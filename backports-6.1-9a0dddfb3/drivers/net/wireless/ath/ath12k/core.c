@@ -45,16 +45,16 @@
 #include "cfr.h"
 #ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/ini.h"
-#endif
-#include "erp.h"
-#include "sdwf.h"
-#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#if defined(CPTCFG_EXT_IPA_OFFLOAD)
 #include "qcn_extns/ipa/dp_ipa.h"
-#endif
+#endif /* CPTCFG_EXT_IPA_OFFLOAD */
+#endif /* CPTCFG_QCN_EXTN */
 #include "telemetry_agent_if.h"
 #include "mgmt_rx.h"
 #include "me.h"
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/me_snoop_extn.h"
+#endif /* CPTCFG_QCN_EXTN */
 #include "umac_reset.h"
 
 #ifdef CPTCFG_ATHDEBUG
@@ -2075,7 +2075,9 @@ static void ath12k_core_hw_group_stop(struct ath12k_hw_group *ag)
 		if (!ab || ab->is_bypassed)
 			continue;
 
+#ifdef CPTCFG_QCN_EXTN
 		ath12k_core_nol_extn_auto_dump_all_radios(ab);
+#endif /* CPTCFG_QCN_EXTN */
 
 		mutex_lock(&ab->core_lock);
 		ath12k_core_pdev_deinit(ab);
@@ -2709,7 +2711,9 @@ static int ath12k_core_hw_group_start(struct ath12k_hw_group *ag)
 		if (!ab || ab->is_bypassed)
 			continue;
 
+#ifdef CPTCFG_QCN_EXTN
 		ath12k_core_nol_extn_auto_restore_all_radios(ab);
+#endif /* CPTCFG_QCN_EXTN */
 	}
 
 core_pdev_create:
@@ -6404,7 +6408,9 @@ int ath12k_core_init(struct ath12k_base *ab)
 		ath12k_err(ab, "Unable to create telemetry psoc agent object: %d\n", ret);
 
 #if defined(CONFIG_BRIDGE_MCAST_OFFLOAD)
+#ifdef CPTCFG_QCN_EXTN
 	ath12k_core_me_notifier_register_extn(ab);
+#endif /* CPTCFG_QCN_EXTN */
 	set_bit(__NB_FLAGS_REGISTERED, &ab->me.nb_flags);
 #endif
 
@@ -6435,7 +6441,9 @@ void ath12k_core_deinit(struct ath12k_base *ab)
 
 #if defined(CONFIG_BRIDGE_MCAST_OFFLOAD)
 	if (test_and_clear_bit(__NB_FLAGS_REGISTERED, &ab->me.nb_flags))
+#ifdef CPTCFG_QCN_EXTN
 		ath12k_core_me_notifier_unregister_extn(ab);
+#endif /* CPTCFG_QCN_EXTN */
 #endif
 
 	ath12k_smd_global_deinit();

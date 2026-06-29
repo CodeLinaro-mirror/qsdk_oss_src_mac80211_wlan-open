@@ -14,8 +14,9 @@
 #include "ce.h"
 #include "../hw.h"
 #include "hw.h"
+#ifdef CPTCFG_QCN_EXTN
 #include "../qcn_extns/ath12k_cmn_extn.h"
-#include "../qcn_extns/ath12k_cmn_extn.h"
+#endif /* CPTCFG_QCN_EXTN */
 #include "../mhi.h"
 #include "mhi.h"
 #include "../pci.h"
@@ -28,7 +29,9 @@
 #include "../debugfs.h"
 #include "../testmode.h"
 #include "../dp_peer.h"
+#ifdef CPTCFG_QCN_EXTN
 #include "../qcn_extns/mesh_util.h"
+#endif /* CPTCFG_QCN_EXTN */
 #include "../dp_tx.h"
 #include "dp_tx.h"
 #include "dp.h"
@@ -36,7 +39,10 @@
 #include "hal_wcn7850.h"
 #include "../cfr.h"
 #include "../dp_stats.h"
+#include "../dp_mon.h"
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/wifi7_dp_extn.h"
+#endif /* CPTCFG_QCN_EXTN */
 
 static const guid_t wcn7850_uuid = GUID_INIT(0xf634f534, 0x6147, 0x11ec,
 					     0x90, 0xd6, 0x02, 0x42,
@@ -1925,7 +1931,9 @@ int ath12k_wifi7_hw_init(struct ath12k_base *ab)
 	ab->ath12k_ops = &ath12k_ops_wifi7;
 	ab->map_event_required = true;
 
+#ifdef CPTCFG_QCN_EXTN
 	ath12k_wifi7_hw_init_extn(ab);
+#endif /* CPTCFG_QCN_EXTN */
 
 	ath12k_info(ab, "WiFi7 Hardware name: %s\n", ab->hw_params->name);
 

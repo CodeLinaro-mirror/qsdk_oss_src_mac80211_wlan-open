@@ -17,7 +17,9 @@
 #include "dp_stats.h"
 #include "dp_htt_logger.h"
 #include "dp_ext_desc.h"
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/ini.h"
+#endif /* CPTCFG_QCN_EXTN */
 
 /* Macros parsing INI */
 #ifndef CPTCFG_QCN_EXTN
@@ -2065,6 +2067,7 @@ dma_addr_t ath12k_dp_tx_buffer_map(struct ath12k_dp *dp,
 	return dma_addr;
 }
 
+#ifdef CPTCFG_QCN_EXTN
 static inline
 void ath12k_dp_tx_buffer_unmap(struct ath12k_dp *dp,
 			       struct ath12k_tx_desc_info *tx_sw_desc)
@@ -2072,6 +2075,7 @@ void ath12k_dp_tx_buffer_unmap(struct ath12k_dp *dp,
 	dma_unmap_single(dp->dev, tx_sw_desc->paddr,
 			 tx_sw_desc->length, DMA_TO_DEVICE);
 }
+#endif /* CPTCFG_QCN_EXTN */
 
 static inline void ath12k_dsb(void)
 {

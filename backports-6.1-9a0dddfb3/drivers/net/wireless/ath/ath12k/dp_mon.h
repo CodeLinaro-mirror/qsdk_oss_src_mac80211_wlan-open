@@ -13,10 +13,13 @@
 #include "pktlog.h"
 
 #include "hal_mon_cmn.h"
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/ath12k_cmn_extn.h"
 #include "qcn_extns/dp_stats_extn.h"
-#include "dp_tx_mon.h"
+#include "qcn_extns/dp_mon_extn.h"
 #include "qcn_extns/ini.h"
+#endif /* CPTCFG_QCN_EXTN */
+#include "dp_tx_mon.h"
 
 #ifndef CPTCFG_QCN_EXTN
 
@@ -884,7 +887,9 @@ struct ath12k_pdev_mon_dp {
 	u8 smart_mon_filter;
 	enum ath12k_dp_smart_mon_state smart_mon_state;
 
+#ifdef CPTCFG_QCN_EXTN
 	struct ath12k_pdev_mon_dp_extn pdev_mon_dp_extn;
+#endif /* CPTCFG_QCN_EXTN */
 	struct ath12k_dp_rx_ext_mon *rx_ext_mon_config;
 	spinlock_t rx_ext_mon_lock;
 	bool rx_pktlog_cbf;
@@ -1809,8 +1814,10 @@ ath12k_dp_rx_scan_radio_stats_reset(struct ath12k_hw *ah)
 		if (!ar->dp.dp_mon_pdev)
 			continue;
 
+#ifdef CPTCFG_QCN_EXTN
 		memset(&ar->dp.dp_mon_pdev->pdev_mon_dp_extn, 0,
 		       sizeof(ar->dp.dp_mon_pdev->pdev_mon_dp_extn));
+#endif /* CPTCFG_QCN_EXTN */
 	}
 	wiphy_unlock(ah->hw->wiphy);
 }
@@ -1819,7 +1826,9 @@ static inline void
 ath12k_dp_mon_rx_scan_radio_stats_update(struct ath12k *ar,
 					 struct ath12k_telemetry_dp_vif *telemetry_vif)
 {
+#ifdef CPTCFG_QCN_EXTN
 	struct ath12k_pdev_mon_dp_extn *mon_dp_extn;
+#endif /* CPTCFG_QCN_EXTN */
 
 	if (unlikely(!ar || !telemetry_vif))
 		return;
@@ -1827,9 +1836,11 @@ ath12k_dp_mon_rx_scan_radio_stats_update(struct ath12k *ar,
 	if (!ar->dp.dp_mon_pdev)
 		return;
 
+#ifdef CPTCFG_QCN_EXTN
 	mon_dp_extn = &ar->dp.dp_mon_pdev->pdev_mon_dp_extn;
 	ath12k_dp_rx_scan_radio_stats_update(telemetry_vif,
 					     &mon_dp_extn->rx_scan_radio_stats);
+#endif /* CPTCFG_QCN_EXTN */
 }
 
 static inline bool

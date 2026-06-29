@@ -26,9 +26,13 @@
 #include <ppe_vp_public.h>
 #include <ppe_vp_tx.h>
 #endif
+#ifdef CPTCFG_QCN_EXTN
 #include "../qcn_extns/mesh_util.h"
+#endif /* CPTCFG_QCN_EXTN */
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
+#ifdef CPTCFG_QCN_EXTN
 #include "../qcn_extns/ipa/dp_ipa.h"
+#endif /* CPTCFG_QCN_EXTN */
 #endif
 #include "../fse.h"
 

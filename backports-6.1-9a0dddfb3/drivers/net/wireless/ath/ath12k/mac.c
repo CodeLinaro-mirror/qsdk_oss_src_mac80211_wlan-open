@@ -45,8 +45,10 @@
 #endif
 #include "hal.h"
 #include "mgmt_rx.h"
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/ath12k_cmn_extn.h"
 #include "qcn_extns/ipa/dp_ipa_pub.h"
+#endif /* CPTCFG_QCN_EXTN */
 #include "mgmt_rx.h"
 
 #define CHAN2G(_channel, _freq, _flags) { \
@@ -6645,7 +6647,9 @@ static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 		  ath12k_wmi_migration_cmd_work);
 	INIT_LIST_HEAD(&arvif->peer_migrate_list);
 
+#ifdef CPTCFG_QCN_EXTN
 	ath12k_mac_init_arvif_extn(ahvif);
+#endif /* CPTCFG_QCN_EXTN */
 
 	arvif->bcast_rate_configured = false;
 
@@ -18171,10 +18175,15 @@ static void ath12k_mgmt_over_wmi_tx_drop(struct ath12k *ar, struct sk_buff *skb)
 
 	ath12k_skb_rhash_remove(ar, skb);
 
-	if (!ATH12K_IS_CUSTOM_PKT(ATH12K_SKB_CB(skb)))
+	if (!ATH12K_IS_CUSTOM_PKT(ATH12K_SKB_CB(skb))) {
 		ieee80211_free_txskb(ar->ah->hw, skb);
-	else
+	} else {
+#ifdef CPTCFG_QCN_EXTN
 		ath12k_custom_tx_free_extn(skb, 1);
+#else
+		dev_kfree_skb_any(skb);
+#endif /* CPTCFG_QCN_EXTN */
+	}
 
 	if (num_mgmt < 0)
 		WARN_ON_ONCE(1);
@@ -18628,14 +18637,16 @@ check_rm_action_frame:
 		}
 		break;
 	default:
+#ifdef CPTCFG_QCN_EXTN
 		if (ath12k_vs_action_has_ml_link_info_ie_extn(ar, category, buf,
-							      skb->data + skb->len))
+							      skb->data + skb->len)) {
 			MGMT_SET_LINK_AGNOSTIC(can_override_mld_tx, skb_cb);
-		else {
-			/* nothing to fill */
-			MGMT_RESET_LINK_AGNOSTIC(can_override_mld_tx, skb_cb);
-			return 0;
+			break;
 		}
+#endif /* CPTCFG_QCN_EXTN */
+		/* nothing to fill */
+		MGMT_RESET_LINK_AGNOSTIC(can_override_mld_tx, skb_cb);
+		return 0;
 	}
 
 #undef MGMT_RESET_LINK_AGNOSTIC
@@ -19665,9 +19676,11 @@ static int ath12k_mac_setup_vdev_create_arg(struct ath12k_link_vif *arvif,
 	arg->global_vdev_id = ahvif->dp_vif.ahvif_id;
 
 	/* Vendor-specific scan radio configuration */
+#ifdef CPTCFG_QCN_EXTN
 	ret = ath12k_mac_setup_vdev_create_arg_scan_radio_extn(arvif, arg);
 	if (ret)
 		return ret;
+#endif /* CPTCFG_QCN_EXTN */
 
 	return 0;
 }
@@ -28024,7 +28037,9 @@ ath12k_mac_setup_radio_iface_comb(struct ath12k *ar,
 					BIT(NL80211_CHAN_WIDTH_80) |
 					BIT(NL80211_CHAN_WIDTH_160);
 
+#ifdef CPTCFG_QCN_EXTN
 	ath12k_mac_setup_radio_iface_comb_extn(comb);
+#endif /* CPTCFG_QCN_EXTN */
 
 	return 0;
 }
@@ -28323,7 +28338,9 @@ static void ath12k_mac_cleanup_unregister(struct ath12k *ar)
 		ar->mac.sbands[NL80211_BAND_6GHZ].chan_6g[i] = NULL;
 	}
 
+#ifdef CPTCFG_QCN_EXTN
 	ath12k_mac_cleanup_unregister_extn(ar);
+#endif /* CPTCFG_QCN_EXTN */
 }
 
 static void ath12k_mac_hw_unregister(struct ath12k_hw *ah)
@@ -28340,7 +28357,9 @@ static void ath12k_mac_hw_unregister(struct ath12k_hw *ah)
 		cancel_delayed_work_sync(&ar->scan.timeout);
 		cancel_delayed_work_sync(&ar->scan.roc_done);
 		ath12k_debugfs_unregister(ar);
+#ifdef CPTCFG_QCN_EXTN
 		ath12k_sysfs_cleanup_extn(ar);
+#endif /* CPTCFG_QCN_EXTN */
 	}
 
 	ieee80211_unregister_hw(hw);
@@ -29001,7 +29020,9 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 
 		ath12k_fw_stats_init(ar);
 		ath12k_debugfs_register(ar);
+#ifdef CPTCFG_QCN_EXTN
 		ath12k_sysfs_init_extn(ar);
+#endif /* CPTCFG_QCN_EXTN */
 		ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
 				 "mac pdev %u freq limits %u->%u MHz, no. of channels %u\n",
 				 ar->pdev->pdev_id, ar->freq_range.start_freq,
@@ -29174,7 +29195,9 @@ static int ath12k_mac_setup(struct ath12k *ar)
 		return ret;
 	}
 
+#ifdef CPTCFG_QCN_EXTN
 	ath12k_mac_setup_extn(ar);
+#endif /* CPTCFG_QCN_EXTN */
 
 	return 0;
 }
@@ -29469,7 +29492,9 @@ static struct ath12k_hw *ath12k_mac_hw_allocate(struct ath12k_hw_group *ag,
 	if (!hw)
 		return NULL;
 
+#ifdef CPTCFG_QCN_EXTN
 	ath12k_mac_hw_allocate_extn(hw, pdev_map[0].ab->ath12k_ops_extn);
+#endif /* CPTCFG_QCN_EXTN */
 
 	ah = ath12k_hw_to_ah(hw);
 	ah->hw = hw;

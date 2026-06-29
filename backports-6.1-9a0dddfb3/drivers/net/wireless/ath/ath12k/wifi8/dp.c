@@ -29,7 +29,9 @@
 #include "dp_peer.h"
 #include "hal_queue.h"
 #include "ppeds.h"
+#ifdef CPTCFG_QCN_EXTN
 #include "../qcn_extns/ipa/dp_ipa_pub.h"
+#endif /* CPTCFG_QCN_EXTN */
 
 extern struct ppe_ds_wlan_ops_v2 ppeds_wifi8_wlanops_v2;
 

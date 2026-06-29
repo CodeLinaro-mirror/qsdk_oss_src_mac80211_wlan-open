@@ -17,7 +17,10 @@
 #include "dp_mon2.h"
 #include "../trace.h"
 #include "../ath12k_notif.h"
+#ifdef CPTCFG_QCN_EXTN
 #include "../../net/mac80211/qcn_extns/cmn_extn.h"
+#include "qcn_extns/dp_mon_extn.h"
+#endif /* CPTCFG_QCN_EXTN */
 
 const struct ath12k_dp_arch_mon_ops ath12k_wifi7_dp_arch_mon_dual_ring_ops = {
 	.rx_srng_setup = ath12k_dp_mon_rx_srng_setup,
@@ -902,6 +905,7 @@ ath12k_wifi7_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 		 *   - need_rtap set: deliver to mac80211 (mac80211 adds radiotap).
 		 *   - need_rtap not set: drop the MPDU.
 		 */
+#ifdef CPTCFG_QCN_EXTN
 		if (ieee80211_ext_mon_rx_notifier_has_listeners_extn()) {
 			struct ieee80211_rx_status *rx_status;
 			struct ieee80211_ext_mon_rx_event_extn rx_event;
@@ -929,6 +933,11 @@ ath12k_wifi7_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 				   "pkt dropped! listener absent & rtap not needed\n");
 			return -EINVAL;
 		}
+#else
+		/* ext_mon not supported, drop the MPDU */
+		dev_kfree_skb_any(mpdu);
+		return -EOPNOTSUPP;
+#endif /* CPTCFG_QCN_EXTN */
 	}
 
 	return 0;

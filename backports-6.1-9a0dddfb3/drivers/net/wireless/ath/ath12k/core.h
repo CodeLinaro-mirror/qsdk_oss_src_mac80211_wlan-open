@@ -39,8 +39,10 @@
 #include "cmn_defs.h"
 #include "spectral.h"
 #include "qos.h"
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/ath12k_cmn_extn.h"
 #include "qcn_extns/vendor_extn.h"
+#endif /* CPTCFG_QCN_EXTN */
 #include <linux/atomic.h>
 #include "event.h"
 #include "me.h"
@@ -999,7 +1001,9 @@ struct ath12k_dp_vif {
 	u32 monitor_flags;
 	struct ath12k_dp_preserved_stats link_vif_delete_stats;
 
+#ifdef CPTCFG_QCN_EXTN
 	struct ath12k_dp_vif_extn dp_extn;
+#endif /* CPTCFG_QCN_EXTN */
 	u8 ahvif_id;
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	int ppe_vp_profile_idx;
@@ -1124,7 +1128,9 @@ struct ath12k_vif {
 	struct ieee80211_vif *vif;
 	struct ath12k_hw *ah;
 
+#ifdef CPTCFG_QCN_EXTN
 	struct ath12k_vif_extn ath12k_vif_extn;
+#endif /* CPTCFG_QCN_EXTN */
 	u8 vap_submode;
 
 	struct dentry *debugfs_rfs_core_mask;
@@ -2072,7 +2078,9 @@ struct ath12k {
 	bool atf_strict_scheduling;
 	u64 atf_stats_accum_start_time;
 	/* ath12k extension structure */
+#ifdef CPTCFG_QCN_EXTN
 	struct ath12k_extn ar_extn;
+#endif /* CPTCFG_QCN_EXTN */
 	struct completion delete_all_peer_done;
 	struct wmi_vdev_host_tsf_arg tsf_report;
 	struct completion tsf_report_done;
@@ -2755,9 +2763,11 @@ struct ath12k_base {
 
 	const struct ieee80211_ops *ath12k_ops;
 
+#ifdef CPTCFG_QCN_EXTN
 	struct ath12k_base_extn ath12k_base_extn;
 
 	const struct ieee80211_ops_extn *ath12k_ops_extn;
+#endif /* CPTCFG_QCN_EXTN */
 
 	bool in_coldboot_fwreset;
 	u32 chwidth_num_peer_caps;
@@ -2842,10 +2852,12 @@ struct ath12k_fw_stats_bcn {
 	u32 tx_bcn_outage_cnt;
 };
 
+#ifdef CPTCFG_QCN_EXTN
 struct ath12k_dcs_wlan_interference {
 	struct list_head list;
 	struct wmi_dcs_wlan_interference_stats info;
 };
+#endif /* CPTCFG_QCN_EXTN */
 
 struct ath12k_fw_stats_pdev {
 	struct list_head list;

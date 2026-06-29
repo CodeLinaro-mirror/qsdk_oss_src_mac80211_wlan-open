@@ -12,9 +12,11 @@
 #include <net/genetlink.h>
 #include <net/cfg80211.h>
 #include "../net/wireless/core.h"
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/ath12k_cmn_extn.h"
 #include "qcn_extns/vendor_extn.h"
 #include "qcn_extns/me_hmmc_extn.h"
+#endif /* CPTCFG_QCN_EXTN */
 #include "mac.h"
 #include "ppe.h"
 #include "vendor.h"
@@ -9923,8 +9925,10 @@ static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 					   "Invalid param command received\n");
 				return -EINVAL;
 			}
+#ifdef CPTCFG_QCN_EXTN
 			ret = ath12k_vendor_set_wifi_params_extn(wiphy, wdev,
 							    &wifi_params);
+#endif /* CPTCFG_QCN_EXTN */
 			if (ret) {
 				ath12k_err(NULL,
 					   "Failed to set wifi params \n");
@@ -9932,6 +9936,7 @@ static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 			}
 			break;
 		default:
+#ifdef CPTCFG_QCN_EXTN
 			ret = ath12k_vendor_wifi_config_handler_extn(wiphy, wdev,
 								     &wifi_params);
 			if (ret) {
@@ -9939,6 +9944,7 @@ static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 					   "Un-supported generic command\n");
 				return ret;
 			}
+#endif /* CPTCFG_QCN_EXTN */
 		}
 	}
 
@@ -10107,6 +10113,7 @@ static int ath12k_vendor_wiphy_config_handler(struct wiphy *wiphy,
 					   "Invalid param command received\n");
 				return -EINVAL;
 			}
+#ifdef CPTCFG_QCN_EXTN
 			ret = ath12k_vendor_set_wiphy_params_extn(wiphy,
 							    &wifi_params);
 			if (ret) {
@@ -10114,6 +10121,7 @@ static int ath12k_vendor_wiphy_config_handler(struct wiphy *wiphy,
 					   "Failed to set wiphy params \n");
 				return -EINVAL;
 			}
+#endif /* CPTCFG_QCN_EXTN */
 			break;
 
 #ifdef CPTCFG_QCN_EXTN
@@ -10137,6 +10145,7 @@ static int ath12k_vendor_wiphy_config_handler(struct wiphy *wiphy,
 					   "Invalid sr param command received\n");
 				return -EINVAL;
 			}
+#ifdef CPTCFG_QCN_EXTN
 			ret = ath12k_vendor_set_wiphy_sr_params_extn(wiphy,
 								     &wifi_params);
 			if (ret) {
@@ -10144,6 +10153,7 @@ static int ath12k_vendor_wiphy_config_handler(struct wiphy *wiphy,
 					   "Failed to set wiphy hwaddr\n");
 				return -EINVAL;
 			}
+#endif /* CPTCFG_QCN_EXTN */
 			break;
 		case QCA_NL80211_VENDOR_RADIO_SMART_ANT_CONFIG:
 			if (!wifi_params.data) {
@@ -10200,8 +10210,10 @@ static int ath12k_vendor_get_wifi_config_handler(struct wiphy *wiphy,
 		ath12k_vendor_wifi_extract_generic_command_params(tb, &wifi_params);
 		switch (wifi_params.command) {
 		case QCA_NL80211_VENDOR_SUBCMD_WIFI_PARAMS:
+#ifdef CPTCFG_QCN_EXTN
 			ret = ath12k_vendor_get_wifi_params_extn(wiphy, wdev,
 							    &wifi_params, &value);
+#endif /* CPTCFG_QCN_EXTN */
 			if (ret) {
 				ath12k_err(NULL,
 					   "Failed to set wifi params \n");
@@ -10209,19 +10221,23 @@ static int ath12k_vendor_get_wifi_config_handler(struct wiphy *wiphy,
 			}
 			break;
 		case QCA_NL80211_VENDOR_SUBCMD_HE_MCS_12_13_SUPP:
+#ifdef CPTCFG_QCN_EXTN
 			ret = ath12k_vendor_get_wifi_config_handler_extn(wiphy,
 									 tb, &value);
+#endif /* CPTCFG_QCN_EXTN */
 			if (ret) {
 				ath12k_err(NULL, "Failed to get HE MCS 12/13 capability\n");
 				return ret;
 			}
 			break;
 		case ACFG_PARAM_RADIO_SCAN_BLANKING_MODE:
+#ifdef CPTCFG_QCN_EXTN
 			ret = ath12k_vendor_get_scan_blanking_mode_extn(wiphy, &value);
 			if (ret) {
 				ath12k_err(NULL, "Failed to get scan blanking mode\n");
 				return ret;
 			}
+#endif /* CPTCFG_QCN_EXTN */
 			break;
 		default:
 			ath12k_dbg(NULL, ATH12K_DBG_CFG, "Un-supported generic command\n");
@@ -10355,6 +10371,7 @@ static int ath12k_vendor_get_wiphy_config_handler(struct wiphy *wiphy,
 		ath12k_vendor_wifi_extract_generic_command_params(tb, &wifi_params);
 		switch (wifi_params.command) {
 		case QCA_NL80211_VENDOR_SUBCMD_WIFI_PARAMS:
+#ifdef CPTCFG_QCN_EXTN
 			ret = ath12k_vendor_get_wiphy_params_extn(wiphy,
 							    &wifi_params, &value);
 			if (ret) {
@@ -10362,12 +10379,15 @@ static int ath12k_vendor_get_wiphy_config_handler(struct wiphy *wiphy,
 					   "Failed to get wifi params\n");
 				return -EINVAL;
 			}
+#endif /* CPTCFG_QCN_EXTN */
 			break;
 		case QCA_NL80211_VENDOR_RADIO_SR_SELF_CONFIG:
+#ifdef CPTCFG_QCN_EXTN
 			ret = ath12k_vendor_get_wiphy_sr_params_extn(wiphy,
 								     &wifi_params,
 								     value_arr,
 								     sizeof(value_arr));
+#endif /* CPTCFG_QCN_EXTN */
 			if (ret) {
 				ath12k_err(NULL, "Failed to get SR wifi params\n");
 				return -EINVAL;
@@ -14141,7 +14161,9 @@ static int ath12k_dump_me_list_entries(struct ath12k_vif *ahvif, u8 list_type)
 		return -EINVAL;
 	}
 
+#ifdef CPTCFG_QCN_EXTN
 	ret = ath12k_me_hmmc_dump_extn(me_db, filter_flags, &count);
+#endif /* CPTCFG_QCN_EXTN */
 	if (ret < 0)
 		ath12k_err(NULL, "Error dumping ME list entries (type %u)\n",
 			   list_type);
