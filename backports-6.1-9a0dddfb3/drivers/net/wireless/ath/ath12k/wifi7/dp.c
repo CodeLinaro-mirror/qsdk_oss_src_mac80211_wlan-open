@@ -342,9 +342,9 @@ static int ath12k_wifi7_dp_op_device_init(struct ath12k_dp *dp)
 		ab->dp->ppe.ppe_ops->ath12k_ppeds_interrupt_start(ab);
 #endif
 
-	ret = ath12k_dp_ipa_init(dp->ab);
+	ret = ath12k_wifi7_dp_ipa_init(ab);
 	if (ret) {
-		ath12k_err(dp->ab, "IPA: ipa init failed");
+		ath12k_err(ab, "IPA: ipa init failed");
 		goto fail_dp_mon_rx_free;
 	}
 
