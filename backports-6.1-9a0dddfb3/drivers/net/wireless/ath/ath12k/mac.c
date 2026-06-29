@@ -346,8 +346,6 @@ ath12k_phymodes_uhr[NUM_NL80211_BANDS][ATH12K_CHAN_WIDTH_NUM] = {
 #define ATH12K_MAX_AR_LINK_IDX	5
 #define ATH12K_SCAN_ROC_CLEANUP_TIMEOUT_MS 3000  /* Timeout for ROC cleanup after scan */
 						 /*  vdev clean */
-#define ATH12K_DP_HW_STATS_REO_IDX	0
-
 static const u32 ath12k_smps_map[] = {
 	[WLAN_HT_CAP_SM_PS_STATIC] = WMI_PEER_SMPS_STATIC,
 	[WLAN_HT_CAP_SM_PS_DYNAMIC] = WMI_PEER_SMPS_DYNAMIC,
@@ -30713,6 +30711,41 @@ static void ath12k_mac_add_preserved_stats(struct rtnl_link_stats64 *stats,
 	}
 }
 
+/**
+ * ath12k_netstats_peer_iter_cb - CP iterator callback for get_netstats
+ *
+ * Called with ar->arsta_lock held (BH-disabled).
+ *
+ * CP responsibility: resolve the dp_peer MAC address from the CP arsta object.
+ *   - self/BSS peer  -> dp_peer keyed by link MAC  (arsta->addr)
+ *   - regular STA    -> dp_peer keyed by MLD MAC   (arsta->ahsta->addr)
+ *
+ * DP responsibility: delegated to ath12k_dp_netstats_peer_update().
+ */
+static int ath12k_netstats_peer_iter_cb(struct ath12k *ar,
+					struct ath12k_link_sta *arsta,
+					void *data)
+{
+	struct ath12k_netstats_iter_ctx *ctx = data;
+	const u8 *dp_peer_addr;
+
+	if (!arsta->is_self_peer && !arsta->ahsta)
+		return 0;
+
+	/* CP: resolve dp_peer MAC address (CP -> DP bridge) */
+	dp_peer_addr = arsta->is_self_peer ? arsta->addr : arsta->ahsta->addr;
+
+	/* Delegate to DP layer */
+	ath12k_dp_netstats_peer_update(&ar->ah->dp_hw,
+				       &ar->dp,
+				       dp_peer_addr,
+				       ar->hw_link_id,
+				       ctx->peer_mac,
+				       ctx->is_ds_vif,
+				       ctx->stats);
+	return 0;
+}
+
 void ath12k_mac_op_get_netstats(struct ieee80211_hw *hw,
 				struct ieee80211_vif *vif,
 				struct rtnl_link_stats64 *stats)
@@ -30721,13 +30754,8 @@ void ath12k_mac_op_get_netstats(struct ieee80211_hw *hw,
 	struct ath12k_dp_vif *dp_vif = &ahvif->dp_vif;
 	struct ath12k *ar = NULL;
 	struct ath12k_link_vif *arvif;
-	struct ath12k_dp *dp;
-	struct ath12k_dp_peer *peer;
-	struct ath12k_dp_link_peer *link_peer;
-	struct ath12k_dp_peer_stats *peer_stats;
-	struct ath12k_dp_peer_rx_stats *rx_stats;
 	unsigned long links_map = ahvif->links_map;
-	int link_id, i, stats_link_id;
+	int link_id;
 	struct wireless_dev *wdev = ieee80211_vif_to_wdev(vif);
 	const u8 *peer_mac = NULL;
 	struct ieee80211_sta *sta;
@@ -30736,8 +30764,7 @@ void ath12k_mac_op_get_netstats(struct ieee80211_hw *hw,
 	struct ath12k_dp_preserved_stats *del_stats;
 	struct ath12k_dp_pkt_info vif_ppeds_rx;
 	struct ieee80211_vif *master_vif;
-	u32 rx_packets;
-	u64 rx_bytes;
+	struct ath12k_netstats_iter_ctx ctx;
 
 	rcu_read_lock();
 	if (vif->type == NL80211_IFTYPE_AP_VLAN) {
@@ -30769,6 +30796,12 @@ void ath12k_mac_op_get_netstats(struct ieee80211_hw *hw,
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	is_ds_vif = (ahvif->dp_vif.ppe_vp_type == PPE_VP_USER_TYPE_DS);
 #endif
+
+	/* Set up iterator context (CP -> DP bridge) */
+	ctx.stats    = stats;
+	ctx.peer_mac = peer_mac;
+	ctx.is_ds_vif = is_ds_vif;
+
 	for_each_set_bit(link_id, &links_map, ATH12K_NUM_MAX_LINKS) {
 		if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
 			continue;
@@ -30779,85 +30812,20 @@ void ath12k_mac_op_get_netstats(struct ieee80211_hw *hw,
 		if (!ar->ab || !ar->ab->dp)
 			continue;
 
-		dp = ath12k_ab_to_dp(ar->ab);
 		if (!is_ap_vlan) {
 			/* Master VIF: Accumulate stats from deleted link peers */
 			del_stats = &dp_vif->dp_link_vif[link_id].link_peer_delete_stats;
 			ath12k_mac_add_preserved_stats(stats, del_stats);
 		}
-		spin_lock_bh(&dp->dp_lock);
-		list_for_each_entry(link_peer, &dp->peers, list)  {
-			rx_packets = 0;
-			rx_bytes = 0;
 
-			if (link_peer->vdev_id != arvif->vdev_id)
-				continue;
-			/* Isolate AP_VLAN stats to the specific WDS peer */
-			if (peer_mac &&
-			    !ether_addr_equal(link_peer->addr, peer_mac) &&
-			    !ether_addr_equal(link_peer->ml_addr, peer_mac))
-				continue;
-
-			peer = link_peer->dp_peer;
-			if (!peer)
-				continue;
-
-			stats_link_id = ar->hw_link_id;
-			if (stats_link_id >= ATH12K_DP_PEER_MAX_MLO_LINKS)
-				continue;
-			peer_stats = &peer->stats[stats_link_id];
-
-			if (ath12k_dp_hw_peer_stats_enabled(&ar->dp)) {
-				/* When HW stats are enabled, recv_from_reo has
-				 * all the Rx traffic data stored in
-				 * ATH12K_DP_HW_STATS_REO_IDX for SFE or
-				 * DS mode.
-				 */
-				rx_stats = &peer_stats->rx[ATH12K_DP_HW_STATS_REO_IDX];
-				rx_packets += rx_stats->recv_from_reo.packets;
-				rx_bytes += rx_stats->recv_from_reo.bytes;
-			} else {
-				for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
-					/* PPE sync credits DS VIF WDS peer
-					 * traffic only on DP_REO_PPEDS_RING_IDX.
-					 * Skip lower ring indices to avoid
-					 * double-counting.
-					 */
-					if (is_ds_vif && i < DP_REO_PPEDS_RING_IDX)
-						continue;
-
-					rx_packets +=
-					(peer_stats->rx[i].sent_to_stack.packets +
-					 peer_stats->rx[i].sent_to_stack_fast.packets);
-					rx_bytes +=
-					(peer_stats->rx[i].sent_to_stack.bytes +
-					 peer_stats->rx[i].sent_to_stack_fast.bytes);
-				}
-
-				if (ar && ath12k_extd_rx_stats_enabled(&ar->dp) &&
-				    link_peer &&
-				    link_peer->peer_stats.rx_stats) {
-					/* Override PPEDS ring sent_to_stack with
-					 * extended RX monitor MSDU totals.
-					 */
-					rx_packets =
-					link_peer->peer_stats.rx_stats->num_msdu;
-					rx_bytes =
-					link_peer->peer_stats.rx_stats->num_msdu_bytes;
-				}
-			}
-
-			stats->rx_packets += rx_packets;
-			stats->rx_bytes += rx_bytes;
-
-			for (i = 0; i < DP_TCL_NUM_RING_MAX; i++) {
-				stats->tx_packets += peer_stats->tx[i].comp_pkt.packets;
-				stats->tx_bytes   += peer_stats->tx[i].comp_pkt.bytes;
-			}
-			stats->tx_packets += peer_stats->tx[i].tx_dropped.packets;
-			stats->tx_bytes   += peer_stats->tx[i].tx_dropped.bytes;
-		}
-		spin_unlock_bh(&dp->dp_lock);
+		/* CP: iterate arsta hash list by vdev_id.
+		 * Lock ordering: arsta_lock -> peer_hash_lock (inside callback).
+		 */
+		spin_lock_bh(&ar->arsta_lock);
+		ath12k_arsta_itr_on_ar_by_vdev_id(ar, arvif->vdev_id,
+						  ath12k_netstats_peer_iter_cb,
+						  &ctx);
+		spin_unlock_bh(&ar->arsta_lock);
 	}
 	/*
 	 * Accumulate hardware PPE DS ring stats on the master VIF

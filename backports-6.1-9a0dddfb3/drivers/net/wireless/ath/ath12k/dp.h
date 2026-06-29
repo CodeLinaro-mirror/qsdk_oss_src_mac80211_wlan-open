@@ -1901,6 +1901,13 @@ int ath12k_dp_get_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 			     struct ath12k_telemetry_dp_vif *telemetry_vif,
 			     u8 link_id);
+
+/* Context passed through the arsta iterator to the DP stats helper */
+struct ath12k_vif_peer_iter_ctx {
+	struct ath12k_link_vif          *arvif;
+	struct ath12k_dp_aggr_vif_stats *aggr_vif_stats;
+	bool                             is_ds_vif;
+};
 void ath12k_dp_get_pdev_stats(struct ath12k_pdev_dp *pdev,
 			      struct ath12k_telemetry_dp_radio *telemetry_radio);
 int ath12k_dp_alloc_proto_stats_vif(struct ath12k_dp_vif *dp_vif);
