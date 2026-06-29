@@ -374,9 +374,8 @@ int ath12k_mhi_register(struct ath12k_pci *ab_pci)
 		}
 		of_node_put(dev_node);
 	} else {
-		/* No Memory DT node, assign full 32-bit region as iova */
 		mhi_ctrl->iova_start = 0;
-		mhi_ctrl->iova_stop = 0xFFFFFFFF;
+		mhi_ctrl->iova_stop = ab_pci->dma_mask;
 	}
 
 	ath12k_dbg(ab, ATH12K_DBG_PCI, "iova start:%pa iova stop: %pa\n",
