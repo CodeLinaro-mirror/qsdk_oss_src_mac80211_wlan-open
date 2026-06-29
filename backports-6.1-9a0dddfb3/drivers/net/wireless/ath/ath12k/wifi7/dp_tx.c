@@ -21,6 +21,7 @@
 #endif
 #include "../telemetry_agent_if.h"
 #include "dp_peer.h"
+#include "../qcn_extns/ini.h"
 
 #ifndef CPTCFG_EXT_IPA_OFFLOAD
 #define ATH12K_DMA_UNMAP_WITH_FREE_SKB(...) ((void)0)
@@ -1287,7 +1288,6 @@ int ath12k_wifi7_dp_tx_hw_enqueue(struct ath12k_dp_link_vif *dp_link_vif,
 }
 #endif
 
-#ifdef CPTCFG_ATH12K_UCAST_ENABLE_AST_OVERRIDE
 void ucast_enable_ast_override(struct ath12k_link_sta *arsta,
 			       u16 *bss_ast_idx, u16 *bss_ast_hash,
 			       bool *lookup_override)
@@ -1298,13 +1298,6 @@ void ucast_enable_ast_override(struct ath12k_link_sta *arsta,
 		*lookup_override = true;
 	}
 }
-#else
-void ucast_enable_ast_override(struct ath12k_link_sta *arsta,
-			       u16 *bss_ast_idx, u16 *bss_ast_hash,
-			       bool *lookup_override)
-{
-}
-#endif
 
 /**
  * ath12k_wifi7_ucast_setup_msdu_info() - Setup MSDU info for unicast transmission
@@ -1321,7 +1314,8 @@ void ucast_enable_ast_override(struct ath12k_link_sta *arsta,
 static void ath12k_wifi7_ucast_setup_msdu_info(struct ath12k_dp_link_vif *dp_link_vif,
 					       struct ath12k_dp_tx_msdu_info *msdu_info,
 					       struct sk_buff *skb, bool htt_mesh,
-					       struct ath12k_link_sta *arsta)
+					       struct ath12k_link_sta *arsta,
+					       struct ath12k_base *ab)
 {
 	u16 bss_ast_idx;
 	u16 bss_ast_hash;
@@ -1335,8 +1329,9 @@ static void ath12k_wifi7_ucast_setup_msdu_info(struct ath12k_dp_link_vif *dp_lin
 	bss_ast_hash = dp_link_vif->ast_hash;
 	lookup_override = false;
 
-	ucast_enable_ast_override(arsta, &bss_ast_idx, &bss_ast_hash,
-				  &lookup_override);
+	if (unlikely(test_bit(ATH12K_FLAG_UCAST_ENABLE_AST_OVERRIDE, &ab->dev_flags)))
+		ucast_enable_ast_override(arsta, &bss_ast_idx, &bss_ast_hash,
+					  &lookup_override);
 
 	msdu_info->bss_ast_idx = bss_ast_idx;
 	msdu_info->bss_ast_hash = bss_ast_hash;
@@ -2120,7 +2115,8 @@ void ath12k_wifi7_ucast_handler(struct ath12k_dp_vif *dp_vif,
 					      skb, ring_id, len);
 
 	/* Setup MSDU info */
-	ath12k_wifi7_ucast_setup_msdu_info(dp_link_vif, &msdu_info, skb, htt_mesh, arsta);
+	ath12k_wifi7_ucast_setup_msdu_info(dp_link_vif, &msdu_info, skb,
+					   htt_mesh, arsta, ar->ab);
 
 	/* Fast path: no features enabled */
 	if (unlikely((DP_FEATURE_IS_ANY(dp_vif) || skb_ctrl->features))) {
