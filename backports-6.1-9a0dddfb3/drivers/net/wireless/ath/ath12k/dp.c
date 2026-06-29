@@ -2245,7 +2245,6 @@ static int ath12k_dp_setup(struct ath12k_base *ab)
 	dp->ab = ab;
 
 	spin_lock_init(&dp->dp_lock);
-	INIT_LIST_HEAD(&dp->peers);
 	INIT_LIST_HEAD(&dp->neighbor_peers);
 	mutex_init(&dp->tbl_mtx_lock);
 	ath12k_dp_link_peer_rhash_tbl_init(dp);
