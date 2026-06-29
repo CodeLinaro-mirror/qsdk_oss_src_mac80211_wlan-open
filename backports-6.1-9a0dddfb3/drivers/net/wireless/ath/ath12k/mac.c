@@ -22136,7 +22136,10 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 		if (chandef && ar->last_wmi_vdev_start_status ==
 		    WMI_VDEV_START_RESPONSE_DFS_VIOLATION)
 			ath12k_mac_dfs_violation_recovery_extn(arvif, ctx);
+		else
 #endif /* CPTCFG_QCN_EXTN */
+			WARN_ON_ONCE(ret);
+
 		return ret;
 	}
 

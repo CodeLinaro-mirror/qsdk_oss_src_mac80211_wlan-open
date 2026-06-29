@@ -12006,7 +12006,7 @@ static void ath12k_vdev_start_resp_event(struct ath12k_base *ab, struct sk_buff 
 
 	status = le32_to_cpu(vdev_start_resp.status);
 
-	if (WARN_ON_ONCE(status)) {
+	if (status) {
 		ath12k_warn(ab, "vdev start resp error status %d (%s)\n",
 			    status, ath12k_wmi_vdev_resp_print(status));
 		ar->last_wmi_vdev_start_status = status;
