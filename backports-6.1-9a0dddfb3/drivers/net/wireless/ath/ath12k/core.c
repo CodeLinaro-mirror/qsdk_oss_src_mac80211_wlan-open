@@ -1448,7 +1448,6 @@ static void ath12k_core_stop(struct ath12k_base *ab)
 	ath12k_wmi_detach(ab);
 	ath12k_mgmt_device_deinit(ab->mgmt);
 	ath12k_dp_cmn_device_deinit(ab->dp);
-	ath12k_cfg_deinit(ab);
 
 	/* De-Init of components as needed */
 }
@@ -2929,19 +2928,11 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 		}
 	}
 
-	mutex_lock(&ab->core_lock);
-	if (ath12k_cfg_init(ab))
-		ath12k_err(ab, "Failed to initialize per radio INI data in driver\n");
-	else
-		ath12k_info(ab, "Initialized per radio INI data in driver\n");
-
 	/* Cache rf_switch_config INI value for use in WMI init and mac registration */
 	ab->rf_switch_config = ath12k_cfg_get(ab, ATH12K_CFG_RF_SWITCH_CONFIG) ? 1 : 0;
 	ath12k_info(ab, "rf_switch_config: %u (%s 5G range)\n",
 		    ab->rf_switch_config,
 		    ab->rf_switch_config ? "secondary/high" : "primary/full");
-
-	mutex_unlock(&ab->core_lock);
 
 	ret = ath12k_dp_cmn_device_init(ab->dp);
 	if (ret) {

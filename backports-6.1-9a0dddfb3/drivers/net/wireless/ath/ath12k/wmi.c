@@ -7914,7 +7914,9 @@ int ath12k_wmi_cmd_init(struct ath12k_base *ab)
 
 	arg.num_band_to_mac = ab->num_radios;
 	ath12k_fill_band_to_mac_param(ab, arg.band_to_mac);
+#ifdef CPTCFG_QCN_EXTN
 	ath12k_cfg_parse_pdev_section(ab);
+#endif
 
 	dp->peer_metadata_ver = arg.res_cfg.peer_metadata_ver;
 
