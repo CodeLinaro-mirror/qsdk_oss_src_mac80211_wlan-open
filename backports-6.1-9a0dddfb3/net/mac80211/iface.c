@@ -1507,7 +1507,7 @@ int ieee80211_do_open(struct wireless_dev *wdev, bool coming_up)
 				goto err_stop;
 
 			ieee80211_set_vif_encap_ops(sdata);
-#ifndef PLATFORM_SDX85
+#ifndef PLATFORM_SDX
 			/* ieee80211_check_queues was disabled for SDX
 			 *  due to Warn on for invalid hw queue for SDX
 			 *  during VAP up

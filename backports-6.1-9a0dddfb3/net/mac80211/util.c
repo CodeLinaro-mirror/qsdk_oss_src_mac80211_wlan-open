@@ -4152,8 +4152,13 @@ void ieee80211_punct_obj_init(struct ieee80211_local *local,
 	obj->radar_ts = radar_hit_ts;
 	obj->ctx = ctx;
 	obj->local = local;
+#if LINUX_VERSION_IS_GEQ(6, 18, 0)
+	hrtimer_setup(&obj->cac_timer, ieee80211_punct_cac_timeout,
+		      CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+#else
 	hrtimer_init(&obj->cac_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	obj->cac_timer.function = ieee80211_punct_cac_timeout;
+#endif
 	wiphy_work_init(&obj->cac_work, ieee80211_punct_cac_work);
 }
 

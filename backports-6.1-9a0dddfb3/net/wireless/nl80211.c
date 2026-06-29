@@ -1728,6 +1728,7 @@ static bool nl80211_put_txq_stats(struct sk_buff *msg,
 	return true;
 }
 
+#if LINUX_VERSION_IS_LESS(6, 8, 0)
 static inline u8 nla_get_u8_default(const struct nlattr *nla, u8 defvalue)
 {
 	if (!nla)
@@ -1748,6 +1749,7 @@ static inline u16 nla_get_u16_default(const struct nlattr *nla, u16 defvalue)
 		return defvalue;
 	return nla_get_u16(nla);
 }
+#endif
 
 /* netlink command implementations */
 
@@ -22778,15 +22780,9 @@ void nl80211_common_reg_change_event(enum nl80211_commands cmd_id,
 		goto nla_put_failure;
 
 	genlmsg_end(msg, hdr);
-#ifndef PLATFORM_SDX85
 #if LINUX_VERSION_IS_GEQ(6,6,59)
 	genlmsg_multicast_allns(&nl80211_fam, msg, 0,
 				NL80211_MCGRP_REGULATORY);
-#else
-	genlmsg_multicast_allns(&nl80211_fam, msg, 0,
-				NL80211_MCGRP_REGULATORY,
-				GFP_ATOMIC);
-#endif
 #else
 	genlmsg_multicast_allns(&nl80211_fam, msg, 0,
 				NL80211_MCGRP_REGULATORY,
@@ -23681,15 +23677,9 @@ void nl80211_send_beacon_hint_event(struct wiphy *wiphy,
 	nla_nest_end(msg, nl_freq);
 
 	genlmsg_end(msg, hdr);
-#ifndef PLATFORM_SDX85
 #if LINUX_VERSION_IS_GEQ(6,6,59)
 	genlmsg_multicast_allns(&nl80211_fam, msg, 0,
 				NL80211_MCGRP_REGULATORY);
-#else
-	genlmsg_multicast_allns(&nl80211_fam, msg, 0,
-				NL80211_MCGRP_REGULATORY,
-				GFP_ATOMIC);
-#endif
 #else
 	genlmsg_multicast_allns(&nl80211_fam, msg, 0,
 				NL80211_MCGRP_REGULATORY,
