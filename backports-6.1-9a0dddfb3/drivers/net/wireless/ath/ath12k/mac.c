@@ -2994,6 +2994,33 @@ void ath12k_mac_bcn_tx_event(struct ath12k_link_vif *arvif)
 	}
 }
 
+static int ath12k_mac_authorize_self_peer(struct ath12k_link_vif *arvif)
+{
+	struct ath12k *ar = arvif->ar;
+	int ret;
+	enum wmi_peer_authorize_mode mode;
+
+	if (arvif->self_peer_authorized || !arvif->self_arsta)
+		return 0;
+
+	if (!(arvif->rsnie_present || arvif->wpaie_present))
+		mode = WMI_PEER_AUTHORIZE_OPEN_MODE;
+	else
+		mode = WMI_PEER_AUTHORIZE_SECURED_MODE;
+
+	ret = ath12k_wmi_set_peer_param(ar, arvif->self_arsta->addr,
+					arvif->vdev_id, WMI_PEER_AUTHORIZE,
+					mode);
+	if (ret) {
+		ath12k_warn(ar->ab, "Unable to authorize self peer %pM vdev %d: %d\n",
+			    arvif->self_arsta->addr, arvif->vdev_id, ret);
+		return ret;
+	}
+
+	arvif->self_peer_authorized = true;
+	return 0;
+}
+
 static void ath12k_control_beaconing(struct ath12k_link_vif *arvif,
 				     struct ieee80211_bss_conf *info)
 {
@@ -3049,6 +3076,13 @@ static void ath12k_control_beaconing(struct ath12k_link_vif *arvif,
 		params.tx_bssid = tx_arvif->bssid;
 		params.nontx_profile_idx = info->bssid_index;
 		params.nontx_profile_cnt = 1 << info->bssid_indicator;
+	}
+
+	if (ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
+		ret = ath12k_mac_authorize_self_peer(arvif);
+		if (ret)
+			ath12k_warn(ar->ab, "Failed to send peer authorize for BSS peer %pM vdev:%d: %d\n",
+				    arvif->addr, arvif->vdev_id, ret);
 	}
 
 	/* Skip VDEV UP command in case of Scan Radio */
@@ -6033,6 +6067,7 @@ void ath12k_bss_assoc(struct ath12k *ar,
 			     struct ath12k_link_vif *arvif,
 			     struct ieee80211_bss_conf *bss_conf)
 {
+	enum wmi_peer_authorize_mode mode = WMI_PEER_AUTHORIZE_OPEN_MODE;
 	struct ath12k_vif *ahvif;
 	struct ieee80211_vif *vif;
 	struct ath12k_wmi_vdev_up_params params = {};
@@ -6049,7 +6084,7 @@ void ath12k_bss_assoc(struct ath12k *ar,
 	bool is_auth = false;
 	bool is_peer_dms = false;
 	u32 hemode = 0, bandwidth;
-	int ret;
+	int ret, key_idx;
 	struct ath12k_dp_vif *dp_vif;
 	struct ath12k_me_db *me_db;
 	u16 bridge_bitmap;
@@ -6057,6 +6092,7 @@ void ath12k_bss_assoc(struct ath12k *ar,
 	bool is_bridge_vdev = ath12k_mac_is_bridge_vdev(arvif);
 	struct ath12k_hw *ah = NULL;
 	union ath12k_config_param val = {0};
+	bool is_arsta_secured = false;
 	void *dp_peer;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
@@ -6271,8 +6307,15 @@ skip_vdev_up:
 	ret = ath12k_dp_peer_get_param_by_mac_addr(ar->dp.dp_hw, arvif->bssid,
 						   ATH12K_DP_PEER_AUTHORIZE_PARAM,
 						   &val);
-	if (!ret && val.is_authorized)
+	if (!ret && val.is_authorized) {
 		is_auth = true;
+		for (key_idx = 0; key_idx <= WMI_MAX_KEY_INDEX; key_idx++) {
+			if (!arsta->keys[key_idx])
+				continue;
+			is_arsta_secured = true;
+			break;
+		}
+	}
 
 	/* SMD transition: activate primary link TX queues now that
 	 * PEER_ASSOC + VDEV_UP are complete for the target AP.
@@ -6319,10 +6362,12 @@ skip_vdev_up:
 skip_dms_peer_notify:
 	/* Authorize BSS Peer */
 	if (is_auth) {
+		if (is_arsta_secured)
+			mode = WMI_PEER_AUTHORIZE_SECURED_MODE;
 		ret = ath12k_wmi_set_peer_param(ar, arvif->bssid,
 						arvif->vdev_id,
 						WMI_PEER_AUTHORIZE,
-						1);
+						mode);
 		if (ret)
 			ath12k_warn(ar->ab, "Unable to authorize BSS peer: %d\n", ret);
 	}
@@ -6519,6 +6564,7 @@ static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 
 	arvif->ahvif = ahvif;
 	arvif->link_id = _link_id;
+	arvif->self_peer_authorized = false;
 
 	/* Protects the datapath stats update on a per link basis */
 	spin_lock_init(&arvif->link_stats_lock);
@@ -9465,6 +9511,12 @@ void ath12k_mac_bss_info_changed(struct ath12k *ar,
 		if (ret)
 			ath12k_warn(ar->ab, "failed to update bcn template: %d\n",
 				    ret);
+
+		ret = ath12k_mac_authorize_self_peer(arvif);
+		if (ret)
+			ath12k_warn(ar->ab, "failed to send BSS peer authorize: %d\n",
+				    ret);
+
 		if (!arvif->pending_csa_up)
 			goto skip_pending_cs_up;
 
@@ -13458,9 +13510,11 @@ static int ath12k_mac_station_authorize(struct ath12k *ar,
 	struct ath12k_dp_vif *dp_vif = NULL;
 	struct ath12k_me_db *me_db;
 	bool is_peer_dms = false;
-	int ret;
+	int ret, key_idx;
 	void *dp_peer;
 	union ath12k_config_param val = {0};
+	enum wmi_peer_authorize_mode mode = WMI_PEER_AUTHORIZE_OPEN_MODE;
+	bool is_arsta_secured = false;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -13503,14 +13557,23 @@ static int ath12k_mac_station_authorize(struct ath12k *ar,
 	}
 
 skip_dms_peer_notify:
+	for (key_idx = 0; key_idx <= WMI_MAX_KEY_INDEX; key_idx++) {
+		if (!arsta->keys[key_idx])
+			continue;
+		is_arsta_secured = true;
+		break;
+	}
+	if (is_arsta_secured)
+		mode = WMI_PEER_AUTHORIZE_SECURED_MODE;
+
 	if (arvif->is_up) {
 		ret = ath12k_wmi_set_peer_param(ar, arsta->addr,
 						arvif->vdev_id,
 						WMI_PEER_AUTHORIZE,
-						1);
+						mode);
 		if (ret) {
-			ath12k_warn(ar->ab, "Unable to authorize peer %pM vdev %d: %d\n",
-				    arsta->addr, arvif->vdev_id, ret);
+			ath12k_warn(ar->ab, "Unable to authorize peer %pM mode:%d vdev %d: %d\n",
+				    arsta->addr, mode, arvif->vdev_id, ret);
 			return ret;
 		}
 
