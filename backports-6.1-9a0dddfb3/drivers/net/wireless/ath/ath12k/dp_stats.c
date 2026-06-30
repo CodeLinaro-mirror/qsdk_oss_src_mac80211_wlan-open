@@ -648,7 +648,7 @@ int ath12k_dp_pdev_get_tid_stats(struct ath12k *ar,
 			per_ring_tx = &ar->dp.tid_stats.tid_tx[ring_id][tid];
 
 			/* Aggregate TQM status counters */
-			for (i = 0; i < HAL_WBM_TQM_REL_REASON_MAX; i++)
+			for (i = 0; i < HAL_WBM_TQM_REL_REASON_MAX_EXT; i++)
 				aggr_tx->tqm_status_cnt[i] +=
 					per_ring_tx->tqm_status_cnt[i];
 
@@ -682,7 +682,7 @@ int ath12k_dp_pdev_get_tid_stats(struct ath12k *ar,
 			aggr_rx->delivered_to_stack += per_ring_rx->delivered_to_stack;
 
 			/* Aggregate Rx SW drop counters */
-			for (i = 0; i < DP_TID_RX_SW_DROP_MAX; i++)
+			for (i = 0; i < DP_TID_RX_SW_DROP_MAX_EXT; i++)
 				aggr_rx->fail_cnt[i] += per_ring_rx->fail_cnt[i];
 
 			ath12k_dp_accumulate_hist_stats(&per_ring_rx->to_stack_delay,

@@ -603,6 +603,13 @@ enum ath12k_dp_tid_rx_sw_drop {
 	DP_TID_RX_SW_DROP_MAX,
 };
 
+enum ath12k_dp_tid_rx_sw_drop_ext {
+	DP_TID_RX_HW_DROP1_UCAST = DP_TID_RX_SW_DROP_MAX,
+	DP_TID_RX_HW_DROP2_UCAST,
+	DP_TID_RX_HW_DROP_GCAST,
+	DP_TID_RX_SW_DROP_MAX_EXT,
+};
+
 /**
  * struct ath12k_reo_error_stats
  * @reo_code_inv: Count of unknown REO error codes
@@ -637,7 +644,7 @@ struct ath12k_tid_rx_stats {
 	u32 mcast_msdu_cnt;
 	u32 bcast_msdu_cnt;
 	u32 delivered_to_stack;
-	u32 fail_cnt[DP_TID_RX_SW_DROP_MAX];
+	u32 fail_cnt[DP_TID_RX_SW_DROP_MAX_EXT];
 };
 
 /**
@@ -653,7 +660,7 @@ struct ath12k_tid_tx_stats {
 	struct hist_stats swq_delay;
 	struct hist_stats hwtx_delay;
 	struct hist_stats intfrm_delay;
-	u32 tqm_status_cnt[HAL_WBM_TQM_REL_REASON_MAX];
+	u32 tqm_status_cnt[HAL_WBM_TQM_REL_REASON_MAX_EXT];
 	u32 htt_status_cnt[HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX];
 	u32 swdrop_cnt[DP_TID_TX_SW_DROP_MAX];
 };
