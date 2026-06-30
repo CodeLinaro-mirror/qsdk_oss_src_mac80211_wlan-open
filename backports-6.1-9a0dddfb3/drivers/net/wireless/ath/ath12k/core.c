@@ -466,11 +466,18 @@ extern struct ath12k_coredump_info ath12k_coredump_ram_info;
 #ifdef CONFIG_IO_COHERENCY
 int ath12k_core_config_iocoherency(struct ath12k_base *ab, bool enable)
 {
-	int ret, num_elem, idx = 0;
+	int ret = 0, num_elem, idx = 0;
+	void __iomem *map_addr;
+	bool no_tmel;
 	struct tmel_secure_io secure_reg;
 
 	if (!ath12k_io_coherency_enabled) {
 		ath12k_err(ab, "io-coherency Disabled\n");
+		return 0;
+	}
+
+	if (!ab->dev || !ab->dev->of_node) {
+		ath12k_err(ab, "improper dts node\n");
 		return 0;
 	}
 
@@ -508,12 +515,24 @@ int ath12k_core_config_iocoherency(struct ath12k_base *ab, bool enable)
 		ath12k_info(ab, "Configuring secure reg: 0x%x val: 0x%x\n",
 			    secure_reg.reg_addr, secure_reg.reg_val);
 
-		ret = tmelcom_secure_io_write(&secure_reg, sizeof(struct tmel_secure_io));
+		no_tmel = of_property_read_bool(ab->dev->of_node, "qcom,no-tmel");
+		if (!no_tmel) {
+			ret = tmelcom_secure_io_write(&secure_reg,
+						      sizeof(struct tmel_secure_io));
+			if (ret) {
+				ath12k_err(ab, "Failed secure_reg settings\n");
+				goto err;
+			};
 
-		if (ret) {
-			ath12k_err(ab, "Failed to update secure_reg settings, ret = %d reg: 0x%x val: 0x%x\n",
-				   ret, secure_reg.reg_addr, secure_reg.reg_val);
-			goto err;
+		} else {
+			map_addr = ioremap(secure_reg.reg_addr, sizeof(uint32_t));
+			if (!map_addr) {
+				ret = -ENOMEM;
+				ath12k_err(ab, "Failed secure_reg mapping\n");
+				goto err;
+			}
+			writel(secure_reg.reg_val, map_addr);
+			iounmap(map_addr);
 		}
 	}
 
