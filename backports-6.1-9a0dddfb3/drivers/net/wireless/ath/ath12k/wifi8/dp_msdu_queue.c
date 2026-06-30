@@ -193,7 +193,17 @@ int ath12k_init_tx_msdu_flowq(struct ath12k_dp_hw_group *dp_hw_grp,
 	ti.bitmap = sw_msduq_ptr->bitmap;
 	ti.msduq_sam_id = sw_msduq_ptr->msduq_sam_id;
 
-	ti.stats_id = peer->stats_id;
+	/*
+	 * When VoW stats are disabled, program the peer-level stats_id.
+	 * When VoW stats are enabled, program the per-TID stats_id so
+	 * HW telemetry ring delivers isolated per-TID descriptors for
+	 * this MSDUQ.
+	 */
+	if (tid_num < ATH12K_DATA_TID_MAX &&
+	    peer->tid_stats_id[tid_num] < ATH12K_MAX_STATS_ID)
+		ti.stats_id = peer->tid_stats_id[tid_num];
+	else
+		ti.stats_id = peer->stats_id;
 	ti.tid = ath12k_dp_tx_get_tid(tid_num);
 
 	if (tid_num == MLO_MGMT_TID) {
