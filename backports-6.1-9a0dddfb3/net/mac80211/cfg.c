@@ -2109,9 +2109,10 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 	 */
 	if (cfg80211_chandef_dfs_usable(local->hw.wiphy, &params->chandef) &&
 	    !cfg80211_chandef_dfs_available(local->hw.wiphy, &params->chandef))
-		ieee80211_bootup_cac_start_timer_extn(sdata, link,
+		ieee80211_bootup_cac_handle_skip_extn(sdata, link,
 						      &params->chandef,
-						      params->residual_cac_ms);
+						      params->residual_cac_ms,
+						      params->skip_cac);
 #endif /* CPTCFG_QCN_EXTN */
 
 	return 0;
