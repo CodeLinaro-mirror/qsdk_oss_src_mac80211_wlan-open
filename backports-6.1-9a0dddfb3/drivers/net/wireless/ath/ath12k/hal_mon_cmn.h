@@ -904,6 +904,19 @@ struct hal_tx_mon_wmask_config {
 	u8 tx_mpdu_start;
 	u8 rxpcu_user_setup;
 	u8 compaction_enable;
+	/* WiFi8 (Boron) word-mask additions — zero on WiFi7 */
+	u8 phytx_pkt_end;
+	u8 mactx_user_desc_common;
+	u8 mactx_mu_ul_user_setup;
+	u8 pdg_response;
+	u8 rcvd_resp_info;
+	u8 rx_resp_required_info;
+	u8 ranging_user_details;
+	u8 mactx_pre_phy_desc;
+	u16 ofdma_trigger_details;
+	u16 tqm_upd_tx_mpdu_cnt_sts;
+	u16 phytx_location;
+	u32 rcvd_resp_info_part2;
 };
 
 /**

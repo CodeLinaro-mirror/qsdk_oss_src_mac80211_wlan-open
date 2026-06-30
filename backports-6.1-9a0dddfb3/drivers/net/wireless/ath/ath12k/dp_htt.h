@@ -1617,6 +1617,18 @@ struct htt_tx_ring_tlv_filter {
 	bool ctrl_log_typ;
 	bool data_log_typ;
 	bool mac_addr_filter_en;
+	bool peer_ppdu_drop;
+	bool stat_filter_en;
+	bool special_pkt_filter_en;
+	bool pkt_buf_cnt_en;
+	u16 pkt_subtype_mgmt;
+	u16 stat_subtype_mgmt;
+	u16 pkt_subtype_ctrl;
+	u16 stat_subtype_ctrl;
+	u16 pkt_subtype_data;
+	u16 stat_subtype_data;
+	u16 tx_mon_upstream_tlv_flags3;
+	u16 tx_mon_downstream_tlv_flags1;
 } __packed;
 
 enum htt_tx_mon_downstream_tlv_flags {

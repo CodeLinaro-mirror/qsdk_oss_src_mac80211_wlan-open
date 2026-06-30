@@ -3470,6 +3470,7 @@ int ath12k_dp_htt_mon_tx_filter_setup(struct ath12k_base *ab, u32 ring_id,
 				      struct htt_tx_ring_tlv_filter *htt_tlv_filter)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	const struct ath12k_dp_arch_mon_ops *mon_ops = ath12k_dp_mon_ops_get(dp);
 	struct htt_tx_mon_ring_selection_cfg_cmd *cmd;
 	struct hal_srng *srng = &ab->hal.srng_list[ring_id];
 	struct hal_srng_params params;
@@ -3685,6 +3686,9 @@ int ath12k_dp_htt_mon_tx_filter_setup(struct ath12k_base *ab, u32 ring_id,
 	cmd->tlv_word_mask_in5 |=
 		le32_encode_bits(htt_tlv_filter->wmask.tx_fes_status_prot,
 				 HTT_TX_MON_WMASK_IN5_FES_STATUS_PROT_MASK);
+
+	if (mon_ops && mon_ops->htt_tx_mon_cfg_fill_extended_wmask)
+		mon_ops->htt_tx_mon_cfg_fill_extended_wmask(cmd, htt_tlv_filter);
 
 	ret = ath12k_htt_send(ab, dp, skb, HTT_H2T_MSG_TYPE_TX_MONITOR_CFG,
 			      (u8 *)cmd);

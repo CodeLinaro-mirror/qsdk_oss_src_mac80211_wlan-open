@@ -38,6 +38,13 @@
 	sizeof(struct hal_tx_mon_fes_status_prot)
 #define HAL_MON_TX_PCU_PPDU_SETUP_INIT_TLV_SIZE	\
 	sizeof(struct hal_tx_mon_pcu_ppdu_setup_init)
+#define HAL_MON_TX_USER_DESC_COMMON_TLV_SIZE		\
+	sizeof(struct hal_tx_mon_user_desc_common)
+#define HAL_MON_TX_RX_RESP_REQ_INFO_TLV_SIZE		\
+	sizeof(struct hal_tx_mon_rx_resp_req_info)
+
+#define HAL_TX_MON_WMASK_USER_DESC_COMMON_CFG		0xBF
+#define HAL_TX_MON_WMASK_RX_RESP_REQUIRED_INFO_CFG	0x35
 
 #define HAL_RX_PPDU_START_INFO0_PPDU_ID			GENMASK(15, 0)
 #define HAL_RX_PPDU_START_INFO1_CHAN_NUM		GENMASK(15, 0)
@@ -1160,6 +1167,21 @@ struct hal_tx_mon_rx_resp_req_info {
 	__le32 rsvd2[5];
 } __packed;
 
+/* The below hal_tx_mon_rx_resp_req_info_compact structure is tied with the mask value
+ * HAL_TX_MON_WMASK_RX_RESP_REQUIRED_INFO_CFG. If the mask value changes the structure
+ * will also change.
+ */
+struct hal_tx_mon_rx_resp_req_info_compact {
+	__le32 info0;
+	__le32 rsvd0;
+	__le32 rsvd1;
+	__le32 info1;
+	__le32 info2;
+	__le32 info3;
+	__le32 info4;
+	__le32 rsvd2;
+} __packed;
+
 #define HAL_TX_MON_FES_START_INFO0_MEDIUM_PROT_TYPE	GENMASK(30, 28)
 
 struct hal_tx_mon_fes_status_start {
@@ -1400,6 +1422,27 @@ struct hal_tx_mon_user_desc_common {
 	__le32 info10;
 	__le32 info11;
 	__le64 rsvd0;
+	__le32 info12;
+	__le32 info13;
+} __packed;
+
+/* The below hal_tx_mon_user_desc_common_compact structure is tied with the mask value
+ * HAL_TX_MON_WMASK_USER_DESC_COMMON_CFG. If the mask value changes the structure
+ * will also change.
+ */
+struct hal_tx_mon_user_desc_common_compact {
+	__le32 info0;
+	__le32 info1;
+	__le32 info2;
+	__le32 info3;
+	__le32 info4;
+	__le32 info5;
+	__le32 info6;
+	__le32 info7;
+	__le32 info8;
+	__le32 info9;
+	__le32 info10;
+	__le32 info11;
 	__le32 info12;
 	__le32 info13;
 } __packed;
