@@ -270,12 +270,6 @@ struct ath12k_dp_arch_mon_ops {
 	int (*mon_tx_wq_start)(struct ath12k_pdev_dp *dp_pdev, u32 mac_id);
 	void (*mon_tx_wq_stop)(struct ath12k_pdev_dp *dp_pdev);
 
-	/* Per-FW-family on-wire size of htt_tx_mon_ring_selection_cfg_cmd.
-	 * Returns the prefix length this FW family sends; see the append-only
-	 * contract note in dp_htt.h.
-	 */
-	int (*get_htt_tx_mon_cfg_msg_size)(void);
-
 	/*
 	 * NULL on architectures that don't extend the command beyond WiFi7
 	 * length; only WiFi8/Boron currently populates words 13-14.
