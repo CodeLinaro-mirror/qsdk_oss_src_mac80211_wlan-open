@@ -1287,6 +1287,8 @@ static void
 ath12k_dp_mon_tx_setup_pktlog_hybrid(struct ath12k_pdev_dp *dp_pdev)
 {
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct ath12k_dp *dp = dp_pdev->dp;
+	struct ath12k_hal *hal = dp->hal;
 	struct dp_mon_tx_filter tx_filter = {0};
 	enum dp_mon_tx_filter_mode mode = DP_MON_TX_FILTER_PKTLOG_HYBRID;
 	enum dp_mon_tx_filter_srng_type srng_type =
@@ -1338,6 +1340,7 @@ ath12k_dp_mon_tx_setup_pktlog_hybrid(struct ath12k_pdev_dp *dp_pdev)
 	tx_tlv_filter->tx_mon_mgmt_pkt_dma_len = DP_TX_MON_MAX_DMA_LENGTH;
 	tx_tlv_filter->tx_mon_data_pkt_dma_len = DP_TX_MON_MAX_DMA_LENGTH;
 	tx_tlv_filter->tx_mon_ctrl_pkt_dma_len = DP_TX_MON_MAX_DMA_LENGTH;
+	tx_tlv_filter->pkt_buf_cnt_en = ath12k_hal_mon_tx_pkt_buf_cnt_in_desc(hal);
 
 	dp_mon_pdev->dp_pdev_tx_mon->tx_mon_filter[mode][srng_type] = tx_filter;
 

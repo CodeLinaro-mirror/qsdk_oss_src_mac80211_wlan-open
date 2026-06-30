@@ -3533,6 +3533,9 @@ int ath12k_dp_htt_mon_tx_filter_setup(struct ath12k_base *ab, u32 ring_id,
 	cmd->info0 |=
 		le32_encode_bits(!!htt_tlv_filter->mac_addr_filter_en,
 				 HTT_TX_MON_RING_CFG_CMD_INFO0_MAC_ADDR_FLTR_CMD);
+	cmd->info0 |=
+		le32_encode_bits(!!htt_tlv_filter->pkt_buf_cnt_en,
+				 HTT_TX_MON_RING_CFG_CMD_INFO0_PKT_BUF_CNT_EN);
 	/*word 1*/
 	cmd->info1 |=
 		le32_encode_bits(tx_buf_size,
