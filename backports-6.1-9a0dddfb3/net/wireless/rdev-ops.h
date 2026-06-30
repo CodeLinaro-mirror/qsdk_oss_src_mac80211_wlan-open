@@ -877,11 +877,12 @@ rdev_update_mgmt_frame_registrations(struct cfg80211_registered_device *rdev,
 
 static inline int rdev_set_antenna(struct cfg80211_registered_device *rdev,
 				   u32 tx_ant, u32 rx_ant, u8 radio_id,
-				   bool is_dynamic)
+				   bool is_dynamic, int ifindex)
 {
 	int ret;
 	trace_rdev_set_antenna(&rdev->wiphy, tx_ant, rx_ant);
-	ret = rdev->ops->set_antenna(&rdev->wiphy, tx_ant, rx_ant, radio_id, is_dynamic);
+	ret = rdev->ops->set_antenna(&rdev->wiphy, tx_ant, rx_ant,
+				     radio_id, is_dynamic, ifindex);
 	trace_rdev_return_int(&rdev->wiphy, ret);
 	return ret;
 }

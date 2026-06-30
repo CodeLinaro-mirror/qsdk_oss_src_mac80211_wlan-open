@@ -5454,7 +5454,7 @@ struct ieee80211_ops {
 			       struct ieee80211_vif *vif,
 			       struct ieee80211_channel_switch *ch_switch);
 	int (*set_antenna)(struct ieee80211_hw *hw, u32 tx_ant, u32 rx_ant,
-			   u8 radio_id, bool is_dynamic);
+			   u8 radio_id, bool is_dynamic, int ifindex);
 	int (*get_antenna)(struct ieee80211_hw *hw, u32 *tx_ant, u32 *rx_ant,
 			   u8 radio_id);
 
