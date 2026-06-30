@@ -1154,14 +1154,14 @@ static void ath12k_wifi8_mac_op_tx(struct ieee80211_hw *hw,
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
 	struct ieee80211_vif *vlan_vif = control->vlan_vif;
 	struct ath12k_vif *vlan_ahvif = vlan_vif ? ath12k_vif_to_ahvif(vlan_vif) : NULL;
-	struct ath12k_link_vif *arvif = &ahvif->deflink;
+	struct ath12k_link_vif *arvif;
 	struct ieee80211_hdr *hdr = NULL;
-	struct ieee80211_key_conf *key = info->control.hw_key;
+	struct ieee80211_key_conf *key;
 	struct ieee80211_sta *sta = control->sta;
 	struct ath12k_link_sta *arsta = NULL;
 	struct ath12k_sta *ahsta = NULL;
 	u32 info_flags = info->flags;
-	struct ieee80211_tx_info info_tx = {0};
+	struct ieee80211_tx_info info_tx;
 	struct ath12k_dp_vif *dp_vif = &ahvif->dp_vif;
 	bool is_mcast = false, is_eth = false, is_data = false;
 	bool is_dvlan = false, is_sta = false;
@@ -1188,6 +1188,8 @@ static void ath12k_wifi8_mac_op_tx(struct ieee80211_hw *hw,
 						      qos_nw_delay, vlan_ahvif)))
 		return;
 #endif
+	arvif = &ahvif->deflink;
+	key = info->control.hw_key;
 
 	hdr = (struct ieee80211_hdr *)skb->data;
 	memcpy(&info_tx, info, sizeof(*info));
