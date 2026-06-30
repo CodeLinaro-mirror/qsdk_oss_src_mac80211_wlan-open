@@ -2990,6 +2990,7 @@ int ath12k_wmi_vdev_uhr_cu_cmd(struct ath12k *ar,
 	struct wmi_uhr_ap_dbe_params *dbe;
 	struct wmi_uhr_ap_puo_params *puo;
 	struct wmi_uhr_ap_elr_reception_params *elr;
+	struct wmi_uhr_ap_mode_tuple_params *mode_tup;
 	struct ath12k_wmi_pdev *wmi = ar->wmi;
 	struct wmi_tlv *tlv;
 	struct sk_buff *skb;
@@ -3004,7 +3005,7 @@ int ath12k_wmi_vdev_uhr_cu_cmd(struct ath12k *ar,
 	      sizeof(*dbe) +
 	      sizeof(*puo) +
 	      sizeof(*elr) +
-	      TLV_HDR_SIZE; /* empty mode_tuple[] array */
+	      TLV_HDR_SIZE + sizeof(*mode_tup); /* mode_tuple[] array: 1 entry */
 
 	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
 	if (!skb)
@@ -3075,10 +3076,39 @@ int ath12k_wmi_vdev_uhr_cu_cmd(struct ath12k *ar,
 	elr->mode_tuple_field = cpu_to_le32(arg->elr.mode_tuple_field);
 	ptr += sizeof(*elr);
 
-	/* Empty array TLV for wmi_uhr_ap_mode_tuple_enable_disable_update_params[] */
+	/* mode_tuple[] array: one entry encoding per-mode present/absent state */
 	tlv = ptr;
-	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, 0);
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, sizeof(*mode_tup));
 	ptr += TLV_HDR_SIZE;
+
+	mode_tup = ptr;
+	mode_tup->tlv_header =
+		ath12k_wmi_tlv_cmd_hdr(WMI_TAG_UHR_AP_MODE_TUPLE_UPDATE_PARAM,
+				       sizeof(*mode_tup));
+	mode_tup->vdev_id_mode_bitmap =
+		le32_encode_bits(arg->vdev_id, WMI_UHR_MODE_TUP_VDEV_ID) |
+		le32_encode_bits(!!(arg->mode_present_bitmap &
+				    BIT(IEEE80211_UHR_MODE_ID_DPS)),
+				 WMI_UHR_MODE_TUP_DPS_STATE) |
+		le32_encode_bits(!!(arg->mode_present_bitmap &
+				    BIT(IEEE80211_UHR_MODE_ID_NPCA)),
+				 WMI_UHR_MODE_TUP_NPCA_STATE) |
+		le32_encode_bits(!!(arg->mode_present_bitmap &
+				    BIT(IEEE80211_UHR_MODE_ID_DUO)),
+				 WMI_UHR_MODE_TUP_DUO_STATE) |
+		le32_encode_bits(!!(arg->mode_present_bitmap &
+				    BIT(IEEE80211_UHR_MODE_ID_PEDCA)),
+				 WMI_UHR_MODE_TUP_PEDCA_STATE) |
+		le32_encode_bits(!!(arg->mode_present_bitmap &
+				    BIT(IEEE80211_UHR_MODE_ID_DBE)),
+				 WMI_UHR_MODE_TUP_DBE_STATE) |
+		le32_encode_bits(!!(arg->mode_present_bitmap &
+				    BIT(IEEE80211_UHR_MODE_ID_AP_PUO)),
+				 WMI_UHR_MODE_TUP_PUO_STATE) |
+		le32_encode_bits(!!(arg->mode_present_bitmap &
+				    BIT(IEEE80211_UHR_MODE_ID_ELR_RX)),
+				 WMI_UHR_MODE_TUP_ELR_STATE);
+	ptr += sizeof(*mode_tup);
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
 		   "WMI vdev_uhr_cu_cmd fixed_param: vdev_id %u\n",
@@ -3108,7 +3138,8 @@ int ath12k_wmi_vdev_uhr_cu_cmd(struct ath12k *ar,
 		   "WMI vdev_uhr_cu_cmd elr: vdev_id %u mode_tuple_field 0x%x\n",
 		   arg->elr.vdev_id, arg->elr.mode_tuple_field);
 	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
-		   "WMI vdev_uhr_cu_cmd mode_tuple[]: empty array (0 entries)\n");
+		   "WMI vdev_uhr_cu_cmd mode_tuple[0]: vdev_id_mode_bitmap 0x%x\n",
+		   le32_to_cpu(mode_tup->vdev_id_mode_bitmap));
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_VDEV_UHR_CU_CMDID);
 	if (ret) {
