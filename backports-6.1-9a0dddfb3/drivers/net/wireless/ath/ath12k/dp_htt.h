@@ -1197,192 +1197,174 @@ struct htt_rx_ring_tlv_filter {
  *    The configuration is per ring based and includes both packet types
  *    and PPDU/MPDU TLVs.
  *
- *    The message would appear as follows:
+ *    The message maps to struct htt_tx_mon_ring_selection_cfg_cmd.
+ *    dwords 0-12 are the original message; dwords 13-21 were appended for
+ *    later FW generations and are zeroed on FW that predates them. The FW
+ *    family selects how many dwords it sends (see the contract note above
+ *    the struct).
  *
- * |31 28|27|26|25|24|23 22|21|20|19|18 16|15|14|13|12|11|10|9|8|7|6|5|4|3|2  0|
- * |-----+--+--+--+--+-----+--+--+--+-----+--+--+--+--+--+--+-+-+-+-+-+-+-+----|
- * |rsvd1|MF|TM|PS|SS|       ring_id      |        pdev_id      |   msg_type   |
- * |--------------+--------+--------+-----+------------------------------------|
- * |    rsvd2     |  DATA  |  CTRL  | MGMT|            ring_buffer_size        |
- * |-----------------------------------------+--+--+--+--+--+-+-+-+-+-+-+-+----|
- * |                                      |cm| M| M| M| M| M|M|M|M|M|M|M|M|    |
- * |                                      |pt| S| S| S| P| P|P|S|S|S|P|P|P|    |
- * |                                      |ac| E| E| E| E| E|E|S|S|S|S|S|S|    |
- * |                     rsvd3            |tn| D| C| M| D| C|M|D|C|M|D|C|M|  E |
- * |---------------------------------------------------------------------------|
- * |                               tlv_filter_mask_in0                         |
- * |---------------------------------------------------------------------------|
- * |                               tlv_filter_mask_in1                         |
- * |---------------------------------------------------------------------------|
- * |                               tlv_filter_mask_in2                         |
- * |---------------------------------------------------------------------------|
- * |                               tlv_filter_mask_in3                         |
- * |--------------------+-----------------+---------------------+--------------|
- * |  tx_msdu_start_wm  | tx_queue_ext_wm |  tx_peer_entry_wm   |tx_fes_stup_wm|
- * |---------------------------------------------------------------------------|
- * |                          pcu_ppdu_setup_word_mask                         |
- * |-----------------------+--+--+--+-----+---------------------+--------------|
- * |         rsvd4         | D| C| M|  PT |   rxpcu_usrsetp_wm  |tx_mpdu_srt_wm|
- * |---------------------------------------------------------------------------|
+ *    Showing byte boundaries (bit 31 left, bit 0 right). Exact sub-byte
+ *    bit positions are in the per-dword detail below the grid.
  *
- * Where:
- *     MF = MAC address filtering enable
- *     TM = tx monitor global enable
- *     PS = pkt_swap
- *     SS = status_swap
- * The message is interpreted as follows:
- * dword0 - b'0:7   - msg_type: This will be set to
- *                    0x1b (HTT_H2T_MSG_TYPE_TX_MONITOR_CFG)
- *          b'8:15  - pdev_id:
- *                    0 (for rings at SOC level),
- *                    1/2/3 mac id (for rings at LMAC level)
- *          b'16:23 - ring_id : Identify the ring to configure.
- *                    More details can be got from enum htt_srng_ring_id
- *          b'24    - status_swap (SS): 1 is to swap status TLV
- *          b'25    - pkt_swap (PS):  1 is to swap packet TLV
- *          b'26    - tx_mon_global_en: Enable/Disable global register
- *                    configuration in Tx monitor module.
- *          b'27    - mac_addr_filter_en:
- *                    Enable/Disable Mac Address based filter.
- *          b'28:31 - rsvd1:  reserved for future use
- * dword1 - b'0:15  - ring_buffer_size: size of bufferes referenced by rx ring,
- *                    in byte units.
- *                    Valid only for HW_TO_SW_RING and SW_TO_HW_RING
- *          b'16:18 - config_length_mgmt(MGMT) for MGMT: Each bit set represent
- *                    64, 128, 256.
- *                    If all 3 bits are set config length is > 256.
- *                    if val is '0', then ignore this field.
- *          b'19:21 - config_length_ctrl(CTRL) for CTRL: Each bit set represent
- *                    64, 128, 256.
- *                    If all 3 bits are set config length is > 256.
- *                    if val is '0', then ignore this field.
- *          b'22:24 - config_length_data(DATA) for DATA: Each bit set represent
- *                    64, 128, 256.
- *                    If all 3 bits are set config length is > 256.
- *                    If val is '0', then ignore this field.
- *        - b'25:31 - rsvd2: Reserved for future use
- * dword2 - b'0:2   - packet_type_enable_flags(E): MGMT, CTRL, DATA
- *          b'3     - filter_in_tx_mpdu_start_mgmt(MPSM):
- *                    If packet_type_enable_flags is '1' for MGMT type,
- *                    monitor will ignore this bit and allow this TLV.
- *                    If packet_type_enable_flags is '0' for MGMT type,
- *                    monitor will use this bit to enable/disable logging
- *                    of this TLV.
- *          b'4     - filter_in_tx_mpdu_start_ctrl(MPSC)
- *                    If packet_type_enable_flags is '1' for CTRL type,
- *                    monitor will ignore this bit and allow this TLV.
- *                    If packet_type_enable_flags is '0' for CTRL type,
- *                    monitor will use this bit to enable/disable logging
- *                    of this TLV.
- *          b'5     - filter_in_tx_mpdu_start_data(MPSD)
- *                    If packet_type_enable_flags is '1' for DATA type,
- *                    monitor will ignore this bit and allow this TLV.
- *                    If packet_type_enable_flags is '0' for DATA type,
- *                    monitor will use this bit to enable/disable logging
- *                    of this TLV.
- *          b'6     - filter_in_tx_msdu_start_mgmt(MSSM)
- *                    If packet_type_enable_flags is '1' for MGMT type,
- *                    monitor will ignore this bit and allow this TLV.
- *                    If packet_type_enable_flags is '0' for MGMT type,
- *                    monitor will use this bit to enable/disable logging
- *                    of this TLV.
- *          b'7     - filter_in_tx_msdu_start_ctrl(MSSC)
- *                    If packet_type_enable_flags is '1' for CTRL type,
- *                    monitor will ignore this bit and allow this TLV.
- *                    If packet_type_enable_flags is '0' for CTRL type,
- *                    monitor will use this bit to enable/disable logging
- *                    of this TLV.
- *          b'8     - filter_in_tx_msdu_start_data(MSSD)
- *                    If packet_type_enable_flags is '1' for DATA type,
- *                    monitor will ignore this bit and allow this TLV.
- *                    If packet_type_enable_flags is '0' for DATA type,
- *                    monitor will use this bit to enable/disable logging
- *                    of this TLV.
- *          b'9     - filter_in_tx_mpdu_end_mgmt(MPEM)
- *                    If packet_type_enable_flags is '1' for MGMT type,
- *                    monitor will ignore this bit and allow this TLV.
- *                    If packet_type_enable_flags is '0' for MGMT type,
- *                    monitor will use this bit to enable/disable logging
- *                    of this TLV.
- *                    If filter_in_TX_MPDU_START = 1 it is recommended
- *                    to set this bit.
- *          b'10    - filter_in_tx_mpdu_end_ctrl(MPEC)
- *                    If packet_type_enable_flags is '1' for CTRL type,
- *                    monitor will ignore this bit and allow this TLV.
- *                    If packet_type_enable_flags is '0' for CTRL type,
- *                    monitor will use this bit to enable/disable logging
- *                    of this TLV.
- *                    If filter_in_TX_MPDU_START = 1 it is recommended
- *                    to set this bit.
- *          b'11    - filter_in_tx_mpdu_end_data(MPED)
- *                    If packet_type_enable_flags is '1' for DATA type,
- *                    monitor will ignore this bit and allow this TLV.
- *                    If packet_type_enable_flags is '0' for DATA type,
- *                    monitor will use this bit to enable/disable logging
- *                    of this TLV.
- *                    If filter_in_TX_MPDU_START = 1 it is recommended
- *                    to set this bit.
- *          b'12    - filter_in_tx_msdu_end_mgmt(MSEM)
- *                    If packet_type_enable_flags is '1' for MGMT type,
- *                    monitor will ignore this bit and allow this TLV.
- *                    If packet_type_enable_flags is '0' for MGMT type,
- *                    monitor will use this bit to enable/disable logging
- *                    of this TLV.
- *                    If filter_in_TX_MSDU_START = 1 it is recommended
- *                    to set this bit.
- *          b'13    - filter_in_tx_msdu_end_ctrl(MSEC)
- *                    If packet_type_enable_flags is '1' for CTRL type,
- *                    monitor will ignore this bit and allow this TLV.
- *                    If packet_type_enable_flags is '0' for CTRL type,
- *                    monitor will use this bit to enable/disable logging
- *                    of this TLV.
- *                    If filter_in_TX_MSDU_START = 1 it is recommended
- *                    to set this bit.
- *          b'14    - filter_in_tx_msdu_end_data(MSED)
- *                    If packet_type_enable_flags is '1' for DATA type,
- *                    monitor will ignore this bit and allow this TLV.
- *                    If packet_type_enable_flags is '0' for DATA type,
- *                    monitor will use this bit to enable/disable logging
- *                    of this TLV.
- *                    If filter_in_TX_MSDU_START = 1 it is recommended
- *                    to set this bit.
- *          b'15    - Enable compaction TLVS
- *          b'16:31 - rsvd3: Reserved for future use
- * dword3 - b'0:31  - tlv_filter_mask_in0:
- * dword4 - b'0:31  - tlv_filter_mask_in1:
- * dword5 - b'0:31  - tlv_filter_mask_in2:
- * dword6 - b'0:31  - tlv_filter_mask_in3:
- * dword7 - b'0:7   - tx_fes_setup_word_mask:
- *        - b'8:15  - tx_peer_entry_word_mask:
- *        - b'16:23 - tx_queue_ext_word_mask:
- *        - b'24:31 - tx_msdu_start_word_mask:
- * dword8 - b'0:31  - pcu_ppdu_setup_word_mask:
- * dword9 - b'0:7   - tx_mpdu_start_word_mask:
- *        - b'8:15  - rxpcu_user_setup_word_mask:
- *        - b'16:18 - pkt_type_enable_msdu_or_mpdu_logging (PT):
- *                    MGMT, CTRL, DATA
- *        - b'19    - dma_mpdu_mgmt(M): For MGMT
- *                    0 -> MSDU level logging is enabled
- *                         (valid only if bit is set in
- *                         pkt_type_enable_msdu_or_mpdu_logging)
- *                    1 -> MPDU level logging is enabled
- *                         (valid only if bit is set in
- *                         pkt_type_enable_msdu_or_mpdu_logging)
- *        - b'20    - dma_mpdu_ctrl(C) : For CTRL
- *                    0 -> MSDU level logging is enabled
- *                         (valid only if bit is set in
- *                         pkt_type_enable_msdu_or_mpdu_logging)
- *                    1 -> MPDU level logging is enabled
- *                         (valid only if bit is set in
- *                         pkt_type_enable_msdu_or_mpdu_logging)
- *        - b'21    - dma_mpdu_data(D) : For DATA
- *                    0 -> MSDU level logging is enabled
- *                         (valid only if bit is set in
- *                         pkt_type_enable_msdu_or_mpdu_logging)
- *                    1 -> MPDU level logging is enabled
- *                         (valid only if bit is set in
- *                         pkt_type_enable_msdu_or_mpdu_logging)
- *        - b'22:31 - rsvd4 for future use
+ *   31            24 23            16 15             8 7              0
+ * +-------------------------------------------------------------------+
+ * | flags [31:24]  |    ring_id     |    pdev_id     |    msg_type    |  dword0  info0
+ * +----------------+----------------+----------------+----------------+
+ * |         len_cfg + rsvd2         |         ring_buffer_size        |  dword1  info1
+ * +---------------------------------+---------------------------------+
+ * |          rsvd3 [31:16]          |       filter flags [15:0]       |  dword2  info2
+ * +---------------------------------+---------------------------------+
+ * |                        tlv_filter_mask_in0                        |  dword3
+ * +-------------------------------------------------------------------+
+ * |                        tlv_filter_mask_in1                        |  dword4
+ * +-------------------------------------------------------------------+
+ * |                        tlv_filter_mask_in2                        |  dword5
+ * +-------------------------------------------------------------------+
+ * |                        tlv_filter_mask_in3                        |  dword6
+ * +-------------------------------------------------------------------+
+ * |   msdu_start   |   queue_ext    |   peer_entry   |   fes_setup    |  dword7
+ * +----------------+----------------+----------------+----------------+
+ * |                           pcu_ppdu_setup                          |  dword8
+ * +-------------------------------------------------------------------+
+ * |         rsvd + log flags        |   rxpcu_usr    |   mpdu_start   |  dword9
+ * +---------------------------------+----------------+----------------+
+ * |  rsvd [31:24]  |           peer_entry_v2 + queue_ext_v2           |  dword10
+ * +----------------+--------------------------------------------------+
+ * |       response_end_status       |          fes_status_end         |  dword11
+ * +---------------------------------+---------------------------------+
+ * |                       rsvd                       |fes_status_prot |  dword12
+ * +--------------------------------------------------+----------------+
+ * ======== end of original message; tail appended for later FW ========
+ * |  pdg_response  |  mactx_mu_ul   | mactx_usr_cmn  | phytx_pkt_end  |  dword13
+ * +----------------+----------------+----------------+----------------+
+ * | mactx_pre_phy  |  ranging_usr   |  rx_resp_reqd  |   rcvd_resp    |  dword14
+ * +----------------+----------------+----------------+----------------+
+ * |         tqm_upd_mpdu_cnt        |            ofdma_trig           |  dword15
+ * +---------------------------------+---------------------------------+
+ * |               rsvd              |          phytx_location         |  dword16
+ * +---------------------------------+---------------------------------+
+ * |                        rcvd_resp_info_part2                       |  dword17
+ * +-------------------------------------------------------------------+
+ * |        status_subtype_en        |          pkt_subtype_en         |  dword18
+ * +---------------------------------+---------------------------------+
+ * |        status_subtype_en        |          pkt_subtype_en         |  dword19
+ * +---------------------------------+---------------------------------+
+ * |        status_subtype_en        |          pkt_subtype_en         |  dword20
+ * +---------------------------------+---------------------------------+
+ * |          ds_ctrl1_mask          |          us_ctrl3_mask          |  dword21
+ * +---------------------------------+---------------------------------+
+ *
+ * Single-bit / abbreviated cell legend:
+ *     msg_type  = HTT_H2T_MSG_TYPE_TX_MONITOR_CFG (0x1b)
+ *     SS  = status_swap          PS  = pkt_swap
+ *     TM  = tx_mon_global_en     MF  = mac_addr_filter_en
+ *     PD  = peer_ppdu_drop_en        [wifi8]
+ *     SF  = stat_filter_en           [wifi8]
+ *     SP  = special_pkt_filter_en    [wifi8]
+ *     PB  = pkt_buf_cnt_en           [wifi8]
+ *     dword1 DATA/CTRL/MGMT = config_length_{data,ctrl,mgmt} (3 bits each;
+ *                             bits encode 64/128/256, 0 = ignore)
+ *     dword2 E   = packet_type_enable_flags (b'2:0 MGMT/CTRL/DATA)
+ *            cmp = enable_compaction_tlvs
+ *            ps* = filter_in_tx_mpdu_start_{mgmt,ctrl,data}  (psm/psc/psd)
+ *            ss* = filter_in_tx_msdu_start_{mgmt,ctrl,data}  (ssm/ssc/ssd)
+ *            pe* = filter_in_tx_mpdu_end_{mgmt,ctrl,data}    (pem/pec/ped)
+ *            se* = filter_in_tx_msdu_end_{mgmt,ctrl,data}    (sem/sec/sed)
+ *     dword9 PT bits = pkt_type_enable_msdu_or_mpdu_logging:
+ *            mLG/cLG/dLG = log enable for MGMT/CTRL/DATA
+ *            mTY/cTY/dTY = dma_mpdu_{mgmt,ctrl,data} log type
+ *                          (0 = MSDU-level, 1 = MPDU-level; valid only when
+ *                           the matching *LG bit is set)
+ *
+ * Per-dword detail:
+ * dword0  (info0) - b'0:7   - msg_type: 0x1b (HTT_H2T_MSG_TYPE_TX_MONITOR_CFG)
+ *                   b'8:15  - pdev_id: 0 for SOC-level rings, 1/2/3 for LMAC
+ *                   b'16:23 - ring_id: see enum htt_srng_ring_id
+ *                   b'24    - status_swap (SS)
+ *                   b'25    - pkt_swap (PS)
+ *                   b'26    - tx_mon_global_en (TM)
+ *                   b'27    - mac_addr_filter_en (MF)
+ *                   b'28    - peer_ppdu_drop_en (PD)         [wifi8]
+ *                   b'29    - stat_filter_en (SF)            [wifi8]
+ *                   b'30    - special_pkt_filter_en (SP)     [wifi8]
+ *                   b'31    - pkt_buf_cnt_en (PB)            [wifi8]
+ * dword1  (info1) - b'0:15  - ring_buffer_size (bytes; HW_TO_SW / SW_TO_HW only)
+ *                   b'16:18 - config_length_mgmt: bits encode 64/128/256; all 3
+ *                             set => length > 256; 0 = ignore
+ *                   b'19:21 - config_length_ctrl: same encoding
+ *                   b'22:24 - config_length_data: same encoding
+ *                   b'25:26 - msg_version: identifies the on-wire layout variant;
+ *                             0 = wifi7 baseline (dwords 0-12), 1 = wifi8 extended
+ *                             (dwords 0-21); set by FW family at device init
+ *                   b'27:31 - rsvd2
+ *
+ * Filter-bit semantics (applies to every filter_in_* bit in dword2):
+ *   - if the matching packet_type_enable_flags bit (E) is set, the TLV is
+ *     always captured and this bit is ignored;
+ *   - if E is clear, this bit enables/disables logging of that TLV.
+ *   When filter_in_TX_M[PS]DU_START is set, also setting the matching
+ *   *_END bit is recommended.
+ *
+ * dword2  (info2) - b'0:2   - packet_type_enable_flags (E): MGMT, CTRL, DATA
+ *                   b'3     - filter_in_tx_mpdu_start_mgmt (psm)
+ *                   b'4     - filter_in_tx_mpdu_start_ctrl (psc)
+ *                   b'5     - filter_in_tx_mpdu_start_data (psd)
+ *                   b'6     - filter_in_tx_msdu_start_mgmt (ssm)
+ *                   b'7     - filter_in_tx_msdu_start_ctrl (ssc)
+ *                   b'8     - filter_in_tx_msdu_start_data (ssd)
+ *                   b'9     - filter_in_tx_mpdu_end_mgmt   (pem)
+ *                   b'10    - filter_in_tx_mpdu_end_ctrl   (pec)
+ *                   b'11    - filter_in_tx_mpdu_end_data   (ped)
+ *                   b'12    - filter_in_tx_msdu_end_mgmt   (sem)
+ *                   b'13    - filter_in_tx_msdu_end_ctrl   (sec)
+ *                   b'14    - filter_in_tx_msdu_end_data   (sed)
+ *                   b'15    - enable_compaction_tlvs (cmp)
+ *                   b'16:31 - rsvd3
+ * dword3  - b'0:31  - tlv_filter_mask_in0
+ * dword4  - b'0:31  - tlv_filter_mask_in1
+ * dword5  - b'0:31  - tlv_filter_mask_in2
+ * dword6  - b'0:31  - tlv_filter_mask_in3
+ * dword7  (word_mask_in0) - b'0:7   - tx_fes_setup_word_mask
+ *                           b'8:15  - tx_peer_entry_word_mask
+ *                           b'16:23 - tx_queue_ext_word_mask
+ *                           b'24:31 - tx_msdu_start_word_mask
+ * dword8  (word_mask_in1) - b'0:31  - pcu_ppdu_setup_word_mask
+ * dword9  (word_mask_in2) - b'0:7   - tx_mpdu_start_word_mask
+ *                           b'8:15  - rxpcu_user_setup_word_mask
+ *                           b'16:18 - mgmt/ctrl/data MPDU-or-MSDU log enable
+ *                                    (mLG/cLG/dLG)
+ *                           b'19:21 - mgmt/ctrl/data log type (mTY/cTY/dTY)
+ *                           b'22:31 - rsvd
+ * dword10 (word_mask_in3) - b'0:11  - tx_queue_ext_word_mask_v2
+ *                           b'12:23 - tx_peer_entry_word_mask_v2
+ *                           b'24:31 - rsvd
+ * dword11 (word_mask_in4) - b'0:15  - fes_status_end_word_mask
+ *                           b'16:31 - response_end_status_word_mask
+ * dword12 (word_mask_in5) - b'0:10  - fes_status_prot_word_mask
+ *                           b'11:31 - rsvd
+ * --- end of original message; dwords 13-21 appended for later FW ---
+ * dword13 (word_mask_in6) - b'0:7   - PHYTX_PKT_END word mask
+ *                           b'8:15  - MACTX_USR_DESC_CMN word mask
+ *                           b'16:23 - MACTX_MU_UL_USR_SETUP word mask
+ *                           b'24:31 - PDG_RESPONSE word mask
+ * dword14 (word_mask_in7) - b'0:7   - RCVD_RESP_INFO word mask
+ *                           b'8:15  - RX_RESP_REQD_INFO word mask
+ *                           b'16:23 - RANGING_USR_DETAILS word mask
+ *                           b'24:31 - MACTX_PRE_PHY_DESC word mask
+ * dword15 (word_mask_in8) - b'0:15  - OFDMA_TRIG_DETAILS word mask
+ *                           b'16:31 - TQM_UPD_TX_MPDU_CNT word mask
+ * dword16 (word_mask_in9) - b'0:15  - PHYTX_LOCATION word mask
+ *                           b'16:31 - rsvd
+ * dword17 (word_mask_in10)- b'0:31  - RCVD_RESP_INFO_PART2 word mask
+ * dword18 (type_en_mgmt)  - b'0:15  - mgmt pkt subtype enable
+ *                                    (IEEE 802.11 subtype N = bit N)
+ *                           b'16:31 - mgmt status subtype enable
+ * dword19 (type_en_ctrl)  - b'0:15  - ctrl pkt subtype enable
+ *                           b'16:31 - ctrl status subtype enable
+ * dword20 (type_en_data)  - b'0:15  - data pkt subtype enable
+ *                           b'16:31 - data status subtype enable
+ * dword21 (filter_mask_in4) - b'0:15  - TX_MON_UPSTREAM_TLV_CTRL3 filter mask
+ *                             b'16:31 - TX_MON_DOWNSTREAM_TLV_CTRL1 filter mask
  */
 
 #define HTT_TX_MON_RING_CFG_CMD_INFO0_MSG_TYPE		GENMASK(7, 0)
@@ -1397,7 +1379,8 @@ struct htt_rx_ring_tlv_filter {
 #define HTT_TX_MON_RING_CFG_CMD_INFO1_CONF_DMA_LEN_MGMT		GENMASK(18, 16)
 #define HTT_TX_MON_RING_CFG_CMD_INFO1_CONF_DMA_LEN_CTRL		GENMASK(21, 19)
 #define HTT_TX_MON_RING_CFG_CMD_INFO1_CONF_DMA_LEN_DATA		GENMASK(24, 22)
-#define HTT_TX_MON_RING_CFG_CMD_INFO1_CONF_RESERVED		GENMASK(31, 25)
+#define HTT_TX_MON_RING_CFG_CMD_INFO1_VERSION			GENMASK(26, 25)
+#define HTT_TX_MON_RING_CFG_CMD_INFO1_CONF_RESERVED		GENMASK(31, 27)
 
 #define HTT_TX_MON_FRAME_CTRL_INFO2_TYPE_MGMT  BIT(0)
 #define HTT_TX_MON_FRAME_CTRL_INFO2_TYPE_CTRL  BIT(1)
@@ -1450,6 +1433,119 @@ struct htt_rx_ring_tlv_filter {
 #define HTT_TX_MON_WMASK_IN4_RESPONSE_END_STATUS_MASK	GENMASK(31, 16)
 #define HTT_TX_MON_WMASK_IN5_FES_STATUS_PROT_MASK	GENMASK(10, 0)
 
+/* Wifi8 (Boron) additions */
+
+/* info0 [31:28] - new control bits over the WiFi7 baseline */
+#define HTT_TX_MON_RING_CFG_CMD_INFO0_PEER_PPDU_DROP		BIT(28)
+#define HTT_TX_MON_RING_CFG_CMD_INFO0_STAT_FILTER_EN		BIT(29)
+#define HTT_TX_MON_RING_CFG_CMD_INFO0_SPECIAL_PKT_FILTER_EN	BIT(30)
+#define HTT_TX_MON_RING_CFG_CMD_INFO0_PKT_BUF_CNT_EN		BIT(31)
+
+/* tlv_word_mask_in6 - four 8-bit masks */
+#define HTT_TX_MON_WMASK_IN6_PHYTX_PKT_END_MASK			GENMASK(7, 0)
+#define HTT_TX_MON_WMASK_IN6_MACTX_USR_DESC_CMN_MASK		GENMASK(15, 8)
+#define HTT_TX_MON_WMASK_IN6_MACTX_MU_UL_USR_SETUP_MASK		GENMASK(23, 16)
+#define HTT_TX_MON_WMASK_IN6_PDG_RESPONSE_MASK			GENMASK(31, 24)
+
+/* tlv_word_mask_in7 - four 8-bit masks */
+#define HTT_TX_MON_WMASK_IN7_RCVD_RESP_INFO_MASK		GENMASK(7, 0)
+#define HTT_TX_MON_WMASK_IN7_RX_RESP_REQD_INFO_MASK		GENMASK(15, 8)
+#define HTT_TX_MON_WMASK_IN7_RANGING_USR_DETAILS_MASK		GENMASK(23, 16)
+#define HTT_TX_MON_WMASK_IN7_MACTX_PRE_PHY_DESC_MASK		GENMASK(31, 24)
+
+/* tlv_word_mask_in8 - two 16-bit masks */
+#define HTT_TX_MON_WMASK_IN8_OFDMA_TRIG_DETAILS_MASK		GENMASK(15, 0)
+#define HTT_TX_MON_WMASK_IN8_TQM_UPD_TX_MPDU_CNT_MASK		GENMASK(31, 16)
+
+/* tlv_word_mask_in9 - one 16-bit mask + reserved */
+#define HTT_TX_MON_WMASK_IN9_PHYTX_LOCATION_MASK		GENMASK(15, 0)
+
+/* tlv_word_mask_in10 - full 32-bit mask */
+#define HTT_TX_MON_WMASK_IN10_RCVD_RESP_INFO_PART2_MASK		GENMASK(31, 0)
+
+/* type_en_{mgmt,ctrl,data} - bit N of each half-word encodes 802.11 subtype N */
+#define HTT_TX_MON_TYPE_EN_PKT_SUBTYPE_MASK			GENMASK(15, 0)
+#define HTT_TX_MON_TYPE_EN_STATUS_SUBTYPE_MASK			GENMASK(31, 16)
+#define HTT_TX_MON_TYPE_EN_STATUS(subtypes)			((u32)(subtypes) << 16)
+
+#define HTT_TX_MON_PKT_ALL_SUBTYPES				GENMASK(15, 0)
+
+/* MGMT subtypes (IEEE 802.11-2020 Table 9-1) */
+#define HTT_TX_MON_MGMT_ASSOC_REQ				BIT(0)
+#define HTT_TX_MON_MGMT_ASSOC_RESP				BIT(1)
+#define HTT_TX_MON_MGMT_REASSOC_REQ				BIT(2)
+#define HTT_TX_MON_MGMT_REASSOC_RESP				BIT(3)
+#define HTT_TX_MON_MGMT_PROBE_REQ				BIT(4)
+#define HTT_TX_MON_MGMT_PROBE_RESP				BIT(5)
+#define HTT_TX_MON_MGMT_BEACON					BIT(8)
+#define HTT_TX_MON_MGMT_DISASSOC				BIT(10)
+#define HTT_TX_MON_MGMT_AUTH					BIT(11)
+#define HTT_TX_MON_MGMT_DEAUTH					BIT(12)
+#define HTT_TX_MON_MGMT_ACTION					BIT(13)
+#define HTT_TX_MON_MGMT_ACTION_NOACK				BIT(14)
+
+/* CTRL subtypes (IEEE 802.11-2020 Table 9-1) */
+#define HTT_TX_MON_CTRL_TRIGGER					BIT(2)
+#define HTT_TX_MON_CTRL_TACK					BIT(3)
+#define HTT_TX_MON_CTRL_BF_RPT_POLL				BIT(4)
+#define HTT_TX_MON_CTRL_NDPA					BIT(5)
+#define HTT_TX_MON_CTRL_BAR					BIT(8)
+#define HTT_TX_MON_CTRL_BA					BIT(9)
+#define HTT_TX_MON_CTRL_PS_POLL					BIT(10)
+#define HTT_TX_MON_CTRL_RTS					BIT(11)
+#define HTT_TX_MON_CTRL_CTS					BIT(12)
+#define HTT_TX_MON_CTRL_ACK					BIT(13)
+#define HTT_TX_MON_CTRL_CF_END					BIT(14)
+
+/* DATA subtypes - bit 3 is the QoS flag; subtypes 4-7 / 12-15 are null variants */
+#define HTT_TX_MON_DATA_ALL					GENMASK(15, 0)
+#define HTT_TX_MON_DATA_QOS_ONLY				GENMASK(15, 8)
+#define HTT_TX_MON_DATA_NULL_FRAMES				(GENMASK(7, 4) | \
+								 GENMASK(15, 12))
+#define HTT_TX_MON_DATA_NULL					BIT(4)
+#define HTT_TX_MON_DATA_QOS_NULL				BIT(12)
+
+/* Convenience masks for HW-generated "special packet" capture via
+ * type_en_ctrl/data [15:0].
+ */
+#define HTT_TX_MON_SPECIAL_PKT_CTRL \
+	(HTT_TX_MON_CTRL_TRIGGER     | \
+	 HTT_TX_MON_CTRL_NDPA        | \
+	 HTT_TX_MON_CTRL_BF_RPT_POLL | \
+	 HTT_TX_MON_CTRL_BAR         | \
+	 HTT_TX_MON_CTRL_BA          | \
+	 HTT_TX_MON_CTRL_CF_END)
+
+#define HTT_TX_MON_SPECIAL_PKT_DATA \
+	(HTT_TX_MON_DATA_NULL | HTT_TX_MON_DATA_QOS_NULL)
+
+/* tlv_filter_mask_in4 [15:0] - TX_MON_UPSTREAM_TLV_CTRL3 */
+#define HTT_TX_FILTER_TLV_FLAGS3_MACTX_U_SIG_UHR_SU_MU			BIT(0)
+#define HTT_TX_FILTER_TLV_FLAGS3_MACTX_U_SIG_UHR_TB			BIT(1)
+#define HTT_TX_FILTER_TLV_FLAGS3_MACTX_UHR_SIG_USR_SU			BIT(2)
+#define HTT_TX_FILTER_TLV_FLAGS3_MACTX_UHR_SIG_USR_MU_MIMO		BIT(3)
+#define HTT_TX_FILTER_TLV_FLAGS3_MACTX_UHR_SIG_USR_OFDMA		BIT(4)
+#define HTT_TX_FILTER_TLV_FLAGS3_MACTX_ELR_SIG_UHR_SU			BIT(5)
+#define HTT_TX_FILTER_TLV_FLAGS3_WIFI_COEX_BLACKOUT_DETAILS		BIT(6)
+#define HTT_TX_FILTER_TLV_FLAGS3_WIFI_HDR_CTRL_PROT_MIC_STATUS		BIT(7)
+#define HTT_TX_FILTER_TLV_FLAGS3_WIFI_HDR_CTRL_PROT_PEER_ENTRY		BIT(8)
+
+#define HTT_TX_FILTER_TLV_FLAGS3_ALL_UHR_PREAMBLE \
+	(HTT_TX_FILTER_TLV_FLAGS3_MACTX_U_SIG_UHR_SU_MU    | \
+	 HTT_TX_FILTER_TLV_FLAGS3_MACTX_U_SIG_UHR_TB        | \
+	 HTT_TX_FILTER_TLV_FLAGS3_MACTX_UHR_SIG_USR_SU      | \
+	 HTT_TX_FILTER_TLV_FLAGS3_MACTX_UHR_SIG_USR_MU_MIMO | \
+	 HTT_TX_FILTER_TLV_FLAGS3_MACTX_UHR_SIG_USR_OFDMA   | \
+	 HTT_TX_FILTER_TLV_FLAGS3_MACTX_ELR_SIG_UHR_SU)
+
+/* tlv_filter_mask_in4 [31:16] - TX_MON_DOWNSTREAM_TLV_CTRL1 */
+#define HTT_TX_FILTER_TLV_FLAGS3_WIFI_RANGING_USER_DETAILS		BIT(16)
+#define HTT_TX_FILTER_TLV_FLAGS3_WIFI_HDR_CTRL_PROT_PEER_ENTRY_DS	BIT(17)
+
+#define HTT_TX_FILTER_TLV_FLAGS3_ALL_DS_CTRL1 \
+	(HTT_TX_FILTER_TLV_FLAGS3_WIFI_RANGING_USER_DETAILS | \
+	 HTT_TX_FILTER_TLV_FLAGS3_WIFI_HDR_CTRL_PROT_PEER_ENTRY_DS)
+
 struct htt_tx_mon_ring_selection_cfg_cmd {
 	__le32 info0;
 	__le32 info1;
@@ -1464,55 +1560,31 @@ struct htt_tx_mon_ring_selection_cfg_cmd {
 	__le32 tlv_word_mask_in3;
 	__le32 tlv_word_mask_in4;
 	__le32 tlv_word_mask_in5;
+	/* Fields appended for later FW generations - left zero on FW that
+	 * predates them. The on-wire length is chosen per FW family and stored
+	 * in ath12k_dp.htt_tx_mon_cfg_msg_size at device init.
+	 */
+	__le32 tlv_word_mask_in6;
+	__le32 tlv_word_mask_in7;
+	__le32 tlv_word_mask_in8;
+	__le32 tlv_word_mask_in9;
+	__le32 tlv_word_mask_in10;
+	__le32 type_en_mgmt;
+	__le32 type_en_ctrl;
+	__le32 type_en_data;
+	__le32 tlv_filter_mask_in4;
 } __packed;
 
-/**
- * struct htt_tx_ring_tlv_filter - TX monitor TLV filter and capture control
- * @tx_mon_downstream_tlv_flags: Bitmap of downstream TLVs to be enabled in
- *	TX monitor capture path.
- * @tx_mon_upstream_tlv_flags0: Upstream TLV bitmap word 0.
- * @tx_mon_upstream_tlv_flags1: Upstream TLV bitmap word 1.
- * @tx_mon_upstream_tlv_flags2: Upstream TLV bitmap word 2.
- * @wmask: Wildcard mask configuration used for selective matching.
+/* htt_tx_mon_ring_selection_cfg_cmd is the union of all FW generations and
+ * follows an append-only contract: new fields are only ever added at the
+ * tail, and existing fields are never reordered or resized. The on-wire
+ * length is therefore a per-FW-family property: each family sends a prefix
+ * of the struct and leaves the tail (which it does not understand) at zero.
  *
- * Frame-class filtering:
- * @tx_mon_mgmt_filter: Enable management frame capture/filtering.
- * @tx_mon_data_filter: Enable data frame capture/filtering.
- * @tx_mon_ctrl_filter: Enable control frame capture/filtering.
- *
- * DMA capture length:
- * @tx_mon_mgmt_pkt_dma_len: Maximum DMA length for management packets.
- * @tx_mon_data_pkt_dma_len: Maximum DMA length for data packets.
- * @tx_mon_ctrl_pkt_dma_len: Maximum DMA length for control packets.
- *
- * TLV boundary logging control for management frames:
- * @mgmt_mpdu_end: Capture MPDU_END TLV.
- * @mgmt_msdu_end: Capture MSDU_END TLV.
- * @mgmt_msdu_start: Capture MSDU_START TLV.
- * @mgmt_mpdu_start: Capture MPDU_START TLV.
- *
- * TLV boundary logging control for control frames:
- * @ctrl_mpdu_end: Capture MPDU_END TLV.
- * @ctrl_msdu_end: Capture MSDU_END TLV.
- * @ctrl_msdu_start: Capture MSDU_START TLV.
- * @ctrl_mpdu_start: Capture MPDU_START TLV.
- *
- * TLV boundary logging control for data frames:
- * @data_mpdu_end: Capture MPDU_END TLV.
- * @data_msdu_end: Capture MSDU_END TLV.
- * @data_msdu_start: Capture MSDU_START TLV.
- * @data_mpdu_start: Capture MPDU_START TLV.
- *
- * Logging and match control:
- * @txmon_disable: Disable TX monitor configuration.
- * @mgmt_mpdu_msdu_log_en: Enable MPDU/MSDU logging for management frames.
- * @ctrl_mpdu_msdu_log_en: Enable MPDU/MSDU logging for control frames.
- * @data_mpdu_msdu_log_en: Enable MPDU/MSDU logging for data frames.
- * @mgmt_log_typ: Select management frame logging type.
- * @ctrl_log_typ: Select control frame logging type.
- * @data_log_typ: Select data frame logging type.
- * @mac_addr_filter_en: Enable MAC address-based filtering.
+ * The length is stored in ath12k_dp.htt_tx_mon_cfg_msg_size, initialised at
+ * device init, so this generic definition stays free of any generation-specific size.
  */
+
 struct htt_tx_ring_tlv_filter {
 	u32 tx_mon_downstream_tlv_flags;
 	u32 tx_mon_upstream_tlv_flags0;

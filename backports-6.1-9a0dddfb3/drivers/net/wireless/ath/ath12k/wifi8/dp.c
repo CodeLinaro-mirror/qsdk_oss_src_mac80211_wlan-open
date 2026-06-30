@@ -667,6 +667,9 @@ static int ath12k_wifi8_dp_op_device_init(struct ath12k_dp *dp)
 	int ret;
 
 	dp->tcl_metadata_ver = HTT_OPTION_TCL_METADATA_VER_V3;
+	dp->htt_tx_mon_cfg_msg_size =
+			(u16)sizeof(struct htt_tx_mon_ring_selection_cfg_cmd);
+	dp->htt_tx_mon_cfg_version = 1; /* wifi8 (Boron) extended message layout */
 
 	dp_wifi8->dp_ppe2wbm_use_dedicated_pool = DP_PPE2WBM_DEDICATED_POOL;
 	if (dp_wifi8->dp_ppe2wbm_use_dedicated_pool)

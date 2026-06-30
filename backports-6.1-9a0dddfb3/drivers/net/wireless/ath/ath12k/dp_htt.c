@@ -3474,11 +3474,20 @@ int ath12k_dp_htt_mon_tx_filter_setup(struct ath12k_base *ab, u32 ring_id,
 	struct hal_srng *srng = &ab->hal.srng_list[ring_id];
 	struct hal_srng_params params;
 	struct sk_buff *skb;
-	int len = sizeof(*cmd);
+	int len;
 	enum htt_srng_ring_type htt_ring_type;
 	enum htt_srng_ring_id htt_ring_id;
 	int ret;
 
+	/* htt_tx_mon_cfg_msg_size is set to zero for chips that don't support
+	 * TX monitor (e.g. WCN7850, QCN9625); ath12k_dp is kzalloc'd so chips
+	 * whose dp_op_device_init doesn't populate the field are safe to check
+	 * here without a separate mon_ops null-guard.
+	 */
+	if (!dp->htt_tx_mon_cfg_msg_size)
+		return -EOPNOTSUPP;
+
+	len = dp->htt_tx_mon_cfg_msg_size;
 	skb = ath12k_htc_alloc_skb(ab, len);
 	if (!skb)
 		return -ENOMEM;
@@ -3527,6 +3536,9 @@ int ath12k_dp_htt_mon_tx_filter_setup(struct ath12k_base *ab, u32 ring_id,
 	cmd->info1 |=
 		le32_encode_bits(tx_buf_size,
 				 HTT_TX_MON_RING_CFG_CMD_INFO1_RING_BUFF_SIZE);
+	cmd->info1 |=
+		le32_encode_bits(dp->htt_tx_mon_cfg_version,
+				 HTT_TX_MON_RING_CFG_CMD_INFO1_VERSION);
 
 	/*word 1 & 2*/
 	if (htt_tlv_filter->tx_mon_mgmt_filter) {
