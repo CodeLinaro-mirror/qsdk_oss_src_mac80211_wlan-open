@@ -1224,7 +1224,6 @@ ath12k_update_htt_stats_txrate(struct ath12k_pdev_dp *dp_pdev,
 	usr_stats->nss = nss;
 	ppdu_info->usr_nss_sum += nss;
 	peer->txrate.bw = ath12k_mac_bw_to_mac80211_bw(bw);
-	peer->tx_duration += tx_duration;
 
 	is_mcast = HTT_PPDU_STATS_USR_CMN_IS_MCAST(usr_stats->common.info);
 	snr = le32_to_cpu(usr_stats->cmpltn_cmn.ack_rssi);
@@ -1337,6 +1336,7 @@ ath12k_ppdu_per_user_stats_phy_tx_time_update(struct ath12k_base *ab,
 
 	DP_STATS_INCR(tx_stats, tx_ppdu_duration, phy_tx_time_us);
 
+	peer->tx_duration += phy_tx_time_us;
 	tid = user->rate.tid_num;
 	ac = ath12k_tid_to_ac(tid);
 	stats = &peer->peer_stats.dp_mon_stats;
