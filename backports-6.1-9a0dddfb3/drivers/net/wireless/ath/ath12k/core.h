@@ -1680,6 +1680,7 @@ struct ath12k_radio_cfg {
  * @mvr_posting_time_us: Time taken to post MVR (Multi-VDEV Restart) command
  * @mvr_resp_time_us: Time taken to receive MVR response from firmware
  * @mvr_timeout_count: Number of times MVR response timed out
+ * @nl_notify_count: Number of cfg80211_ch_switch_notify NL events sent to applications
  */
 struct ath12k_chanctx_switch_stats {
 	u64 total_switches;
@@ -1695,6 +1696,9 @@ struct ath12k_chanctx_switch_stats {
 
 	/* Error tracking */
 	u64 mvr_timeout_count;
+
+	/* NL event tracking */
+	u64 nl_notify_count;
 };
 
 /* Lightweight structure to receive FW HTT map event */
