@@ -4288,6 +4288,7 @@ struct ath12k_wmi_peer_create_arg {
 	u32 vdev_id;
 	bool ml_enabled;
 	bool mlo_bridge_peer;
+	bool epp_peer;
 	u32 peer_id;
 	u32 sta_id;
 };
@@ -4424,6 +4425,7 @@ enum wmi_peer_type {
 };
 
 #define ATH12K_WMI_FLAG_STA_ID_VALID	BIT(0)
+#define WMI_PEER_CREATE_EPP_PEER_INDICATION  BIT(1)
 struct wmi_peer_create_cmd {
 	__le32 tlv_header;
 	__le32 vdev_id;

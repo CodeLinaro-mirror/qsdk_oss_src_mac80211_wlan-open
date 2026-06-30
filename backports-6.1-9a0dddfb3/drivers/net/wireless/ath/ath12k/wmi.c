@@ -2470,6 +2470,12 @@ int ath12k_wmi_send_peer_create_cmd(struct ath12k *ar,
 		cmd->sta_id = cpu_to_le32(arg->sta_id);
 	}
 
+	if (arg->epp_peer &&
+	    test_bit(WMI_SERVICE_11BI_EPPKE_SUPPORT,
+		     ar->ab->wmi_ab.svc_map))
+		cmd->flags |=
+			le32_encode_bits(1, WMI_PEER_CREATE_EPP_PEER_INDICATION);
+
 	ptr = skb->data + sizeof(*cmd);
 	tlv = ptr;
 	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT,
