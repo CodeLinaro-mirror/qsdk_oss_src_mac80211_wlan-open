@@ -1496,9 +1496,9 @@ ath12k_dp_mon_ppdu_per_user_rx_time_update(struct ath12k_pdev_dp *dp_pdev,
 	peer = ath12k_dp_link_peer_find_by_peerid_index(dp_pdev->dp, dp_pdev,
 							user_stats->sw_peer_id);
 	if (!peer || !ath12k_dp_link_peer_get_sta(peer)) {
-		ath12k_dbg(dp_pdev->ar->ab, ATH12K_DBG_PEER,
-			   "peer stats not found on ppdu peer id %d\n",
-			   user_stats->sw_peer_id);
+		ath12k_dbg_level(dp_pdev->ar->ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+				 "peer stats not found on ppdu peer id %d\n",
+				 user_stats->sw_peer_id);
 		return;
 	}
 
@@ -1569,9 +1569,9 @@ ath12k_dp_mon_link_peer_signal_stats(struct ath12k_pdev_dp *dp_pdev,
 	peer = ath12k_dp_link_peer_find_by_peerid_index(dp_pdev->dp, dp_pdev,
 							user_stats->sw_peer_id);
 	if (!peer) {
-		ath12k_dbg(dp_pdev->ar->ab, ATH12K_DBG_PEER,
-			   "peer stats not found on ppdu peer id %d\n",
-			   user_stats->sw_peer_id);
+		ath12k_dbg_level(dp_pdev->ar->ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+				 "peer stats not found on ppdu peer id %d\n",
+				 user_stats->sw_peer_id);
 		rcu_read_unlock();
 		return;
 	}
@@ -1649,9 +1649,9 @@ ath12k_dp_mon_per_user_ppdu_rssi_update(struct ath12k_pdev_dp *dp_pdev,
 	peer = ath12k_dp_link_peer_find_by_peerid_index(dp_pdev->dp, dp_pdev,
 							user_stats->sw_peer_id);
 	if (!peer || !ath12k_dp_link_peer_get_sta(peer)) {
-		ath12k_dbg(dp_pdev->ar->ab, ATH12K_DBG_PEER,
-			   "peer stats not found on ppdu peer id %d\n",
-			   user_stats->sw_peer_id);
+		ath12k_dbg_level(dp_pdev->ar->ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+				 "peer stats not found on ppdu peer id %d\n",
+				 user_stats->sw_peer_id);
 		return;
 	}
 
