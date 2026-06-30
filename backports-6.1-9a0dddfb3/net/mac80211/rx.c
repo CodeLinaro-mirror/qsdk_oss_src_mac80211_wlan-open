@@ -4479,6 +4479,42 @@ ieee80211_rx_h_action(struct ieee80211_rx_data *rx)
 	return RX_QUEUED;
 }
 
+static void debug_noinline
+ieee80211_rx_h_userspace_mgmt_action(struct cfg80211_rx_info *info,
+				     struct ieee80211_rx_data *rx)
+{
+	struct ieee80211_mgmt *mgmt = (void *)info->buf;
+	struct wireless_skb_ext *ext;
+	u8 action_code, type;
+
+	switch (mgmt->u.action.category) {
+	case WLAN_CATEGORY_PROTECTED_UHR:
+		action_code = mgmt->u.action.u.uhr_link_reconf_req.action_code;
+
+		switch (action_code) {
+		case WLAN_PROTECTED_UHR_ACTION_LINK_RECONFIG_REQ:
+		case WLAN_PROTECTED_UHR_ACTION_LINK_RECONFIG_RESP:
+			type = mgmt->u.action.u.uhr_link_reconf_req.type;
+
+			if (type == IEEE80211_UHR_LINK_RECONF_TYPE_ST_PREP ||
+			    type == IEEE80211_UHR_LINK_RECONF_TYPE_ST_EXEC) {
+				ext = skb_ext_find(rx->skb, SKB_EXT_WIRELESS);
+				if (!ext)
+					return;
+
+				info->st_info.type = type;
+				info->st_info.ctx = &ext->uhr_smd_ctx;
+			}
+			break;
+		default:
+			break;
+		}
+		break;
+	default:
+		break;
+	}
+}
+
 static ieee80211_rx_result debug_noinline
 ieee80211_rx_h_userspace_mgmt(struct ieee80211_rx_data *rx)
 {
@@ -4506,6 +4542,7 @@ ieee80211_rx_h_userspace_mgmt(struct ieee80211_rx_data *rx)
 		.link_removal_update = 0,
 		.ttlm_expec_dur_update = 0,
 		.bitrate = bitrate,
+		.st_info.ctx = NULL,
 	};
 
 	stype = mgmt->frame_control & cpu_to_le16(IEEE80211_FCTL_STYPE);
@@ -4520,7 +4557,10 @@ ieee80211_rx_h_userspace_mgmt(struct ieee80211_rx_data *rx)
 
 		if (wdev->ttlm_expec_dur_update_flag)
 			info.ttlm_expec_dur_update = 1;
+	} else if (ieee80211_is_action(mgmt->frame_control)) {
+		ieee80211_rx_h_userspace_mgmt_action(&info, rx);
 	}
+
 	/* skip known-bad action frames and return them in the next handler */
 	if (status->rx_flags & IEEE80211_RX_MALFORMED_ACTION_FRM)
 		return RX_CONTINUE;

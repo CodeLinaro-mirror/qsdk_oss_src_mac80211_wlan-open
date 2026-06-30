@@ -22,6 +22,7 @@
 #include <linux/bug.h>
 #include <linux/netlink.h>
 #include <linux/skbuff.h>
+#include <linux/skb_wireless.h>
 #include <linux/nl80211.h>
 #include <linux/if_ether.h>
 #include <linux/ieee80211.h>
@@ -5587,6 +5588,20 @@ struct cfg80211_uhr_mode_update_params {
 };
 
 /**
+ * cfg80211_smd_transition_info - SMD BSS Transition info
+ *
+ * @type: Type of ST indication
+ * @ctx: Dynamic context to be transferred as part of ST
+ */
+struct cfg80211_smd_transition_info {
+	struct ieee80211_smd_ctx *ctx;
+	enum cfg80211_smd_transition_type {
+		CFG80211_ST_TYPE_PREP,
+		CFG80211_ST_PREP_EXEC,
+	} type;
+};
+
+/**
  * struct cfg80211_ops - backend description for wireless configuration
  *
  * This struct is registered by fullmac card drivers and/or wireless stacks
@@ -10239,7 +10254,7 @@ void cfg80211_conn_failed(struct net_device *dev, const u8 *mac_addr,
  *	the rx info
  * @ttlm_expec_dur_update: Indicates whether expected duration update for TTLM
  *	element is present in the rx info
- * @st_roaming_data: ST roaming data in skb extension
+ * @st_info: SMD BSS Transition data in skb extension
  */
 struct cfg80211_rx_info {
 	int freq;
@@ -10255,7 +10270,7 @@ struct cfg80211_rx_info {
 	bool link_removal_update;
 	bool ttlm_expec_dur_update;
 	u16 bitrate;
-	const struct ieee80211_smd_ctx *st_roaming_data;
+	struct cfg80211_smd_transition_info st_info;
 };
 
 /**
