@@ -1140,6 +1140,7 @@ void ath12k_dp_mon_rx_update_peer_su_stats(struct ath12k_pdev_dp *pdev_dp,
 	rx_stats = peer->peer_stats.rx_stats;
 	peer->rssi_comb = ppdu_info->rssi_comb;
 	ewma_avg_rssi_add(&peer->avg_rssi, ppdu_info->rssi_comb);
+	peer->rx_duration += ppdu_info->rx_duration;
 
 	/* Update both pdev-level and per-peer BAR counts together after a
 	 * successful peer lookup.
@@ -1199,8 +1200,6 @@ void ath12k_dp_mon_rx_update_peer_su_stats(struct ath12k_pdev_dp *pdev_dp,
 	rx_stats->num_mpdu_fcs_ok += ppdu_info->num_mpdu_fcs_ok;
 	rx_stats->num_mpdu_fcs_err += ppdu_info->num_mpdu_fcs_err;
 	rx_stats->dcm_count += ppdu_info->dcm;
-
-	peer->rx_duration = rx_stats->rx_duration;
 
 	if (ppdu_info->nss > 0 && ppdu_info->nss <= HAL_RX_MAX_NSS) {
 		rx_stats->pkt_stats.nss_count[ppdu_info->nss - 1] += num_msdu;
@@ -1347,6 +1346,7 @@ ath12k_dp_mon_rx_update_user_stats(struct ath12k_pdev_dp *pdev_dp,
 	}
 
 	peer->peer_stats.rx_retries = user_stats->mpdu_retry;
+	peer->rx_duration += ppdu_info->rx_duration;
 
 	if (!ath12k_extd_rx_stats_enabled(pdev_dp))
 		return;
@@ -1400,9 +1400,6 @@ ath12k_dp_mon_rx_update_user_stats(struct ath12k_pdev_dp *pdev_dp,
 	    ppdu_info->reception_type == HAL_RX_RECEPTION_TYPE_MU_OFDMA_MIMO)
 		rx_stats->ru_alloc_cnt[user_stats->ul_ofdma_ru_size] += num_msdu;
 
-	rx_stats->rx_duration += ppdu_info->rx_duration;
-	peer->rx_duration = rx_stats->rx_duration;
-
 	if (user_stats->nss > 0 && user_stats->nss <= HAL_RX_MAX_NSS) {
 		rx_stats->pkt_stats.nss_count[user_stats->nss - 1] += num_msdu;
 		rx_stats->byte_stats.nss_count[user_stats->nss - 1] +=
@@ -1449,6 +1446,7 @@ ath12k_dp_mon_rx_update_user_stats(struct ath12k_pdev_dp *pdev_dp,
 	pdev_stats->telemetry_stats.total_rx_data_bytes = user_stats->mpdu_ok_byte_count;
 
 	ath12k_dp_mon_rx_update_basic_stats(peer, rx_stats, ppdu_info, num_msdu, uid);
+	peer->rx_duration = rx_stats->rx_duration;
 	/* Update Advance stats */
 	if (ath12k_dp_stats_enabled(pdev_dp) &&
 	    ath12k_dp_advance_stats_enabled(pdev_dp)) {
@@ -1462,9 +1460,6 @@ ath12k_dp_mon_rx_update_peer_mu_stats(struct ath12k_pdev_dp *pdev_dp,
 				      struct hal_rx_mon_ppdu_info *ppdu_info)
 {
 	u32 num_users, i;
-
-	if (!ath12k_extd_rx_stats_enabled(pdev_dp))
-		return;
 
 	num_users = ppdu_info->num_users;
 	if (num_users > HAL_MAX_UL_MU_USERS)
