@@ -1572,3 +1572,20 @@ void ath12k_hal_set_low_threshold(struct hal_srng *srng, u32 low_threshold)
 {
 	srng->u.src_ring.low_threshold = low_threshold * srng->entry_size;
 }
+
+bool ath12k_hal_rx_reo_status(struct ath12k_base *ab, struct hal_reo_status *reo_status)
+{
+	if (ab->hal.hal_ops->hal_rx_reo_status)
+		return ab->hal.hal_ops->hal_rx_reo_status(reo_status);
+
+	return false;
+}
+
+bool ath12k_hal_rx_reo_1k_status(struct ath12k_base *ab,
+				 struct hal_reo_status *reo_status)
+{
+	if (ab->hal.hal_ops->hal_rx_reo_1k_status)
+		return ab->hal.hal_ops->hal_rx_reo_1k_status(reo_status);
+
+	return false;
+}

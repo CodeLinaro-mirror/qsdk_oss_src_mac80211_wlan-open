@@ -15,6 +15,7 @@ struct ath12k_base;
 struct ath12k_smd_info;
 struct hal_reo_status;
 struct ath12k_dp;
+struct ath12k_hw;
 struct ath12k;
 
 /**
@@ -161,6 +162,8 @@ struct ath12k_smd_ctx {
 };
 
 struct ath12k_smd_ctx_req {
+	/* protects @req data */
+	spinlock_t lock;
 	enum ieee80211_uhr_link_reconf_resp_type type;
 	DECLARE_BITMAP(wait_for_1k_status_ctx, IEEE80211_MAX_NUM_TIDS);
 	bool tx_done; /* mark Tx HW block completion */
@@ -191,5 +194,21 @@ const char *ath12k_uhr_reconf_type_str(enum ieee80211_uhr_link_reconf_resp_type 
 int ath12k_smd_collect_sta_session_ctx(struct ath12k *ar, struct sk_buff *skb);
 void ath12k_smd_update_ctx_to_stack(struct ath12k_smd_info *smd_info,
 				    struct ath12k_smd_ctx_req *req);
+
+u16 ath12k_smd_ctx_get_rx_ba_bufsize(struct ath12k_base *ab, struct ath12k_hw *ah,
+				     const u8 *peer_addr, u8 tid, u16 orig_ba_win_sz);
+
+static inline void ath12k_smd_ctx_encode_ba_buf_size(u16 buf_size, u16 *buf_size_base,
+						     u16 *buf_size_ext)
+{
+	*buf_size_base = buf_size & (IEEE80211_ADDBA_PARAM_BUF_SIZE_MASK >> 6);
+	*buf_size_ext = buf_size >> IEEE80211_ADDBA_EXT_BUF_SIZE_SHIFT;
+}
+
+static inline u16 ath12k_smd_ctx_decode_ba_buf_size(u16 buf_size_base,
+						    u16 buf_size_ext)
+{
+	return (buf_size_ext << IEEE80211_ADDBA_EXT_BUF_SIZE_SHIFT | buf_size_base);
+}
 
 #endif /* ATH12K_SMD_H */
