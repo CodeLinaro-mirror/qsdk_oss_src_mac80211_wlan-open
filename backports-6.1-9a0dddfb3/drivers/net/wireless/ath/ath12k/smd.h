@@ -81,6 +81,17 @@ struct ath12k_smd_ctx_ba {
 
 /* Vendor Context and TLVs */
 
+#define SMD_CTX_TLV_TYPE_VENDOR 221
+
+#define SMD_CTX_VENDOR_INVALID_VERSION 0xff
+/* Presence Bitmap field */
+#define SMD_CTX_VENDOR_TLV_CTRL_DL_SN_PRESENT		0x0001
+#define SMD_CTX_VENDOR_TLV_CTRL_DL_PN_PRESENT		0x0002
+#define SMD_CTX_VENDOR_TLV_CTRL_UL_SN_PRESENT		0x0004
+#define SMD_CTX_VENDOR_TLV_CTRL_UL_PN_PRESENT		0x0008
+#define SMD_CTX_VENDOR_TLV_CTRL_DL_LSN_OFFSET_PRESENT	0x0010
+#define SMD_CTX_VENDOR_TLV_CTRL_UL_REO_BMAP_PRESENT	0x0020
+
 struct ath12k_smd_reo_bitmap {
 	struct_group(bitmap_287_0_grp,
 		u32 bitmap_31_0;

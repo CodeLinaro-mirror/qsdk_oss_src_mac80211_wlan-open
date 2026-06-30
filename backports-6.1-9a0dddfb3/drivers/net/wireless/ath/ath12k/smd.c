@@ -5,6 +5,7 @@
 
 #include <net/mac80211.h>
 #include <net/cfg80211.h>
+#include <linux/skb_wireless.h>
 #include <linux/etherdevice.h>
 
 #include "mac.h"
@@ -1443,9 +1444,316 @@ int ath12k_smd_collect_sta_session_ctx(struct ath12k *ar, struct sk_buff *mmpdu)
 }
 EXPORT_SYMBOL(ath12k_smd_collect_sta_session_ctx);
 
+static void ath12k_smd_ctx_set_vendor_v1_tlv(struct ath12k_smd_ctx *ctx,
+					     struct ieee80211_smd_ctx *i80211_ctx)
+{
+	u8 *tlv, *pos, *tlv_len_pos, *cmn_info_len_pos, *ctx_info_len_pos;
+	size_t variable_size = 0, tlv_size;
+	u8 n_dl_tids = 0, n_ul_tids = 0;
+	size_t reo_bitmap_size = 0;
+	u16 ctx_ctrl;
+	u8 tid;
+
+	/**
+	 * Vendor TLV format
+	 *
+	 * TLV Tag: 1 octet
+	 * TLV Length: 2 octets
+	 * TLV Value:
+	 *   Vendor OUI: 3 octets
+	 *   Version: 1 octet
+	 *   Context Control: Presence Bitmap: 2 octets
+	 *   Common Info:
+	 *     Common Info Length: 1 octet
+	 *     REO Bitmap size: 2 octets
+	 *   Context Info:
+	 *     Context Info Length: 2 octets
+	 *     DL Mgmt SN: 2 octets
+	 *     DL Mgmt PN: variable (`ctx->pn_len` octets)
+	 *     UL Mgmt SN: 2 octets
+	 *     UL Mgmt PN: variable (`ctx->pn_len` octets)
+	 *     DL Data LSN Offset: 2 * IEEE80211_MAX_NUM_TIDS octets
+	 *     UL Data REO Bitmap: Common Info:REO Bitmap size
+	 */
+
+	n_dl_tids = bitmap_weight(ctx->dl.valid_tid_bmap, IEEE80211_MAX_NUM_TIDS);
+	n_ul_tids = bitmap_weight(ctx->ul.valid_tid_bmap, IEEE80211_MAX_NUM_TIDS);
+
+	ctx_ctrl = (SMD_CTX_VENDOR_TLV_CTRL_DL_SN_PRESENT |
+		    SMD_CTX_VENDOR_TLV_CTRL_UL_SN_PRESENT |
+		    SMD_CTX_VENDOR_TLV_CTRL_DL_LSN_OFFSET_PRESENT);
+	if (ctx->pn_len)
+		ctx_ctrl |= SMD_CTX_VENDOR_TLV_CTRL_DL_PN_PRESENT |
+			SMD_CTX_VENDOR_TLV_CTRL_UL_PN_PRESENT;
+
+	if (ctx_ctrl & SMD_CTX_VENDOR_TLV_CTRL_DL_SN_PRESENT)
+		variable_size += 2;
+	if (ctx_ctrl & SMD_CTX_VENDOR_TLV_CTRL_DL_PN_PRESENT)
+		variable_size += ctx->pn_len;
+	if (ctx_ctrl & SMD_CTX_VENDOR_TLV_CTRL_UL_SN_PRESENT)
+		variable_size += 2;
+	if (ctx_ctrl & SMD_CTX_VENDOR_TLV_CTRL_UL_PN_PRESENT)
+		variable_size += ctx->pn_len;
+	if (ctx_ctrl & SMD_CTX_VENDOR_TLV_CTRL_DL_LSN_OFFSET_PRESENT)
+		variable_size += (n_dl_tids * 2);
+	if (ctx_ctrl & SMD_CTX_VENDOR_TLV_CTRL_UL_REO_BMAP_PRESENT) {
+		reo_bitmap_size = sizeof(struct ath12k_smd_reo_bitmap);
+		variable_size += 2 + (n_ul_tids * reo_bitmap_size);
+	}
+
+	tlv_size = 1 + 2 + 3 + 1 + 2 + 1 + 2 + variable_size;
+
+	tlv = kzalloc(tlv_size, GFP_ATOMIC);
+	if (!tlv) {
+		i80211_ctx->drv_ctx = NULL;
+		i80211_ctx->drv_ctx_size = 0;
+		return;
+	}
+
+	pos = tlv;
+
+	/* TLV header */
+	*pos++ = SMD_CTX_TLV_TYPE_VENDOR;
+	tlv_len_pos = pos;
+	pos += 2;
+
+	/* Vendor OUI */
+	*pos++ = 0x00;
+	*pos++ = 0x13;
+	*pos++ = 0x74;
+
+	/* Version */
+	*pos++ = ath12k_smd_ctx_vendor_version;
+
+	/* Context Control - Presence Bitmap */
+	put_unaligned_le16(ctx_ctrl, pos);
+	pos += sizeof(ctx_ctrl);
+
+	/* Common Info */
+	cmn_info_len_pos = pos;
+	pos += 1; /* move past Length subfield */
+	if (ctx_ctrl & SMD_CTX_VENDOR_TLV_CTRL_UL_REO_BMAP_PRESENT) {
+		put_unaligned_le16(reo_bitmap_size, pos);
+		pos += 2;
+	}
+	*cmn_info_len_pos = pos - cmn_info_len_pos;
+
+	/* Context Info - starts */
+	ctx_info_len_pos = pos;
+	pos += 2;
+
+	/* DL Mgmt SN */
+	if (ctx_ctrl & SMD_CTX_VENDOR_TLV_CTRL_DL_SN_PRESENT) {
+		put_unaligned_le16(ctx->vendor_ctx.ctx_v1.dl_mgmt_sn, pos);
+		pos += sizeof(ctx->vendor_ctx.ctx_v1.dl_mgmt_sn);
+	}
+
+	/* DL Mgmt PN */
+	if (ctx_ctrl & SMD_CTX_VENDOR_TLV_CTRL_DL_PN_PRESENT) {
+		memcpy(pos, ctx->vendor_ctx.ctx_v1.dl_mgmt_pn, ctx->pn_len);
+		pos += ctx->pn_len;
+	}
+
+	/* UL Mgmt SN */
+	if (ctx_ctrl & SMD_CTX_VENDOR_TLV_CTRL_UL_SN_PRESENT) {
+		put_unaligned_le16(ctx->vendor_ctx.ctx_v1.ul_mgmt_sn, pos);
+		pos += sizeof(ctx->vendor_ctx.ctx_v1.ul_mgmt_sn);
+	}
+
+	/* UL Mgmt PN */
+	if (ctx_ctrl & SMD_CTX_VENDOR_TLV_CTRL_UL_PN_PRESENT) {
+		memcpy(pos, ctx->vendor_ctx.ctx_v1.ul_mgmt_pn, ctx->pn_len);
+		pos += ctx->pn_len;
+	}
+
+	/* DL Data LSN Offset */
+	if (!(ctx_ctrl & SMD_CTX_VENDOR_TLV_CTRL_DL_LSN_OFFSET_PRESENT))
+		goto skip_lsn_offset;
+	for_each_set_bit(tid, ctx->dl.valid_tid_bmap, IEEE80211_MAX_NUM_TIDS) {
+		put_unaligned_le16(ctx->vendor_ctx.ctx_v1.dl_data_lsn_offset[tid], pos);
+		pos += sizeof(u16);
+	}
+
+skip_lsn_offset:
+	/* UL Data REO Bitmap */
+	if (!(ctx_ctrl & SMD_CTX_VENDOR_TLV_CTRL_UL_REO_BMAP_PRESENT))
+		goto skip_reo_bitmap;
+	for_each_set_bit(tid, ctx->ul.valid_tid_bmap, IEEE80211_MAX_NUM_TIDS) {
+		memcpy(pos, (u8 *)&ctx->vendor_ctx.ctx_v1.ul_reo_bmap[tid],
+		       sizeof(struct ath12k_smd_reo_bitmap));
+		pos += sizeof(struct ath12k_smd_reo_bitmap);
+	}
+	/* Context Info - ends */
+
+skip_reo_bitmap:
+	put_unaligned_le16(pos - ctx_info_len_pos, ctx_info_len_pos);
+	put_unaligned_le16(pos - tlv_len_pos - 2, tlv_len_pos);
+
+	i80211_ctx->drv_ctx = tlv;
+	i80211_ctx->drv_ctx_size = tlv_size;
+
+	ath12k_dbg_level(NULL, ATH12K_DBG_SMD, ATH12K_DBG_L3, "SMD vendor context: %*ph",
+			 (int)i80211_ctx->drv_ctx_size, i80211_ctx->drv_ctx);
+}
+
+static void ath12k_smd_ctx_set_vendor_tlv(struct ath12k_smd_ctx *ctx,
+					  struct ieee80211_smd_ctx *i80211_ctx)
+{
+	switch (ath12k_smd_ctx_vendor_version) {
+	case 1:
+		ath12k_smd_ctx_set_vendor_v1_tlv(ctx, i80211_ctx);
+		break;
+	default:
+		ath12k_err(NULL, "Unsupported SMD Vendor ctx TLV version=%d",
+			   ath12k_smd_ctx_vendor_version);
+	}
+}
+
+static void ath12k_smd_ctx_to_ieee80211_ctx(struct ath12k_smd_ctx *ctx,
+					    struct ieee80211_smd_ctx *i80211_ctx)
+{
+	u8 tid;
+
+	if (!ctx || !i80211_ctx)
+		return;
+
+	bitmap_zero(i80211_ctx->valid_ctx_bmap, IEEE80211_SMD_CTX_NUM_VALID_CTX);
+	if (test_bit(ATH12K_SMD_CTX_VALID_DL_SN, ctx->valid_ctx_bmap))
+		set_bit(IEEE80211_SMD_CTX_VALID_DL_SN, i80211_ctx->valid_ctx_bmap);
+	if (test_bit(ATH12K_SMD_CTX_VALID_UL_SN, ctx->valid_ctx_bmap))
+		set_bit(IEEE80211_SMD_CTX_VALID_UL_SN, i80211_ctx->valid_ctx_bmap);
+	if (test_bit(ATH12K_SMD_CTX_VALID_PN, ctx->valid_ctx_bmap))
+		set_bit(IEEE80211_SMD_CTX_VALID_PN, i80211_ctx->valid_ctx_bmap);
+	if (test_bit(ATH12K_SMD_CTX_VALID_BA_PARAMS, ctx->valid_ctx_bmap))
+		set_bit(IEEE80211_SMD_CTX_VALID_BA_PARAMS, i80211_ctx->valid_ctx_bmap);
+	if (test_bit(ATH12K_SMD_CTX_VALID_QOS, ctx->valid_ctx_bmap))
+		set_bit(IEEE80211_SMD_CTX_VALID_QOS, i80211_ctx->valid_ctx_bmap);
+
+	bitmap_copy(i80211_ctx->dl.valid_tid_bmap, ctx->dl.valid_tid_bmap,
+		    IEEE80211_SMD_CTX_NUM_TIDS);
+	bitmap_copy(i80211_ctx->ul.valid_tid_bmap, ctx->ul.valid_tid_bmap,
+		    IEEE80211_SMD_CTX_NUM_TIDS);
+
+	if (test_bit(ATH12K_SMD_CTX_VALID_PN, ctx->valid_ctx_bmap)) {
+		i80211_ctx->pn_len = ctx->pn_len;
+		memcpy(i80211_ctx->dl.pn, ctx->dl.pn, ctx->pn_len);
+
+		for_each_set_bit(tid, ctx->ul.valid_tid_bmap, IEEE80211_MAX_NUM_TIDS)
+			memcpy(i80211_ctx->ul.pn[tid], ctx->ul.pn[tid], ctx->pn_len);
+	}
+
+	if (test_bit(ATH12K_SMD_CTX_VALID_DL_SN, ctx->valid_ctx_bmap))
+		memcpy(i80211_ctx->dl.sn, ctx->dl.sn, sizeof(ctx->dl.sn));
+
+	if (test_bit(ATH12K_SMD_CTX_VALID_UL_SN, ctx->valid_ctx_bmap))
+		memcpy(i80211_ctx->ul.sn, ctx->ul.sn, sizeof(ctx->ul.sn));
+
+	if (test_bit(ATH12K_SMD_CTX_VALID_BA_PARAMS, ctx->valid_ctx_bmap)) {
+		for_each_set_bit(tid, ctx->dl.valid_tid_bmap, IEEE80211_MAX_NUM_TIDS) {
+			i80211_ctx->dl.ba[tid].amsdu_supported =
+				ctx->dl.ba[tid].amsdu_supported;
+			i80211_ctx->dl.ba[tid].ba_policy = ctx->dl.ba[tid].ba_policy;
+			i80211_ctx->dl.ba[tid].buffer_size =
+				ctx->dl.ba[tid].buffer_size;
+			i80211_ctx->dl.ba[tid].timeout = ctx->dl.ba[tid].timeout;
+			i80211_ctx->dl.ba[tid].ext_no_frag =
+				ctx->dl.ba[tid].ext_no_frag;
+			i80211_ctx->dl.ba[tid].extfrag_level =
+				ctx->dl.ba[tid].extfrag_level;
+			i80211_ctx->dl.ba[tid].ext_buffer_size =
+				ctx->dl.ba[tid].ext_buffer_size;
+		}
+
+		for_each_set_bit(tid, ctx->ul.valid_tid_bmap, IEEE80211_MAX_NUM_TIDS) {
+			i80211_ctx->ul.ba[tid].amsdu_supported =
+				ctx->ul.ba[tid].amsdu_supported;
+			i80211_ctx->ul.ba[tid].ba_policy = ctx->ul.ba[tid].ba_policy;
+			i80211_ctx->ul.ba[tid].buffer_size =
+				ctx->ul.ba[tid].buffer_size;
+			i80211_ctx->ul.ba[tid].timeout = ctx->ul.ba[tid].timeout;
+			i80211_ctx->ul.ba[tid].ext_no_frag =
+				ctx->ul.ba[tid].ext_no_frag;
+			i80211_ctx->ul.ba[tid].extfrag_level =
+				ctx->ul.ba[tid].extfrag_level;
+				i80211_ctx->ul.ba[tid].ext_buffer_size =
+					ctx->ul.ba[tid].ext_buffer_size;
+		}
+	}
+
+	/* Vendor context is added as Inter-AP Communication TLVs since no upper layer
+	 * deals with it; it shall be transferred as such to the candidate AP MLD.
+	 */
+	ath12k_smd_ctx_set_vendor_tlv(ctx, i80211_ctx);
+}
+
 void ath12k_smd_update_ctx_to_stack(struct ath12k_smd_info *smd_info,
 				    struct ath12k_smd_ctx_req *req)
-{}
+{
+	struct ath12k_sta *ahsta = container_of(smd_info, struct ath12k_sta, smd_info);
+	struct ieee80211_smd_ctx *i80211_ctx = NULL;
+	struct sk_buff *mmpdu = req->mmpdu;
+	struct wireless_skb_ext *ctx_ext;
+	struct ath12k_base *ab;
+
+	ab = ahsta->ahvif->deflink.ar->ab;
+
+	ctx_ext = skb_ext_add(mmpdu, SKB_EXT_WIRELESS);
+	if (!ctx_ext) {
+		ath12k_err(ab, "Failed to allocate space for SMD ctx in skb_ext");
+		goto deliver;
+	}
+
+	memset(ctx_ext, 0, sizeof(*ctx_ext));
+	i80211_ctx = &ctx_ext->uhr_smd_ctx;
+
+	ath12k_smd_ctx_to_ieee80211_ctx(&req->ctx, i80211_ctx);
+
+deliver:
+	rcu_read_lock();
+	ieee80211_rx_ni(ahsta->ahvif->ah->hw, mmpdu);
+	rcu_read_unlock();
+
+	if (i80211_ctx)
+		kfree(i80211_ctx->drv_ctx);
+}
+
+static void ath12k_smd_ctx_hw_completion(struct ath12k_smd_info *smd_info,
+					 struct ath12k_smd_ctx_req *req,
+					 bool tx, u8 tid)
+{
+	/* MGMT TID cb() is agreed to be the last TID cb() */
+	if ((tx && tid != ATH12K_SMD_TX_MGMT_TID) ||
+	    (!tx && tid != ATH12K_SMD_RX_MGMT_TID))
+		return;
+
+	spin_lock_bh(&req->lock);
+
+	if (tx) {
+		req->tx_done = true;
+		bitmap_and(req->ctx.dl.valid_tid_bmap, req->ctx.dl.valid_tid_bmap,
+			   req->ctx.dl.completed_tid_bmap, IEEE80211_MAX_NUM_TIDS);
+	} else {
+		req->rx_done = true;
+		bitmap_and(req->ctx.ul.valid_tid_bmap, req->ctx.ul.valid_tid_bmap,
+			   req->ctx.ul.completed_tid_bmap, IEEE80211_MAX_NUM_TIDS);
+	}
+
+	if (!req->tx_done || !req->rx_done) {
+		spin_unlock_bh(&req->lock);
+		return;
+	}
+
+	smd_info->latest_ctx_ts = ktime_get();
+	req->handler(smd_info, req);
+	memcpy(&smd_info->latest_ctx, &req->ctx, sizeof(req->ctx));
+	smd_info->latest_ctx_valid = true;
+
+	spin_unlock_bh(&req->lock);
+
+	kfree(req);
+	smd_info->current_req = NULL;
+	smd_info->ctx_inflight = false;
+}
 
 u16 ath12k_smd_ctx_get_rx_ba_bufsize(struct ath12k_base *ab, struct ath12k_hw *ah,
 				     const u8 *peer_addr, u8 tid, u16 orig_ba_win_sz)
@@ -1723,6 +2031,8 @@ static void ath12k_smd_ctx_hw_tx_tid_cb(struct ath12k_dp *dp, void *cb_ctx,
 	/* Mgmt TID */
 	ath12k_smd_ctx_hw_tid_cb_vendor(cb_data, req, true, tid);
 	spin_unlock_bh(&req->lock);
+
+	ath12k_smd_ctx_hw_completion(smd_info, req, true, tid);
 }
 
 static void ath12k_smd_ctx_hw_rx_tid_cb(struct ath12k_dp *dp, void *cb_ctx,
@@ -1863,4 +2173,6 @@ static void ath12k_smd_ctx_hw_rx_tid_cb(struct ath12k_dp *dp, void *cb_ctx,
 	/* Mgmt TID */
 	ath12k_smd_ctx_hw_tid_cb_vendor((void *)reo_status, req, false, tid);
 	spin_unlock_bh(&req->lock);
+
+	ath12k_smd_ctx_hw_completion(smd_info, req, false, tid);
 }
