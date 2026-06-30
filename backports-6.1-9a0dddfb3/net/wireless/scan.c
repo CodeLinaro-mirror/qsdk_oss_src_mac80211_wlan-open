@@ -171,6 +171,8 @@ static inline void bss_ref_put(struct cfg80211_registered_device *rdev,
 		hbss = bss_from_pub(bss->pub.hidden_beacon_bss);
 		hbss->refcount--;
 		if (hbss->refcount == 0) {
+			if (hbss->pub.transmitted_bss)
+				list_del_init(&hbss->pub.nontrans_list);
 			if (hbss->in_rbtree == true) {
 				rb_erase(&hbss->rbn, &rdev->bss_tree);
 				hbss->in_rbtree = false;
@@ -185,6 +187,8 @@ static inline void bss_ref_put(struct cfg80211_registered_device *rdev,
 		tbss = bss_from_pub(bss->pub.transmitted_bss);
 		tbss->refcount--;
 		if (tbss->refcount == 0) {
+			if (tbss->pub.transmitted_bss)
+				list_del_init(&tbss->pub.nontrans_list);
 			if (tbss->in_rbtree == true) {
 				rb_erase(&tbss->rbn, &rdev->bss_tree);
 				tbss->in_rbtree = false;
@@ -195,6 +199,8 @@ static inline void bss_ref_put(struct cfg80211_registered_device *rdev,
 
 	bss->refcount--;
 	if (bss->refcount == 0) {
+		if (bss->pub.transmitted_bss)
+			list_del_init(&bss->pub.nontrans_list);
 		if (bss->in_rbtree == true) {
 			rb_erase(&bss->rbn, &rdev->bss_tree);
 			bss->in_rbtree = false;
