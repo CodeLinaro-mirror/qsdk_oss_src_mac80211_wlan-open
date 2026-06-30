@@ -1348,6 +1348,10 @@ struct ath12k_ba_session_params {
 	bool valid;
 };
 
+struct ath12k_smd_info {
+	struct ath12k_smd_ctx_req *current_req;
+};
+
 struct ath12k_sta {
 	struct ath12k_vif *ahvif;
 	enum hal_pn_type pn_type;
@@ -1405,6 +1409,8 @@ struct ath12k_sta {
 
 	/* Opaque RCU pointer to ath12k_dp_peer */
 	void __rcu *dp_peer;
+
+	struct ath12k_smd_info smd_info;
 };
 
 #define ATH12K_INVALID_RSSI_FULL -1

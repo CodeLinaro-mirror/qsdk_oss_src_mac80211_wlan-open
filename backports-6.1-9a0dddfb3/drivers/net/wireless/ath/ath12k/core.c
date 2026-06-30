@@ -6412,6 +6412,12 @@ int ath12k_core_init(struct ath12k_base *ab)
 		athdbg_if_register(ab);
 #endif
 
+	ret = ath12k_smd_global_init(ab);
+	if (ret) {
+		ath12k_err(ab, "SMD global init failed: %d", ret);
+		goto err;
+	}
+
 	return 0;
 
 err:
@@ -6430,6 +6436,8 @@ void ath12k_core_deinit(struct ath12k_base *ab)
 	if (test_and_clear_bit(__NB_FLAGS_REGISTERED, &ab->me.nb_flags))
 		ath12k_core_me_notifier_unregister_extn(ab);
 #endif
+
+	ath12k_smd_global_deinit();
 
 	if (ath12k_telemetry_ab_agent_delete_handler(ab))
 		ath12k_err(ab, "failed to destroy soc agent\n");
