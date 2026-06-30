@@ -37,6 +37,7 @@
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 #include "qcn_extns/ipa/dp_ipa.h"
 #endif
+#include "smd.h"
 
 struct ath12k_wmi_svc_ready_parse {
 	bool wmi_svc_bitmap_done;
@@ -12639,6 +12640,13 @@ skip_mgmt_stats:
 		   "event mgmt rx freq %d band %d snr %d, rate_idx %d\n",
 		   status->freq, status->band, status->signal,
 		   status->rate_idx);
+
+	if (ath12k_mac_mgmt_need_smd_sta_session_ctx(skb) &&
+	    !ath12k_smd_collect_sta_session_ctx(ar, skb)) {
+		/* frame will be delivered from SMD context collector */
+		rcu_read_unlock();
+		return;
+	}
 
 	ieee80211_rx_ni(ath12k_ar_to_hw(ar), skb);
 

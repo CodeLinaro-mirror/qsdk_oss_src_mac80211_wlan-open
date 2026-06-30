@@ -838,8 +838,10 @@ struct ath12k_dp_arch_ops {
 	int (*dp_peer_fetch_smd_ctx)(struct ath12k_base *ab,
 				     struct ath12k_dp_hw *dp_hw,
 				     struct ath12k_dp_smd_ctx *ctx,
-				     void (*cb)(struct ath12k_dp *dp, void *ctx,
-						struct hal_reo_status *status));
+				     void (*rx_cb)(struct ath12k_dp *dp, void *ctx,
+						   struct hal_reo_status *status),
+				     void (*tx_cb)(struct ath12k_dp *dp, void *ctx,
+						   u8 *addr, u8 tid));
 	int (*dp_qos_queue_setup)(struct ath12k_dp_hw_group *dp_hw_grp,
 				  struct ath12k_dp_peer *dp_peer,
 				  u16 msduq, u16 qos_id);
@@ -1581,11 +1583,14 @@ static inline int
 ath12k_dp_arch_dp_peer_fetch_smd_ctx(struct ath12k_dp *dp,
 				     struct ath12k_dp_hw *dp_hw,
 				     struct ath12k_dp_smd_ctx *ctx,
-				     void (*cb)(struct ath12k_dp *dp, void *ctx,
-						struct hal_reo_status *reo_status))
+				     void (*rx_cb)(struct ath12k_dp *dp, void *ctx,
+						   struct hal_reo_status *reo_status),
+				     void (*tx_cb)(struct ath12k_dp *dp, void *ctx,
+						   u8 *addr, u8 tid))
 {
 	if (dp->arch_ops->dp_peer_fetch_smd_ctx)
-		return dp->arch_ops->dp_peer_fetch_smd_ctx(dp->ab, dp_hw, ctx, cb);
+		return dp->arch_ops->dp_peer_fetch_smd_ctx(dp->ab, dp_hw, ctx,
+							   rx_cb, tx_cb);
 	return 0;
 }
 

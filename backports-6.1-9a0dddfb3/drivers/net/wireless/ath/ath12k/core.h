@@ -1349,6 +1349,11 @@ struct ath12k_ba_session_params {
 };
 
 struct ath12k_smd_info {
+	bool ctx_inflight;
+	u8 st_control;
+	bool latest_ctx_valid;
+	ktime_t latest_ctx_ts;
+	struct ath12k_smd_ctx latest_ctx;
 	struct ath12k_smd_ctx_req *current_req;
 };
 
