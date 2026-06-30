@@ -142,9 +142,8 @@ struct ath12k_vendor_ch_switch_attrs {
  *
  * @QCA_NL80211_VENDOR_SUBCMD_CHAIN_MASK_CHANGED: Vendor event used to notify
  *     userspace whenever the TX or RX chain mask is updated in the firmware.
- *     This event carries no attributes; the updated chain mask values can be
- *     retrieved via the standard wiphy configuration interface after the event
- *     is received by the userspace.
+ *     Event attributes are defined in enum
+ *     qca_wlan_vendor_attr_chain_mask_event.
  *
  * @QCA_NL80211_VENDOR_SUBCMD_SET_MULTI_BSS_PARAM: Vendor subcommand used to
  *	indicate parameters update for multiple BSS to the driver to perform
@@ -1288,6 +1287,25 @@ enum qca_wlan_vendor_attr_afc_event {
 	QCA_WLAN_VENDOR_ATTR_AFC_EVENT_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_AFC_EVENT_MAX =
 	QCA_WLAN_VENDOR_ATTR_AFC_EVENT_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_wlan_vendor_attr_chain_mask_event - Attributes for
+ * %QCA_NL80211_VENDOR_SUBCMD_CHAIN_MASK_CHANGED event.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_CHAIN_MASK_EVENT_HW_IDX: Required u32 attribute.
+ * Hardware (radio) index for which chain mask has changed.
+ * @QCA_WLAN_VENDOR_ATTR_CHAIN_MASK_EVENT_IFINDEX: Optional u32 attribute.
+ * Netdev ifindex that initiated the chain mask update, if known.
+ */
+enum qca_wlan_vendor_attr_chain_mask_event {
+	QCA_WLAN_VENDOR_ATTR_CHAIN_MASK_EVENT_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_CHAIN_MASK_EVENT_HW_IDX = 1,
+	QCA_WLAN_VENDOR_ATTR_CHAIN_MASK_EVENT_IFINDEX = 2,
+
+	QCA_WLAN_VENDOR_ATTR_CHAIN_MASK_EVENT_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_CHAIN_MASK_EVENT_MAX =
+		QCA_WLAN_VENDOR_ATTR_CHAIN_MASK_EVENT_AFTER_LAST - 1,
 };
 
 enum qca_wlan_vendor_attr_reg_params {
@@ -7196,6 +7214,7 @@ enum qca_wlan_vendor_attr_set_multi_bss_param {
 /**
  * ath12k_vendor_event_chain_mask_changed() - Notify userspace of a chain mask change.
  * @ar: per-radio ath12k context for which the chain mask was modified.
+ * @ifindex: netdev ifindex that initiated the chain mask update, or -1.
  *
  * Allocates and sends a %QCA_NL80211_VENDOR_SUBCMD_CHAIN_MASK_CHANGED vendor
  * event over nl80211 so that userspace applications are notified whenever
@@ -7204,7 +7223,7 @@ enum qca_wlan_vendor_attr_set_multi_bss_param {
  * Context: Any context. GFP_ATOMIC allocation; safe to call from non-sleepable
  *          paths.
  */
-void ath12k_vendor_event_chain_mask_changed(struct ath12k *ar);
+void ath12k_vendor_event_chain_mask_changed(struct ath12k *ar, int ifindex);
 
 /**
  * enum qca_wlan_vendor_rf_path_mode - RF path configuration modes used as

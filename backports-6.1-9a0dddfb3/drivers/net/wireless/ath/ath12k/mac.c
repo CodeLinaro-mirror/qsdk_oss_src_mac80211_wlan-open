@@ -17912,7 +17912,7 @@ static void ath12k_mac_handle_agile_cac_on_chainmask_change(struct ath12k *ar)
 }
 
 static int __ath12k_set_antenna(struct ath12k *ar, u32 tx_ant, u32 rx_ant,
-				bool is_dynamic)
+				bool is_dynamic, int ifindex)
 {
 	struct ath12k_hw *ah = ath12k_ar_to_ah(ar);
 	int ret;
@@ -17964,7 +17964,7 @@ static int __ath12k_set_antenna(struct ath12k *ar, u32 tx_ant, u32 rx_ant,
 
 	if (is_dynamic) {
 		ath12k_mac_handle_agile_cac_on_chainmask_change(ar);
-		ath12k_vendor_event_chain_mask_changed(ar);
+		ath12k_vendor_event_chain_mask_changed(ar, ifindex);
 	}
 
 	return 0;
@@ -18965,7 +18965,12 @@ int ath12k_mac_start(struct ath12k *ar)
 		}
 	}
 
-	__ath12k_set_antenna(ar, ar->cfg_tx_chainmask, ar->cfg_rx_chainmask, false);
+	/* Since the chain mask is not updated dynamically, pass ATH12K_IFINDEX_DEFAULT
+	 * as the ifindex. The ifindex is not used when dynamic chain mask update is
+	 * disabled.
+	 */
+	__ath12k_set_antenna(ar, ar->cfg_tx_chainmask, ar->cfg_rx_chainmask,
+			     false, ATH12K_IFINDEX_DEFAULT);
 
 	/* TODO: Do we need to enable ANI? */
 
@@ -21362,7 +21367,7 @@ int ath12k_mac_op_get_antenna(struct ieee80211_hw *hw, u32 *tx_ant, u32 *rx_ant,
 EXPORT_SYMBOL(ath12k_mac_op_get_antenna);
 
 int ath12k_mac_op_set_antenna(struct ieee80211_hw *hw, u32 tx_ant, u32 rx_ant,
-			      u8 radio_id, bool is_dynamic)
+			      u8 radio_id, bool is_dynamic, int ifindex)
 {
 	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
 	struct ath12k *ar;
@@ -21374,7 +21379,8 @@ int ath12k_mac_op_set_antenna(struct ieee80211_hw *hw, u32 tx_ant, u32 rx_ant,
 	for_each_ar(ah, ar, i) {
 		if ((radio_id != 255) && (radio_id != i))
 			continue;
-		ret = __ath12k_set_antenna(ar, tx_ant, rx_ant, is_dynamic);
+		ret = __ath12k_set_antenna(ar, tx_ant, rx_ant, is_dynamic,
+					   ifindex);
 		if (ret)
 			break;
 	}
