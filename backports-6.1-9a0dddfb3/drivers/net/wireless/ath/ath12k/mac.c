@@ -14679,8 +14679,10 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 	if (old_state == IEEE80211_STA_NOTEXIST &&
 	    new_state == IEEE80211_STA_NONE) {
 		if (!ahsta->links_map) {
-			struct ath12k_ba_session_params rx_ba_save[ATH12K_SMD_NUM_TIDS];
-			struct ath12k_ba_session_params tx_ba_save[ATH12K_SMD_NUM_TIDS];
+			struct ath12k_ba_session_params
+				rx_ba_save[IEEE80211_MAX_NUM_TIDS];
+			struct ath12k_ba_session_params
+				tx_ba_save[IEEE80211_MAX_NUM_TIDS];
 
 			/* Preserve BA params for SMD target sta populated at
 			 * EXECUTE time. The memset below resets the whole ahsta;
@@ -14692,6 +14694,7 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 			memcpy(tx_ba_save, ahsta->tx_ba_params, sizeof(tx_ba_save));
 
 			memset(ahsta, 0, sizeof(*ahsta));
+			spin_lock_init(&ahsta->ba_lock);
 			wiphy_work_init(&ahsta->set_4addr_wk, ath12k_sta_set_4addr_wk);
 
 			memcpy(ahsta->rx_ba_params, rx_ba_save, sizeof(rx_ba_save));
@@ -14797,10 +14800,12 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 			}
 		}
 
-		for (tid = 0; tid < ATH12K_SMD_NUM_TIDS; tid++) {
+		spin_lock_bh(&ahsta->ba_lock);
+		for (tid = 0; tid < IEEE80211_MAX_NUM_TIDS; tid++) {
 			ahsta->tx_ba_params[tid].valid = false;
 			ahsta->rx_ba_params[tid].valid = false;
 		}
+		spin_unlock_bh(&ahsta->ba_lock);
 	}
 
 	if (old_state == IEEE80211_STA_AUTH &&
@@ -14955,6 +14960,15 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 				}
 			}
 		}
+	}
+
+	if (old_state == IEEE80211_STA_AUTHORIZED && new_state == IEEE80211_STA_ASSOC) {
+		spin_lock_bh(&ahsta->ba_lock);
+		for (tid = 0; tid < IEEE80211_MAX_NUM_TIDS; tid++) {
+			ahsta->tx_ba_params[tid].valid = false;
+			ahsta->rx_ba_params[tid].valid = false;
+		}
+		spin_unlock_bh(&ahsta->ba_lock);
 	}
 
 ml_station_remove:
@@ -21373,11 +21387,14 @@ static int ath12k_mac_ampdu_action(struct ieee80211_hw *hw,
 			ath12k_dbg(ar->ab, ATH12K_DBG_SMD,
 				   "Rx AMPDU action %d: setting Rx BA params\n",
 				   params->action);
+			spin_lock_bh(&ahsta->ba_lock);
 			ahsta->rx_ba_params[params->tid].buf_size = params->buf_size;
 			ahsta->rx_ba_params[params->tid].ssn      = params->ssn;
 			ahsta->rx_ba_params[params->tid].timeout  = params->timeout;
 			ahsta->rx_ba_params[params->tid].amsdu    = params->amsdu;
+			ahsta->rx_ba_params[params->tid].policy = params->policy;
 			ahsta->rx_ba_params[params->tid].valid    = true;
+			spin_unlock_bh(&ahsta->ba_lock);
 		}
 		break;
 	case IEEE80211_AMPDU_RX_STOP:
@@ -21385,8 +21402,10 @@ static int ath12k_mac_ampdu_action(struct ieee80211_hw *hw,
 			   "Rx AMPDU action %d: resetting Rx BA params\n",
 			   params->action);
 		ret = ath12k_dp_rx_ampdu_stop(ar, params, link_id);
+		spin_lock_bh(&ahsta->ba_lock);
 		memset(&ahsta->rx_ba_params[params->tid], 0,
 		       sizeof(ahsta->rx_ba_params[params->tid]));
+		spin_unlock_bh(&ahsta->ba_lock);
 		break;
 	case IEEE80211_AMPDU_TX_STOP_CONT:
 	case IEEE80211_AMPDU_TX_STOP_FLUSH:
@@ -21395,8 +21414,10 @@ static int ath12k_mac_ampdu_action(struct ieee80211_hw *hw,
 			   "Tx AMPDU action %d: resetting Tx BA params\n",
 			   params->action);
 		/* Use Tx BA Stop notification to reset stored BA params */
+		spin_lock_bh(&ahsta->ba_lock);
 		memset(&ahsta->tx_ba_params[params->tid], 0,
 		       sizeof(ahsta->tx_ba_params[params->tid]));
+		spin_unlock_bh(&ahsta->ba_lock);
 		fallthrough;
 	case IEEE80211_AMPDU_TX_START:
 	case IEEE80211_AMPDU_TX_OPERATIONAL:

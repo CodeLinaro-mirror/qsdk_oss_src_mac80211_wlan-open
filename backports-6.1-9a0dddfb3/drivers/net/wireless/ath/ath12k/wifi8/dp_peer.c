@@ -1576,7 +1576,7 @@ int ath12k_wifi8_peer_tx_tid_sn_reset(struct ath12k_base *ab,
 
 	spin_lock_bh(&tx_flow_info->tx_q_lock);
 
-	for (tid = 0; tid < ATH12K_SMD_NUM_TIDS; tid++) {
+	for (tid = 0; tid < ATH12K_MAX_NUM_DATA_TIDS; tid++) {
 		sw_mpduq_ptr = tx_flow_info->tid_info[tid].mpduq;
 		if (!sw_mpduq_ptr)
 			continue;

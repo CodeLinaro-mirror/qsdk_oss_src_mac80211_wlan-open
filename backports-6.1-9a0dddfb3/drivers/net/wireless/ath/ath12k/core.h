@@ -1338,12 +1338,13 @@ enum ath12k_smd_tid {
 	ATH12K_SMD_RX_MGMT_TID = 16,
 };
 
-#define ATH12K_SMD_NUM_TIDS WMI_SMD_NUM_TIDS
 struct ath12k_ba_session_params {
+	u8 tid;
 	u16  buf_size;
 	u16  ssn;
 	u16  timeout;
 	bool amsdu;
+	bool policy;
 	bool valid;
 };
 
@@ -1398,8 +1399,9 @@ struct ath12k_sta {
 #endif
 	u16 free_logical_idx_map;
 
-	struct ath12k_ba_session_params rx_ba_params[ATH12K_SMD_NUM_TIDS];
-	struct ath12k_ba_session_params tx_ba_params[ATH12K_SMD_NUM_TIDS];
+	spinlock_t ba_lock; /* protects ba_params arrays */
+	struct ath12k_ba_session_params rx_ba_params[IEEE80211_MAX_NUM_TIDS];
+	struct ath12k_ba_session_params tx_ba_params[IEEE80211_MAX_NUM_TIDS];
 
 	/* Opaque RCU pointer to ath12k_dp_peer */
 	void __rcu *dp_peer;

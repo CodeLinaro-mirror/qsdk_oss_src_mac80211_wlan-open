@@ -870,7 +870,7 @@ int ath12k_wifi8_peer_rx_tid_svld_reset(struct ath12k_base *ab,
 		ath12k_warn(ab, "SMD SVLD reset: peer %pM not found\n", peer_addr);
 		return -ENOENT;
 	}
-	for (tid = 0; tid < ATH12K_SMD_NUM_TIDS; tid++) {
+	for (tid = 0; tid < ATH12K_MAX_NUM_DATA_TIDS; tid++) {
 		rx_tid = &dp_peer->rx_tid[tid];
 		if (!rx_tid->active)
 			continue;
