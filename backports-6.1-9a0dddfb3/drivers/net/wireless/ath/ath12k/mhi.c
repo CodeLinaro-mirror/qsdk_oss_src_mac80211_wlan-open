@@ -274,7 +274,6 @@ static void ath12k_mhi_op_write_reg(struct mhi_controller *mhi_cntrl,
 int ath12k_mhi_register(struct ath12k_pci *ab_pci)
 {
 	struct ath12k_base *ab = ab_pci->ab;
-	const struct ath12k_hw_params *hw_params = ab->hw_params;
 	struct mhi_controller *mhi_ctrl;
 	unsigned int board_id;
 	int ret, idx = 0;
@@ -292,15 +291,15 @@ int ath12k_mhi_register(struct ath12k_pci *ab_pci)
 	mhi_ctrl->cntrl_dev = ab->dev;
 	mhi_ctrl->regs = ab->mem;
 	mhi_ctrl->reg_len = ab->mem_len;
-	mhi_ctrl->rddm_size = hw_params->rddm_size ?: ATH12K_PCI_FW_RDDM_SZ;
-	mhi_ctrl->standard_elf_image = hw_params->fw.std_elf_img;
-	if (hw_params->otp_board_id_register) {
+	mhi_ctrl->rddm_size = ab->hw_params->rddm_size ?: ATH12K_PCI_FW_RDDM_SZ;
+	if (ab->hw_params->otp_board_id_register) {
 		if (!of_property_read_u32(ab->dev->of_node, "qcom,board_id", &board_id) &&
 		    board_id != ATH12K_BOARD_ID_DEFAULT) {
 			board_id = u32_get_bits(board_id, OTP_BOARD_ID_MASK);
 		} else {
 			board_id =
-				ath12k_pci_read32(ab, hw_params->otp_board_id_register);
+				ath12k_pci_read32(ab,
+						  ab->hw_params->otp_board_id_register);
 			board_id = u32_get_bits(board_id, OTP_BOARD_ID_MASK);
 		}
 
@@ -313,11 +312,11 @@ int ath12k_mhi_register(struct ath12k_pci *ab_pci)
 				   "dualmac fw selected for board id: %x\n", board_id);
 		}
 
-		if (hw_params->fw.unified_fw_image)
+		if (ab->hw_params->fw.unified_fw_image)
 			ab_pci->unified_fw_board_id = board_id;
 	}
 
-	if (!hw_params->fw.unified_fw_image && dualmac) {
+	if (!ab->hw_params->fw.unified_fw_image && dualmac) {
 		ab->is_dualmac = true;
 		if (ab->fw.amss_dualmac_data && ab->fw.amss_dualmac_len > 0) {
 			/* use MHI firmware file from firmware-N.bin */
@@ -391,7 +390,7 @@ int ath12k_mhi_register(struct ath12k_pci *ab_pci)
 	mhi_ctrl->read_reg = ath12k_mhi_op_read_reg;
 	mhi_ctrl->write_reg = ath12k_mhi_op_write_reg;
 
-	ret = mhi_register_controller(mhi_ctrl, hw_params->mhi_config);
+	ret = mhi_register_controller(mhi_ctrl, ab->hw_params->mhi_config);
 	if (ret) {
 		ath12k_err(ab, "failed to register to mhi bus, err = %d\n", ret);
 		goto free_controller;
