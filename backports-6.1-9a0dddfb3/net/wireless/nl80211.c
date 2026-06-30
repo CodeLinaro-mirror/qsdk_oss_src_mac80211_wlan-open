@@ -15750,7 +15750,11 @@ static int nl80211_remain_on_channel(struct sk_buff *skb,
 	if (err)
 		return err;
 
-	if (!cfg80211_off_channel_oper_allowed(wdev, chandef.chan)) {
+	if (!cfg80211_off_channel_oper_allowed(wdev, chandef.chan)
+#ifdef CPTCFG_QCN_EXTN
+	    && !wdev->wiphy->allow_scan_on_dfs_chan
+#endif /* CPTCFG_QCN_EXTN */
+	    ) {
 		const struct cfg80211_chan_def *oper_chandef, *compat_chandef;
 
 		oper_chandef = wdev_chandef(wdev, link_id);
