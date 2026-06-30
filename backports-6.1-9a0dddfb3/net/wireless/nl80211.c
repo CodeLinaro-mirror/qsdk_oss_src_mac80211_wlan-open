@@ -1208,6 +1208,7 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_SMD_LINK_TRANSITION_STATE] = { .type = NLA_U8 },
 	[NL80211_ATTR_SMD_STA_LINK_MACS]    = { .type = NLA_NESTED },
 	[NL80211_ATTR_SMD_STA_LINK_MAC]     = { .type = NLA_BINARY, .len = ETH_ALEN },
+	[NL80211_ATTR_SMD_CTX] = { .type = NLA_NESTED },
 };
 
 /* policy for the key attributes */
