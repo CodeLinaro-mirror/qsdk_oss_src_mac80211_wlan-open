@@ -3650,6 +3650,7 @@ static int ath12k_get_vap_cp_attr_len(void)
 
 	payload_size = nla_total_size(sizeof(u32)) +
 		(nla_total_size(sizeof(u64)) * (QCA_VENDOR_ATTR_TELEMETRY_CP_MAX - 1));
+	payload_size += ath12k_get_cp_tx_scan_radio_stats_len();
 
 	return nla_total_size_nested(payload_size);
 }
@@ -7452,6 +7453,16 @@ static int ath12k_send_cp_event(struct ath12k_telemetry_command *cmd,
 	if (!attr) {
 		ath12k_err(ar->ab, "nla nest failure: CP stats\n");
 		return -EINVAL;
+	}
+
+	if (ath12k_scan_radio_supported(ar->pdev)) {
+		ret = ath12k_fill_cp_tx_scan_radio_stats(vendor_event, mgmt_stats);
+		if (ret) {
+			nla_nest_cancel(vendor_event, attr);
+			return ret;
+		}
+		nla_nest_end(vendor_event, attr);
+		return 0;
 	}
 
 	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TELEMETRY_CP_VDEV_ID, vdev_id) ||

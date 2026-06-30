@@ -1884,6 +1884,13 @@ ath12k_dp_smart_mon_enabled(struct ath12k *ar)
 }
 
 static inline void
+ath12k_dp_mon_pdev_rx_scan_radio_stats_reset(struct ath12k_pdev_mon_dp *dp_mon_pdev)
+{
+	memset(&dp_mon_pdev->pdev_mon_dp_extn.rx_scan_radio_stats, 0,
+	       sizeof(dp_mon_pdev->pdev_mon_dp_extn.rx_scan_radio_stats));
+}
+
+static inline void
 ath12k_dp_rx_scan_radio_stats_reset(struct ath12k_hw *ah)
 {
 	int i = 0;
@@ -1897,8 +1904,7 @@ ath12k_dp_rx_scan_radio_stats_reset(struct ath12k_hw *ah)
 			continue;
 
 #ifdef CPTCFG_QCN_EXTN
-		memset(&ar->dp.dp_mon_pdev->pdev_mon_dp_extn, 0,
-		       sizeof(ar->dp.dp_mon_pdev->pdev_mon_dp_extn));
+		ath12k_dp_mon_pdev_rx_scan_radio_stats_reset(ar->dp.dp_mon_pdev);
 #endif /* CPTCFG_QCN_EXTN */
 	}
 	wiphy_unlock(ah->hw->wiphy);
