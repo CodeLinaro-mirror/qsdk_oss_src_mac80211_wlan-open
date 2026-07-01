@@ -2732,6 +2732,7 @@ struct hal_tqm_update_tx_msdu_flow_params {
 	bool update_hard_drop_threshold;
 	bool update_peer_id;
 	bool update_tid;
+	bool flow_valid;
 	bool update_flow_valid;
 	bool update_flow_number;
 	bool update_smd_roaming;
