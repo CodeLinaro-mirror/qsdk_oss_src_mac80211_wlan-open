@@ -14,7 +14,6 @@
 #include "dp_cmn.h"
 #include "ppe.h"
 #include <linux/errno.h>
-#include <linux/rhashtable.h>
 #include "dp_stats.h"
 #include "dp_htt_logger.h"
 #include "dp_ext_desc.h"
@@ -1072,12 +1071,9 @@ struct ath12k_dp {
 
 	struct ath12k_dp_mon *dp_mon;
 
-	/* To synchronize rhash tbl write operation */
-	struct mutex tbl_mtx_lock;
+	/* Hashtable for struct ath12k_dp_link_peer keyed by mac addr */
+	DECLARE_HASHTABLE(link_peer_htbl, ATH12K_DP_LINK_PEER_HASH_BITS);
 
-	/* The rhashtable containing struct ath12k_peer keyed by mac addr */
-	struct rhashtable *rhead_peer_addr;
-	struct rhashtable_params rhash_peer_addr_param;
 	struct ath12k_ppe ppe;
 
 	/*Neighbors Peer list for NAC RSSI*/

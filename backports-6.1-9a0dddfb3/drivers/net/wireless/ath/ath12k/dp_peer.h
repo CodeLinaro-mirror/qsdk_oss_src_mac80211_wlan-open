@@ -97,9 +97,8 @@ struct ath12k_dp_link_peer {
 	/* for reference to ath12k_link_sta */
 	u8 link_id;
 
-	/* peer addr based rhashtable list pointer */
-	struct rhash_head rhash_addr;
-	bool rhash_done;
+	/* peer addr based hashtable list pointer */
+	struct hlist_node hash_addr_node;
 
 	bool is_bridge_peer;
 	u8 hw_link_id;
@@ -297,13 +296,9 @@ struct ath12k_dp_peer *ath12k_dp_peer_find_by_addr_and_sta(struct ath12k_dp_hw *
 struct ath12k_dp_peer *ath12k_dp_peer_create_find(struct ath12k_dp_hw *dp_hw, u8 *addr,
 						  struct ieee80211_sta *sta,
 						  bool mlo_peer);
-struct ath12k_dp_link_peer *
-ath12k_dp_link_peer_find_by_addr(struct ath12k_dp *dp, const u8 *addr);
-int ath12k_dp_link_peer_rhash_tbl_init(struct ath12k_dp *dp);
-void ath12k_dp_link_peer_rhash_tbl_destroy(struct ath12k_dp *dp);
-int ath12k_dp_link_peer_rhash_add(struct ath12k_dp *dp,
+void ath12k_dp_link_peer_htbl_add(struct ath12k_pdev_dp *dp_pdev,
 				  struct ath12k_dp_link_peer *peer);
-int ath12k_dp_link_peer_rhash_delete(struct ath12k_dp *dp,
+void ath12k_dp_link_peer_htbl_delete(struct ath12k_pdev_dp *dp_pdev,
 				     struct ath12k_dp_link_peer *peer);
 struct ath12k_dp_peer *ath12k_dp_peer_find_by_peerid_index(struct ath12k_dp *dp,
 							   struct ath12k_pdev_dp *dp_pdev,

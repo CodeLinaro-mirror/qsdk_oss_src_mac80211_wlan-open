@@ -38,19 +38,6 @@ u16 ath12k_dp_get_peer_based_tcl_metadata(struct ath12k_dp *dp, u16 peer_id,
 	return metadata;
 }
 
-struct ath12k_dp_link_peer *
-ath12k_dp_link_peer_find_by_addr(struct ath12k_dp *dp, const u8 *addr)
-{
-	lockdep_assert_held(&dp->dp_lock);
-
-	if (!dp->rhead_peer_addr)
-		return NULL;
-
-	return rhashtable_lookup_fast(dp->rhead_peer_addr, addr,
-				      dp->rhash_peer_addr_param);
-}
-EXPORT_SYMBOL(ath12k_dp_link_peer_find_by_addr);
-
 static void __ath12k_link_peer_free(struct ath12k_dp_link_peer *peer)
 {
 	kfree(peer->peer_stats.rx_stats);
@@ -113,165 +100,24 @@ void ath12k_peer_map_event(struct ath12k_base *ab, u8 vdev_id, u16 peer_id,
 	ath12k_warn(ab, "unexpected peer map event for %pM\n", mac_addr);
 }
 
-static int ath12k_dp_link_peer_rhash_addr_tbl_init(struct ath12k_dp *dp)
-{
-	struct ath12k_base *ab = dp->ab;
-	struct rhashtable_params *param;
-	struct rhashtable *rhash_addr_tbl;
-	int ret;
-	size_t size;
-
-	lockdep_assert_held(&dp->tbl_mtx_lock);
-
-	if (dp->rhead_peer_addr)
-		return 0;
-
-	size = sizeof(*dp->rhead_peer_addr);
-	rhash_addr_tbl = kzalloc(size, GFP_KERNEL);
-	if (!rhash_addr_tbl)
-		return -ENOMEM;
-
-	param = &dp->rhash_peer_addr_param;
-
-	param->key_offset = offsetof(struct ath12k_dp_link_peer, addr);
-	param->head_offset = offsetof(struct ath12k_dp_link_peer, rhash_addr);
-	param->key_len = sizeof_field(struct ath12k_dp_link_peer, addr);
-	param->automatic_shrinking = true;
-	param->nelem_hint = dp->num_radios * ath12k_core_get_max_peers_per_radio(ab);
-
-	ret = rhashtable_init(rhash_addr_tbl, param);
-	if (ret) {
-		ath12k_warn(ab, "failed to init peer addr rhash table %d\n", ret);
-		goto err_free;
-	}
-
-	if (!dp->rhead_peer_addr)
-		dp->rhead_peer_addr = rhash_addr_tbl;
-	else
-		goto cleanup_tbl;
-
-	return 0;
-
-cleanup_tbl:
-	rhashtable_destroy(rhash_addr_tbl);
-err_free:
-	kfree(rhash_addr_tbl);
-
-	return ret;
-}
-
-int ath12k_dp_link_peer_rhash_tbl_init(struct ath12k_dp *dp)
-{
-	int ret;
-
-	mutex_lock(&dp->tbl_mtx_lock);
-	ret = ath12k_dp_link_peer_rhash_addr_tbl_init(dp);
-	mutex_unlock(&dp->tbl_mtx_lock);
-
-	return ret;
-}
-
-void ath12k_dp_link_peer_rhash_tbl_destroy(struct ath12k_dp *dp)
-{
-	mutex_lock(&dp->tbl_mtx_lock);
-
-	if (!dp->rhead_peer_addr)
-		goto unlock;
-
-	rhashtable_destroy(dp->rhead_peer_addr);
-	kfree(dp->rhead_peer_addr);
-	dp->rhead_peer_addr = NULL;
-
-unlock:
-	mutex_unlock(&dp->tbl_mtx_lock);
-}
-
-static int ath12k_dp_link_peer_rhash_insert(struct ath12k_dp *dp,
-					    struct rhashtable *rtbl,
-					    struct rhash_head *rhead,
-					    struct rhashtable_params *params,
-					    void *key)
-{
-	struct ath12k_peer *tmp;
-
-	lockdep_assert_held(&dp->dp_lock);
-
-	tmp = rhashtable_lookup_get_insert_fast(rtbl, rhead, *params);
-
-	if (!tmp)
-		return 0;
-	else if (IS_ERR(tmp))
-		return PTR_ERR(tmp);
-	else
-		return -EEXIST;
-}
-
-static int ath12k_dp_link_peer_rhash_remove(struct ath12k_dp *dp,
-					    struct rhashtable *rtbl,
-					    struct rhash_head *rhead,
-					    struct rhashtable_params *params)
-{
-	int ret;
-
-	lockdep_assert_held(&dp->dp_lock);
-
-	ret = rhashtable_remove_fast(rtbl, rhead, *params);
-	if (ret && ret != -ENOENT)
-		return ret;
-
-	return 0;
-}
-
-int ath12k_dp_link_peer_rhash_add(struct ath12k_dp *dp,
+void ath12k_dp_link_peer_htbl_add(struct ath12k_pdev_dp *dp_pdev,
 				  struct ath12k_dp_link_peer *peer)
 {
-	int ret;
+	u32 hash;
+	struct ath12k_dp *dp = dp_pdev->dp;
 
 	lockdep_assert_held(&dp->dp_lock);
 
-	if (!dp->rhead_peer_addr)
-		return -EPERM;
-
-	if (peer->rhash_done)
-		return 0;
-
-	ret = ath12k_dp_link_peer_rhash_insert(dp, dp->rhead_peer_addr, &peer->rhash_addr,
-					       &dp->rhash_peer_addr_param, &peer->addr);
-	if (ret) {
-		ath12k_warn(dp, "failed to add peer %pM with id %d in rhash_addr ret %d\n",
-			    peer->addr, peer->peer_id, ret);
-		peer->rhash_done = false;
-	} else {
-		peer->rhash_done = true;
-	}
-
-	return ret;
+	hash = jhash(peer->addr, ETH_ALEN, 0);
+	hash_add(dp->link_peer_htbl, &peer->hash_addr_node, hash);
 }
 
-int ath12k_dp_link_peer_rhash_delete(struct ath12k_dp *dp,
+void ath12k_dp_link_peer_htbl_delete(struct ath12k_pdev_dp *dp_pdev,
 				     struct ath12k_dp_link_peer *peer)
 {
-	int ret;
+	lockdep_assert_held(&dp_pdev->dp->dp_lock);
 
-	lockdep_assert_held(&dp->dp_lock);
-
-	if (!dp->rhead_peer_addr)
-		return -EPERM;
-
-	if (!peer->rhash_done)
-		return 0;
-
-	ret = ath12k_dp_link_peer_rhash_remove(dp, dp->rhead_peer_addr, &peer->rhash_addr,
-					       &dp->rhash_peer_addr_param);
-	if (ret) {
-		ath12k_warn(dp, "failed to remove peer %pM with id %d in rhash_addr ret %d\n",
-			    peer->addr, peer->peer_id, ret);
-		return ret;
-	}
-
-	peer->rhash_done = false;
-
-	return 0;
+	hash_del(&peer->hash_addr_node);
 }
 
 /**
@@ -553,7 +399,7 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ath12k_dp_hw *dp_hw = &ar->ah->dp_hw;
 	struct ath12k_dp_peer *dp_peer;
-	struct ath12k_dp_link_peer *peer, *temp_peer;
+	struct ath12k_dp_link_peer *peer;
 	u16 peerid_index;
 	int ret;
 	u8 *dp_peer_mac = !sta ? addr : sta->addr;
@@ -725,16 +571,7 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 			peer->rssi_mon.cfg = &arvif->rssi_deauth_cfg;
 	}
 
-	/* In case of Split PHY and roaming scenario, pdev idx
-	 * might differ but both the pdev will share same rhash
-	 * table. In that case update the rhash table if link_peer is
-	 * already present
-	 */
-	temp_peer = ath12k_dp_link_peer_find_by_addr(dp, addr);
-	if (temp_peer && temp_peer->hw_link_id != ar->hw_link_id)
-		ath12k_dp_link_peer_rhash_delete(dp, temp_peer);
-
-	ath12k_dp_link_peer_rhash_add(dp, peer);
+	ath12k_dp_link_peer_htbl_add(dp_pdev, peer);
 
 	if (!peer->is_bridge_peer) {
 		ret = ath12k_telemetry_peer_agent_create_handler(ar, peer);
@@ -864,7 +701,7 @@ static void __ath12k_dp_link_peer_unassign(struct ath12k *ar,
 					   struct ath12k_dp_link_vif *link_vif,
 					   u8 *addr)
 {
-	struct ath12k_dp_link_peer *temp_peer;
+	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
 	struct ath12k_dp_peer *dp_peer;
 	int stats_link_id;
 	u16 peerid_index;
@@ -902,10 +739,7 @@ static void __ath12k_dp_link_peer_unassign(struct ath12k *ar,
 		rcu_assign_pointer(dp_hw->dp_peer_list[peerid_index], NULL);
 	}
 
-	/* To handle roaming and split phy scenario */
-	temp_peer = ath12k_dp_link_peer_find_by_addr(dp, addr);
-	if (temp_peer && temp_peer->hw_link_id == ar->hw_link_id)
-		ath12k_dp_link_peer_rhash_delete(dp, peer);
+	ath12k_dp_link_peer_htbl_delete(dp_pdev, peer);
 
 	if (!peer->is_bridge_peer && link_vif) {
 		ret = ath12k_telemetry_peer_agent_delete_handler(ar, peer);
@@ -2825,7 +2659,7 @@ static void ath12k_mac_dp_peer_cleanup_cb(struct ath12k_pdev_dp *dp_pdev,
 		}
 	}
 
-	ath12k_dp_link_peer_rhash_delete(dp, link_peer);
+	ath12k_dp_link_peer_htbl_delete(dp_pdev, link_peer);
 	list_add(&link_peer->list, &ctx->link_peers);
 	spin_unlock_bh(&dp->dp_lock);
 }

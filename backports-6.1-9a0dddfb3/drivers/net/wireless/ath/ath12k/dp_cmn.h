@@ -139,6 +139,9 @@ struct ath12k_dp_hw_link {
 #define ATH12K_DP_PEER_HASH_BITS 11
 #define ATH12K_DP_HW_STATS_REO_IDX 0
 
+/* Hash table size for link peers: 2^11 = 2048 buckets */
+#define ATH12K_DP_LINK_PEER_HASH_BITS 11
+
 struct ath12k_dp_hw {
 	struct ath12k_dp_peer __rcu *dp_peer_list[MAX_DP_PEER_LIST_SIZE];
 	DECLARE_BITMAP(free_peer_id_map, ATH12K_MAX_PEER_ID);
