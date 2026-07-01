@@ -738,8 +738,6 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 
 	list_add(&peer->list, &dp->peers);
 
-	peer->is_assigned = true;
-
 	if (!peer->is_bridge_peer) {
 		ret = ath12k_telemetry_peer_agent_create_handler(ar, peer);
 		if (ret && ret != -EOPNOTSUPP) {
@@ -921,8 +919,6 @@ static void __ath12k_dp_link_peer_unassign(struct ath12k *ar,
 	}
 
 	list_del(&peer->list);
-
-	peer->is_assigned = false;
 }
 
 void ath12k_dp_cp_link_peer_unassign(struct ath12k *ar,
@@ -960,14 +956,6 @@ void ath12k_dp_cp_link_peer_unassign(struct ath12k *ar,
 
 	spin_lock_bh(&dp_hw->peer_hash_lock);
 	spin_lock_bh(&dp->dp_lock);
-
-	if (!peer->is_assigned) {
-		ath12k_link_peer_free(peer);
-		spin_unlock_bh(&dp->dp_lock);
-		spin_unlock_bh(&dp_hw->peer_hash_lock);
-		rcu_read_unlock();
-		return;
-	}
 
 	if (ath12k_dp_link_peer_get_vif(peer)) {
 		ahvif = ath12k_vif_to_ahvif(ath12k_dp_link_peer_get_vif(peer));
@@ -1067,13 +1055,6 @@ void ath12k_dp_link_peer_unassign(struct ath12k *ar, u8 vdev_id, u8 *addr,
 	}
 
 	spin_lock_bh(&dp->dp_lock);
-	if (!peer->is_assigned) {
-		ath12k_link_peer_free(peer);
-		spin_unlock_bh(&dp->dp_lock);
-		spin_unlock_bh(&dp_hw->peer_hash_lock);
-		rcu_read_unlock();
-		return;
-	}
 
 	__ath12k_dp_link_peer_unassign(ar, dp, dp_hw, peer, link_vif, addr);
 
