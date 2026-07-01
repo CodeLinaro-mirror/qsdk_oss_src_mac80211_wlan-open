@@ -66,6 +66,10 @@ typedef unsigned int __bitwise ieee80211_rx_result;
 	R(RX_DROP_U_UNEXPECTED_STA_4ADDR)	\
 	R(RX_DROP_U_UNEXPECTED_VLAN_MCAST)	\
 	R(RX_DROP_U_NOT_PORT_CONTROL)		\
+	R(RX_DROP_U_UNEXPECTED_4ADDR_FRAME)	\
+	R(RX_DROP_U_BAD_BCN_KEYIDX)		\
+	/* 0x30 */				\
+	R(RX_DROP_U_BAD_MGMT_KEYIDX)		\
 	R(RX_DROP_U_UNKNOWN_ACTION_REJECTED)	\
 /* this line for the trailing \ - add before this */
 
@@ -78,9 +82,11 @@ enum ___mac80211_drop_reason {
 	___RX_QUEUED	= SKB_NOT_DROPPED_YET,
 
 #define ENUM(x) ___ ## x,
+#if LINUX_VERSION_IS_LESS(6, 15, 0)
 	___RX_DROP_MONITOR = SKB_DROP_REASON_SUBSYS_MAC80211_MONITOR <<
 		SKB_DROP_REASON_SUBSYS_SHIFT,
 	MAC80211_DROP_REASONS_MONITOR(ENUM)
+#endif
 
 	___RX_DROP_UNUSABLE = SKB_DROP_REASON_SUBSYS_MAC80211_UNUSABLE <<
 		SKB_DROP_REASON_SUBSYS_SHIFT,
@@ -91,12 +97,27 @@ enum ___mac80211_drop_reason {
 enum mac80211_drop_reason {
 	RX_CONTINUE	 = (__force ieee80211_rx_result)___RX_CONTINUE,
 	RX_QUEUED	 = (__force ieee80211_rx_result)___RX_QUEUED,
+#if LINUX_VERSION_IS_LESS(6, 15, 0)
 	RX_DROP_MONITOR	 = (__force ieee80211_rx_result)___RX_DROP_MONITOR,
+#else
+	RX_DROP_MONITOR	 = (__force ieee80211_rx_result)___RX_DROP_UNUSABLE,
+#endif
 #define DEF(x) x = (__force ieee80211_rx_result)___ ## x,
+#if LINUX_VERSION_IS_LESS(6, 15, 0)
 	MAC80211_DROP_REASONS_MONITOR(DEF)
+#endif
 	MAC80211_DROP_REASONS_UNUSABLE(DEF)
 #undef DEF
 };
+
+#if !LINUX_VERSION_IS_LESS(6, 15, 0)
+/* RX_DROP_M_* are renamed to RX_DROP_U_* from kernel 6.15 onwards;
+ * keep the old names as aliases for source compatibility.
+ */
+#define RX_DROP_M_UNEXPECTED_4ADDR_FRAME RX_DROP_U_UNEXPECTED_4ADDR_FRAME
+#define RX_DROP_M_BAD_BCN_KEYIDX         RX_DROP_U_BAD_BCN_KEYIDX
+#define RX_DROP_M_BAD_MGMT_KEYIDX        RX_DROP_U_BAD_MGMT_KEYIDX
+#endif
 
 enum rx_pkt_type {
 	RX_NETIF_PKTS,

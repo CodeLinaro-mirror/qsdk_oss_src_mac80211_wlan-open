@@ -39,6 +39,17 @@
 
 #define IS_HW_CSUM_NOT_ENABLED(dev)             (!((dev)->features & NETIF_F_HW_CSUM))
 
+#if LINUX_VERSION_IS_LESS(6, 16, 0)
+#define WIFI_TX_STATUS(skb, ctrl_flags) \
+	(((skb)->sk && \
+	  (skb_shinfo(skb)->tx_flags & SKBTX_WIFI_STATUS)) || \
+	 ((ctrl_flags) & IEEE80211_TX_CTL_REQ_TX_STATUS))
+#else
+#define WIFI_TX_STATUS(skb, ctrl_flags) \
+	((((skb)->sk && sk_requests_wifi_status((skb)->sk)) || \
+	  ((ctrl_flags) & IEEE80211_TX_CTL_REQ_TX_STATUS)))
+#endif
+
 static void ieee80211_8023_xmit(struct ieee80211_sub_if_data *sdata,
 				struct net_device *dev, struct sta_info *sta,
 				struct ieee80211_key *key, struct sk_buff *skb,
@@ -3159,14 +3170,11 @@ static struct sk_buff *ieee80211_build_hdr(struct ieee80211_sub_if_data *sdata,
 	}
 
 	if (unlikely(!multicast &&
-		     ((skb->sk &&
-		       skb_shinfo(skb)->tx_flags & SKBTX_WIFI_STATUS) ||
-		      ctrl_flags & IEEE80211_TX_CTL_REQ_TX_STATUS) &&
+		     WIFI_TX_STATUS(skb, ctrl_flags) &&
 		      !(ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD) &&
 		      ieee80211_is_data(fc) && !ieee80211_is_qos_nullfunc(fc))))
 		info_id = ieee80211_store_ack_skb(local, skb, &info_flags,
 						  cookie);
-
 	/*
 	 * If the skb is shared we need to obtain our own copy.
 	 */
@@ -4103,9 +4111,14 @@ static bool ieee80211_xmit_fast(struct ieee80211_sub_if_data *sdata,
 	if (ethertype < ETH_P_802_3_MIN)
 		return false;
 
+#if LINUX_VERSION_IS_LESS(6, 16, 0)
 	/* don't handle TX status request here either */
 	if (skb->sk && skb_shinfo(skb)->tx_flags & SKBTX_WIFI_STATUS)
 		return false;
+#else
+	if (skb->sk && sk_requests_wifi_status(skb->sk))
+		return false;
+#endif
 
 	if (hdr->frame_control & cpu_to_le16(IEEE80211_STYPE_QOS_DATA)) {
 		tid = skb->priority & IEEE80211_QOS_CTL_TAG1D_MASK;
@@ -5165,9 +5178,7 @@ static void ieee80211_8023_xmit(struct ieee80211_sub_if_data *sdata,
 			memcpy(IEEE80211_SKB_CB(seg), info, sizeof(*info));
 	}
 
-	if (unlikely(((skb->sk &&
-		       skb_shinfo(skb)->tx_flags & SKBTX_WIFI_STATUS) ||
-		     ((ctrl_flags & IEEE80211_TX_CTL_REQ_TX_STATUS) && !multicast)) &&
+	if (unlikely(((WIFI_TX_STATUS(skb, ctrl_flags) && !multicast)) &&
 		     !ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD))) {
 		info->status_data = ieee80211_store_ack_skb(local, skb,
 							    &info->flags, cookie);
@@ -5227,9 +5238,7 @@ void ieee80211_8023_xmit_ap(struct ieee80211_sub_if_data *sdata,
 	memset(info, 0, sizeof(*info));
 	info->flags |= info_flags;
 
-	if (unlikely((skb->sk &&
-		      skb_shinfo(skb)->tx_flags & SKBTX_WIFI_STATUS) ||
-		     ((ctrl_flags & IEEE80211_TX_CTL_REQ_TX_STATUS) && !multicast))) {
+	if (unlikely((WIFI_TX_STATUS(skb, ctrl_flags) && !multicast))) {
 		info->status_data = ieee80211_store_ack_skb(local, skb,
 							    &info->flags, cookie);
 		if (info->status_data >= 0)

@@ -4787,6 +4787,7 @@ ieee80211_rx_h_mgmt(struct ieee80211_rx_data *rx)
 	return RX_QUEUED;
 }
 
+#if LINUX_VERSION_IS_LESS(6, 15, 0)
 static void ieee80211_rx_cooked_monitor(struct ieee80211_rx_data *rx,
 					struct ieee80211_rate *rate,
 					ieee80211_rx_result reason)
@@ -4862,6 +4863,7 @@ static void ieee80211_rx_cooked_monitor(struct ieee80211_rx_data *rx,
  out_free_skb:
 	kfree_skb_reason(skb, (__force u32)reason);
 }
+#endif
 
 static void ieee80211_rx_handlers_result(struct ieee80211_rx_data *rx,
 					 ieee80211_rx_result res)
@@ -4891,7 +4893,9 @@ static void ieee80211_rx_handlers_result(struct ieee80211_rx_data *rx,
 	if (status->encoding == RX_ENC_LEGACY)
 		rate = &sband->bitrates[status->rate_idx];
 
+#if LINUX_VERSION_IS_LESS(6, 15, 0)
 	ieee80211_rx_cooked_monitor(rx, rate, res);
+#endif
 }
 
 static void ieee80211_rx_handlers(struct ieee80211_rx_data *rx,
