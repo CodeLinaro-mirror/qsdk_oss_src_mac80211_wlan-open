@@ -187,6 +187,11 @@ static void ath12k_wifi7_umac_reset_handle_post_reset_start(struct ath12k_base *
 	ath12k_dp_rx_reo_cmd_list_cleanup(ab);
 
 	ath12k_dp_tid_cleanup(ab);
+
+	/* Reprogram PCP-TID map and TID map precedence after UMAC reset */
+	ath12k_hal_tx_set_pcp_tid_map(ab, ab->ag->dp_hw_grp->pcp_tid_map);
+	ath12k_hal_tx_set_tid_map_precedence(ab,
+					     ab->ag->dp_hw_grp->tid_map_precedence);
 }
 
 void ath12k_wifi7_umac_reset_handle_post_reset_start_wrapper(struct ath12k_base *ab)
