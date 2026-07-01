@@ -7,6 +7,7 @@
 #include "../debug.h"
 #include "../hif.h"
 #include "hal_rx.h"
+#include "dp.h"
 
 static
 void ath12k_wifi8_hal_reo_set_desc_hdr(struct hal_desc_header *hdr,
@@ -1293,6 +1294,8 @@ static void ath12k_wifi8_reo_dest_ring_ctrl_setup(struct ath12k_base *ab,
 void ath12k_wifi8_hal_reo_hw_setup(struct ath12k_base *ab)
 {
 	struct ath12k_hal *hal = &ab->hal;
+	struct ath12k_dp_wifi8 *dp_wifi8 =
+			ath12k_get_dp_wifi8(ath12k_ab_to_dp(ab));
 	u32 reo_base = HAL_SEQ_WCSS_UMAC_REO_REG;
 	u32 val, VI_reorder_timeout;
 
@@ -1525,6 +1528,56 @@ void ath12k_wifi8_hal_reo_hw_setup(struct ath12k_base *ab)
 	val = ath12k_hif_read32(ab, reo_base + HAL_REO1_DESCRIPTOR_TYPE_ROAMING);
 	val &= ~HAL_REO1_DESC_TYPE_PPE_FOR_SW_ROAMING1;
 	ath12k_hif_write32(ab, reo_base + HAL_REO1_DESCRIPTOR_TYPE_ROAMING, val);
+
+	/* Enable backpressure-drop for REO2SW and REO2PPE rings.
+	 *
+	 * Register: UMAC_REO_R0_BACKPRESSURE_DROP_EN (offset 0x1C98,
+	 *           full address 0xF23C98, reset state 0x00000000)
+	 *
+	 * When a bit is set, REO detects backpressure for that ring and
+	 * routes packets to the buffer-release ring (configured via
+	 * BACKPRESSURE_BUFFER_RELEASE_RING_SELECT) instead of stalling.
+	 * This prevents the Reo_dst ring from filling up (Ring Usage=100%)
+	 * and causing a complete RX stall.
+	 *
+	 * Bits enabled:
+	 *   REO2SW0..REO2SW11 (bits  0-11) : all SW destination rings
+	 *   REO2PPE, REO2PPE1, REO2PPE2    : PPE offload rings
+	 */
+	val = ath12k_hif_read32(ab, reo_base + HAL_REO_BACKPRESSURE_DROP_EN);
+	val |= HAL_REO_BP_DROP_REO2SW_ALL | HAL_REO_BP_DROP_REO2PPE_ALL;
+	ath12k_hif_write32(ab, reo_base + HAL_REO_BACKPRESSURE_DROP_EN, val);
+
+	/* Configure buffer-release ring selection for backpressure-dropped packets.
+	 *
+	 * Register IX_0: UMAC_REO_R0_BACKPRESSURE_BUFFER_RELEASE_RING_SELECT_IX_0
+	 *   (offset 0x1C9C, full address 0xF23C9C, reset state 0x00000000)
+	 *   Each 2-bit field selects the buffer-release ring for the corresponding
+	 *   REO destination ring. Covers REO2SW0..REO2SW11, REO2FW, REO2FW_MGMT,
+	 *   REO2PPE, REO2PPE1.
+	 *
+	 * Register IX_1: UMAC_REO_R0_BACKPRESSURE_BUFFER_RELEASE_RING_SELECT_IX_1
+	 *   (offset 0x1CA0, full address 0xF23CA0, reset state 0x00000000)
+	 *   Covers REO2PPE2 only (bits 1:0).
+	 *
+	 * Routing policy:
+	 *   REO2SW rings  → always SW0 buffer pool (HAL_REO_BP_REL_RING_SW0 = 0)
+	 *   REO2PPE rings → SW0 by default; dedicated DS pool
+	 *                   (HAL_REO_BP_REL_RING_DS = 2) when
+	 *                   dp_ppe2wbm_use_dedicated_pool is enabled
+	 */
+
+	u8 ppe_ring = dp_wifi8->dp_ppe2wbm_use_dedicated_pool ?
+		      HAL_REO_BP_REL_RING_DS : HAL_REO_BP_REL_RING_SW0;
+	ath12k_hif_write32(ab,
+			   reo_base +
+			   HAL_REO_BACKPRESSURE_BUFFER_RELEASE_RING_SELECT_IX_0,
+			   HAL_REO_BP_REL_SEL_IX0_VAL(ppe_ring));
+
+	ath12k_hif_write32(ab,
+			   reo_base +
+			   HAL_REO_BACKPRESSURE_BUFFER_RELEASE_RING_SELECT_IX_1,
+			   HAL_REO_BP_REL_SEL_IX1_VAL(ppe_ring));
 }
 
 void ath12k_wifi8_hal_reo_shared_qaddr_cache_clear(struct ath12k_base *ab)
