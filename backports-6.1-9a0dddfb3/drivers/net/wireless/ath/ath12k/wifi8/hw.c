@@ -440,7 +440,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.def_num_link = 0,
 		.max_mlo_peer = 256,
 
-		.otp_board_id_register = QCN9274_QFPROM_RAW_RFA_PDET_ROW13_LSB,
+		.otp_board_id_register = QCN9625_QFPROM_RAW_FEATURE_CONFIG_ROW4_LSB,
 
 		.supports_sta_ps = false,
 
@@ -565,7 +565,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.def_num_link = 0,
 		.max_mlo_peer = 256,
 
-		.otp_board_id_register = QCN9274_QFPROM_RAW_RFA_PDET_ROW13_LSB,
+		.otp_board_id_register = QCN9625_QFPROM_RAW_FEATURE_CONFIG_ROW4_LSB,
 
 		.supports_sta_ps = false,
 
@@ -687,7 +687,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.def_num_link = 0,
 		.max_mlo_peer = 256,
 
-		.otp_board_id_register = QCN9274_QFPROM_RAW_RFA_PDET_ROW13_LSB,
+		.otp_board_id_register = QCN9625_QFPROM_RAW_FEATURE_CONFIG_ROW4_LSB,
 
 		.supports_sta_ps = false,
 
