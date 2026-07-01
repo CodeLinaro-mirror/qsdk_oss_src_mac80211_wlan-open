@@ -1072,9 +1072,6 @@ struct ath12k_dp {
 
 	struct ath12k_dp_mon *dp_mon;
 
-	/* Linked list of struct ath12k_dp_link_peer */
-	struct list_head peers;
-
 	/* To synchronize rhash tbl write operation */
 	struct mutex tbl_mtx_lock;
 
