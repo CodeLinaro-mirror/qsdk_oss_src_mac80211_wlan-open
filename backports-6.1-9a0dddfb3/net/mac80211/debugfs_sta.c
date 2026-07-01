@@ -1774,16 +1774,7 @@ void ieee80211_sta_debugfs_remove(struct sta_info *sta)
 
 void ieee80211_link_sta_debugfs_add(struct link_sta_info *link_sta)
 {
-	/*
-	 * Silently skip if the STA has not been inserted yet — debugfs_dir
-	 * is set up by ieee80211_sta_debugfs_add() in sta_info_insert_finish(),
-	 * which will then call this function for all pre-allocated links.
-	 */
-	if (!link_sta->sta->debugfs_dir)
-		return;
-
-	/* Unexpected duplicate add — link debugfs already exists. */
-	if (WARN_ON(link_sta->debugfs_dir))
+	if (WARN_ON(!link_sta->sta->debugfs_dir))
 		return;
 
 	/* For non-MLO, leave the files in the main directory. */
