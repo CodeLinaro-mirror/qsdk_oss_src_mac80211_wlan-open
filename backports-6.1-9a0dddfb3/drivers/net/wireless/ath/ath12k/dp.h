@@ -1139,6 +1139,7 @@ struct ath12k_dp {
 	u8 htt_tx_mon_cfg_version;
 
 	struct ath12k_dbg_dp_svc_sort_stats svc_sort_stats;
+	u8 *rx_status_buf[DP_TOTAL_REO_DST_RINGS];
 
 	/* Keep Last */
 	u8 arch_data[] __aligned(sizeof(void *));
@@ -2091,6 +2092,8 @@ void ath12k_dp_umac_tx_desc_cleanup(struct ath12k_base *ab);
 void ath12k_dp_umac_rx_desc_cleanup(struct ath12k_base *ab);
 void ath12k_dp_srng_hw_disable(struct ath12k_base *ab, struct dp_srng *ring);
 void ath12k_dp_init_ring_size(struct ath12k_base *ab);
+void ath12k_status_bufs_init(struct ath12k_dp *dp);
+void ath12k_status_bufs_deinit(struct ath12k_dp *dp);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 void ath12k_ppeds_reinject_handler(struct ath12k_base *ab,
 				   struct ath12k_ppeds_tx_desc_info *tx_desc,

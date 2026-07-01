@@ -167,8 +167,7 @@ void ath12k_wifi8_dp_smd_clear_old_peer_rx_lut(struct ath12k_dp *dp,
 int ath12k_wifi8_dp_rx_process_reo_rings(struct ath12k_dp *dp,
 					 struct hal_srng *srng,
 					 struct hal_rx_spd_data *rx_status_desc,
-					 int ring_id, int budget,
-					 int cpu_id);
+					 int ring_id, int budget);
 void ath12k_wifi8_dp_rx_h_undecap_nwifi(struct ath12k_pdev_dp *dp_pdev,
 					struct sk_buff *msdu,
 					enum hal_encrypt_type enctype,

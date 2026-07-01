@@ -1248,7 +1248,6 @@ int ath12k_wifi7_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 	struct dp_rxdma_ring *rx_ring = &dp->rx_refill_buf_ring;
 	struct hal_srng *refill_srng;
 	struct ath12k_dp *partner_dp;
-	int rx_status_idx = smp_processor_id();
 
 	srng = &dp->hal->srng_list[dp->reo_dst_ring[ring_id].ring_id];
 
@@ -1267,8 +1266,7 @@ int ath12k_wifi7_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 	if (valid_entries > budget)
 		valid_entries = budget;
 
-	rx_status_desc =
-		(struct hal_rx_spd_data *)dp_hw_grp->rx_status_buf[rx_status_idx];
+	rx_status_desc = (struct hal_rx_spd_data *)dp->rx_status_buf[ring_id];
 
 	ath12k_dp_srng_dst_invalidate_entries(dp, srng, valid_entries);
 

@@ -2154,8 +2154,9 @@ static bool check_sg_termination(struct hal_srng *srng,
 int ath12k_wifi8_dp_rx_process_reo_rings(struct ath12k_dp *dp,
 					 struct hal_srng *srng,
 					 struct hal_rx_spd_data *rx_status_desc,
-					 int ring_id, int budget, int cpu_id)
+					 int ring_id, int budget)
 {
+	int cpu_id = smp_processor_id();
 	struct ath12k_base *ab = dp->ab;
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
 	struct hal_reo_dest_ring *hw_rx_desc = NULL;
@@ -2320,14 +2321,12 @@ int ath12k_wifi8_dp_rx_process_reo_rings(struct ath12k_dp *dp,
 int ath12k_wifi8_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 			       struct napi_struct *napi, int budget)
 {
-	int cpu_id = smp_processor_id();
 	struct hal_srng *srng = &dp->hal->srng_list[dp->reo_dst_ring[ring_id].ring_id];
-	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
 	struct hal_rx_spd_data *rx_status_desc =
-		(struct hal_rx_spd_data *)dp_hw_grp->rx_status_buf[cpu_id];
+		(struct hal_rx_spd_data *)dp->rx_status_buf[ring_id];
 	int total_msdu_reaped =
 		ath12k_wifi8_dp_rx_process_reo_rings(dp, srng, rx_status_desc,
-						     ring_id, budget, cpu_id);
+						     ring_id, budget);
 
 	dp->device_stats.reo_rx[ring_id][dp->device_id] += total_msdu_reaped;
 

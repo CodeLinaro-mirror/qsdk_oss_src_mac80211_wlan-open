@@ -400,6 +400,8 @@ static int ath12k_wifi7_dp_op_mlo_init(struct ath12k_dp *dp)
 {
 	int ret;
 
+	ath12k_status_bufs_init(dp);
+
 	ath12k_dp_partner_cc_init(dp->ab);
 
 	ret = ath12k_wifi7_dp_rx_flow_fse_cache_operation(dp->ab,
@@ -407,6 +409,7 @@ static int ath12k_wifi7_dp_op_mlo_init(struct ath12k_dp *dp)
 							  NULL);
 	if (ret) {
 		ath12k_err(dp->ab, "Unable to invalidate Full cache ret %d", ret);
+		ath12k_status_bufs_deinit(dp);
 		return ret;
 	}
 
@@ -437,6 +440,7 @@ static void ath12k_wifi7_dp_op_device_deinit(struct ath12k_dp *dp)
 #endif
 
 	ath12k_hif_ext_irq_cleanup(dp->ab);
+	ath12k_status_bufs_deinit(dp);
 }
 
 static struct ath12k_dp_hw_group *ath12k_wifi7_dp_hw_group_alloc(void)

@@ -1725,15 +1725,14 @@ int ath12k_wifi8_dp_rx_process_err(struct ath12k_dp *dp,
 				   struct napi_struct *napi, int budget)
 
 {
-	int cpu_id = DP_REO_ERR_RINGS_MAX + smp_processor_id();
+	int rx_status_id = DP_REO_DST_RING_MAX;
 	int ring_id = dp->reo_except_ring.ring_id;
 	struct hal_srng *srng = &dp->hal->srng_list[ring_id];
-	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
 	struct hal_rx_spd_data *rx_status_desc =
-		(struct hal_rx_spd_data *)dp_hw_grp->rx_status_buf[cpu_id];
+		(struct hal_rx_spd_data *)dp->rx_status_buf[rx_status_id];
 	int total_msdu_reaped =
 		ath12k_wifi8_dp_rx_process_reo_rings(dp, srng, rx_status_desc,
-						     0, budget, cpu_id);
+						     0, budget);
 
 	if (total_msdu_reaped)
 		ath12k_wifi8_dp_process_reo_rx_err_packets(dp, napi,
