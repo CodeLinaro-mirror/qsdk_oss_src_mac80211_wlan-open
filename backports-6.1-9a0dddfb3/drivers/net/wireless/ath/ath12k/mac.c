@@ -19766,7 +19766,7 @@ static int ath12k_mac_cu_mem_setup(struct ath12k *ar,
 	CU_MEM_FIELD_OFFSET(ML_RECONFIG, reconfig);
 	CU_MEM_FIELD_OFFSET(TTLM_MAX_CH_SW_TIME, ttlm_max_ch_sw_time);
 	CU_MEM_FIELD_OFFSET(TTLM_EXP_DUR, ttlm_expected_duration);
-	CU_MEM_FIELD_OFFSET(UHR_PARAM_UPD, uhr_param_update);
+	CU_MEM_FIELD_OFFSET(UHR_COUNTDOWN, uhr_countdown);
 	CU_MEM_FIELD_OFFSET(UHR_EBPCC, uhr_ebpcc);
 #undef CU_MEM_FIELD_OFFSET
 

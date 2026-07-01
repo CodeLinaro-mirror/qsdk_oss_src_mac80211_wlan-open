@@ -1790,7 +1790,7 @@ struct ath12k_cu_mem {
 	__le32 reconfig;
 	__le32 ttlm_max_ch_sw_time;
 	__le32 ttlm_expected_duration;
-	__le32 uhr_param_update;
+	__le32 uhr_countdown;
 	__le32 uhr_ebpcc;
 	__le32 max_chan_switch_time;
 } __packed;
