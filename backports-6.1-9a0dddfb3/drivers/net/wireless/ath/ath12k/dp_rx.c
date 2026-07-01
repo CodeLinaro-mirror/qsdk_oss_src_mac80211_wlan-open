@@ -2045,6 +2045,7 @@ ath12k_dp_rx_update_peer_stats(struct ath12k_pdev_dp *pdev,
 	int i;
 	struct ath12k_dp_peer_stats *pstats = NULL;
 	struct ath12k_dp_peer_rx_stats *rx = NULL;
+	bool skip = ath12k_dp_hw_peer_stats_enabled(pdev);
 
 	hw_link_id = ath12k_dp_validate_hw_link_id(hw_link_id);
 	pstats = &peer->stats[hw_link_id];
@@ -2056,8 +2057,10 @@ ath12k_dp_rx_update_peer_stats(struct ath12k_pdev_dp *pdev,
 			continue;
 		}
 
-		rx->recv_from_reo.packets += stats->received_frm_reo_cnt;
-		rx->recv_from_reo.bytes += stats->received_frm_reo_bytes;
+		if (!skip) {
+			rx->recv_from_reo.packets += stats->received_frm_reo_cnt;
+			rx->recv_from_reo.bytes += stats->received_frm_reo_bytes;
+		}
 
 		/* ideally we should have both ucast and mcast pkts sent to stack
 		 * stats rather than just one sent_to_stack_fast stats
@@ -2078,8 +2081,10 @@ ath12k_dp_rx_update_peer_stats(struct ath12k_pdev_dp *pdev,
 		rx->mpdu_retry += stats->mpdu_retry;
 
 		if (stats->sent_to_stack_ucast) {
-			rx->ucast.packets += stats->sent_to_stack_ucast;
-			rx->ucast.bytes += stats->sent_to_stack_ucast_bytes;
+			if (!skip) {
+				rx->ucast.packets += stats->sent_to_stack_ucast;
+				rx->ucast.bytes += stats->sent_to_stack_ucast_bytes;
+			}
 
 			/* ideally we should have both ucast and mcast pkts sent to stack
 			 * stats rather than just one sent_to_stack stats.
