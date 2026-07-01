@@ -6942,6 +6942,9 @@ static ssize_t ath12k_write_reset_dp_stats(struct file *file,
 			memset(&dp_pdev->tid_stats, 0, sizeof(dp_pdev->tid_stats));
 			dp_pdev->prev_tx_enq_tstamp = 0;
 			dp_pdev->prev_rx_timestamp = 0;
+
+			ath12k_dp_tid_tx_stats_hist_init(dp_pdev);
+			ath12k_dp_tid_rx_stats_hist_init(dp_pdev);
 		}
 		list_for_each_entry(arvif, &ar->arvifs, list) {
 			dp_vif = &arvif->ahvif->dp_vif;
