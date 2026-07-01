@@ -587,6 +587,9 @@ link_policy[NL80211_CU_MLD_LINK_ATTR_MAX + 1] = {
 	[NL80211_CU_MLD_LINK_ATTR_CRITICAL_FLAG] = { .type = NLA_FLAG },
 	[NL80211_CU_MLD_LINK_ATTR_BPCC] = { .type = NLA_U8 },
 	[NL80211_CU_MLD_LINK_ATTR_SWITCH_COUNT] = { .type = NLA_U8 },
+	[NL80211_CU_MLD_LINK_ATTR_ENHANCED_BPCC] = { .type = NLA_U8 },
+	[NL80211_CU_MLD_LINK_ATTR_ENHANCED_CRITICAL_FLAG] = { .type = NLA_FLAG },
+	[NL80211_CU_MLD_LINK_ATTR_ECU_COUNTDOWN] = { .type = NLA_U8 },
 };
 
 static const struct nla_policy
@@ -24401,9 +24404,11 @@ static int nl80211_send_mgmt_critical_update_len(struct wireless_dev *wdev)
 		cu_len += 24;
 		for_each_valid_link(tmp_wdev, link_id) {
 			/*Add length for link nla_header and
-			 * length for link_id, critical flag, bpcc and CSA count
+			 * length for link_id, critical flag, bpcc, CSA count,
+			 * enhanced_bpcc + enhanced_critical_flag (ECU) and
+			 * ecu_countdown_timer
 			 */
-			cu_len += 24;
+			cu_len += 44;
 		}
 	}
 	return cu_len;
@@ -24465,6 +24470,17 @@ static int nl80211_send_mgmt_critical_update(struct sk_buff *msg, struct wireles
 				goto nla_fail_link;
 			if (nla_put_u8(msg, NL80211_CU_MLD_LINK_ATTR_SWITCH_COUNT,
 				       tmp_wdev->links[link_id].switch_count))
+				goto nla_fail_link;
+			if (nla_put_u8(msg, NL80211_CU_MLD_LINK_ATTR_ENHANCED_BPCC,
+				       tmp_wdev->links[link_id].enhanced_bpcc))
+				goto nla_fail_link;
+			if (tmp_wdev->links[link_id].enhanced_critical_update &&
+			    nla_put_flag(msg,
+					 NL80211_CU_MLD_LINK_ATTR_ENHANCED_CRITICAL_FLAG))
+				goto nla_fail_link;
+			if (tmp_wdev->links[link_id].ecu_countdown_timer &&
+			    nla_put_u8(msg, NL80211_CU_MLD_LINK_ATTR_ECU_COUNTDOWN,
+				       tmp_wdev->links[link_id].ecu_countdown_timer))
 				goto nla_fail_link;
 			nla_nest_end(msg, link);
 			j++;

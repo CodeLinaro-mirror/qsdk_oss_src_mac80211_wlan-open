@@ -8878,6 +8878,33 @@ void ieee80211_critical_update(struct ieee80211_vif *vif, unsigned int link_id,
 				bool critical_flag, u8 bpcc);
 
 /**
+ * ieee80211_critical_update_ecu - update Enhanced Critical Update (ECU)
+ *	parameters for a link
+ * @vif: virtual interface
+ * @link_id: the link on which the ECU parameter was received
+ * @enhanced_critical_update: enhanced critical update flag (true when the
+ *	UHR Parameters Update element is present in the received frame)
+ * @enhanced_bpcc: Enhanced BSS Parameter Change Count (4-bit, modulo 16)
+ *	as defined in IEEE 802.11bn/D1.5 37.30.3
+ * @ecu_countdown_timer: Countdown Timer initialized to
+ *	advance notification interval; number of TBTTs until the
+ *	update(s) in the UHR Parameters Update element take effect. Value 1
+ *	means next TBTT. Value > 127 means the update already took effect
+ *	(Countdown Timer - 127) beacon intervals ago
+ *
+ * Called by the driver when it receives an updated enhanced BPCC from a
+ * peer in a management frame (Probe Request, (Re)Association Request).
+ * Stores the values in the per-link wdev state so that
+ * nl80211_send_mgmt_critical_update() can encode them and deliver them to
+ * hostapd via %NL80211_ATTR_RXMGMT_CRITICAL_UPDATE.
+ */
+void ieee80211_critical_update_ecu(struct ieee80211_vif *vif,
+				   unsigned int link_id,
+				   bool enhanced_critical_update,
+				   u8 enhanced_bpcc,
+				   u8 ecu_countdown_timer);
+
+/**
  * ieee80211_cu_notify - notify mac80211 of a UHR ECU state transition
  * @hw: pointer to the hardware
  * @vif: virtual interface

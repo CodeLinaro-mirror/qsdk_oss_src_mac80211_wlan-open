@@ -9286,6 +9286,18 @@ enum nl80211_cu_mld_attrs {
  * @NL80211_CU_MLD_LINK_ATTR_BPCC: BSS parameter change count value
  * @NL80211_CU_MLD_LINK_ATTR_SWITCH_COUNT: CSA/CCA switch count
  * @NL80211_CU_ATTR_TTLM_EXPEC_DUR: Current expected duration
+ * @NL80211_CU_MLD_LINK_ATTR_ENHANCED_BPCC: Enhanced BSS Parameter Change
+ *	Count (4-bit, modulo 16) for the ECU procedure (IEEE 802.11bn 37.30.3).
+ *	Carried in %NL80211_ATTR_RXMGMT_CRITICAL_UPDATE when the driver reports
+ *	an ECU-capable peer's enhanced BPCC.
+ * @NL80211_CU_MLD_LINK_ATTR_ENHANCED_CRITICAL_FLAG: flag attribute; present
+ *	when the UHR Parameters Update element was included in the received
+ *	management frame (enhanced_critical_update, IEEE 802.11bn 37.30.3).
+ * @NL80211_CU_MLD_LINK_ATTR_ECU_COUNTDOWN: ECU Countdown Timer (u8);
+ *	advance notification interval; indicates
+ *	the number of TBTTs until the update(s) in the UHR Parameters Update
+ *	element take effect. Value 1 means next TBTT. Value > 127 means the
+ *	update already took effect (Countdown Timer - 127) beacon intervals ago.
  * @__NL80211_CU_MLD_LINK_ATTR_LAST: internal use
  * @NL80211_CU_MLD_LINK ATTR_MAX: maximum per link critical update attribute
  */
@@ -9298,6 +9310,9 @@ enum nl80211_cu_mld_link_attrs {
 	NL80211_CU_MLD_LINK_ATTR_SWITCH_COUNT,
 	NL80211_CU_ATTR_AP_REMOVAL_COUNT,
 	NL80211_CU_ATTR_TTLM_EXPEC_DUR,
+	NL80211_CU_MLD_LINK_ATTR_ENHANCED_BPCC,
+	NL80211_CU_MLD_LINK_ATTR_ENHANCED_CRITICAL_FLAG,
+	NL80211_CU_MLD_LINK_ATTR_ECU_COUNTDOWN,
 
 	/* keep last */
 	__NL80211_CU_MLD_LINK_ATTR_LAST,

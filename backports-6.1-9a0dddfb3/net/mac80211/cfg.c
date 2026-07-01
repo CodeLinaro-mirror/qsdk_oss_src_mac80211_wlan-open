@@ -4792,6 +4792,30 @@ void ieee80211_critical_update(struct ieee80211_vif *vif, unsigned int link_id,
 }
 EXPORT_SYMBOL(ieee80211_critical_update);
 
+void ieee80211_critical_update_ecu(struct ieee80211_vif *vif,
+				   unsigned int link_id,
+				   bool enhanced_critical_update,
+				   u8 enhanced_bpcc,
+				   u8 ecu_countdown_timer)
+{
+	struct wireless_dev *wdev = ieee80211_vif_to_wdev(vif);
+
+	if (!wdev || !wdev->valid_links)
+		return;
+	if (WARN_ON(link_id >= IEEE80211_MLD_MAX_NUM_LINKS))
+		return;
+
+	if (wdev->links[link_id].enhanced_critical_update != enhanced_critical_update ||
+	    wdev->links[link_id].enhanced_bpcc != enhanced_bpcc ||
+	    wdev->links[link_id].ecu_countdown_timer != ecu_countdown_timer) {
+		wdev->critical_update = true;
+		wdev->links[link_id].enhanced_critical_update = enhanced_critical_update;
+		wdev->links[link_id].enhanced_bpcc = enhanced_bpcc & 0x0F;
+		wdev->links[link_id].ecu_countdown_timer = ecu_countdown_timer;
+	}
+}
+EXPORT_SYMBOL(ieee80211_critical_update_ecu);
+
 void ieee80211_link_removal_count_update(struct ieee80211_vif *vif,
 					 unsigned int link_id, u16 count)
 {
