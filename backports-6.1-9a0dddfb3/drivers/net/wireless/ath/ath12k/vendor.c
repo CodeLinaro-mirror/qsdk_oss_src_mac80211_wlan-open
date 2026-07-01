@@ -10601,8 +10601,19 @@ static struct ath12k *ath12k_get_radio_by_index(struct wiphy *wiphy,
 {
 	u8 radio_idx;
 
-	if (!tb[QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX])
-		return NULL;
+	if (!tb[QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX]) {
+		struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
+		struct ath12k_hw *ah;
+
+		if (!hw)
+			return NULL;
+
+		ah = ath12k_hw_to_ah(hw);
+		if (!ah || ah->num_radio != 1)
+			return NULL;
+
+		return ath12k_ah_to_ar(ah, 0);
+	}
 
 	radio_idx = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX]);
 
