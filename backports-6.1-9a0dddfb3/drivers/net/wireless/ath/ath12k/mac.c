@@ -25636,7 +25636,8 @@ ath12k_mac_reconfig_complete(struct ieee80211_hw *hw,
 
 		ah->state = ATH12K_HW_STATE_ON;
 	} else {
-		WARN_ON(ah->state != ATH12K_HW_STATE_ON);
+		if (ah->state != ATH12K_HW_STATE_ON)
+			ath12k_err(NULL, "ah state %d during recovery\n", ah->state);
 	}
 
 	/* stop_queues() & wake_queues() will take care to stop/wake
