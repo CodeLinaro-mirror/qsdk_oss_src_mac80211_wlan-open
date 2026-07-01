@@ -3419,6 +3419,51 @@ int ieee80211_sta_allocate_link(struct sta_info *sta, unsigned int link_id)
 	return 0;
 }
 
+/*
+ * ieee80211_sta_allocate_link_pre_insert - allocate a link_sta before insert.
+ *
+ * The ST Preparation Response provides the complete target AP link set.
+ * All link_sta structures must exist before ieee80211_smd_assoc_success()
+ * runs, so sta_info_insert() is deferred to ieee80211_smd_sta_insert_and_auth()
+ * after all allocations complete.
+ *
+ * Unlike ieee80211_sta_allocate_link(), WLAN_STA_INSERTED is not required.
+ * ieee80211_link_sta_debugfs_add() is not called here — sta_info_insert_finish()
+ * iterates all non-NULL sta->link[] entries and calls it for each once
+ * sta->debugfs_dir is set up.
+ */
+int ieee80211_sta_allocate_link_pre_insert(struct sta_info *sta,
+					   unsigned int link_id)
+{
+	struct ieee80211_sub_if_data *sdata = sta->sdata;
+	struct sta_link_alloc *alloc;
+	int ret;
+
+	lockdep_assert_wiphy(sdata->local->hw.wiphy);
+
+	/* must represent an MLD from the start */
+	if (WARN_ON(!sta->sta.valid_links))
+		return -EINVAL;
+
+	if (WARN_ON(sta->sta.valid_links & BIT(link_id) ||
+		    sta->link[link_id]))
+		return -EBUSY;
+
+	alloc = kzalloc(sizeof(*alloc), GFP_KERNEL);
+	if (!alloc)
+		return -ENOMEM;
+
+	ret = sta_info_alloc_link(sdata->local, &alloc->info, GFP_KERNEL);
+	if (ret) {
+		kfree(alloc);
+		return ret;
+	}
+
+	sta_info_add_link(sta, link_id, &alloc->info, &alloc->sta);
+
+	return 0;
+}
+
 void ieee80211_sta_free_link(struct sta_info *sta, unsigned int link_id, bool unhash)
 {
 	lockdep_assert_wiphy(sta->sdata->local->hw.wiphy);

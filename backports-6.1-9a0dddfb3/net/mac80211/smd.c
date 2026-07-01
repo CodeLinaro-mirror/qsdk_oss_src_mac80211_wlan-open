@@ -1551,7 +1551,7 @@ int ieee80211_smd_alloc_target_sta(struct ieee80211_sub_if_data *sdata,
 		/* Allocate link_sta at SAP slot (vdev routing).
 		 * BSS bssid is TAP-indexed.
 		 */
-		err = ieee80211_sta_allocate_link(sta, sap_link_id);
+		err = ieee80211_sta_allocate_link_pre_insert(sta, sap_link_id);
 		if (err) {
 			sdata_info(sdata,
 				   "smd: failed to allocate prepared link tap=%d sap=%d: %d\n",
