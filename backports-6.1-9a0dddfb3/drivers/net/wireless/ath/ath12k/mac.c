@@ -23020,6 +23020,7 @@ ath12k_mac_update_vif_chan_mvr(struct ath12k *ar,
 					    vifs[0].new_ctx->radar_enabled);
 	if (ret) {
 		ath12k_warn(ab, "mac failed to send mvr command (%d)\n", ret);
+		ath12k_critical_failure_trigger(ab, ATH12K_CRIT_MVR_FAILURE);
 		goto out;
 	}
 
@@ -23034,6 +23035,7 @@ ath12k_mac_update_vif_chan_mvr(struct ath12k *ar,
 			kfree(vdev_ids);
 			ath12k_err(ar->ab, "[vdev_id : %s radio_idx : %u] mac mvr cmd response timed out\n",
 				   ATH12K_INVALID_VDEV_ID, ar->radio_idx);
+			ath12k_critical_failure_trigger(ar->ab, ATH12K_CRIT_MVR_FAILURE);
 			/* fallback to restarting one-by-one */
 			return ath12k_mac_update_vif_chan(ar, vifs,
 							  vifs_bridge_link_id,
@@ -23051,6 +23053,7 @@ ath12k_mac_update_vif_chan_mvr(struct ath12k *ar,
 			ath12k_err(ab,
 				   "[radio_idx : %u] mac failed to restart mbssid tx vdev %d via mvr cmd\n",
 				   ar->radio_idx, tx_arvif->vdev_id);
+			ath12k_critical_failure_trigger(ar->ab, ATH12K_CRIT_MVR_FAILURE);
 		}
 
 		rcu_read_lock();
@@ -23067,10 +23070,12 @@ ath12k_mac_update_vif_chan_mvr(struct ath12k *ar,
 						   vifs[trans_vdev_index].new_ctx,
 						   BIT_ULL(trans_vdev_index),
 						   vdev_idx);
-		if (ret)
+		if (ret) {
 			ath12k_warn(ab,
 				    "mac failed to bring up mbssid tx vdev %d after mvr (%d)\n",
 				    tx_arvif->vdev_id, ret);
+			ath12k_critical_failure_trigger(ab, ATH12K_CRIT_MVR_FAILURE);
+		}
 	}
 
 	for (i = 0; i < n_vifs; i++) {
@@ -23098,6 +23103,7 @@ ath12k_mac_update_vif_chan_mvr(struct ath12k *ar,
 			vdev_idx = i;
 			ath12k_err(ab, "[radio_idx : %u] mac failed to restart vdev %d via mvr cmd\n",
 				   ar->radio_idx, arvif->vdev_id);
+			ath12k_critical_failure_trigger(ab, ATH12K_CRIT_MVR_FAILURE);
 		}
 
 		if (!is_bridge_vdev) {
@@ -23111,9 +23117,11 @@ ath12k_mac_update_vif_chan_mvr(struct ath12k *ar,
 		}
 		ret = ath12k_vdev_restart_sequence(arvif, vifs[i].new_ctx,
 						   BIT_ULL(i), vdev_idx);
-		if (ret && ret != -EOPNOTSUPP)
+		if (ret && ret != -EOPNOTSUPP) {
 			ath12k_warn(ab, "mac failed to bring up vdev %d after mvr (%d)\n",
 				    arvif->vdev_id, ret);
+			ath12k_critical_failure_trigger(ab, ATH12K_CRIT_MVR_FAILURE);
+		}
 	}
 out:
 	kfree(vdev_ids);

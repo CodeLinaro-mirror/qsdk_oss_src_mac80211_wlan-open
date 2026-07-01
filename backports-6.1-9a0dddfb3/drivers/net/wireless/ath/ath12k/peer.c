@@ -64,8 +64,10 @@ static void ath12k_peer_del_timeout(struct timer_list *t)
 		/* The WARN_ON check is skipped because the firmware does not send a peer
 		 * delete response to the host while a recovery is in progress.
 		 */
-		if (!test_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags))
+		if (!test_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags)) {
+			ath12k_critical_failure_trigger(ab, ATH12K_CRIT_PEER_FAILURE);
 			WARN_ON(1);
+		}
 
 		kfree_rcu(entry, rcu_head);
 		atomic_dec_if_positive(&pdev->peer_del_tracker_entries);
@@ -744,6 +746,7 @@ static int ath12k_wait_for_peer_create_done(struct ath12k *ar, u32 vdev_id,
 		if (ret) {
 			ath12k_warn(ar->ab, "failed wait for peer create addr : %pM\n",
 				    addr);
+			ath12k_critical_failure_trigger(ar->ab, ATH12K_CRIT_PEER_FAILURE);
 			WARN_ON(1);
 			return ret;
 		}
