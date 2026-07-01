@@ -1621,16 +1621,17 @@ void ath12k_dp_umac_reset_deinit(struct ath12k_base *ab)
 
 	umac_reset = &ab->dp_umac_reset;
 
+	if (!umac_reset->shmem_vaddr_unaligned)
+		return;
+
 	ath12k_hif_dp_umac_reset_free_irq(ab);
 	ath12k_umcmn_irq_free(ab);
 	ath12k_umcmn_timer_free(ab);
 
-	if (umac_reset->shmem_vaddr_unaligned) {
-		dma_free_coherent(ab->dev,
-				  umac_reset->shmem_size,
-				  umac_reset->shmem_vaddr_unaligned,
-				  umac_reset->shmem_paddr_unaligned);
-		umac_reset->shmem_vaddr_unaligned = NULL;
+	dma_free_coherent(ab->dev,
+			  umac_reset->shmem_size,
+			  umac_reset->shmem_vaddr_unaligned,
+			  umac_reset->shmem_paddr_unaligned);
 
-	}
+	umac_reset->shmem_vaddr_unaligned = NULL;
 }
