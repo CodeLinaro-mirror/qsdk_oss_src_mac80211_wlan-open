@@ -842,7 +842,8 @@ static void ieee80211_del_chanctx(struct ieee80211_local *local,
 	if (!skip_idle_recalc)
 		ieee80211_recalc_idle(local);
 
-	ieee80211_remove_wbrf(local, &ctx->conf.def);
+	if (ctx->driver_present)
+		ieee80211_remove_wbrf(local, &ctx->conf.def);
 }
 
 static void ieee80211_free_chanctx(struct ieee80211_local *local,
