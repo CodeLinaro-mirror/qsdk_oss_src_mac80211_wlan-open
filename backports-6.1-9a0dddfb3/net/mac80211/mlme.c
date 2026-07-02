@@ -1606,6 +1606,17 @@ static int ieee80211_config_bw(struct ieee80211_link_data *link,
 	if (ieee80211_chanreq_identical(&chanreq, &link->conf->chanreq))
 		return 0;
 
+	if (link->conf->csa_active &&
+	    cfg80211_chandef_identical(&chanreq.oper,
+				       &link->csa.chanreq.oper)) {
+		link_info(link,
+			  "CSA already pending in %s freq=%d width=%d punct=0x%x\n",
+			  frame,
+			  chanreq.oper.chan ? chanreq.oper.chan->center_freq : 0,
+			  chanreq.oper.width, chanreq.oper.punctured);
+		return 0;
+	}
+
 	if (link->conf->csa_active && link->u.mgd.csa.bw_reconfig &&
 	    ieee80211_chanreq_identical(&chanreq, &link->csa.chanreq)) {
 		link_info(link,
@@ -1656,6 +1667,22 @@ static int ieee80211_config_bw(struct ieee80211_link_data *link,
 		sdata_info(sdata,
 			   "AP %pM changed bandwidth in %s to incompatible one - disconnect\n",
 			   link->u.mgd.bssid, frame);
+		link_info(link,
+			  "incompatible chanreq: requested oper=%d.%03d width=%d punct=0x%x cf1=%d.%03d cf2=%d csa oper=%d.%03d width=%d punct=0x%x cf1=%d.%03d cf2=%d\n",
+			  chanreq.oper.chan ? chanreq.oper.chan->center_freq : 0,
+			  chanreq.oper.chan ? chanreq.oper.chan->freq_offset : 0,
+			  chanreq.oper.width, chanreq.oper.punctured,
+			  chanreq.oper.center_freq1, chanreq.oper.freq1_offset,
+			  chanreq.oper.center_freq2,
+			  link->csa.chanreq.oper.chan ?
+			  link->csa.chanreq.oper.chan->center_freq : 0,
+			  link->csa.chanreq.oper.chan ?
+			  link->csa.chanreq.oper.chan->freq_offset : 0,
+			  link->csa.chanreq.oper.width,
+			  link->csa.chanreq.oper.punctured,
+			  link->csa.chanreq.oper.center_freq1,
+			  link->csa.chanreq.oper.freq1_offset,
+			  link->csa.chanreq.oper.center_freq2);
 		return ret;
 	}
 
