@@ -3414,14 +3414,6 @@ int ieee80211_sta_allocate_link(struct sta_info *sta, unsigned int link_id)
 	}
 
 	sta_info_add_link(sta, link_id, &alloc->info, &alloc->sta);
-
-	/*
-	 * For post-insert STAs this adds debugfs immediately.
-	 * For pre-insert STAs (e.g. SMD target STA) sta->debugfs_dir is
-	 * not set yet, so ieee80211_link_sta_debugfs_add() returns silently.
-	 * sta_info_insert_finish() will call it for all non-NULL links after
-	 * setting up debugfs_dir.
-	 */
 	ieee80211_link_sta_debugfs_add(&alloc->info);
 
 	return 0;
@@ -3592,6 +3584,14 @@ void ieee80211_sta_remove_link(struct sta_info *sta, unsigned int link_id,
 					   &sta->sta.deflink);
 
 			link_sta_info_hash_add(sdata->local, &sta->deflink);
+			/*
+			 * memcpy() above shallow-copied sta_info into sta->deflink,
+			 * including its debugfs_dir pointer.  sta_remove_link() has
+			 * already freed that directory; the pointer is stale.  Clear
+			 * it so ieee80211_link_sta_debugfs_add() creates a fresh
+			 * directory for the new link_id.
+			 */
+			sta->deflink.debugfs_dir = NULL;
 			ieee80211_link_sta_debugfs_add(&sta->deflink);
 		}
 	}
