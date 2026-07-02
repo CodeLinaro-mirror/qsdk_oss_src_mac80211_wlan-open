@@ -18928,6 +18928,18 @@ int ath12k_mac_start(struct ath12k *ar)
 		goto err;
 	}
 
+#ifdef CPTCFG_QCN_EXTN
+	if (ath12k_scan_radio_supported(ar->pdev)) {
+		ret = ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_SCAN_RADIO_TX_ON_DFS,
+			ath12k_cfg_get(ar->ab, ATH12K_CFG_SCAN_RADIO_TX_ON_DFS),
+			pdev->pdev_id);
+		if (ret) {
+			ath12k_warn(ab, "failed to set scan radio TX on DFS: %d\n", ret);
+			ret = 0;
+		}
+	}
+#endif /* CPTCFG_QCN_EXTN */
+
 	ret = ath12k_dp_tx_htt_h2t_ppdu_stats_req(ar,
 						  HTT_PPDU_STATS_TAG_DEFAULT);
 	if (ret) {
