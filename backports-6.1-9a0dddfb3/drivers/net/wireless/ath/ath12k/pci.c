@@ -25,7 +25,11 @@
 #endif
 
 #define ATH12K_PCI_BAR_NUM		0
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#define ATH12K_PCI_DMA_MASK		32
+#else
 #define ATH12K_PCI_DMA_MASK		36
+#endif
 
 /* BAR0 + 4k is always accessible, and no
  * need to force wakeup.
