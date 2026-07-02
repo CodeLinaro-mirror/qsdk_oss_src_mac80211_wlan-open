@@ -1443,6 +1443,9 @@
  * @NL80211_CMD_SMD_ROAM: Event indicating an SMD roam has completed.
  *	Carries %NL80211_ATTR_SMD_TARGET_MLD_ADDR and status information.
  *
+ * @NL80211_CMD_SET_SMD_CTX: Set UHR SMD dynamic context on the target AP MLD
+ *	for the non-AP MLD.
+ *
  * @NL80211_CMD_MAX: highest used command number
  * @__NL80211_CMD_AFTER_LAST: internal use
  */
@@ -1736,6 +1739,8 @@ enum nl80211_commands {
 
 	NL80211_CMD_SMD_TRANSITION_DONE,
 	NL80211_CMD_SMD_ROAM,
+
+	NL80211_CMD_SET_SMD_CTX,
 
 	/* add new commands above here */
 

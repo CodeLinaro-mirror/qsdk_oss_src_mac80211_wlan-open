@@ -7309,6 +7309,24 @@ static int ieee80211_critical_update_cmd(struct wiphy *wiphy,
 	return ret;
 }
 
+static int ieee80211_set_smd_ctx(struct wiphy *wiphy, struct wireless_dev *wdev,
+				 const u8 *addr,
+				 struct cfg80211_smd_transition_info *st_info)
+{
+	struct ieee80211_local *local = wiphy_priv(wiphy);
+	struct ieee80211_sub_if_data *sdata;
+	struct sta_info *sta;
+
+	lockdep_assert_wiphy(wiphy);
+
+	sdata = IEEE80211_WDEV_TO_SUB_IF(wdev);
+	sta = sta_info_get_bss(sdata, addr);
+	if (!sta || !sta->sta.smd_params.smd_enabled)
+		return -EINVAL;
+
+	return drv_set_smd_ctx(local, sdata, &sta->sta, st_info);
+}
+
 const struct cfg80211_ops mac80211_config_ops = {
 	.add_virtual_intf = ieee80211_add_iface,
 	.del_virtual_intf = ieee80211_del_iface,
@@ -7442,6 +7460,7 @@ const struct cfg80211_ops mac80211_config_ops = {
 	.abort_cac = ieee80211_dfs_abort_cac,
 	.uhr_mode_update = ieee80211_uhr_mode_update,
 	.critical_update = ieee80211_critical_update_cmd,
+	.set_smd_ctx = ieee80211_set_smd_ctx,
 };
 
 void ieee80211_cu_notify(struct ieee80211_hw *hw,
