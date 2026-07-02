@@ -23,23 +23,10 @@
 #define ATH12K_SPECTRAL_ATH12K_MIN_BINS		32
 #define ATH12K_SPECTRAL_RPT_MODE_MAX		3
 
-/* Per-BW FFT-size caps. No upper-slot constant — 80/160/320 MHz use
- * ilog2(max_fft_bins) from hw_params directly (it already encodes
- * each chip's FFT-engine ceiling).
- */
-#define ATH12K_SPECTRAL_FFT_SIZE_MIN		5
-#define ATH12K_SPECTRAL_FFT_SIZE_MAX_20MHZ	9
-#define ATH12K_SPECTRAL_FFT_SIZE_MAX_40MHZ	10
+#define ATH12K_SPECTRAL_FFT_SIZE_MIN			5
+#define ATH12K_SPECTRAL_FFT_SIZE_MAX_20MHZ		9
+#define ATH12K_SPECTRAL_FFT_SIZE_MAX_40MHZ		10
 
-/* nl80211_chan_width slots we validate. */
-enum ath12k_spectral_bw_slot {
-	ATH12K_SPECTRAL_BW_20MHZ,
-	ATH12K_SPECTRAL_BW_40MHZ,
-	ATH12K_SPECTRAL_BW_80MHZ,
-	ATH12K_SPECTRAL_BW_160MHZ,
-	ATH12K_SPECTRAL_BW_320MHZ,
-	ATH12K_SPECTRAL_NUM_BW_SLOTS,
-};
 
 struct ath12k_spectral_param_min_max {
 	u16 fft_size_min;

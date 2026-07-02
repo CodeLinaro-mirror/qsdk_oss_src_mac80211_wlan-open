@@ -15594,6 +15594,25 @@ void ath12k_vendor_event_chain_mask_changed(struct ath12k *ar)
 #define SPECTRAL_SCALING_HIGH_LEVEL_OFFSET	5
 #define SPECTRAL_SCALING_RSSI_THRESH		5
 #define SPECTRAL_IPQ8074_DEFAULT_MAX_GAIN	62
+#define ATH12K_SPECTRAL_RECAPTURE_SCAN_PERIOD_THRESHOLD	52
+
+/* Helpers for parsing spectral scan NL attrs into param fields. */
+#define ATTR_U32(id, fptr) do {				\
+	const int _a = (id);				\
+	if (tb[_a])					\
+		*(fptr) = nla_get_u32(tb[_a]);		\
+} while (0)
+#define ATTR_U8(id, fptr) do {				\
+	const int _a = (id);				\
+	if (tb[_a])					\
+		*(fptr) = nla_get_u8(tb[_a]);		\
+} while (0)
+
+#define ATTR_BOOL(id, fptr) do {			\
+	const int _a = (id);				\
+	if (tb[_a])					\
+		*(fptr) = !!nla_get_u32(tb[_a]);	\
+} while (0)
 
 static const struct nla_policy
 ath12k_spectral_scan_policy[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_MAX + 1] = {
@@ -15811,9 +15830,11 @@ static int ath12k_vendor_spectral_scan_start(struct wiphy *wiphy,
 				QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FFT_SIZE]);
 			u32 fft_min  = ar->spectral.param_min_max.fft_size_min;
 			int idx      = ath12k_spectral_resolve_bw_idx(ar, tb);
+			const u16 *hw_fft_max =
+				ar->ab->hw_params->spectral.fft_size_max;
 			u32 fft_max  = (idx >= 0)
 				       ? ar->spectral.param_min_max.fft_size_max[idx]
-				       : ilog2(ar->ab->hw_params->spectral.max_fft_bins);
+				       : hw_fft_max[ATH12K_SPECTRAL_BW_320MHZ];
 
 			if (v < fft_min || v > fft_max) {
 				ath12k_warn(ar->ab,
@@ -15824,16 +15845,6 @@ static int ath12k_vendor_spectral_scan_start(struct wiphy *wiphy,
 			}
 		}
 
-#define ATTR_U32(id, fptr) do {				\
-	const int _a = (id);				\
-	if (tb[_a])					\
-		*(fptr) = nla_get_u32(tb[_a]);		\
-} while (0)
-#define ATTR_U8(id, fptr) do {				\
-	const int _a = (id);				\
-	if (tb[_a])					\
-		*(fptr) = nla_get_u8(tb[_a]);		\
-} while (0)
 		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_SCAN_COUNT,
 			 &p->scan_count);
 		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_SCAN_PERIOD,
@@ -15842,10 +15853,10 @@ static int ath12k_vendor_spectral_scan_start(struct wiphy *wiphy,
 			 &p->scan_priority);
 		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FFT_SIZE,
 			 &p->scan_fft_size);
-		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_GC_ENA,
-			 &p->scan_gc_ena);
-		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_RESTART_ENA,
-			 &p->scan_restart_ena);
+		ATTR_BOOL(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_GC_ENA,
+			  &p->scan_gc_ena);
+		ATTR_BOOL(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_RESTART_ENA,
+			  &p->scan_restart_ena);
 		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_NOISE_FLOOR_REF,
 			 &p->scan_noise_floor_ref);
 		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_INIT_DELAY,
@@ -15854,38 +15865,64 @@ static int ath12k_vendor_spectral_scan_start(struct wiphy *wiphy,
 			 &p->scan_nb_tone_thr);
 		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_STR_BIN_THR,
 			 &p->scan_str_bin_thr);
-		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_WB_RPT_MODE,
-			 &p->scan_wb_rpt_mode);
-		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_RSSI_RPT_MODE,
-			 &p->scan_rssi_rpt_mode);
+		ATTR_BOOL(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_WB_RPT_MODE,
+			  &p->scan_wb_rpt_mode);
+		ATTR_BOOL(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_RSSI_RPT_MODE,
+			  &p->scan_rssi_rpt_mode);
 		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_RSSI_THR,
 			 &p->scan_rssi_thr);
-		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_PWR_FORMAT,
-			 &p->scan_pwr_format);
+		ATTR_BOOL(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_PWR_FORMAT,
+			  &p->scan_pwr_format);
 		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_RPT_MODE,
 			 &p->scan_rpt_mode);
 		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_BIN_SCALE,
 			 &p->scan_bin_scale);
-		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_DBM_ADJ,
-			 &p->scan_dbm_adj);
+		ATTR_BOOL(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_DBM_ADJ,
+			  &p->scan_dbm_adj);
 		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_CHN_MASK,
 			 &p->scan_chn_mask);
 		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FFT_PERIOD,
 			 &p->fft_period);
-		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_SHORT_REPORT,
-			 &p->short_report);
+		ATTR_BOOL(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_SHORT_REPORT,
+			  &p->short_report);
 		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FREQUENCY,
 			 &p->frequency);
 		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FREQUENCY_2,
 			 &p->frequency2);
 		ATTR_U8(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_BANDWIDTH,
 			&p->bandwidth);
-		ATTR_U8(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FFT_RECAPTURE,
-			&p->fft_recapture);
+		struct nlattr *recapture_attr =
+			tb[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FFT_RECAPTURE];
+		if (recapture_attr) {
+			u8 recapture = nla_get_u8(recapture_attr);
+
+			if (recapture) {
+				if (p->scan_period >=
+				    ATH12K_SPECTRAL_RECAPTURE_SCAN_PERIOD_THRESHOLD) {
+					p->fft_recapture = 1;
+				} else {
+					ath12k_warn(ar->ab,
+						    "spectral scan: FFT recapture cannot be enabled due to scan period: %u us\n",
+						    p->scan_period);
+					p->fft_recapture = 0;
+				}
+			} else {
+				p->fft_recapture = 0;
+			}
+		}
+
+		if (tb[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_SCAN_PERIOD]) {
+			if (p->fft_recapture && p->scan_period <
+			    ATH12K_SPECTRAL_RECAPTURE_SCAN_PERIOD_THRESHOLD) {
+				ath12k_warn(ar->ab,
+					    "spectral scan: FFT recapture disabled due to scan period: %u us\n",
+					    p->scan_period);
+				p->fft_recapture = 0;
+			}
+		}
+
 		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_COMPLETION_TIMEOUT,
 			 &p->completion_timeout_us);
-#undef ATTR_U32
-#undef ATTR_U8
 		ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
 			   "spectral config: count=%u period=%u fft_size=%u\n",
 			   p->scan_count, p->scan_period, p->scan_fft_size);
