@@ -10905,6 +10905,28 @@ ath12k_htt_print_rx_pdev_rate_ext_stats_tlv(const void *tag_buf, u16 tag_len,
 	wifi_version_word = le32_to_cpu(htt_stats_buf->wifi_version_word);
 
 	len += scnprintf(buf + len, buf_len - len, "HTT_RX_PDEV_RATE_EXT_STATS_TLV:\n");
+
+	for (j = 0; j < ATH12K_HTT_RX_PDEV_STATS_NUM_SPATIAL_STREAMS; j++) {
+		len += scnprintf(buf + len, buf_len - len,
+				"rssi_chain_ext[%u] = ", j);
+		CHAIN_ARRAY_TO_BUF(buf, len,
+				htt_stats_buf->rssi_chain_ext[j],
+				ATH12K_HTT_RX_PDEV_STATS_NUM_BW_EXT_COUNTERS);
+		len += scnprintf(buf + len, buf_len - len, "\n");
+	}
+
+	for (j = 0; j < ATH12K_HTT_RX_PDEV_STATS_NUM_SPATIAL_STREAMS; j++) {
+		len += scnprintf(buf + len, buf_len - len,
+				"rx_per_chain_rssi_ext_in_dbm[%u] = ", j);
+		CHAIN_ARRAY_TO_BUF(buf, len,
+				htt_stats_buf->rx_per_chain_rssi_ext_in_dbm[j],
+				   ATH12K_HTT_RX_PDEV_STATS_NUM_BW_EXT_COUNTERS);
+		len += scnprintf(buf + len, buf_len - len, "\n");
+	}
+
+	len += scnprintf(buf + len, buf_len - len, "rssi_mcast_in_dbm = %d\n",
+			 le32_to_cpu(htt_stats_buf->rssi_mcast_in_dbm));
+
 	len += scnprintf(buf + len, buf_len - len, "rssi_mgmt_in_dbm = %d\n",
 			 le32_to_cpu(htt_stats_buf->rssi_mgmt_in_dbm));
 
