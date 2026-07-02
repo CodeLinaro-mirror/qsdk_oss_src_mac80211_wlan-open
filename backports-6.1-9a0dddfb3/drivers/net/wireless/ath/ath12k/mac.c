@@ -17984,12 +17984,19 @@ static int __ath12k_set_antenna(struct ath12k *ar, u32 tx_ant, u32 rx_ant,
 static void ath12k_mgmt_over_wmi_tx_drop(struct ath12k *ar, struct sk_buff *skb)
 {
 	int num_mgmt = 0;
+	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
+	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
 	if (!(info->flags & IEEE80211_TX_CTL_TX_OFFCHAN))
 		num_mgmt = atomic_dec_if_positive(&ar->num_pending_mgmt_tx);
+
+	if (skb_cb->flags & ATH12K_SKB_DEAUTH_DISASSOC_TRACKED) {
+		ath12k_peer_deauth_disassoc_tx_dec(ar, hdr->addr1);
+		skb_cb->flags &= ~ATH12K_SKB_DEAUTH_DISASSOC_TRACKED;
+	}
 
 	ath12k_skb_rhash_remove(ar, skb);
 
@@ -18058,6 +18065,7 @@ static int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arv
 	struct ath12k_mgmt_frame_stats *stats;
 	enum hal_encrypt_type enctype;
 	bool is_cfr = false;
+	bool is_deauth_disassoc;
 	unsigned int mic_len;
 	bool mlo_params_valid;
 	bool link_agnostic;
@@ -18070,6 +18078,9 @@ static int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arv
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
 	skb_cb->u.ar = ar;
+	skb_cb->flags &= ~ATH12K_SKB_DEAUTH_DISASSOC_TRACKED;
+	is_deauth_disassoc = ieee80211_is_deauth(hdr->frame_control) ||
+			     ieee80211_is_disassoc(hdr->frame_control);
 	spin_lock_bh(&ar->txmgmt_idr_lock);
 	buf_id = idr_alloc(&ar->txmgmt_idr, skb, 0,
 			   ATH12K_TX_MGMT_NUM_PENDING_MAX, GFP_ATOMIC);
@@ -18127,6 +18138,11 @@ static int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arv
 
 	ether_addr_copy(sta_addr, hdr->addr1);
 
+	if (is_deauth_disassoc) {
+		ath12k_peer_deauth_disassoc_tx_inc(ar, hdr->addr1);
+		skb_cb->flags |= ATH12K_SKB_DEAUTH_DISASSOC_TRACKED;
+	}
+
 	if (info->flags & IEEE80211_TX_CTL_TX_OFFCHAN)
 		ret = ath12k_wmi_offchan_mgmt_send(ar, arvif->vdev_id, buf_id, skb);
 	else
@@ -18134,6 +18150,10 @@ static int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arv
 					   mlo_params_valid, link_agnostic, is_cfr);
 	if (ret) {
 		ath12k_warn(ar->ab, "failed to send mgmt frame: %d\n", ret);
+		if (is_deauth_disassoc) {
+			ath12k_peer_deauth_disassoc_tx_dec(ar, hdr->addr1);
+			skb_cb->flags &= ~ATH12K_SKB_DEAUTH_DISASSOC_TRACKED;
+		}
 		goto err_unmap_buf;
 	}
 

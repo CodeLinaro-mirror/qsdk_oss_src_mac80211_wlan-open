@@ -340,6 +340,7 @@ static inline u64 ath12k_le32hilo_to_u64(__le32 hi, __le32 lo)
 enum ath12k_skb_flags {
 	ATH12K_SKB_HW_80211_ENCAP = BIT(0),
 	ATH12K_SKB_CIPHER_SET = BIT(1),
+	ATH12K_SKB_DEAUTH_DISASSOC_TRACKED = BIT(2),
 	ATH12K_SKB_MGMT_LINK_AGNOSTIC = BIT(3),
 	ATH12K_SKB_CUSTOM_MGMT_TX = BIT(4),
 	ATH12K_SKB_CUSTOM_OFFCHAN_MGMT_TX = BIT(5),
@@ -1264,6 +1265,8 @@ struct ath12k_per_ppdu_tx_stats {
 struct ath12k_link_sta {
 	struct ath12k_link_vif *arvif;
 	struct ath12k_sta *ahsta;
+	/* Deauth/disassoc management frames sent and awaiting tx completion */
+	atomic_t pending_deauth_disassoc_tx;
 
 	/* link address similar to ieee80211_link_sta */
 	u8 addr[ETH_ALEN];
