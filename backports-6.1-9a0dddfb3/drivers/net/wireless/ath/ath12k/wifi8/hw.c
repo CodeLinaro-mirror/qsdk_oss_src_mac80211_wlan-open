@@ -1311,6 +1311,115 @@ static void ath12k_wifi8_mac_op_sta_set_4addr(struct ieee80211_hw *hw,
 	}
 }
 
+static int ath12k_wifi8_mac_op_set_smd_ctx(struct ieee80211_hw *hw,
+					   struct ieee80211_vif *vif,
+					   struct ieee80211_sta *sta,
+					   struct cfg80211_smd_transition_info *st_info)
+{
+	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
+	struct ath12k_dp_hw *dp_hw = &ahvif->ah->dp_hw;
+	struct ieee80211_smd_ctx *ctx = st_info->ctx;
+	struct ath12k_smd_ctx *drv_ctx __free(kfree) = NULL; /* to parse vendor ctx */
+	struct ath12k_rx_smd_ctx_per_tid rx_tid;
+	struct ath12k_tx_smd_ctx_per_tid tx_tid;
+	struct ath12k_link_vif *arvif;
+	struct ath12k_base *ab;
+	struct ath12k_dp *dp;
+	int ret;
+	u8 tid;
+
+	lockdep_assert_wiphy(hw->wiphy);
+
+	/* fetch default link */
+	arvif = ath12k_get_arvif_from_link_id(ahvif, 0);
+	ab = arvif->ar->ab;
+	dp = ab->dp;
+
+	ath12k_dbg(ab, ATH12K_DBG_SMD, "%s for %pM", __func__, sta->addr);
+
+	drv_ctx = kzalloc(sizeof(*drv_ctx), GFP_ATOMIC);
+	if (!drv_ctx)
+		return -ENOMEM;
+
+	ath12k_smd_parse_vendor_ctx(ctx, drv_ctx);
+	drv_ctx->pn_len = ctx->pn_len;
+
+	/* UL context - Data TIDs */
+	for_each_set_bit(tid, ctx->ul.valid_tid_bmap, IEEE80211_SMD_CTX_NUM_TIDS) {
+		struct ieee80211_smd_ctx_ba *ul_ba = &ctx->ul.ba[tid];
+
+		memset(&rx_tid, 0, sizeof(rx_tid));
+		rx_tid.tid = tid;
+		memcpy(rx_tid.peer_addr, sta->addr, ETH_ALEN);
+		rx_tid.ssn = ctx->ul.sn[tid];
+		rx_tid.pn_len = ctx->pn_len;
+		if (rx_tid.pn_len) {
+			rx_tid.pn_31_0 = get_unaligned_le32(&ctx->ul.pn[tid][0]);
+			rx_tid.pn_47_32 = get_unaligned_le16(&ctx->ul.pn[tid][4]);
+		}
+		if (rx_tid.pn_len > 6)
+			rx_tid.pn_127_48_info = 1;
+		rx_tid.ba_win_sz =
+			ath12k_smd_ctx_decode_ba_buf_size(ul_ba->buffer_size,
+							  ul_ba->ext_buffer_size);
+		ath12k_smd_get_vendor_ctx_bitmaps(drv_ctx, &rx_tid);
+
+		ath12k_dbg_level(ab, ATH12K_DBG_SMD, ATH12K_DBG_L3,
+				 "UL tid: %u sn: %u pn_len: %u pn: %*ph ba_buf_size: %u",
+				 tid, rx_tid.ssn, rx_tid.pn_len,
+				 rx_tid.pn_len, ctx->ul.pn[tid], rx_tid.ba_win_sz);
+
+		ret = ath12k_dp_arch_peer_rx_tid_reo_update_for_smd(dp, dp_hw, sta->addr,
+								    &rx_tid);
+		if (ret)
+			ath12k_err(ab,
+				   "Failed to set SMD UL ctx for %pM tid: %d err: %d",
+				   sta->addr, tid, ret);
+	}
+
+	/* DL context - Data TIDs */
+	for_each_set_bit(tid, ctx->dl.valid_tid_bmap, IEEE80211_SMD_CTX_NUM_TIDS) {
+		struct ieee80211_smd_ctx_ba *dl_ba = &ctx->dl.ba[tid];
+		u16 ba_buf_size;
+
+		memset(&tx_tid, 0, sizeof(tx_tid));
+		tx_tid.tid = tid;
+		tx_tid.ssn = ctx->dl.sn[tid];
+		ath12k_smd_ctx_get_tx_lsn_offset(drv_ctx, &tx_tid);
+
+		memcpy(tx_tid.pn_number, ctx->dl.pn, IEEE80211_SMD_CTX_MAX_PN_LEN);
+
+		ba_buf_size =
+			ath12k_smd_ctx_decode_ba_buf_size(dl_ba->buffer_size,
+							  dl_ba->ext_buffer_size);
+		ath12k_dbg_level(ab, ATH12K_DBG_SMD, ATH12K_DBG_L3,
+				 "DL tid: %u sn: %u pn_len: %u pn: %*ph ba_buf_size: %u",
+				 tid, tx_tid.ssn, ctx->pn_len,
+				 ctx->pn_len, tx_tid.pn_number, ba_buf_size);
+
+		ret = ath12k_dp_arch_peer_tx_tid_update_for_smd(dp, dp_hw, sta->addr,
+								&tx_tid);
+		if (ret)
+			ath12k_err(ab,
+				   "Failed to set SMD DL ctx for %pM tid: %d err: %d",
+				   sta->addr, tid, ret);
+	}
+
+	/* Vendor context */
+	if (drv_ctx->vendor_ctx.version != SMD_CTX_VENDOR_INVALID_VERSION) {
+		ath12k_dbg_level(ab, ATH12K_DBG_SMD, ATH12K_DBG_L3,
+				 "SMD vendor context in set_ctx: %*ph",
+				 (int)ctx->drv_ctx_size, ctx->drv_ctx);
+		ret = ath12k_smd_set_vendor_ctx(dp, dp_hw, drv_ctx, sta);
+		if (ret)
+			ath12k_err(ab,
+				   "Failed to set SMD vendor ctx for %pM, err: %d",
+				   sta->addr, ret);
+	}
+
+	return 0;
+}
+
 static const struct ieee80211_ops ath12k_ops_wifi8 = {
 	.tx				= ath12k_wifi8_mac_op_tx,
 	.wake_tx_queue			= ieee80211_handle_wake_tx_queue,
@@ -1394,6 +1503,7 @@ static const struct ieee80211_ops ath12k_ops_wifi8 = {
 	.set_monitor_flags		= ath12k_mac_op_set_monitor_flags,
 	.uhr_mode_update		= ath12k_mac_op_sta_uhr_mode_update,
 	.critical_update		= ath12k_mac_op_critical_update,
+	.set_smd_ctx			= ath12k_wifi8_mac_op_set_smd_ctx,
 };
 
 int ath12k_wifi8_hw_init(struct ath12k_base *ab)

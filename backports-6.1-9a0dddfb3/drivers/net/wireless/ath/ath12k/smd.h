@@ -8,6 +8,7 @@
 
 #include <linux/ieee80211.h>
 #include <net/mac80211.h>
+#include <linux/skb_wireless.h>
 
 struct ath12k_sta;
 struct ath12k_vif;
@@ -17,6 +18,9 @@ struct hal_reo_status;
 struct ath12k_dp;
 struct ath12k_hw;
 struct ath12k;
+struct ath12k_dp_hw;
+struct ath12k_tx_smd_ctx_per_tid;
+struct ath12k_rx_smd_ctx_per_tid;
 
 /**
  * struct ath12k_smd_peer_assoc_ctx - SMD BSS transition peer assoc context
@@ -61,6 +65,9 @@ int ath12k_smd_remap_links_op(struct ath12k_vif *ahvif,
 
 /* copy of ATH12K_DP_MAX_POSSIBLE_BA_WIN */
 #define ATH12K_SMD_BA_WIN_SIZE_MAX 0x400
+
+/* copy of ATH12K_DP_INVALID_MLSN_OFFSET */
+#define ATH12K_SMD_INVALID_MLSN_OFFSET 0xffff
 
 #define ATH12K_SMD_CTX_NUM_VALID_CTX    8
 #define ATH12K_SMD_CTX_VALID_DL_SN      0
@@ -221,5 +228,14 @@ static inline u16 ath12k_smd_ctx_decode_ba_buf_size(u16 buf_size_base,
 {
 	return (buf_size_ext << IEEE80211_ADDBA_EXT_BUF_SIZE_SHIFT | buf_size_base);
 }
+
+void ath12k_smd_parse_vendor_ctx(struct ieee80211_smd_ctx *ctx,
+				 struct ath12k_smd_ctx *drv_ctx);
+void ath12k_smd_ctx_get_tx_lsn_offset(struct ath12k_smd_ctx *drv_ctx,
+				      struct ath12k_tx_smd_ctx_per_tid *tid);
+void ath12k_smd_get_vendor_ctx_bitmaps(struct ath12k_smd_ctx *drv_ctx,
+				       struct ath12k_rx_smd_ctx_per_tid *tid);
+int ath12k_smd_set_vendor_ctx(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
+			      struct ath12k_smd_ctx *ctx, struct ieee80211_sta *sta);
 
 #endif /* ATH12K_SMD_H */
