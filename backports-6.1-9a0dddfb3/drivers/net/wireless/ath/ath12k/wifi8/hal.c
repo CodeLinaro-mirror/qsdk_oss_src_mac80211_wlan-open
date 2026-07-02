@@ -334,7 +334,13 @@ void ath12k_wifi8_hal_set_umac_srng_ptr_addr(struct ath12k_base *ab,
 			srng->u.dst_ring.tp_addr =
 				(u32 *)((unsigned long)ab->mem + reg_base +
 				(HAL_REO1_RING_TP - HAL_REO1_RING_HP));
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+			if (type  == HAL_TX_COMPLETION ||
+				    type == HAL_TQM2PPE ||
+				    type == HAL_REO_DST) {
+#else
 			if (type  == HAL_TX_COMPLETION) {
+#endif
 				if (ab->hif.bus == ATH12K_BUS_PCI ||
 				    ab->hif.bus == ATH12K_BUS_HYBRID){
 					srng->u.dst_ring.tp_addr_direct =
@@ -359,7 +365,13 @@ void ath12k_wifi8_hal_set_umac_srng_ptr_addr(struct ath12k_base *ab,
 		if (!ab->hw_params->supports_shadow_regs) {
 			srng->u.src_ring.hp_addr =
 				(u32 *)((unsigned long)ab->mem + reg_base);
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+			if (type  == HAL_TCL_DATA ||
+				    type == HAL_PPE2TCL ||
+				    type == HAL_PPE2WBM_BUF) {
+#else
 			if (type  == HAL_TCL_DATA) {
+#endif
 				if (ab->hif.bus == ATH12K_BUS_PCI ||
 				    ab->hif.bus == ATH12K_BUS_HYBRID){
 					srng->u.src_ring.hp_addr_direct =

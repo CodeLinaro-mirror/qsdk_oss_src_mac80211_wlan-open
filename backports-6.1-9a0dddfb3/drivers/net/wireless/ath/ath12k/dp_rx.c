@@ -494,7 +494,8 @@ static void ath12k_dp_rx_enqueue_free(struct ath12k_dp *dp,
  * via alloc_skb to get PAGE_ALIGNED.
  * Regular pool buffers use the normal allocator.
  */
-static struct sk_buff *ath12k_dp_alloc_rx_skb(struct ath12k_rx_desc_info *rx_desc)
+static struct sk_buff *ath12k_dp_alloc_rx_skb(struct ath12k_base *ab,
+					      struct ath12k_rx_desc_info *rx_desc)
 {
 	unsigned long pg_offset;
 	struct sk_buff *skb;
@@ -593,7 +594,8 @@ static int ath12k_dp_rx_ipa_smmu_buf_map(struct ath12k_base *ab,
 
 #else /* !CPTCFG_EXT_IPA_OFFLOAD */
 
-static inline struct sk_buff *ath12k_dp_alloc_rx_skb(struct ath12k_rx_desc_info *rx_desc)
+static inline struct sk_buff *ath12k_dp_alloc_rx_skb(struct ath12k_base *ab,
+						     struct ath12k_rx_desc_info *rx_desc)
 {
 	return ath12k_dp_alloc_skb(DP_RX_BUFFER_SIZE);
 }
@@ -646,7 +648,7 @@ void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 		ath12k_dp_rx_ipa_dma_mask_save(ab, dp, &ipa_saved_mask, &ipa_mask_set);
 
 		list_for_each_entry_safe(rx_desc, tmp_rx_desc, used_list, list) {
-			skb = ath12k_dp_alloc_rx_skb(rx_desc);
+			skb = ath12k_dp_alloc_rx_skb(ab, rx_desc);
 			if (unlikely(!skb))
 				break;
 
