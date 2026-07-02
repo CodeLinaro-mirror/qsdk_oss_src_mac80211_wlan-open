@@ -28914,6 +28914,8 @@ static int ath12k_mac_setup(struct ath12k *ar)
 	 * Should we do this again?
 	 */
 	ath12k_wmi_pdev_attach(ab, pdev_idx);
+	if (!ar->wmi->wmi_recording_enabled)
+		ath12k_wmi_recording_init(ar->wmi, ab);
 
 	ath12k_mac_fetch_coex_info(ar);
 

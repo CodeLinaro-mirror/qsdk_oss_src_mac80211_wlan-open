@@ -20237,19 +20237,13 @@ int ath12k_wmi_connect(struct ath12k_base *ab)
 	return 0;
 }
 
-static void ath12k_wmi_pdev_detach(struct ath12k_base *ab, u8 pdev_id)
+static void ath12k_wmi_recording_cleanup(struct ath12k_wmi_pdev *wmi_handle)
 {
-	struct ath12k_wmi_pdev *wmi_handle;
+	struct ath12k_base *ab = wmi_handle->wmi_ab->ab;
 	struct wmi_cmd_debug *cmd_log;
 	struct wmi_cmd_comp_debug *tx_cmp_log;
 	struct wmi_event_debug *evt_log;
 
-	if (WARN_ON(pdev_id >= MAX_RADIOS))
-		return;
-
-	wmi_handle = &ab->wmi_ab.wmi[pdev_id];
-
-	wmi_handle->wmi_recording_enabled = false;
 	cmd_log = rcu_access_pointer(wmi_handle->wmi_cmd_log);
 	tx_cmp_log = rcu_access_pointer(wmi_handle->wmi_cmd_tx_cmp_log);
 	evt_log = rcu_access_pointer(wmi_handle->wmi_evt_log);
@@ -20257,28 +20251,36 @@ static void ath12k_wmi_pdev_detach(struct ath12k_base *ab, u8 pdev_id)
 	rcu_assign_pointer(wmi_handle->wmi_cmd_tx_cmp_log, NULL);
 	rcu_assign_pointer(wmi_handle->wmi_evt_log, NULL);
 	synchronize_rcu();
-	kfree(wmi_handle->wmi_cmd_log);
-	kfree(wmi_handle->wmi_cmd_tx_cmp_log);
-	kfree(wmi_handle->wmi_evt_log);
-	/* TODO: Deinit any pdev specific wmi resource */
+
+	if (!test_bit(ATH12K_FLAG_UNREGISTERING, &ab->dev_flags)) {
+		memset(cmd_log, 0,
+		       wmi_handle->wmi_cmd_log_size * sizeof(*cmd_log));
+		memset(tx_cmp_log, 0,
+		       wmi_handle->wmi_cmd_tx_cmp_log_size * sizeof(*tx_cmp_log));
+		memset(evt_log, 0,
+		       wmi_handle->wmi_evt_log_size * sizeof(*evt_log));
+		rcu_assign_pointer(wmi_handle->wmi_cmd_log, cmd_log);
+		rcu_assign_pointer(wmi_handle->wmi_cmd_tx_cmp_log, tx_cmp_log);
+		rcu_assign_pointer(wmi_handle->wmi_evt_log, evt_log);
+		wmi_handle->dbg_cmd_tail_idx = 0;
+		wmi_handle->dbg_cmd_tx_cmp_tail_idx = 0;
+		wmi_handle->dbg_evt_tail_idx = 0;
+	} else {
+		kfree(cmd_log);
+		kfree(tx_cmp_log);
+		kfree(evt_log);
+		wmi_handle->wmi_recording_enabled = false;
+	}
 }
 
-int ath12k_wmi_pdev_attach(struct ath12k_base *ab,
-			   u8 pdev_id)
+void ath12k_wmi_recording_init(struct ath12k_wmi_pdev *wmi_handle,
+				      struct ath12k_base *ab)
 {
-	struct ath12k_wmi_pdev *wmi_handle;
 	struct wmi_cmd_debug *wmi_cmd_log = NULL;
 	struct wmi_cmd_comp_debug *wmi_cmd_tx_cmp_log = NULL;
 	struct wmi_event_debug *wmi_evt_log = NULL;
-	size_t cmd_bytes, txcmp_bytes, evt_bytes;
 	u32 wmi_common_log_entries = 1024;
-
-	if (pdev_id >= ab->hw_params->max_radios)
-		return -EINVAL;
-
-	wmi_handle = &ab->wmi_ab.wmi[pdev_id];
-	wmi_handle->wmi_ab = &ab->wmi_ab;
-	ab->wmi_ab.ab = ab;
+	size_t cmd_bytes, txcmp_bytes, evt_bytes;
 
 	cmd_bytes = wmi_common_log_entries * sizeof(*wmi_handle->wmi_cmd_log);
 	txcmp_bytes = wmi_common_log_entries * sizeof(*wmi_handle->wmi_cmd_tx_cmp_log);
@@ -20305,19 +20307,43 @@ int ath12k_wmi_pdev_attach(struct ath12k_base *ab,
 	wmi_handle->dbg_evt_tail_idx = 0;
 	wmi_handle->verbosity = 1;
 	wmi_handle->wmi_recording_enabled = true;
-	/* TODO: Init remaining resource specific to pdev */
-
-	return 0;
+	return;
 err:
-
 	kfree(wmi_evt_log);
 	kfree(wmi_cmd_tx_cmp_log);
 	kfree(wmi_cmd_log);
-	wmi_handle->wmi_recording_enabled = false;
 	ath12k_err(ab, "WMI Recording Failure : Memory Allocation\n");
+}
+
+static void ath12k_wmi_pdev_detach(struct ath12k_base *ab, u8 pdev_id)
+{
+	struct ath12k_wmi_pdev *wmi_handle;
+
+	if (WARN_ON(pdev_id >= MAX_RADIOS))
+		return;
+
+	wmi_handle = &ab->wmi_ab.wmi[pdev_id];
+
+	if (wmi_handle->wmi_recording_enabled)
+		ath12k_wmi_recording_cleanup(wmi_handle);
+
+	/* TODO: Deinit any pdev specific wmi resource */
+}
+
+int ath12k_wmi_pdev_attach(struct ath12k_base *ab,
+			   u8 pdev_id)
+{
+	struct ath12k_wmi_pdev *wmi_handle;
+
+	if (pdev_id >= ab->hw_params->max_radios)
+		return -EINVAL;
+
+	wmi_handle = &ab->wmi_ab.wmi[pdev_id];
+	wmi_handle->wmi_ab = &ab->wmi_ab;
+	ab->wmi_ab.ab = ab;
+	/* TODO: Init remaining resource specific to pdev */
 
 	return 0;
-
 }
 
 int ath12k_wmi_attach(struct ath12k_base *ab)

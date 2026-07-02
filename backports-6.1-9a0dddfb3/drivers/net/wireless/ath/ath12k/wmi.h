@@ -10931,6 +10931,8 @@ int ath12k_wmi_pdev_attach(struct ath12k_base *ab,
 			   u8 pdev_id);
 int ath12k_wmi_attach(struct ath12k_base *ab);
 void ath12k_wmi_detach(struct ath12k_base *ab);
+void ath12k_wmi_recording_init(struct ath12k_wmi_pdev *wmi_handle,
+			       struct ath12k_base *ab);
 int ath12k_wmi_vdev_create(struct ath12k *ar, u8 *macaddr,
 			   struct ath12k_wmi_vdev_create_arg *arg);
 int ath12k_wmi_send_peer_create_cmd(struct ath12k *ar,
