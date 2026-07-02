@@ -20372,7 +20372,8 @@ void ath12k_wmi_detach(struct ath12k_base *ab)
 {
 	int i;
 
-	if (!test_bit(ATH12K_FLAG_WMI_INIT_DONE, &ab->dev_flags))
+	if (!test_bit(ATH12K_FLAG_WMI_INIT_DONE, &ab->dev_flags) &&
+	    !test_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags))
 		return;
 
 	/* TODO: Deinit wmi resource specific to SOC as required */
