@@ -4787,6 +4787,7 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab,
 	struct ath12k_hw_group *ag = ab->ag;
 	int sz = 0, avail_sz;
 	int i, idx, ret;
+	u64 host_fw_req_total = 0;
 
 	mutex_lock(&ag->mutex);
 	ab->qmi.mem_seg_count = req_mem_seg_count;
@@ -4813,6 +4814,7 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab,
 		case BDF_MEM_REGION_TYPE:
 		case M3_DUMP_REGION_TYPE:
 		case PAGEABLE_MEM_REGION_TYPE:
+			host_fw_req_total += ab->qmi.target_mem[i].size;
 			if ((ab->qmi.target_mem[i].type == CALDB_MEM_REGION_TYPE &&
 			     (!ab->hw_params->cold_boot_calib ||
 			      !ath12k_dp_ring_cfg->cold_boot_calib)) ||
@@ -4889,6 +4891,11 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab,
 				goto out;
 			}
 			ag->mlo_mem.is_mlo_mem_avail = true;
+			if (ab->qmi.target_mem[i].size < rmem->size) {
+				ath12k_info(ab, "mlo: More memory is reserved. reserved=%llu requested=%u\n",
+					    (unsigned long long)rmem->size,
+					    ab->qmi.target_mem[i].size);
+			}
 			idx++;
 			break;
 		case AFC_REGION_TYPE:
@@ -4946,6 +4953,12 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab,
 
 	ab->host_ddr_fixed_mem_off = sz;
 	ab->qmi.mem_seg_count = idx;
+	if (sz < ddr_rmem->size) {
+		ath12k_info(ab, "host-ddr: More memory is reserved. reserved=%llu requested=%llu avail=%llu\n",
+			    (unsigned long long)ddr_rmem->size,
+			    (unsigned long long)host_fw_req_total,
+			    (unsigned long long)(ddr_rmem->size - sz));
+	}
 
 	mutex_unlock(&ag->mutex);
 
