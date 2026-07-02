@@ -825,6 +825,8 @@ struct ath12k_smd_params {
 	bool ptk_mode;
 };
 
+#define ATH12K_FLAG_BEACON_RECEIVED	0
+
 struct ath12k_link_vif {
 	u32 vdev_id;
 	u32 beacon_interval;
@@ -856,6 +858,7 @@ struct ath12k_link_vif {
 	u8 link_id;
 	struct ath12k_vif *ahvif;
 	struct ath12k_rekey_data rekey_data;
+	unsigned long beacon_flags;
 
 	struct ath12k_rssi_deauth_config rssi_deauth_cfg;
 
