@@ -4577,16 +4577,8 @@ int ath12k_dp_mon_tx_srng_alloc_setup(struct ath12k_dp *dp)
 	struct ath12k_dp_tx_mon *dp_tx_mon;
 	int ret;
 
-	if (!dp_mon)
+	if (!dp_mon || !dp_mon->dp_tx_mon)
 		return -EINVAL;
-
-	if (!dp_mon->dp_tx_mon) {
-		dp_tx_mon = kzalloc(sizeof(*dp_tx_mon), GFP_KERNEL);
-		if (!dp_tx_mon)
-			return -ENOMEM;
-		dp_tx_mon->tx_mon_buf_ring_ready = false;
-		dp_mon->dp_tx_mon = dp_tx_mon;
-	}
 
 	dp_tx_mon = dp_mon->dp_tx_mon;
 
