@@ -17,10 +17,59 @@
 
 static int ath12k_smd_ctx_vendor_version = 1;
 
+static struct workqueue_struct *ath12k_smd_ctx_wq;
+static atomic_t ath12k_smd_ctx_wq_ref = ATOMIC_INIT(0);
+static DEFINE_MUTEX(ath12k_smd_ctx_wq_lock);
+
 static void ath12k_smd_ctx_hw_tx_tid_cb(struct ath12k_dp *dp, void *cb_ctx,
 					u8 *addr, u8 tid);
 static void ath12k_smd_ctx_hw_rx_tid_cb(struct ath12k_dp *dp, void *cb_ctx,
 					struct hal_reo_status *reo_status);
+
+static int ath12k_smd_ctx_wq_init(struct ath12k_base *ab)
+{
+	mutex_lock(&ath12k_smd_ctx_wq_lock);
+
+	if (atomic_inc_return(&ath12k_smd_ctx_wq_ref) == 1) {
+		ath12k_smd_ctx_wq = alloc_workqueue("ath12k_smd_ctx_wq",
+						    WQ_HIGHPRI | WQ_UNBOUND,
+						    0);
+		if (!ath12k_smd_ctx_wq) {
+			ath12k_err(ab, "Failed to allocate ath12k_smd_ctx_wq");
+			atomic_dec(&ath12k_smd_ctx_wq_ref);
+			mutex_unlock(&ath12k_smd_ctx_wq_lock);
+			return -ENOMEM;
+		}
+	}
+
+	mutex_unlock(&ath12k_smd_ctx_wq_lock);
+
+	return 0;
+}
+
+static void ath12k_smd_ctx_wq_deinit(void)
+{
+	mutex_lock(&ath12k_smd_ctx_wq_lock);
+
+	if (!ath12k_smd_ctx_wq) {
+		mutex_unlock(&ath12k_smd_ctx_wq_lock);
+		return;
+	}
+
+	if (atomic_dec_and_test(&ath12k_smd_ctx_wq_ref)) {
+		flush_workqueue(ath12k_smd_ctx_wq);
+		destroy_workqueue(ath12k_smd_ctx_wq);
+		ath12k_smd_ctx_wq = NULL;
+	}
+
+	mutex_unlock(&ath12k_smd_ctx_wq_lock);
+}
+
+
+void ath12k_smd_ctx_queue_work(struct work_struct *ctx_wk)
+{
+	queue_work(ath12k_smd_ctx_wq, ctx_wk);
+}
 
 static int ath12k_uhr_smd_transfer_ext_ctx(struct ath12k_vif *ahvif,
 					   struct ieee80211_sta *current_sta,
@@ -1214,11 +1263,12 @@ int ath12k_smd_uhr_link_reconfig(struct ieee80211_hw *hw,
 
 int ath12k_smd_global_init(struct ath12k_base *ab)
 {
-	return 0;
+	return ath12k_smd_ctx_wq_init(ab);
 }
 
 void ath12k_smd_global_deinit(void)
 {
+	ath12k_smd_ctx_wq_deinit();
 }
 
 static int ath12k_smd_post_sta_session_ctx_req(struct ath12k_vif *ahvif,
@@ -1234,10 +1284,14 @@ static int ath12k_smd_post_sta_session_ctx_req(struct ath12k_vif *ahvif,
 	bool dl_sn_transfer;
 	u8 tid;
 
+	if (req->state != SMD_CTX_INIT && req->state != SMD_CTX_WAITING)
+		return -EINVAL;
+
 	arvif = &ahvif->deflink;
 	dp = arvif->ar->ab->dp;
 	ahsta = container_of(smd_info, struct ath12k_sta, smd_info);
 
+	req->state = SMD_CTX_RUNNING;
 	smd_info->ctx_inflight = true;
 	smd_info->latest_ctx_valid = false;
 	smd_info->current_req = req;
@@ -1277,6 +1331,114 @@ static int ath12k_smd_post_sta_session_ctx_req(struct ath12k_vif *ahvif,
 	return ath12k_dp_arch_dp_peer_fetch_smd_ctx(dp, dp_hw, &dp_ctx,
 						    ath12k_smd_ctx_hw_rx_tid_cb,
 						    ath12k_smd_ctx_hw_tx_tid_cb);
+}
+
+void ath12k_smd_ctx_collector_work(struct work_struct *work)
+{
+	struct ath12k_smd_info *smd_info =
+		container_of(work, struct ath12k_smd_info, ctx_wk);
+	struct ath12k_sta *ahsta =
+		container_of(smd_info, struct ath12k_sta, smd_info);
+	struct wiphy *wiphy = ahsta->ahvif->ah->hw->wiphy;
+	struct ath12k_smd_ctx_req *req;
+
+	for (;;) {
+		/* lock per-request to enable callers to submit new requests */
+		spin_lock_bh(&smd_info->ctx_list_lock);
+
+		req = list_first_entry_or_null(&smd_info->ctx_list,
+					       struct ath12k_smd_ctx_req, list);
+		if (!req) {
+			spin_unlock_bh(&smd_info->ctx_list_lock);
+			break;
+		}
+
+		spin_lock_bh(&req->lock);
+
+		if (!req->handler) {
+			WARN_ONCE(1, "SMD Context request with no handler! Drop frame");
+			list_del_init(&req->list);
+			if (req->mmpdu)
+				dev_kfree_skb_any(req->mmpdu);
+			spin_unlock_bh(&req->lock);
+			spin_unlock_bh(&smd_info->ctx_list_lock);
+			kfree(req);
+			continue;
+		}
+
+		if (smd_info->ctx_inflight) {
+			WARN(req->state != SMD_CTX_INIT,
+			     "Context req state is %u but context is inflight",
+			     req->state);
+			req->state = SMD_CTX_WAITING;
+			spin_unlock_bh(&req->lock);
+			spin_unlock_bh(&smd_info->ctx_list_lock);
+			break;
+		}
+
+		list_del_init(&req->list);
+
+		/* COMPLETE-ed requests should not be in the list */
+		if (req->state == SMD_CTX_COMPLETE) {
+			WARN(1, "Request cannot be in COMPLETE state inside wq");
+			if (req->mmpdu)
+				dev_kfree_skb_any(req->mmpdu);
+			spin_unlock_bh(&req->lock);
+			spin_unlock_bh(&smd_info->ctx_list_lock);
+			kfree(req);
+			continue;
+		}
+
+		smd_info->ctx_inflight = false;
+
+		/* Copy cached context for ST Preparation if it is within the threshold */
+		if (req->type == IEEE80211_UHR_LINK_RECONF_TYPE_ST_PREP &&
+		    smd_info->latest_ctx_valid &&
+		    ktime_us_delta(req->enqueued_ts, smd_info->latest_ctx_ts) <=
+		    ATH12K_SMD_CTX_REUSE_THRESHOLD) {
+			ath12k_dbg(NULL, ATH12K_DBG_SMD,
+				   "Using cached ST Prep context for %pM",
+				   req->sta_addr);
+			req->state = SMD_CTX_COMPLETE;
+			memcpy(&req->ctx, &smd_info->latest_ctx, sizeof(req->ctx));
+			req->handler(smd_info, req);
+			spin_unlock_bh(&req->lock);
+			spin_unlock_bh(&smd_info->ctx_list_lock);
+			kfree(req);
+			continue;
+		}
+
+		spin_unlock_bh(&req->lock);
+		spin_unlock_bh(&smd_info->ctx_list_lock);
+
+		/* wiphy_lock serializes against sta teardown and protects
+		 * ahvif->deflink.ar access inside ath12k_smd_post_sta_session_ctx_req().
+		 */
+		wiphy_lock(wiphy);
+		spin_lock_bh(&req->lock);
+
+		if (ath12k_smd_post_sta_session_ctx_req(ahsta->ahvif, req, smd_info)) {
+			ath12k_err(NULL, "Failed to post context request for %pM",
+				   req->sta_addr);
+			/* do not transition to COMPLETE state */
+			req->handler(smd_info, req);
+			spin_unlock_bh(&req->lock);
+			wiphy_unlock(wiphy);
+			kfree(req);
+			continue;
+		}
+
+		ath12k_dbg(NULL, ATH12K_DBG_SMD,
+			   "Posted context request (0x%*pb) for %pM, data dl_tids=0x%*pb ul_tids=0x%*pb",
+			   ATH12K_SMD_CTX_NUM_VALID_CTX, req->ctx.valid_ctx_bmap,
+			   req->sta_addr,
+			   IEEE80211_MAX_NUM_TIDS, req->ctx.dl.valid_tid_bmap,
+			   IEEE80211_MAX_NUM_TIDS, req->ctx.ul.valid_tid_bmap);
+
+		spin_unlock_bh(&req->lock);
+		wiphy_unlock(wiphy);
+		break;
+	}
 }
 
 int ath12k_smd_collect_sta_session_ctx(struct ath12k *ar, struct sk_buff *mmpdu)
@@ -1376,6 +1538,7 @@ int ath12k_smd_collect_sta_session_ctx(struct ath12k *ar, struct sk_buff *mmpdu)
 
 		ath12k_dbg(ab, ATH12K_DBG_SMD, "Using cached ST Prep context for %pM",
 			   sta->addr);
+		_req->state = SMD_CTX_COMPLETE;
 		memcpy(&_req->ctx, &smd_info->latest_ctx, sizeof(_req->ctx));
 		_req->mmpdu = mmpdu;
 		ath12k_smd_update_ctx_to_stack(smd_info, _req);
@@ -1413,6 +1576,7 @@ int ath12k_smd_collect_sta_session_ctx(struct ath12k *ar, struct sk_buff *mmpdu)
 
 	spin_lock_init(&req->lock);
 	req->mmpdu = mmpdu;
+	req->state = SMD_CTX_INIT;
 	req->type = uhr_reconf_type;
 	req->handler = ath12k_smd_update_ctx_to_stack;
 	req->enqueued_ts = ktime_get();
@@ -1424,6 +1588,20 @@ int ath12k_smd_collect_sta_session_ctx(struct ath12k *ar, struct sk_buff *mmpdu)
 	bitmap_write(req->ctx.valid_ctx_bmap, valid_ctx_bmap,
 		     0, ATH12K_SMD_CTX_NUM_VALID_CTX);
 
+	/* If Context Collection is already in-flight for this peer, schedule
+	 * the workqueue to wait it out.
+	 */
+	if (smd_info->ctx_inflight) {
+		spin_lock_bh(&smd_info->ctx_list_lock);
+		list_add_tail(&req->list, &smd_info->ctx_list);
+		spin_unlock_bh(&smd_info->ctx_list_lock);
+
+		ath12k_smd_ctx_queue_work(&smd_info->ctx_wk);
+		spin_unlock_bh(&ar->arsta_lock);
+		return 0;
+	}
+
+	/* pull the context directly, otherwise */
 	ret = ath12k_smd_post_sta_session_ctx_req(ahsta->ahvif, req, smd_info);
 
 	ath12k_dbg(ab, ATH12K_DBG_SMD,
@@ -1696,9 +1874,12 @@ void ath12k_smd_update_ctx_to_stack(struct ath12k_smd_info *smd_info,
 
 	ab = ahsta->ahvif->deflink.ar->ab;
 
+	if (req->state != SMD_CTX_COMPLETE)
+		goto deliver;
+
 	ctx_ext = skb_ext_add(mmpdu, SKB_EXT_WIRELESS);
 	if (!ctx_ext) {
-		ath12k_err(ab, "Failed to allocate space for SMD ctx in skb_ext");
+		ath12k_err(ab, "Failed to attach skb_ext for SMD ctx");
 		goto deliver;
 	}
 
@@ -1742,6 +1923,7 @@ static void ath12k_smd_ctx_hw_completion(struct ath12k_smd_info *smd_info,
 		return;
 	}
 
+	req->state = SMD_CTX_COMPLETE;
 	smd_info->latest_ctx_ts = ktime_get();
 	req->handler(smd_info, req);
 	memcpy(&smd_info->latest_ctx, &req->ctx, sizeof(req->ctx));
@@ -1964,6 +2146,13 @@ static void ath12k_smd_ctx_hw_tx_tid_cb(struct ath12k_dp *dp, void *cb_ctx,
 	}
 
 	spin_lock_bh(&req->lock);
+	if (req->state != SMD_CTX_RUNNING) {
+		ath12k_err(ab, "Invalid SMD HW tx ctx cb for %pM tid=%u in state=%u",
+			   sta->addr, tid, req->state);
+		spin_unlock_bh(&req->lock);
+		return;
+	}
+
 	if (!test_bit(tid, req->ctx.dl.valid_tid_bmap) &&
 	    tid != ATH12K_SMD_TX_MGMT_TID) {
 		spin_unlock_bh(&req->lock);
@@ -2071,6 +2260,13 @@ static void ath12k_smd_ctx_hw_rx_tid_cb(struct ath12k_dp *dp, void *cb_ctx,
 	}
 
 	spin_lock_bh(&req->lock);
+	if (req->state != SMD_CTX_RUNNING) {
+		ath12k_err(ab, "Invalid SMD HW rx ctx cb for %pM tid=%u in state=%u",
+			   sta->addr, tid, req->state);
+		spin_unlock_bh(&req->lock);
+		return;
+	}
+
 	if (!test_bit(tid, req->ctx.ul.valid_tid_bmap) &&
 	    tid != ATH12K_SMD_RX_MGMT_TID) {
 		spin_unlock_bh(&req->lock);
