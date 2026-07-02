@@ -937,6 +937,16 @@ void ath12k_dp_cp_link_peer_unassign(struct ath12k *ar,
 
 	lockdep_assert_wiphy(wiphy);
 
+	if (WARN_ON(link_id >= ATH12K_NUM_MAX_LINKS))
+		return;
+
+	ahvif = arvif->ahvif;
+	dp_vif = &ahvif->dp_vif;
+	dp_link_vif = &dp_vif->dp_link_vif[link_id];
+
+	/* Flush the pending events to be safe */
+	ath12k_event_queue_flush(&ahvif->event_queue);
+
 	dp_peer = (struct ath12k_dp_peer *)ath12k_sta_get_dp_peer_wiphy_locked(wiphy,
 									       ahsta);
 	if (!dp_peer)
@@ -953,25 +963,11 @@ void ath12k_dp_cp_link_peer_unassign(struct ath12k *ar,
 	spin_lock_bh(&dp_hw->peer_hash_lock);
 	spin_lock_bh(&dp->dp_lock);
 
-	if (ath12k_dp_link_peer_get_vif(peer)) {
-		ahvif = ath12k_vif_to_ahvif(ath12k_dp_link_peer_get_vif(peer));
-		if (ahvif) {
-			/* Flush the pending events to be safe */
-			ath12k_event_queue_flush(&ahvif->event_queue);
-			dp_vif = &ahvif->dp_vif;
-			if (peer->link_id < ATH12K_NUM_MAX_LINKS)
-				dp_link_vif = &dp_vif->dp_link_vif[peer->link_id];
-		}
-	}
-
 	__ath12k_dp_link_peer_unassign(ar, dp, dp_hw, peer, dp_link_vif, addr);
 
 	spin_unlock_bh(&dp->dp_lock);
 	spin_unlock_bh(&dp_hw->peer_hash_lock);
 	rcu_read_unlock();
-
-	if (WARN_ON(link_id >= ATH12K_NUM_MAX_LINKS))
-		return;
 
 	arsta = wiphy_dereference(ah->hw->wiphy, ahsta->link[link_id]);
 	if (WARN_ON(!arsta))
