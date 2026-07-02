@@ -3978,6 +3978,8 @@ ieee80211_rx_h_mgmt_check(struct ieee80211_rx_data *rx)
 	}
 
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	if (ieee80211_process_mesh_peer_deauth_disassoc(rx) == RX_DROP_MONITOR)
+		return RX_DROP_MONITOR;
 	if (ieee80211_process_mesh_peer_beacon(rx) == RX_DROP_MONITOR)
 		return RX_DROP_MONITOR;
 #endif /* CPTCFG_QCN_EXTN_MESH_SUPPORT */
