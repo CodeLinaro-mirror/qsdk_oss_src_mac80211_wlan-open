@@ -2602,6 +2602,12 @@ struct ath12k_base {
 
 	/* Current DFS Regulatory */
 	enum ath12k_dfs_region dfs_region;
+	/* Protects reg_freq_2g/5g/6g against concurrent reset+write in
+	 * ath12k_reg_build_regd() vs. read in ath12k_regd_update_freq_range(),
+	 * ath12k_mac_setup_channels_rates() and
+	 * ath12k_mac_setup_channels_rates_multiband().
+	 */
+	spinlock_t reg_freq_lock;
 	struct ath12k_reg_freq reg_freq_2g;
 	struct ath12k_reg_freq reg_freq_5g;
 	struct ath12k_reg_freq reg_freq_6g;

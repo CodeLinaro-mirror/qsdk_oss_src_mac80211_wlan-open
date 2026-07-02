@@ -27227,10 +27227,12 @@ static int ath12k_mac_setup_channels_rates_multiband(struct ath12k *ar,
 			reg_cap_2g_local = *reg_cap;
 		}
 
+		spin_lock_bh(&ab->reg_freq_lock);
 		freq_low = max(reg_cap_2g_local.low_2ghz_chan,
 			       ab->reg_freq_2g.start_freq);
 		freq_high = min(reg_cap_2g_local.high_2ghz_chan,
 				ab->reg_freq_2g.end_freq);
+		spin_unlock_bh(&ab->reg_freq_lock);
 
 		ath12k_mac_update_ch_list(ar, band,
 					  reg_cap_2g_local.low_2ghz_chan,
@@ -27335,8 +27337,10 @@ static int ath12k_mac_setup_channels_rates_multiband(struct ath12k *ar,
 					  ATH12K_MIN_6GHZ_FREQ - 1);
 		}
 
+		spin_lock_bh(&ab->reg_freq_lock);
 		freq_low = max(reg_5g_low, ab->reg_freq_5g.start_freq);
 		freq_high = min(reg_5g_high, ab->reg_freq_5g.end_freq);
+		spin_unlock_bh(&ab->reg_freq_lock);
 
 		ath12k_mac_update_ch_list(ar, band, reg_5g_low,
 					  reg_5g_high);
@@ -27440,8 +27444,10 @@ static int ath12k_mac_setup_channels_rates_multiband(struct ath12k *ar,
 		}
 		reg_6g_high = reg_cap_6g_local.high_5ghz_chan;
 
+		spin_lock_bh(&ab->reg_freq_lock);
 		freq_low = max(reg_6g_low, ab->reg_freq_6g.start_freq);
 		freq_high = min(reg_6g_high, ab->reg_freq_6g.end_freq);
+		spin_unlock_bh(&ab->reg_freq_lock);
 
 		ath12k_mac_update_ch_list(ar, band, reg_6g_low,
 					  reg_6g_high);
@@ -27509,10 +27515,12 @@ static int ath12k_mac_setup_channels_rates(struct ath12k *ar,
 			reg_cap = &ab->hal_reg_cap[phy_id];
 		}
 
+		spin_lock_bh(&ab->reg_freq_lock);
 		freq_low = max(reg_cap->low_2ghz_chan,
 			       ab->reg_freq_2g.start_freq);
 		freq_high = min(reg_cap->high_2ghz_chan,
 				ab->reg_freq_2g.end_freq);
+		spin_unlock_bh(&ab->reg_freq_lock);
 
 		ath12k_mac_update_ch_list(ar, band,
 					  reg_cap->low_2ghz_chan,
@@ -27586,10 +27594,12 @@ static int ath12k_mac_setup_channels_rates(struct ath12k *ar,
 			if (ar->ab->hw_params->single_pdev_only)
 				phy_id = ath12k_get_phy_id(ar, WMI_HOST_WLAN_5GHZ_CAP);
 
+			spin_lock_bh(&ab->reg_freq_lock);
 			freq_low = max(reg_cap->low_5ghz_chan,
 				       ab->reg_freq_5g.start_freq);
 			freq_high = min(reg_cap->high_5ghz_chan,
 					ab->reg_freq_5g.end_freq);
+			spin_unlock_bh(&ab->reg_freq_lock);
 
 			ath12k_mac_update_ch_list(ar, band,
 						  reg_cap->low_5ghz_chan,
@@ -27672,10 +27682,12 @@ static int ath12k_mac_setup_channels_rates(struct ath12k *ar,
 			band->channels = channels;
 			band->n_channels = ARRAY_SIZE(ath12k_6ghz_channels);
 
+			spin_lock_bh(&ab->reg_freq_lock);
 			freq_low = max(reg_cap->low_5ghz_chan,
 				       ab->reg_freq_6g.start_freq);
 			freq_high = min(reg_cap->high_5ghz_chan,
 					ab->reg_freq_6g.end_freq);
+			spin_unlock_bh(&ab->reg_freq_lock);
 
 			ath12k_mac_update_ch_list(ar, band,
 						  reg_cap->low_5ghz_chan,

@@ -6490,6 +6490,7 @@ struct ath12k_base *ath12k_core_alloc(struct device *dev, size_t priv_size,
 
 	mutex_init(&ab->core_lock);
 	spin_lock_init(&ab->base_lock);
+	spin_lock_init(&ab->reg_freq_lock);
 	init_completion(&ab->reset_complete);
 
 	init_waitqueue_head(&ab->peer_mapping_wq);
