@@ -1198,6 +1198,27 @@ struct sk_buff *ath12k_dp_rx_get_msdu_last_buf(struct sk_buff_head *msdu_list,
 	return NULL;
 }
 
+static struct ath12k_dp_link_peer *
+ath12k_dp_link_peer_find_by_addr(struct ath12k_pdev_dp *dp_pdev, const u8 *addr)
+{
+	u32 hash;
+	struct ath12k_dp_link_peer *peer;
+	struct ath12k_dp *dp = dp_pdev->dp;
+
+	lockdep_assert_held(&dp->dp_lock);
+
+	hash = jhash(addr, ETH_ALEN, 0);
+
+	/* Compare mac address and hw_link_id */
+	hash_for_each_possible(dp->link_peer_htbl, peer, hash_addr_node, hash) {
+		if (ether_addr_equal(peer->addr, addr) &&
+		    dp_pdev->ar->hw_link_id == peer->hw_link_id)
+			return peer;
+	}
+
+	return NULL;
+}
+
 struct ath12k_dp_link_peer *
 ath12k_dp_rx_h_find_peer(struct ath12k_pdev_dp *dp_pdev,
 			 struct hal_rx_desc *rx_desc,
@@ -1214,7 +1235,7 @@ ath12k_dp_rx_h_find_peer(struct ath12k_pdev_dp *dp_pdev,
 
 	peer_mac = ath12k_hal_rxdesc_get_mpdu_start_addr2(dp->hal, rx_desc);
 	if (peer_mac)
-		peer = ath12k_dp_link_peer_find_by_addr(dp, peer_mac);
+		peer = ath12k_dp_link_peer_find_by_addr(dp_pdev, peer_mac);
 
 	return peer;
 }
