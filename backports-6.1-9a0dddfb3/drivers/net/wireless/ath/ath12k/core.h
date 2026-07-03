@@ -1490,6 +1490,28 @@ struct ath12k_sta {
 	void __rcu *dp_peer;
 
 	struct ath12k_smd_info smd_info;
+
+	/*
+	 * Cached per-link sta pointers used to hand off between pre-remove
+	 * handling and later state transitions. Written before clearing
+	 * ahsta->link[link_id], read during teardown transitions that execute
+	 * after the pre-remove step, and cleared during final unassign.
+	 * Protected by wiphy->mtx (all callers hold the wiphy lock).
+	 */
+	struct ath12k_link_sta *saved_link_sta[ATH12K_NUM_MAX_LINKS];
+
+	/*
+	 * Set by sta_pre_rcu_remove() after clearing ahsta->link[link_id] for
+	 * all active links (single-link and MLO) and before mac80211's
+	 * synchronize_net(). When true, ath12k_mac_free_unassign_link_sta()
+	 * skips rcu_assign_pointer + synchronize_rcu() because
+	 * synchronize_net() already provided the grace period for readers of
+	 * ahsta->link[]. STA-level flag is sufficient since
+	 * sta_pre_rcu_remove() operates on all links of the STA. Protected by
+	 * wiphy->mtx. Reset to false by memset in sta_state(NOTEXIST->NONE) at
+	 * the start of the next connect cycle.
+	 */
+	bool pre_rcu_remove_done;
 };
 
 #define ATH12K_INVALID_RSSI_FULL -1

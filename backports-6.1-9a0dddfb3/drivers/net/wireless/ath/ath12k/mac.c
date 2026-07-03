@@ -4880,6 +4880,9 @@ ath12k_peer_assoc_build_vendor_event(struct ath12k_sta *ahsta,
 	unsigned long links;
 	struct ath12k_vendor_generic_peer_assoc_event *assoc_ev = ev;
 	struct ath12k_vendor_mld_peer_link_entry *link_entry;
+	struct ath12k_hw *ah = ahsta->ahvif->ah;
+	struct wiphy *wiphy = ah->hw->wiphy;
+
 	u8 i = 0, link_id;
 
 	sta = container_of((void *)ahsta, struct ieee80211_sta, drv_priv);
@@ -4889,7 +4892,11 @@ ath12k_peer_assoc_build_vendor_event(struct ath12k_sta *ahsta,
 	for_each_set_bit(link_id, &links, ATH12K_NUM_MAX_LINKS) {
 		if (i >= ATH12K_WMI_MLO_MAX_LINKS)
 			break;
-		arsta = ahsta->link[link_id];
+		arsta = wiphy_dereference(wiphy, ahsta->link[link_id]);
+		if (!arsta)
+			arsta = ahsta->saved_link_sta[link_id];
+		if (!arsta)
+			continue;
 		arvif = ath12k_get_arvif_from_link_id(ahsta->ahvif, link_id);
 		if (!(arvif && arvif->ar))
 			continue;
@@ -12185,6 +12192,8 @@ int ath12k_mac_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 							  ahvif->link[link_id]);
 				arsta = wiphy_dereference(hw->wiphy,
 							  ahsta->link[link_id]);
+				if (!arsta)
+					arsta = ahsta->saved_link_sta[link_id];
 
 				if (WARN_ON(!arvif || !arsta))
 					/* arvif and arsta are expected to be valid when
@@ -13783,8 +13792,8 @@ static void ath12k_mac_free_unassign_link_sta(struct ath12k_hw *ah,
 					      u8 link_id)
 {
 	struct ath12k_link_sta *arsta;
-	struct ath12k_link_vif *arvif = ahsta->link[link_id]->arvif;
-	struct ath12k_base *ab = arvif->ar->ab;
+	struct ath12k_link_vif *arvif;
+	struct ath12k_base *ab;
 
 	lockdep_assert_wiphy(ah->hw->wiphy);
 
@@ -13792,15 +13801,31 @@ static void ath12k_mac_free_unassign_link_sta(struct ath12k_hw *ah,
 		return;
 
 	arsta = wiphy_dereference(ah->hw->wiphy, ahsta->link[link_id]);
+	if (!arsta)
+		arsta = ahsta->saved_link_sta[link_id];
 	if (WARN_ON(!arsta))
 		return;
+
+	arvif = arsta->arvif;
+	ab = arvif->ar->ab;
 
 	ahsta->links_map &= ~BIT(link_id);
 	ahsta->device_bitmap &= ~BIT(ab->wsi_info.index);
 	ahsta->mlo_hw_link_id_bitmap &= ~BIT(arvif->ar->pdev->hw_link_id);
 	ahsta->free_logical_idx_map |= BIT(arsta->link_idx);
-	rcu_assign_pointer(ahsta->link[link_id], NULL);
-	synchronize_rcu();
+
+	if (ahsta->pre_rcu_remove_done) {
+		/*
+		 * ahsta->link[link_id] was already cleared in sta_pre_rcu_remove()
+		 * before mac80211's synchronize_net(). No rcu_assign_pointer or
+		 * synchronize_rcu() needed here — synchronize_net() already provided
+		 * the grace period covering all readers of ahsta->link[link_id].
+		 */
+		ahsta->saved_link_sta[link_id] = NULL;
+	} else {
+		rcu_assign_pointer(ahsta->link[link_id], NULL);
+		synchronize_rcu();
+	}
 
 	if (arsta == &ahsta->deflink) {
 		arsta->link_id = ATH12K_INVALID_LINK_ID;
@@ -14755,6 +14780,8 @@ static void ath12k_mac_ml_station_remove(struct ath12k_vif *ahvif,
 	for_each_set_bit(link_id, &links, ATH12K_NUM_MAX_LINKS) {
 		arsta = wiphy_dereference(ah->hw->wiphy, ahsta->link[link_id]);
 		if (!arsta)
+			arsta = ahsta->saved_link_sta[link_id];
+		if (!arsta)
 			continue;
 		memcpy(link_addr[link_id], arsta->addr, ETH_ALEN);
 	}
@@ -15245,6 +15272,45 @@ static void ath12k_mac_sta_smd_info_cleanup(struct ath12k_sta *ahsta)
 	}
 }
 
+void ath12k_mac_op_sta_pre_rcu_remove(struct ieee80211_hw *hw,
+				      struct ieee80211_vif *vif,
+				      struct ieee80211_sta *sta)
+{
+	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
+	struct ath12k_link_sta *arsta;
+	unsigned long links_map;
+	u8 link_id;
+
+	lockdep_assert_wiphy(hw->wiphy);
+
+	/*
+	 * Clear ahsta->link[] for all active links.
+	 * Handle both single-link and MLO STAs. For each link, save arsta for
+	 * teardown transitions that run after sta_pre_rcu_remove() (the only
+	 * remaining reference once ahsta->link[link_id] is NULL, under
+	 * wiphy->mtx), then clear ahsta->link[link_id] before synchronize_net()
+	 * so the grace period guarantees no RX fast-path readers still hold
+	 * arsta via this pointer.
+	 */
+	links_map = ahsta->links_map;
+	for_each_set_bit(link_id, &links_map, ATH12K_NUM_MAX_LINKS) {
+		arsta = wiphy_dereference(hw->wiphy, ahsta->link[link_id]);
+		if (!arsta)
+			continue;
+
+		ahsta->saved_link_sta[link_id] = arsta;
+		rcu_assign_pointer(ahsta->link[link_id], NULL);
+	}
+
+	/* pre_rcu_remove_done indicates that ahsta->link[] was already cleared
+	 * and synchronize_net() provides the grace period, so no additional
+	 * synchronize_rcu() is needed in the later cleanup path.
+	 */
+
+	ahsta->pre_rcu_remove_done = true;
+}
+EXPORT_SYMBOL(ath12k_mac_op_sta_pre_rcu_remove);
+
 int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 			    struct ieee80211_vif *vif,
 			    struct ieee80211_sta *sta,
@@ -15529,6 +15595,16 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 	for_each_set_bit(link_id, &links_map, ATH12K_NUM_MAX_LINKS) {
 		arvif = wiphy_dereference(wiphy, ahvif->link[link_id]);
 		arsta = wiphy_dereference(wiphy, ahsta->link[link_id]);
+		/*
+		 * ahsta->link[link_id] is NULL after sta_pre_rcu_remove()
+		 * cleared it before synchronize_net(). Use saved_link_sta as
+		 * fallback for all teardown transitions (ASSOC->AUTH,
+		 * AUTH->NONE, NONE->NOTEXIST).
+		 * During connect, ahsta->link[link_id] is non-NULL so the
+		 * fallback is never reached.
+		 */
+		if (!arsta)
+			arsta = ahsta->saved_link_sta[link_id];
 		/* some assumptions went wrong! */
 		if (WARN_ON(!arvif || !arsta))
 			continue;
@@ -15636,6 +15712,8 @@ ml_station_remove:
 			if (is_recovery && link_id >= 0) {
 				arvif = wiphy_dereference(wiphy, ahvif->link[link_id]);
 				arsta = wiphy_dereference(wiphy, ahsta->link[link_id]);
+				if (!arsta)
+					arsta = ahsta->saved_link_sta[link_id];
 
 				if (!WARN_ON(!arvif || !arsta))
 					ath12k_mac_station_remove(arvif->ar,
