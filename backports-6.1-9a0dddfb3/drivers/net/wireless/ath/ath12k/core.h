@@ -1517,7 +1517,7 @@ struct ath12k_debug {
 	struct completion wmi_ctrl_path_stats_rcvd;
 	u8 wmi_ctrl_path_stats_reqid;
 	/* To protect wmi_list manipulation */
-	spinlock_t  wmi_ctrl_path_stats_lock;
+	spinlock_t wmi_ctrl_path_stats_lock;
 	bool wmi_ctrl_path_stats_more_enabled;
 	enum wmi_halphy_ctrl_path_stats_id tpc_stats_type;
 	bool tpc_request;
@@ -1970,9 +1970,6 @@ struct ath12k {
 #ifdef CPTCFG_ATH12K_DEBUGFS
 	struct ath12k_debug debug;
 	struct dentry *wmi_ctrl_stat;
-	/* To protect wmi_list manipulation */
-	spinlock_t wmi_ctrl_path_stats_lock;
-
 	/* TODO: Add mac_filter, ampdu_aggr_size and wbm_tx_completion_stats stats*/
 #endif
 	bool supports_6ghz:1;
