@@ -509,6 +509,11 @@ void cfg80211_chandef_primary_freqs(const struct cfg80211_chan_def *c,
 {
 	int tmp;
 
+	if (!pri40 || !pri80 || !pri160) {
+		WARN_ON_ONCE(1);
+		return;
+	}
+
 	switch (c->width) {
 	case NL80211_CHAN_WIDTH_40:
 		*pri40 = c->center_freq1;
@@ -588,7 +593,10 @@ int cfg80211_chandef_primary(const struct cfg80211_chan_def *c,
 			*punctured >>= bits_to_drop;
 		} else {
 			center -= width / 4;
-			*punctured &= (1 << bits_to_drop) - 1;
+			if (bits_to_drop >= 16)
+				*punctured = 0;
+			else
+				*punctured &= (1U << bits_to_drop) - 1;
 		}
 		width /= 2;
 	}
@@ -2081,6 +2089,9 @@ cfg80211_update_chandef_6ghz_power_mode(const struct net_device *netdev,
 	if (!chan) {
 		return -EINVAL;
 	}
+
+	if (link_id >= ARRAY_SIZE(wdev->links))
+		return -EINVAL;
 
 	chandef->chan = chan;
 	wdev->links[link_id].reg_6g_power_mode = power_mode;

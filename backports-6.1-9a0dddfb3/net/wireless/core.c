@@ -1770,8 +1770,10 @@ static int cfg80211_netdev_notifier_call(struct notifier_block *nb,
 				struct mesh_setup *setup;
 
 				setup = kzalloc(sizeof(*setup), GFP_KERNEL);
-				if (!setup)
+				if (!setup) {
+					wiphy_unlock(&rdev->wiphy);
 					return notifier_from_errno(-ENOMEM);
+				}
 				memcpy(setup, &default_mesh_setup,
 				       sizeof(*setup));
 				 /* back compat only needed for mesh_id */

@@ -120,6 +120,11 @@ static int cfg80211_conn_scan(struct wireless_dev *wdev)
 		struct_size(request, channels, n_channels);
 	request->n_ssids = 1;
 
+	if (wdev->conn->params.ssid_len > IEEE80211_MAX_SSID_LEN) {
+		kfree(request);
+		return -EINVAL;
+	}
+
 	memcpy(request->ssids[0].ssid, wdev->conn->params.ssid,
 		wdev->conn->params.ssid_len);
 	request->ssids[0].ssid_len = wdev->conn->params.ssid_len;
@@ -342,7 +347,14 @@ void cfg80211_sme_rx_auth(struct wireless_dev *wdev, const u8 *buf, size_t len)
 	struct wiphy *wiphy = wdev->wiphy;
 	struct cfg80211_registered_device *rdev = wiphy_to_rdev(wiphy);
 	struct ieee80211_mgmt *mgmt = (struct ieee80211_mgmt *)buf;
-	u16 status_code = le16_to_cpu(mgmt->u.auth.status_code);
+	size_t min_len = offsetof(struct ieee80211_mgmt, u.auth.status_code) +
+			 sizeof(mgmt->u.auth.status_code);
+	u16 status_code;
+
+	if (len < min_len)
+		return;
+
+	status_code = le16_to_cpu(mgmt->u.auth.status_code);
 
 	lockdep_assert_wiphy(wdev->wiphy);
 
@@ -906,6 +918,8 @@ void __cfg80211_connect_result(struct net_device *dev,
 						      WLAN_EID_SSID);
 
 			if (!ssid || !ssid->datalen)
+				continue;
+			if (ssid->datalen > sizeof(wdev->u.client.ssid))
 				continue;
 
 			memcpy(wdev->u.client.ssid, ssid->data, ssid->datalen);
@@ -1483,6 +1497,9 @@ int cfg80211_connect(struct cfg80211_registered_device *rdev,
 		u32 cipher;
 
 		idx = connkeys->def;
+		if (idx >= ARRAY_SIZE(connkeys->params))
+			return -EINVAL;
+
 		cipher = connkeys->params[idx].cipher;
 		/* If given a WEP key we may need it for shared key auth */
 		if (cipher == WLAN_CIPHER_SUITE_WEP40 ||
@@ -1516,6 +1533,10 @@ int cfg80211_connect(struct cfg80211_registered_device *rdev,
 	}
 
 	wdev->connect_keys = connkeys;
+	if (connect->ssid_len > sizeof(wdev->u.client.ssid)) {
+		wdev->connect_keys = NULL;
+		return -EINVAL;
+	}
 	memcpy(wdev->u.client.ssid, connect->ssid, connect->ssid_len);
 	wdev->u.client.ssid_len = connect->ssid_len;
 

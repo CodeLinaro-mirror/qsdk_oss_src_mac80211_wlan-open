@@ -37,7 +37,8 @@ void ieee80211_aes_cmac(struct crypto_shash *tfm, const u8 *aad,
 	if (ieee80211_is_beacon(*fc)) {
 		/* mask Timestamp field to zero */
 		crypto_shash_update(desc, zero, 8);
-		crypto_shash_update(desc, data + 8, data_len - 8 - CMAC_TLEN);
+		if (data_len >= 8 + CMAC_TLEN)
+			crypto_shash_update(desc, data + 8, data_len - 8 - CMAC_TLEN);
 	} else {
 		crypto_shash_update(desc, data, data_len - CMAC_TLEN);
 	}
