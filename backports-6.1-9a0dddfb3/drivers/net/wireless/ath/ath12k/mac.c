@@ -11436,6 +11436,18 @@ static int ath12k_clear_peer_keys(struct ath12k_link_vif *arvif, void *dp_peer,
 	if (ret)
 		return -ENOENT;
 
+	spin_lock_bh(&ar->arsta_lock);
+	if (!ath12k_link_sta_find_by_addr(ar, addr)) {
+		spin_unlock_bh(&ar->arsta_lock);
+		/*Return success if peer dosen't exist when recovery is in progress*/
+		if (test_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags))
+			return 0;
+
+		ath12k_err(ab, "arsta %pM dosen't exist in sta list\n", addr);
+		return -EINVAL;
+	}
+	spin_unlock_bh(&ar->arsta_lock);
+
 	len = val.keys_params.len;
 	for (i = 0; i < len; i++) {
 		if (!val.keys_params.keys[i])
