@@ -1324,6 +1324,7 @@ ath12k_wifi8_deliver_raw_frame(struct ath12k_pdev_dp *dp_pdev,
 			       struct link_peer_rx_tid_stats *stats,
 			       struct rx_tlv_info_1 *prev_tlv_info)
 {
+	enum hal_encrypt_type enctype = HAL_ENCRYPT_TYPE_OPEN;
 	struct rx_msdu_desc_info *rx_msdu_info;
 	struct rx_mpdu_desc_info *rx_mpdu_info;
 	struct rx_tlv_info_1 *tlv_info;
@@ -1334,7 +1335,11 @@ ath12k_wifi8_deliver_raw_frame(struct ath12k_pdev_dp *dp_pdev,
 	struct hal_rx_desc *rx_tlv_hdr;
 	bool is_mcbc = false;
 	bool ret, decrypted;
-	bool ra_mcbc = rx_spd->rx_msdu_info.da_is_mcbc && !peer->is_reset_mcbc;
+	bool ra_mcbc = rx_spd->rx_msdu_info.da_is_mcbc;
+	u16 peer_id = ATH12K_PEER_ID_INVALID;
+
+	if (peer)
+		ra_mcbc = ra_mcbc && !peer->is_reset_mcbc;
 
 	is_mcbc = is_ieee80211_frame_da_mcast(msdu);
 
@@ -1351,7 +1356,14 @@ ath12k_wifi8_deliver_raw_frame(struct ath12k_pdev_dp *dp_pdev,
 			RX_FLAG_IV_STRIPPED |
 			RX_FLAG_MMIC_STRIPPED);
 
-	pubsta = peer->sta;
+	if (!peer) {
+		status->link_valid = 0;
+	} else {
+		pubsta = peer->sta;
+		enctype = ra_mcbc ? peer->sec_type_grp : peer->sec_type;
+		peer_id = peer->peer_id;
+	}
+
 	if (pubsta && pubsta->valid_links) {
 		int link_id = rx_mpdu_info->src_link_id;
 
@@ -1386,8 +1398,8 @@ ath12k_wifi8_deliver_raw_frame(struct ath12k_pdev_dp *dp_pdev,
 
 	ath12k_dp_rx_h_undecap_raw(dp_pdev, msdu,
 				   rx_tlv_hdr,
-				   peer->sec_type,
-				   status, 1, peer->peer_id,
+				   enctype,
+				   status, 1, peer_id,
 				   rx_msdu_info->first_msdu,
 				   rx_msdu_info->last_msdu);
 
@@ -1415,6 +1427,7 @@ ath12k_wifi8_deliver_nwifi_frame(struct ath12k_pdev_dp *dp_pdev,
 				 struct link_peer_rx_tid_stats *stats,
 				 struct rx_tlv_info_1 *prev_tlv_info)
 {
+	enum hal_encrypt_type enctype = HAL_ENCRYPT_TYPE_OPEN;
 	struct rx_msdu_desc_info *rx_msdu_info;
 	struct rx_mpdu_desc_info *rx_mpdu_info;
 	struct rx_tlv_info_1 *tlv_info;
@@ -1426,6 +1439,11 @@ ath12k_wifi8_deliver_nwifi_frame(struct ath12k_pdev_dp *dp_pdev,
 	struct ieee80211_hdr *hdr;
 	u32 hdr_len;
 	bool ret;
+	bool ra_mcbc = rx_spd->rx_msdu_info.da_is_mcbc;
+	u16 peer_id = ATH12K_PEER_ID_INVALID;
+
+	if (peer)
+		ra_mcbc = ra_mcbc && !peer->is_reset_mcbc;
 
 	/* ideally driver should not be doing this check.
 	 * instead HW should flag this with error_code
@@ -1452,7 +1470,14 @@ ath12k_wifi8_deliver_nwifi_frame(struct ath12k_pdev_dp *dp_pdev,
 			RX_FLAG_SKIP_MONITOR |
 			RX_FLAG_DUP_VALIDATED;
 
-	pubsta = peer->sta;
+	if (!peer) {
+		status->link_valid = 0;
+	} else {
+		pubsta = peer->sta;
+		enctype = ra_mcbc ? peer->sec_type_grp : peer->sec_type;
+		peer_id = peer->peer_id;
+	}
+
 	if (pubsta && pubsta->valid_links) {
 		int link_id = rx_mpdu_info->src_link_id;
 
@@ -1477,7 +1502,7 @@ ath12k_wifi8_deliver_nwifi_frame(struct ath12k_pdev_dp *dp_pdev,
 		return;
 	}
 
-	ath12k_wifi8_dp_rx_h_undecap_nwifi(dp_pdev, msdu, peer->sec_type,
+	ath12k_wifi8_dp_rx_h_undecap_nwifi(dp_pdev, msdu, enctype,
 					   status,
 					   rx_tlv_hdr,
 					   rx_spd->tlv_info.mesh_ctrl_present,
@@ -3618,8 +3643,6 @@ ath12k_wifi8_flush_handle_null_queue(struct ath12k_dp *dp,
 						 peer_metadata);
 
 	peer = ath12k_dp_peer_find_by_peerid_index(dp_pdev->dp, dp_pdev, peer_id);
-	if (!peer)
-		return false;
 
 	hw_link_id = ath12k_dp_validate_hw_link_id(hw_link_id);
 	rx_spd.rx_mpdu_info.src_link_id = hw_link_id;
