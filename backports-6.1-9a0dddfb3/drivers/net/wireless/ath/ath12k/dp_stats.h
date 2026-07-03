@@ -1959,6 +1959,19 @@ void ath12k_dp_tid_tx_stats_hist_init(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_accumulate_hist_stats(struct hist_stats *src_hist_stats,
 				     struct hist_stats *dst_hist_stats);
 
+void ath12k_dp_tx_compute_hw_delay_stats(struct ath12k_pdev_dp *dp_pdev,
+					 struct ath12k_dp_peer *peer, u8 ring,
+					 struct hal_tx_status *ts,
+					 u32 fwhw_transmit_delay);
+
+void ath12k_dp_tx_update_peer_latency_stats(struct ath12k_pdev_dp *dp_pdev,
+					    struct ath12k_dp_peer *peer,
+					    struct hal_tx_status *ts,
+					    u8 ring,
+					    struct sk_buff *skb,
+					    u32 hw_enqueue_tstamp,
+					    u32 fwhw_transmit_delay);
+
 void ath12k_qos_tx_enqueue_peer_stats(struct ath12k_dp_peer *mld_peer,
 				      u8 hw_link_id, u16 msduq_id,
 				      unsigned int len);
