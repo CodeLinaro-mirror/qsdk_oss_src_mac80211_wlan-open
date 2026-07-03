@@ -5208,6 +5208,15 @@ struct wmi_pdev_check_cal_version_cmd {
 	__le32 pdev_id;
 } __packed;
 
+#define WMI_BOARD_MCN_STRING_MAX_SIZE		19
+#define WMI_BOARD_MCN_STRING_BUF_SIZE		(WMI_BOARD_MCN_STRING_MAX_SIZE + 1)
+
+enum wmi_calibration_status {
+	WMI_CALIBRATION_NO_FEATURE,
+	WMI_CALIBRATION_OK,
+	WMI_CALIBRATION_NOT_OK,
+};
+
 #define WMI_P2P_MAX_NOA_DESCRIPTORS		4
 
 struct wmi_p2p_noa_event {
@@ -6599,6 +6608,14 @@ struct wmi_probe_resp_tx_status_event {
 struct wmi_pdev_ctl_failsafe_chk_event {
 	__le32 pdev_id;
 	__le32 ctl_failsafe_status;
+} __packed;
+
+struct wmi_pdev_check_cal_version_event {
+	__le32 software_cal_version;
+	__le32 board_cal_version;
+	__le32 cal_status;
+	u8 board_mcn_detail[WMI_BOARD_MCN_STRING_BUF_SIZE];
+	__le32 pdev_id;
 } __packed;
 
 struct ath12k_wmi_pdev_csa_event {
