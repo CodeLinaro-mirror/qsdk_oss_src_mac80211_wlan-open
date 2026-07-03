@@ -2071,4 +2071,9 @@ void ath12k_wifi8_htt_tx_mon_cfg_fill_extended_wmask(
 	cmd->tlv_word_mask_in7 |=
 		le32_encode_bits(htt_tlv_filter->wmask.rx_resp_required_info,
 				 HTT_TX_MON_WMASK_IN7_RX_RESP_REQD_INFO_MASK);
+	cmd->tlv_filter_mask_in4 |=
+		le32_encode_bits(htt_tlv_filter->tx_mon_upstream_tlv_flags3,
+				 HTT_TX_FILTER_MASK_IN4_UPSTREAM_TLV_FLAGS3) |
+		le32_encode_bits(htt_tlv_filter->tx_mon_downstream_tlv_flags1,
+				 HTT_TX_FILTER_MASK_IN4_DOWNSTREAM_TLV_FLAGS1);
 }
