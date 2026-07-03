@@ -611,8 +611,6 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 	spin_lock_bh(&dp_hw->peer_hash_lock);
 	spin_lock_bh(&dp->dp_lock);
 
-	ath12k_dp_arch_link_peer_assign_id(dp, ar, peer);
-
 	if (!is_vdev_peer)
 		dp_peer = ath12k_dp_peer_find_by_addr_and_sta(dp_hw, dp_peer_mac, sta);
 	else
@@ -625,6 +623,8 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 
 	peer->link_id = link_id;
 	peer->dp_peer = dp_peer;
+
+	ath12k_dp_arch_link_peer_assign_id(dp, ar, peer);
 	peer->hw_link_id = hw_link_id;
 	peer->event.common.hw_link_id = hw_link_id;
 	peer->tcl_metadata |= ath12k_dp_get_peer_based_tcl_metadata(dp, peer->peer_id, 0);

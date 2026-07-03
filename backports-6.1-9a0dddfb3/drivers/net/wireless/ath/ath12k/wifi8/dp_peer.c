@@ -1078,6 +1078,7 @@ int ath12k_wifi8_dp_peer_assoc(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 	u32 ppeds_idx_map_val = 0;
 #endif
 	u16 tid_band_id[ATH12K_DATA_TID_MAX][HAL_TASC_BAND_MAX];
+	struct ath12k_pdev_dp *dp_pdev;
 	bool vow_enabled;
 	u8 tid;
 	int j;
@@ -1089,8 +1090,6 @@ int ath12k_wifi8_dp_peer_assoc(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		return -ENOENT;
 	}
-
-	vow_enabled = dp_peer->stats_id >= ATH12K_MAX_STATS_ID;
 
 	switch (ath12k_wifi8_dp_peer_assoc_smd_transition(dp, dp_peer, addr)) {
 	case ATH12K_SMD_ASSOC_EXEC:
@@ -1138,6 +1137,10 @@ int ath12k_wifi8_dp_peer_assoc(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 	dp_peer->peer_ext_ctx = peer_ext_ctx;
 	spin_lock_init(&peer_ext_ctx->tx_flow_info.tx_q_lock);
 	rcu_read_lock();
+	dp_pdev = ath12k_dp_hw_grp_to_dp_pdev(dp->dp_hw_grp,
+					     dp_peer->assoc_hw_link_id);
+	vow_enabled = dp_pdev ? ath12k_dp_vow_stats_enabled(dp_pdev) : false;
+
 	for (i = 0; i < ATH12K_DP_PEER_MAX_MLO_LINKS; i++) {
 		link_peer = ath12k_dp_link_peer_find_by_hw_link_id(dp_peer, i);
 		if (!link_peer)
@@ -1146,7 +1149,7 @@ int ath12k_wifi8_dp_peer_assoc(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 		set_bit(link_peer->hw_link_id,
 			&peer_ext_ctx->tx_flow_info.assoc_hw_links_bitmap);
 
-		if (!vow_enabled) {
+		if (!vow_enabled || dp_peer->is_vdev_peer) {
 			link_band_id[link_peer->hw_link_id] = link_peer->link_band_id;
 		} else {
 			for (tid = 0; tid < ATH12K_DATA_TID_MAX; tid++) {
@@ -1170,14 +1173,14 @@ int ath12k_wifi8_dp_peer_assoc(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 	/*
 	 * Configure HW peer telemetry registers.
 	 *
-	 * VoW disabled: Program the single peer-level stats_id with the
-	 * per-link band ID. One HW descriptor per window covers all TIDs.
+	 * VoW disabled (or) Self peer : Program the single peer-level stats_id
+	 * with the per-link band ID. One HW descriptor per window covers all TIDs.
 	 *
 	 * VoW enabled: Program one stats_id per data TID, each paired with that
 	 * TID's dedicated per-link band ID so HW delivers isolated per-TID,
 	 * per-band descriptors.  The peer-level stats_id is not programmed.
 	 */
-	if (!vow_enabled) {
+	if (!vow_enabled || dp_peer->is_vdev_peer) {
 		ath12k_wifi8_dp_telemetry_peer_config(umac_dp, dp_peer->stats_id,
 						      link_band_id);
 	} else {
@@ -1280,9 +1283,11 @@ void ath12k_wifi8_dp_link_peer_assign_id(struct ath12k_dp *dp, struct ath12k *ar
 
 	dp_hw_grp_wifi8 = ath12k_get_dp_hw_group_wifi8(dp->dp_hw_grp);
 
-	if (!ath12k_dp_vow_stats_enabled(&ar->dp)) {
+	if (!ath12k_dp_vow_stats_enabled(&ar->dp) ||
+	    peer->dp_peer->is_vdev_peer) {
 		/*
-		 * VoW disabled: one link_band_id per link peer covers all TIDs.
+		 * VoW disabled or vdev/self peer: one link_band_id per link
+		 * peer covers all TIDs.
 		 * tid_band_id[] entries should be set to ATH12K_MAX_STATS_ID
 		 * (invalid marker).
 		 */
