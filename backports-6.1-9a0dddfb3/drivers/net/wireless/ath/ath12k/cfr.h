@@ -846,6 +846,24 @@ struct ath12k_cfr {
 #ifdef CPTCFG_ATH12K_CFR
 int ath12k_cfr_init(struct ath12k_base *ab);
 void ath12k_cfr_deinit(struct ath12k_base *ab);
+int ath12k_cfr_peer_capture_validate(struct ath12k *ar,
+				     struct ath12k_link_sta *arsta,
+				     u32 link_sta_bw,
+				     u32 *cfr_capture_enable,
+				     u32 *cfr_capture_bw,
+				     u32 *cfr_capture_period,
+				     u32 *cfr_capture_method);
+void ath12k_cfr_peer_capture_fill_wmi_arg(struct wmi_peer_cfr_capture_conf_arg *arg,
+					  u32 cfr_capture_enable,
+					  u32 cfr_capture_bw,
+					  u32 cfr_capture_period,
+					  u32 cfr_capture_method);
+void ath12k_cfr_peer_capture_update(struct ath12k *ar,
+				    struct ath12k_link_sta *arsta,
+				    u32 cfr_capture_enable,
+				    u32 cfr_capture_bw,
+				    u32 cfr_capture_period,
+				    u32 cfr_capture_method);
 struct ath12k_dbring *ath12k_cfr_get_dbring(struct ath12k *ar);
 int ath12k_process_cfr_capture_event(struct ath12k_base *ab,
 				     struct ath12k_cfr_peer_tx_param *params);
@@ -867,6 +885,36 @@ static inline int ath12k_cfr_init(struct ath12k_base *ab)
 static inline void ath12k_cfr_deinit(struct ath12k_base *ab)
 {
 }
+
+static inline int ath12k_cfr_peer_capture_validate(struct ath12k *ar,
+						   struct ath12k_link_sta *arsta,
+						   u32 link_sta_bw,
+						   u32 *cfr_capture_enable,
+						   u32 *cfr_capture_bw,
+						   u32 *cfr_capture_period,
+						   u32 *cfr_capture_method)
+{
+	return 0;
+}
+
+static inline
+void ath12k_cfr_peer_capture_fill_wmi_arg(struct wmi_peer_cfr_capture_conf_arg *arg,
+					  u32 cfr_capture_enable,
+					  u32 cfr_capture_bw,
+					  u32 cfr_capture_period,
+					  u32 cfr_capture_method)
+{
+}
+
+static inline void ath12k_cfr_peer_capture_update(struct ath12k *ar,
+						  struct ath12k_link_sta *arsta,
+						  u32 cfr_capture_enable,
+						  u32 cfr_capture_bw,
+						  u32 cfr_capture_period,
+						  u32 cfr_capture_method)
+{
+}
+
 static inline
 struct ath12k_dbring *ath12k_cfr_get_dbring(struct ath12k *ar)
 {

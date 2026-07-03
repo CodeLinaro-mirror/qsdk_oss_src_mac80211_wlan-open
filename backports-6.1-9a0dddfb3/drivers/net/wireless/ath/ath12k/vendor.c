@@ -833,6 +833,404 @@ static int ath12k_vendor_repurpose_link(struct wiphy *wiphy,
 	return ret;
 }
 
+#ifdef CPTCFG_ATH12K_CFR
+static const struct nla_policy
+ath12k_peer_cfr_policy[QCA_WLAN_VENDOR_ATTR_PEER_CFR_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_CFR_PEER_MAC_ADDR] =
+		NLA_POLICY_EXACT_LEN(ETH_ALEN),
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_ENABLE] = { .type = NLA_FLAG },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_BANDWIDTH] = { .type = NLA_U8 },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_PERIODICITY] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_METHOD] = { .type = NLA_U8 },
+	[QCA_WLAN_VENDOR_ATTR_PERIODIC_CFR_CAPTURE_ENABLE] = { .type = NLA_FLAG },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_VERSION] = { .type = NLA_U8 },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_ENABLE_GROUP_BITMAP] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_DURATION] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_INTERVAL] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_CAPTURE_TYPE] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_UL_MU_MASK] = { .type = NLA_U64 },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_FREEZE_TLV_DELAY_COUNT] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_GROUP_TABLE] = { .type = NLA_NESTED },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_GROUP_ENTRY] = { .type = NLA_NESTED },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_GROUP_NUMBER] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_GROUP_TA] = NLA_POLICY_EXACT_LEN(ETH_ALEN),
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_GROUP_RA] = NLA_POLICY_EXACT_LEN(ETH_ALEN),
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_GROUP_TA_MASK] = NLA_POLICY_EXACT_LEN(ETH_ALEN),
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_GROUP_RA_MASK] = NLA_POLICY_EXACT_LEN(ETH_ALEN),
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_GROUP_NSS] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_GROUP_BW] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_GROUP_MGMT_FILTER] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_GROUP_CTRL_FILTER] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_GROUP_DATA_FILTER] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_DATA_TRANSPORT_MODE] = { .type = NLA_U8 },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_DATA_RECEIVER_PID] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_RESP_DATA] = { .type = NLA_BINARY },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_FREQ] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_FRAME_TYPE] = { .type = NLA_U8 },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_FRAME_SUBTYPE] = { .type = NLA_U8 },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_REPORT_INTERVAL] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_DATA_FORMAT_OUI] = { .type = NLA_BINARY },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_DATA_FORMAT_VERSION] = { .type = NLA_U8 },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_TIMESTAMP_US] = { .type = NLA_U64 },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_RX_ANTENNA_INFO] = { .type = NLA_NESTED },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_RX_ANTENNA_INDEX] = { .type = NLA_U8 },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_RX_ANTENNA_RSSI] = { .type = NLA_S8 },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_RX_ANTENNA_AGC] = { .type = NLA_U8 },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_IS_LAST_REPORT] = { .type = NLA_FLAG },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_FRAME_SEQUENCE_NUMBER] = { .type = NLA_U16 },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_CHIP_ID] = { .type = NLA_U16 },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_CAPTURE_TSF] = { .type = NLA_U64 },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_CFO] = { .type = NLA_S16 },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_CSI_LTF_TYPE] = { .type = NLA_U8 },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_NUM_SPATIAL_STREAMS] = { .type = NLA_U8 },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_STOP_REASON] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_TARA_FILTER_AS_FP] = { .type = NLA_FLAG },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_CAPTURE_COUNT] = { .type = NLA_U16 },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_CAPTURE_INTERVALMODE_SEL] = { .type = NLA_FLAG },
+	[QCA_WLAN_VENDOR_ATTR_PEER_CFR_LINK_ID] =
+		NLA_POLICY_RANGE(NLA_U8, 0, IEEE80211_MLD_MAX_NUM_LINKS - 1),
+};
+
+/* CFR helper function to fetch sta, link_sta, ahsta & arsta based on mac address &
+ * link id. must be called with rcu_read_lock()
+ */
+static inline int
+ath12k_peer_periodic_cfr_get_sta_details(struct wireless_dev *wdev,
+					 struct ieee80211_sta **sta,
+					 struct ieee80211_vif *vif,
+					 struct ieee80211_link_sta **link_sta,
+					 struct ath12k_hw *ah,
+					 struct ath12k_sta **ahsta,
+					 struct ath12k_link_sta **arsta,
+					 struct ath12k *ar,
+					 u8 *cfr_peer_mac,
+					 unsigned int link_id)
+{
+	unsigned int local_link_id = link_id;
+
+	if (!sta || !link_sta || !ahsta || !arsta)
+		return -EINVAL;
+
+	*sta = ieee80211_find_sta(vif, cfr_peer_mac);
+	if (*sta)
+		goto ath_sta;
+
+	/* search as peer link mac when valid link id provided */
+	if (link_id == INVALID_LINK_ID) {
+		ath12k_err(ar->ab, "STA not found");
+		return -EINVAL;
+	}
+	*sta = ieee80211_find_sta_by_link_addrs(ah->hw, cfr_peer_mac,
+						NULL, &local_link_id);
+	if (!(*sta) || local_link_id != link_id) {
+		ath12k_err(ar->ab, "STA not found");
+		return -EINVAL;
+	}
+
+ath_sta:
+	*ahsta = ath12k_sta_to_ahsta(*sta);
+	if (!(*ahsta)) {
+		ath12k_err(ar->ab, "failed to get ahsta for peer %pM", cfr_peer_mac);
+		return -EINVAL;
+	}
+
+	if (!(*sta)->mlo)
+		*arsta = wiphy_dereference(ah->hw->wiphy,
+					   (*ahsta)->link[(*ahsta)->deflink.link_id]);
+	else if (BIT(link_id) & (*ahsta)->links_map)
+		*arsta = wiphy_dereference(ah->hw->wiphy, (*ahsta)->link[link_id]);
+
+	if (!(*arsta)) {
+		ath12k_err(ar->ab, "failed to get arsta for peer %pM link_id %u",
+			   cfr_peer_mac, link_id);
+		return -ENOENT;
+	}
+
+	if (!(*sta)->mlo)
+		*link_sta = &(*sta)->deflink;
+	else
+		*link_sta = ath12k_mac_get_link_sta(*arsta);
+
+	if (!(*link_sta)) {
+		ath12k_err(ar->ab, "failed to get link sta for peer %pM link_id %u",
+			   cfr_peer_mac, link_id);
+		return -ENOENT;
+	}
+
+	return 0;
+}
+
+static int
+ath12k_peer_periodic_cfr_configure(struct wireless_dev *wdev,
+				   struct ieee80211_vif *vif,
+				   struct ath12k_hw *ah,
+				   struct ath12k_link_vif *arvif,
+				   struct ath12k *ar,
+				   struct nlattr **tb,
+				   unsigned int link_id)
+{
+	struct ieee80211_sta *sta = NULL;
+	struct ieee80211_link_sta *link_sta = NULL;
+	struct ath12k_sta *ahsta = NULL;
+	struct ath12k_link_sta *arsta = NULL;
+	struct wmi_peer_cfr_capture_conf_arg arg = { 0 };
+	u8 cfr_peer_mac[ETH_ALEN] = { 0 };
+	u8 link_sta_mac[ETH_ALEN] = { 0 };
+	u32 cfr_capture_enable = 0, cfr_capture_bw = 0;
+	u32 cfr_capture_method = 0, cfr_capture_period = 0;
+	u32 vdev_id;
+	int ret;
+
+	if (!tb[QCA_WLAN_VENDOR_ATTR_CFR_PEER_MAC_ADDR])
+		return -EINVAL;
+
+	ether_addr_copy(cfr_peer_mac,
+			nla_data(tb[QCA_WLAN_VENDOR_ATTR_CFR_PEER_MAC_ADDR]));
+
+	cfr_capture_enable = !!tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_ENABLE];
+
+	if (cfr_capture_enable) {
+		/* If request is to enable periodic CFR - BW, periodicity &
+		 * capture method are mandatory parameters.
+		 */
+		if (!tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_BANDWIDTH] ||
+		    !tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_PERIODICITY] ||
+		    !tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_METHOD])
+			return -EINVAL;
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_BANDWIDTH])
+		cfr_capture_bw =
+			nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_BANDWIDTH]);
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_PERIODICITY])
+		cfr_capture_period =
+			nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_PERIODICITY]);
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_METHOD])
+		cfr_capture_method =
+			nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_METHOD]);
+
+	if (!ar->cfr.cfr_enabled) {
+		ath12k_err(ar->ab, "cfr_enabled is false, can't enable periodic CFR");
+		return -EINVAL;
+	}
+
+	rcu_read_lock();
+	/* fetch sta details */
+	ret = ath12k_peer_periodic_cfr_get_sta_details(wdev, &sta, vif,
+						       &link_sta, ah, &ahsta,
+						       &arsta, ar,
+						       cfr_peer_mac, link_id);
+	if (ret) {
+		rcu_read_unlock();
+		return ret;
+	}
+	if (!arsta->arvif || !arsta->arvif->ar ||
+	    arsta->arvif != arvif ||
+	    arsta->arvif->ar != ar) {
+		ath12k_err(ar->ab,
+			   "failed to get arsta for peer %pM link_id %u",
+			   cfr_peer_mac, link_id);
+		rcu_read_unlock();
+		return -ENOENT;
+	}
+
+	ret = ath12k_cfr_peer_capture_validate(ar, arsta, link_sta->bandwidth,
+					       &cfr_capture_enable,
+					       &cfr_capture_bw,
+					       &cfr_capture_period,
+					       &cfr_capture_method);
+
+	if (ret == -EALREADY) {
+		rcu_read_unlock();
+		return 0;
+	}
+
+	if (ret) {
+		rcu_read_unlock();
+		return ret;
+	}
+
+	/* copy link sta mac, bandwidth and vdev_id to use later to send
+	 * wmi command
+	 */
+	vdev_id = arsta->arvif->vdev_id;
+	ether_addr_copy(link_sta_mac, link_sta->addr);
+	rcu_read_unlock();
+
+	ath12k_cfr_peer_capture_fill_wmi_arg(&arg, cfr_capture_enable,
+					     cfr_capture_bw,
+					     cfr_capture_period,
+					     cfr_capture_method);
+
+	ret = ath12k_wmi_peer_set_cfr_capture_conf(ar, vdev_id,
+						   link_sta_mac, &arg);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "failed peer CFR capture cfg vdev_id %u peer %pM: %d",
+			    vdev_id, link_sta_mac, ret);
+		return ret;
+	}
+
+	rcu_read_lock();
+	ret = ath12k_peer_periodic_cfr_get_sta_details(wdev, &sta, vif,
+						       &link_sta, ah,
+						       &ahsta, &arsta,
+						       ar, cfr_peer_mac,
+						       link_id);
+	if (ret) {
+		ath12k_err(ar->ab, "Failed to refetch peer details post CFR WMI");
+		rcu_read_unlock();
+		return ret;
+	}
+	if (!arsta->arvif || !arsta->arvif->ar ||
+	    arsta->arvif != arvif ||
+	    arsta->arvif->ar != ar) {
+		ath12k_err(ar->ab,
+			   "failed to get arsta for peer %pM link_id %u when refetch",
+			   cfr_peer_mac, link_id);
+		rcu_read_unlock();
+		return -ENOENT;
+	}
+
+	ath12k_cfr_peer_capture_update(ar, arsta, cfr_capture_enable,
+				       cfr_capture_bw, cfr_capture_period,
+				       cfr_capture_method);
+
+	rcu_read_unlock();
+
+	return 0;
+}
+
+static inline int
+ath12k_vendor_set_cfr_enabled(struct ath12k *ar, bool enable)
+{
+	int ret = ath12k_wmi_pdev_set_param(ar,
+					    WMI_PDEV_PARAM_PER_PEER_CFR_ENABLE,
+					    enable,
+					    ar->pdev->pdev_id);
+	if (ret) {
+		ath12k_err(ar->ab,
+			   "Failed to enable/disable per peer cfr (%d)", ret);
+		return ret;
+	}
+
+	ar->cfr.cfr_enabled = enable;
+	return ret;
+}
+
+static int ath12k_vendor_peer_cfr_handler(struct wiphy *wiphy,
+					  struct wireless_dev *wdev,
+					  const void *data,
+					  int data_len)
+{
+	struct ieee80211_vif *vif = NULL;
+	struct ath12k_vif *ahvif;
+	struct ath12k_hw *ah = NULL;
+	struct ath12k *ar;
+	struct ath12k_link_vif *arvif;
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_MAX + 1];
+	int ret;
+	unsigned int version = 0;
+	unsigned int link_id = INVALID_LINK_ID;
+
+	lockdep_assert_wiphy(wiphy);
+
+	if (!wdev || !data || !data_len) {
+		ath12k_err(NULL, "invalid input to peer CFR handler\n");
+		return -EINVAL;
+	}
+
+	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_PEER_CFR_MAX, data,
+			data_len, ath12k_peer_cfr_policy, NULL);
+	if (ret) {
+		ath12k_err(NULL, "failed to parse peer CFR vendor attributes\n");
+		return ret;
+	}
+
+	if (!tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_VERSION])  {
+		ath12k_err(NULL, "CFR version not present");
+		return -EINVAL;
+	}
+
+	vif = wdev_to_ieee80211_vif(wdev);
+	if (!vif) {
+		ath12k_err(NULL, "failed to get vif from wdev\n");
+		return -EINVAL;
+	}
+
+	ahvif = ath12k_vif_to_ahvif(vif);
+	if (!ahvif) {
+		ath12k_err(NULL, "failed to get ahvif from vif\n");
+		return -EINVAL;
+	}
+
+	ah = ahvif->ah;
+	if (ah->state != ATH12K_HW_STATE_ON)
+		return -ENETDOWN;
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_LINK_ID])
+		link_id = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_LINK_ID]);
+
+	/* Do not consider the link id if passed on non-mld vif */
+	if (link_id != INVALID_LINK_ID && !ieee80211_vif_is_mld(vif))
+		link_id = INVALID_LINK_ID;
+
+	/* link id is mandatory on mld interface */
+	if (link_id == INVALID_LINK_ID && ieee80211_vif_is_mld(vif)) {
+		ath12k_err(NULL, "Link id is mandatory on MLD interface");
+		return -EINVAL;
+	}
+
+	/* reject if vif does not have the link id requested */
+	if (link_id != INVALID_LINK_ID && !(vif->valid_links & BIT(link_id))) {
+		ath12k_err(NULL, "Invalid link on the VIF");
+		return -EINVAL;
+	}
+
+	if (link_id == INVALID_LINK_ID)
+		arvif = &ahvif->deflink;
+	else
+		arvif = wiphy_dereference(ahvif->ah->hw->wiphy, ahvif->link[link_id]);
+
+	if (!arvif || !arvif->ar) {
+		ath12k_err(NULL, "NULL arvif/ar");
+		return -EINVAL;
+	}
+
+	ar = arvif->ar;
+
+	version = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_VERSION]);
+
+	if (version == 1) {
+		/* NL command received to disable timer at target */
+		if (!tb[QCA_WLAN_VENDOR_ATTR_PERIODIC_CFR_CAPTURE_ENABLE]) {
+			if (!ar->cfr.cfr_enabled)
+				return 0;
+			return ath12k_vendor_set_cfr_enabled(ar, false);
+		}
+
+		/* Enable the timer at target if not enabled earlier */
+		if (!ar->cfr.cfr_enabled) {
+			ret = ath12k_vendor_set_cfr_enabled(ar, true);
+			if (ret)
+				return ret;
+		}
+
+		/* handle if any peer needs periodic cfr to be enabled/disabled */
+		if (tb[QCA_WLAN_VENDOR_ATTR_CFR_PEER_MAC_ADDR])
+			return ath12k_peer_periodic_cfr_configure(wdev, vif, ah,
+								  arvif, ar,
+								  tb, link_id);
+
+		return 0;
+	}
+
+	return -EOPNOTSUPP;
+}
+#endif
+
 static void
 ath12k_afc_response_buffer_display(struct ath12k_base *ab,
 				   struct ath12k_afc_host_resp *afc_rsp)
@@ -18062,6 +18460,16 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.policy = ath12k_repurpose_link_policy,
 		.maxattr = QCA_WLAN_VENDOR_ATTR_CONFIG_MAX,
 	},
+#ifdef CPTCFG_ATH12K_CFR
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_PEER_CFR_CAPTURE_CFG,
+		.doit = ath12k_vendor_peer_cfr_handler,
+		.policy = ath12k_peer_cfr_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_PEER_CFR_MAX,
+		.flags = WIPHY_VENDOR_CMD_NEED_WDEV,
+	},
+#endif
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
 		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_EXTENDED_MONITOR,
