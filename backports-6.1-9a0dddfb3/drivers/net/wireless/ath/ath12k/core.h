@@ -907,7 +907,6 @@ struct ath12k_link_vif {
 	bool is_link_removal_update_pending;
 	struct ath12k_wmi_mlo_link_removal_event_params link_removal_data;
 	bool update_skip_link;
-	u8 map_id;
 	struct ath12k_qos_map *qos_map;
 	struct wiphy_work set_dscp_tid_work;
 	bool set_wds_vdev_param;
@@ -959,7 +958,6 @@ struct ath12k_dp_link_vif {
 	u16 tcl_metadata;
 	u8 lmac_id;
 	int bank_id;
-	u8 map_id;
 	enum wmi_phy_mode phymode;
 	struct ath12k_dp_preserved_stats link_peer_delete_stats;
 };
@@ -1165,6 +1163,7 @@ struct ath12k_vif {
 	bool chanctx_peer_del_done;
 	u8 primary_link_id;
 	u8 hw_link_id;
+	u8 map_id;
 	struct ath12k_wmm_stats wmm_stats;
 	bool overide_primary_umac;
 	struct work_struct disable_sg_netdev_work;
@@ -2056,7 +2055,6 @@ struct ath12k {
 	bool agile_abort_pending; /* WMI abort sent; awaiting firmware ACK */
 	struct wiphy_work agile_cac_abort_wq;
 	struct wiphy_work ap_ps_recalc_wq;
-	u32 free_map_id;
 	struct ath12k_qos_map *qos_map;
 
 	bool erp_trigger_set;
@@ -2143,6 +2141,7 @@ struct ath12k_hw {
 
 	DECLARE_BITMAP(free_ml_peer_id_map, ATH12K_MAX_MLO_PEERS);
 	unsigned long long free_ahvif_id_map;
+	u32 free_map_id;
 
 	struct ath12k_dp_hw dp_hw;
 	u32 max_ml_peers_supported;

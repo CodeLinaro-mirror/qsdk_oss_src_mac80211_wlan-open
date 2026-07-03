@@ -94,6 +94,11 @@ void ath12k_wifi8_hal_tx_update_dscp_tid_map(struct ath12k_base *ab,
 	u32 mask;
 	u32 value;
 
+	/*Converting ab to cumac ab*/
+	ab = ath12k_dp_get_ab_from_dp_hw_group(ab->dp->dp_hw_grp);
+	if (!ab)
+		return;
+
 	ctrl_reg_val = ath12k_hif_read32(ab, HAL_SEQ_WCSS_UMAC_TCL_REG +
 					 HAL_TCL1_RING_CMN_CTRL_REG);
 	/* Enable read/write access */

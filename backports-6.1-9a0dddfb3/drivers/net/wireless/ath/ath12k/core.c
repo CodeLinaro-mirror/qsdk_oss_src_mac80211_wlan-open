@@ -3508,7 +3508,6 @@ static void ath12k_core_mlo_hw_queues_stop(struct ath12k_hw_group *ag)
 
 void ath12k_core_radio_cleanup(struct ath12k *ar)
 {
-	ar->free_map_id = ATH12K_FREE_MAP_ID_MASK;
 	ath12k_mac_drain_tx(ar);
 	ar->state_11d = ATH12K_11D_IDLE;
 	complete(&ar->completed_11d_scan);

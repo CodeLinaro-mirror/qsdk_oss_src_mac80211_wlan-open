@@ -3316,7 +3316,6 @@ u32 ath12k_wifi8_dp_tx_get_vdev_bank_config(struct ath12k_base *ab,
 	u32 bank_config = 0;
 	enum hal_encrypt_type encrypt_type = 0;
 	struct ath12k_dp_vif *dp_vif = &ahvif->dp_vif;
-	struct ath12k_dp_link_vif *dp_link_vif = &dp_vif->dp_link_vif[link_id];
 	u32 key_cipher = ahvif->deflink.key_cipher;
 	bool vdev_id_check_en;
 
@@ -3363,7 +3362,7 @@ u32 ath12k_wifi8_dp_tx_get_vdev_bank_config(struct ath12k_base *ab,
 					HAL_TX_BANK_CONFIG_VDEV_ID_CHECK_EN);
 
 	/*TODO need to revist with qos implementation */
-	bank_config |= u32_encode_bits(dp_link_vif->map_id,
+	bank_config |= u32_encode_bits(ahvif->map_id,
 				       HAL_TX_BANK_CONFIG_DSCP_TIP_MAP_ID);
 
 	return bank_config;

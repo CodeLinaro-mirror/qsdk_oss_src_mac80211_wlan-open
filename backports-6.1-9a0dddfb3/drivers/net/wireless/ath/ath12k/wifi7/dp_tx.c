@@ -3435,7 +3435,6 @@ u32 ath12k_wifi7_dp_tx_get_vdev_bank_config(struct ath12k_base *ab,
 	enum hal_encrypt_type encrypt_type = 0;
 	struct ath12k_dp_vif *dp_vif = &ahvif->dp_vif;
 	u32 key_cipher = ahvif->deflink.key_cipher;
-	struct ath12k_dp_link_vif *dp_link_vif = &dp_vif->dp_link_vif[link_id];
 	bool vdev_id_check_en;
 
 	if (force_vdev_id_check_disable)
@@ -3480,7 +3479,7 @@ u32 ath12k_wifi7_dp_tx_get_vdev_bank_config(struct ath12k_base *ab,
 			u32_encode_bits(vdev_id_check_en,
 					HAL_TX_BANK_CONFIG_VDEV_ID_CHECK_EN);
 
-	bank_config |= u32_encode_bits(dp_link_vif->map_id, HAL_TX_BANK_CONFIG_DSCP_TIP_MAP_ID);
+	bank_config |= u32_encode_bits(ahvif->map_id, HAL_TX_BANK_CONFIG_DSCP_TIP_MAP_ID);
 
 	return bank_config;
 }
