@@ -2628,7 +2628,8 @@ static void ath12k_mac_dp_peer_cleanup_cb(struct ath12k_pdev_dp *dp_pdev,
 	ath12k_dp_ipa_peer_notify(ar, link_peer, NULL, link_peer->vdev_id, false);
 	/*Skip this for non primary_links and vdev peers*/
 	if (ath12k_dp_link_peer_get_sta(link_peer) && link_peer->dp_peer &&
-	    link_peer->primary_link) {
+	    ath12k_dp_arch_mlo_peer_tid_teardown_ready(dp, link_peer->dp_peer,
+						       link_peer)) {
 		for (i = 0; i < num_tids; i++) {
 			rx_tid = &link_peer->dp_peer->rx_tid[i];
 
@@ -2724,7 +2725,8 @@ void ath12k_dp_peer_cleanup_all(struct ath12k *ar)
 	/*Link peer cleanup part*/
 	list_for_each_entry_safe(link_peer, tmp_link_peer, &ctx.link_peers, list) {
 		if (ath12k_dp_link_peer_get_sta(link_peer) && link_peer->dp_peer &&
-		    link_peer->primary_link) {
+		    ath12k_dp_arch_mlo_peer_tid_teardown_ready(dp, link_peer->dp_peer,
+							       link_peer)) {
 			for (i = 0; i < num_tids; i++) {
 				rx_tid = &link_peer->dp_peer->rx_tid[i];
 

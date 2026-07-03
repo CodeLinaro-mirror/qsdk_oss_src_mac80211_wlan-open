@@ -67,6 +67,8 @@ int ath12k_wifi8_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 			       int budget);
 void ath12k_wifi8_dp_rx_peer_tid_delete(struct ath12k *ar,
 					struct ath12k_dp_link_peer *peer, u8 tid);
+bool ath12k_wifi8_dp_mlo_peer_tid_teardown_ready(struct ath12k_dp_peer *dp_peer,
+						 struct ath12k_dp_link_peer *link_peer);
 bool ath12k_wifi8_dp_rx_h_ppdu(struct ath12k_pdev_dp *dp_pdev,
 			       struct ieee80211_rx_status *rx_status,
 			       struct rx_tlv_info_1 *tlv_info,

@@ -921,7 +921,7 @@ void ath12k_dp_rx_peer_tid_cleanup(struct ath12k *ar,
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 
-	if (!peer->primary_link)
+	if (!ath12k_dp_arch_mlo_peer_tid_teardown_ready(dp, peer->dp_peer, peer))
 		return;
 
 	for (i = 0; i < ab->hal.hal_params->num_tids; i++) {
