@@ -49,9 +49,9 @@ static inline bool ath12k_wifi8_dp_reo_cmd_shutdown(struct ath12k_base *ab)
 	struct ath12k_dp *central_dp = ath12k_get_central_dp(dp);
 	struct ath12k_base *central_ab = central_dp->ab;
 
-	return test_bit(ATH12K_FLAG_CRASH_FLUSH, &central_ab->dev_flags) ||
-	       test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS,
-			&central_ab->dev_flags);
+	return (test_bit(ATH12K_FLAG_CRASH_FLUSH, &central_ab->dev_flags) &&
+		!test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &central_ab->dev_flags)) ||
+		test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &central_ab->dev_flags);
 }
 
 static int ath12k_wifi8_dp_reo_cmd_prepare(struct ath12k_dp_rx_reo_cmd **dp_cmd,
@@ -307,7 +307,8 @@ int ath12k_wifi8_dp_fse_cmd_send(struct ath12k_base *ab,
 	struct hal_srng *cmd_ring;
 	int ret;
 
-	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &central_ab->dev_flags) ||
+	if ((test_bit(ATH12K_FLAG_CRASH_FLUSH, &central_ab->dev_flags) &&
+	     !test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &central_ab->dev_flags)) ||
 	    test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &central_ab->dev_flags))
 		return -ESHUTDOWN;
 
