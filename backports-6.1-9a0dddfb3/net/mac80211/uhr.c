@@ -702,6 +702,15 @@ static void ieee80211_process_smd_prep_resp(struct ieee80211_sub_if_data *sdata,
 		goto out;
 	}
 
+	/* Drop AP retransmissions of a Prep Response we already processed. */
+	if (target->target_sta) {
+		sdata_dbg(sdata,
+			  "smd: duplicate ST Prep Resp from %pM (token=%u), dropping\n",
+			  mgmt->sa,
+			  mgmt->u.action.u.uhr_link_reconf_resp.dialog_token);
+		return;
+	}
+
 	if (len < mgmt->u.action.u.uhr_link_reconf_resp.count * 3) {
 		sdata_info(sdata,
 			   "smd: unexpected len=%zu, count=%u\n",
@@ -1003,6 +1012,18 @@ static void ieee80211_process_smd_exec_resp(struct ieee80211_sub_if_data *sdata,
 
 	if (!target) {
 		sdata_err(sdata, "smd: exec no target for token=%d\n",
+			  mgmt->u.action.u.uhr_link_reconf_resp.dialog_token);
+		return;
+	}
+
+	/*
+	 * Drop AP retransmissions during the async DL-drain window;
+	 * re-entering execute_transition() corrupts the transition FSM.
+	 */
+	if (target->execution_in_progress) {
+		sdata_dbg(sdata,
+			  "smd: duplicate ST Exec Resp from %pM (token=%u), dropping\n",
+			  mgmt->sa,
 			  mgmt->u.action.u.uhr_link_reconf_resp.dialog_token);
 		return;
 	}
