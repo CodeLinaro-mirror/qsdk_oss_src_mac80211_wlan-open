@@ -127,7 +127,6 @@ struct ath12k_ppeds_arch_ops {
 	int (*ath12k_ppeds_detach)(struct ath12k_base *ab);
 	int (*ath12k_ppeds_register_soc)(struct ath12k_dp *dp,
 						struct dp_ppe_ds_idxs *idx);
-	int (*ath12k_ppeds_srng_setup)(struct ath12k_base *ab);
 	void (*ath12k_ppeds_srng_cleanup)(struct ath12k_base *ab);
 	void (*ath12k_ppeds_interrupt_start)(struct ath12k_base *ab);
 	void (*ath12k_ppeds_interrupt_stop)(struct ath12k_base *ab);

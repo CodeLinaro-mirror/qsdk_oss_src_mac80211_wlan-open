@@ -28,30 +28,53 @@ ath12k_wifi8_dp_telemetry_peer_find(struct ath12k_dp_hw_group *dp_hw_grp,
 						   dp_peer_id);
 }
 
-int ath12k_wifi8_dp_telemetry_ring_setup(struct ath12k_base *ab)
+int ath12k_wifi8_dp_telemetry_ring_alloc(struct ath12k_base *ab)
 {
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(ab->dp);
 	int ret;
 
-	ret = ath12k_dp_srng_setup(ab, &dp_wifi8->tx_peer_telemetry_ring,
+	ret = ath12k_dp_srng_alloc(ab, &dp_wifi8->tx_peer_telemetry_ring,
 				   HAL_PEER_TX_TELEMETRY, 0, 0,
 				   DP_TELEMETRY_TX_RING_SIZE);
 	if (ret) {
-		ath12k_warn(ab, "Peer Tx Telemetry ring setup failed: %d\n",
-			    ret);
+		ath12k_warn(ab, "Peer Tx Telemetry ring alloc failed: %d\n", ret);
 		goto err;
 	}
 
-	ret = ath12k_dp_srng_setup(ab, &dp_wifi8->rx_peer_telemetry_ring,
+	ret = ath12k_dp_srng_alloc(ab, &dp_wifi8->rx_peer_telemetry_ring,
 				   HAL_PEER_RX_TELEMETRY, 0, 0,
 				   DP_TELEMETRY_RX_RING_SIZE);
 	if (ret) {
-		ath12k_warn(ab, "Peer Rx Telemetry ring setup failed: %d\n",
-			    ret);
+		ath12k_warn(ab, "Peer Rx Telemetry ring alloc failed: %d\n", ret);
 		goto err;
 	}
+
+	return 0;
 err:
+	ath12k_wifi8_dp_telemetry_ring_cleanup(ab);
 	return ret;
+}
+
+int ath12k_wifi8_dp_telemetry_ring_init(struct ath12k_base *ab)
+{
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(ab->dp);
+	int ret;
+
+	ret = ath12k_dp_srng_init(ab, &dp_wifi8->tx_peer_telemetry_ring,
+				  HAL_PEER_TX_TELEMETRY, 0, 0);
+	if (ret) {
+		ath12k_warn(ab, "Peer Tx Telemetry ring init failed: %d\n", ret);
+		return ret;
+	}
+
+	ret = ath12k_dp_srng_init(ab, &dp_wifi8->rx_peer_telemetry_ring,
+				  HAL_PEER_RX_TELEMETRY, 0, 0);
+	if (ret) {
+		ath12k_warn(ab, "Peer Rx Telemetry ring init failed: %d\n", ret);
+		return ret;
+	}
+
+	return 0;
 }
 
 int ath12k_wifi8_dp_telemetry_ring_cleanup(struct ath12k_base *ab)
@@ -862,11 +885,11 @@ int ath12k_wifi8_dp_telemetry_umac_peer_setup(struct ath12k_base *ab)
 	return 0;
 }
 
-int ath12k_wifi8_dp_telemetry_umac_setup(struct ath12k_base *ab)
+int ath12k_wifi8_dp_telemetry_umac_init(struct ath12k_base *ab)
 {
 	int ret;
 
-	ret = ath12k_wifi8_dp_telemetry_ring_setup(ab);
+	ret = ath12k_wifi8_dp_telemetry_ring_init(ab);
 	if (ret)
 		return ret;
 

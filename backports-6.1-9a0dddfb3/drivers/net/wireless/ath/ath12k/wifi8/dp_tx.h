@@ -109,7 +109,8 @@ int ath12k_wifi8_sdwf_reinject_handler(struct ath12k_pdev_dp *dp_pdev,
 				       struct sk_buff *skb,
 				       struct ath12k_link_sta *arsta,
 				       struct ath12k_dp_peer *dp_peer);
-int ath12k_wifi8_dp_tx_ring_setup(struct ath12k_base *ab);
+int ath12k_wifi8_dp_tx_ring_alloc(struct ath12k_base *ab);
+int ath12k_wifi8_dp_tx_ring_init(struct ath12k_base *ab);
 void ath12k_wifi8_dp_tx_ring_cleanup(struct ath12k_base *ab);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 int ath12k_wifi8_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget);
