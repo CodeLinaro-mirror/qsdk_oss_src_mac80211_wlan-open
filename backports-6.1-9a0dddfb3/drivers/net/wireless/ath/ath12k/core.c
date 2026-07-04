@@ -2910,23 +2910,6 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 	struct ath12k_base *partner_ab;
 	bool hw_grp_ready = false;
 
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	/* TODO: DS: revisit this for new DS design in WDS mode */
-	if (ath12k_ppe_ds_enabled) {
-		if (ath12k_frame_mode != ATH12K_HW_TXRX_ETHERNET) {
-			ath12k_warn(ab,
-				    "Force enabling Ethernet frame mode in PPE DS for" \
-				    " AP and STA modes.\n");
-			/* MESH and WDS VAPs will still use NATIVE_WIFI mode
-			 * @ath12k_mac_update_vif_offload()
-			 * TODO: add device capability check
-			 */
-			ath12k_ppe_ds_enabled = 0;
-		} else if (ab->hw_params->ds_support) {
-			set_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags);
-		}
-	}
-#endif
 	ret = ath12k_core_start_firmware(ab, ab->fw_mode);
 	if (ret) {
 		ath12k_err(ab, "failed to start firmware in mode: %d ret: %d\n",
