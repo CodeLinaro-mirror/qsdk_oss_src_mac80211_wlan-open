@@ -1859,9 +1859,10 @@ ath12k_dp_peer_migrate(struct ath12k_sta *ahsta, u16 peer_id,
 		goto out;
 	}
 
-	ath12k_info(ab, "htt current primary peer  %pM peer_id 0x%x ml_peer_id 0x%x link_id 0x%x\n",
-		    link_peer->addr, link_peer->peer_id, link_peer->ml_id,
-		    link_peer->link_id);
+	ath12k_dbg(ab, ATH12K_DBG_DP_HTT,
+		   "htt current primary peer %pM peer_id 0x%x ml_peer_id 0x%x link_id 0x%x\n",
+		   link_peer->addr, link_peer->peer_id, link_peer->ml_id,
+		   link_peer->link_id);
 
 	link_peer->primary_link = false;
 	arsta->arvif->primary_sta_link = false;
