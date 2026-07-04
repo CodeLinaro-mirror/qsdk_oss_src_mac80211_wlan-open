@@ -379,7 +379,7 @@ fail_dp_bank_profiles_cleanup:
 #endif
 	ath12k_dp_deinit_bank_profiles(ab);
 fail_hw_cc_cleanup:
-	ath12k_dp_cc_cleanup(ab);
+	ath12k_dp_cc_deinit(ab);
 
 fail_irq_cleanup:
 	ath12k_hif_ext_irq_cleanup(dp->ab);
@@ -417,7 +417,7 @@ static void ath12k_wifi7_dp_op_device_deinit(struct ath12k_dp *dp)
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	dp->ppe.ppe_ops->ath12k_ppeds_detach(ab);
 #endif
-	ath12k_dp_cc_cleanup(ab);
+	ath12k_dp_cc_deinit(ab);
 	ath12k_dp_deinit_bank_profiles(ab);
 
 	ath12k_dp_rx_reo_cmd_list_cleanup(ab);
@@ -661,6 +661,18 @@ struct ath12k_dp *ath12k_wifi7_dp_init(struct ath12k_base *ab)
 		goto dp_err;
 	}
 
+	ret = ath12k_dp_cc_rx_alloc(ab);
+	if (ret) {
+		ath12k_err(ab, "dp cc rx alloc failed %d\n", ret);
+		goto dp_err;
+	}
+
+	ret = ath12k_dp_bank_profiles_alloc(ab);
+	if (ret) {
+		ath12k_err(ab, "dp bank profile alloc failed %d\n", ret);
+		goto dp_err;
+	}
+
 	ret = ath12k_dp_srng_common_alloc(ab);
 	if (ret) {
 		ath12k_err(ab, "dp srng common alloc failed %d\n", ret);
@@ -707,6 +719,8 @@ void ath12k_wifi7_dp_deinit(struct ath12k_dp *dp)
 	ath12k_wifi7_dp_reoq_lut_cleanup(dp->ab);
 	ath12k_wifi7_dp_tx_ring_cleanup(dp->ab);
 	ath12k_dp_srng_common_cleanup(dp->ab);
+	ath12k_dp_bank_profiles_free(dp->ab);
+	ath12k_dp_cc_rx_free(dp->ab);
 	ath12k_dp_link_desc_cleanup(dp->ab, dp->link_desc_banks,
 				    HAL_WBM_IDLE_LINK, &dp->wbm_idle_ring);
 	ath12k_wbm_idle_ring_cleanup(dp->ab);
