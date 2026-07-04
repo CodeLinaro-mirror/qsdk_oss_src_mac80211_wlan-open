@@ -261,10 +261,6 @@ int ath12k_dp_srng_init_idx(struct ath12k_base *ab, struct dp_srng *ring,
 			    int mac_id,
 			    int num_entries, u32 restore_idx);
 
-int ath12k_dp_srng_alloc(struct ath12k_base *ab, struct dp_srng *ring,
-			 enum hal_ring_type type, int ring_num,
-			 int num_entries);
-
 int ath12k_ppeds_dp_srng_init(struct ath12k_base *ab, struct dp_srng *ring,
 			      enum hal_ring_type type, int ring_num,
 			      int mac_id, int num_entries,

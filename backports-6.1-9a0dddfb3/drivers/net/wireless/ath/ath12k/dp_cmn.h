@@ -29,6 +29,7 @@ struct dp_srng {
 	int size;
 	u32 ring_id;
 	u8 cached;
+	u32 num_entries;
 };
 
 struct ath12k_dp_hw_link {
