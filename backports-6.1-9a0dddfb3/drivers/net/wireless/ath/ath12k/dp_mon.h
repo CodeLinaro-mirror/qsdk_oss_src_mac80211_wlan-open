@@ -206,8 +206,11 @@ enum punc_type {
 struct ath12k_dp_arch_mon_ops {
 	int (*rx_srng_setup)(struct ath12k_dp *dp);
 	void (*rx_srng_cleanup)(struct ath12k_dp *dp);
+	int (*rx_ring_init)(struct ath12k_dp *dp);
+	void (*rx_ring_deinit)(struct ath12k_dp *dp);
 	int (*rx_buf_setup)(struct ath12k_dp *dp);
 	void (*rx_buf_free)(struct ath12k_dp *dp);
+
 	int (*rx_htt_srng_setup)(struct ath12k_dp *dp);
 	int (*mon_pdev_alloc)(struct ath12k_pdev_dp *dp_pdev);
 	void (*mon_pdev_free)(struct ath12k_pdev_dp *dp_pdev);
@@ -1097,14 +1100,11 @@ void ath12k_dp_mon_peer_telemetry_stats(const struct ath12k_dp_link_peer *peer,
 
 int ath12k_dp_mon_pdev_update_telemetry_stats(struct ath12k_base *ab,
                                              int pdev_id);
-
-void ath12k_dp_rxdma_mon_buf_ring_free(struct ath12k_dp *dp,
-				       struct dp_rxdma_mon_ring *rx_ring);
 void ath12k_dp_mon_cfg_init(struct ath12k_dp *dp);
 int ath12k_dp_mon_rx_srng_setup(struct ath12k_dp *dp);
 void ath12k_dp_mon_rx_srng_cleanup(struct ath12k_dp *dp);
-int ath12k_dp_mon_rx_buf_setup(struct ath12k_dp *dp);
-void ath12k_dp_mon_rx_buf_free(struct ath12k_dp *dp);
+int ath12k_dp_mon_rx_ring_init(struct ath12k_dp *dp);
+void ath12k_dp_mon_rx_ring_deinit(struct ath12k_dp *dp);
 int ath12k_dp_mon_rx_htt_srng_setup(struct ath12k_dp *dp);
 int ath12k_dp_mon_pdev_alloc(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_mon_pdev_free(struct ath12k_pdev_dp *dp_pdev);
@@ -1220,6 +1220,9 @@ int ath12k_dp_mon_rx_alloc(struct ath12k_dp *dp)
 			return ret;
 	}
 
+	/* This is required only for wifi6, remove this after wifi6
+	 * memory optimization
+	 */
 	if (mon_ops && mon_ops->rx_buf_setup) {
 		ret = mon_ops->rx_buf_setup(dp);
 		if (ret)
@@ -1242,8 +1245,45 @@ void ath12k_dp_mon_rx_free(struct ath12k_dp *dp)
 	if (mon_ops && mon_ops->rx_srng_cleanup)
 		mon_ops->rx_srng_cleanup(dp);
 
+	/* This is required only for wifi6, remove this after wifi6
+	 * memory optimization
+	 */
 	if (mon_ops && mon_ops->rx_buf_free)
 		mon_ops->rx_buf_free(dp);
+}
+
+static inline
+int ath12k_dp_mon_rx_init(struct ath12k_dp *dp)
+{
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	int ret;
+
+	if (unlikely(!dp || !dp->dp_mon))
+		return -EINVAL;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (mon_ops && mon_ops->rx_ring_init) {
+		ret = mon_ops->rx_ring_init(dp);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+
+static inline
+void ath12k_dp_mon_rx_deinit(struct ath12k_dp *dp)
+{
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+
+	if (unlikely(!dp || !dp->dp_mon))
+		return;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (mon_ops && mon_ops->rx_ring_deinit)
+		mon_ops->rx_ring_deinit(dp);
 }
 
 static inline

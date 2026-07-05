@@ -22,8 +22,13 @@
 const struct ath12k_dp_arch_mon_ops ath12k_wifi7_dp_arch_mon_dual_ring_ops = {
 	.rx_srng_setup = ath12k_dp_mon_rx_srng_setup,
 	.rx_srng_cleanup = ath12k_dp_mon_rx_srng_cleanup,
-	.rx_buf_setup = ath12k_dp_mon_rx_buf_setup,
-	.rx_buf_free = ath12k_dp_mon_rx_buf_free,
+	.rx_ring_init = ath12k_dp_mon_rx_ring_init,
+	.rx_ring_deinit = ath12k_dp_mon_rx_ring_deinit,
+	/* The below 2 ops are required only for wifi6, remove this after wifi6
+	 * memory optimization
+	 */
+	.rx_buf_setup = NULL,
+	.rx_buf_free = NULL,
 	.rx_htt_srng_setup = ath12k_dp_mon_rx_htt_srng_setup,
 	.mon_pdev_alloc = ath12k_dp_mon_pdev_alloc,
 	.mon_pdev_free = ath12k_dp_mon_pdev_free,
