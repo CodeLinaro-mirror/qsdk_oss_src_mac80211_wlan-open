@@ -256,6 +256,106 @@ void ath12k_dp_peer_cleanup(struct ath12k *ar, void *ptr, int vdev_id, const u8 
 	rcu_read_unlock();
 }
 
+int ath12k_dp_peer_epp_setup_mgmt_tids(struct ath12k *ar, void *ptr,
+				       struct ath12k_link_vif *arvif,
+				       struct ath12k_link_sta *arsta)
+{
+	struct ath12k_dp_peer *dp_peer = (struct ath12k_dp_peer *)ptr;
+	struct ieee80211_sta *sta = ath12k_dp_peer_get_sta(dp_peer);
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp_link_peer *link_peer;
+	struct ieee80211_key_conf *key = NULL;
+	struct ath12k_dp_rx_tid *rx_tid;
+	u32 vdev_id = arvif->vdev_id;
+	int i, ret, link_id;
+	u32 ba_win_size;
+	u16 ssn;
+	u8 tid;
+
+	if (!dp_peer || !sta)
+		return -ENOENT;
+
+	if (!ab->hw_params->hw_ops->is_mgmt_reoq_tid)
+		return 0;
+
+	/* only EPP peers need queue setup early */
+	if (!sta->epp_peer)
+		return 0;
+
+	link_id = arsta->link_id;
+
+	rcu_read_lock();
+	link_peer = ath12k_dp_link_peer_find_by_logical_link_id(dp_peer, link_id);
+	if (!link_peer) {
+		ath12k_err(ab, "failed to find link peer (link=%d) to setup mgmt rx tid",
+			   link_id);
+		rcu_read_unlock();
+		return -ENOLINK;
+	}
+
+	if (!link_peer->primary_link) {
+		rcu_read_unlock();
+		return 0;
+	}
+
+	ath12k_info(ab, "Setting up mgmt rx TIDs for EPP peer %pM on primary link: %u",
+		    arsta->addr, link_id);
+
+	for (tid = 0; tid < ab->hal.hal_params->num_tids; tid++) {
+		if (!ath12k_hw_is_mgmt_reoq_tid(ab->hw_params, tid))
+			continue;
+
+		ath12k_dp_rx_peer_tid_ba_config(dp, tid, &ba_win_size, &ssn);
+		ret = ath12k_dp_rx_peer_tid_setup(ar, dp_peer, arsta->addr, vdev_id, tid,
+						  ba_win_size, ssn, HAL_PN_TYPE_NONE);
+		if (ret) {
+			ath12k_err(ab, "failed to setup mgmt rx tid queue for tid %u: %d",
+				   tid, ret);
+			goto tid_clean;
+		}
+	}
+
+	spin_lock_bh(&dp_peer->keys_lock);
+	for (i = 0; i < ARRAY_SIZE(dp_peer->keys); i++) {
+		if (!dp_peer->keys[i] ||
+		    !(dp_peer->keys[i]->flags & IEEE80211_KEY_FLAG_PAIRWISE))
+			continue;
+
+		key = dp_peer->keys[i];
+		break;
+	}
+
+	if (key) {
+		ret = ath12k_dp_rx_peer_pn_replay_config(arvif, arsta->addr, SET_KEY,
+							 key, sta,
+							 ATH12K_RXTID_PN_CHECK_MGMT_TIDS);
+		if (ret) {
+			spin_unlock_bh(&dp_peer->keys_lock);
+			ath12k_err(ab, "failed to configure PN Replay check for mgmt rx tids: %d",
+				   ret);
+			goto tid_clean;
+		}
+	}
+	spin_unlock_bh(&dp_peer->keys_lock);
+
+	rcu_read_unlock();
+	return 0;
+
+tid_clean:
+	for (tid--; (int)tid >= 0; tid--) {
+		if (!ath12k_hw_is_mgmt_reoq_tid(ab->hw_params, tid))
+			continue;
+		rx_tid = &link_peer->dp_peer->rx_tid[tid];
+		spin_lock_bh(&rx_tid->tid_lock);
+		ath12k_dp_arch_rx_peer_tid_delete(ab->dp, ar, link_peer, tid);
+		spin_unlock_bh(&rx_tid->tid_lock);
+	}
+
+	rcu_read_unlock();
+	return ret;
+}
+
 int ath12k_dp_peer_setup(struct ath12k *ar, void *ptr, struct ath12k_link_vif *arvif,
 			 const u8 *addr, u8 link_id)
 {
@@ -272,6 +372,7 @@ int ath12k_dp_peer_setup(struct ath12k *ar, void *ptr, struct ath12k_link_vif *a
 	u16 ssn;
 	struct ath12k_dp_rx_tid *rx_tid;
 	struct ath12k_dp_peer *dp_peer = (struct ath12k_dp_peer *)ptr;
+	bool is_mgmt;
 
 	if (!dp_peer)
 		return -ENOENT;
@@ -341,6 +442,10 @@ int ath12k_dp_peer_setup(struct ath12k *ar, void *ptr, struct ath12k_link_vif *a
 #endif
 
 	for (tid = 0; tid < ab->hal.hal_params->num_tids; tid++) {
+		is_mgmt = ath12k_hw_is_mgmt_reoq_tid(ab->hw_params, tid);
+		if (is_mgmt && dp_peer->is_epp_peer)
+			continue;
+
 		ath12k_dp_rx_peer_tid_ba_config(dp, tid, &ba_win_size, &ssn);
 		ret = ath12k_dp_rx_peer_tid_setup(ar, dp_peer, addr, vdev_id, tid,
 						  ba_win_size, ssn, HAL_PN_TYPE_NONE);
@@ -369,6 +474,10 @@ int ath12k_dp_peer_setup(struct ath12k *ar, void *ptr, struct ath12k_link_vif *a
 
 tid_clean:
 	for (tid--; tid >= 0; tid--) {
+		is_mgmt = ath12k_hw_is_mgmt_reoq_tid(ab->hw_params, tid);
+		if (is_mgmt && dp_peer->is_epp_peer)
+			continue;
+
 		rx_tid = &link_peer->dp_peer->rx_tid[tid];
 
 		spin_lock_bh(&rx_tid->tid_lock);

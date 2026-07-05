@@ -407,6 +407,7 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
 	u8 hw_link_id = ar->hw_link_id;
 	struct ath12k_dp_link_vif *dp_link_vif = &ahvif->dp_vif.dp_link_vif[link_id];
+	struct ath12k_link_vif *arvif;
 
 	peer = kzalloc(sizeof(*peer), GFP_KERNEL);
 	if (!peer)
@@ -523,8 +524,17 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 		}
 	}
 
-	if (!dp_peer->is_vdev_peer)
+	if (!dp_peer->is_vdev_peer) {
 		dp_peer->peer_links_map |= BIT(link_id);
+		/* if this is the first link, assign primary link early for EPP peers */
+		if (dp_peer->is_epp_peer && hweight32(dp_peer->peer_links_map) == 1) {
+			peer->primary_link = true;
+			rcu_read_lock();
+			arvif = rcu_dereference(ahvif->link[link_id]);
+			arvif->primary_sta_link = true;
+			rcu_read_unlock();
+		}
+	}
 
 	if (ath12k_proto_stats_enabled(dp_pdev) && dp_peer->peer_links_map)
 		ath12k_dp_alloc_proto_stats_vif(&ahvif->dp_vif);

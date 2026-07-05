@@ -1247,6 +1247,12 @@ struct ath12k_dp_umac_reset {
 #endif
 };
 
+enum ath12k_rxtid_pn_check {
+	ATH12K_RXTID_PN_CHECK_DATA_TIDS,
+	ATH12K_RXTID_PN_CHECK_MGMT_TIDS,
+	ATH12K_RXTID_PN_CHECK_ALL_TIDS,
+};
+
 #define HTT_T2H_EXT_STATS_INFO1_DONE	BIT(11)
 #define HTT_T2H_EXT_STATS_INFO1_LENGTH   GENMASK(31, 16)
 
@@ -1844,6 +1850,9 @@ int ath12k_dp_get_pdev_telemetry_stats(struct ath12k_base *ab,
 int ath12k_dp_pdev_pre_alloc(struct ath12k *ar);
 int ath12k_dp_tx_htt_srng_setup(struct ath12k_base *ab, u32 ring_id,
 				int mac_id, enum hal_ring_type ring_type);
+int ath12k_dp_peer_epp_setup_mgmt_tids(struct ath12k *ar, void *ptr,
+				       struct ath12k_link_vif *arvif,
+				       struct ath12k_link_sta *arsta);
 int ath12k_dp_peer_setup(struct ath12k *ar, void *ptr, struct ath12k_link_vif *arvif,
 			 const u8 *addr, u8 link_id);
 void ath12k_dp_peer_cleanup(struct ath12k *ar, void *ptr, int vdev_id, const u8 *addr);

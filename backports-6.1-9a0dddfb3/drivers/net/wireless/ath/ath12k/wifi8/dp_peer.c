@@ -398,6 +398,7 @@ int ath12k_wifi8_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 	dp_peer->sta = params->sta;
 	dp_peer->vif = vif;
 	dp_peer->is_mlo = params->is_mlo;
+	dp_peer->is_epp_peer = params->is_epp_peer;
 	dp_peer->peer_id = ath12k_wifi8_peer_id_alloc(dp_hw);
 	if (dp_peer->peer_id == ATH12K_MLO_PEER_ID_INVALID) {
 		ath12k_dp_peer_stats_free(dp_peer);

@@ -135,6 +135,7 @@ int ath12k_wifi7_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 	dp_peer->vif = vif;
 	dp_peer->is_mlo = params->is_mlo;
 	dp_peer->peer_id = params->is_mlo ? params->peer_id : ATH12K_DP_PEER_ID_INVALID;
+	dp_peer->is_epp_peer = params->is_epp_peer;
 	dp_peer->sta_id = ATH12K_DP_PEER_ID_INVALID;
 	dp_peer->hw_link_id = ATH12K_INVALID_HW_LINKID;
 	dp_peer->is_vdev_peer = params->is_vdev_peer;

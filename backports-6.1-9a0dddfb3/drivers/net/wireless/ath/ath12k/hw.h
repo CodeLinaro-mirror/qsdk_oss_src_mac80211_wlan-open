@@ -424,6 +424,7 @@ struct ath12k_hw_ops {
 	bool (*rx_peer_tid_skip_pn_replay)(struct ath12k_base *ab, u8 tid);
 	void (*dp_peer_migration)(struct ath12k_link_vif *arvif,
 				   struct ath12k_mac_pri_link_migr_peer_node *peer_node);
+	bool (*is_mgmt_reoq_tid)(u8 tid);
 };
 
 static inline
@@ -452,6 +453,15 @@ static inline int ath12k_hw_mac_id_to_srng_id(const struct ath12k_hw_params *hw,
 		return hw->hw_ops->mac_id_to_srng_id(hw, mac_id);
 
 	return 0;
+}
+
+static inline bool ath12k_hw_is_mgmt_reoq_tid(const struct ath12k_hw_params *hw,
+					      u8 tid)
+{
+	if (hw->hw_ops->is_mgmt_reoq_tid)
+		return hw->hw_ops->is_mgmt_reoq_tid(tid);
+
+	return false;
 }
 
 struct ath12k_fw_ie {
