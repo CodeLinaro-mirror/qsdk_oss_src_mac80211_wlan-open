@@ -443,6 +443,7 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 
 	peer->max_rssi = S8_MIN;
 	peer->min_rssi = S8_MAX;
+	spin_lock_init(&peer->ppdu_stats_lock);
 
 	if (vif->type == NL80211_IFTYPE_STATION) {
 		dp_link_vif->ast_hash = peer->ast_hash;
@@ -1004,23 +1005,21 @@ void
 ath12k_link_peer_get_sta_rate_info_stats(struct ath12k_dp_link_peer *link_peer,
 					 struct ath12k_dp_link_peer_rate_info *rate_info)
 {
+	spin_lock_bh(&link_peer->ppdu_stats_lock);
 	rate_info->rx_duration = link_peer->rx_duration;
 	rate_info->tx_duration = link_peer->tx_duration;
-	rate_info->txrate.legacy = link_peer->txrate.legacy;
-	rate_info->txrate.mcs = link_peer->txrate.mcs;
-	rate_info->txrate.nss = link_peer->txrate.nss;
-	rate_info->txrate.bw = link_peer->txrate.bw;
-	rate_info->txrate.he_gi = link_peer->txrate.he_gi;
-	rate_info->txrate.he_dcm = link_peer->txrate.he_dcm;
-	rate_info->txrate.he_ru_alloc = link_peer->txrate.he_ru_alloc;
-	rate_info->txrate.eht_gi = link_peer->txrate.eht_gi;
-	rate_info->txrate.eht_ru_alloc = link_peer->txrate.eht_ru_alloc;
-	rate_info->txrate.flags = link_peer->txrate.flags;
-	rate_info->rssi_comb = link_peer->rssi_comb;
-	rate_info->signal_avg = ewma_avg_rssi_read(&link_peer->avg_rssi);
+	/* Copy txrate and rxrate atomically under the caller's ppdu stats lock
+	 * Field-by-field access races with dp_htt.c/dp_mon.c writers that
+	 * do memset + multi-store sequences under stats lock on another CPU.
+	 */
+	memcpy(&rate_info->txrate, &link_peer->txrate, sizeof(struct rate_info));
+	memcpy(&rate_info->rxrate, &link_peer->rxrate, sizeof(struct rate_info));
+	rate_info->rssi_comb = link_peer->signal_stats.rssi;
+	rate_info->signal_avg = (s8)link_peer->signal_stats.rssi_avg;
 	rate_info->tx_retry_count = link_peer->tx_retry_count;
 	rate_info->tx_retry_failed = link_peer->tx_retry_failed;
 	rate_info->rx_retries = link_peer->peer_stats.rx_retries;
+	spin_unlock_bh(&link_peer->ppdu_stats_lock);
 }
 
 struct ath12k_dp_peer_qos *
