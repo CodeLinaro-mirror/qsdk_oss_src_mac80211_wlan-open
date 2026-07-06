@@ -5788,6 +5788,7 @@ int ath12k_core_dynamic_wsi_remap(struct ath12k_base *ab)
 	int ret = 0, i;
 	struct ath12k_hw *ah;
 	struct ath12k_hw_group *ag;
+	struct ath12k *ar = NULL;
 
 	ag = ab->ag;
 
@@ -5887,6 +5888,11 @@ int ath12k_core_dynamic_wsi_remap(struct ath12k_base *ab)
 		if (ret) {
 			ath12k_err(ab, "srng init failed %d\n", ret);
 			return ret;
+		}
+
+		for (i = 0; i < ab->num_radios; i++) {
+			ar = ab->pdevs[i].ar;
+			ar->pdev_suspend = false;
 		}
 
 		ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS, "WSI Bypass: Power on Q6");
