@@ -204,7 +204,7 @@ static int ath12k_cfr_correlate_and_relay(struct ath12k *ar,
 	}
 }
 
-static u8 freeze_reason_to_capture_type(struct ath12k_base *ab, void *freeze_tlv)
+u8 freeze_reason_to_capture_type(struct ath12k_base *ab, void *freeze_tlv)
 {
 	struct macrx_freeze_capture_channel *freeze = freeze_tlv;
 	u8 capture_reason = FIELD_GET(MACRX_FREEZE_CC_INFO0_CAPTURE_REASON,
@@ -230,8 +230,9 @@ static u8 freeze_reason_to_capture_type(struct ath12k_base *ab, void *freeze_tlv
 
 	return CFR_CAPTURE_METHOD_AUTO;
 }
+EXPORT_SYMBOL(freeze_reason_to_capture_type);
 
-static void extract_peer_mac_from_freeze_tlv(void *freeze_tlv, uint8_t *peermac)
+void extract_peer_mac_from_freeze_tlv(void *freeze_tlv, uint8_t *peermac)
 {
 	struct macrx_freeze_capture_channel_v3 *freeze =
 		(struct macrx_freeze_capture_channel_v3 *)freeze_tlv;
@@ -243,29 +244,33 @@ static void extract_peer_mac_from_freeze_tlv(void *freeze_tlv, uint8_t *peermac)
 	peermac[4] = freeze->packet_ta_upper_16 & 0x00FF;
 	peermac[5] = (freeze->packet_ta_upper_16 & 0xFF00) >> 8;
 }
+EXPORT_SYMBOL(extract_peer_mac_from_freeze_tlv);
 
-static int ath12k_cfr_enh_process_data(struct ath12k *ar,
-				       struct ath12k_dbring_data *param)
+/* ath12k_cfr_parse_enh_dma_hdr for chips using the
+ * ath12k_cfir_enh_dma_hdr DMA header layout -- shared by wifi6
+ * (qcn9074_ops, qcn9160_ops) and wifi7 (qcn9274_ops, wcn7850_ops), all
+ * of which use this exact layout; only buffer sizes differ per chip.
+ * wifi8/QCN9625 uses a different layout (locsens_common_header_t) and
+ * has its own ath12k_hw_qcn9625_parse_cfr_enh_dma_hdr() in wifi8/hw.c.
+ *
+ * ath12k_wifi6.o, ath12k_wifi7.o, and ath12k_wifi8.o are separate
+ * kernel modules from each other and from this (ath12k.o) -- this
+ * function lives here, exported, so wifi6 and wifi7 can share one
+ * implementation instead of each carrying their own copy.
+ *
+ * Fills @lut's header-derived fields from the ucode DMA header at
+ * @data and returns the total header+payload length in @length.
+ */
+int ath12k_cfr_parse_enh_dma_hdr(struct ath12k *ar, u8 *data,
+				 struct ath12k_cfr_look_up_table *lut,
+				 u32 *length)
 {
 	struct ath12k_base *ab = ar->ab;
-	struct ath12k_cfr *cfr = &ar->cfr;
-	struct ath12k_cfr_look_up_table *lut;
-	struct ath12k_csi_cfr_header *header;
 	struct ath12k_cfir_enh_dma_hdr dma_hdr;
 	struct cfr_enh_metadata *meta;
-	void *mu_rx_user_info = NULL, *freeze_tlv = NULL;
+	void *freeze_tlv = NULL;
 	u8 *peer_macaddr;
-	u8 *data;
-	u32 buf_id;
-	u32 length;
-	u32 freeze_tlv_len = 0;
-	u32 end_magic = ATH12K_CFR_END_MAGIC;
 	u8 capture_type;
-	int ret = 0;
-	int status;
-
-	data = param->data;
-	buf_id = param->buf_id;
 
 	memcpy(&dma_hdr, data, sizeof(struct ath12k_cfir_enh_dma_hdr));
 
@@ -276,22 +281,50 @@ static int ath12k_cfr_enh_process_data(struct ath12k *ar,
 		capture_type = CFR_CAPTURE_METHOD_AUTO;
 	}
 
-	if (dma_hdr.mu_rx_data_incl) {
-		if (dma_hdr.freeze_tlv_version == MACRX_FREEZE_TLV_VERSION_5)
-			freeze_tlv_len =
-				sizeof(struct macrx_freeze_capture_channel_v5);
-		else if (dma_hdr.freeze_tlv_version == MACRX_FREEZE_TLV_VERSION_3)
-			freeze_tlv_len =
-				sizeof(struct macrx_freeze_capture_channel_v3);
-		else
-			freeze_tlv_len = sizeof(struct macrx_freeze_capture_channel);
+	*length = dma_hdr.length * 4;
+	*length += dma_hdr.total_bytes;
 
-		mu_rx_user_info = data + sizeof(struct ath12k_cfir_enh_dma_hdr) +
-				  freeze_tlv_len;
+	lut->dbr_ppdu_id = dma_hdr.phy_ppdu_id;
+	lut->header_length = dma_hdr.length;
+	lut->payload_length = dma_hdr.total_bytes;
+	memcpy(&lut->dma_hdr.enh_hdr, &dma_hdr,
+	       sizeof(struct ath12k_cfir_enh_dma_hdr));
+
+	meta = &lut->header.u.meta_enh;
+
+	if (capture_type != CFR_CAPTURE_METHOD_ACK_RESP_TO_TM_FTM) {
+		if (!dma_hdr.mu_rx_data_incl) {
+			peer_macaddr = meta->peer_addr.su_peer_addr;
+			if (dma_hdr.freeze_data_incl)
+				extract_peer_mac_from_freeze_tlv(freeze_tlv,
+								 peer_macaddr);
+		}
 	}
 
-	length = dma_hdr.length * 4;
-	length += dma_hdr.total_bytes;
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_cfr_parse_enh_dma_hdr);
+
+/* Generation-agnostic CFR DBR (direct-buffer-rx) event handler.
+ * Delegates the ucode-specific DMA header parsing to
+ * ab->hw_params->hw_ops->parse_cfr_enh_dma_hdr(), which fills in the LUT
+ * entry's header/metadata fields and returns the total data length.
+ * Locking, LUT lookup, correlate-and-relay, and RFS write stay here since
+ * they do not vary by chip generation.
+ */
+static int ath12k_cfr_process_dbr_data(struct ath12k *ar,
+				       struct ath12k_dbring_data *param)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_cfr *cfr = &ar->cfr;
+	struct ath12k_cfr_look_up_table *lut;
+	u32 buf_id;
+	u32 length = 0;
+	u32 end_magic = ATH12K_CFR_END_MAGIC;
+	int ret = 0;
+	int status;
+
+	buf_id = param->buf_id;
 
 	spin_lock_bh(&cfr->lut_lock);
 
@@ -308,37 +341,20 @@ static int ath12k_cfr_enh_process_data(struct ath12k *ar,
 		return -EINVAL;
 	}
 
+	ret = ab->hw_params->hw_ops->parse_cfr_enh_dma_hdr(ar, param->data,
+							   lut, &length);
+	if (ret) {
+		spin_unlock_bh(&cfr->lut_lock);
+		return ret;
+	}
 
-	ath12k_dbg_dump(ab, ATH12K_DBG_CFR_DUMP,"data_from_buf_rel:", "",
-			data, length);
+	ath12k_dbg_dump(ab, ATH12K_DBG_CFR_DUMP, "data_from_buf_rel:", "",
+			param->data, length);
 
 	lut->buff = param->buff;
-	lut->data = data;
+	lut->data = param->data;
 	lut->data_len = length;
-	lut->dbr_ppdu_id = dma_hdr.phy_ppdu_id;
 	lut->dbr_tstamp = jiffies;
-	lut->header_length = dma_hdr.length;
-	lut->payload_length = dma_hdr.total_bytes;
-	memcpy(&lut->dma_hdr.enh_hdr, &dma_hdr,
-	       sizeof(struct ath12k_cfir_enh_dma_hdr));
-
-	header = &lut->header;
-	meta = &header->u.meta_enh;
-	meta->channel_bw = dma_hdr.upload_pkt_bw;
-	meta->num_rx_chain =
-		NUM_CHAINS_FW_TO_HOST(dma_hdr.num_chains);
-	meta->length = length;
-
-	if (capture_type != CFR_CAPTURE_METHOD_ACK_RESP_TO_TM_FTM) {
-		meta->capture_type = capture_type;
-		meta->sts_count = dma_hdr.nss + 1;
-		if (!dma_hdr.mu_rx_data_incl) {
-			peer_macaddr = meta->peer_addr.su_peer_addr;
-			if (dma_hdr.freeze_data_incl)
-				extract_peer_mac_from_freeze_tlv(freeze_tlv,
-								 peer_macaddr);
-		}
-	}
 
 	status = ath12k_cfr_correlate_and_relay(ar, lut,
 						ATH12K_CORRELATE_DBR_EVENT);
@@ -777,7 +793,7 @@ static int ath12k_cfr_ring_alloc(struct ath12k *ar,
 	ath12k_dbring_set_cfg(ar, &cfr->rx_ring,
 			      ATH12K_CFR_NUM_RESP_PER_EVENT,
 			      ATH12K_CFR_EVENT_TIMEOUT_MS,
-			      ath12k_cfr_enh_process_data);
+			      ath12k_cfr_process_dbr_data);
 
 	ret = ath12k_dbring_buf_setup(ar, &cfr->rx_ring, db_cap);
 	if (ret) {
