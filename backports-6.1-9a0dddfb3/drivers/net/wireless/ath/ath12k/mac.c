@@ -13624,6 +13624,68 @@ static int ath12k_mac_station_remove(struct ath12k *ar,
 	return ret;
 }
 
+static int ath12k_mac_install_epp_assoc_key(struct ath12k_link_vif *arvif,
+					    struct ath12k_link_sta *arsta)
+{
+	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(arsta->ahsta);
+	struct ath12k_sta *ahsta = arsta->ahsta;
+	struct ath12k_link_sta *assoc_arsta;
+	struct ath12k_link_vif *assoc_arvif;
+	union ath12k_config_param param_val = {};
+	struct ath12k *assoc_ar;
+	struct ieee80211_key_conf *key = NULL;
+	void *dp_peer;
+	int i, ret, len = 0;
+
+	lockdep_assert_wiphy(ath12k_ar_to_hw(arvif->ar)->wiphy);
+
+	if (!sta->mlo || !sta->epp_peer ||
+	    ahsta->assoc_link_id == arsta->link_id)
+		return 0;
+
+	assoc_arsta = wiphy_dereference(ath12k_ar_to_hw(arvif->ar)->wiphy,
+					ahsta->link[ahsta->assoc_link_id]);
+
+	if (!assoc_arsta || !assoc_arsta->arvif || !assoc_arsta->arvif->ar)
+		return -EINVAL;
+
+	assoc_arvif = assoc_arsta->arvif;
+	assoc_ar = assoc_arvif->ar;
+
+	dp_peer = ath12k_sta_get_dp_peer_wiphy_locked(ath12k_ar_to_hw(assoc_ar)->wiphy,
+						      ahsta);
+	if (!dp_peer)
+		return -EINVAL;
+
+	ath12k_dp_peer_get_param_by_dp_peer(dp_peer, ATH12K_DP_PEER_KEYS_PARAM,
+					    &param_val);
+
+	len = param_val.keys_params.len;
+	for (i = 0; i < len; i++) {
+		struct ieee80211_key_conf *t_key;
+
+		t_key = param_val.keys_params.keys[i];
+		if (!t_key || !(t_key->flags & IEEE80211_KEY_FLAG_PAIRWISE))
+			continue;
+
+		key = t_key;
+		break;
+	}
+
+	if (!key) {
+		ath12k_warn(assoc_ar->ab,
+			    "No pairwise key found for EPPKE initiated link\n");
+		return -ENOENT;
+	}
+	ret = ath12k_mac_set_key(arvif->ar, SET_KEY, arvif,
+				 arsta, key, NULL);
+	if (ret)
+		return ret;
+	arsta->keys[key->keyidx] = key;
+
+	return 0;
+}
+
 static int ath12k_mac_station_add(struct ath12k *ar,
 				  struct ath12k_link_vif *arvif,
 				  struct ath12k_link_sta *arsta)
@@ -13704,6 +13766,18 @@ static int ath12k_mac_station_add(struct ath12k *ar,
 				    arsta->addr, ret);
 			goto free_peer;
 		}
+	}
+
+	/*
+	 * Retrieve pairwise key from EPPKE initiated link and install in
+	 * the setup link
+	 */
+	ret = ath12k_mac_install_epp_assoc_key(arvif, arsta);
+	if (ret) {
+		ath12k_warn(ab,
+			    "failed to set EPPKE pairwise key for %pM on vdev %i (%d)\n",
+			    arsta->addr, arvif->vdev_id, ret);
+		goto free_peer;
 	}
 
 	if (ab->hw_params->vdev_start_delay &&
