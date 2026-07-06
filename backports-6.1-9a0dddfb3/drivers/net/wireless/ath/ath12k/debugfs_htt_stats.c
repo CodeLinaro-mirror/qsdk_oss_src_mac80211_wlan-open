@@ -15882,21 +15882,14 @@ int ath12k_debugfs_htt_stats_req(struct ath12k *ar)
 {
 	struct debug_htt_stats_req *stats_req = ar->debug.htt_stats.stats_req;
 	enum ath12k_dbg_htt_ext_stats_type type = stats_req->type;
-	u64 cookie;
-	int ret, pdev_id;
 	struct htt_ext_stats_cfg_params cfg_params = { 0 };
+	int ret, pdev_id, i;
+	u64 cookie;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
-	init_completion(&stats_req->htt_stats_rcvd);
-
 	pdev_id = ath12k_mac_get_target_pdev_id(ar);
-	stats_req->done = false;
 	stats_req->pdev_id = pdev_id;
-
-	cookie = u64_encode_bits(ATH12K_HTT_STATS_MAGIC_VALUE,
-				 ATH12K_HTT_STATS_COOKIE_MSB);
-	cookie |= u64_encode_bits(pdev_id, ATH12K_HTT_STATS_COOKIE_LSB);
 
 	if (stats_req->override_cfg_param) {
 		cfg_params.cfg0 = stats_req->cfg_param[0];
@@ -15912,23 +15905,41 @@ int ath12k_debugfs_htt_stats_req(struct ath12k *ar)
 		return ret;
 	}
 
-	ret = ath12k_dp_tx_htt_h2t_ext_stats_req(ar, type, &cfg_params, cookie);
-	if (ret) {
-		ath12k_warn(ar->ab, "failed to send htt stats request: %d\n", ret);
-		return ret;
-	}
-	if (!wait_for_completion_timeout(&stats_req->htt_stats_rcvd, 3 * HZ)) {
-		spin_lock_bh(&ar->data_lock);
-		if (!stats_req->done) {
-			stats_req->done = true;
+	cookie  = u64_encode_bits(ATH12K_HTT_STATS_MAGIC_VALUE,
+				  ATH12K_HTT_STATS_COOKIE_MSB);
+	cookie |= u64_encode_bits(pdev_id, ATH12K_HTT_STATS_COOKIE_LSB);
+
+	for (i = 0; i < ATH12K_HTT_STATS_MAX_RETRIES; i++) {
+		init_completion(&stats_req->htt_stats_rcvd);
+		stats_req->done = false;
+
+		ret = ath12k_dp_tx_htt_h2t_ext_stats_req(ar, type, &cfg_params, cookie);
+		if (ret) {
+			ath12k_warn(ar->ab, "failed to send htt stat request: %d\n", ret);
+			return ret;
+		}
+
+		if (!wait_for_completion_timeout(&stats_req->htt_stats_rcvd, 3 * HZ)) {
+			spin_lock_bh(&ar->data_lock);
+			if (!stats_req->done) {
+				stats_req->done = true;
+				spin_unlock_bh(&ar->data_lock);
+				ath12k_warn(ar->ab, "stats request timed out\n");
+				return -ETIMEDOUT;
+			}
 			spin_unlock_bh(&ar->data_lock);
-			ath12k_warn(ar->ab, "stats request timed out\n");
-			return -ETIMEDOUT;
+		}
+
+		spin_lock_bh(&ar->data_lock);
+		if (stats_req->buf_len) {
+			spin_unlock_bh(&ar->data_lock);
+			return 0;
 		}
 		spin_unlock_bh(&ar->data_lock);
 	}
 
-	return 0;
+	ath12k_warn(ar->ab, "htt stats: max retries reached, buf_len still 0\n");
+	return -ETIMEDOUT;
 }
 
 static int ath12k_open_htt_stats(struct inode *inode,
