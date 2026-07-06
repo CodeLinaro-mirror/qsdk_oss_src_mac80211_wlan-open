@@ -12550,6 +12550,12 @@ skip_mgmt_stats:
 		goto exit;
 	}
 
+	/* Firmware is guaranteed to report all essential management frames via
+	 * WMI while it can deliver some extra via HTT. Since there can be
+	 * duplicates split the reporting wrt monitor/sniffing.
+	 */
+	status->flag |= RX_FLAG_SKIP_MONITOR;
+
 	if (is_4addr_null_pkt) {
 		spin_lock_bh(&ar->arsta_lock);
 		arsta = ath12k_link_sta_find_by_addr(ar, hdr->addr2);
@@ -12574,12 +12580,6 @@ skip_mgmt_stats:
 		ieee80211_rx_napi(ar->ah->hw, pubsta, skb, NULL);
 		goto exit;
 	}
-
-	/* Firmware is guaranteed to report all essential management frames via
-	 * WMI while it can deliver some extra via HTT. Since there can be
-	 * duplicates split the reporting wrt monitor/sniffing.
-	 */
-	status->flag |= RX_FLAG_SKIP_MONITOR;
 
 	/* In case of PMF or (Re)Association Request/Response encryption,
 	 * FW delivers decrypted frames with Protected Bit set including
