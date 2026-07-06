@@ -1767,7 +1767,19 @@ void ath12k_wifi8_ucast_handler(struct ath12k_dp_vif *dp_vif, u8 link_id,
 	prefetch(central_dp->device_stats.tx_fast_unicast);
 
 	/* Assign TX descriptor */
+#ifdef CPTCFG_QCN_EXTN
+	/* EAPOL frames always use the special descriptor pool (with lock).
+	 * For regular unicast frames on the DP_SKB_FAST_TX path use the
+	 * per-ring hot list (lock-free); fall back to the regular pool for
+	 * all other frames.
+	 */
+	if (likely(skb_ctrl->flags & DP_SKB_FAST_TX))
+		tx_desc =
+		ath12k_dp_tx_assign_buffer_hot(central_dp->dp_hw_grp, ring_id);
+	else if (unlikely(skb->protocol == cpu_to_be16(ETH_P_PAE)))
+#else
 	if (unlikely(skb->protocol == cpu_to_be16(ETH_P_PAE)))
+#endif
 		tx_desc =
 		ath12k_dp_tx_assign_buffer(central_dp->dp_hw_grp,
 					   central_dp->dp_hw_grp->tx_spl_desc_free_list,
