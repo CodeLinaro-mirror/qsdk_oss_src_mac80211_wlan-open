@@ -14977,6 +14977,7 @@ ath12k_ext_mon_get_pkt_attr_len(void)
 	payload = ath12k_ext_mon_get_len_attr_len();
 	len += nla_total_size(payload);
 
+	len += nla_total_size(3 * nla_total_size(sizeof(u8)));
 	return len;
 }
 
@@ -15129,8 +15130,32 @@ ath12k_ext_mon_put_filter_len(struct sk_buff *skb,
 }
 
 static int
+ath12k_ext_mon_put_data_mpdu_tlv(struct sk_buff *skb,
+				 const struct ath12k_ext_mon_data_mpdu_tlv_config *tlv)
+{
+	struct nlattr *attr;
+
+	attr = nla_nest_start(skb, QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_DATA_MPDU_TLV);
+	if (!attr)
+		return -EMSGSIZE;
+
+	if (nla_put_u8(skb, QCA_VENDOR_ATTR_EXT_MON_DATA_MPDU_TLV_MCAST,
+		       tlv->mcast) ||
+	    nla_put_u8(skb, QCA_VENDOR_ATTR_EXT_MON_DATA_MPDU_TLV_UCAST,
+		       tlv->ucast) ||
+	    nla_put_u8(skb, QCA_VENDOR_ATTR_EXT_MON_DATA_MPDU_TLV_NULL,
+		       tlv->null_frm)) {
+		nla_nest_cancel(skb, attr);
+		return -EMSGSIZE;
+	}
+	nla_nest_end(skb, attr);
+	return 0;
+}
+
+static int
 ath12k_ext_mon_put_pkt_config(struct sk_buff *skb, int attrtype,
-			      const struct ath12k_ext_mon_pkt_config *pkt)
+			      const struct ath12k_ext_mon_pkt_config *pkt,
+			      bool is_peer_filter)
 {
 	struct nlattr *attr;
 	int ret;
@@ -15146,6 +15171,12 @@ ath12k_ext_mon_put_pkt_config(struct sk_buff *skb, int attrtype,
 	ret = ath12k_ext_mon_put_filter_len(skb, pkt);
 	if (ret)
 		goto err;
+
+	if (is_peer_filter && pkt->data_mpdu_tlv.tlv_configured) {
+		ret = ath12k_ext_mon_put_data_mpdu_tlv(skb, &pkt->data_mpdu_tlv);
+		if (ret)
+			goto err;
+	}
 
 	nla_nest_end(skb, attr);
 	return 0;
@@ -15179,25 +15210,25 @@ ath12k_ext_mon_put_filter_config(struct sk_buff *skb,
 
 	ret = ath12k_ext_mon_put_pkt_config(
 		skb, QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_ALL_PEER,
-		&filter->all_peer);
+		&filter->all_peer, true);
 	if (ret)
 		goto err;
 
 	ret = ath12k_ext_mon_put_pkt_config(
 		skb, QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_ALL_NEIGHBOR,
-		&filter->all_neighbor);
+		&filter->all_neighbor, false);
 	if (ret)
 		goto err;
 
 	ret = ath12k_ext_mon_put_pkt_config(
 		skb, QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_TARGET_PEER,
-		&filter->target_peer);
+		&filter->target_peer, true);
 	if (ret)
 		goto err;
 
 	ret = ath12k_ext_mon_put_pkt_config(
 		skb, QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_TARGET_NEIGHBOR,
-		&filter->target_neighbor);
+		&filter->target_neighbor, false);
 	if (ret)
 		goto err;
 
