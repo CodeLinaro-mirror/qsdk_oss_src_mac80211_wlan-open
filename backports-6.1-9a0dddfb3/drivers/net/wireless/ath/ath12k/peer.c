@@ -1141,7 +1141,8 @@ void ath12k_link_sta_hlist_destroy(struct ath12k *ar)
 	for (bkt = 0; bkt < BIT(ar->arsta_hash_bits); bkt++) {
 		hlist_for_each_entry_safe(arsta, tmp, &ar->arsta_list[bkt], hlist_addr) {
 			if (!hlist_unhashed(&arsta->hlist_addr)) {
-				arsta->ahsta->ar_bitmap &= ~ar_bmp;
+				if (!arsta->is_self_peer)
+					arsta->ahsta->ar_bitmap &= ~ar_bmp;
 				hash_del(&arsta->hlist_addr);
 			}
 		}
