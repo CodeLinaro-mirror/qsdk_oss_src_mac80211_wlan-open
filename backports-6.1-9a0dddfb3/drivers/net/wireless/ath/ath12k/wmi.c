@@ -19237,6 +19237,8 @@ static void ath12k_fw_anomaly_event(struct ath12k_base *ab, struct sk_buff *skb)
 	u16 entry_tag;
 	u32 i;
 	int ret;
+	u32 pdev_id;
+	struct ath12k *ar = NULL;
 
 	ath12k_dbg(ab, ATH12K_DBG_WMI, "Anomaly event received\n");
 	ret = ath12k_wmi_tlv_iter(ab, skb->data, skb->len,
@@ -19247,10 +19249,18 @@ static void ath12k_fw_anomaly_event(struct ath12k_base *ab, struct sk_buff *skb)
 		return;
 	}
 
+	pdev_id = le32_to_cpu(*(const __le32 *)parse.hdr);
+	ar = ath12k_mac_get_ar_by_pdev_id(ab, pdev_id);
+
+	if (!ar) {
+		ath12k_warn(ab, "Invalid pdev_id=%u\n", pdev_id);
+		return;
+	}
+
 	/* TLV#0: print anomaly report header */
 	ath12k_dbg(ab, ATH12K_DBG_WMI,
-		   "Anomaly TLV#0 hdr: pdev_id=%u\n",
-		   le32_to_cpu(*(const __le32 *)parse.hdr));
+		   "Anomaly TLV#0 hdr: pdev_id=%u, radio_idx=%u\n",
+		   le32_to_cpu(*(const __le32 *)parse.hdr), ar->radio_idx);
 	ath12k_dbg_dump(ab, ATH12K_DBG_WMI, "Anomaly TLV#0 hdr raw", "",
 			parse.hdr, sizeof(__le32));
 
@@ -19295,9 +19305,14 @@ static void ath12k_fw_anomaly_event(struct ath12k_base *ab, struct sk_buff *skb)
 		ath12k_dbg_dump(ab, ATH12K_DBG_WMI, "Anomaly TLV#1 entry raw", "",
 				&entries[i], sizeof(entries[i]) - sizeof(__le32));
 #ifdef CPTCFG_ATHDEBUG
+		struct athdbg_wmi_event_info info = {
+			.radio_idx  = ar->radio_idx,
+			.hw_link_id = ar->hw_link_id,
+			.tlv_data   = skb->data,
+			.tlv_len    = skb->len,
+		};
 		/* bit0 == 0 => forward full original TLV payload */
-		athdbg_if_send_tlv(ab, WMI_ANOMALY_REPORT_EVENTID,
-				   skb->data, skb->len);
+		athdbg_if_send_tlv(ab, WMI_ANOMALY_REPORT_EVENTID, &info);
 #endif
 	}
 }
