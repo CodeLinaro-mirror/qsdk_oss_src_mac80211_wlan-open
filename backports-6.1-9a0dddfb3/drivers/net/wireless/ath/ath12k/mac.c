@@ -6761,6 +6761,8 @@ static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 		}
 	}
 
+	ath12k_mac_remove_link_interface_extn(arvif);
+
 	ath12k_debugfs_remove_interface(arvif);
 	ret = ath12k_mac_vdev_delete(ar, arvif);
 	if (ret)
