@@ -1602,7 +1602,7 @@ static int ath12k_cumac_reset_wrapper(struct ath12k_base *ab,
 			   "%s: Step '%s' failed with error %d\n",
 			   phase_name, step->name, ret);
 	} else {
-		*ts = jiffies_to_msecs(jiffies);
+		*ts = jiffies;
 		ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET,
 			   "%s: Step '%s' completed successfully\n",
 			   phase_name, step->name);
@@ -1618,17 +1618,22 @@ static void ath12k_cumac_reset_print_summary(struct ath12k_base *ab,
 					     const char *phase_name)
 {
 	int i;
-	u64 duration;
+	u64 start, end, duration;
 
 	ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET,
 		   "%s: Step timestamp summary:\n", phase_name);
 
 	for (i = 0; i < count; i++) {
-		duration = (i > 0) ? (ts[i] - ts[i - 1]) : 0;
+		start = (i > 0) ? ts[i - 1] : ts[0];
+		end = ts[i];
+		duration = (i > 0) ? jiffies_to_msecs(end - start) : 0;
 		ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET,
-			   "%s: [%2d] %-35s %llu ms\n",
-			   phase_name, i, steps[i].name, duration);
+			   "%s: [%2d] %-35s start=%llu end=%llu time_taken=%llu ms\n",
+			   phase_name, i, steps[i].name, start, end, duration);
 	}
+
+	duration = jiffies_to_msecs(ts[count - 1] - ts[0]);
+	ath12k_info(ab, "%s: Total time: %llu ms\n", phase_name, duration);
 }
 
 static const struct cumac_hw_reset_step pre_reset_steps[] = {
