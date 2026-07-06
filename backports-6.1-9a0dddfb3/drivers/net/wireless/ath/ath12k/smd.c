@@ -2218,7 +2218,7 @@ static void ath12k_smd_ctx_hw_tx_tid_cb(struct ath12k_dp *dp, void *cb_ctx,
 		ath12k_smd_ctx_hw_tid_cb_vendor(cb_data, req, true, tid);
 
 		ath12k_dbg_level(ab, ATH12K_DBG_SMD, ATH12K_DBG_L3,
-				 "DL cb tid: %u sn: %u, lsn_offset: %u, pn_len: %u, pn: %*ph, ba_setup: %s, ba_amsdu: %d, ba_policy: %d, ba_buffer_size: %u, ba_timeout: %u",
+				 "DL cb tid: %u sn: %u, lsn_offset: %u, pn_len: %u, pn: %*ph, ba_setup: %s, ba_amsdu: %d, ba_policy: %u, ba_buffer_size: %u, ba_timeout: %u",
 				 tid,
 				 req->ctx.dl.sn[tid],
 				 cb_data->lsn_offset,
@@ -2380,7 +2380,7 @@ static void ath12k_smd_ctx_hw_rx_tid_cb(struct ath12k_dp *dp, void *cb_ctx,
 		ath12k_smd_ctx_hw_tid_cb_vendor((void *)reo_status, req, false, tid);
 
 		ath12k_dbg_level(ab, ATH12K_DBG_SMD, ATH12K_DBG_L3,
-				 "UL cb tid: %u sn: %u, pn_len: %u, pn: %*ph, ba_setup: %s, ba_amsdu: %d, ba_policy: %d, ba_buffer_size: %u, ba_timeout: %u",
+				 "UL cb tid: %u sn: %u, pn_len: %u, pn: %*ph, ba_setup: %s, ba_amsdu: %d, ba_policy: %u, ba_buffer_size: %u, ba_timeout: %u",
 				 tid,
 				 req->ctx.ul.sn[tid],
 				 q_stats->pn_len,

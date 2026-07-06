@@ -12342,7 +12342,7 @@ skip_addba_ext:
 		(capab & IEEE80211_ADDBA_PARAM_POLICY_MASK) >> 1;
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_SMD,
-		   "AddBA Response from %pM, tid: %u amsdu: %d timeout: %u buf_size: %u policy: %d",
+		   "AddBA Response from %pM, tid: %u amsdu: %d timeout: %u buf_size: %u policy: %u",
 		   sta->addr, tid,
 		   ahsta->tx_ba_params[tid].amsdu, timeout, buf_size,
 		   ahsta->tx_ba_params[tid].policy);
