@@ -14396,6 +14396,14 @@ ath12k_wmi_process_csa_switch_count_event(struct ath12k_base *ab,
 
 		/* Finish CSA when counter reaches zero */
 		if (!current_switch_count) {
+			ath12k_info(ab,
+				    "CSA finish: vdev_id %u link_id %u vif %pM radio_idx %d band %d vdev_type %d host_count %u num_vdevs %u csa_active %d\n",
+				    vdev_ids[i], arvif->link_id, ahvif->vif->addr,
+				    arvif->ar ? arvif->ar->radio_idx : -1,
+				    conf->chanreq.oper.chan ?
+				    conf->chanreq.oper.chan->band : -1,
+				    ahvif->vdev_type, arvif->current_cntdown_counter,
+				    num_vdevs, conf->csa_active);
 			ieee80211_csa_finish(ahvif->vif, arvif->link_id);
 			arvif->current_cntdown_counter = 0;
 		} else if (current_switch_count > 1) {
