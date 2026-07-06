@@ -2763,6 +2763,7 @@ struct ath12k_base {
 	/* Number of ML peers supported by firmware */
 	u32 max_ml_peer_supported;
 	u32 max_ml_peer_ids;
+	u32 fw_max_peers;
 	bool mm_cal_support;
 
 	u32 max_tid_msduq;
@@ -2963,7 +2964,8 @@ const struct firmware *ath12k_core_firmware_request(struct ath12k_base *ab,
 						    const char *filename);
 void ath12k_core_issue_bug_on(struct ath12k_base *ab);
 u32 ath12k_core_get_max_station_per_radio(struct ath12k_base *ab);
-u32 ath12k_core_get_max_peers_per_radio(struct ath12k_base *ab);
+u32 ath12k_core_get_def_max_peers_per_radio(struct ath12k_base *ab);
+u32 ath12k_core_get_supp_max_peers_per_radio(struct ath12k_base *ab);
 u32 ath12k_core_get_max_num_tids(struct ath12k_base *ab);
 
 void ath12k_core_hw_group_set_mlo_capable(struct ath12k_hw_group *ag);

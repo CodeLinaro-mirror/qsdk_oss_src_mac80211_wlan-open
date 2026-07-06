@@ -1190,7 +1190,7 @@ u32 ath12k_core_get_max_station_per_radio(struct ath12k_base *ab)
 	return TARGET_NUM_STATIONS_SINGLE;
 }
 
-u32 ath12k_core_get_max_peers_per_radio(struct ath12k_base *ab)
+u32 ath12k_core_get_def_max_peers_per_radio(struct ath12k_base *ab)
 {
 	if (ab->num_radios == 2)
 		return TARGET_NUM_PEERS_PDEV_DBS;
@@ -1198,7 +1198,21 @@ u32 ath12k_core_get_max_peers_per_radio(struct ath12k_base *ab)
 		return TARGET_NUM_PEERS_PDEV_DBS_SBS;
 	return TARGET_NUM_PEERS_PDEV_SINGLE;
 }
-EXPORT_SYMBOL(ath12k_core_get_max_peers_per_radio);
+EXPORT_SYMBOL(ath12k_core_get_def_max_peers_per_radio);
+
+u32 ath12k_core_get_supp_max_peers_per_radio(struct ath12k_base *ab)
+{
+	u32 host_peers = ath12k_core_get_def_max_peers_per_radio(ab);
+	u32 fw_peers = ab->fw_max_peers / ab->num_radios;
+
+	if (!fw_peers) {
+		ath12k_warn(ab, "Invalid fw_peers, fw_max_peers:%u, num_radios:%d\n",
+				ab->fw_max_peers, ab->num_radios);
+		return host_peers;
+	}
+	return min(host_peers, fw_peers);
+}
+EXPORT_SYMBOL(ath12k_core_get_supp_max_peers_per_radio);
 
 u32 ath12k_core_get_max_num_tids(struct ath12k_base *ab)
 {

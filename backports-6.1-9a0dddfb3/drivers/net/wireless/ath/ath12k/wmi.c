@@ -11921,6 +11921,8 @@ static int ath12k_wmi_rdy_parse(struct ath12k_base *ab, u16 tag, u16 len,
 		ab->pktlog_defs_checksum = le32_to_cpu(fixed_param.pktlog_defs_checksum);
 		ab->wmi_ready = true;
 		ab->max_ml_peer_supported = fixed_param.max_num_ml_peers;
+		ab->fw_max_peers =
+			le32_to_cpu(fixed_param.ready_event_min.num_total_peers);
 		break;
 	case WMI_TAG_ARRAY_FIXED_STRUCT:
 		addr_list = (struct ath12k_wmi_mac_addr_params *)ptr;
