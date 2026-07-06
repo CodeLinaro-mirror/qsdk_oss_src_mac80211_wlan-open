@@ -2000,6 +2000,45 @@ static int ath12k_mac_monitor_vdev_stop(struct ath12k *ar)
 	return ret;
 }
 
+static int ath12k_mac_monitor_vdev_delete(struct ath12k *ar)
+{
+	int ret;
+	unsigned long time_left;
+
+	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	if (!ar->monitor_vdev_created)
+		return 0;
+
+	reinit_completion(&ar->vdev_delete_done);
+
+	ret = ath12k_wmi_vdev_delete(ar, ar->monitor_vdev_id);
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to request wmi monitor vdev %i removal: %d\n",
+			    ar->monitor_vdev_id, ret);
+		return ret;
+	}
+
+	time_left = wait_for_completion_timeout(&ar->vdev_delete_done,
+						ATH12K_VDEV_DELETE_TIMEOUT_HZ);
+	if (time_left == 0) {
+		ath12k_warn(ar->ab, "Timeout in receiving vdev delete response\n");
+	} else {
+		ar->allocated_vdev_map &= ~(1LL << ar->monitor_vdev_id);
+		spin_lock_bh(&ar->ab->base_lock);
+		ar->ab->free_vdev_map |= 1LL << (ar->monitor_vdev_id);
+		spin_unlock_bh(&ar->ab->base_lock);
+		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "mac monitor vdev %d deleted\n",
+			   ar->monitor_vdev_id);
+		WARN_ON(!ar->num_created_vdevs);
+		ar->num_created_vdevs--;
+		ar->monitor_vdev_id = -1;
+		ar->monitor_vdev_created = false;
+	}
+
+	return ret;
+}
+
 int ath12k_mac_monitor_start(struct ath12k *ar)
 {
 	struct ath12k_mac_get_any_chanctx_conf_arg arg;
@@ -6692,7 +6731,6 @@ static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 	struct ath12k_vif *ahvif = arvif->ahvif;
 	struct ath12k_hw *ah = hw->priv;
 	struct ath12k *ar = arvif->ar;
-	struct ath12k_base *ab = ar->ab;
 	int ret;
 	struct ath12k_dp *dp;
 
@@ -6701,7 +6739,7 @@ static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 	if (!ar)
 		return;
 
-	dp = ath12k_ab_to_dp(ab);
+	dp = ath12k_ab_to_dp(ar->ab);
 	if (!dp)
 		return;
 
@@ -6723,25 +6761,25 @@ static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 	if (!list_empty(&arvif->peer_migrate_list))
 		ath12k_free_peer_migrate_list(arvif);
 
-	ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
 			 "[radio_idx : %u] mac remove link interface (vdev %d link id %d)",
 			 ar->radio_idx, arvif->vdev_id, arvif->link_id);
 
-	if (test_bit(WMI_TLV_SERVICE_11D_OFFLOAD, ab->wmi_ab.svc_map) &&
+	if (test_bit(WMI_TLV_SERVICE_11D_OFFLOAD, ar->ab->wmi_ab.svc_map) &&
 	    ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
 	    arvif->vdev_subtype == WMI_VDEV_SUBTYPE_NONE)
 		ath12k_mac_11d_scan_stop(ar);
 
 	ret = ath12k_spectral_vif_stop(arvif);
 	if (ret)
-		ath12k_warn(ab, "[radio_idx : %u] failed to stop spectral for vdev %i: %d\n",
+		ath12k_warn(ar->ab, "[radio_idx : %u] failed to stop spectral for vdev %i: %d\n",
 			    ar->radio_idx, arvif->vdev_id, ret);
 
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
 		ret = ath12k_peer_delete(ar, arvif->vdev_id, arvif->bssid,
 					 false, 0, false, NULL);
-		if (ret && !test_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags))
-			ath12k_warn(ab, "[radio_idx : %u] failed to submit AP self-peer removal on vdev %d link id %d: %d"
+		if (ret)
+			ath12k_warn(ar->ab, "[radio_idx : %u] failed to submit AP self-peer removal on vdev %d link id %d: %d"
 				    "num_peers: %d",
 				    ar->radio_idx,
 				    arvif->vdev_id, arvif->link_id, ret, ar->num_peers);
@@ -6766,7 +6804,7 @@ static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 	ath12k_debugfs_remove_interface(arvif);
 	ret = ath12k_mac_vdev_delete(ar, arvif);
 	if (ret)
-		ath12k_critical_failure_trigger(ab, ATH12K_CRIT_VAP_FAILURE);
+		ath12k_critical_failure_trigger(ar->ab, ATH12K_CRIT_VAP_FAILURE);
 
 	ath12k_mac_ap_ps_recalc(ar);
 }
@@ -6919,12 +6957,7 @@ ath12k_mac_remove_and_unassign_bridge_vdevs(struct ieee80211_hw *hw,
 				   link_id, links);
 			continue;
 		}
-		/* remove_link_interface may have already been called by
-		 * stop_bridge_vdevs via unassign_vif_chanctx_handle; only
-		 * call it again if the vdev was not yet deleted.
-		 */
-		if (arvif->is_created)
-			ath12k_mac_remove_link_interface(hw, arvif);
+		ath12k_mac_remove_link_interface(hw, arvif);
 		ath12k_mac_unassign_link_vif(arvif);
 	}
 }
@@ -7014,12 +7047,29 @@ ath12k_mac_op_change_vif_links(struct ieee80211_hw *hw,
 						   arvif->vdev_id);
 				return -EINVAL;
 			}
-			ath12k_mac_remove_link_interface(hw, arvif);
 			arvif->is_started = false;
 			arvif->is_scan_vif = false;
 			arvif->is_mlprobe_scan_vif = false;
 		}
 
+		/* In case of SSR in progress arvif->is_created is explicitly
+		 * marked as false to indicate vdev creation is not done on FW side,
+		 * so any genuine interface down during this shouldn't leave stale
+		 * entries hence check on both arvif->ar, arvif->is_created before
+		 * calling ath12k_mac_unassign_link_vif as in case of SSR arvif->ar
+		 * will be valid.
+		 */
+
+		if (!arvif->ar) {
+			if (!arvif->is_created) {
+				ath12k_mac_unassign_link_vif(arvif);
+				continue;
+			}
+			WARN_ON(1);
+			return -EINVAL;
+		}
+
+		ath12k_mac_remove_link_interface(hw, arvif);
 		ath12k_mac_unassign_link_vif(arvif);
 		if (!is_link_repurposed)
 			ath12k_mac_remove_and_unassign_bridge_vdevs(hw, vif);
@@ -23835,8 +23885,10 @@ ath12k_mac_assign_vif_chanctx_handle(struct ieee80211_hw *hw,
 
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR) {
 		ret = ath12k_mac_monitor_start(ar);
-		if (ret)
-			goto err_clean_vdev;
+		if (ret) {
+			ath12k_mac_monitor_vdev_delete(ar);
+			goto out;
+		}
 
 		if (ctx)
 			memcpy(&arvif->chanctx, ctx, sizeof(*ctx));
@@ -23869,7 +23921,7 @@ ath12k_mac_assign_vif_chanctx_handle(struct ieee80211_hw *hw,
 			ath12k_warn(ab, "failed to start vdev %i addr %pM on freq %d: %d\n",
 				    arvif->vdev_id, vif->addr,
 				    ctx->def.chan->center_freq, ret);
-			goto err_clean_vdev;
+			goto out;
 		}
 	} else {
 		memset(&arvif->chanctx, 0, sizeof(*ctx));
@@ -23877,7 +23929,7 @@ ath12k_mac_assign_vif_chanctx_handle(struct ieee80211_hw *hw,
 		if (ret) {
 			ath12k_warn(ab, "failed to start vdev %i addr %pM with ret %d\n",
 				    arvif->vdev_id, arvif->bssid, ret);
-			goto err_clean_vdev;
+			goto out;
 		}
 	}
 
@@ -23901,11 +23953,6 @@ ath12k_mac_assign_vif_chanctx_handle(struct ieee80211_hw *hw,
 	/* TODO: Setup ps and cts/rts protection */
 	if (is_bridge_vdev && ahvif->vdev_type == WMI_VDEV_TYPE_STA)
 		ath12k_info(ab, "STA Bridge VAP created\n");
-
-	return ret;
-
-err_clean_vdev:
-	ath12k_mac_remove_link_interface(hw, arvif);
 
 out:
 	return ret;
@@ -24018,16 +24065,19 @@ ath12k_mac_unassign_vif_chanctx_handle(struct ieee80211_hw *hw,
 		ar->state_11d = ATH12K_11D_PREPARING;
 	}
 
+	/* In legacy station association with the AP,
+	 * arvif is created during channel context assignment.
+	 * However, since mac80211 is unaware of this link,
+	 * it is not deleted automatically. To prevent stale arvif
+	 * entries in ahvif, this link must be explicitly removed
+	 * during channel context unassignment.
+	 */
 cleanup:
 	memset(&arvif->chanctx, 0, sizeof(*ctx));
-	/* Symmetric to assign_vif_chanctx which does vdev_create + vdev_start,
-	 * always do vdev_stop + vdev_delete here for both MLO and non-MLO.
-	 * ath12k_mac_unassign_link_vif() to free the arvif. This is deferred
-	 * to op_change_vif_links for MLO, and done here for non-MLO.
-	 */
-	ath12k_mac_remove_link_interface(hw, arvif);
-	if (!vif->valid_links)
+	if (!vif->valid_links) {
+		ath12k_mac_remove_link_interface(hw, arvif);
 		ath12k_mac_unassign_link_vif(arvif);
+	}
 
 }
 
@@ -24305,10 +24355,14 @@ static void ath12k_mac_handle_failures_bridge_addition(struct ieee80211_hw *hw,
 		if (WARN_ON(!arvif))
 			continue;
 
-		if (arvif->is_started)
+		if (arvif->is_started) {
 			ath12k_mac_unassign_vif_chanctx_handle(hw, vif, NULL, NULL, link_id);
-
-		ath12k_mac_unassign_link_vif(arvif);
+		} else if (arvif->is_created) {
+			ath12k_mac_remove_link_interface(hw, arvif);
+			ath12k_mac_unassign_link_vif(arvif);
+		} else {
+			ath12k_mac_unassign_link_vif(arvif);
+		}
 	}
 }
 
@@ -31201,6 +31255,7 @@ void ath12k_mac_remove_bridge_vdevs_iter(void *data, u8 *mac,
 		}
 		arvif->is_up = false;
 		ath12k_mac_unassign_vif_chanctx_handle(ah->hw, vif, NULL, NULL, link_id);
+		ath12k_mac_remove_link_interface(ah->hw, arvif);
 		ath12k_mac_unassign_link_vif(arvif);
 	}
 	ath12k_info(NULL, "Bypass: Bridge vdevs removed for MLD %pM\n", vif->addr);
