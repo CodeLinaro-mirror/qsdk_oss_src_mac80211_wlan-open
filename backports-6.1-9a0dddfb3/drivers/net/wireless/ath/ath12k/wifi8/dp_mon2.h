@@ -11,6 +11,14 @@
 
 #define ATH12K_WIFI8_DP_MON_RX_HDR_LEN		256
 
+/*
+ * Pack one 6-bit data MPDU TLV subtype slot at bit position @shift.
+ * If @field is zero the subtype is not subscribed — leave slot empty.
+ * Otherwise set TLV mask bits and per-msdu/per-ppdu header bits.
+ */
+#define HTT_FP_DATA_TLV_SUBTYPE(field, shift, hdr_bits) \
+	((u32)((field) ? (u8)(field) | (hdr_bits) : 0) << (shift))
+
 struct workqueue_struct;
 
 int ath12k_wifi8_dp_mon_rx_dual_ring_setup_ppdu_desc(struct ath12k_pdev_dp *dp_pdev);

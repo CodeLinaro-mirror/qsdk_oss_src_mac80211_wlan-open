@@ -2134,7 +2134,6 @@ ath12k_wifi8_ext_mon_validate_pkt_data_mpdu_tlv(struct ath12k_dp *dp,
 int ath12k_wifi8_dp_ext_mon_validate_request(struct ath12k_pdev_dp *dp_pdev,
 					     const struct ath12k_ext_mon_config *req)
 {
-	const struct ath12k_ext_mon_data_mpdu_tlv_config zero = {0};
 	struct ath12k_pdev_mon_dp *dp_mon_pdev;
 	const struct ath12k_ext_mon_peer_info *peer = NULL;
 	int i, ret;
@@ -2214,6 +2213,12 @@ void
 ath12k_wifi8_dp_ext_mon_setup_rx_filter(struct htt_rx_ring_tlv_filter *tlv_filter,
 					const struct ath12k_dp_rx_ext_mon *rx_ext_mon)
 {
+	const struct ath12k_ext_mon_data_mpdu_tlv_config *fp_mpdu_tlv =
+							&rx_ext_mon->fp.data_mpdu_tlv;
+	const struct ath12k_ext_mon_data_mpdu_tlv_config *fpmo_mpdu_tlv =
+							&rx_ext_mon->fpmo.data_mpdu_tlv;
+	u8 hdr_bits;
+
 	tlv_filter->rx_mon_fp_mgmt_hdrlen   = HTT_RX_HDR_LEN_64_BYTES;
 	tlv_filter->rx_mon_fp_ctrl_hdrlen   = HTT_RX_HDR_LEN_64_BYTES;
 	tlv_filter->rx_mon_fp_data_hdrlen   = HTT_RX_HDR_LEN_64_BYTES;
@@ -2289,4 +2294,63 @@ ath12k_wifi8_dp_ext_mon_setup_rx_filter(struct htt_rx_ring_tlv_filter *tlv_filte
 
 	if (rx_ext_mon->level == ATH12K_EXT_MON_FILTER_LEVEL_PPDU)
 		tlv_filter->rx_mon_enable_hdr_per_ppdu = 1;
+
+	/* Data MPDU TLV filtering is supported only for FP and FPMO modes;
+	 * MO and MD modes have no corresponding hardware filter register.
+	 *
+	 * filter0 (30 bits): packs 5 data subtypes at 6 bits each:
+	 *   bit 0 = rx_mpdu_start
+	 *   bit 1 = rx_msdu_end
+	 *   bit 2 = rx_mpdu_end
+	 *   bit 3 = rx_header
+	 *   bit 4 = rx_header_per_msdu
+	 *   bit 5 = rx_header_per_ppdu
+	 * Bit layout in the 30-bit word matches RXDMA
+	 * FP_DATA_MPDU_TLV_FILTER_IN_CONTROL:
+	 *   [5:0]   = mcast
+	 *   [11:6]  = ucast
+	 *   [17:12] = null
+	 *   [23:18] = qos_null
+	 *   [29:24] = qos_null_tb
+	 *
+	 * filter1: NDP subtype TLV bitmask (same 6-bit layout as above).
+	 * Both FP and FP_MO NDP masks are packed into the same HTT info5
+	 * word via HTT_RX_RING_SEL_CFG_CMD_INFO5_FP_DATA_MPDU_TLV_FILTER_1
+	 * (GENMASK(5,0)) and
+	 * HTT_RX_RING_SEL_CFG_CMD_INFO5_FPMO_DATA_MPDU_TLV_FILTER_1
+	 * (GENMASK(11,6)).
+	 *
+	 * Bits 4 and 5 are only set for slots that are already active (non-zero
+	 * lower 4 bits). A zero slot means the subtype is not subscribed, so
+	 * per-msdu/per-ppdu header generation for it serves no purpose.
+	 *
+	 * Rx Monitor Stats do not subscribe for QoS_Null and QoS_Null_TB.
+	 * As enabling this for any data subtype enables the FP FPMO Data MPDU TLV
+	 * for all FP/FPMO data subtypes subscription, we need to subscribe for all
+	 * TLVs for these subtypes as they will be needed if QoS_Null and
+	 * QoS_Null_TB are enabled for packet delivery.
+	 */
+	hdr_bits = (tlv_filter->rx_filter &
+		    HTT_RX_FILTER_TLV_FLAGS_PER_MSDU_HEADER) ? 0x10 : 0;
+	hdr_bits |= (tlv_filter->rx_mon_enable_hdr_per_ppdu) ? 0x20 : 0;
+
+	if (fp_mpdu_tlv->tlv_configured || fpmo_mpdu_tlv->tlv_configured) {
+		tlv_filter->fp_data_mpdu_tlv_filter0 =
+			HTT_FP_DATA_TLV_SUBTYPE(fp_mpdu_tlv->mcast, 0, hdr_bits) |
+			HTT_FP_DATA_TLV_SUBTYPE(fp_mpdu_tlv->ucast, 6, hdr_bits) |
+			HTT_FP_DATA_TLV_SUBTYPE(fp_mpdu_tlv->null_frm, 12, hdr_bits) |
+			(0xFu | hdr_bits) << 18 |  /* qos_null */
+			(0xFu | hdr_bits) << 24;   /* qos_null_tb */
+		tlv_filter->fp_data_mpdu_tlv_filter1 = 0xFu | hdr_bits; /* ndp */
+
+		tlv_filter->fpmo_data_mpdu_tlv_filter0 =
+			HTT_FP_DATA_TLV_SUBTYPE(fpmo_mpdu_tlv->mcast, 0, hdr_bits) |
+			HTT_FP_DATA_TLV_SUBTYPE(fpmo_mpdu_tlv->ucast, 6, hdr_bits) |
+			HTT_FP_DATA_TLV_SUBTYPE(fpmo_mpdu_tlv->null_frm, 12, hdr_bits) |
+			(0xFu | hdr_bits) << 18 |  /* qos_null */
+			(0xFu | hdr_bits) << 24;   /* qos_null_tb */
+		tlv_filter->fpmo_data_mpdu_tlv_filter1 = 0xFu | hdr_bits; /* ndp */
+
+		tlv_filter->fp_fpmo_data_mpdu_filter_in_en = 1;
+	}
 }
