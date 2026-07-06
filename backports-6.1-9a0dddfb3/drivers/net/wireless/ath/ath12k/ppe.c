@@ -1226,10 +1226,12 @@ ath12k_dp_rx_ppeds_fse_add_flow_entry(struct ppe_drv_fse_rule_info *ppe_flow_inf
 		return false;
 	}
 
+	rcu_read_lock();
+
 	links = ahvif->links_map;
 
 	for_each_set_bit(link_id, &links, IEEE80211_MLD_MAX_NUM_LINKS) {
-		arvif = ahvif->link[link_id];
+		arvif = rcu_dereference(ahvif->link[link_id]);
 		if (!arvif)
 			continue;
 
@@ -1240,6 +1242,8 @@ ath12k_dp_rx_ppeds_fse_add_flow_entry(struct ppe_drv_fse_rule_info *ppe_flow_inf
 		if (ab)
 			break;
 	}
+
+	rcu_read_unlock();
 
 	/* TODO: protect ag->ab[] by spin lock */
 	/* NOTE: ag->ab[0] can be any arbitirary ab but first ab is used to cover non-MLO */
