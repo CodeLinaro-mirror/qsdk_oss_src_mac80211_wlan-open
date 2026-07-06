@@ -247,6 +247,7 @@ int ieee80211_parse_ch_switch_ie(struct ieee80211_sub_if_data *sdata,
 	const struct ieee80211_ext_chansw_ie *ext_chansw_elem;
 	int secondary_channel_offset = -1;
 	enum nl80211_regulatory_power_modes pwr_mode_6ghz = NL80211_REG_NUM_POWER_MODES;
+	bool support_320 = conn->bw_limit >= IEEE80211_CONN_BW_LIMIT_320;
 
 	memset(csa_ie, 0, sizeof(*csa_ie));
 
@@ -368,10 +369,18 @@ int ieee80211_parse_ch_switch_ie(struct ieee80211_sub_if_data *sdata,
 	memset(&new_chandef, 0, sizeof(new_chandef));
 	new_chandef.chan = new_chan;
 	if (bwi) {
+		bool support_160 = conn->bw_limit >= IEEE80211_CONN_BW_LIMIT_160;
+
 		/* start with the CSA one */
 		new_chandef = csa_ie->chanreq.oper;
 		/* and update the width accordingly */
-		ieee80211_chandef_eht_oper(&bwi->info, true, true, &new_chandef);
+		ieee80211_chandef_eht_oper(&bwi->info, support_160,
+					   support_320, &new_chandef);
+		sdata_dbg(sdata,
+			  "CSA BWI: support_160=%d support_320=%d bw_limit=%d width=%d freq=%d\n",
+			  support_160, support_320, conn->bw_limit,
+			  new_chandef.width,
+			  new_chandef.chan ? new_chandef.chan->center_freq : 0);
 
 		if (bwi->params & IEEE80211_BW_IND_DIS_SUBCH_PRESENT)
 			new_chandef.punctured =
