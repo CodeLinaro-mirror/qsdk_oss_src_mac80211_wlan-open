@@ -10978,10 +10978,6 @@ static int wmi_process_mgmt_tx_comp(struct ath12k *ar, u32 desc_id,
 	ath12k_core_dma_unmap_single(ar->ab->dev, skb_cb->paddr, msdu->len, DMA_TO_DEVICE);
 
 	hdr = (struct ieee80211_hdr *)msdu->data;
-	if (skb_cb->flags & ATH12K_SKB_DEAUTH_DISASSOC_TRACKED) {
-		ath12k_peer_deauth_disassoc_tx_dec(ar, hdr->addr1);
-		skb_cb->flags &= ~ATH12K_SKB_DEAUTH_DISASSOC_TRACKED;
-	}
 
 	if (ieee80211_is_mgmt(hdr->frame_control)) {
 		frm_stype = FIELD_GET(IEEE80211_FCTL_STYPE, hdr->frame_control);
@@ -11094,7 +11090,6 @@ static void wmi_process_offchan_tx_comp(struct ath12k *ar, u32 desc_id,
 	struct sk_buff *msdu;
 	struct ath12k_skb_cb *skb_cb;
 	struct ieee80211_tx_info *info;
-	struct ieee80211_hdr *hdr;
 
 	spin_lock_bh(&ar->data_lock);
 	spin_lock_bh(&ar->txmgmt_idr_lock);
@@ -11112,12 +11107,7 @@ static void wmi_process_offchan_tx_comp(struct ath12k *ar, u32 desc_id,
 	spin_unlock_bh(&ar->txmgmt_idr_lock);
 
 	skb_cb = ATH12K_SKB_CB(msdu);
-	hdr = (struct ieee80211_hdr *)msdu->data;
 	dma_unmap_single(ar->ab->dev, skb_cb->paddr, msdu->len, DMA_TO_DEVICE);
-	if (skb_cb->flags & ATH12K_SKB_DEAUTH_DISASSOC_TRACKED) {
-		ath12k_peer_deauth_disassoc_tx_dec(ar, hdr->addr1);
-		skb_cb->flags &= ~ATH12K_SKB_DEAUTH_DISASSOC_TRACKED;
-	}
 
 	spin_unlock_bh(&ar->data_lock);
 

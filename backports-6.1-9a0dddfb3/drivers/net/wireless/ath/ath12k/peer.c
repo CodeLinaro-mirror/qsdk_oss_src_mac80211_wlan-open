@@ -619,15 +619,6 @@ static int ath12k_peer_delete_send(struct ath12k *ar, u32 vdev_id, const u8 *add
 				    addr, ret);
 	}
 
-	ret = ath12k_wait_pending_deauth_disassoc_tx(ar, addr,
-						     ATH12K_PEER_DELETE_MGMT_TX_WAIT_MS);
-	if (ret) {
-		ath12k_warn(ab,
-			    "failed to get tx completion for deauth disassoc: %pM ret:%d\n",
-			    addr, ret);
-		WARN_ON(1);
-	}
-
 	ret = ath12k_wmi_send_peer_delete_cmd(ar, addr, vdev_id,
 					      mlo_hw_link_id_bitmap,
 					      peer_delete_send_mlo_hw_bitmap);
@@ -1066,7 +1057,6 @@ int ath12k_link_sta_hlist_add(struct ath12k *ar,
 		return -EEXIST;
 	}
 
-	atomic_set(&arsta->pending_deauth_disassoc_tx, 0);
 	hlist_add_head(&arsta->hlist_addr, bucket);
 	return 0;
 }
@@ -1172,79 +1162,6 @@ struct ath12k_link_sta *ath12k_link_sta_find_by_addr(struct ath12k *ar,
 	return NULL;
 }
 EXPORT_SYMBOL(ath12k_link_sta_find_by_addr);
-
-static int ath12k_peer_pending_deauth_disassoc_tx_get(struct ath12k *ar,
-						      const u8 *addr)
-{
-	struct ath12k_link_sta *arsta;
-	int pending = 0;
-
-	if (!addr)
-		return 0;
-
-	spin_lock_bh(&ar->arsta_lock);
-	arsta = ath12k_link_sta_find_by_addr(ar, addr);
-	if (arsta)
-		pending = atomic_read(&arsta->pending_deauth_disassoc_tx);
-	spin_unlock_bh(&ar->arsta_lock);
-
-	return pending;
-}
-
-void ath12k_peer_deauth_disassoc_tx_inc(struct ath12k *ar, const u8 *addr)
-{
-	struct ath12k_link_sta *arsta;
-
-	if (!addr)
-		return;
-
-	spin_lock_bh(&ar->arsta_lock);
-	arsta = ath12k_link_sta_find_by_addr(ar, addr);
-	if (arsta)
-		atomic_inc(&arsta->pending_deauth_disassoc_tx);
-	spin_unlock_bh(&ar->arsta_lock);
-}
-EXPORT_SYMBOL(ath12k_peer_deauth_disassoc_tx_inc);
-
-void ath12k_peer_deauth_disassoc_tx_dec(struct ath12k *ar, const u8 *addr)
-{
-	struct ath12k_link_sta *arsta;
-	int pending;
-
-	if (!addr)
-		return;
-
-	spin_lock_bh(&ar->arsta_lock);
-	arsta = ath12k_link_sta_find_by_addr(ar, addr);
-	if (arsta) {
-		pending = atomic_dec_if_positive(&arsta->pending_deauth_disassoc_tx);
-		if (pending < 0) {
-			ath12k_warn(ar->ab, "pending_deauth_disassoc_tx underflow:%d\n",
-				    pending);
-			WARN_ON_ONCE(1);
-		}
-	}
-	spin_unlock_bh(&ar->arsta_lock);
-
-	wake_up(&ar->txmgmt_empty_waitq);
-}
-EXPORT_SYMBOL(ath12k_peer_deauth_disassoc_tx_dec);
-
-int ath12k_wait_pending_deauth_disassoc_tx(struct ath12k *ar, const u8 *addr,
-					   unsigned long timeout_ms)
-{
-	if (!addr)
-		return 0;
-
-	if (!wait_event_timeout(ar->txmgmt_empty_waitq,
-				!ath12k_peer_pending_deauth_disassoc_tx_get(ar, addr),
-				msecs_to_jiffies(timeout_ms)) &&
-	    ath12k_peer_pending_deauth_disassoc_tx_get(ar, addr))
-		return -ETIMEDOUT;
-
-	return 0;
-}
-EXPORT_SYMBOL(ath12k_wait_pending_deauth_disassoc_tx);
 
 struct ath12k_link_sta *ath12k_link_sta_find_by_addr_vdev_id(struct ath12k *ar,
 							     const u8 *addr,
