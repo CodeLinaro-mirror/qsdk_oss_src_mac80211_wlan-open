@@ -2157,55 +2157,65 @@ move_next:
 int ath12k_dp_mon_rx_dual_ring_setup_ppdu_desc(struct ath12k_pdev_dp *dp_pdev)
 {
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
-	struct ath12k_dp_mon_ppdu_desc *ppdu_desc_pool = dp_mon_pdev->ppdu_desc_pool;
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
 	u32 mon_status_buf = ATH12K_DP_MON_STATUS_BUF;
-	int i;
+	int i, ret;
 
+	spin_lock_init(&dp_mon_pdev->ppdu_desc_lock);
 	dp_mon_pdev->ppdu_desc_pool = kcalloc(dp_mon->mon_num_ppdu_desc,
-					      sizeof(*ppdu_desc_pool), GFP_ATOMIC);
+					      sizeof(*dp_mon_pdev->ppdu_desc_pool),
+					      GFP_KERNEL);
+
 	if (unlikely(!dp_mon_pdev->ppdu_desc_pool)) {
 		ath12k_warn(dp_pdev->dp, "Failed to allocate monitor PPDU desc pool\n");
 		return -ENOMEM;
 	}
 
-	/* Allocate status_desc array for each RX PPDU descriptor.
-	 * The RX path (ath12k_wifi7_dp_mon_rx_add_ppdu_desc) directly accesses
-	 * ppdu_desc->status_desc[desc_cnt], so it must be allocated here.
-	 */
 	for (i = 0; i < dp_mon->mon_num_ppdu_desc; i++) {
-		dp_mon_pdev->ppdu_desc_pool[i].status_desc =
+		dp_mon_pdev->ppdu_desc_pool[i] =
+				kzalloc(sizeof(*dp_mon_pdev->ppdu_desc_pool[i]),
+					GFP_KERNEL);
+		if (!dp_mon_pdev->ppdu_desc_pool[i]) {
+			ath12k_warn(dp_pdev->dp,
+				    "Failed to allocate monitor PPDU desc pool\n");
+			ret = -ENOMEM;
+			goto fail;
+		}
+		/* Allocate status_desc array for each RX PPDU descriptor.
+		 * The RX path (ath12k_wifi7_dp_mon_rx_add_ppdu_desc) directly accesses
+		 * ppdu_desc->status_desc[desc_cnt], so it must be allocated here.
+		 */
+		dp_mon_pdev->ppdu_desc_pool[i]->status_desc =
 			kcalloc(mon_status_buf,
 				sizeof(struct ath12k_dp_mon_status_desc),
-				GFP_ATOMIC);
-		if (!dp_mon_pdev->ppdu_desc_pool[i].status_desc) {
+				GFP_KERNEL);
+		if (!dp_mon_pdev->ppdu_desc_pool[i]->status_desc) {
 			ath12k_warn(dp_pdev->dp,
 				    "Failed to allocate status_desc for RX PPDU desc %d\n",
 				    i);
-			while (--i >= 0)
-				kfree(dp_mon_pdev->ppdu_desc_pool[i].status_desc);
-			kfree(dp_mon_pdev->ppdu_desc_pool);
-			dp_mon_pdev->ppdu_desc_pool = NULL;
-			return -ENOMEM;
+			ret = -ENOMEM;
+			goto fail;
 		}
 	}
 
-	spin_lock_init(&dp_mon_pdev->ppdu_desc_lock);
 	INIT_LIST_HEAD(&dp_mon_pdev->ppdu_desc_free_list);
 	INIT_LIST_HEAD(&dp_mon_pdev->ppdu_desc_used_list);
 	INIT_LIST_HEAD(&dp_mon_pdev->ppdu_desc_proc_list);
 
 	spin_lock_bh(&dp_mon_pdev->ppdu_desc_lock);
 	for (i = 0; i < dp_mon->mon_num_ppdu_desc; i++) {
-		INIT_LIST_HEAD(&dp_mon_pdev->ppdu_desc_pool[i].list);
-		list_add_tail(&dp_mon_pdev->ppdu_desc_pool[i].list,
+		INIT_LIST_HEAD(&dp_mon_pdev->ppdu_desc_pool[i]->list);
+		list_add_tail(&dp_mon_pdev->ppdu_desc_pool[i]->list,
 			      &dp_mon_pdev->ppdu_desc_free_list);
 		dp_mon_pdev->mon_stats.ppdu_desc_free++;
 	}
 	spin_unlock_bh(&dp_mon_pdev->ppdu_desc_lock);
 
 	return 0;
+fail:
+	ath12k_dp_mon_rx_dual_ring_cleanup_ppdu_desc(dp_pdev);
+	return ret;
 }
 
 void ath12k_dp_mon_rx_dual_ring_cleanup_ppdu_desc(struct ath12k_pdev_dp *dp_pdev)
@@ -2215,15 +2225,25 @@ void ath12k_dp_mon_rx_dual_ring_cleanup_ppdu_desc(struct ath12k_pdev_dp *dp_pdev
 	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
 	int i;
 
-	if (!dp_mon_pdev->ppdu_desc_pool)
+	spin_lock_bh(&dp_mon_pdev->ppdu_desc_lock);
+	if (!dp_mon_pdev->ppdu_desc_pool) {
+		spin_unlock_bh(&dp_mon_pdev->ppdu_desc_lock);
 		return;
+	}
 
-	/* Free status_desc arrays allocated for each RX PPDU descriptor */
-	for (i = 0; i < dp_mon->mon_num_ppdu_desc; i++)
-		kfree(dp_mon_pdev->ppdu_desc_pool[i].status_desc);
+	for (i = 0; i < dp_mon->mon_num_ppdu_desc; i++) {
+		if (dp_mon_pdev->ppdu_desc_pool[i]) {
+		/* Free status_desc arrays allocated for each RX PPDU descriptor */
+			kfree(dp_mon_pdev->ppdu_desc_pool[i]->status_desc);
+			dp_mon_pdev->ppdu_desc_pool[i]->status_desc = NULL;
+			kfree(dp_mon_pdev->ppdu_desc_pool[i]);
+		}
+		dp_mon_pdev->ppdu_desc_pool[i] = NULL;
+	}
 
 	kfree(dp_mon_pdev->ppdu_desc_pool);
 	dp_mon_pdev->ppdu_desc_pool = NULL;
+	spin_unlock_bh(&dp_mon_pdev->ppdu_desc_lock);
 }
 
 int ath12k_dp_mon_rx_wq_init(struct ath12k_pdev_dp *dp_pdev)
