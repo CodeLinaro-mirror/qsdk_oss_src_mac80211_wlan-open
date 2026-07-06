@@ -23706,7 +23706,7 @@ ath12k_mac_assign_vif_chanctx_handle(struct ieee80211_hw *hw,
 			ath12k_mac_parse_tx_pwr_env(ar, arvif);
 	}
 
-	if (link_conf->smd_params.smd_enabled) {
+	if (!is_bridge_vdev && link_conf->smd_params.smd_enabled) {
 		memcpy(arvif->smd_params.smd_identifier,
 		       link_conf->smd_params.smd_identifier, ETH_ALEN);
 		arvif->smd_params.smd_enabled = link_conf->smd_params.smd_enabled;
