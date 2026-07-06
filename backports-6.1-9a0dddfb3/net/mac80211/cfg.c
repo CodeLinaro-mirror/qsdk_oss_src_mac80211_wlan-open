@@ -1135,11 +1135,6 @@ int ieee80211_set_monitor_channel(struct wiphy *wiphy,
 		goto done;
 	}
 
-	if (rcu_access_pointer(sdata->deflink.conf->chanctx_conf) &&
-		cfg80211_chandef_identical(&sdata->vif.bss_conf.chanreq.oper,
-				       &chanreq.oper))
-		return 0;
-
 	/*
 	 * Scan the chanctx list for a context that already has links under
 	 * reservation and is compatible with the requested chanreq.  If one
@@ -1168,6 +1163,16 @@ int ieee80211_set_monitor_channel(struct wiphy *wiphy,
 						     ctx->mode, false);
 		if (!ret) {
 			sdata->deflink.reserved_ready = true;
+			/* If monitor has joined the in-progress CSA reservation.
+			 * Reset the batch timer so AP links that have not yet
+			 * submitted NL80211_CMD_CHANNEL_SWITCH get a fresh
+			 * window before the first beacon commit fires.
+			 */
+			if (ctx->csa_batch_queued)
+				wiphy_delayed_work_queue(local->hw.wiphy,
+							 &ctx->csa_batch_work,
+							 msecs_to_jiffies(
+							 IEEE80211_CSA_BATCH_TIMEOUT_MS));
 			sdata_dbg(sdata,
 				  "MON-CSA set_monitor_channel: reserved monitor on existing ctx (freq=%d), marked ready for MVR\n",
 				  ctx->conf.def.chan ?
