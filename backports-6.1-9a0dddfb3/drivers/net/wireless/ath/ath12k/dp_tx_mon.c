@@ -3804,6 +3804,31 @@ move_next:
 }
 EXPORT_SYMBOL(ath12k_dp_mon_tx_process_ring);
 
+int ath12k_dp_mon_tx_srng_init(struct ath12k_dp *dp)
+{
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	int ret = 0;
+
+	if (!ath12k_dp_tx_mon_feature_eval(dp))
+		return 0;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (!mon_ops) {
+		ath12k_err(dp->ab, "TX Monitor: No monitor ops available");
+		return -EINVAL;
+	}
+
+	if (mon_ops->mon_tx_srng_init_setup) {
+		ret = mon_ops->mon_tx_srng_init_setup(dp);
+		if (ret)
+			ath12k_err(dp->ab, "TX Monitor: SRNG setup failed, ret=%d", ret);
+	}
+
+	return ret;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_srng_init);
+
 int ath12k_dp_mon_tx_srng_alloc(struct ath12k_dp *dp)
 {
 	const struct ath12k_dp_arch_mon_ops *mon_ops;
@@ -3942,7 +3967,7 @@ int ath12k_dp_mon_tx_update_filter(struct ath12k *ar)
 	return ret;
 }
 
-void ath12k_dp_mon_tx_srng_free(struct ath12k_dp *dp)
+void ath12k_dp_mon_tx_srng_deinit(struct ath12k_dp *dp)
 {
 	const struct ath12k_dp_arch_mon_ops *mon_ops;
 
@@ -3952,6 +3977,17 @@ void ath12k_dp_mon_tx_srng_free(struct ath12k_dp *dp)
 	mon_ops = ath12k_dp_mon_ops_get(dp);
 
 	ath12k_dp_mon_tx_htt_src_ring_cleanup(dp);
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_srng_deinit);
+
+void ath12k_dp_mon_tx_srng_free(struct ath12k_dp *dp)
+{
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+
+	if (!ath12k_dp_tx_mon_feature_eval(dp))
+		return;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
 
 	if (mon_ops && mon_ops->mon_tx_srng_cleanup)
 		mon_ops->mon_tx_srng_cleanup(dp);
@@ -4035,6 +4071,15 @@ void ath12k_dp_mon_tx_desc_pool_free(struct ath12k_dp *dp)
 
 	dp_tx_mon = dp_mon->dp_tx_mon;
 
+	/* This check is required because, in certain error scenarios where SRNG
+	 * allocation fails, this API may still be invoked. At that point, the
+	 * spin lock initialization may not have completed, so this validation
+	 * is necessary to avoid accessing an uninitialized spin lock.
+	 */
+
+	if (!dp_tx_mon->tx_mon_desc_pool)
+		return;
+
 	spin_lock_bh(&dp_tx_mon->tx_mon_desc_lock);
 	kfree(dp_tx_mon->tx_mon_desc_pool);
 	dp_tx_mon->tx_mon_desc_pool = NULL;
@@ -4066,33 +4111,18 @@ int ath12k_dp_mon_tx_buff_alloc(struct ath12k_dp *dp)
 	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
 	struct ath12k_dp_tx_mon *dp_tx_mon = dp_mon ? dp_mon->dp_tx_mon : NULL;
 	struct dp_rxdma_mon_ring *tx_ring;
-	int num_entries, ret = -EINVAL, i, free_list_count;
+	int num_entries, ret = -EINVAL, free_list_count;
 	LIST_HEAD(list);
 
 	if (!dp_tx_mon)
 		return -EINVAL;
 
-	INIT_LIST_HEAD(&dp_tx_mon->tx_mon_desc_free_list);
-
 	spin_lock_bh(&dp_tx_mon->tx_mon_desc_lock);
-	if (!dp_tx_mon->tx_mon_desc_pool) {
-		spin_unlock_bh(&dp_tx_mon->tx_mon_desc_lock);
-		ath12k_warn(dp, "tx mon desc pool not available\n");
-		return -ENOMEM;
-	}
-
 	if (dp_tx_mon->tx_mon_buf_ring_ready) {
 		spin_unlock_bh(&dp_tx_mon->tx_mon_desc_lock);
 		ath12k_dbg(dp->ab, ATH12K_DBG_DP_MON_TX,
 			   "TX monitor: Buffers available\n");
 		return 0;
-	}
-
-	for (i = 0; i < DP_TX_MONITOR_BUF_RING_SIZE; i++) {
-		dp_tx_mon->tx_mon_desc_pool[i].magic = ATH12K_MON_MAGIC_VALUE;
-		INIT_LIST_HEAD(&dp_tx_mon->tx_mon_desc_pool[i].list);
-		list_add_tail(&dp_tx_mon->tx_mon_desc_pool[i].list,
-			      &dp_tx_mon->tx_mon_desc_free_list);
 	}
 
 	spin_unlock_bh(&dp_tx_mon->tx_mon_desc_lock);
@@ -4632,12 +4662,12 @@ int ath12k_dp_mon_tx_srng_alloc_setup(struct ath12k_dp *dp)
 	/*Todo : DP_TX_MONITOR_BUF_RING_SIZE is 8192 - 512M profile will need
 	 *	 smaller size
 	 */
-	ret = ath12k_dp_srng_setup(ab,
+	ret = ath12k_dp_srng_alloc(ab,
 				   &dp_tx_mon->tx_mon_buf_ring.refill_buf_ring,
 				   HAL_TX_MONITOR_BUF, 0, 0,
 				   DP_TX_MONITOR_BUF_RING_SIZE);
 	if (ret) {
-		ath12k_warn(dp, "Tx Mon: failed to setup buffer srng (%d)\n", ret);
+		ath12k_warn(dp, "Tx Mon: failed to alloc buffer srng (%d)\n", ret);
 		return ret;
 	}
 
@@ -4668,6 +4698,67 @@ void ath12k_dp_mon_tx_srng_cleanup(struct ath12k_dp *dp)
 	ath12k_dp_srng_cleanup(ab, srng);
 }
 EXPORT_SYMBOL(ath12k_dp_mon_tx_srng_cleanup);
+
+static
+int ath12k_dp_mon_tx_desc_pool_init(struct ath12k_dp *dp)
+{
+	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
+	struct ath12k_dp_tx_mon *dp_tx_mon = dp_mon ? dp_mon->dp_tx_mon : NULL;
+	int i;
+
+	if (!dp_tx_mon)
+		return -EINVAL;
+
+	INIT_LIST_HEAD(&dp_tx_mon->tx_mon_desc_free_list);
+	spin_lock_bh(&dp_tx_mon->tx_mon_desc_lock);
+	if (!dp_tx_mon->tx_mon_desc_pool) {
+		spin_unlock_bh(&dp_tx_mon->tx_mon_desc_lock);
+		ath12k_warn(dp, "tx mon desc pool not available\n");
+		return -ENOMEM;
+	}
+
+	 memset(dp_tx_mon->tx_mon_desc_pool, 0,
+		DP_TX_MONITOR_BUF_RING_SIZE * sizeof(*dp_tx_mon->tx_mon_desc_pool));
+
+	for (i = 0; i < DP_TX_MONITOR_BUF_RING_SIZE; i++) {
+		dp_tx_mon->tx_mon_desc_pool[i].magic = ATH12K_MON_MAGIC_VALUE;
+		INIT_LIST_HEAD(&dp_tx_mon->tx_mon_desc_pool[i].list);
+		list_add_tail(&dp_tx_mon->tx_mon_desc_pool[i].list,
+			      &dp_tx_mon->tx_mon_desc_free_list);
+	}
+
+	spin_unlock_bh(&dp_tx_mon->tx_mon_desc_lock);
+
+	return 0;
+}
+
+int ath12k_dp_mon_tx_srng_init_setup(struct ath12k_dp *dp)
+{
+	struct ath12k_base *ab = dp->ab;
+	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
+	struct ath12k_dp_tx_mon *dp_tx_mon = dp_mon ? dp_mon->dp_tx_mon : NULL;
+	int ret;
+
+	if (!dp_tx_mon)
+		return -EINVAL;
+
+	ret = ath12k_dp_srng_init(ab,
+				  &dp_tx_mon->tx_mon_buf_ring.refill_buf_ring,
+				  HAL_TX_MONITOR_BUF, 0, 0);
+	if (ret) {
+		ath12k_warn(dp, "Tx Mon: failed to init buffer srng (%d)\n", ret);
+		return ret;
+	}
+
+	ret = ath12k_dp_mon_tx_desc_pool_init(dp);
+	if (ret) {
+		ath12k_warn(dp, "Tx Mon: failed to init desc pool (%d)\n", ret);
+		return ret;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_srng_init_setup);
 
 void ath12k_dp_mon_tx_filter_free(struct ath12k_pdev_dp *dp_pdev)
 {
@@ -4750,12 +4841,20 @@ int ath12k_dp_mon_tx_dst_ring_alloc_setup(struct ath12k_pdev_dp *dp_pdev,
 		return -EINVAL;
 	}
 
-	ret = ath12k_dp_srng_setup(dp->ab,
+	ret = ath12k_dp_srng_alloc(dp->ab,
 				   &dp_pdev->dp_mon_pdev->dp_pdev_tx_mon->tx_mon_dst_ring,
 				   HAL_TX_MONITOR_DST, 0, mac_id,
 				   DP_TX_MONITOR_DEST_RING_SIZE);
 	if (ret) {
-		ath12k_warn(dp->ab, "Tx Mon: failed dest. ring allocation/setup\n");
+		ath12k_warn(dp->ab, "Tx Mon: failed dest. ring allocation\n");
+		return ret;
+	}
+
+	ret = ath12k_dp_srng_init(dp->ab,
+				  &dp_pdev->dp_mon_pdev->dp_pdev_tx_mon->tx_mon_dst_ring,
+				  HAL_TX_MONITOR_DST, 0, mac_id);
+	if (ret) {
+		ath12k_warn(dp->ab, "Tx Mon: failed dest. srng ring init\n");
 		return ret;
 	}
 

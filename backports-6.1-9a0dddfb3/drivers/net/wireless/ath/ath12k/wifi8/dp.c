@@ -858,7 +858,7 @@ static int ath12k_wifi8_dp_op_device_init(struct ath12k_dp *dp)
 		goto fail_dp_mon_rx_deinit;
 	}
 
-	ret = ath12k_dp_mon_tx_srng_alloc(dp);
+	ret = ath12k_dp_mon_tx_srng_init(dp);
 	if (ret) {
 		ath12k_warn(dp->ab, "Tx Mon: failed to setup rings ret = %d\n", ret);
 		goto fail_dp_ase_ring_free;
@@ -882,7 +882,7 @@ static void ath12k_wifi8_dp_op_device_deinit(struct ath12k_dp *dp)
 		return;
 
 	ath12k_dp_srng_cleanup(ab, &dp_wifi8->rx_ase_status_ring);
-	ath12k_dp_mon_tx_srng_free(dp);
+	ath12k_dp_mon_tx_srng_deinit(dp);
 	ath12k_dp_mon_rx_deinit(dp);
 }
 
@@ -1588,6 +1588,12 @@ struct ath12k_dp *ath12k_wifi8_dp_init(struct ath12k_base *ab)
 		goto dp_err;
 	}
 
+	ret = ath12k_dp_mon_tx_srng_alloc(dp);
+	if (ret) {
+		ath12k_warn(ab, "Tx Mon: failed to setup rings ret = %d\n", ret);
+		goto dp_err;
+	}
+
 	return dp;
 dp_err:
 	ath12k_wifi8_dp_deinit(dp);
@@ -1596,6 +1602,7 @@ dp_err:
 
 void ath12k_wifi8_dp_deinit(struct ath12k_dp *dp)
 {
+	ath12k_dp_mon_tx_srng_free(dp);
 	ath12k_dp_mon_rx_free(dp);
 	ath12k_dp_mon_deinit(dp);
 	ath12k_wifi8_dp_umac_free(dp);

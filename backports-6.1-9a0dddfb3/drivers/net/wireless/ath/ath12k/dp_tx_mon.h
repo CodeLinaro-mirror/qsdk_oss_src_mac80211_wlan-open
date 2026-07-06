@@ -170,6 +170,7 @@ void ath12k_dp_tx_mon_process_ppdu(struct work_struct *work);
 
 int ath12k_dp_mon_tx_srng_alloc_setup(struct ath12k_dp *dp);
 void ath12k_dp_mon_tx_srng_cleanup(struct ath12k_dp *dp);
+int ath12k_dp_mon_tx_srng_init_setup(struct ath12k_dp *dp);
 int ath12k_dp_mon_tx_dst_ring_alloc_setup(struct ath12k_pdev_dp *dp_pdev, u32 mac_id);
 void ath12k_dp_mon_tx_dst_ring_cleanup(struct ath12k_pdev_dp *dp_pdev);
 int ath12k_dp_mon_tx_htt_srng_setup(struct ath12k_dp *dp);
@@ -186,12 +187,14 @@ int ath12k_dp_mon_tx_monitor_start_stop(struct ath12k *ar, bool state);
 void ath12k_dp_mon_tx_filter_free(struct ath12k_pdev_dp *dp_pdev);
 bool ath12k_dp_tx_mon_feature_eval(struct ath12k_dp *dp);
 int ath12k_dp_mon_tx_srng_alloc(struct ath12k_dp *dp);
+int ath12k_dp_mon_tx_srng_init(struct ath12k_dp *dp);
 void ath12k_dp_mon_tx_htt_src_ring_cleanup(struct ath12k_dp *dp);
 void ath12k_dp_mon_tx_pdev_free(struct ath12k_pdev_dp *dp_pdev);
 int ath12k_dp_mon_tx_htt_src_ring_setup(struct ath12k_dp *dp);
 int ath12k_dp_mon_tx_config_monitor_mode(struct ath12k *ar, bool set);
 int ath12k_dp_mon_tx_update_filter(struct ath12k *ar);
 void ath12k_dp_mon_tx_srng_free(struct ath12k_dp *dp);
+void ath12k_dp_mon_tx_srng_deinit(struct ath12k_dp *dp);
 int ath12k_dp_mon_tx_pdev_alloc(struct ath12k_pdev_dp *dp_pdev,
 				u32 mac_id);
 int ath12k_dp_mon_tx_set_monitor_flags(struct ath12k *ar, u32 new_flags, u32 *cur_flags);

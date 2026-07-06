@@ -260,6 +260,7 @@ struct ath12k_dp_arch_mon_ops {
 	/* Below are TxMonitor ops */
 	int (*mon_tx_srng_alloc_setup)(struct ath12k_dp *dp);
 	void (*mon_tx_srng_cleanup)(struct ath12k_dp *dp);
+	int (*mon_tx_srng_init_setup)(struct ath12k_dp *dp);
 	int (*mon_tx_htt_srng_setup)(struct ath12k_dp *dp);
 	void (*mon_tx_htt_srng_cleanup)(struct ath12k_dp *dp);
 	int (*mon_tx_filter_configure)(struct ath12k_pdev_dp *dp_pdev, bool state);
