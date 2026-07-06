@@ -319,9 +319,21 @@ static void ath12k_regd_update_freq_range(struct ath12k *ar)
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_wmi_hal_reg_capabilities_ext_arg *reg_cap;
 	u32 phy_id, freq_low, freq_high, supported_bands;
+	struct ath12k_reg_freq reg_freq_2g, reg_freq_5g, reg_freq_6g;
 
 	supported_bands = ar->pdev->cap.supported_bands;
 	reg_cap = &ab->hal_reg_cap[ar->pdev_idx];
+
+	/* Take a consistent snapshot of the per-band frequency limits.
+	 * ath12k_reg_build_regd() resets these fields to sentinel values
+	 * before writing new ones, so read them atomically under
+	 * reg_freq_lock to avoid observing a transient zeroed end_freq.
+	 */
+	spin_lock_bh(&ab->reg_freq_lock);
+	reg_freq_2g = ab->reg_freq_2g;
+	reg_freq_5g = ab->reg_freq_5g;
+	reg_freq_6g = ab->reg_freq_6g;
+	spin_unlock_bh(&ab->reg_freq_lock);
 
 	spin_lock_bh(&ar->data_lock);
 
@@ -334,8 +346,8 @@ static void ath12k_regd_update_freq_range(struct ath12k *ar)
 			reg_cap = &ab->hal_reg_cap[phy_id];
 		}
 
-		freq_low = max(reg_cap->low_2ghz_chan, ab->reg_freq_2g.start_freq);
-		freq_high = min(reg_cap->high_2ghz_chan, ab->reg_freq_2g.end_freq);
+		freq_low = max(reg_cap->low_2ghz_chan, reg_freq_2g.start_freq);
+		freq_high = min(reg_cap->high_2ghz_chan, reg_freq_2g.end_freq);
 
 		ath12k_mac_update_freq_range(ar, freq_low, freq_high);
 	}
@@ -346,8 +358,8 @@ static void ath12k_regd_update_freq_range(struct ath12k *ar)
 			reg_cap = &ab->hal_reg_cap[phy_id];
 		}
 
-		freq_low  = max(reg_cap->low_5ghz_chan, ab->reg_freq_5g.start_freq);
-		freq_high = min(reg_cap->high_5ghz_chan, ab->reg_freq_5g.end_freq);
+		freq_low = max(reg_cap->low_5ghz_chan, reg_freq_5g.start_freq);
+		freq_high = min(reg_cap->high_5ghz_chan, reg_freq_5g.end_freq);
 
 		if (ar->rf_path_ctx.current_index == ATH12K_RF_PATH_HIGH_RANGE) {
 			/*
@@ -372,8 +384,8 @@ static void ath12k_regd_update_freq_range(struct ath12k *ar)
 	}
 
 	if (supported_bands & WMI_HOST_WLAN_5GHZ_CAP && ar->supports_6ghz) {
-		freq_low = reg_cap->low_5ghz_chan;
-		freq_high = reg_cap->high_5ghz_chan;
+		freq_low = max(reg_cap->low_5ghz_chan, reg_freq_6g.start_freq);
+		freq_high = min(reg_cap->high_5ghz_chan, reg_freq_6g.end_freq);
 		ath12k_mac_update_freq_range(ar, freq_low, freq_high);
 	}
 
@@ -1186,9 +1198,12 @@ static const struct ath12k_op_class_map_t global_op_class[] = {
 	  NULL_CFIS_LST},
 };
 
-static void ath12k_reg_update_freq_range(struct ath12k_reg_freq *reg_freq,
+static void ath12k_reg_update_freq_range(struct ath12k_base *ab,
+					 struct ath12k_reg_freq *reg_freq,
 					 struct ath12k_reg_rule *reg_rule)
 {
+	lockdep_assert_held(&ab->reg_freq_lock);
+
 	if (reg_freq->start_freq > reg_rule->start_freq)
 		reg_freq->start_freq = reg_rule->start_freq;
 
@@ -1271,8 +1286,16 @@ ath12k_reg_build_regd(struct ath12k_base *ab,
 		   alpha2, ath12k_reg_get_regdom_str(new_regd->dfs_region),
 		   reg_info->dfs_region, num_rules);
 
-	/* Reset start and end frequency for each band
+	/* Reset start and end frequency for each band.
+	 * Hold reg_freq_lock across the reset and the subsequent per-rule
+	 * updates so that a concurrent ath12k_regd_update_freq_range() reader
+	 * (running on another CPU for a sibling radio) never observes the
+	 * transient state where start_freq == INT_MAX / end_freq == 0.
+	 * The lock also spans the ath12k_dbg() trace calls inside the loop;
+	 * those prints run with BH disabled only in debug builds where the
+	 * relevant debug categories are active.
 	 */
+	spin_lock_bh(&ab->reg_freq_lock);
 	ab->reg_freq_5g.start_freq = INT_MAX;
 	ab->reg_freq_5g.end_freq = 0;
 	ab->reg_freq_2g.start_freq = INT_MAX;
@@ -1291,7 +1314,7 @@ ath12k_reg_build_regd(struct ath12k_base *ab,
 				       reg_info->max_bw_2g);
 			flags = ath12k_update_bw_reg_flags(reg_info->max_bw_2g);
 			pwr_mode = 0;
-			ath12k_reg_update_freq_range(&ab->reg_freq_2g, reg_rule);
+			ath12k_reg_update_freq_range(ab, &ab->reg_freq_2g, reg_rule);
 		} else if (reg_info->num_5g_reg_rules &&
 			   (j < reg_info->num_5g_reg_rules)) {
 			reg_rule = reg_info->reg_rules_5g_ptr + j++;
@@ -1307,9 +1330,13 @@ ath12k_reg_build_regd(struct ath12k_base *ab,
 			flags = NL80211_RRF_AUTO_BW | ath12k_update_bw_reg_flags(reg_info->max_bw_5g);
 			pwr_mode = 0;
 			if (reg_rule->end_freq <= ATH12K_MAX_5GHZ_FREQ)
-				ath12k_reg_update_freq_range(&ab->reg_freq_5g, reg_rule);
+				ath12k_reg_update_freq_range(ab,
+							     &ab->reg_freq_5g,
+							     reg_rule);
 			else if (reg_rule->start_freq >= ATH12K_MIN_6GHZ_FREQ)
-				ath12k_reg_update_freq_range(&ab->reg_freq_6g, reg_rule);
+				ath12k_reg_update_freq_range(ab,
+							     &ab->reg_freq_6g,
+							     reg_rule);
 		} else if (reg_info->is_ext_reg_event && reg_6g_number) {
 			if (!reg_6g_itr_set) {
 				reg_rule_6g = ath12k_get_active_6g_reg_rule(reg_info,
@@ -1334,10 +1361,10 @@ ath12k_reg_build_regd(struct ath12k_base *ab,
 					flags |= NL80211_RRF_PSD;
 
 				if (reg_rule->end_freq <= ATH12K_MAX_6GHZ_FREQ)
-					ath12k_reg_update_freq_range(&ab->reg_freq_6g,
+					ath12k_reg_update_freq_range(ab, &ab->reg_freq_6g,
 								     reg_rule);
 				else if (reg_rule->start_freq >= ATH12K_MIN_6GHZ_FREQ)
-					ath12k_reg_update_freq_range(&ab->reg_freq_6g,
+					ath12k_reg_update_freq_range(ab, &ab->reg_freq_6g,
 								     reg_rule);
 			}
 
@@ -1421,6 +1448,7 @@ ath12k_reg_build_regd(struct ath12k_base *ab,
 
 		idx++;
 	}
+	spin_unlock_bh(&ab->reg_freq_lock);
 
 	kfree(ab->sp_rule);
 	ab->sp_rule = sp_rule;
