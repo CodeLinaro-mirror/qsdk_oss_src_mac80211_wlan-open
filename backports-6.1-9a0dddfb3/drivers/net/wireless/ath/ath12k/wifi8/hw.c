@@ -773,11 +773,13 @@ static bool ath12k_wifi8_mac_is_mgmt_action_link_agnostic(struct sk_buff *skb)
 	/* Offset by iv_len if it is a protected frame */
 	if (ieee80211_has_protected(mgmt->frame_control)) {
 		switch (ATH12K_SKB_CB(skb)->cipher) {
-		/* Other cipher types than CCMP  will be sanitized in
-		 * ath12k_mac_mgmt_action_frame_fill_elem.
-		 */
 		case WLAN_CIPHER_SUITE_CCMP:
+		case WLAN_CIPHER_SUITE_CCMP_256:
 			iv_len = IEEE80211_CCMP_HDR_LEN;
+			break;
+		case WLAN_CIPHER_SUITE_GCMP:
+		case WLAN_CIPHER_SUITE_GCMP_256:
+			iv_len = IEEE80211_GCMP_HDR_LEN;
 			break;
 		default:
 			iv_len = 0;
