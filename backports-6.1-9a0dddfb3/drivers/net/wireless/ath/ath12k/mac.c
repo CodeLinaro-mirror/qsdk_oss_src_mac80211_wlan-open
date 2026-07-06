@@ -20030,11 +20030,13 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		ahvif->vdev_type = WMI_VDEV_TYPE_AP;
 		if (wdev && wdev->vap_submode) {
 			ahvif->vap_submode = wdev->vap_submode;
-			arvif->vdev_subtype = WMI_VDEV_SUBTYPE_MESH_NON_11S;
-			if (ab->hw_rev == ATH12K_HW_QCN9625_HW10 ||
-			    ab->hw_rev == ATH12K_HW_QCN9625_HW20) {
-				WARN_ONCE(1, "MMESH is not supported in QCN9625\n");
-				return -EINVAL;
+			if (wdev->vap_submode == QCA_WLAN_VENDOR_VAP_SUBMODE_MESH) {
+				arvif->vdev_subtype = WMI_VDEV_SUBTYPE_MESH_NON_11S;
+				if (ab->hw_rev == ATH12K_HW_QCN9625_HW10 ||
+				    ab->hw_rev == ATH12K_HW_QCN9625_HW20) {
+					WARN_ONCE(1, "MMESH is not supported in QCN9625\n");
+					return -EINVAL;
+				}
 			}
 		}
 
@@ -28557,7 +28559,7 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 	/* Copy over MLO related capabilities received from
 	 * WMI_SERVICE_READY_EXT2_EVENT if single_chip_mlo_supp is set.
 	 */
-	if (ab->ag->mlo_capable) {
+	if (ab->ag->mlo_capable && !ath12k_scan_radio_supported(ar->pdev)) {
 		ath12k_iftypes_ext_capa[2].eml_capabilities = cap->eml_cap;
 		ath12k_iftypes_ext_capa[2].mld_capa_and_ops = cap->mld_cap;
 		ath12k_iftypes_ext_capa[2].ext_mld_capa_and_ops = cap->ext_mld_cap;
@@ -29379,6 +29381,7 @@ static void ath12k_mac_set_device_defaults(struct ath12k_base *ab)
 int ath12k_mac_allocate(struct ath12k_hw_group *ag)
 {
 	struct ath12k_pdev_map pdev_map[ATH12K_GROUP_MAX_RADIO];
+	struct ath12k_pdev_map scan_pdev_map;
 	int mac_id, device_id, total_radio, num_hw, pdev_index;
 	const char *phy_name = NULL;
 	struct ath12k_pdev *pdev;
@@ -29386,6 +29389,7 @@ int ath12k_mac_allocate(struct ath12k_hw_group *ag)
 	struct ath12k_hw *ah;
 	int ret, i, j;
 	u8 radio_per_hw;
+	bool has_scan_radio = false;
 
 	total_radio = 0;
 	for (i = 0; i < ag->num_devices; i++) {
@@ -29398,14 +29402,23 @@ int ath12k_mac_allocate(struct ath12k_hw_group *ag)
 		if (ag->mlo_capable) {
 			for (j = 0; j < ab->num_radios; j++) {
 				pdev = &ab->pdevs[j];
-				if (!phy_name)
-					phy_name = pdev->phy_name;
-				else if(strcmp(phy_name, pdev->phy_name) > 0)
-					phy_name = pdev->phy_name;
 
+				if (!ath12k_scan_radio_supported(pdev)) {
+					if (!phy_name)
+						phy_name = pdev->phy_name;
+					else if (strcmp(phy_name, pdev->phy_name) > 0)
+						phy_name = pdev->phy_name;
+				} else {
+					/* At most one scan pdev exists in a group */
+					scan_pdev_map.ab = ab;
+					scan_pdev_map.pdev_idx = j;
+					has_scan_radio = true;
+					total_radio--;
+				}
 			}
 		}
 	}
+
 	if (!total_radio)
 		return -EINVAL;
 
@@ -29436,6 +29449,19 @@ int ath12k_mac_allocate(struct ath12k_hw_group *ag)
 			}
 
 			ab = ag->ab[device_id];
+
+			/* skip scan radio pdev for MLO group*/
+			if (ag->mlo_capable &&
+				ath12k_scan_radio_supported(&ab->pdevs[mac_id])) {
+				mac_id++;
+				if (mac_id >= ab->num_radios) {
+					mac_id = 0;
+					device_id++;
+				}
+				j--;
+				continue;
+			}
+
 			pdev_map[j].ab = ab;
 			pdev_map[j].pdev_idx = mac_id;
 			mac_id++;
@@ -29468,7 +29494,26 @@ int ath12k_mac_allocate(struct ath12k_hw_group *ag)
 
 		ah->dev = ab->dev;
 
-		ath12k_ag_set_ah(ag, i, ah);
+		ath12k_ag_set_ah(ag, ag->num_hw, ah);
+		ah->ag = ag;
+		ag->num_hw++;
+	}
+
+	/* Allocate a dedicated wiphy for the scan radio pdev. */
+	if (has_scan_radio) {
+		ab = scan_pdev_map.ab;
+		pdev = &ab->pdevs[scan_pdev_map.pdev_idx];
+		ah = ath12k_mac_hw_allocate(ag, &scan_pdev_map, 1, pdev->phy_name);
+		if (!ah) {
+			ath12k_warn(ab,
+				    "failed to allocate mac80211 hw for scan radio pdev %d\n",
+				    scan_pdev_map.pdev_idx);
+			ret = -ENOMEM;
+			goto err;
+		}
+
+		ah->dev = ab->dev;
+		ath12k_ag_set_ah(ag, ag->num_hw, ah);
 		ah->ag = ag;
 		ag->num_hw++;
 	}
@@ -29485,7 +29530,7 @@ int ath12k_mac_allocate(struct ath12k_hw_group *ag)
 	return 0;
 
 err:
-	for (i = i - 1; i >= 0; i--) {
+	for (i = ag->num_hw - 1; i >= 0; i--) {
 		ah = ath12k_ag_to_ah(ag, i);
 		if (!ah)
 			continue;
@@ -29493,6 +29538,7 @@ err:
 		ath12k_mac_hw_destroy(ah);
 		ath12k_ag_set_ah(ag, i, NULL);
 	}
+	ag->num_hw = 0;
 
 	return ret;
 }
