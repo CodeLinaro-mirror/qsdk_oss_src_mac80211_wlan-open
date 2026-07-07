@@ -6990,9 +6990,6 @@ static void ath12k_qmi_driver_event_work(struct work_struct *work)
 			if (test_bit(ATH12K_FLAG_QMI_FW_READY_COMPLETE, &ab->dev_flags) ||
 			    (ath12k_check_erp_power_down(ab->ag) &&
 			    ath12k_hw_group_recovery_in_progress(ab->ag))) {
-				if (ab->is_reset)
-					ath12k_hal_dump_srng_stats(ab);
-
 				queue_work(ab->workqueue, &ab->restart_work);
 				break;
 			}
