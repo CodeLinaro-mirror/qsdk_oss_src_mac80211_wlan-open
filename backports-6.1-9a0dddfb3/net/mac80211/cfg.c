@@ -3748,6 +3748,16 @@ static int ieee80211_scan(struct wiphy *wiphy,
 	case NL80211_IFTYPE_P2P_CLIENT:
 	case NL80211_IFTYPE_P2P_DEVICE:
 		break;
+	case NL80211_IFTYPE_MONITOR:
+		/* Allow scan on monitor interface only when the driver
+		 * handles monitor vifs directly (NO_VIRTUAL_MONITOR) and
+		 * supports hw_scan. Software scan is not meaningful for a
+		 * monitor vif since it has no associated station context.
+		 */
+		if (!ieee80211_hw_check(&sdata->local->hw, NO_VIRTUAL_MONITOR) ||
+		    !sdata->local->ops->hw_scan)
+			return -EOPNOTSUPP;
+		break;
 	case NL80211_IFTYPE_P2P_GO:
 		if (sdata->local->ops->hw_scan)
 			break;
