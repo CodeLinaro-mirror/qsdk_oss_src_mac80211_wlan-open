@@ -858,7 +858,14 @@ void ieee80211_smd_free_target_links(struct ieee80211_smd_prep_target *target)
 		if (!tgt_link)
 			continue;
 
-		__ieee80211_link_release_channel(&tgt_link->data, false);
+		/* Skip __ieee80211_link_release_channel() if link->conf is NULL.
+		 * This happens when ieee80211_smd_alloc_target_link() succeeded
+		 * but ieee80211_smd_init_target_link() failed before calling
+		 * __ieee80211_link_init_data(), so link->conf was never set.
+		 */
+		if (tgt_link->data.conf)
+			__ieee80211_link_release_channel(&tgt_link->data, false);
+
 		kfree(target->new_links[link_id]);
 		target->new_links[link_id] = NULL;
 	}
@@ -993,10 +1000,17 @@ void ieee80211_smd_prep_reset_target(struct ieee80211_sub_if_data *sdata,
 	sdata_dbg(sdata, "smd: reset prep target %pM status=%u\n",
 		   target->target_mld_addr, status);
 
-	cfg80211_notify_smd_bss_transition(sdata->dev,
-					   target->target_mld_addr,
-					   NL80211_SMD_TRANSITION_ABORT,
-					   status);
+	/* Skip the notification if the STA is no longer associated.
+	 * cfg80211_notify_smd_bss_transition() asserts wdev->valid_links != 0.
+	 * On beacon loss, ieee80211_set_disassoc() clears valid_links under
+	 * the wiphy lock before the exec timeout work runs, so
+	 * sdata->vif.valid_links reliably reflects the association state here.
+	 */
+	if (sdata->vif.valid_links)
+		cfg80211_notify_smd_bss_transition(sdata->dev,
+						   target->target_mld_addr,
+						   NL80211_SMD_TRANSITION_ABORT,
+						   status);
 
 	/* Only clear the transition state bit when the last prepared target
 	 * is being reset — in multi-prep, other targets may still be active.
@@ -1048,11 +1062,21 @@ void ieee80211_smd_prep_reset_target(struct ieee80211_sub_if_data *sdata,
 		 * was inserted into the hash table. __sta_info_destroy() requires
 		 * the STA to be in the hash; sta_info_free() handles the
 		 * pre-insertion case (e.g. exec timeout before STA fully setup).
+		 *
+		 * A concurrent disconnect may have already removed the link
+		 * state that __sta_info_destroy() depends on; if it fails, log
+		 * and fall back to sta_info_free() to avoid leaking the object.
 		 */
-		if (target->sta_inserted)
-			WARN_ON(__sta_info_destroy(target->target_sta));
-		else
+		if (target->sta_inserted) {
+			if (__sta_info_destroy(target->target_sta)) {
+				sdata_info(sdata,
+					   "smd: sta_info_destroy failed for %pM, freeing directly\n",
+					   target->target_sta->sta.addr);
+				sta_info_free(local, target->target_sta);
+			}
+		} else {
 			sta_info_free(local, target->target_sta);
+		}
 		target->target_sta = NULL;
 	}
 
