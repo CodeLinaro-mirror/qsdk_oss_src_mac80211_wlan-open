@@ -1496,7 +1496,7 @@ ath12k_wifi8_dp_mon_rx_h_drop_tlv(struct ath12k_pdev_dp *pdev_dp,
 	struct sk_buff *mpdu;
 	u32 num_skb_free = 0;
 	u32 pkt_tlv_free = 0;
-	u8 status_desc_cnt, i;
+	u32 status_desc_cnt, i;
 
 	status_desc_cnt = ppdu_desc->status_desc_cnt;
 	for (; desc_cnt < status_desc_cnt; desc_cnt++) {
