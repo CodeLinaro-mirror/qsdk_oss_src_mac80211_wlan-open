@@ -25656,7 +25656,6 @@ ath12k_mac_reconfig_complete(struct ieee80211_hw *hw,
 		if (recovery_count == ab->num_radios) {
 			atomic_dec(&ab->reset_count);
 			complete(&ab->reset_complete);
-			ab->post_reconfig_done = false;
 			ab->is_reset = false;
 			atomic_set(&ab->fail_cont_count, 0);
 			clear_bit(ATH12K_FLAG_RECOVERY, &ar->ab->dev_flags);
