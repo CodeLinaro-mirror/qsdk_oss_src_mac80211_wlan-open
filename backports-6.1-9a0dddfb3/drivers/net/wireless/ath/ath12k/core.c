@@ -156,6 +156,10 @@ module_param_named(waltest_mode, ath12k_waltest_mode, bool, 0444);
 MODULE_PARM_DESC(waltest_mode, "Boots up in Wal test mode");
 EXPORT_SYMBOL(ath12k_waltest_mode);
 
+bool ath12k_boot_time_qdss = true;
+module_param_named(boot_time_qdss, ath12k_boot_time_qdss, bool, 0444);
+MODULE_PARM_DESC(boot_time_qdss, "QDSS tracing at boot time (0: disabled, 1: enabled (default))");
+
 unsigned int ath12k_frame_mode = ATH12K_HW_TXRX_ETHERNET;
 module_param_named(frame_mode, ath12k_frame_mode, uint, 0644);
 MODULE_PARM_DESC(frame_mode,
@@ -2737,7 +2741,8 @@ static int ath12k_core_start_firmware(struct ath12k_base *ab,
 	 * configuration in both Mission and FTM modes.
 	 */
 #ifdef CPTCFG_ATHDEBUG
-	if (ab->hw_params->en_qdsslog && !ath12k_waltest_mode) {
+	if (ab->hw_params->en_qdsslog && !ath12k_waltest_mode &&
+	    ath12k_boot_time_qdss) {
 		ath12k_info(ab, "QDSS trace enabled\n");
 		qdss_ret = athdbg_if_get_service(ab, ATHDBG_SRV_CONFIG_QDSS);
 		if (qdss_ret < 0) {
