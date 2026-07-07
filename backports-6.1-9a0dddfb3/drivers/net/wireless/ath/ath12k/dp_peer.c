@@ -41,7 +41,6 @@ u16 ath12k_dp_get_peer_based_tcl_metadata(struct ath12k_dp *dp, u16 peer_id,
 static void __ath12k_link_peer_free(struct ath12k_dp_link_peer *peer)
 {
 	kfree(peer->peer_stats.rx_stats);
-	kfree(peer->peer_stats.tx_stats);
 	ath12k_dp_peer_link_stats_free(peer);
 
 	kfree(peer);
@@ -482,14 +481,6 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 	if (ath12k_extd_rx_stats_enabled(dp_pdev) &&
 	    !peer->peer_stats.rx_stats) {
 		peer->peer_stats.rx_stats = kzalloc(sizeof(*peer->peer_stats.rx_stats), GFP_ATOMIC);
-	}
-
-	if (ath12k_extd_tx_stats_enabled(dp_pdev) &&
-	    !peer->peer_stats.tx_stats) {
-		peer->peer_stats.tx_stats = kzalloc(sizeof(*peer->peer_stats.tx_stats),
-						    GFP_ATOMIC);
-		peer->peer_stats.tx_stats->avg_ack_rssi = INVALID_RSSI;
-		peer->peer_stats.tx_stats->avg_tx_rate = INVALID_RATE;
 	}
 
 	dp_peer->qos_stats_lvl = (ar->dp.qos_stats &
@@ -1788,6 +1779,43 @@ static void ath12k_dp_qos_link_stats_alloc(struct ath12k_dp_link_peer *link_peer
 			GFP_ATOMIC);
 }
 
+static void ath12k_dp_tx_stats_alloc(struct ath12k_dp_link_peer *link_peer,
+				     struct ath12k_pdev_dp *dp_pdev)
+{
+	if (ath12k_extd_tx_stats_enabled(dp_pdev) &&
+	    !link_peer->peer_stats.tx_stats)
+		link_peer->peer_stats.tx_stats =
+			kzalloc(sizeof(*link_peer->peer_stats.tx_stats),
+				GFP_ATOMIC);
+}
+
+static void ath12k_dp_tx_stats_free(struct ath12k_dp_link_peer *link_peer)
+{
+	kfree(link_peer->peer_stats.tx_stats);
+	link_peer->peer_stats.tx_stats = NULL;
+}
+
+static void ath12k_dp_tx_ppdu_stats_alloc(struct ath12k_dp_link_peer *link_peer,
+					  struct ath12k_pdev_dp *dp_pdev)
+{
+	if (ath12k_htt_tx_ppdu_stats_enabled(dp_pdev) &&
+	    !link_peer->peer_stats.tx_ppdu_stats) {
+		link_peer->peer_stats.tx_ppdu_stats =
+			kzalloc(sizeof(*link_peer->peer_stats.tx_ppdu_stats),
+				GFP_ATOMIC);
+		if (link_peer->peer_stats.tx_ppdu_stats) {
+			link_peer->peer_stats.tx_ppdu_stats->avg_ack_rssi = INVALID_RSSI;
+			link_peer->peer_stats.tx_ppdu_stats->avg_tx_rate  = INVALID_RATE;
+		}
+	}
+}
+
+static void ath12k_dp_tx_ppdu_stats_free(struct ath12k_dp_link_peer *link_peer)
+{
+	kfree(link_peer->peer_stats.tx_ppdu_stats);
+	link_peer->peer_stats.tx_ppdu_stats = NULL;
+}
+
 int ath12k_dp_peer_link_stats_alloc(struct ath12k_dp_link_peer *link_peer,
 				    struct ath12k_pdev_dp *dp_pdev)
 {
@@ -1817,6 +1845,10 @@ int ath12k_dp_peer_link_stats_alloc(struct ath12k_dp_link_peer *link_peer,
 		if (!link_peer->peer_stats.link_qos_stats)
 			return -ENOMEM;
 	}
+
+	ath12k_dp_tx_stats_alloc(link_peer, dp_pdev);
+	ath12k_dp_tx_ppdu_stats_alloc(link_peer, dp_pdev);
+
 	return 0;
 }
 
@@ -1835,6 +1867,8 @@ void ath12k_dp_peer_link_stats_free(struct ath12k_dp_link_peer *link_peer)
 	link_peer->peer_stats.hw_link_stats = NULL;
 
 	ath12k_dp_qos_link_stats_free(link_peer);
+	ath12k_dp_tx_stats_free(link_peer);
+	ath12k_dp_tx_ppdu_stats_free(link_peer);
 }
 
 int ath12k_dp_peer_set_param_by_dp_peer(void *ptr, enum ath12k_dp_peer_param param,

@@ -3438,16 +3438,23 @@ static void ath12k_dp_aggr_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 #endif
 }
 
-
-static void ath12k_dp_update_tx_ext_htt_stats(struct ath12k_htt_tx_stats *dst_peer_stats,
-					      struct ath12k_htt_tx_stats *src_peer_stats)
+/**
+ * ath12k_dp_update_ext_htt_stats - Copy tx_ppdu_stats into an aggregation buffer
+ * @dst: Destination tx_ppdu_stats buffer
+ * @src: Source link peer tx_ppdu_stats
+ *
+ * Copies the full tx_ppdu_stats structure for per-peer or pdev aggregation.
+ * Called only when DP_ENABLE_TX_PPDU_STATS is enabled.
+ */
+static void
+ath12k_dp_update_tx_ppdu_stats(struct ath12k_htt_tx_ppdu_stats *dst_tx_ppdu_stats,
+			       struct ath12k_htt_tx_ppdu_stats *src_tx_ppdu_stats)
 {
-
-	if (!dst_peer_stats || !src_peer_stats)
+	if (!dst_tx_ppdu_stats || !src_tx_ppdu_stats)
 		return;
 
-	/* htt stats */
-	memcpy(dst_peer_stats, src_peer_stats, sizeof(struct ath12k_htt_tx_stats));
+	memcpy(dst_tx_ppdu_stats, src_tx_ppdu_stats,
+	       sizeof(struct ath12k_htt_tx_ppdu_stats));
 }
 
 static void ath12k_dp_update_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
@@ -3975,8 +3982,8 @@ static void ath12k_dp_aggr_peer_stats(struct ath12k_link_vif *arvif,
 	struct ath12k *ar = arvif->ar;
 	struct ath12k_dp_link_peer_stats *link_peer_stats;
 	int stats_link_id;
-	struct ath12k_htt_tx_stats *src_htt_stats = NULL;
-	struct ath12k_htt_tx_stats *dst_htt_stats = NULL;
+	struct ath12k_htt_tx_ppdu_stats *src_tx_ppdu_stats = NULL;
+	struct ath12k_htt_tx_ppdu_stats *dst_tx_ppdu_stats = NULL;
 	struct ath12k_rx_peer_stats *rx_peer_stats = NULL;
 	struct ath12k_dp_link_peer_hw_tx_stats *src_hw_link_tx = NULL;
 	struct ath12k_dp_link_peer_hw_rx_stats *src_hw_link_rx = NULL;
@@ -3996,13 +4003,13 @@ static void ath12k_dp_aggr_peer_stats(struct ath12k_link_vif *arvif,
 						  &peer->stats[stats_link_id],
 						  peer->is_vdev_peer,
 						  is_ds_wds_peer);
-		dst_htt_stats = link_peer_stats->tx_stats;
-		src_htt_stats = link_peer->peer_stats.tx_stats;
+		dst_tx_ppdu_stats = link_peer_stats->tx_ppdu_stats;
+		src_tx_ppdu_stats = link_peer->peer_stats.tx_ppdu_stats;
 		rx_peer_stats =  link_peer->peer_stats.rx_stats;
-		if (ath12k_extd_tx_stats_enabled(dp_pdev))
-			ath12k_dp_update_tx_ext_htt_aggr_stats(dp_pdev,
-							       dst_htt_stats,
-							       src_htt_stats);
+		if (ath12k_htt_tx_ppdu_stats_enabled(dp_pdev))
+			ath12k_dp_update_tx_ppdu_stats_aggr(dp_pdev,
+							    dst_tx_ppdu_stats,
+							    src_tx_ppdu_stats);
 		if (ath12k_extd_rx_stats_enabled(dp_pdev))
 			ath12k_dp_aggregate_link_rx_mon_stats(link_peer_stats->rx_stats,
 							      rx_peer_stats);
@@ -4203,8 +4210,8 @@ void ath12k_dp_get_pdev_stats(struct ath12k_pdev_dp *pdev,
 
 	aggr_vif_stats = vzalloc(sizeof(*aggr_vif_stats));
 	if (aggr_vif_stats) {
-		aggr_vif_stats->link_peer_stats.tx_stats =
-					aggr_pdev_stats->link_peer_stats.tx_stats;
+		aggr_vif_stats->link_peer_stats.tx_ppdu_stats =
+					aggr_pdev_stats->link_peer_stats.tx_ppdu_stats;
 		aggr_vif_stats->link_peer_stats.rx_stats =
 					aggr_pdev_stats->link_peer_stats.rx_stats;
 		list_for_each_entry(arvif, &ar->arvifs, list) {
@@ -4464,8 +4471,9 @@ ath12k_dp_get_link_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_dp_link_peer_stats *link_peer_stats =
 					&telemetry_peer->link_peer_stats;
 	struct ath12k_dp_link_peer *link_peer;
-	struct ath12k_htt_tx_stats *dst_htt_stats = link_peer_stats->tx_stats;
-	struct ath12k_htt_tx_stats *src_htt_stats;
+
+	struct ath12k_htt_tx_ppdu_stats *dsc_tx_ppdu_stats = NULL;
+	struct ath12k_htt_tx_ppdu_stats *src_tx_ppdu_stats = NULL;
 	struct ath12k_rx_peer_stats *dst_stats = link_peer_stats->rx_stats;
 	int ret = 0;
 	bool is_ds_wds_peer = is_ds_vif && dp_peer->use_4addr;
@@ -4477,6 +4485,8 @@ ath12k_dp_get_link_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 	if (hw_link_id < ATH12K_DP_PEER_MAX_MLO_LINKS) {
+		dsc_tx_ppdu_stats = link_peer_stats->tx_ppdu_stats;
+		src_tx_ppdu_stats = link_peer->peer_stats.tx_ppdu_stats;
 		/* Per packet Counters */
 		ath12k_dp_update_per_pkt_peer_stats(dp_pdev, peer_stats,
 						    &dp_peer->stats[hw_link_id],
@@ -4486,12 +4496,10 @@ ath12k_dp_get_link_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 		ath12k_dp_update_hw_link_stats(dp_pdev, dp_peer, hw_link_id,
 					       link_peer_stats);
 
-		/* Tx HTT stats */
-		if (ath12k_extd_tx_stats_enabled(dp_pdev)) {
-			src_htt_stats = link_peer->peer_stats.tx_stats;
-			ath12k_dp_update_tx_ext_htt_stats(dst_htt_stats,
-							  src_htt_stats);
-		}
+		/* Tx PPDU HTT stats */
+		if (ath12k_htt_tx_ppdu_stats_enabled(dp_pdev))
+			ath12k_dp_update_tx_ppdu_stats(dsc_tx_ppdu_stats,
+						       src_tx_ppdu_stats);
 
 		/* Rx Mon stats */
 		if (ath12k_extd_rx_stats_enabled(dp_pdev)) {
@@ -4512,7 +4520,7 @@ void ath12k_update_ext_stats(struct ath12k_pdev_dp *dp_pdev,
 {
 	struct ath12k_dp_link_peer *tmp_peer = NULL;
 	int ret = 0;
-	if (!ath12k_extd_tx_stats_enabled(dp_pdev) &&
+	if (!ath12k_htt_tx_ppdu_stats_enabled(dp_pdev) &&
 	    !ath12k_extd_rx_stats_enabled(dp_pdev))
 		return;
 
@@ -4521,9 +4529,11 @@ void ath12k_update_ext_stats(struct ath12k_pdev_dp *dp_pdev,
 	if (!tmp_peer)
 		goto unlock;
 
-	if (ath12k_extd_tx_stats_enabled(dp_pdev))
-		ath12k_dp_update_tx_ext_htt_stats(link_peer_stats->tx_stats,
-						  tmp_peer->peer_stats.tx_stats);
+	/* TX PPDU stats */
+	if (ath12k_htt_tx_ppdu_stats_enabled(dp_pdev))
+		ath12k_dp_update_tx_ppdu_stats(link_peer_stats->tx_ppdu_stats,
+					       tmp_peer->peer_stats.tx_ppdu_stats);
+
 	if (ath12k_extd_rx_stats_enabled(dp_pdev)) {
 		ret = ath12k_update_peer_rx_mon_stats(tmp_peer,
 						      link_peer_stats->rx_stats);
@@ -4541,9 +4551,11 @@ static void ath12k_dp_aggr_htt_stats(struct ath12k_pdev_dp *dp_pdev,
 				     struct ath12k_dp_link_peer_stats *link_peer_stats)
 {
 	struct ath12k_dp_link_peer *tmp_peer = NULL;
+	struct ath12k_htt_tx_ppdu_stats *src_tx_ppdu_stats = NULL;
+	struct ath12k_htt_tx_ppdu_stats *dst_tx_ppdu_stats = NULL;
 	u8 tmp_link_id;
 
-	if (!ath12k_extd_tx_stats_enabled(dp_pdev))
+	if (!ath12k_htt_tx_ppdu_stats_enabled(dp_pdev))
 		return;
 
 	rcu_read_lock();
@@ -4551,8 +4563,11 @@ static void ath12k_dp_aggr_htt_stats(struct ath12k_pdev_dp *dp_pdev,
 		tmp_peer = ath12k_dp_link_peer_find_by_hw_link_id(peer, tmp_link_id);
 		if (!tmp_peer)
 			continue;
-		ath12k_dp_update_tx_ext_htt_aggr_stats(dp_pdev, link_peer_stats->tx_stats,
-						       tmp_peer->peer_stats.tx_stats);
+		dst_tx_ppdu_stats = link_peer_stats->tx_ppdu_stats;
+		src_tx_ppdu_stats = tmp_peer->peer_stats.tx_ppdu_stats;
+		ath12k_dp_update_tx_ppdu_stats_aggr(dp_pdev,
+						    dst_tx_ppdu_stats,
+						    src_tx_ppdu_stats);
 	}
 	rcu_read_unlock();
 }

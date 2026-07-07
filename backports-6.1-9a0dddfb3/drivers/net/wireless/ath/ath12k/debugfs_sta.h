@@ -10,9 +10,14 @@
 
 #include "core.h"
 #include "dp_rx.h"
+#include "dp_htt.h"
 
 #define ATH12K_STA_RX_STATS_BUF_SIZE		(1024 * 16)
 #define STATS_OP_FMT(name) tx_stats->stats[ATH12K_STATS_TYPE_##name]
+
+int ath12k_he_ru_alloc_to_ru_loc_idx(u16 nl_ru);
+int ath12k_eht_ru_alloc_to_ru_loc_idx(u16 nl_ru);
+enum htt_ppdu_stats_gi ath12k_debugfs_sta_get_gi_idx(const struct rate_info *txrate);
 
 #ifdef CPTCFG_ATH12K_DEBUGFS
 void ath12k_debugfs_sta_op_add(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
