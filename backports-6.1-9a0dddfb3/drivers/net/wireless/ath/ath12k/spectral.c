@@ -15,8 +15,8 @@
 #define ATH12K_SPECTRAL_DWORD_SIZE		4
 #define ATH12K_SPECTRAL_BIN_SIZE		1
 #define ATH12K_SPECTRAL_ATH12K_MIN_IB_BINS	(ATH12K_SPECTRAL_ATH12K_MIN_BINS>>1)
-#define ATH12K_SPECTRAL_ATH12K_MAX_IB_BINS(x)	((x)->hw_params->spectral.max_fft_bins)
-
+#define ATH12K_SPECTRAL_ATH12K_MAX_IB_BINS(x)	\
+					((x)->hw_params->spectral.max_fft_bins >> 1)
 
 #define ATH12K_SPECTRAL_SCAN_COUNT_MAX		4095
 
@@ -342,14 +342,21 @@ int ath12k_spectral_nl80211_bw_to_idx(enum nl80211_chan_width bw)
 static void ath12k_spectral_init_param_min_max(struct ath12k *ar)
 {
 	struct ath12k_spectral_param_min_max *pmm = &ar->spectral.param_min_max;
-	const u16 *hw_max = ar->ab->hw_params->spectral.fft_size_max;
+	u16 chip_cap = ilog2(ar->ab->hw_params->spectral.max_fft_bins);
 	int i;
 
-	pmm->fft_size_min   = ar->ab->hw_params->spectral.fft_size_min;
+	pmm->fft_size_min   = ATH12K_SPECTRAL_FFT_SIZE_MIN;
 	pmm->scan_count_max = ATH12K_SPECTRAL_SCAN_COUNT_MAX;
 
+	/* Default every BW slot to the chip's FFT-engine ceiling. */
 	for (i = 0; i < ATH12K_SPECTRAL_NUM_BW_SLOTS; i++)
-		pmm->fft_size_max[i] = hw_max[i];
+		pmm->fft_size_max[i] = chip_cap;
+
+	/* 20/40 MHz have a tighter HW spec ceiling. */
+	pmm->fft_size_max[ATH12K_SPECTRAL_BW_20MHZ] =
+		min_t(u16, chip_cap, ATH12K_SPECTRAL_FFT_SIZE_MAX_20MHZ);
+	pmm->fft_size_max[ATH12K_SPECTRAL_BW_40MHZ] =
+		min_t(u16, chip_cap, ATH12K_SPECTRAL_FFT_SIZE_MAX_40MHZ);
 }
 
 int ath12k_spectral_start_scan(struct ath12k *ar)
