@@ -147,6 +147,7 @@ void ath12k_dp_peer_cleanup(struct ath12k *ar, int vdev_id, const u8 *addr)
 #endif
 	ath12k_dp_rx_peer_tid_cleanup(ar, peer);
 	crypto_free_shash(peer->dp_peer->tfm_mmic);
+	peer->dp_peer->tfm_mmic = NULL;
 	if (peer->primary_link)
 		peer->dp_peer->primary_link_frag_setup = false;
 	spin_unlock_bh(&dp->dp_lock);
