@@ -2712,8 +2712,8 @@ void ath12k_wifi8_dp_vif_update_4addr(struct ath12k_dp_hw *dp_hw,
 	spin_lock_bh(&dp_hw->peer_hash_lock);
 	dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, addr);
 
-	if (!dp_peer) {
-		ath12k_dbg(NULL, ATH12K_DBG_PEER, "unable for find peer for mac addr in set 4 addr %pM",
+	if (!dp_peer || !dp_peer->peer_ext_ctx) {
+		ath12k_dbg(NULL, ATH12K_DBG_PEER, "unable for find peer/peer_ext_ctx for mac addr in set 4 addr %pM",
 			   addr);
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		return;
