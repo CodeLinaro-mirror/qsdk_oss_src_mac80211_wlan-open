@@ -377,6 +377,10 @@ int ath12k_mhi_register(struct ath12k_pci *ab_pci)
 		mhi_ctrl->iova_stop = ab_pci->dma_mask;
 	}
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	mhi_ctrl->iova_stop = min(mhi_ctrl->iova_stop, (dma_addr_t)DMA_BIT_MASK(32));
+#endif
+
 	ath12k_dbg(ab, ATH12K_DBG_PCI, "iova start:%pa iova stop: %pa\n",
 		   &mhi_ctrl->iova_start, &mhi_ctrl->iova_stop);
 
