@@ -177,11 +177,11 @@ int ath12k_wifi8_dp_tx_pool_create(struct ath12k_dp_hw_group *dp_hw_grp)
 						       NUM_TOTAL_MSDU_QUEUES,
 						       true);
 	if (!dp_hw_grp_wifi8->msduq_ctxt)
-		goto error;
+		goto err_msduq_alloc;
 
 	if (dma_map_pages(ab, dp_hw_grp_wifi8->msduq_ctxt)) {
 		ath12k_err(ab, "DMA MAP failed for MSDUQ\n");
-		goto error1;
+		goto err_msduq_dma;
 	}
 
 	aligned_size = sizeof(struct ath12k_dp_msdu_q_info);
@@ -190,17 +190,17 @@ int ath12k_wifi8_dp_tx_pool_create(struct ath12k_dp_hw_group *dp_hw_grp)
 							  NUM_TOTAL_MSDU_QUEUES,
 							  true);
 	if (!dp_hw_grp_wifi8->sw_msduq_ctxt)
-		goto error1;
+		goto err_sw_msduq_alloc;
 
 	dp_hw_grp_wifi8->mpduq_ctxt = init_memory_pool(ab, MPDU_STRUCT_SZ,
 						       NUM_TOTAL_MPDU_QUEUES,
 						       true);
 	if (!dp_hw_grp_wifi8->mpduq_ctxt)
-		goto error2;
+		goto err_mpduq_alloc;
 
 	if (dma_map_pages(ab, dp_hw_grp_wifi8->mpduq_ctxt)) {
 		ath12k_err(ab, "DMA MAP failed for MPDUQ\n");
-		goto error3;
+		goto err_mpduq_dma;
 	}
 
 	aligned_size = sizeof(struct ath12k_dp_mpdu_q_info);
@@ -209,7 +209,7 @@ int ath12k_wifi8_dp_tx_pool_create(struct ath12k_dp_hw_group *dp_hw_grp)
 							  NUM_TOTAL_MPDU_QUEUES,
 							  true);
 	if (!dp_hw_grp_wifi8->sw_mpduq_ctxt)
-		goto error3;
+		goto err_sw_mpduq_alloc;
 
 	bitmap_zero(dp_hw_grp_wifi8->msduq_sam_id_alloc_map,
 		    MAX_NUM_SAM_MSDU_QUEUES_SUPPORTED);
@@ -235,16 +235,20 @@ int ath12k_wifi8_dp_tx_pool_create(struct ath12k_dp_hw_group *dp_hw_grp)
 	spin_lock_init(&dp_hw_grp_wifi8->sam_id_lock);
 
 	return 0;
-error3:
+err_sw_mpduq_alloc:
+	dma_unmap_pages(ab, dp_hw_grp_wifi8->mpduq_ctxt);
+err_mpduq_dma:
 	pool_destroy(ab, dp_hw_grp_wifi8->mpduq_ctxt);
 	dp_hw_grp_wifi8->mpduq_ctxt = NULL;
-error2:
+err_mpduq_alloc:
 	pool_destroy(ab, dp_hw_grp_wifi8->sw_msduq_ctxt);
 	dp_hw_grp_wifi8->sw_msduq_ctxt = NULL;
-error1:
+err_sw_msduq_alloc:
+	dma_unmap_pages(ab, dp_hw_grp_wifi8->msduq_ctxt);
+err_msduq_dma:
 	pool_destroy(ab, dp_hw_grp_wifi8->msduq_ctxt);
 	dp_hw_grp_wifi8->msduq_ctxt = NULL;
-error:
+err_msduq_alloc:
 	return -ENOMEM;
 }
 
