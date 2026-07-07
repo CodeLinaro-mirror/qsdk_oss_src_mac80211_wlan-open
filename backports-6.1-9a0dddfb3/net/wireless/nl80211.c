@@ -20016,16 +20016,27 @@ out:
 			cfg80211_put_bss(&rdev->wiphy, req->u.add_links[link_id].bss);
 		return err;
 	case NL80211_IFTYPE_AP:
-		err = nl80211_process_sta_links(rdev, req->u.link_sta_params, info);
-		if (err)
-			return err;
+		/* Only process ML reconfig links if MLO_LINKS attribute is present */
+		if (info->attrs[NL80211_ATTR_MLO_LINKS]) {
+			err = nl80211_process_sta_links(rdev,
+							req->u.link_sta_params,
+							info);
+			if (err)
+				return err;
 
-		for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS;
-		     link_id++) {
-			if (!req->u.link_sta_params[link_id].link_mac)
-				continue;
-			add_links |= BIT(link_id);
+			for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS;
+			link_id++) {
+				if (!req->u.link_sta_params[link_id].link_mac)
+					continue;
+				add_links |= BIT(link_id);
+			}
 		}
+
+		/* Reject if same link appears in both add and remove sets, or
+		 * if request neither adds nor removes any links (no-op).
+		 */
+		if ((add_links & req->rem_links) || !(add_links | req->rem_links))
+			return -EINVAL;
 
 		if (!info->attrs[NL80211_ATTR_MLD_ADDR])
 			return -EINVAL;
