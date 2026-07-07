@@ -565,7 +565,8 @@ int ath12k_wifi8_cleanup_all_peers_tx_queues(struct ath12k_dp_hw *dp_hw,
 		return -EINVAL;
 	}
 
-	ath12k_info(ab, "Starting TX queue cleanup for all peers\n");
+	ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET,
+		   "Starting TX queue cleanup for all peers\n");
 
 	spin_lock_bh(&dp_hw->peer_list_lock);
 
@@ -607,7 +608,7 @@ int ath12k_wifi8_cleanup_all_peers_tx_queues(struct ath12k_dp_hw *dp_hw,
 				/* Continue with other peers even if one fails */
 			}
 		} else {
-			ath12k_dbg(ab, ATH12K_DBG_DP_TX,
+			ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET,
 				   "No VIF found for peer %pM, skipping MPDU cleanup\n",
 				   peer->addr);
 		}
@@ -615,8 +616,9 @@ int ath12k_wifi8_cleanup_all_peers_tx_queues(struct ath12k_dp_hw *dp_hw,
 
 	spin_unlock_bh(&dp_hw->peer_list_lock);
 
-	ath12k_info(ab, "Completed TX queue cleanup for %d peers\n",
-		    peer_count);
+	ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET,
+		   "Completed TX queue cleanup for %d peers\n", peer_count);
+
 	return 0;
 }
 

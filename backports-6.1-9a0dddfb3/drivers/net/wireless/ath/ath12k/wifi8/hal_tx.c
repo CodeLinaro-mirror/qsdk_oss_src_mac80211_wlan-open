@@ -1171,9 +1171,9 @@ void ath12k_wifi8_hal_tx_sam_program_clear(struct ath12k_base *ab)
 						       -1, true, true);
 
 		if (ret < 0)
-			ath12k_warn(ab,
-				    "failed to send SAM peer clear command for link %d: %d\n",
-				    i, ret);
+			ath12k_dbg(ab, ATH12K_DBG_HAL,
+				   "failed to send SAM peer clear command for link %d: %d\n",
+				   i, ret);
 	}
 }
 
