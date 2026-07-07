@@ -283,6 +283,8 @@ static const struct ath12k_wmi_tlv_policy ath12k_wmi_tlv_policies[] = {
 		.min_len = sizeof(struct wmi_rfkill_state_change_event) },
 	[WMI_TAG_PDEV_CTL_FAILSAFE_CHECK_EVENT] = {
 		.min_len = sizeof(struct wmi_pdev_ctl_failsafe_chk_event) },
+	[WMI_TAG_PDEV_CHECK_CAL_VERSION_EVENT] = {
+		.min_len = sizeof(struct wmi_pdev_check_cal_version_event) },
 	[WMI_TAG_HOST_SWFDA_EVENT] = {
 		.min_len = sizeof(struct wmi_fils_discovery_event) },
 	[WMI_TAG_OFFLOAD_PRB_RSP_TX_STATUS_EVENT] = {
@@ -14281,6 +14283,53 @@ static void ath12k_pdev_ctl_failsafe_check_event(struct ath12k_base *ab,
 	kfree(tb);
 }
 
+static void ath12k_pdev_check_cal_version_event(struct ath12k_base *ab,
+						struct sk_buff *skb)
+{
+	const struct wmi_pdev_check_cal_version_event *ev;
+	char board_mcn[WMI_BOARD_MCN_STRING_BUF_SIZE];
+	const void **tb;
+	u32 cal_status;
+	int ret;
+
+	tb = ath12k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
+	if (IS_ERR(tb)) {
+		ret = PTR_ERR(tb);
+		ath12k_warn(ab, "failed to parse cal version event tlv: %d\n", ret);
+		return;
+	}
+
+	ev = tb[WMI_TAG_PDEV_CHECK_CAL_VERSION_EVENT];
+	if (!ev) {
+		ath12k_warn(ab, "failed to fetch pdev cal version check ev\n");
+		kfree(tb);
+		return;
+	}
+
+	cal_status = le32_to_cpu(ev->cal_status);
+	memcpy(board_mcn, ev->board_mcn_detail, sizeof(board_mcn));
+	board_mcn[WMI_BOARD_MCN_STRING_MAX_SIZE] = '\0';
+
+	ath12k_info(ab, "****************** CAl DATA Version Details ********************\n");
+	if (cal_status != WMI_CALIBRATION_NO_FEATURE) {
+		ath12k_info(ab, "Current Meta Cal Version: 0x%x\n",
+			    le32_to_cpu(ev->software_cal_version));
+		ath12k_info(ab, "Board (MCN : %s) Cal Version: 0x%x\n",
+			    board_mcn, le32_to_cpu(ev->board_cal_version));
+
+		if (cal_status == WMI_CALIBRATION_OK)
+			ath12k_info(ab, "Calibration Status: OK\n");
+		else
+			ath12k_info(ab, "Calibration Status: NOT OK\n");
+
+		ath12k_info(ab, "Note: Please cross check board's MCN\n");
+	} else {
+		ath12k_info(ab, "Board was not calibrated with this feature\n");
+	}
+
+	kfree(tb);
+}
+
 static int ath12k_wmi_dcs_intf_subtlv_parser(struct ath12k_base *ab,
 					     u16 tag, u16 len,
 					     const void *ptr, void *data)
@@ -19397,6 +19446,9 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 		break;
 	case WMI_PDEV_CTL_FAILSAFE_CHECK_EVENTID:
 		ath12k_pdev_ctl_failsafe_check_event(ab, skb);
+		break;
+	case WMI_PDEV_CHECK_CAL_VERSION_EVENTID:
+		ath12k_pdev_check_cal_version_event(ab, skb);
 		break;
 	case WMI_PDEV_CSA_SWITCH_COUNT_STATUS_EVENTID:
 		ath12k_wmi_pdev_csa_switch_count_status_event(ab, skb);
