@@ -69,7 +69,6 @@ const struct ath12k_dp_arch_mon_ops ath12k_wifi8_dp_arch_mon_dual_ring_ops = {
 	.mon_tx_dst_ring_cleanup = ath12k_dp_mon_tx_dst_ring_cleanup,
 	.mon_tx_wq_start = ath12k_dp_mon_tx_wq_start,
 	.mon_tx_wq_stop = ath12k_dp_mon_tx_wq_stop,
-	.get_htt_tx_mon_cfg_msg_size = ath12k_wifi8_dp_htt_tx_mon_cfg_msg_size_get,
 	.htt_tx_mon_cfg_fill_extended_wmask =
 		ath12k_wifi8_htt_tx_mon_cfg_fill_extended_wmask,
 };
@@ -2077,11 +2076,6 @@ int ath12k_wifi8_dp_ext_mon_validate_request(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 	return 0;
-}
-
-int ath12k_wifi8_dp_htt_tx_mon_cfg_msg_size_get(void)
-{
-	return sizeof(struct htt_tx_mon_ring_selection_cfg_cmd);
 }
 
 void ath12k_wifi8_htt_tx_mon_cfg_fill_extended_wmask(

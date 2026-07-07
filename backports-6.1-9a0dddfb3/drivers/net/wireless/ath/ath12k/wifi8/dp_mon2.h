@@ -17,7 +17,6 @@ int ath12k_wifi8_dp_mon_rx_wq_init(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_wifi8_dp_mon_rx_wq_deinit(struct ath12k_pdev_dp *dp_pdev);
 int ath12k_wifi8_dp_ext_mon_validate_request(struct ath12k_pdev_dp *dp_pdev,
 					     const struct ath12k_ext_mon_config *req);
-int ath12k_wifi8_dp_htt_tx_mon_cfg_msg_size_get(void);
 void ath12k_wifi8_htt_tx_mon_cfg_fill_extended_wmask(
 		struct htt_tx_mon_ring_selection_cfg_cmd *cmd,
 		const struct htt_tx_ring_tlv_filter *htt_tlv_filter);
