@@ -12749,7 +12749,7 @@ int ieee80211_smd_prep_activate(struct ieee80211_sub_if_data *sdata,
 	struct ieee80211_uhr_link_reconfig_info *info = target->drv_info;
 	struct sta_info *current_sta, *target_sta = target->target_sta;
 	u16 transitioning_links = target->prep_transition_links;
-	unsigned int link_id;
+	unsigned int link_id, tap_id;
 	int ret;
 
 	lockdep_assert_wiphy(local->hw.wiphy);
@@ -12784,8 +12784,6 @@ int ieee80211_smd_prep_activate(struct ieee80211_sub_if_data *sdata,
 			goto out_free_links;
 	}
 
-	ifmgd->smd_transitioning_links |= transitioning_links;
-
 	target->assoc_data->assoc_link_id = target->primary_link_id;
 
 	for_each_set_bit(link_id,
@@ -12800,6 +12798,17 @@ int ieee80211_smd_prep_activate(struct ieee80211_sub_if_data *sdata,
 			goto out_free_links;
 		}
 	}
+
+	/* smd_transitioning_links is indexed by SAP link_id, not TAP link_id.
+	 * For same-links topology the two spaces are identical; for diff-links
+	 * remaps they diverge. Map each TAP id to its SAP counterpart so
+	 * ieee80211_sdata_in_st_bss_transition() correctly suppresses mgmt
+	 * frames on the transitioning link.
+	 */
+	for_each_set_bit(tap_id, (unsigned long *)&transitioning_links,
+			 IEEE80211_MLD_MAX_NUM_LINKS)
+		ifmgd->smd_transitioning_links |=
+			BIT(target->tap_to_sap_link[tap_id]);
 
 	ret = drv_uhr_link_reconfig(local, sdata, current_sta, target_sta,
 				    IEEE80211_UHR_LINK_RECONFIG_PREPARE_RESP,
