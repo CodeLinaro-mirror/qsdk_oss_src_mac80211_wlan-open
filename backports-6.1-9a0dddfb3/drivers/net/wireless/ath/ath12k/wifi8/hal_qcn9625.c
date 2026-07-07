@@ -1227,7 +1227,7 @@ void ath12k_wifi8_hal_extract_rx_spd_data_qcn9625(struct hal_rx_spd_data *rx_inf
 			      ATH12K_DP_RX_FSE_FLOW_METADATA_MASK);
 }
 
-static int ath12k_wifi8_hal_srng_create_config_qcn9625(struct ath12k_hal *hal)
+int ath12k_wifi8_hal_srng_create_config_qcn9625(struct ath12k_hal *hal)
 {
 	struct hal_srng_config *s;
 
@@ -1546,16 +1546,17 @@ static const struct ath12k_hal_rdi_mapping ath12k_wifi8_hal_rdi_mapping_qcn9625[
 };
 #endif /* CPTCFG_EXT_IPA_OFFLOAD */
 
-static int ath12k_wifi8_hal_init_qcn9625(struct ath12k_hal *hal, u8 hw_version)
+int ath12k_wifi8_hal_init_qcn9625(struct ath12k_hal *hal, u8 hw_version)
 {
 	struct ath12k_hal_wifi8 *hal_wifi8;
 
 	switch (hw_version) {
 	case ATH12K_HW_QCN9625_HW10:
-	case ATH12K_HW_QCN9625_HW20:
 	case ATH12K_HW_QCN9589_HW10:
+	case ATH12K_HW_QCN9625_HW20:
 		hal->regs = &qcn9625_regs;
 		hal->hal_params = &ath12k_wifi8_hw_hal_params_qcn9625;
+		hal->hal_ops = &hal_qcn9625_ops;
 		break;
 	default:
 		return -EINVAL;
@@ -1563,7 +1564,6 @@ static int ath12k_wifi8_hal_init_qcn9625(struct ath12k_hal *hal, u8 hw_version)
 
 	hal->tcl_to_cmp_rbm_map = ath12k_wifi8_hal_tcl_to_cmp_rbm_map_qcn9625;
 	hal->rdi_mapping = ath12k_wifi8_hal_rdi_mapping_qcn9625;
-	hal->hal_ops = &hal_qcn9625_ops;
 	hal->hal_desc_sz = ath12k_wifi8_hal_get_rx_desc_size_qcn9625();
 	hal_wifi8 = kzalloc(sizeof(*hal_wifi8), GFP_KERNEL);
 	if (!hal_wifi8)
@@ -1575,13 +1575,13 @@ static int ath12k_wifi8_hal_init_qcn9625(struct ath12k_hal *hal, u8 hw_version)
 	return 0;
 }
 
-static void ath12k_wifi8_hal_deinit_qcn9625(struct ath12k_hal *hal)
+void ath12k_wifi8_hal_deinit_qcn9625(struct ath12k_hal *hal)
 {
 	kfree(hal->arch_data);
 	hal->arch_data = NULL;
 }
 
-static void ath12k_wifi8_hal_set_reg_writer_hptp_addr(struct ath12k_base *ab,
+void ath12k_wifi8_hal_set_reg_writer_hptp_addr(struct ath12k_base *ab,
 						      struct hal_srng *srng,
 						      int mac_id,
 						      int idx,

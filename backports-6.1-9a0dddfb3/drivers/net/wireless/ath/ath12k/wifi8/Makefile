@@ -16,6 +16,7 @@ ath12k_wifi8-y += core.o \
 		  hal_qcn9625.o\
 		  hal_mon.o \
 		  hal_mon_qcn9625.o \
+		  hal_qcn9625_v1.o \
 		  dp_peer.o\
 		  dp_ast.o \
 		  dp_tx_flow_info.o \
@@ -39,4 +40,3 @@ ath12k_wifi8-$(CPTCFG_EXT_IPA_OFFLOAD) += qcn_extns/ipa/dp_ipa_fse.o \
 					  qcn_extns/ipa/dp_ipa.o \
 					  qcn_extns/ipa/dp_ipa_rx.o \
 					  qcn_extns/ipa/dp_ipa_tx.o
-

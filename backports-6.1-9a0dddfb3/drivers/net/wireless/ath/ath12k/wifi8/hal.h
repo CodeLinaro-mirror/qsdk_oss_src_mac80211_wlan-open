@@ -2045,8 +2045,6 @@ enum rx_drop_reason_category {
 
 #define HAL_RX_PEER_STATS_BAND_INDEX_MSB		BIT(31)
 
-extern const struct hal_ops hal_qcn9625_ops;
-
 void ath12k_wifi8_hal_ce_dst_setup(struct ath12k_base *ab,
 				   struct hal_srng *srng, int ring_num);
 void ath12k_wifi8_hal_srng_dst_hw_init(struct ath12k_base *ab,
@@ -2104,7 +2102,7 @@ void ath12k_wifi8_hal_reo_qdesc_setup(struct hal_rx_reo_queue *qdesc,
 				      int tid, u32 ba_window_size,
 				      u32 start_seq, enum hal_pn_type type,
 				      u16 stats_id);
-u32 ath12k_hal_srng_get_cmd_size(enum hal_tlv_tag_be type);
+u32 ath12k_hal_srng_get_cmd_size(struct ath12k_base *ab, enum hal_tlv_tag_be type);
 void *ath12k_hal_srng_src_get_next_entry_by_cmd_size(struct ath12k_base *ab,
 						     struct hal_srng *srng,
 						     enum hal_tlv_tag_be type);

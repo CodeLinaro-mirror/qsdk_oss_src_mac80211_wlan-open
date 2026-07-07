@@ -2779,6 +2779,39 @@ struct hal_tqm_update_tx_msdu_flow {
 	__le32 rsvd0[5];
 } __packed;
 
+/*
+ * QCN9625 HW1.0 (E3R65) layout of hal_tqm_update_tx_msdu_flow. Identical to
+ * the HW2.0 (E3R86) struct above except the trailing reserved field: HW1.0 has
+ * a scalar rsvd0 (1 word) where HW2.0 grew it to rsvd0[5] (+16 bytes). All
+ * functional fields are at identical offsets, so a single packer fills either
+ * layout; only sizeof() — the TLV length written to the descriptor and the TQM
+ * command-ring entry size — differs. Keep this in sync with the struct above
+ * for every field except rsvd0.
+ */
+struct hal_tqm_update_tx_msdu_flow_hw10 {
+	struct hal_uniform_tqm_cmd_hdr cmd_hdr;
+	__le32 flow_queue_addr_31_0;
+	__le32 info0;
+	__le32 info1;
+	__le16 slow_drop_threshold;
+	__le16 medium_drop_threshold;
+	__le16 hard_drop_threshold;
+	__le16 sw_notification_threshold;
+	__le16 sw_notification_threshold_2;
+	__le16 sw_peer_id;
+	__le32 info2;
+	__le32 info3;
+	__le16 green_msdu_drop_threshold;
+	__le16 yellow_msdu_drop_threshold;
+	__le16 red_msdu_drop_threshold;
+	__le16 info4;
+	__le32 info5;
+	__le16 info6;
+	__le16 l4s_dropping_credit;
+	__le16 l4s_dropping_probability_numerator;
+	__le16 l4s_dropping_probability_denominator;
+	__le32 rsvd0;
+} __packed;
 #define HAL_TQM_FLOW_UPDSTAT_INFO0_REQUIREMENTS_NOT_MET	BIT(0)
 #define HAL_TQM_FLOW_UPDSTAT_INFO0_TX_FLOW_NUMBER	GENMASK(31, 8)
 

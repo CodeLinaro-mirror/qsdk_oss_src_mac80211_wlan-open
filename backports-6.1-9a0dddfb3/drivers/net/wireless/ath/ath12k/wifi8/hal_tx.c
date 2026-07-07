@@ -535,8 +535,19 @@ int ath12k_wifi8_hal_tqm_update_msduq(struct ath12k_base *ab,
 
 	update_params = &cmd->update_tx_msdu_params;
 
+	/*
+	 * HW1.0 (E3R65) and HW2.0 (E3R86) differ only in the trailing reserved
+	 * field of hal_tqm_update_tx_msdu_flow (scalar rsvd0 vs rsvd0[5], a
+	 * 16-byte difference). The TLV length must match the layout the hardware
+	 * expects; sending the HW2.0 size to HW1.0 would corrupt the TQM command
+	 * ring. Select the size from the version-specific struct so it stays
+	 * correct if either layout changes.
+	 */
 	tlv->tl = le64_encode_bits(HAL_TQM_UPDATE_MSDUQ_BO, HAL_TLV_HDR_TAG) |
-		  le64_encode_bits(sizeof(*desc), HAL_TLV_HDR_LEN);
+		  le64_encode_bits(ab->hw_rev == ATH12K_HW_QCN9625_HW10
+				   ? sizeof(struct hal_tqm_update_tx_msdu_flow_hw10)
+				   : sizeof(struct hal_tqm_update_tx_msdu_flow),
+				   HAL_TLV_HDR_LEN);
 
 	desc = (struct hal_tqm_update_tx_msdu_flow *)tlv->value;
 	memset(desc, 0, sizeof(*desc));
@@ -741,7 +752,7 @@ int ath12k_wifi8_hal_tqm_cmd_send(struct ath12k_base *ab, struct hal_srng *srng,
 		goto out;
 	}
 
-	cmd_size = ath12k_hal_srng_get_cmd_size(type);
+	cmd_size = ath12k_hal_srng_get_cmd_size(ab, type);
 	if (!cmd_size || cmd_size >= srng->ring_size ||
 	    cmd_size > HAL_TQM_CMD_MAX_WORDS) {
 		ret = -EINVAL;
@@ -1106,7 +1117,7 @@ int ath12k_wifi8_hal_tx_sam_cmd_send(struct ath12k_base *ab, struct hal_srng *sr
 		goto out;
 	}
 
-	cmd_size = ath12k_hal_srng_get_cmd_size(type);
+	cmd_size = ath12k_hal_srng_get_cmd_size(ab, type);
 	if (cmd_size > HAL_SAM_CMD_MAX_WORDS) {
 		ret = -EINVAL;
 		goto out;
