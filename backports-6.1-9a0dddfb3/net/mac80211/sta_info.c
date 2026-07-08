@@ -3354,6 +3354,9 @@ unsigned long ieee80211_sta_last_active(struct sta_info *sta, int link_id)
 		link_sta_info = wiphy_dereference(sta->local->hw.wiphy,
 						  sta->link[link_id]);
 
+	if (!link_sta_info)
+		return stats ? stats->last_rx : 0;
+
 	if (!link_sta_info->status_stats.last_ack ||
 	    time_after(stats->last_rx, link_sta_info->status_stats.last_ack))
 		return stats->last_rx;
