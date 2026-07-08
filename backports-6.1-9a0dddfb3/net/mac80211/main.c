@@ -1019,6 +1019,7 @@ struct ieee80211_hw *ieee80211_alloc_hw_nm(size_t priv_data_len,
 	local->airtime_flags = AIRTIME_USE_TX | AIRTIME_USE_RX;
 	local->aql_threshold = IEEE80211_AQL_THRESHOLD;
 	atomic_set(&local->aql_total_pending_airtime, 0);
+	local->addba_req_enable = true;
 
 	spin_lock_init(&local->handle_wake_tx_queue_lock);
 
