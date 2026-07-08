@@ -956,7 +956,7 @@ void ath12k_qos_stats_update(struct ath12k_dp_peer *mld_peer,
 	if (!mld_peer || !ts || !dp_pdev)
 		return;
 
-	if (!(skb->mark & QOS_VALID_TAG))
+	if (!(skb->mark & SDWF_VALID_MASK))
 		return;
 
 	msduq_id = u32_get_bits(skb->mark, SDWF_MSDUQ_ID);
