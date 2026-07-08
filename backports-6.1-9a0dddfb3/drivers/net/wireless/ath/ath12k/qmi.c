@@ -4248,6 +4248,7 @@ int ath12k_memdev_init(struct ath12k_base *ab, struct ath12k_mem_dev *mem_dev,
 		       const char *name)
 {
 	struct device *dev = &mem_dev->dev;
+	struct device_node *rmem_node;
 	int ret, idx;
 
 	memset(dev, 0, sizeof(*dev));
@@ -4274,6 +4275,17 @@ int ath12k_memdev_init(struct ath12k_base *ab, struct ath12k_mem_dev *mem_dev,
 		goto err_del;
 	}
 
+	rmem_node = of_parse_phandle(dev->of_node, "memory-region", idx);
+	if (!rmem_node || !of_property_read_bool(rmem_node, "reusable")) {
+		if (rmem_node)
+			of_node_put(rmem_node);
+		ath12k_dbg(ab, ATH12K_DBG_QMI,
+			   "reserved mem '%s' is not a shared CMA pool, skipping\n",
+			   name);
+		goto not_cma;
+	}
+	of_node_put(rmem_node);
+
 	ret = of_reserved_mem_device_init_by_idx(dev, dev->of_node, idx);
 	if (ret)
 		goto err_del;
@@ -4281,6 +4293,8 @@ int ath12k_memdev_init(struct ath12k_base *ab, struct ath12k_mem_dev *mem_dev,
 	mem_dev->rmem_inited = true;
 	return 0;
 
+not_cma:
+	ret = 0;
 err_del:
 	device_del(dev);
 	mem_dev->dev_registered = false;
@@ -4290,6 +4304,7 @@ err_put:
 	put_device(dev);
 	return ret;
 }
+EXPORT_SYMBOL(ath12k_memdev_init);
 
 void ath12k_memdev_deinit(struct ath12k_base *ab, struct ath12k_mem_dev *mem_dev)
 {
@@ -4312,6 +4327,7 @@ void ath12k_memdev_deinit(struct ath12k_base *ab, struct ath12k_mem_dev *mem_dev
 
 	put_device(dev);
 }
+EXPORT_SYMBOL(ath12k_memdev_deinit);
 #endif
 
 static void ath12k_qmi_free_mlo_mem_chunk(struct ath12k_base *ab,
@@ -4411,9 +4427,12 @@ void ath12k_qmi_free_target_mem_chunk(struct ath12k_base *ab)
 					ab->qmi.target_mem[i].v.ioaddr = NULL;
 				}
 #else
-				if (ab->qmi.target_mem[i].type == AFC_REGION_TYPE &&
-				    ab->hif.bus != ATH12K_BUS_HYBRID &&
-				    ab->qmi.target_mem[i].v.addr) {
+				if ((ab->qmi.target_mem[i].type == AFC_REGION_TYPE &&
+				     ab->hif.bus != ATH12K_BUS_HYBRID &&
+				     ab->qmi.target_mem[i].v.addr) ||
+				     (ab->qmi.target_mem[i].type ==
+				      MLO_GLOBAL_MEM_REGION_TYPE &&
+				      ab->mlo_mem_dev.rmem_inited)){
 					dma_free_coherent(dev,
 							  ab->qmi.target_mem[i].size,
 							  ab->qmi.target_mem[i].v.addr,
@@ -4950,6 +4969,7 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab,
 	int sz = 0, avail_sz;
 	int i, idx, ret;
 	u64 host_fw_req_total = 0;
+	struct device *dev;
 
 	mutex_lock(&ag->mutex);
 	ab->qmi.mem_seg_count = req_mem_seg_count;
@@ -5032,8 +5052,18 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab,
 				mlo_chunk->size = ab->qmi.target_mem[i].size;
 				mlo_chunk->type = ab->qmi.target_mem[i].type;
 				mlo_chunk->paddr = rmem->base;
-				mlo_chunk->v.ioaddr = ioremap(mlo_chunk->paddr,
-							      mlo_chunk->size);
+				if (ab->mlo_mem_dev.rmem_inited) {
+					dev = &ab->mlo_mem_dev.dev;
+					mlo_chunk->v.ioaddr =
+						dma_alloc_coherent(dev,
+								   mlo_chunk->size,
+								   &mlo_chunk->paddr,
+								   GFP_KERNEL |
+								   __GFP_NOWARN);
+				} else {
+					mlo_chunk->v.ioaddr = ioremap(mlo_chunk->paddr,
+								      mlo_chunk->size);
+				}
 				memset_io(mlo_chunk->v.ioaddr, 0, mlo_chunk->size);
 			}
 
