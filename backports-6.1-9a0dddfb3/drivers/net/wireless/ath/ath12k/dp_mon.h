@@ -1016,7 +1016,12 @@ struct ath12k_ext_mon_data_mpdu_tlv_config {
 };
 
 struct ath12k_ext_mon_pkt_config {
+	/* pkt tier: full TX_DATA payload + MPDU status TLVs; wire [15:0] */
 	u32 filter[ATH12K_EXT_MON_FRAME_MAX];
+	/* status tier: MPDU status TLVs only, no payload; wire [31:16].
+	 * TX-only; RX consumers never read this field.
+	 */
+	u32 status_filter[ATH12K_EXT_MON_FRAME_MAX];
 	u8 len[ATH12K_EXT_MON_FRAME_MAX];
 	struct ath12k_ext_mon_data_mpdu_tlv_config data_mpdu_tlv;
 };
@@ -2018,6 +2023,18 @@ ath12k_dp_ext_mon_is_mode_enabled(const struct ath12k_ext_mon_pkt_config *config
 
 	for (i = 0; i < ATH12K_EXT_MON_FRAME_MAX; i++)
 		if (config->filter[i])
+			return true;
+
+	return false;
+}
+
+static inline bool
+ath12k_dp_ext_mon_is_status_filter_set(const struct ath12k_ext_mon_pkt_config *config)
+{
+	u8 i;
+
+	for (i = 0; i < ATH12K_EXT_MON_FRAME_MAX; i++)
+		if (config->status_filter[i])
 			return true;
 
 	return false;

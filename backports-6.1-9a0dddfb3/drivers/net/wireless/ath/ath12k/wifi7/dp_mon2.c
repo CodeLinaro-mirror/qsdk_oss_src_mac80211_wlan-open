@@ -2376,6 +2376,21 @@ int ath12k_wifi7_dp_ext_mon_validate_request(struct ath12k_pdev_dp *dp_pdev,
 		}
 	}
 
+	/*
+	 * The status tier (-F / status_filter[]) programs HTT dwords 18-20,
+	 * which only exist on the wifi8 extended message layout (see
+	 * htt_tx_mon_cfg_version). wifi7 has no consumer for these fields;
+	 * reject explicitly instead of silently ignoring.
+	 */
+	if (ath12k_dp_ext_mon_is_status_filter_set(&req->filter.all_peer) ||
+	    ath12k_dp_ext_mon_is_status_filter_set(&req->filter.all_neighbor) ||
+	    ath12k_dp_ext_mon_is_status_filter_set(&req->filter.target_peer) ||
+	    ath12k_dp_ext_mon_is_status_filter_set(&req->filter.target_neighbor)) {
+		ath12k_warn(dp_pdev->dp,
+			    "status_filter is not supported on wifi7\n");
+		return -EINVAL;
+	}
+
 	return 0;
 }
 

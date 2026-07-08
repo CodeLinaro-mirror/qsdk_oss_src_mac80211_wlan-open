@@ -252,6 +252,7 @@ ath12k_vendor_ext_mon_pkt_config_policy[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_MAX +
 	[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER] = {.type = NLA_NESTED},
 	[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN] = {.type = NLA_NESTED},
 	[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_DATA_MPDU_TLV] = {.type = NLA_NESTED},
+	[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_STATUS_FILTER] = {.type = NLA_NESTED},
 };
 
 static const struct nla_policy
@@ -15922,6 +15923,55 @@ ath12k_ext_mon_extract_filter(struct nlattr *filter_attr,
 }
 
 static int
+ath12k_ext_mon_extract_status_filter(struct nlattr *filter_attr,
+				     struct ath12k_ext_mon_pkt_config *pkt)
+{
+	struct nlattr *tb[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER_MAX + 1];
+	int ret;
+
+	ret = nla_parse_nested(tb, QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER_MAX,
+			       filter_attr,
+			       ath12k_vendor_ext_mon_pkt_config_filter_policy,
+			       NULL);
+	if (ret) {
+		ath12k_err(NULL, "failed to parse ext mon status filter: %d\n", ret);
+		return ret;
+	}
+
+	if (tb[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER_MGMT]) {
+		u32 filter =
+			nla_get_u32(tb[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER_MGMT]);
+		if (filter & ~ATH12K_EXT_MON_FILTER_ALL) {
+			ath12k_err(NULL, "invalid mgmt status filter 0x%x\n", filter);
+			return -EINVAL;
+		}
+		pkt->status_filter[ATH12K_EXT_MON_FRAME_MGMT] = filter;
+	}
+
+	if (tb[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER_CTRL]) {
+		u32 filter =
+			nla_get_u32(tb[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER_CTRL]);
+		if (filter & ~ATH12K_EXT_MON_FILTER_ALL) {
+			ath12k_err(NULL, "invalid ctrl status filter 0x%x\n", filter);
+			return -EINVAL;
+		}
+		pkt->status_filter[ATH12K_EXT_MON_FRAME_CTRL] = filter;
+	}
+
+	if (tb[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER_DATA]) {
+		u32 filter =
+			nla_get_u32(tb[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER_DATA]);
+		if (filter & ~ATH12K_EXT_MON_FILTER_ALL) {
+			ath12k_err(NULL, "invalid data status filter 0x%x\n", filter);
+			return -EINVAL;
+		}
+		pkt->status_filter[ATH12K_EXT_MON_FRAME_DATA] = filter;
+	}
+
+	return 0;
+}
+
+static int
 ath12k_ext_mon_extract_filter_len(struct nlattr *len_attr,
 				  struct ath12k_ext_mon_pkt_config *pkt)
 {
@@ -16077,6 +16127,15 @@ ath12k_ext_mon_extract_pkt_config(struct nlattr *pkt_attr,
 			if (ret)
 				return ret;
 		}
+	}
+
+	if (tb[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_STATUS_FILTER]) {
+		struct nlattr *status_filter_attr =
+			tb[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_STATUS_FILTER];
+
+		ret = ath12k_ext_mon_extract_status_filter(status_filter_attr, pkt);
+		if (ret)
+			return ret;
 	}
 
 	return 0;
@@ -16364,6 +16423,11 @@ ath12k_ext_mon_get_pkt_attr_len(void)
 	len += nla_total_size(payload);
 
 	len += nla_total_size(3 * nla_total_size(sizeof(u8)));
+
+	/* status_filter nest: header + MGMT/CTRL/DATA u32 */
+	payload = ath12k_ext_mon_get_filter_attr_len();
+	len += nla_total_size(payload);
+
 	return len;
 }
 
@@ -16492,6 +16556,31 @@ ath12k_ext_mon_put_filter(struct sk_buff *skb,
 }
 
 static int
+ath12k_ext_mon_put_status_filter(struct sk_buff *skb,
+				 const struct ath12k_ext_mon_pkt_config *pkt)
+{
+	struct nlattr *attr;
+
+	attr = nla_nest_start(skb,
+			      QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_STATUS_FILTER);
+	if (!attr)
+		return -EMSGSIZE;
+
+	if (nla_put_u32(skb, QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER_MGMT,
+			pkt->status_filter[ATH12K_EXT_MON_FRAME_MGMT]) ||
+	    nla_put_u32(skb, QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER_CTRL,
+			pkt->status_filter[ATH12K_EXT_MON_FRAME_CTRL]) ||
+	    nla_put_u32(skb, QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER_DATA,
+			pkt->status_filter[ATH12K_EXT_MON_FRAME_DATA])) {
+		nla_nest_cancel(skb, attr);
+		return -EMSGSIZE;
+	}
+	nla_nest_end(skb, attr);
+
+	return 0;
+}
+
+static int
 ath12k_ext_mon_put_filter_len(struct sk_buff *skb,
 			      const struct ath12k_ext_mon_pkt_config *pkt)
 {
@@ -16563,6 +16652,10 @@ ath12k_ext_mon_put_pkt_config(struct sk_buff *skb, int attrtype,
 		if (ret)
 			goto err;
 	}
+
+	ret = ath12k_ext_mon_put_status_filter(skb, pkt);
+	if (ret)
+		goto err;
 
 	nla_nest_end(skb, attr);
 	return 0;
