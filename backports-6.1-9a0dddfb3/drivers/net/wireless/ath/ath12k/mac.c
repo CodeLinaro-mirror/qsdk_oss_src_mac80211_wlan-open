@@ -31655,24 +31655,60 @@ ath12k_mac_fill_npca_arg(struct ath12k_link_vif *arvif,
 			 struct ieee80211_chanctx_conf *chanctx_conf,
 			 struct ath12k_wmi_vdev_uhr_cu_arg *arg)
 {
+	const struct cfg80211_chan_def *def = &chanctx_conf->def;
+	struct ieee80211_channel *chan = def->chan;
+	struct ath12k_wmi_channel_params chan_info = {};
+	enum wmi_phy_mode mode;
+	u32 cf_device = 0;
+	u32 width_device = 0;
+
 	arg->npca.vdev_id = arvif->vdev_id;
 
 	if (!enabled)
 		goto out;
 
 	arg->npca.mode_tuple_field = WMI_NPCA_MODE_ENABLE | WMI_NPCA_MODE_UPDATE;
+
+	mode = ath12k_mac_get_phymode(arvif->ar, chan->band, def->width);
+
+	if (test_bit(WMI_TLV_SERVICE_SW_PROG_DFS_SUPPORT,
+		     arvif->ar->ab->wmi_ab.svc_map) &&
+	    cfg80211_chandef_device_present(def)) {
+		cf_device = def->center_freq_device;
+		width_device = def->width_device;
+	}
+
+	ath12k_wmi_put_channel_info(&chan_info, chan->center_freq,
+				    def->center_freq1,
+				    def->center_freq2,
+				    mode, cf_device, width_device);
+
 	/* Derive NPCA primary channel frequency from the primary channel
 	 * offset field in the IE and the current BSS channel definition.
 	 * The offset is in units of 20 MHz subchannels counted from the
 	 * lowest subchannel of the BSS bandwidth.
 	 */
 	arg->npca.mhz =
-		chanctx_conf->def.center_freq1 -
-		cfg80211_chandef_get_width(&chanctx_conf->def) / 2 +
+		def->center_freq1 -
+		cfg80211_chandef_get_width(def) / 2 +
 		10 +
 		le32_get_bits(npca->params,
 			      IEEE80211_UHR_NPCA_PARAMS_PRIMARY_CHAN_OFFS) * 20;
-	arg->npca.band_center_freq1 = chanctx_conf->def.center_freq1;
+	arg->npca.band_center_freq1 = le32_to_cpu(chan_info.band_center_freq1);
+	arg->npca.band_center_freq2 = le32_to_cpu(chan_info.band_center_freq2);
+	arg->npca.info = le32_to_cpu(chan_info.info);
+
+	if (chan->flags & IEEE80211_CHAN_RADAR)
+		arg->npca.info |= WMI_CHAN_INFO_DFS;
+
+	arg->npca.reg_info_1 =
+		le32_encode_bits(chan->max_power, WMI_CHAN_REG_INFO1_MAX_PWR) |
+		le32_encode_bits(chan->max_reg_power,
+				 WMI_CHAN_REG_INFO1_MAX_REG_PWR);
+	arg->npca.reg_info_2 =
+		le32_encode_bits(chan->max_antenna_gain,
+				 WMI_CHAN_REG_INFO2_ANT_MAX) |
+		le32_encode_bits(chan->max_power, WMI_CHAN_REG_INFO2_MAX_TX_PWR);
 
 	arg->npca.npca_cap1 =
 		le32_get_bits(npca->params,
@@ -31696,11 +31732,13 @@ ath12k_mac_fill_npca_arg(struct ath12k_link_vif *arvif,
 
 out:
 	ath12k_dbg(arvif->ar->ab, ATH12K_DBG_MAC | ATH12K_DBG_CU,
-		   "UHR NPCA vdev %u mode_tuple 0x%x mhz %u bcf1 %u cap1 0x%x cap2 0x%x\n",
+		   "UHR NPCA vdev %u mode_tuple 0x%x mhz %u bcf1 %u bcf2 %u info 0x%x cap1 0x%x cap2 0x%x\n",
 		   arvif->vdev_id,
 		   arg->npca.mode_tuple_field,
 		   arg->npca.mhz,
 		   arg->npca.band_center_freq1,
+		   arg->npca.band_center_freq2,
+		   arg->npca.info,
 		   arg->npca.npca_cap1,
 		   arg->npca.npca_cap2);
 }

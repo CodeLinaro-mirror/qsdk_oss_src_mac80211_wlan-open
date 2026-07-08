@@ -1884,42 +1884,85 @@ ath12k_wmi_check_device_present(u32 width_device,
 		center_freq_device != center_freq_oper);
 }
 
+/* Fill mhz, band_center_freq1/2, and the PHY-mode bits of chan->info.
+ *
+ * Pass non-zero cf_device/width_device for the SW-prog-DFS device-width path;
+ * pass 0/0 for the standard BSS-width path (mode and band_center_freq1 are
+ * used directly in that case).
+ */
+void
+ath12k_wmi_put_channel_info(struct ath12k_wmi_channel_params *chan,
+			    u32 freq, u32 band_center_freq1,
+			    u32 band_center_freq2,
+			    enum wmi_phy_mode mode,
+			    u32 cf_device, u32 width_device)
+{
+	u32 cf1;
+
+	chan->mhz = cpu_to_le32(freq);
+
+	if (cf_device && width_device) {
+		/* Device-width path: resolve mode and base centre freq from
+		 * the device channel width.
+		 */
+		switch (width_device) {
+		case NL80211_CHAN_WIDTH_320:
+			mode = MODE_11BE_EHT320;
+			break;
+		case NL80211_CHAN_WIDTH_160:
+			mode = MODE_11BE_EHT160;
+			break;
+		case NL80211_CHAN_WIDTH_80:
+			mode = MODE_11BE_EHT80;
+			break;
+		case NL80211_CHAN_WIDTH_40:
+			mode = MODE_11BE_EHT40;
+			break;
+		default:
+			mode = MODE_UNKNOWN;
+			break;
+		}
+		cf1 = cf_device;
+	} else {
+		/* BSS-width path: mode and centre freq already resolved by
+		 * the caller.
+		 */
+		cf1 = band_center_freq1;
+	}
+
+	/* Adjust band_center_freq1 and set band_center_freq2 for bandwidths
+	 * that split the spectrum into two 80 MHz segments.
+	 */
+	if (mode == MODE_11BN_UHR320 || mode == MODE_11BE_EHT320) {
+		chan->band_center_freq1 =
+			cpu_to_le32(freq > cf1 ? cf1 + 80 : cf1 - 80);
+		chan->band_center_freq2 = cpu_to_le32(cf1);
+	} else if (mode == MODE_11BN_UHR160 || mode == MODE_11BE_EHT160) {
+		chan->band_center_freq1 =
+			cpu_to_le32(freq > cf1 ? cf1 + 40 : cf1 - 40);
+		chan->band_center_freq2 = cpu_to_le32(cf1);
+	} else {
+		chan->band_center_freq1 = cpu_to_le32(cf1);
+		chan->band_center_freq2 = 0;
+	}
+
+	chan->info |= le32_encode_bits(mode, WMI_CHAN_INFO_MODE);
+}
+
 static void ath12k_wmi_set_wmi_channel_device(struct ath12k_wmi_channel_params *chan_device,
 					      struct wmi_vdev_start_req_arg *channel,
 					      u32 cf_device, u32 width_device)
 {
-	enum wmi_phy_mode mode_device;
-
 	memset(chan_device, 0, sizeof(*chan_device));
 
 	chan_device->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_CHANNEL,
 							 sizeof(*chan_device));
-	chan_device->mhz = cpu_to_le32(channel->freq);
-	chan_device->band_center_freq1 = cpu_to_le32(cf_device);
 
-	if (width_device == NL80211_CHAN_WIDTH_320) {
-		mode_device = MODE_11BE_EHT320;
-		if (channel->freq > chan_device->band_center_freq1)
-			chan_device->band_center_freq1 = cf_device + 80;
-		else
-			chan_device->band_center_freq1 = cf_device - 80;
-		chan_device->band_center_freq2 = cf_device;
-	} else if (width_device == NL80211_CHAN_WIDTH_160) {
-		mode_device = MODE_11BE_EHT160;
-		if (channel->freq > chan_device->band_center_freq1)
-			chan_device->band_center_freq1 = cf_device + 40;
-		else
-			chan_device->band_center_freq1 = cf_device - 40;
-		chan_device->band_center_freq2 = cf_device;
-	} else if (width_device == NL80211_CHAN_WIDTH_80) {
-		mode_device = MODE_11BE_EHT80;
-	} else if (width_device == NL80211_CHAN_WIDTH_40) {
-		mode_device = MODE_11BE_EHT40;
-	} else {
-		mode_device = MODE_UNKNOWN;
-	}
+	ath12k_wmi_put_channel_info(chan_device, channel->freq,
+				    channel->band_center_freq1,
+				    channel->band_center_freq2,
+				    MODE_UNKNOWN, cf_device, width_device);
 
-	chan_device->info |= le32_encode_bits(mode_device, WMI_CHAN_INFO_MODE);
 	if (channel->passive)
 		chan_device->info |= cpu_to_le32(WMI_CHAN_INFO_PASSIVE);
 	if (channel->allow_ibss)
@@ -1951,36 +1994,13 @@ static void ath12k_wmi_set_wmi_channel_device(struct ath12k_wmi_channel_params *
 static void ath12k_wmi_put_wmi_channel(struct ath12k_wmi_channel_params *chan,
 				       struct wmi_vdev_start_req_arg *arg)
 {
-	u32 center_freq1 = arg->band_center_freq1;
-
 	memset(chan, 0, sizeof(*chan));
 
-	chan->mhz = cpu_to_le32(arg->freq);
-	chan->band_center_freq1 = cpu_to_le32(arg->band_center_freq1);
-	if (arg->mode == MODE_11BN_UHR320 || arg->mode == MODE_11BE_EHT320) {
-		if (arg->freq > center_freq1)
-			chan->band_center_freq1 =
-					cpu_to_le32(center_freq1 + 80);
-		else
-			chan->band_center_freq1 =
-					cpu_to_le32(center_freq1 - 80);
+	ath12k_wmi_put_channel_info(chan, arg->freq,
+				    arg->band_center_freq1,
+				    arg->band_center_freq2,
+				    arg->mode, 0, 0);
 
-		chan->band_center_freq2 = cpu_to_le32(arg->band_center_freq1);
-	} else if (arg->mode == MODE_11BN_UHR160 ||
-		   arg->mode == MODE_11BE_EHT160) {
-		if (arg->freq > center_freq1)
-			chan->band_center_freq1 =
-					cpu_to_le32(center_freq1 + 40);
-		else
-			chan->band_center_freq1 =
-					cpu_to_le32(center_freq1 - 40);
-
-		chan->band_center_freq2 = cpu_to_le32(arg->band_center_freq1);
-	} else {
-		chan->band_center_freq2 = 0;
-	}
-
-	chan->info |= le32_encode_bits(arg->mode, WMI_CHAN_INFO_MODE);
 	if (arg->passive)
 		chan->info |= cpu_to_le32(WMI_CHAN_INFO_PASSIVE);
 	if (arg->allow_ibss)
@@ -3035,8 +3055,12 @@ int ath12k_wmi_vdev_uhr_cu_cmd(struct ath12k *ar,
 	npca->npca_chan.tlv_header =
 		ath12k_wmi_tlv_cmd_hdr(WMI_TAG_CHANNEL,
 				       sizeof(npca->npca_chan));
-	npca->npca_chan.mhz = cpu_to_le32(arg->npca.mhz);
+	npca->npca_chan.mhz            = cpu_to_le32(arg->npca.mhz);
 	npca->npca_chan.band_center_freq1 = cpu_to_le32(arg->npca.band_center_freq1);
+	npca->npca_chan.band_center_freq2 = cpu_to_le32(arg->npca.band_center_freq2);
+	npca->npca_chan.info           = cpu_to_le32(arg->npca.info);
+	npca->npca_chan.reg_info_1     = cpu_to_le32(arg->npca.reg_info_1);
+	npca->npca_chan.reg_info_2     = cpu_to_le32(arg->npca.reg_info_2);
 	npca->puncture_20mhz_bitmap = cpu_to_le32(arg->npca.puncture_20mhz_bitmap);
 	npca->npca_cap1 = cpu_to_le32(arg->npca.npca_cap1);
 	npca->npca_cap2 = cpu_to_le32(arg->npca.npca_cap2);
@@ -3118,9 +3142,10 @@ int ath12k_wmi_vdev_uhr_cu_cmd(struct ath12k *ar,
 		   "WMI vdev_uhr_cu_cmd dps: vdev_id %u mode_tuple_field 0x%x\n",
 		   arg->dps.vdev_id, arg->dps.mode_tuple_field);
 	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
-		   "WMI vdev_uhr_cu_cmd npca: vdev_id %u mode_tuple_field 0x%x mhz %u bcf1 %u puncture_bitmap 0x%x npca_cap1 0x%x npca_cap2 0x%x\n",
+		   "WMI vdev_uhr_cu_cmd npca: vdev_id %u mode_tuple_field 0x%x mhz %u bcf1 %u bcf2 %u info 0x%x puncture_bitmap 0x%x npca_cap1 0x%x npca_cap2 0x%x\n",
 		   arg->npca.vdev_id, arg->npca.mode_tuple_field,
 		   arg->npca.mhz, arg->npca.band_center_freq1,
+		   arg->npca.band_center_freq2, arg->npca.info,
 		   arg->npca.puncture_20mhz_bitmap,
 		   arg->npca.npca_cap1, arg->npca.npca_cap2);
 	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
