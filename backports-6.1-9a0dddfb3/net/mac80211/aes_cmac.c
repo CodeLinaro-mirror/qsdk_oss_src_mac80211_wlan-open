@@ -35,10 +35,16 @@ void ieee80211_aes_cmac(struct crypto_shash *tfm, const u8 *aad,
 	crypto_shash_update(desc, aad, AAD_LEN);
 	fc = (const __le16 *)aad;
 	if (ieee80211_is_beacon(*fc)) {
+		if (data_len < 8 + CMAC_TLEN)
+			return;
+
 		/* mask Timestamp field to zero */
 		crypto_shash_update(desc, zero, 8);
 		crypto_shash_update(desc, data + 8, data_len - 8 - CMAC_TLEN);
 	} else {
+		if (data_len < CMAC_TLEN)
+			return;
+
 		crypto_shash_update(desc, data, data_len - CMAC_TLEN);
 	}
 	crypto_shash_finup(desc, zero, CMAC_TLEN, out);
@@ -58,11 +64,17 @@ void ieee80211_aes_cmac_256(struct crypto_shash *tfm, const u8 *aad,
 	crypto_shash_update(desc, aad, AAD_LEN);
 	fc = (const __le16 *)aad;
 	if (ieee80211_is_beacon(*fc)) {
+		if (data_len < 8 + CMAC_TLEN_256)
+			return;
+
 		/* mask Timestamp field to zero */
 		crypto_shash_update(desc, zero, 8);
 		crypto_shash_update(desc, data + 8,
 				    data_len - 8 - CMAC_TLEN_256);
 	} else {
+		if (data_len < CMAC_TLEN_256)
+			return;
+
 		crypto_shash_update(desc, data, data_len - CMAC_TLEN_256);
 	}
 	crypto_shash_finup(desc, zero, CMAC_TLEN_256, mic);
