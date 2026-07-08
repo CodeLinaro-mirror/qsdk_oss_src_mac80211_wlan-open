@@ -241,6 +241,12 @@ ieee80211_smd_build_link_id_remap(struct ieee80211_sub_if_data *sdata,
 		target->sap_to_tap_link[sap_link_id] = tap_link_id;
 		if (tap_link_id != sap_link_id)
 			target->link_id_remap = true;
+
+		sdata_dbg(sdata, "smd: remap: tap[%d] bssid=%pM chan=%u band=%d -> sap[%d]\n",
+			  tap_link_id,
+			  target->assoc_data->link[tap_link_id].bss->bssid,
+			  target->assoc_data->link[tap_link_id].bss->channel->center_freq,
+			  tap_band, sap_link_id);
 	}
 }
 
@@ -1614,6 +1620,35 @@ out_free_sta:
 	return err;
 }
 
+/*
+ * Validate that a diff-links tap_to_sap_link[] map is bijective.
+ * Each TAP link must resolve to a distinct SAP slot.  If two TAP links share
+ * the same operating band and the SAP has only one slot of that band, both
+ * map to the same slot and no valid remap exists.
+ */
+static int
+ieee80211_smd_validate_link_id_remap(struct ieee80211_sub_if_data *sdata,
+				     struct ieee80211_smd_prep_target *target)
+{
+	u16 used_sap_slots = 0;
+	int tap_link_id;
+
+	for (tap_link_id = 0; tap_link_id < IEEE80211_MLD_MAX_NUM_LINKS; tap_link_id++) {
+		int sap_link_id = target->tap_to_sap_link[tap_link_id];
+
+		if (sap_link_id < 0 || !(target->prepared_links_mask & BIT(tap_link_id)))
+			continue;
+		if (used_sap_slots & BIT(sap_link_id)) {
+			sdata_info(sdata,
+				   "smd: remap collision on SAP slot %d, aborting SMD BSS Transition\n",
+				   sap_link_id);
+			return -EINVAL;
+		}
+		used_sap_slots |= BIT(sap_link_id);
+	}
+	return 0;
+}
+
 int
 ieee80211_smd_compute_prep_bitmaps(struct ieee80211_sub_if_data *sdata,
 				   struct ieee80211_smd_prep_target *target,
@@ -1667,6 +1702,16 @@ ieee80211_smd_compute_prep_bitmaps(struct ieee80211_sub_if_data *sdata,
 			   target->primary_link_id);
 		return -EINVAL;
 	}
+
+	/* A diff-links remap requires a bijective mapping between TAP and SAP
+	 * link slots: each TAP link must resolve to a distinct SAP slot.  If
+	 * two TAP links have the same operating band and the SAP has only one
+	 * slot of that band, both map to the same slot and no valid remap
+	 * exists. Reject early before any resource allocation.
+	 */
+	if (target->link_id_remap &&
+	    ieee80211_smd_validate_link_id_remap(sdata, target))
+		return -EINVAL;
 
 	target->transitioning_links =
 		target->prepared_links_mask & ~target->dl_drain_link_mask;

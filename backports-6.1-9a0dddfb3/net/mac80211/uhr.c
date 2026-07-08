@@ -770,23 +770,29 @@ static void ieee80211_process_smd_prep_resp(struct ieee80211_sub_if_data *sdata,
 
 	for (tap_link_id = 0; tap_link_id < IEEE80211_MLD_MAX_NUM_LINKS; tap_link_id++) {
 		struct cfg80211_bss *fresh_bss;
+		struct cfg80211_bss *old_bss = target->assoc_data->link[tap_link_id].bss;
 		const u8 *tap_bssid = target->assoc_data->link[tap_link_id].addr;
 
-		if (!target->assoc_data->link[tap_link_id].bss)
+		if (!old_bss)
 			continue;
 		if (is_zero_ether_addr(tap_bssid))
 			continue;
 
+		/* Refresh the BSS entry but constrain the lookup to the channel
+		 * the AP was operating on at PREP-request time.  Without this,
+		 * cfg80211_get_bss() may return a stale entry from a different
+		 * channel if the AP changed bands between the last scan and the
+		 * PREP response, producing a wrong band-to-SAP-slot remap.
+		 */
 		fresh_bss = cfg80211_get_bss(sdata->local->hw.wiphy,
-					     NULL, tap_bssid,
+					     old_bss->channel, tap_bssid,
 					     NULL, 0,
 					     IEEE80211_BSS_TYPE_ANY,
 					     IEEE80211_PRIVACY_ANY);
 		if (!fresh_bss)
 			continue;
 
-		cfg80211_put_bss(sdata->local->hw.wiphy,
-				 target->assoc_data->link[tap_link_id].bss);
+		cfg80211_put_bss(sdata->local->hw.wiphy, old_bss);
 		target->assoc_data->link[tap_link_id].bss = fresh_bss;
 	}
 
