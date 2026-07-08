@@ -3748,7 +3748,14 @@ ath12k_fill_transmit_type_mpdu_succ_tried(struct sk_buff *vendor_event,
 {
 	struct nlattr *attr, *tx_type_attr;
 	struct ath12k_tx_pkt_info *tx_type_info;
+	struct ath12k_htt_tx_ppdu_stats *tx_ppdu_stats =
+		link_peer_stats->tx_ppdu_stats;
 	int i;
+
+	if (!tx_ppdu_stats) {
+		ath12k_err(NULL, "link peer tx stats is NULL");
+		return -EINVAL;
+	}
 
 	attr = nla_nest_start(vendor_event,
 			      QCA_VENDOR_WLAN_TELEMETRY_TX_PPDU_STATS_TX_MPDU_SUC_TRD);
@@ -3767,7 +3774,7 @@ ath12k_fill_transmit_type_mpdu_succ_tried(struct sk_buff *vendor_event,
 		}
 
 		tx_type_info =
-			&link_peer_stats->tx_ppdu_stats->transmit_type_mpdu_succ_tried[i];
+			&tx_ppdu_stats->transmit_type_mpdu_succ_tried[i];
 
 		if (nla_put_u32(vendor_event,
 			QCA_VENDOR_WLAN_TELEMETRY_TX_PPDU_HTT_TX_PKT_INFO_NUM_MPDU,
