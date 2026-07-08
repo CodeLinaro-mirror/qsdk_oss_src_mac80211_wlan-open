@@ -730,6 +730,9 @@ void mesh_neighbour_update(struct ieee80211_sub_if_data *sdata,
 	if (!sta)
 		goto out;
 
+	if (!elems->mesh_config)
+		goto out;
+
 	sta->mesh->connected_to_gate = elems->mesh_config->meshconf_form &
 		IEEE80211_MESHCONF_FORM_CONNECTED_TO_GATE;
 
