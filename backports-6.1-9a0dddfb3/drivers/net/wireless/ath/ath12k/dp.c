@@ -614,7 +614,7 @@ int ath12k_dp_srng_alloc(struct ath12k_base *ab, struct dp_srng *ring,
 		case HAL_REO_DST:
 		case HAL_REO_DST_ROAMING:
 		case HAL_WBM2SW_RELEASE:
-#ifndef CPTCFG_EXT_IPA_OFFLOAD
+#ifndef PLATFORM_SDX
 			cached = true;
 			break;
 #endif

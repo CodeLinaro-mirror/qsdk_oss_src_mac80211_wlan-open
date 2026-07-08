@@ -29040,6 +29040,7 @@ static int ath12k_mac_setup(struct ath12k *ar)
 		ar->bdf_nf_chains[i] = 1;
 
 	spin_lock_init(&ar->data_lock);
+	spin_lock_init(&ar->dp.ppdu_list_lock);
 	spin_lock_init(&ar->arsta_lock);
 	INIT_LIST_HEAD(&ar->arvifs);
 	spin_lock_bh(&ar->arsta_lock);
