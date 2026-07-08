@@ -12741,6 +12741,34 @@ out_free_sta:
 	return ret;
 }
 
+/*
+ * Restore sdata->link[] slots that ieee80211_smd_assoc_success() replaced via
+ * __ieee80211_link_assign().  The old link data structs are parked (chanctx
+ * released by ieee80211_smd_stop_old_link()) but not freed; free_old_links()
+ * only runs on the success path.  Must be called before
+ * ieee80211_smd_free_target_links() so that sdata->link[] no longer points into
+ * the tgt_link objects that are about to be kfree'd.  synchronize_rcu() ensures
+ * all in-flight RCU readers see the restored pointers before the tgt_links are
+ * released.
+ */
+static void
+ieee80211_smd_rollback_link_assign(struct ieee80211_sub_if_data *sdata,
+				   struct ieee80211_smd_prep_target *target)
+{
+	unsigned int link_id;
+
+	for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS; link_id++) {
+		struct ieee80211_link_data *old = target->old_links[link_id];
+
+		if (!old)
+			continue;
+
+		__ieee80211_link_assign(sdata, link_id, old, old->conf);
+		target->old_links[link_id] = NULL;
+	}
+	synchronize_rcu();
+}
+
 int ieee80211_smd_prep_activate(struct ieee80211_sub_if_data *sdata,
 				struct ieee80211_smd_prep_target *target)
 {
@@ -12786,6 +12814,7 @@ int ieee80211_smd_prep_activate(struct ieee80211_sub_if_data *sdata,
 
 	target->assoc_data->assoc_link_id = target->primary_link_id;
 
+	current_sta->sta.is_uhr_link_reconf = true;
 	for_each_set_bit(link_id,
 			 (unsigned long *)&target->prep_transition_links,
 			 IEEE80211_MLD_MAX_NUM_LINKS) {
@@ -12795,9 +12824,11 @@ int ieee80211_smd_prep_activate(struct ieee80211_sub_if_data *sdata,
 
 		if (assoc_ret) {
 			ret = assoc_ret;
+			current_sta->sta.is_uhr_link_reconf = false;
 			goto out_free_links;
 		}
 	}
+	current_sta->sta.is_uhr_link_reconf = false;
 
 	/* smd_transitioning_links is indexed by SAP link_id, not TAP link_id.
 	 * For same-links topology the two spaces are identical; for diff-links
@@ -12839,16 +12870,33 @@ int ieee80211_smd_prep_activate(struct ieee80211_sub_if_data *sdata,
 	return 0;
 
 out_free_links:
+	ieee80211_smd_rollback_link_assign(sdata, target);
 	ieee80211_smd_free_target_links(target);
 	kfree(target->drv_info);
 	target->drv_info = NULL;
 	if (target->target_sta) {
-		sta_info_free(local, target->target_sta);
+		/* assoc_success() calls ieee80211_smd_sta_insert_and_auth()
+		 * which sets sta_inserted=true.  sta_info_free() must not be
+		 * called on an inserted STA; use __sta_info_destroy() instead,
+		 * matching the logic in ieee80211_smd_prep_reset_target().
+		 * A concurrent disconnect may cause __sta_info_destroy() to
+		 * fail; fall back to sta_info_free() to avoid leaking the object.
+		 */
+		if (target->sta_inserted) {
+			if (__sta_info_destroy(target->target_sta)) {
+				sdata_info(sdata,
+					   "smd: sta_info_destroy failed for %pM, freeing directly\n",
+					   target->target_sta->sta.addr);
+				sta_info_free(local, target->target_sta);
+			}
+			target->sta_inserted = false;
+		} else {
+			sta_info_free(local, target->target_sta);
+		}
 		target->target_sta = NULL;
 	}
 	return ret;
 }
-
 
 struct ieee80211_mgd_assoc_data *
 ieee80211_smd_create_assoc_data(struct ieee80211_sub_if_data *sdata,
