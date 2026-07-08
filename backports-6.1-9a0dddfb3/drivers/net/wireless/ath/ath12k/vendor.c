@@ -1847,6 +1847,7 @@ ath12k_wlan_telemetry_feat_policy[QCA_VENDOR_ATTR_WLAN_FEAT_MAX + 1] = {
 	[QCA_VENDOR_ATTR_WLAN_FEAT_JITTER] = {.type = NLA_FLAG},
 	[QCA_VENDOR_ATTR_WLAN_FEAT_SOJOURN] = {.type = NLA_FLAG},
 	[QCA_VENDOR_ATTR_WLAN_FEAT_MON_STATS] = {.type = NLA_FLAG},
+	[QCA_VENDOR_ATTR_WLAN_FEAT_TX_MON_STATS] = {.type = NLA_FLAG},
 };
 
 int ath12k_extract_feat_inputs(struct nlattr *tb_attr,
@@ -1896,6 +1897,9 @@ int ath12k_extract_feat_inputs(struct nlattr *tb_attr,
 
 	if (feat_attr[QCA_VENDOR_ATTR_WLAN_FEAT_SOJOURN])
 		cmd->feat.feat_sojourn = true;
+
+	if (feat_attr[QCA_VENDOR_ATTR_WLAN_FEAT_TX_MON_STATS])
+		cmd->feat.feat_tx_mon_stats = true;
 
 	return ret;
 }
@@ -2872,6 +2876,14 @@ static u32 ath12k_get_mon_stats_attr_size(void)
 	return nla_total_size_nested(payload_size);
 }
 
+static u32 ath12k_get_tx_mon_stats_attr_size(void)
+{
+	u32 payload_size;
+
+	payload_size = nla_total_size(sizeof(u32)) * QCA_VENDOR_ATTR_TX_MON_STATS_MAX;
+	return nla_total_size_nested(payload_size);
+}
+
 static int ath12k_get_feat_tx_peer_attr_size(void)
 {
 	struct ath12k_dp_peer_tx_stats tx_stats;
@@ -3515,6 +3527,9 @@ static int ath12k_get_dp_peer_attr_len(struct ath12k_telemetry_command *cmd)
 
 	if (cmd->feat.feat_sojourn)
 		total_size += ath12k_get_sojourn_stats_attr_size();
+
+	if (cmd->feat.feat_tx_mon_stats)
+		total_size += ath12k_get_tx_mon_stats_attr_size();
 
 	return total_size;
 }
@@ -9182,6 +9197,272 @@ static int ath12k_fill_radio_mon_stats(struct sk_buff *vendor_event,
 	return 0;
 }
 
+
+static int ath12k_fill_radio_tx_mon_stats(struct sk_buff *vendor_event,
+				       struct ath12k_pdev_dp *dp_pdev)
+{
+	struct ath12k_dp_tx_mon_stats *tx_mon_stats;
+	struct ath12k_pdev_tx_mon_stats *pdev_tx_mon_stats;
+	struct ath12k_dp_mon *dp_mon;
+
+	if (unlikely(!dp_pdev->dp_mon_pdev)) {
+		ath12k_err(NULL, "dp_mon_pdev not present");
+		return -ENODEV;
+	}
+
+	dp_mon = dp_pdev->dp_mon_pdev->dp_mon;
+
+	if (unlikely(!dp_mon || !dp_mon->dp_tx_mon)) {
+		ath12k_err(NULL, "dp_mon_tx not present");
+		return -ENODEV;
+	}
+
+	tx_mon_stats = &dp_mon->dp_tx_mon->tx_mon_stats;
+	ath12k_dp_mon_tx_update_buf_ownership_stats(dp_pdev->dp);
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_BUF_REPLENISHED,
+			tx_mon_stats->buf_replenished)) {
+		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s", "buf_replenished");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_BUF_IN_REAP,
+			tx_mon_stats->in_reap)) {
+		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s", "in_reap");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_BUF_IN_HARDWARE,
+			tx_mon_stats->with_hw)) {
+		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
+			"buf_with_hardware");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_BUF_FREE,
+			tx_mon_stats->free)) {
+		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s", "free");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_BUF_REPLENISH_ERR,
+			tx_mon_stats->replenish_err)) {
+		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
+			"replenish_err");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_BUF_PROC_ERR,
+			tx_mon_stats->proc_err)) {
+		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
+			"proc_err");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_TX_MON_STATS_BUF_ALLOC_FAILED,
+			tx_mon_stats->alloc_fail)) {
+		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
+			"alloc_fail");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_BUF_DMA_FAILED,
+			tx_mon_stats->dma_fail)) {
+		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
+			"dma_fail");
+		return -EMSGSIZE;
+	}
+
+	if (unlikely(!dp_pdev->dp_mon_pdev->dp_pdev_tx_mon)) {
+		ath12k_err(NULL, "dp_pdev_tx_mon not present");
+		return -ENODEV;
+	}
+
+	pdev_tx_mon_stats = &dp_pdev->dp_mon_pdev->dp_pdev_tx_mon->pdev_tx_mon_stats;
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_NUM_BUFS_REAPED,
+			pdev_tx_mon_stats->num_bufs_reaped)) {
+		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s", "num_bufs_reaped");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_TRUNCATED_BUF,
+			pdev_tx_mon_stats->truncated_buf)) {
+		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s", "truncated_buf");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_FLUSHED_BUF,
+			pdev_tx_mon_stats->flushed_buf)) {
+		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s", "flushed_buf");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_NULL_BUF,
+			pdev_tx_mon_stats->null_buf)) {
+		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s", "null_buf");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_MON_DESC_FREE,
+			pdev_tx_mon_stats->mon_desc_free)) {
+		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s", "mon_desc_free");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_PKT_BUF_NULL,
+			pdev_tx_mon_stats->pkt_buf_null)) {
+		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s", "pkt_buf_null");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_STATUS_BUF_NULL,
+			pdev_tx_mon_stats->status_buf_null)) {
+		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s", "status_buf_null");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_PREP_WQ_FAILED,
+			pdev_tx_mon_stats->prep_wq_failed)) {
+		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s", "prep_wq_failed");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_EMPTY_DESCRIPTORS,
+			pdev_tx_mon_stats->empty_descriptor)) {
+		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
+			"empty_descriptor");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_PPDU_PROCESSED,
+			pdev_tx_mon_stats->ppdu_processed)) {
+		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s", "ppdu_processed");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_STATUS_DESC_PROCESSED,
+			pdev_tx_mon_stats->status_desc_processed)) {
+		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
+			"status_desc_processed");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_PPDU_DESC_OVERFLOW,
+			pdev_tx_mon_stats->ppdu_desc_overflow)) {
+		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
+			"ppdu_desc_overflow");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_ZERO_STATUS_DESC,
+			pdev_tx_mon_stats->zero_status_desc)) {
+		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
+			"zero_status_desc");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_PPDU_PREP_FAILED,
+			pdev_tx_mon_stats->ppdu_prep_failed)) {
+		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
+			"ppdu_prep_failed");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_TLV_PROCESS_FAILED,
+			pdev_tx_mon_stats->tlv_process_failed)) {
+		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
+			"tlv_process_failed");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_DATA_GEN_FAILED,
+			pdev_tx_mon_stats->data_gen_failed)) {
+		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
+			"data_gen_failed");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_BUF_EXTRACT_FAILED,
+			pdev_tx_mon_stats->buf_extract_failed)) {
+		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
+			"buf_extract_failed");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_MAGIC_VALUE_ERROR,
+			pdev_tx_mon_stats->magic_value_error)) {
+		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
+			"magic_value_error");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_PKT_TLV_FREE,
+			pdev_tx_mon_stats->pkt_tlv_free)) {
+		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s", "pkt_tlv_free");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_STATUS_BUF_FREE,
+			pdev_tx_mon_stats->status_buf_free)) {
+		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
+			"status_buf_free");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_MU_USER_FRAME,
+			pdev_tx_mon_stats->mu_user_frame)) {
+		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
+			"mu_user_frame");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_DATA_PPDU_DELIVERED,
+			pdev_tx_mon_stats->data_ppdu_delivered)) {
+		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
+			"data_ppdu_delivered");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_PROT_PPDU_DELIVERED,
+			pdev_tx_mon_stats->prot_ppdu_delivered)) {
+		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
+			"prot_ppdu_delivered");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_SELF_GEN_FAILED,
+			pdev_tx_mon_stats->self_gen_failed)) {
+		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
+			"self_gen_failed");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_SKB_ALLOC_FAILED,
+			pdev_tx_mon_stats->skb_alloc_failed)) {
+		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
+			"skb_alloc_failed");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_RING_EXTRACT_FAILED,
+			pdev_tx_mon_stats->ring_extract_failed)) {
+		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
+			"ring_extract_failed");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_GET_NUM_USERS_FAILED,
+			pdev_tx_mon_stats->get_num_users_failed)) {
+		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
+			"get_num_users_failed");
+		return -EMSGSIZE;
+	}
+
+	return 0;
+}
+
 static int ath12k_prepare_radio_vendor_event(struct sk_buff *vendor_event,
 					     struct ath12k_pdev_dp *dp_pdev,
 					     struct ath12k_telemetry_command *cmd)
@@ -9339,6 +9620,28 @@ static int ath12k_prepare_radio_vendor_event(struct sk_buff *vendor_event,
 			nla_nest_end(vendor_event, attr);
 		} else {
 			ath12k_err(ab, "nla nest failure: Radio mon feat stats");
+			goto out;
+		}
+	}
+
+	if (cmd->feat.feat_tx_mon_stats) {
+		if (!ath12k_dp_tx_mon_feature_eval(dp_pdev->dp)) {
+			ath12k_err(NULL, "TX monitor feature not available");
+			goto out;
+		}
+
+		attr = nla_nest_start(vendor_event,
+				      QCA_VENDOR_ATTR_WLAN_TELEMETRY_TX_MON_STATS_EVENT);
+		if (attr) {
+			if (ath12k_fill_radio_tx_mon_stats(vendor_event, dp_pdev)) {
+				ath12k_err(ab,
+					   "Error filling radio tx mon feat stats");
+				nla_nest_cancel(vendor_event, attr);
+				goto out;
+			}
+			nla_nest_end(vendor_event, attr);
+		} else {
+			ath12k_err(ab, "nla nest failure: Radio tx mon feat stats");
 			goto out;
 		}
 	}
