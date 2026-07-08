@@ -107,7 +107,8 @@ void ath12k_wifi8_hal_srng_idx_update_addr(struct ath12k_base *ab, struct hal_sr
 				reg_base + HAL_TCL1_RING_TP_ADDR_MSB_OFFSET(hal),
 				((u64)tp_paddr >> HAL_ADDR_MSB_REG_SHIFT));
 		srng->u.src_ring.tp_addr = tp_vaddr;
-		ath12k_info(ab, "PPEDS SRC_SRNG tp_paddr:%pad tp_vaddr:%p ring_id:%d\n",
+		ath12k_dbg(ab, ATH12K_DBG_HAL,
+				"PPEDS SRC_SRNG tp_paddr:%pad tp_vaddr:%p ring_id:%d\n",
 				&tp_paddr, tp_vaddr, srng->ring_id);
 	} else {
 		ath12k_hif_write32(ab,
@@ -117,7 +118,8 @@ void ath12k_wifi8_hal_srng_idx_update_addr(struct ath12k_base *ab, struct hal_sr
 				reg_base + ath12k_hal_reo1_ring_hp_addr_msb_offset(hal),
 				((u64)hp_paddr >> HAL_ADDR_MSB_REG_SHIFT));
 		srng->u.dst_ring.hp_addr = hp_vaddr;
-		ath12k_info(ab, "PPEDS DST_SRNG hp_paddr:%pad hp_vaddr:%p ring_id:%d\n",
+		ath12k_dbg(ab, ATH12K_DBG_HAL,
+				"PPEDS DST_SRNG hp_paddr:%pad hp_vaddr:%p ring_id:%d\n",
 				&hp_paddr, hp_vaddr, srng->ring_id);
 	}
 

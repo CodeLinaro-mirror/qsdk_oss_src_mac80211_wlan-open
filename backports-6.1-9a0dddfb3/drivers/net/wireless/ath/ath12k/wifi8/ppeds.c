@@ -1023,7 +1023,8 @@ int ath12k_wifi8_dp_ppeds_start(struct ath12k_base *ab)
 						      ab->dp->ppe.ds_node_id) != 0)
 		return -EINVAL;
 
-	ath12k_info(ab, "PPEDS start success device_id %d ds_node_id %d ppeds_soc_idx %d",
+	ath12k_dbg(ab, ATH12K_DBG_PPE,
+			"PPEDS start success device_id %d ds_node_id %d ppeds_soc_idx %d",
 			ab->device_id, ab->dp->ppe.ds_node_id, ab->dp->ppe.ppeds_soc_idx);
 	return 0;
 }
@@ -1113,10 +1114,12 @@ int ath12k_wifi8_dp_ppeds_register_soc(struct ath12k_dp *dp, struct dp_ppe_ds_id
 		ring_info->ppe2tcl_ba[ring_idx] = dp->ppe.ppe2tcl_ring[ring_idx].paddr;
 		ring_info->ppe2tcl_num_desc[ring_idx] = DP_PPE2TCL_RING_SIZE;
 		ring_info->num_ppe2tcl = ath12k_ppeds_ppe2tcl_rings_max;
-		ath12k_info(ab, "PPEDS reg - PPE2TCL ring_id:%d ppe2tcl_ring:%p\n",
+		ath12k_dbg(ab, ATH12K_DBG_PPE,
+				"PPEDS reg - PPE2TCL ring_id:%d ppe2tcl_ring:%p\n",
 				dp->ppe.ppe2tcl_ring[ring_idx].ring_id,
 				ppe2tcl_ring);
-		ath12k_info(ab, "PPEDS PPE2TCL num_desc:%d num_rings:%d\n",
+		ath12k_dbg(ab, ATH12K_DBG_PPE,
+				"PPEDS PPE2TCL num_desc:%d num_rings:%d\n",
 				ring_info->ppe2tcl_num_desc[ring_idx],
 				ring_info->num_ppe2tcl);
 
@@ -1131,13 +1134,16 @@ int ath12k_wifi8_dp_ppeds_register_soc(struct ath12k_dp *dp, struct dp_ppe_ds_id
 			txrx_info->wlan_ppe2tcl_hp_addr[ring_idx].paddr = reg_paddr;
 			txrx_info->wlan_ppe2tcl_hp_addr[ring_idx].vaddr =
 							ppe2tcl_ring->u.src_ring.hp_addr;
-			ath12k_info(ab, "PPEDS - Data ring auto index - reg_offset:%x\n",
+			ath12k_dbg(ab, ATH12K_DBG_PPE,
+					"PPEDS - Data ring auto index - reg_offset:%x\n",
 					reg_offset);
-			ath12k_info(ab, "PPEDS - ppe2tcl_paddr:%pad vaddr:%p\n",
+			ath12k_dbg(ab, ATH12K_DBG_PPE,
+					"PPEDS - ppe2tcl_paddr:%pad vaddr:%p\n",
 					&reg_paddr, ppe2tcl_ring->u.src_ring.hp_addr);
 			reg_info.wifi8_cfg.data_ring_auto_index_en = true;
 		} else {
-			ath12k_info(ab, "PPEDS - Data ring auto index disabled\n");
+			ath12k_dbg(ab, ATH12K_DBG_PPE,
+					"PPEDS - Data ring auto index disabled\n");
 		}
 
 	}
@@ -1147,10 +1153,12 @@ int ath12k_wifi8_dp_ppeds_register_soc(struct ath12k_dp *dp, struct dp_ppe_ds_id
 		ring_info->reo2ppe_ba[ring_idx] = dp->ppe.reo2ppe_ring[ring_idx].paddr;
 		ring_info->reo2ppe_num_desc[ring_idx] = DP_REO2PPE_RING_SIZE;
 		ring_info->num_reo2ppe = ath12k_ppeds_reo2ppe_rings_max;
-		ath12k_info(ab, "PPEDS reg - REO2PPE ring_id:%d reo2ppe_ring:%p\n",
+		ath12k_dbg(ab, ATH12K_DBG_PPE,
+				"PPEDS reg - REO2PPE ring_id:%d reo2ppe_ring:%p\n",
 				dp->ppe.reo2ppe_ring[ring_idx].ring_id,
 				reo2ppe_ring);
-		ath12k_info(ab, "PPEDS REO2PPE ring_size:%d num_reo2ppe_ring:%d\n",
+		ath12k_dbg(ab, ATH12K_DBG_PPE,
+				"PPEDS REO2PPE ring_size:%d num_reo2ppe_ring:%d\n",
 				ring_info->reo2ppe_num_desc[ring_idx],
 				ring_info->num_reo2ppe);
 
@@ -1166,13 +1174,16 @@ int ath12k_wifi8_dp_ppeds_register_soc(struct ath12k_dp *dp, struct dp_ppe_ds_id
 			txrx_info->wlan_reo2ppe_tp_addr[ring_idx].paddr = reg_paddr;
 			txrx_info->wlan_reo2ppe_tp_addr[ring_idx].vaddr =
 					reo2ppe_ring->u.dst_ring.tp_addr;
-			ath12k_info(ab, "PPEDS  - Data ring auto index - reg_offset:%x\n",
+			ath12k_dbg(ab, ATH12K_DBG_PPE,
+					"PPEDS  - Data ring auto index - reg_offset:%x\n",
 					reg_offset);
-			ath12k_info(ab, "PPEDS - reo2ppe_paddr:%pad vaddr:%p\n",
+			ath12k_dbg(ab, ATH12K_DBG_PPE,
+					"PPEDS - reo2ppe_paddr:%pad vaddr:%p\n",
 					&reg_paddr, reo2ppe_ring->u.dst_ring.tp_addr);
 			reg_info.wifi8_cfg.data_ring_auto_index_en = true;
 		} else {
-			ath12k_info(ab, "PPEDS - Data ring auto index disabled\n");
+			ath12k_dbg(ab, ATH12K_DBG_PPE,
+					"PPEDS - Data ring auto index disabled\n");
 		}
 
 	}
@@ -1183,20 +1194,23 @@ int ath12k_wifi8_dp_ppeds_register_soc(struct ath12k_dp *dp, struct dp_ppe_ds_id
 		tqm2ppe_ring = &ab->hal.srng_list[dp->ppe.tqm2ppe_txcmp_ring.ring_id];
 		ppe2wbm_ring = &ab->hal.srng_list[ring_id];
 
-		ath12k_info(ab, "PPEDS:HBM - TQM2PPE ring_id:%d PPE2WBM ring_id:%d\n",
+		ath12k_dbg(ab, ATH12K_DBG_PPE,
+				"PPEDS:HBM - TQM2PPE ring_id:%d PPE2WBM ring_id:%d\n",
 				dp->ppe.tqm2ppe_txcmp_ring.ring_id,
 				dp_wifi8->ppe2wbm_refill_ring[0].ring_id);
 
 		/* HW buffer manager - TQM2PPE ring and PPE2WBM */
 		hbm_ring_info->tqm2ppe_ba = dp->ppe.tqm2ppe_txcmp_ring.paddr;
 		hbm_ring_info->tqm2ppe_num_desc = DP_TQM2PPE_RING_SIZE;
-		ath12k_info(ab, "PPEDS:HBM tqm2ppe_ba:%pad num_desc:%u\n",
+		ath12k_dbg(ab, ATH12K_DBG_PPE,
+				"PPEDS:HBM tqm2ppe_ba:%pad num_desc:%u\n",
 				&hbm_ring_info->tqm2ppe_ba,
 				hbm_ring_info->tqm2ppe_num_desc);
 
 		hbm_ring_info->ppe2wbm_ba = dp_wifi8->ppe2wbm_refill_ring[0].paddr;
 		hbm_ring_info->ppe2wbm_num_desc = ath12k_ppeds_ppe2wbm_ring_size;
-		ath12k_info(ab, "PPEDS:HBM pp2wbm_ba:%pad num_desc:%u\n",
+		ath12k_dbg(ab, ATH12K_DBG_PPE,
+				"PPEDS:HBM pp2wbm_ba:%pad num_desc:%u\n",
 				&hbm_ring_info->ppe2wbm_ba,
 				hbm_ring_info->ppe2wbm_num_desc);
 
@@ -1209,7 +1223,8 @@ int ath12k_wifi8_dp_ppeds_register_soc(struct ath12k_dp *dp, struct dp_ppe_ds_id
 		hbm_txrx_info->wlan_tqm2ppe_tp_addr.vaddr =
 							tqm2ppe_ring->u.dst_ring.tp_addr;
 
-		ath12k_info(ab, "PPEDS:HBM - TQM2PPE auto idx tqm2ppe_tp:%x paddr %pad\n",
+		ath12k_dbg(ab, ATH12K_DBG_PPE,
+				"PPEDS:HBM - TQM2PPE auto idx tqm2ppe_tp:%x paddr %pad\n",
 				reg_offset, &reg_paddr);
 
 		/* ======HW buffer manager - PPE2WBM ring  auto index set ======*/
@@ -1221,7 +1236,8 @@ int ath12k_wifi8_dp_ppeds_register_soc(struct ath12k_dp *dp, struct dp_ppe_ds_id
 		hbm_txrx_info->wlan_ppe2wbm_hp_addr.vaddr =
 							ppe2wbm_ring->u.src_ring.hp_addr;
 
-		ath12k_info(ab, "PPEDS:HBM - PPE2WBM auto idx ppe2wbm_hp:%x paddr %pad\n",
+		ath12k_dbg(ab, ATH12K_DBG_PPE,
+				"PPEDS:HBM - PPE2WBM auto idx ppe2wbm_hp:%x paddr %pad\n",
 				reg_offset, &reg_paddr);
 
 		reg_info.wifi8_cfg.hw_buff_mgmt_en = true;
@@ -1248,7 +1264,8 @@ int ath12k_wifi8_dp_ppeds_register_soc(struct ath12k_dp *dp, struct dp_ppe_ds_id
 
 			ppe2tcl_ring = &ab->hal.srng_list[ring_id];
 
-			ath12k_info(ab, "PPEDS:HBM auto_idx ring_id:%d ppe2tcl_ring:%p\n",
+			ath12k_dbg(ab, ATH12K_DBG_PPE,
+					"PPEDS:HBM auto_idx ring_id:%d ppe2tcl_ring:%p\n",
 					dp->ppe.ppe2tcl_ring[ring_idx].ring_id,
 					ppe2tcl_ring);
 			ab->hal.hal_ops->hal_srng_idx_update_addr(ab,
@@ -1256,7 +1273,8 @@ int ath12k_wifi8_dp_ppeds_register_soc(struct ath12k_dp *dp, struct dp_ppe_ds_id
 					txrx_info->edma_rxdesc_cons_addr[ring_idx].vaddr,
 					txrx_info->edma_rxdesc_cons_addr[ring_idx].paddr);
 
-			ath12k_info(ab, "PPEDS:HBM PPE2TCL srng change idx ptr done\n");
+			ath12k_dbg(ab, ATH12K_DBG_PPE,
+					"PPEDS:HBM PPE2TCL srng change idx ptr done\n");
 		}
 
 		reo2ppe_rings_max = ath12k_ppeds_reo2ppe_rings_max;
@@ -1273,7 +1291,8 @@ int ath12k_wifi8_dp_ppeds_register_soc(struct ath12k_dp *dp, struct dp_ppe_ds_id
 			ring_id = dp->ppe.reo2ppe_ring[ring_idx].ring_id;
 			reo2ppe_ring =  &ab->hal.srng_list[ring_id];
 
-			ath12k_info(ab, "PPEDS:HBM auto_idx ring_id:%d reo2ppe_ring:%p\n",
+			ath12k_dbg(ab, ATH12K_DBG_PPE,
+					"PPEDS:HBM auto_idx ring_id:%d reo2ppe_ring:%p\n",
 					dp->ppe.reo2ppe_ring[ring_idx].ring_id,
 					reo2ppe_ring);
 			ab->hal.hal_ops->hal_srng_idx_update_addr(ab, reo2ppe_ring,
@@ -1281,7 +1300,8 @@ int ath12k_wifi8_dp_ppeds_register_soc(struct ath12k_dp *dp, struct dp_ppe_ds_id
 					txrx_info->edma_txdesc_prod_addr[ring_idx].paddr,
 					NULL, 0);
 
-			ath12k_info(ab, "PPEDS:HBM REO2PPE srng change idx ptr done\n");
+			ath12k_dbg(ab, ATH12K_DBG_PPE,
+					"PPEDS:HBM REO2PPE srng change idx ptr done\n");
 		}
 
 		/*
@@ -1306,7 +1326,8 @@ int ath12k_wifi8_dp_ppeds_register_soc(struct ath12k_dp *dp, struct dp_ppe_ds_id
 					reg_info.wifi7_cfg.ppe_ds_int_mode_enabled;
 	}
 
-	ath12k_info(ab, "PPEDS register success\n");
+	ath12k_dbg(ab, ATH12K_DBG_PPE,
+			"PPEDS register success\n");
 	ath12k_dbg(ab,
 		ATH12K_DBG_PPE,
 		"PPEDS register success device_id:%d ppe2tcl_idx:0x%x reo2ppe_idx:0x%x",
@@ -1515,7 +1536,8 @@ int ath12k_wifi8_dp_srng_ppeds_init(struct ath12k_base *ab)
 			ath12k_warn(ab, "failed to set up reo2ppe ring :%d\n", ret);
 			goto err;
 		}
-		ath12k_info(ab, "PPEDS SRNG init reo2ppe[%d] ring_id=%d restore_idx=%d\n",
+		ath12k_dbg(ab, ATH12K_DBG_PPE,
+				"PPEDS SRNG init reo2ppe[%d] ring_id=%d restore_idx=%d\n",
 				idx, dp->ppe.reo2ppe_ring[idx].ring_id,
 				restore_idx.reo2ppe_start_idx);
 	}
@@ -1530,7 +1552,8 @@ int ath12k_wifi8_dp_srng_ppeds_init(struct ath12k_base *ab)
 			goto err;
 		}
 
-		ath12k_info(ab, "Init ppe2tcl[%d] ring_id=%d restore_idx=%d\n",
+		ath12k_dbg(ab, ATH12K_DBG_PPE,
+				"Init ppe2tcl[%d] ring_id=%d restore_idx=%d\n",
 				idx,
 				dp->ppe.ppe2tcl_ring[idx].ring_id,
 				restore_idx.ppe2tcl_start_idx);
