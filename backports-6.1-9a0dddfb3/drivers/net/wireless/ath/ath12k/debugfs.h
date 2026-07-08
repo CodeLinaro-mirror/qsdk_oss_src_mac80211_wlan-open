@@ -27,6 +27,9 @@ struct ath12k;
 #define SMART_MON_FILTER_M	BIT(2)
 #define SMART_MON_FILTER_C	BIT(3)
 
+#define ATH12K_DBG_RESET_STR "reset"
+#define ATH12K_DBG_RESET_STR_LEN sizeof("reset")
+
 enum ath12k_dbg_aggr_mode {
 	ATH12K_DBG_AGGR_MODE_AUTO,
 	ATH12K_DBG_AGGR_MODE_MANUAL,

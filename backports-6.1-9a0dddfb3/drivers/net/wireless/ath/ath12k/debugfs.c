@@ -7086,6 +7086,83 @@ static const struct file_operations ath12k_fops_set_sta_primary_link = {
 	.llseek = default_llseek,
 };
 
+static ssize_t
+ath12k_write_reset_dp_tx_mon_stats(struct file *file,
+						const char __user *user_buf,
+						size_t count, loff_t *ppos)
+{
+	struct ath12k_hw *ah = file->private_data;
+	struct ath12k *ar;
+	struct ath12k_base *ab, *prev_ab = NULL;
+	struct ath12k_dp *dp;
+	struct ath12k_pdev_dp *pdev;
+	struct ath12k_dp_mon *mon_dp;
+	struct ath12k_pdev_mon_dp *pdev_mon_dp;
+	struct ath12k_dp_tx_mon_stats *tx_mon_stats;
+	struct ath12k_pdev_tx_mon_stats *pdev_tx_mon_stats;
+	char buf[ATH12K_DBG_RESET_STR_LEN + 1] = {0};
+	int i, idx;
+
+	if (!ah->num_radio)
+		return -EINVAL;
+
+	if (count > sizeof(buf) - 1)
+		return -EINVAL;
+
+	if (copy_from_user(buf, user_buf, count))
+		return -EFAULT;
+
+	if (strncmp(buf, ATH12K_DBG_RESET_STR,
+		    ATH12K_DBG_RESET_STR_LEN - 1) ||
+	    (buf[ATH12K_DBG_RESET_STR_LEN - 1] != '\n' &&
+	     buf[ATH12K_DBG_RESET_STR_LEN - 1] != '\0'))
+		return -EINVAL;
+
+	wiphy_lock(ah->hw->wiphy);
+
+	for_each_ar(ah, ar, idx) {
+		if (ar->ab == prev_ab)
+			continue;
+		prev_ab = ar->ab;
+		ab = ar->ab;
+		dp = ath12k_ab_to_dp(ab);
+		if (!ath12k_dp_tx_mon_feature_eval(dp))
+			continue;
+
+		mon_dp = dp->dp_mon;
+		if (!mon_dp)
+			continue;
+
+		tx_mon_stats = &mon_dp->dp_tx_mon->tx_mon_stats;
+
+		memset(tx_mon_stats, 0, sizeof(struct ath12k_dp_tx_mon_stats));
+
+		for (i = 0; i < ah->num_radio; i++) {
+			if (ah->radio[i].ab != ab)
+				continue;
+
+			pdev = &ah->radio[i].dp;
+			pdev_mon_dp = pdev->dp_mon_pdev;
+			if (unlikely(!pdev_mon_dp))
+				continue;
+
+			pdev_tx_mon_stats =
+				&pdev_mon_dp->dp_pdev_tx_mon->pdev_tx_mon_stats;
+			memset(pdev_tx_mon_stats, 0,
+				sizeof(struct ath12k_pdev_tx_mon_stats));
+		}
+	}
+	wiphy_unlock(ah->hw->wiphy);
+
+	return count;
+}
+
+static const struct file_operations fops_reset_dp_tx_mon_stats = {
+	.write = ath12k_write_reset_dp_tx_mon_stats,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+};
+
 void ath12k_hw_debugfs_register(struct ath12k_hw *ah)
 {
 	struct ieee80211_hw *hw = ah->hw;
@@ -7107,6 +7184,9 @@ void ath12k_hw_debugfs_register(struct ath12k_hw *ah)
 
 	debugfs_create_file("reset_latency_stats", 0644, hw->wiphy->debugfsdir, ah,
 			    &fops_latency_stats);
+
+	debugfs_create_file("reset_dp_tx_mon_stats", 0200, hw->wiphy->debugfsdir, ah,
+			&fops_reset_dp_tx_mon_stats);
 }
 
 void ath12k_debugfs_register(struct ath12k *ar)
