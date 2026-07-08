@@ -348,6 +348,15 @@ static void ath12k_wifi8_umac_reset_ppeds_srng_init(struct ath12k_base *cumac_ab
 }
 #endif
 
+static void ath12k_wifi8_pcp_tid_map_reprogram_wrapper(struct ath12k_base *ab)
+{
+	struct ath12k_hw_group *ag = ab->ag;
+
+	/* Reprogram PCP-TID map and TID map precedence after UMAC reset */
+	ath12k_dp_pcp_tid_map(ag->dp_hw_grp);
+	ath12k_dp_tid_map_precedence(ag->dp_hw_grp);
+}
+
 void ath12k_wifi8_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
 {
 	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset;
@@ -401,6 +410,9 @@ void ath12k_wifi8_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	ath12k_wifi8_umac_reset_ppeds_srng_init(cumac_ab);
 #endif
+	/* Reprogram PCP-TID map and TID map precedence as the last queued task */
+	ath12k_q_post_reset_task(cumac_ab,
+				 ath12k_wifi8_pcp_tid_map_reprogram_wrapper);
 }
 
 /**
@@ -463,6 +475,12 @@ void ath12k_wifi8_umac_reset_handle_post_reset_complete(struct ath12k_base *ab)
 			ath12k_err(ab, "CUMAC HW post reset failed");
 			return;
 		}
+
+		/* Reprogram PCP-TID map and TID map precedence after CUMAC HW reset
+		 * (Mode 2 / Q6 BCR reset).
+		 */
+		ath12k_dp_pcp_tid_map(ab->ag->dp_hw_grp);
+		ath12k_dp_tid_map_precedence(ab->ag->dp_hw_grp);
 		ath12k_hif_irq_enable(cumac_ab);
 		ath12k_hif_mgmt_irq_enable(cumac_ab);
 		clear_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &cumac_ab->dev_flags);

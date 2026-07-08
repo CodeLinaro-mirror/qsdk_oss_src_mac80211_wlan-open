@@ -545,7 +545,19 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 	} else {
 		ath12k_wifi8_enable_hif_interrupts(dp, ath12k_wifi8_non_cumac_dp_service_srng);
 		dp_wifi8->init_done = true;
-		ath12k_info(ab, "Skipping DP init for non-cumac target");
+		ath12k_hal_tx_set_pcp_tid_map(ab, dp->dp_hw_grp->pcp_tid_map);
+		ath12k_hal_tx_set_tid_map_precedence
+			(ab, dp->dp_hw_grp->tid_map_precedence);
+		ath12k_info(ab, "Skipping ring init for non-cumac target");
+		return 0;
+	}
+
+	if (dp_hw_group_wifi8->cumac_dp) {
+		ath12k_info(ab, "CUMAC init is already done. Skip re-init");
+		ath12k_hal_tx_set_pcp_tid_map(ab, dp->dp_hw_grp->pcp_tid_map);
+		ath12k_hal_tx_set_tid_map_precedence
+			(ab, dp->dp_hw_grp->tid_map_precedence);
+		dp_wifi8->init_done = true;
 		return 0;
 	}
 
@@ -635,7 +647,8 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 	for (i = 0; i < HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX; i++)
 		ath12k_hal_tx_set_dscp_tid_map(ab, ath12k_default_dscp_tid_map, i);
 
-	ath12k_hal_tx_set_pcp_tid_map(ab, ath12k_default_pcp_tid_map);
+	ath12k_hal_tx_set_pcp_tid_map(ab, dp->dp_hw_grp->pcp_tid_map);
+	ath12k_hal_tx_set_tid_map_precedence(ab, dp->dp_hw_grp->tid_map_precedence);
 
 	ret = ath12k_wifi8_dp_rx_ring_init(ab);
 	if (ret) {

@@ -329,7 +329,8 @@ static int ath12k_wifi7_dp_op_device_init(struct ath12k_dp *dp)
 	for (i = 0; i < HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX; i++)
 		ath12k_hal_tx_set_dscp_tid_map(ab, ath12k_default_dscp_tid_map, i);
 
-	ath12k_hal_tx_set_pcp_tid_map(ab, ath12k_default_pcp_tid_map);
+	ath12k_hal_tx_set_pcp_tid_map(ab, dp->dp_hw_grp->pcp_tid_map);
+	ath12k_hal_tx_set_tid_map_precedence(ab, dp->dp_hw_grp->tid_map_precedence);
 
 	ret = ath12k_wifi7_dp_rx_ring_init(ab);
 	if (ret) {
