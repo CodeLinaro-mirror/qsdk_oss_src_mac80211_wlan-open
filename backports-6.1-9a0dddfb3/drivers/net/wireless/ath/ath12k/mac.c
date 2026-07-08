@@ -10251,6 +10251,25 @@ ath12k_mac_select_scan_device(struct ieee80211_hw *hw,
 			return ath12k_mac_get_ar_by_pdev_id(ar->ab, ar->pdev->pdev_id);
 		}
 	}
+
+	/* Fallback for 6 GHz: channel 2 (5935 MHz, Operating Class 136) sits
+	 * 10 MHz below freq_range.start_freq (5945 MHz) as reported by firmware,
+	 * but is still a valid 6 GHz channel on this radio.  Return the radio
+	 * whose 6 GHz freq_range is closest to center_freq rather than failing.
+	 */
+	if (band == NL80211_BAND_6GHZ) {
+		for_each_ar(ah, ar, i) {
+			/* Accept if center_freq is within one 20 MHz channel
+			 * below the reported start_freq.
+			 */
+			if (ar->mac.sbands[NL80211_BAND_6GHZ].channels &&
+			    center_freq >= KHZ_TO_MHZ(ar->freq_range.start_freq) - 20 &&
+			    center_freq <= KHZ_TO_MHZ(ar->freq_range.end_freq))
+				return ath12k_mac_get_ar_by_pdev_id(ar->ab,
+								    ar->pdev->pdev_id);
+		}
+	}
+
 	return NULL;
 }
 
