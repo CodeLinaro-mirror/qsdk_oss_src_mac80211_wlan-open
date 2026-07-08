@@ -546,8 +546,8 @@ struct ath12k_htt_tx_ppdu_stats {
 
 
 struct fw_mpdu_stats {
-	u64 success_cnt;
-	u64 failure_cnt;
+	u32 success_cnt;
+	u32 failure_cnt;
 };
 
 struct msduq_tx_stats {
@@ -590,7 +590,7 @@ enum hist_types {
 
 struct hist_bucket {
 	enum hist_types hist_type;
-	u64 freq[HIST_BUCKET_MAX];
+	u32 freq[HIST_BUCKET_MAX];
 };
 
 struct hist_stats {
@@ -770,12 +770,12 @@ struct ath12k_dp_link_peer_qos_stats {
 };
 
 struct ath12k_mld_qos_stats {
-	u64 tx_success_pkts;
-	u64 tx_failed_pkts;
-	u64 tx_invalid_delay_pkts;
-	u64 nwdelay_win_total;
-	u64 swdelay_win_total;
-	u64 hwdelay_win_total;
+	u32 tx_success_pkts;
+	u32 tx_failed_pkts;
+	u32 tx_invalid_delay_pkts;
+	u32 nwdelay_win_total;
+	u32 swdelay_win_total;
+	u32 hwdelay_win_total;
 	struct fw_mpdu_stats svc_intval_stats;
 	struct fw_mpdu_stats burst_size_stats;
 	u32 queue_depth;
@@ -893,9 +893,9 @@ struct ath12k_dp_peer_tid_jitter_stats {
 	u32 tx_prev_delay;
 	u32 tx_avg_jitter;
 	u32 tx_avg_delay;
-	u64 tx_avg_err;
-	u64 tx_total_success;
-	u64 tx_drop;
+	u32 tx_avg_err;
+	u32 tx_total_success;
+	u32 tx_drop;
 };
 
 DECLARE_EWMA(avg_sojourn, 10, 8)
@@ -982,9 +982,9 @@ struct ath12k_dp_peer_tx_stats {
 };
 
 struct ath12k_dp_proto_stats {
-	u64 l3[DP_PKT_TYPE_L3_MAX];
-	u64 l4[DP_PKT_TYPE_L4_MAX];
-	u64 l5[DP_PKT_TYPE_L5_MAX];
+	u32 l3[DP_PKT_TYPE_L3_MAX];
+	u32 l4[DP_PKT_TYPE_L4_MAX];
+	u32 l5[DP_PKT_TYPE_L5_MAX];
 };
 
 struct ath12k_dp_proto_stats_peer {
