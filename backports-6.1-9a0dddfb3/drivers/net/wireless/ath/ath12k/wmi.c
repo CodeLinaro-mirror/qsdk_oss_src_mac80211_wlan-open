@@ -12079,7 +12079,6 @@ static void ath12k_vdev_start_resp_event(struct ath12k_base *ab, struct sk_buff 
 			    vdev_start_resp.vdev_id);
 		ar->last_wmi_vdev_start_status = status;
 		ath12k_critical_failure_trigger(ab, ATH12K_CRIT_VAP_FAILURE);
-		WARN_ON_ONCE(status);
 	}
 
 	complete(&ar->vdev_setup_done);
