@@ -20,10 +20,10 @@
 
 unsigned int athmem_stats_num_nodes;
 unsigned long long athmem_stats_dup_ptr;
-bool athmem_flag_init_done;
+atomic_t athmem_flag_init_done;
 
 static struct rb_root athmem_obj_tree_root = RB_ROOT;
-spinlock_t athmem_spinlock;
+static DEFINE_SPINLOCK(athmem_spinlock);
 
 struct athmem_debug_object {
 	struct rb_node rb_node;
@@ -484,10 +484,7 @@ static void athmem_create_object(unsigned long long ptr, size_t size,
 	struct athmem_debug_object *object, *parent;
 	struct rb_node **link, *rb_parent;
 
-	if (!athmem_flag_init_done) {
-		athmem_flag_init_done = 1;
-		spin_lock_init(&athmem_spinlock);
-	}
+	atomic_cmpxchg(&athmem_flag_init_done, 0, 1);
 
 	object = kmalloc(sizeof(*object), (gfp));
 	if (!object) {
@@ -528,7 +525,7 @@ static void athmem_create_object(unsigned long long ptr, size_t size,
 
 char *ath_minidump_update_free(void *ptr)
 {
-	if (!athmem_flag_init_done || RB_EMPTY_ROOT(&athmem_obj_tree_root))
+	if (!atomic_read(&athmem_flag_init_done) || RB_EMPTY_ROOT(&athmem_obj_tree_root))
 		return NULL;
 
 	return athmem_delete_obj_full((unsigned long)ptr);
