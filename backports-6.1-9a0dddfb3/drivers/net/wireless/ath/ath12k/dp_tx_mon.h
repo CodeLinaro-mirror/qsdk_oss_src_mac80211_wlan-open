@@ -110,8 +110,115 @@
 #define ATH12K_RATE_STATUS_DEFAULT_NSS     1
 #define ATH12K_RATE_STATUS_DEFAULT_IDX	  -1
 
+#define _ATH12K_STAT_INC(dp_pdev, field) \
+	do { \
+		if (likely(dp_pdev && dp_pdev->dp_mon_pdev && \
+			dp_pdev->dp_mon_pdev->dp_pdev_tx_mon)) \
+			dp_pdev->dp_mon_pdev->dp_pdev_tx_mon->pdev_tx_mon_stats.field++; \
+	} while (0)
+
+#define ATH12K_TX_MON_STAT_INC(dp_pdev, field)  _ATH12K_STAT_INC(dp_pdev, field)
+
+#define ATH12K_TX_MON_STAT_INC_ERR(dp_pdev, field) _ATH12K_STAT_INC(dp_pdev, field)
+
 enum dp_mon_tx_filter_mode;
 struct dp_mon_tx_filter;
+
+/**
+ * struct ath12k_pdev_tx_mon_stats - per-pdev TX monitor ring stats counters
+ * @num_bufs_reaped: total ring entries consumed from the TX monitor dst ring
+ * @truncated_buf: PPDUs dropped because hardware reported HAL_MON_PPDU_TRUNCATED
+ * @flushed_buf: PPDUs dropped because hardware reported HAL_MON_FLUSH_DETECTED
+ * @null_buf: ring entries skipped due to NULL DMA buffer pointer
+ * @mon_desc_free: descriptors returned to the free pool after end-of-PPDU delivery
+ * @pkt_buf_null: packet TLV processing aborted due to NULL buffer
+ * @status_buf_null: status TLV processing aborted due to NULL buffer
+ * @prep_wq_failed: failures adding a completed PPDU descriptor to the work queue list
+ * @empty_descriptor: Empty descriptors provided by hardware
+ * @ppdu_processed: PPDUs fully processed through the work queue handler
+ * @status_desc_processed: individual status descriptors parsed inside a PPDU
+ * @ppdu_desc_overflow: PPDUs dropped because status descriptor count exceeded the
+ *						pool limit
+ * @zero_status_desc: PPDUs skipped because the descriptor list was empty at
+ *						work queue time
+ * @ppdu_prep_failed: failures building the consolidated ppdu_desc from the
+ *						descriptor list
+ * @tlv_process_failed: failures in processing info from status TLVs
+ * @data_gen_failed: failures attaching a payload buffer as an skb fragment
+ * @buf_extract_failed: failures extracting buffer address info from a buffer-address TLV
+ * @magic_value_error: descriptors rejected due to magic-value mismatch
+ * @pkt_tlv_free: packet TLV buffers released back to the page-fragment allocator
+ * @status_buf_free: status buffers released back to the page-fragment allocator
+ * @mu_user_frame: MU frames generated for individual users within a MU-MIMO PPDU
+ * @data_ppdu_delivered: Data PPDUs successfully delivered up to mac80211
+ * @prot_ppdu_delivered: Protection PPDUs successfully delivered up to mac80211
+ * @self_gen_failed: failures generating self-generated response frames (ACK/CTS/BA)
+ * @skb_alloc_failed: failures allocating skb for a new MPDU during PPDU reconstruction
+ * @ring_extract_failed: failures reading the next entry from the TX mon destination ring
+ * @get_num_users_failed: failures parsing the number of users from the PPDU start TLV
+ */
+struct ath12k_pdev_tx_mon_stats {
+	/* Tasklet related stats */
+	u32 num_bufs_reaped;
+	u32 truncated_buf;
+	u32 flushed_buf;
+	u32 null_buf;
+	u32 mon_desc_free;
+	u32 pkt_buf_null;
+	u32 status_buf_null;
+	u32 prep_wq_failed;
+	u32 empty_descriptor;
+
+	/* ppdu descriptor stats */
+	u32 ppdu_processed;
+	u32 status_desc_processed;
+	u32 ppdu_desc_overflow;
+	u32 zero_status_desc;
+	u32 ppdu_prep_failed;
+	u32 tlv_process_failed;
+	u32 data_gen_failed;
+	u32 buf_extract_failed;
+	u32 magic_value_error;
+	u32 pkt_tlv_free;
+	u32 status_buf_free;
+	u32 mu_user_frame;
+
+	/* Delivery statistics */
+	u32 prot_ppdu_delivered;
+	u32 data_ppdu_delivered;
+
+	/* frame generation failures */
+	u32 self_gen_failed;
+	u32 skb_alloc_failed;
+
+	/* HAL related statistics */
+	u32 ring_extract_failed;
+	u32 get_num_users_failed;
+};
+
+/**
+ * struct ath12k_dp_tx_mon_stats - device-level TX monitor buffer lifecycle counters
+ * @buf_replenished: buffers successfully written into the TX monitor refill ring
+ * @alloc_fail: page_frag_alloc() failures during buffer replenishment
+ * @dma_fail: DMA mapping failures during buffer replenishment
+ * @with_hw: current snapshot of buffers owned by hardware
+ * @in_reap: current snapshot of buffers being reaped by the host
+ * @free: current snapshot of buffers in the free pool
+ * @replenish_err: current snapshot of buffers stranded due to replenish failure
+ * @proc_err: current snapshot of buffers stranded due to processing failure
+ */
+struct ath12k_dp_tx_mon_stats {
+	/* monitor buffer replenishment statistics */
+	u32 buf_replenished;
+	u32 alloc_fail;
+	u32 dma_fail;
+	/* buffer ownership snapshot */
+	u32 with_hw;
+	u32 in_reap;
+	u32 free;
+	u32 replenish_err;
+	u32 proc_err;
+};
 
 struct ieee80211_frame_min {
 	__le16 frame_control;
@@ -205,5 +312,5 @@ void ath12k_dp_mon_tx_display_filters(struct ath12k_dp *dp,
 void
 ath12k_dp_mon_tx_setup_mon_mode_filter(struct ath12k_dp *dp,
 				       struct htt_tx_ring_tlv_filter *src_tlv_filter);
-
+void ath12k_dp_mon_tx_update_buf_ownership_stats(struct ath12k_dp *dp);
 #endif /* ATH12K_DP_TX_MON_H */
