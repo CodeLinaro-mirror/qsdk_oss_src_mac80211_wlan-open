@@ -53,7 +53,6 @@
 #define CFR_DATA_MAX_LEN_QCN9625 81920
 
 #define VENDOR_QCA 0x8cfdf0
-#define PLATFORM_TYPE_ARM 2
 #define NUM_CHAINS_FW_TO_HOST(n) ((1 << ((n) + 1)) - 1)
 
 enum ath12k_cfr_meta_version {
@@ -68,23 +67,8 @@ enum ath12k_cfr_meta_version {
 	ATH12K_CFR_META_VERSION_8,
 	ATH12K_CFR_META_VERSION_9,
 	ATH12K_CFR_META_VERSION_10,
+	ATH12K_CFR_META_VERSION_11,
 	ATH12K_CFR_META_VERSION_MAX = 0xFF,
-};
-
-enum ath12k_cfr_data_version {
-	ATH12K_CFR_DATA_VERSION_NONE,
-	ATH12K_CFR_DATA_VERSION_1,
-	ATH12K_CFR_DATA_VERSION_MAX = 0xFF,
-};
-
-enum ath12k_cfr_capture_ack_mode {
-	ATH12K_CFR_CAPTURE_LEGACY_ACK,
-	ATH12K_CFR_CAPTURE_DUP_LEGACY_ACK,
-	ATH12K_CFR_CAPTURE_HT_ACK,
-	ATH12K_CFR_CPATURE_VHT_ACK,
-
-	/*Always keep this at last*/
-	ATH12K_CFR_CPATURE_INVALID_ACK
 };
 
 enum ath12k_cfr_correlate_status {
@@ -120,63 +104,58 @@ struct ath12k_cfr_peer_tx_param {
 };
 
 #define HOST_MAX_CHAINS 8
-#define MAX_CFR_MU_USERS 37
 
-struct cfr_dbr_metadata {
-	u8 peer_addr[ETH_ALEN];
-	u8 status;
-	u8 capture_bw;
-	u8 channel_bw;
-	u8 phy_mode;
-	u16 prim20_chan;
-	u16 center_freq1;
-	u16 center_freq2;
-	u8 capture_mode;
-	u8 capture_type;
-	u8 sts_count;
-	u8 num_rx_chain;
-	u32 timestamp;
-	u32 length;
-	u32 chain_rssi[HOST_MAX_CHAINS];
-	u16 chain_phase[HOST_MAX_CHAINS];
-	u32 rtt_cfo_measurement;
-	u8 agc_gain[HOST_MAX_CHAINS];
-	u32 rx_start_ts;
-	u16 mcs_rate;
-	u16 gi_type;
-	u8 agc_gain_tbl_index[HOST_MAX_CHAINS];
-} __packed;
-
-struct cfr_su_sig_info {
-	u8 coding;
-	u8 stbc;
-	u8 beamformed;
-	u8 dcm;
-	u8 ltf_size;
-	u8 sgi;
-	u16 reserved;
-} __packed;
-
+/*
+ * @status: capture status/histogram tracking
+ * @tx_pkt_bw: bandwidth of the transmitted packet that triggered this capture
+ * @phy_mode: PHY mode of the captured packet
+ * @center_freq1: primary center frequency of the capture
+ * @center_freq2: secondary center frequency of the capture (160/80+80 MHz)
+ *
+ * @num_mu_users: 0 for an SU capture. Non-zero indicates an MU (RCC)
+ * capture and gives the user count -- RCC is not yet implemented in UD,
+ * so this is currently always 0 and su_peer_addr is the only valid peer
+ * address. When RCC lands, see prop's target_if_cfr_rx_tlv_process() for
+ * how multiple peer MACs are carried for the MU case
+ *
+ * @su_peer_addr: peer MAC address for an SU capture
+ *
+ * @chain_rssi: per-chain RSSI. Not available from ucode's DMA header on
+ * either wifi7 or wifi8 -- sourced from the WMI TX capture event
+ * (ath12k_cfr_peer_tx_param.chain_rssi), so kept here rather than dropped
+ *
+ * @chain_phase: per-chain phase. Same as chain_rssi -- no ucode DMA-header
+ * equivalent, kept
+ *
+ * @cfo_measurement: pending FW/ucode alignment, kept for now
+ *
+ * @agc_gain: per-chain AGC gain. Same as chain_rssi -- no ucode DMA-header
+ * equivalent, kept
+ *
+ * @rx_start_ts: pending FW/ucode alignment, kept for now
+ *
+ * @mcs_rate: same as chain_rssi -- no ucode DMA-header equivalent, kept
+ *
+ * @gi_type: pending FW/ucode alignment, kept for now
+ *
+ * @beamformed: whether the captured packet was beamformed. RCC-only
+ * (prop sets this from cdp_rx_ppdu->beamformed in
+ * target_if_cfr_rx_tlv_process()); RCC is not yet implemented in UD, so
+ * this is currently always 0
+ *
+ * @agc_gain_tbl_index: per-chain AGC gain table index. Same as
+ * chain_rssi -- no ucode DMA-header equivalent, kept
+ *
+ * @puncture_bitmap: puncture pattern of the capture bandwidth
+ */
 struct cfr_enh_metadata {
 	u8 status;
-	u8 capture_bw;
-	u8 channel_bw;
+	u8 tx_pkt_bw;
 	u8 phy_mode;
-	u16 prim20_chan;
 	u16 center_freq1;
 	u16 center_freq2;
-	u8 capture_mode;
-	u8 capture_type;
-	u8 sts_count;
-	u8 num_rx_chain;
-	u64 timestamp;
-	u32 length;
-	u8 is_mu_ppdu;
 	u8 num_mu_users;
-	union {
-		u8 su_peer_addr[ETH_ALEN];
-		u8 mu_peer_addr[MAX_CFR_MU_USERS][ETH_ALEN];
-	} peer_addr;
+	u8 su_peer_addr[ETH_ALEN];
 	u32 chain_rssi[HOST_MAX_CHAINS];
 	u16 chain_phase[HOST_MAX_CHAINS];
 	u32 cfo_measurement;
@@ -184,7 +163,7 @@ struct cfr_enh_metadata {
 	u32 rx_start_ts;
 	u16 mcs_rate;
 	u16 gi_type;
-	struct cfr_su_sig_info sig_info;
+	u8 beamformed;
 	u8 agc_gain_tbl_index[HOST_MAX_CHAINS];
 	u16 puncture_bitmap;
 } __packed;
@@ -193,15 +172,10 @@ struct ath12k_csi_cfr_header {
 	u32 start_magic_num;
 	u32 vendorid;
 	u8 cfr_metadata_version;
-	u8 cfr_data_version;
 	u8 chip_type;
-	u8 pltform_type;
 	u32 cfr_metadata_len;
 	u64 host_real_ts;
-	union {
-		struct cfr_dbr_metadata meta_dbr;
-		struct cfr_enh_metadata meta_enh;
-	} u;
+	struct cfr_enh_metadata meta_enh;
 } __packed;
 
 enum ath12k_cfr_preamble_type {
