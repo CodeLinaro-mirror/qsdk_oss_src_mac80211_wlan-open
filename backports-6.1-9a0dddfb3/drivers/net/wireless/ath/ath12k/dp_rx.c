@@ -1226,6 +1226,40 @@ int ath12k_dp_rx_peer_pn_replay_config(struct ath12k_link_vif *arvif,
 	return ret;
 }
 
+int ath12k_dp_rx_peer_epp_pn_replay_config(struct ath12k_dp_peer *dp_peer,
+					   struct ath12k_link_vif *arvif,
+					   const u8 *peer_addr,
+					   enum set_key_cmd key_cmd,
+					   enum ath12k_rxtid_pn_check cfg)
+{
+	struct ieee80211_sta *sta = ath12k_dp_peer_get_sta(dp_peer);
+	struct ieee80211_key_conf *key = NULL;
+	int i, ret = 0;
+
+	if (!dp_peer || !sta)
+		return -ENOENT;
+
+	if (!dp_peer->is_epp_peer)
+		return 0;
+
+	spin_lock_bh(&dp_peer->keys_lock);
+	for (i = 0; i < ARRAY_SIZE(dp_peer->keys); i++) {
+		if (!dp_peer->keys[i] ||
+		    !(dp_peer->keys[i]->flags & IEEE80211_KEY_FLAG_PAIRWISE))
+			continue;
+
+		key = dp_peer->keys[i];
+		break;
+	}
+
+	if (key)
+		ret = ath12k_dp_rx_peer_pn_replay_config(arvif, peer_addr, key_cmd, key,
+							 sta, cfg);
+	spin_unlock_bh(&dp_peer->keys_lock);
+
+	return ret;
+}
+
 struct sk_buff *ath12k_dp_rx_get_msdu_last_buf(struct sk_buff_head *msdu_list,
 					       struct sk_buff *first)
 {

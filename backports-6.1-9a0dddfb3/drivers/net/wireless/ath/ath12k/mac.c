@@ -14601,10 +14601,24 @@ static int ath12k_mac_handle_link_sta_state(struct ieee80211_hw *hw,
 	 */
 	} else if (old_state == IEEE80211_STA_ASSOC &&
 		   new_state == IEEE80211_STA_AUTHORIZED) {
+		enum ath12k_rxtid_pn_check cfg = ATH12K_RXTID_PN_CHECK_DATA_TIDS;
+		void *dp_peer;
+
+		dp_peer = ath12k_sta_get_dp_peer_wiphy_locked(hw->wiphy,
+							      arsta->ahsta);
+		ret = ath12k_dp_rx_peer_epp_pn_replay_config(dp_peer, arvif, arsta->addr,
+							     SET_KEY, cfg);
+		if (ret) {
+			ath12k_warn(ar->ab, "Failed to config data TIDs PN replay check for %pM",
+				    arsta->addr);
+			goto exit;
+		}
+
 		ret = ath12k_mac_station_authorize(ar, arvif, arsta);
 		if (ret)
 			ath12k_warn(ar->ab, "Failed to authorize station: %pM\n",
 				    arsta->addr);
+
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 		ath12k_dp_peer_ppeds_route_setup(ar, arvif, arsta);
 #endif
