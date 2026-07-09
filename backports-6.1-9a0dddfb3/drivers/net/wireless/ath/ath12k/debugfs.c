@@ -596,6 +596,78 @@ int wmi_ctrl_path_btcoex_stat(struct ath12k *ar, char __user *ubuf,
 	return ret_val;
 }
 
+/**
+ * ath12k_mgmt_stats_update_beacon() - sync FW beacon TX counts into per-vdev mgmt_stats.
+ *
+ * Beacons are firmware-offloaded (WMI_BCN_TMPL_CMDID); they never pass through
+ * mac_op_tx, so tx_succ_cnt[BEACON] and the aggregates are never incremented by
+ * the normal mgmt path. This helper queries WMI_REQUEST_BCN_STAT for every active
+ * vdev and writes the absolute FW counters into mgmt_stats, adjusting the aggregates
+ * by the delta to avoid double-counting on repeated calls.
+ *
+ * Must be called with wiphy_lock held and outside data_lock.
+ */
+static void ath12k_mgmt_stats_update_beacon(struct ath12k *ar)
+{
+	struct ath12k_fw_stats_req_params param = {0};
+	struct ath12k_mgmt_frame_stats *ms;
+	struct ath12k_fw_stats_bcn *bcn;
+	struct ath12k_link_vif *arvif;
+	u32 old_succ, old_fail;
+	int ret;
+
+	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	if (ar->ah->state != ATH12K_HW_STATE_ON)
+		return;
+
+	param.pdev_id = ath12k_mac_get_target_pdev_id(ar);
+	param.stats_id = WMI_REQUEST_BCN_STAT;
+
+	ath12k_fw_stats_reset(ar);
+
+	spin_lock_bh(&ar->data_lock);
+	list_for_each_entry(arvif, &ar->arvifs, list) {
+		if (!arvif->is_up || ath12k_mac_is_bridge_vdev(arvif))
+			continue;
+		param.vdev_id = arvif->vdev_id;
+		ret = ath12k_mac_get_fw_stats_per_vif(ar, &param);
+		if (ret)
+			ath12k_warn(ar->ab,
+				    "beacon stats query failed for vdev %u: %d\n",
+				    param.vdev_id, ret);
+	}
+
+	list_for_each_entry(bcn, &ar->fw_stats.bcn, list) {
+		list_for_each_entry(arvif, &ar->arvifs, list) {
+			if (arvif->vdev_id != bcn->vdev_id)
+				continue;
+
+			ms = &arvif->ahvif->mgmt_stats;
+			old_succ = ms->tx_succ_cnt[QCA_VENDOR_MGMT_STATS_BEACON];
+			old_fail  = ms->tx_fail_cnt[QCA_VENDOR_MGMT_STATS_BEACON];
+
+			ms->tx_succ_cnt[QCA_VENDOR_MGMT_STATS_BEACON] =
+				bcn->tx_bcn_succ_cnt;
+			ms->tx_fail_cnt[QCA_VENDOR_MGMT_STATS_BEACON]  =
+				bcn->tx_bcn_outage_cnt;
+
+			if (bcn->tx_bcn_succ_cnt >= old_succ)
+				ms->aggr_tx_mgmt_success_cnt +=
+					bcn->tx_bcn_succ_cnt - old_succ;
+			if (bcn->tx_bcn_outage_cnt >= old_fail)
+				ms->aggr_tx_mgmt_fail_cnt +=
+					bcn->tx_bcn_outage_cnt - old_fail;
+			ms->aggr_tx_mgmt_cnt =
+				ms->aggr_tx_mgmt_success_cnt +
+				ms->aggr_tx_mgmt_fail_cnt;
+			break;
+		}
+	}
+	ath12k_fw_stats_bcn_free(&ar->fw_stats.bcn);
+	spin_unlock_bh(&ar->data_lock);
+}
+
 static ssize_t ath12k_dump_mgmt_stats(struct file *file,
 					char __user *ubuf,
 					size_t count, loff_t *ppos)
@@ -622,6 +694,7 @@ static ssize_t ath12k_dump_mgmt_stats(struct file *file,
 		return -ENOMEM;
 
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+	ath12k_mgmt_stats_update_beacon(ar);
 	spin_lock_bh(&ar->data_lock);
 
 	list_for_each_entry (arvif, &ar->arvifs, list) {
