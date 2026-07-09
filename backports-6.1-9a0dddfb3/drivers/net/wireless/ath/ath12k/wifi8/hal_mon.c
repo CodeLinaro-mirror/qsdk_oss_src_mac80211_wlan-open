@@ -459,7 +459,7 @@ ath12k_wifi8_hal_mon_parse_he_sig_mu(
 	}
 
 	ppdu_info->gi = he_gi;
-	hal_get_radiotap_he_gi_ltf(&he_gi, &he_ltf);
+	hal_get_radiotap_gi_ltf(&he_gi, &he_ltf);
 	value = he_gi << HE_GI_SHIFT;
 	ppdu_info->he_data5 |= value;
 
@@ -625,7 +625,7 @@ ath12k_wifi8_hal_mon_parse_he_sig_su(const struct hal_rx_he_sig_a_su_info *he_si
 	}
 	ppdu_info->gi = he_gi;
 	ppdu_info->ltf_size = he_ltf;
-	hal_get_radiotap_he_gi_ltf(&he_gi, &he_ltf);
+	hal_get_radiotap_gi_ltf(&he_gi, &he_ltf);
 	value = he_gi << HE_GI_SHIFT;
 	ppdu_info->he_data5 |= value;
 	value = he_ltf << HE_LTF_SIZE_SHIFT;
@@ -5110,6 +5110,7 @@ ath12k_wifi8_hal_mon_tx_populate_eht_sig_common
 	u32 eht_data[4] = {0};
 	u8  num_ru_allocation_known = 0;
 	u8  i = 0;
+	u16 gi, ltf = 0;
 
 	eht_known = (IEEE80211_RADIOTAP_EHT_KNOWN_SPATIAL_REUSE |
 			IEEE80211_RADIOTAP_EHT_KNOWN_GI |
@@ -5119,7 +5120,9 @@ ath12k_wifi8_hal_mon_tx_populate_eht_sig_common
 			IEEE80211_RADIOTAP_EHT_KNOWN_PE_DISAMBIGUITY_OM |
 			IEEE80211_RADIOTAP_EHT_KNOWN_DISREGARD_O);
 	eht_data[0] |= (usr_common->spatial_reuse << EHT_SPATIAL_REUSE_SHIFT);
-	eht_data[0] |= (usr_common->gi << EHT_GI_SHIFT);
+	gi = usr_common->gi;
+	hal_get_radiotap_gi_ltf(&gi, &ltf);
+	eht_data[0] |= (gi << EHT_GI_SHIFT);
 	eht_data[0] |= (usr_common->ltf_size << EHT_LTF_SHIFT);
 	eht_data[0] |= (usr_common->num_ltf_symbols << EHT_EHT_LTF_SHIFT);
 	eht_data[0] |= (usr_common->a_factor << EHT_PRE_FEC_PADDING_FACTOR_SHIFT);
@@ -5182,6 +5185,7 @@ ath12k_wifi8_hal_mon_tx_populate_uhr_sig_common
 	struct hal_rx_radiotap_uhr *uhr = &uhr_info->uhr;
 	u32 known, data0, data1, data2, data3, data4, data5, data6, data7;
 	bool is_non_ofdma;
+	u16 gi, ltf = 0;
 
 	known = __le32_to_cpu(uhr->known);
 	data0 = __le32_to_cpu(uhr->data[0]);
@@ -5199,9 +5203,12 @@ ath12k_wifi8_hal_mon_tx_populate_uhr_sig_common
 		 IEEE80211_RADIOTAP_UHR_KNOWN_PRE_PAD_FACTOR |
 		 IEEE80211_RADIOTAP_UHR_KNOWN_PE_DISAMBIGUITY;
 
+	gi = usr_common->gi;
+	hal_get_radiotap_gi_ltf(&gi, &ltf);
+
 	data0 |= u32_encode_bits(usr_common->spatial_reuse,
 				 IEEE80211_RADIOTAP_UHR_DATA0_SPATIAL_REUSE) |
-		 u32_encode_bits(usr_common->gi,
+		 u32_encode_bits(gi,
 				 IEEE80211_RADIOTAP_UHR_DATA0_GI) |
 		 u32_encode_bits(usr_common->num_ltf_symbols,
 				 IEEE80211_RADIOTAP_UHR_DATA0_UHR_LTF) |
@@ -5983,7 +5990,7 @@ ath12k_wifi8_hal_mon_tx_parse_mactx_phy_desc(const void *tlv_data,
 		    IEEE80211_RADIOTAP_HE_DATA2_NUM_LTF_SYMS_KNOWN;
 	he_data3 |= is_stbc << HE_STBC_SHIFT;
 
-	hal_get_radiotap_he_gi_ltf(&gi, &ltf_size);
+	hal_get_radiotap_gi_ltf(&gi, &ltf_size);
 	he_data5 |= (gi << HE_GI_SHIFT) | ((1 + ltf_size) << HE_LTF_SIZE_SHIFT);
 	he_data5 = (he_data5 & HE_DATA5_INFO_MASK) | bandwidth;
 
