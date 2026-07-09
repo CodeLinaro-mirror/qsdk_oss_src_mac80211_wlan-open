@@ -3715,6 +3715,7 @@ ath12k_fill_ru_loc_mpdu_succ_tried(struct sk_buff *vendor_event,
 		ru_attr = nla_nest_start(vendor_event, (i + 1));
 		if (!ru_attr) {
 			ath12k_err(NULL, "nla nest failure: ru loc %d", i);
+			nla_nest_cancel(vendor_event, attr);
 			return -EINVAL;
 		}
 
@@ -3723,6 +3724,8 @@ ath12k_fill_ru_loc_mpdu_succ_tried(struct sk_buff *vendor_event,
 			tx_ppdu_stats->ru_loc_mpdu_succ_tried[i].num_mpdu)) {
 			ath12k_err(NULL,
 				   "nla put failed: ru loc num mpdu %d", i);
+			nla_nest_cancel(vendor_event, ru_attr);
+			nla_nest_cancel(vendor_event, attr);
 			return -EINVAL;
 		}
 
@@ -3731,6 +3734,8 @@ ath12k_fill_ru_loc_mpdu_succ_tried(struct sk_buff *vendor_event,
 			tx_ppdu_stats->ru_loc_mpdu_succ_tried[i].mpdu_tried)) {
 			ath12k_err(NULL,
 				   "nla put failed: ru loc mpdu tried %d", i);
+			nla_nest_cancel(vendor_event, ru_attr);
+			nla_nest_cancel(vendor_event, attr);
 			return -EINVAL;
 		}
 
@@ -3763,6 +3768,7 @@ ath12k_fill_transmit_type_mpdu_succ_tried(struct sk_buff *vendor_event,
 		if (!tx_type_attr) {
 			ath12k_err(NULL,
 				   "nla nest failure: transmit type %d", i);
+			nla_nest_cancel(vendor_event, attr);
 			return -EINVAL;
 		}
 
@@ -3775,6 +3781,8 @@ ath12k_fill_transmit_type_mpdu_succ_tried(struct sk_buff *vendor_event,
 			ath12k_err(NULL,
 				   "nla put failed: transmit type num mpdu %d",
 				   i);
+			nla_nest_cancel(vendor_event, tx_type_attr);
+			nla_nest_cancel(vendor_event, attr);
 			return -EINVAL;
 		}
 
@@ -3784,6 +3792,8 @@ ath12k_fill_transmit_type_mpdu_succ_tried(struct sk_buff *vendor_event,
 			ath12k_err(NULL,
 				   "nla put failed: transmit type mpdu tried %d",
 				   i);
+			nla_nest_cancel(vendor_event, tx_type_attr);
+			nla_nest_cancel(vendor_event, attr);
 			return -EINVAL;
 		}
 
