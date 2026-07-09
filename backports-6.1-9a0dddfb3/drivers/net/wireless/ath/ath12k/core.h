@@ -2792,6 +2792,7 @@ struct ath12k_base {
 	struct ath12k_dp_umac_reset dp_umac_reset;
 	int umcmn_irq_num;
 	struct timer_list umcmn_timer;
+	struct timer_list tqm_tp_timer;
 	bool early_cal_support;
 	bool powerup_triggered;
 	struct ath12k_wsi_info bypass_wsi_info;

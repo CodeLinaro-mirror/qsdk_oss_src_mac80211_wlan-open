@@ -240,6 +240,10 @@ static void ath12k_mhi_op_status_cb(struct mhi_controller *mhi_cntrl,
 			set_bit(ATH12K_GROUP_FLAG_RECOVERY, &ab->ag->flags);
 			if (ab_pci->device_ops->get_reset_reason)
 				ab_pci->device_ops->get_reset_reason(ab);
+			if (test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags) &&
+			    ab->hw_params->hw_ops->update_tqm_status_ring_tp)
+				ab->hw_params->hw_ops->update_tqm_status_ring_tp(ab,
+										 true);
 			queue_work(ab->workqueue_aux, &ab->reset_work);
 			ath12k_hal_dump_srng_stats(ab);
 		}

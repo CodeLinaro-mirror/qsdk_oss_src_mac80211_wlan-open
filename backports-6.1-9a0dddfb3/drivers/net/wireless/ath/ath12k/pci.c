@@ -250,6 +250,9 @@ static void ath12k_pci_sw_reset(struct ath12k_base *ab, bool power_on)
 	if (!power_on) {
 		if (!ab->in_panic &&
 		    test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags)) {
+			if (ab->hw_params->hw_ops->update_tqm_status_ring_tp)
+				ab->hw_params->hw_ops->update_tqm_status_ring_tp(ab,
+										 false);
 			/* Disable umcmn interrupt/timer before issuing reset */
 			ath12k_umcmn_irq_disable(ab);
 			ath12k_umcmn_timer_free(ab);

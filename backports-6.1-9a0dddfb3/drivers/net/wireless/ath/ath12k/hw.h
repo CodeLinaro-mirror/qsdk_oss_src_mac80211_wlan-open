@@ -376,6 +376,7 @@ struct ath12k_hw_params {
 	bool cfr_support;
 	bool cumac_support;
 	u8 cumac_chip_priority;
+	bool tqm_status_war;
 	enum ath12k_umcmn_interrupt_handling support_umcmn_interrupts;
 	u32 cfr_dma_hdr_size;
 	u32 cfr_num_stream_bufs;
@@ -408,6 +409,7 @@ struct ath12k_hw_ops {
 	void (*dp_peer_migration)(struct ath12k_link_vif *arvif,
 				   struct ath12k_mac_pri_link_migr_peer_node *peer_node);
 	bool (*is_mgmt_reoq_tid)(u8 tid);
+	void (*update_tqm_status_ring_tp)(struct ath12k_base *ab, bool enable);
 };
 
 static inline
