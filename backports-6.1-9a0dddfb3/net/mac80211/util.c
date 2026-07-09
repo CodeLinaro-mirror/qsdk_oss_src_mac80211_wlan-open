@@ -4659,6 +4659,18 @@ again:
 		c->center_freq1 = cfg80211_chandef_primary(c, new_primary_width,
 							   &c->punctured);
 		c->width = new_primary_width;
+
+		/* If NPCA primary fell outside the narrowed band, drop NPCA fields */
+		if (c->npca_freq) {
+			int new_bw = nl80211_chan_width_to_mhz(c->width);
+			u32 new_start = c->center_freq1 - new_bw / 2 + 10;
+			u32 new_end   = c->center_freq1 + new_bw / 2 - 10;
+
+			if (c->npca_freq < new_start || c->npca_freq > new_end) {
+				c->npca_freq = 0;
+				c->npca_puncture_bitmap = 0;
+			}
+		}
 	}
 
 	/*
