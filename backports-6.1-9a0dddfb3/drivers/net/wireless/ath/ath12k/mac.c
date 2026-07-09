@@ -18988,7 +18988,7 @@ int ath12k_mac_start(struct ath12k *ar)
 	}
 
 	ret = ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_ARP_AC_OVERRIDE,
-					0, pdev->pdev_id);
+					WME_AC_VO, pdev->pdev_id);
 	if (ret) {
 		ath12k_err(ab, "[vdev_id : %s radio_idx : %u] failed to set ac override for ARP: %d\n",
 			   ATH12K_INVALID_VDEV_ID, ar->radio_idx,
