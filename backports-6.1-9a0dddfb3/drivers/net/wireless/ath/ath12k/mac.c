@@ -16961,9 +16961,16 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 	 */
 	ahvif->dp_vif.ppe_vp_num = ppe_vp_num;
 	ahvif->dp_vif.ppe_vp_type = ppe_vp_type;
-	ahvif->tstats = alloc_percpu_gfp(struct pcpu_netdev_tid_stats, GFP_KERNEL);
-	if (!ahvif->tstats)
-		return -ENOMEM;
+	/* On SSR recovery, ahvif (and tstats) survives the restart and
+	 * add_interface() is re-entered for surviving vifs without an
+	 * intervening remove_interface(); skip the alloc to avoid leaking
+	 * the previous percpu block every recovery cycle.
+	 */
+	if (!ahvif->tstats) {
+		ahvif->tstats = alloc_percpu_gfp(struct pcpu_netdev_tid_stats, GFP_KERNEL);
+		if (!ahvif->tstats)
+			return -ENOMEM;
+	}
 	ath12k_mac_init_arvif(ahvif, arvif, -1, false);
 
 	/* Check the PPE VP type and update it accordingly.
