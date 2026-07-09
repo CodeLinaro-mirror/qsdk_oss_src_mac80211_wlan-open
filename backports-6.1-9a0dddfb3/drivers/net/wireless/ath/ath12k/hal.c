@@ -1172,9 +1172,6 @@ void ath12k_hal_srng_deinit(struct ath12k_base *ab)
 {
 	struct ath12k_hal *hal = &ab->hal;
 
-	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
-		return;
-
 	if (test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags)) {
 		ath12k_info(ab, "Skip HAL deinit during Q6 BCR RESET\n");
 		return;
