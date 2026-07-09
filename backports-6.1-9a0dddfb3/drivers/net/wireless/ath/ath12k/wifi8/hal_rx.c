@@ -1986,8 +1986,8 @@ int ath12k_wifi8_hal_rx_flow_insert_entry(struct ath12k_base *ab,
 		/* Find the matching flow entry in HW FST */
 		if (!memcmp(&hal_tuple_info, flow_tuple_info,
 			    sizeof(struct hal_flow_tuple_info))) {
-			ath12k_dbg(ab, ATH12K_DBG_DP_FST,
-				   "Flow already exists in FST %u at skid %u",
+			ath12k_err(ab,
+				   "Flow already exists in FST %u at skid %u\n",
 				   hal_hash, i);
 			*flow_idx = hal_hash;
 			return -EEXIST;

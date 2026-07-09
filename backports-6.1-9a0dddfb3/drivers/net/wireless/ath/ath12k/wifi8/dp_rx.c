@@ -3024,7 +3024,8 @@ int ath12k_wifi8_dp_rx_flow_add_entry(struct ath12k_dp *dp,
 	}
 
 	fst->num_entries++;
-	fst->flows_per_reo[fse->reo_indication - 1]++;
+	if (fse->reo_indication)
+		fst->flows_per_reo[fse->reo_indication - 1]++;
 
 	ath12k_dbg(ab, ATH12K_DBG_DP_FST,
 		   "FST num_entries = %d, reo_dest_ind = %d, reo_dest_hand = %u",
@@ -3056,7 +3057,8 @@ int ath12k_wifi8_dp_rx_flow_delete_entry(struct ath12k_dp *dp,
 
 	/* Decrement number of valid entries in table */
 	fst->num_entries--;
-	fst->flows_per_reo[fse->reo_indication - 1]--;
+	if (fse->reo_indication)
+		fst->flows_per_reo[fse->reo_indication - 1]--;
 
 	ath12k_dbg(ab, ATH12K_DBG_DP_FST,
 		   "FST num_entries = %d", fst->num_entries);
@@ -3084,7 +3086,8 @@ int ath12k_wifi8_dp_rx_flow_delete_all_entries(struct ath12k_dp *dp)
 		fse->is_valid = false;
 
 		fst->num_entries--;
-		fst->flows_per_reo[fse->reo_indication - 1]--;
+		if (fse->reo_indication)
+			fst->flows_per_reo[fse->reo_indication - 1]--;
 	}
 
 	ath12k_dbg(ab, ATH12K_DBG_DP_FST,
