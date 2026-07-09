@@ -20756,8 +20756,20 @@ ath12k_mac_assign_vif_to_vdev(struct ieee80211_hw *hw,
 		 * a certain radio.
 		 */
 		if (ar != arvif->ar) {
-			if (WARN_ON(arvif->is_started))
-				return NULL;
+			if (arvif->is_started) {
+				if (WARN_ON(!arvif->is_scan_vif))
+					return NULL;
+
+				ret = ath12k_mac_vdev_stop(arvif);
+				if (ret) {
+					ath12k_warn(arvif->ar->ab,
+						    "[radio_idx : %u] failed to stop scan vdev %d before radio switch: %d\n",
+						    arvif->ar->radio_idx,
+						    arvif->vdev_id, ret);
+					return NULL;
+				}
+				arvif->is_started = false;
+			}
 
 			ath12k_mac_remove_link_interface(hw, arvif);
 			ath12k_mac_unassign_link_vif(arvif);
@@ -26700,8 +26712,32 @@ int ath12k_mac_op_remain_on_channel(struct ieee80211_hw *hw,
 
 	ahvif = arvif->ahvif;
 	if (!arvif->is_started && ahvif->vdev_type == WMI_VDEV_TYPE_STA) {
-		ctx.def.chan = chan;
-		ctx.def.center_freq1 = chan->center_freq;
+		struct ath12k_link_vif *ap_arvif;
+		struct ieee80211_channel *start_chan = chan;
+
+		/* In an Independent Repeater scenario, an AP vdev may already
+		 * be started on this radio with its own home channel. The FW
+		 * does not support two active home channels on the same radio,
+		 * so starting the STA vdev on the ROC off-channel would trigger
+		 * a target assert. Instead, start the STA vdev on the AP's home
+		 * channel so both vdevs share the same home channel. The ROC
+		 * scan engine will then handle off-channel tuning independently
+		 * via the WMI scan request, which carries the actual ROC
+		 * frequency as its target channel.
+		 */
+		ap_arvif = ath12k_mac_get_started_ap_arvif(ar);
+		if (ap_arvif && ap_arvif->chanctx.def.chan &&
+		    ap_arvif->chanctx.def.chan->center_freq != chan->center_freq) {
+			ath12k_info(ar->ab,
+				    "[vdev_id : %u radio_idx : %u] ROC STA vdev start: using AP home chan %u MHz instead of ROC chan %u MHz\n",
+				    arvif->vdev_id, ar->radio_idx,
+				    ap_arvif->chanctx.def.chan->center_freq,
+				    chan->center_freq);
+			start_chan = ap_arvif->chanctx.def.chan;
+		}
+
+		ctx.def.chan = start_chan;
+		ctx.def.center_freq1 = start_chan->center_freq;
 		ret = ath12k_mac_vdev_start(arvif, &ctx);
 		if (ret) {
 			ath12k_err(ar->ab,
