@@ -23700,7 +23700,7 @@ void ath12k_mac_op_change_chanctx(struct ieee80211_hw *hw,
 	    changed & IEEE80211_CHANCTX_CHANGE_PUNCTURING) {
 		ath12k_mac_update_active_vif_chan(ar, ctx);
 #ifdef CPTCFG_QCN_EXTN
-		ath12k_smart_ant_api_channel_change(ar);
+		ath12k_smart_ant_api_channel_change(ar, true);
 #endif
 	}
 
