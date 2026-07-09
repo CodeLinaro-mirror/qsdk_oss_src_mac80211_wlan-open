@@ -2049,7 +2049,7 @@ int ath12k_dp_peer_get_param_by_mac_addr(struct ath12k_dp_hw *dp_hw, const u8 *a
 
 	spin_lock_bh(&dp_hw->peer_hash_lock);
 	dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, addr);
-	if (!dp_peer || dp_peer->is_vdev_peer) {
+	if (!dp_peer) {
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		return -EINVAL;
 	}
