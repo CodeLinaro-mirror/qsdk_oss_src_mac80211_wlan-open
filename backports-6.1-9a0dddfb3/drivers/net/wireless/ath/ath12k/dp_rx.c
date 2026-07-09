@@ -1246,6 +1246,12 @@ int ath12k_dp_rx_peer_frag_setup(struct ath12k *ar,
 		skb_queue_head_init(&rx_tid->rx_frags);
 	}
 
+	/* If this peer survived an SSR/recovery cycle and already has a
+	 * tfm_mmic handle, free it before installing the newly allocated
+	 * one to avoid leaking a crypto_shash tfm every reconnect cycle.
+	 */
+	if (peer->dp_peer->tfm_mmic)
+		crypto_free_shash(peer->dp_peer->tfm_mmic);
 	peer->dp_peer->tfm_mmic = tfm;
 	peer->dp_peer->primary_link_frag_setup = true;
 
