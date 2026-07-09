@@ -248,16 +248,16 @@ static int ath12k_wifi7_dp_op_device_init(struct ath12k_dp *dp)
 		goto fail_dp_rx_free;
 	}
 
-	ret = ath12k_dp_mon_rx_alloc(dp);
+	ret = ath12k_dp_mon_rx_init(dp);
 	if (ret) {
-		ath12k_warn(ab, "failed to setup rxdma rings ret = %d\n", ret);
-		goto fail_dp_mon_rx_free;
+		ath12k_warn(ab, "failed to init rxdma rings ret = %d\n", ret);
+		goto fail_dp_mon_rx_deinit;
 	}
 
 	return 0;
 
-fail_dp_mon_rx_free:
-	ath12k_dp_mon_rx_free(dp);
+fail_dp_mon_rx_deinit:
+	ath12k_dp_mon_rx_deinit(dp);
 
 fail_dp_rx_free:
 	ath12k_wifi7_dp_rx_ring_free(ab);
@@ -315,7 +315,7 @@ static void ath12k_wifi7_dp_op_device_deinit(struct ath12k_dp *dp)
 
 	ath12k_dp_rx_reo_cmd_list_cleanup(ab);
 
-	ath12k_dp_mon_rx_free(dp);
+	ath12k_dp_mon_rx_deinit(dp);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	ath12k_nss_plugin_unregister_ops(ab);
 #endif
@@ -390,6 +390,15 @@ struct ath12k_dp *ath12k_wifi7_dp_init(struct ath12k_base *ab)
 
 	ath12k_wifi7_dp_mon_ops_register(dp);
 
+	/* Allocate monitor status/buf ring DMA memory at probe time too,
+	 * so it survives SSR like the other rings above.
+	 */
+	ret = ath12k_dp_mon_rx_alloc(dp);
+	if (ret) {
+		ath12k_err(ab, "dp mon rx alloc failed %d\n", ret);
+		goto dp_err;
+	}
+
 	return dp;
 dp_err:
 	ath12k_wifi7_dp_deinit(dp);
@@ -398,6 +407,7 @@ dp_err:
 
 void ath12k_wifi7_dp_deinit(struct ath12k_dp *dp)
 {
+	ath12k_dp_mon_rx_free(dp);
 	ath12k_dp_mon_deinit(dp);
 	kfree(dp);
 }

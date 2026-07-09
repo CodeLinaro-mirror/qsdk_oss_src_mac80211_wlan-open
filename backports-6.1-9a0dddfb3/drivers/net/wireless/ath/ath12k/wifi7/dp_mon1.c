@@ -17,8 +17,8 @@
 struct ath12k_dp_arch_mon_ops ath12k_wifi7_dp_arch_mon_quad_ring_ops = {
 	.rx_srng_setup = ath12k_wifi7_dp_mon_rx_srng_setup,
 	.rx_srng_cleanup = ath12k_wifi7_dp_mon_rx_srng_cleanup,
-	.rx_buf_setup = ath12k_wifi7_dp_mon_rx_buf_setup,
-	.rx_buf_free = ath12k_wifi7_dp_mon_rx_buf_free,
+	.rx_ring_init = ath12k_wifi7_dp_mon_rx_ring_init,
+	.rx_ring_deinit = ath12k_wifi7_dp_mon_rx_ring_deinit,
 	.rx_htt_srng_setup = ath12k_wifi7_dp_mon_rx_htt_srng_setup,
 	.mon_pdev_alloc = ath12k_dp_mon_pdev_alloc,
 	.mon_pdev_free = ath12k_dp_mon_pdev_free,
@@ -54,17 +54,12 @@ int ath12k_wifi7_dp_mon_rx_srng_setup(struct ath12k_dp *dp)
 	int i, ret;
 
 	for (i = 0; i < ab->hw_params->num_rxdma_per_pdev; i++) {
-		idr_init(&dp_mon->rx_mon_status_refill_ring[i].bufs_idr);
-		spin_lock_init(&dp_mon->rx_mon_status_refill_ring[i].idr_lock);
-	}
-
-	for (i = 0; i < ab->hw_params->num_rxdma_per_pdev; i++) {
 		srng = &dp_mon->rx_mon_status_refill_ring[i].refill_buf_ring;
-		ret = ath12k_dp_srng_setup(ab, srng,
+		ret = ath12k_dp_srng_alloc(ab, srng,
 					   HAL_RXDMA_MONITOR_STATUS, 0, i,
 					   DP_RXDMA_MON_STATUS_RING_SIZE);
 		if (ret) {
-			ath12k_warn(dp, "failed to setup mon status ring %d\n", i);
+			ath12k_warn(dp, "failed to alloc mon status ring %d\n", i);
 			return ret;
 		}
 	}
@@ -175,7 +170,8 @@ fail_free_skb:
 	return req_entries - num_remain;
 }
 
-int ath12k_wifi7_dp_mon_rx_buf_setup(struct ath12k_dp *dp)
+static
+int ath12k_wifi7_dp_mon_rx_buf_replenish(struct ath12k_dp *dp)
 {
 	struct ath12k_base *ab = dp->ab;
 	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
@@ -195,7 +191,38 @@ int ath12k_wifi7_dp_mon_rx_buf_setup(struct ath12k_dp *dp)
 	return 0;
 }
 
-void ath12k_wifi7_dp_mon_rx_buf_free(struct ath12k_dp *dp)
+int ath12k_wifi7_dp_mon_rx_ring_init(struct ath12k_dp *dp)
+{
+	struct ath12k_base *ab = dp->ab;
+	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
+	struct dp_srng *srng;
+	int i, ret;
+
+	for (i = 0; i < ab->hw_params->num_rxdma_per_pdev; i++) {
+		idr_init(&dp_mon->rx_mon_status_refill_ring[i].bufs_idr);
+		spin_lock_init(&dp_mon->rx_mon_status_refill_ring[i].idr_lock);
+	}
+
+	for (i = 0; i < ab->hw_params->num_rxdma_per_pdev; i++) {
+		srng = &dp_mon->rx_mon_status_refill_ring[i].refill_buf_ring;
+		ret = ath12k_dp_srng_init(ab, srng,
+					  HAL_RXDMA_MONITOR_STATUS, 0, i);
+		if (ret) {
+			ath12k_warn(dp, "failed to init mon status ring %d\n", i);
+			return ret;
+		}
+	}
+
+	ret = ath12k_wifi7_dp_mon_rx_buf_replenish(dp);
+	if (ret) {
+		ath12k_warn(dp, "failed to allocate status ring buffers %d\n", ret);
+		return ret;
+	}
+
+	return 0;
+}
+
+void ath12k_wifi7_dp_mon_rx_ring_deinit(struct ath12k_dp *dp)
 {
 	struct ath12k_base *ab = dp->ab;
 	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
