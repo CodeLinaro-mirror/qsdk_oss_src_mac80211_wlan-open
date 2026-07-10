@@ -908,6 +908,7 @@ struct ath12k_device_dp_rx_wbm_err_stats {
 	u32 rxdma_error[HAL_REO_ENTR_RING_RXDMA_ECODE_MAX];
 	u32 reo_error[HAL_REO_DEST_RING_ERROR_CODE_MAX];
 	u32 drop[WBM_ERR_DROP_MAX];
+	u32 hal_reo_route;
 };
 
 struct ath12k_tx_comp_stats {
@@ -927,7 +928,6 @@ struct ath12k_device_dp_stats {
 	u32 invalid_rbm;
 	u32 reo_excep_msdu_buf_type;
 	u32 free_excess_alloc_skb;
-	u32 hal_reo_error[DP_REO_DST_RING_MAX];
 	u32 rx_wbm_rel_source[HAL_WBM_REL_SRC_MODULE_MAX] [ATH12K_MAX_SOCS];
 	u32 reo_rx[DP_REO_DST_RING_MAX] [ATH12K_MAX_SOCS];
 	u32 non_fast_unicast_rx[DP_REO_DST_RING_MAX][ATH12K_MAX_SOCS];

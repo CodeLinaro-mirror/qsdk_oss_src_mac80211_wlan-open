@@ -1179,8 +1179,7 @@ static bool ath12k_wifi8_handle_null_queue(struct ath12k_pdev_dp *dp_pdev,
 					   struct ieee80211_rx_status *rx_status,
 					   struct hal_rx_spd_data *spd_desc_l,
 					   struct napi_struct *napi,
-					   struct rx_tlv_info_1 *prev_tlv_info,
-					   u8 ring_id)
+					   struct rx_tlv_info_1 *prev_tlv_info)
 
 {
 	struct rx_msdu_desc_info *rx_msdu_info = &spd_desc_l->rx_msdu_info;
@@ -1199,19 +1198,8 @@ static bool ath12k_wifi8_handle_null_queue(struct ath12k_pdev_dp *dp_pdev,
 		if (is_4addr_sta && is_mcbc && !to_ds)
 			return true;
 
-		if (peer) {
-			struct rx_mpdu_desc_info *rx_mpdu_info =
-				&spd_desc_l->rx_mpdu_info;
-			u8 link_id = rx_mpdu_info->src_link_id;
-
+		if (peer)
 			is_mcbc = is_mcbc && !peer->is_reset_mcbc;
-			if (unlikely(ath12k_dp_stats_enabled(dp_pdev)) &&
-			    ath12k_proto_stats_enabled(dp_pdev))
-				ath12k_dp_rx_update_protocol_stats(peer, link_id,
-								   spd_desc_l->msdu,
-								   RX_SENT_TO_STACK,
-								   ring_id);
-		}
 
 		if ((fr_ds && to_ds && peer && !peer->use_4addr) || is_mcbc) {
 			ath12k_wifi8_convert_n_deliver_nw_frame(dp_pdev,
@@ -1293,7 +1281,7 @@ static void
 ath12k_wifi8_dp_process_reo_rx_err_packets(struct ath12k_dp *dp,
 					   struct napi_struct *napi,
 					   struct hal_rx_spd_data *rx_spd,
-					   int ring_id, int num_msdus)
+					   int num_msdus)
 {
 	struct rx_msdu_desc_info *rx_msdu_info;
 	struct rx_mpdu_desc_info *rx_mpdu_info;
@@ -1440,6 +1428,7 @@ ath12k_wifi8_dp_process_reo_rx_err_packets(struct ath12k_dp *dp,
 		if (src == HAL_WBM_REL_SRC_MODULE_REO) {
 			if (rx_mpdu_info->reo_push_reason ==
 				HAL_REO_DEST_RING_PUSH_REASON_ROUTING_INSTRUCTION) {
+				dp->device_stats.wbm_err.hal_reo_route++;
 				drop = ath12k_wifi8_handle_reo_route(dp_pdev, peer,
 								     &rx_status,
 								     spd_desc_l,
@@ -1457,8 +1446,7 @@ ath12k_wifi8_dp_process_reo_rx_err_packets(struct ath12k_dp *dp,
 									      &rx_status,
 									      spd_desc_l,
 									      napi,
-									      &prev_tlv,
-									      ring_id);
+									      &prev_tlv);
 
 					if (drop)
 						drop_reason = ATH_RX_NULL_Q_DESC;
@@ -1617,12 +1605,11 @@ int ath12k_wifi8_dp_rx_process_err(struct ath12k_dp *dp,
 		(struct hal_rx_spd_data *)dp_hw_grp->rx_status_buf[cpu_id];
 	int total_msdu_reaped =
 		ath12k_wifi8_dp_rx_process_reo_rings(dp, srng, rx_status_desc,
-						     ring_id, budget, cpu_id);
+						     0, budget, cpu_id);
 
 	if (total_msdu_reaped)
 		ath12k_wifi8_dp_process_reo_rx_err_packets(dp, napi,
 							   rx_status_desc,
-							   ring_id,
 							   total_msdu_reaped);
 
 	return total_msdu_reaped;

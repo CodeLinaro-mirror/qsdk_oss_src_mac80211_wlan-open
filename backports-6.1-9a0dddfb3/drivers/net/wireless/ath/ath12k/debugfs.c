@@ -1214,10 +1214,8 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 		len += scnprintf(buf + len, size - len, "%s= %u\n",
 				 wbm_rx_drop[i], device_stats->wbm_err.drop[i]);
 
-	len += scnprintf(buf + len, size - len, "\nHAL_REO_errors:\n");
-	for (j = 0; j < DP_REO_DST_RING_MAX; j++)
-		len += scnprintf(buf + len, size - len, "ring%d= %u\n",
-				 j, device_stats->hal_reo_error[j]);
+	len += scnprintf(buf + len, size - len, "\nHAL_REO_routes: %u\n",
+			 device_stats->wbm_err.hal_reo_route);
 
 	len += scnprintf(buf + len, size - len, "\nREO_Rx_Received:");
 	for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
