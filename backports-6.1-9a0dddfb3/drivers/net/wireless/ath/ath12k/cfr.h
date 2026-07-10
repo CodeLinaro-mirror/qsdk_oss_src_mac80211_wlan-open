@@ -553,6 +553,59 @@ struct cfr_unassoc_pool_entry {
 	bool is_valid;
 };
 
+#define MAX_TA_RA_ENTRIES 16
+struct ta_ra_cfr_cfg {
+	u8 filter_group_id;
+	u16 bw :5,
+	    nss :8,
+	    rsvd0 :3;
+	u16 valid_ta :1,
+	    valid_ta_mask :1,
+	    valid_ra :1,
+	    valid_ra_mask :1,
+	    valid_bw_mask :1,
+	    valid_nss_mask :1,
+	    valid_mgmt_subtype :1,
+	    valid_ctrl_subtype :1,
+	    valid_data_subtype :1,
+	    rsvd1 :7;
+	u16 mgmt_subtype_filter;
+	u16 ctrl_subtype_filter;
+	u16 data_subtype_filter;
+	u8 ta_addr[ETH_ALEN];
+	u8 ra_addr[ETH_ALEN];
+	u8 ta_addr_mask[ETH_ALEN];
+	u8 ra_addr_mask[ETH_ALEN];
+} __packed;
+
+struct cfr_rcc_param {
+	u8 pdev_id;
+	u8 vdev_id;
+	u8 srng_id;
+	u32 capture_duration;
+	u32 capture_interval;
+	u32 ul_mu_user_mask_lower;
+	u32 ul_mu_user_mask_upper;
+	u16 freeze_tlv_delay_cnt_en  :1,
+	    freeze_tlv_delay_cnt_thr :8,
+	    rsvd0 :7;
+	u16 filter_group_bitmap;
+	u8 m_directed_ftm :1,
+	   m_all_ftm_ack :1,
+	   m_ndpa_ndp_directed :1,
+	   m_ndpa_ndp_all :1,
+	   m_ta_ra_filter :1,
+	   m_all_packet :1,
+	   en_ta_ra_filter_in_as_fp :1,
+	   rsvd1 : 1;
+	u8 num_grp_tlvs;
+	struct ta_ra_cfr_cfg curr[MAX_TA_RA_ENTRIES];
+	unsigned long modified_in_curr_session;
+	u32 capture_count :16,
+	    capture_intval_mode_sel  :1,
+	    rsvd2 :15;
+};
+
 struct ath12k_cfr {
 	struct ath12k_dbring rx_ring;
 	/* Protects enabled for ath12k_cfr */
@@ -583,6 +636,8 @@ struct ath12k_cfr {
 	u64 flush_timeout_dbr_cnt;
 	struct cfr_unassoc_pool_entry unassoc_pool[ATH12K_MAX_CFR_ENABLED_CLIENTS];
 	bool cfr_enabled;
+	struct cfr_rcc_param rcc_param;
+	struct ta_ra_cfr_cfg global[MAX_TA_RA_ENTRIES];
 };
 
 #ifdef CPTCFG_ATH12K_CFR
