@@ -7371,9 +7371,9 @@ int ath12k_mac_get_bridge_link_id_from_ahvif(struct ath12k_vif *ahvif,
 		ab = arvif->ar->ab;
 		ar = arvif->ar;
 		if (bridge_bitmap & BIT(ab->wsi_info.index)) {
-			ath12k_dbg(ab, ATH12K_DBG_PEER,
-				   "arvif found link_id %d for bridge_bitmap 0x%x\n",
-				   *link_id, bridge_bitmap);
+			ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+					 "arvif found link_id %d for bridge_bitmap 0x%x\n",
+					 *link_id, bridge_bitmap);
 			ret = 0;
 			break;
 		}
@@ -13156,9 +13156,9 @@ static int ath12k_mac_station_disassoc(struct ath12k *ar,
 	spin_lock_bh(&arvif->ar->data_lock);
 
 	if (!arvif->num_stations) {
-		ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
-			   "mac station disassoc for vdev %u which does not have any station connected\n",
-			   arvif->vdev_id);
+		ath12k_dbg_level(ar->ab, ATH12K_DBG_PEER, ATH12K_DBG_L0,
+				 "mac station disassoc for vdev %u which does not have any station connected\n",
+				 arvif->vdev_id);
 	} else {
 		arvif->num_stations--;
 		ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
@@ -13365,8 +13365,9 @@ static void ath12k_sta_rc_update_wk(struct wiphy *wiphy, struct wiphy_work *wk)
 	}
 
 	if (changed & IEEE80211_RC_NSS_CHANGED) {
-		ath12k_dbg(ar->ab, ATH12K_DBG_PEER, "mac update sta %pM nss %d\n",
-			   arsta->addr, nss);
+		ath12k_dbg_level(ar->ab, ATH12K_DBG_PEER, ATH12K_DBG_L0,
+				 "mac update sta %pM nss %d\n",
+				 arsta->addr, nss);
 
 		err = ath12k_wmi_set_peer_param(ar, arsta->addr, arvif->vdev_id,
 						WMI_PEER_NSS, nss);
@@ -13376,8 +13377,9 @@ static void ath12k_sta_rc_update_wk(struct wiphy *wiphy, struct wiphy_work *wk)
 	}
 
 	if (changed & IEEE80211_RC_SMPS_CHANGED) {
-		ath12k_dbg(ar->ab, ATH12K_DBG_PEER, "mac update sta %pM smps %d\n",
-			   arsta->addr, smps);
+		ath12k_dbg_level(ar->ab, ATH12K_DBG_PEER, ATH12K_DBG_L0,
+				 "mac update sta %pM smps %d\n",
+				 arsta->addr, smps);
 
 		err = ath12k_wmi_set_peer_param(ar, arsta->addr, arvif->vdev_id,
 						WMI_PEER_MIMO_PS_STATE, smps);
@@ -13463,8 +13465,8 @@ static void ath12k_sta_set_4addr_wk(struct wiphy *wiphy, struct wiphy_work *wk)
 		ar = arvif->ar;
 		dp_link_vif = &ahvif->dp_vif.dp_link_vif[link_id];
 
-		ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
-			   "setting USE_4ADDR for peer %pM\n", arsta->addr);
+		ath12k_dbg_level(ar->ab, ATH12K_DBG_PEER, ATH12K_DBG_L0,
+				 "setting USE_4ADDR for peer %pM\n", arsta->addr);
 
 		if (!arvif->set_wds_vdev_param) {
 			ath12k_wmi_set_peer_param(ar, arsta->addr,
@@ -13569,9 +13571,9 @@ static int ath12k_mac_station_unauthorize(struct ath12k *ar,
 	 */
 	ret = ath12k_clear_peer_keys(arvif, dp_peer, arsta);
 	if (ret) {
-		ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
-			   "failed to clear all peer keys for vdev %i: %d\n",
-			   arvif->vdev_id, ret);
+		ath12k_dbg_level(ar->ab, ATH12K_DBG_PEER, ATH12K_DBG_L0,
+				 "failed to clear all peer keys for vdev %i: %d\n",
+				 arvif->vdev_id, ret);
 		return ret;
 	}
 
@@ -13720,7 +13722,7 @@ static int ath12k_mac_station_remove(struct ath12k *ar,
 		ath12k_warn(ar->ab, "Failed to delete peer: %pM for VDEV: %d ar->num_peers: %d arvif->num_peers: %d\n",
 			    arsta->addr, arvif->vdev_id, ar->num_peers, arvif->num_peers);
 	else
-		ath12k_dbg_level(ar->ab, ATH12K_DBG_PEER | ATH12K_DBG_MLME, ATH12K_DBG_L1,
+		ath12k_dbg_level(ar->ab, ATH12K_DBG_PEER | ATH12K_DBG_MLME, ATH12K_DBG_L0,
 				 "Removed peer: %pM for VDEV: %d ar->num_peers: %d arvif->num_peers: %d\n",
 				 arsta->addr, arvif->vdev_id,
 				 ar->num_peers, arvif->num_peers);
@@ -13873,8 +13875,9 @@ static int ath12k_mac_station_add(struct ath12k *ar,
 	arsta->ahsta->ar_bitmap |= BIT(ar->radio_idx);
 
 	arvif->num_peers++;
-	ath12k_dbg(ab, ATH12K_DBG_PEER, "Added peer: %pM for VDEV: %d num_stations: %d num_peers %d\n",
-		   arsta->addr, arvif->vdev_id, ar->num_stations, arvif->num_peers);
+	ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L0,
+			 "Added peer: %pM for VDEV: %d num_stations: %d num_peers %d\n",
+			 arsta->addr, arvif->vdev_id, ar->num_stations, arvif->num_peers);
 
 	if (ieee80211_vif_is_mesh(vif)) {
 		ret = ath12k_wmi_set_peer_param(ar, arsta->addr,
@@ -14558,8 +14561,9 @@ static int ath12k_mac_handle_link_sta_state(struct ieee80211_hw *hw,
 	    ar->ab->ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE2)
 		return -ESHUTDOWN;
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_PEER, "mac handle link %u sta %pM state %d -> %d\n",
-		   arsta->link_id, arsta->addr, old_state, new_state);
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+			 "mac handle link %u sta %pM state %d -> %d\n",
+			 arsta->link_id, arsta->addr, old_state, new_state);
 
 	/* IEEE80211_STA_NONE -> IEEE80211_STA_NOTEXIST: Remove the station
 	 * from driver
@@ -21623,10 +21627,10 @@ static int ath12k_mac_ampdu_action(struct ieee80211_hw *hw,
 	}
 
 	if (ret)
-		ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
-			   "[vdev_id : %s radio_idx : %u] unable to perform ampdu action %d for vif %pM link %u ret %d\n",
-			   ATH12K_INVALID_VDEV_ID, ar->radio_idx,
-			   params->action, vif->addr, link_id, ret);
+		ath12k_dbg_level(ar->ab, ATH12K_DBG_PEER, ATH12K_DBG_L3,
+				 "[vdev_id : %s radio_idx : %u] unable to perform ampdu action %d for vif %pM link %u ret %d\n",
+				 ATH12K_INVALID_VDEV_ID, ar->radio_idx,
+				 params->action, vif->addr, link_id, ret);
 
 	return ret;
 }

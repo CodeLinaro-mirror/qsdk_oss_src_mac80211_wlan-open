@@ -567,9 +567,9 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 	if (!peer->is_bridge_peer) {
 		ret = ath12k_telemetry_peer_agent_create_handler(ar, peer);
 		if (ret && ret != -EOPNOTSUPP) {
-			ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
-				   "TA peer create failed vdev_id:%d addr %pM ret %d\n",
-				   vdev_id, addr, ret);
+			ath12k_dbg_level(ar->ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+					 "TA peer create failed vdev_id:%d addr %pM ret %d\n",
+					 vdev_id, addr, ret);
 		}
 	}
 
@@ -735,9 +735,9 @@ static void __ath12k_dp_link_peer_unassign(struct ath12k *ar,
 	if (!peer->is_bridge_peer && link_vif) {
 		ret = ath12k_telemetry_peer_agent_delete_handler(ar, peer);
 		if (ret && ret != -EOPNOTSUPP) {
-			ath12k_dbg(dp->ab, ATH12K_DBG_PEER,
-				   "failed to delete peer reference in TA for vdev_id %d addr %pM ret %d\n",
-				   link_vif->vdev_id, addr, ret);
+			ath12k_dbg_level(dp->ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+					 "failed to delete peer reference in TA for vdev_id %d addr %pM ret %d\n",
+					 link_vif->vdev_id, addr, ret);
 		}
 	}
 }
@@ -2657,9 +2657,10 @@ static void ath12k_mac_dp_peer_cleanup_cb(struct ath12k_pdev_dp *dp_pdev,
 		/*vdev peer cleanup is taken care later*/
 		if (ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE2 &&
 		    !dp_peer->is_vdev_peer && dp_peer->peer_links_map == 0) {
-			ath12k_dbg(ab, ATH12K_DBG_MAC | ATH12K_DBG_PEER,
-				   "dp_peer %pM dosent have active link_peers\n",
-				    dp_peer->addr);
+			ath12k_dbg_level(ab, ATH12K_DBG_MAC | ATH12K_DBG_PEER,
+					 ATH12K_DBG_L0,
+					 "dp_peer %pM dosent have active link_peers\n",
+					 dp_peer->addr);
 			if (dp_peer->is_mlo &&
 			    dp_peer->peer_id != ATH12K_MLO_PEER_ID_INVALID) {
 				sta = ath12k_dp_peer_get_sta(dp_peer);
