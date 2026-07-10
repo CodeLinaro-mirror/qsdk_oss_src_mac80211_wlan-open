@@ -1283,24 +1283,40 @@ int ath12k_core_power_up(struct ath12k_hw_group *ag)
 {
 	struct ath12k_base *ab;
 	unsigned long time_left;
-	int i;
+	bool wait_for_power_up = false;
+	struct ath12k *ar = NULL;
+	int i, j, ret;
 
 	reinit_completion(&ag->power_up);
 	for (i = 0; i < ag->num_probed; i++) {
 		ab =  ag->ab[i];
 		if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags) &&
 		    !ath12k_hw_group_recovery_in_progress(ag)) {
+			for (j = 0; j < ab->num_radios; j++) {
+				ar = ab->pdevs[j].ar;
+				ar->pdev_suspend = false;
+			}
+
 			ath12k_hif_power_up(ab);
 			ab->powerup_triggered = true;
+			wait_for_power_up = true;
 			ath12k_info(ab, "Q6 power up is started\n");
 		}
 	}
 
-	time_left = wait_for_completion_timeout(&ag->power_up,
-						ATH12K_Q6_POWER_UP_TIMEOUT);
-	if (!time_left) {
-		ath12k_err(ab, "Q6 power up wait timed out\n");
-		return -ETIMEDOUT;
+	if (wait_for_power_up) {
+		time_left = wait_for_completion_timeout(&ag->power_up,
+							ATH12K_Q6_POWER_UP_TIMEOUT);
+		if (!time_left) {
+			ath12k_err(NULL, "Q6 power up wait timed out\n");
+			return -ETIMEDOUT;
+		}
+	} else {
+		ret = ath12k_core_mlo_setup(ag);
+		if (ret) {
+			ath12k_err(NULL, "mlo setup is failed: %d\n", ret);
+			return ret;
+		}
 	}
 
 	return 0;
@@ -2164,7 +2180,7 @@ int ath12k_mac_mlo_ready(struct ath12k_hw_group *ag)
 	return 0;
 }
 
-static int ath12k_core_mlo_setup(struct ath12k_hw_group *ag)
+int ath12k_core_mlo_setup(struct ath12k_hw_group *ag)
 {
 	int ret;
 
