@@ -4730,6 +4730,7 @@ static int nl80211_set_wiphy(struct sk_buff *skb, struct genl_info *info)
 	if (info->attrs[NL80211_ATTR_WIPHY_ANTENNA_TX] &&
 	    info->attrs[NL80211_ATTR_WIPHY_ANTENNA_RX]) {
 		u32 tx_ant, rx_ant;
+		int ifindex = netdev ? netdev->ifindex : -1;
 
 		if ((!rdev->wiphy.available_antennas_tx &&
 		     !rdev->wiphy.available_antennas_rx) ||
@@ -4749,9 +4750,11 @@ static int nl80211_set_wiphy(struct sk_buff *skb, struct genl_info *info)
 		rx_ant = rx_ant & rdev->wiphy.available_antennas_rx;
 
 		if (info->attrs[NL80211_ATTR_DYNAMIC_CHAIN_MASK])
-			result = rdev_set_antenna(rdev, tx_ant, rx_ant, radio_idx, true);
+			result = rdev_set_antenna(rdev, tx_ant, rx_ant,
+						  radio_idx, true, ifindex);
 		else
-			result = rdev_set_antenna(rdev, tx_ant, rx_ant, radio_idx, false);
+			result = rdev_set_antenna(rdev, tx_ant, rx_ant,
+						  radio_idx, false, ifindex);
 		if (result)
 			return result;
 	}
