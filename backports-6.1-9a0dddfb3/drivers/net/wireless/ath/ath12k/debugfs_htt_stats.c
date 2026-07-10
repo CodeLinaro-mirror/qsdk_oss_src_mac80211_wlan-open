@@ -15951,6 +15951,12 @@ static int ath12k_open_htt_stats(struct inode *inode,
 		goto err_unlock;
 	}
 
+	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags) ||
+	    test_bit(ATH12K_FLAG_RECOVERY, &ar->ab->dev_flags)) {
+		ret = -EBUSY;
+		goto err_unlock;
+	}
+
 	if (ar->debug.htt_stats.stats_req) {
 		ret = -EAGAIN;
 		goto err_unlock;
