@@ -3021,7 +3021,11 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 	}
 
 	/* Cache rf_switch_config INI value for use in WMI init and mac registration */
+#ifdef CPTCFG_QCN_EXTN
 	ab->rf_switch_config = ath12k_cfg_get(ab, ATH12K_CFG_RF_SWITCH_CONFIG) ? 1 : 0;
+#else
+	ab->rf_switch_config = 0; /* default: primary/full 5G range */
+#endif /* CPTCFG_QCN_EXTN */
 	ath12k_info(ab, "rf_switch_config: %u (%s 5G range)\n",
 		    ab->rf_switch_config,
 		    ab->rf_switch_config ? "secondary/high" : "primary/full");

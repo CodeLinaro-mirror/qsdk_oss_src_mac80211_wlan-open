@@ -198,8 +198,12 @@ u32 ath12k_wifi8_dp_tx_get_he_header_length(struct ath12k_dp_hw_group *dp_hw_grp
 
 	ht_he_cap = ath12k_tx_get_he_mac_cap(dp_hw_grp, link_peer);
 	ar = arsta->arvif->ar;
+#ifdef CPTCFG_QCN_EXTN
 	rep_ul_resp = ((ath12k_cfg_get(ab, ATH12K_CFG_REP_UL_RESP) >>
 			ar->pdev->pdev_id) & 01);
+#else
+	rep_ul_resp = 0;
+#endif /* CPTCFG_QCN_EXTN */
 	//do we need STA check if we are checking sta_bss_peer
 	if (arsta->arvif->ahvif->vif->type == NL80211_IFTYPE_STATION &&
 	    peer->is_sta_bss_peer && ath12k_dp_peer_get_sta(peer)->wme &&

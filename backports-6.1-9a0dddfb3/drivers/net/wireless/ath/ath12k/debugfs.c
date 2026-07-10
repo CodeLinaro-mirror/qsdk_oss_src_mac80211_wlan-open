@@ -8317,7 +8317,11 @@ static ssize_t ath12k_debugfs_dump_device_mgmt_srng_stats(struct file *file,
 
 	device_stats = &ab->mgmt->srng_stats;
 
+#ifdef CPTCFG_QCN_EXTN
 	if (ath12k_cfg_get(ab, ATH12K_CFG_REO_MGMT_PATH_DISABLE))
+#else
+	if (false) /* non-extn: REO mgmt path always enabled */
+#endif /* CPTCFG_QCN_EXTN */
 		ath12k_info(ab, "REO2SW management path is disabled");
 
 	len += scnprintf(buf + len, size - len, "SOC MGMT SRNG RX STATS:\n\n");
