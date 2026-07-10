@@ -640,12 +640,24 @@ void
 ath12k_wifi8_cu_mem_update(struct ath12k_base *ab,
 			   struct ath12k_link_vif *arvif, bool is_probe_req)
 {
-	struct ieee80211_vif *vif = arvif->ahvif->vif;
+	struct ieee80211_vif *vif;
 	struct ieee80211_bss_conf *link_conf;
 	u32 eht_bpcc = 0, cu_flags = 0, reconfig = 0, expec_dur = 0;
 	u32 uhr_ebpcc = 0, uhr_countdown = 0;
 	bool eht_cu = false, uhr_cu = false;
 	unsigned int dbg_level = is_probe_req ? ATH12K_DBG_L1 : ATH12K_DBG_L0;
+
+	if (!arvif->is_up || !arvif->ahvif || arvif->is_scan_vif)
+		return;
+
+	if (!arvif->ahvif->vif || !arvif->ahvif->vif->valid_links)
+		return;
+
+	if (arvif->link_id >= IEEE80211_MLD_MAX_NUM_LINKS ||
+	    !(arvif->ahvif->vif->valid_links & BIT(arvif->link_id)))
+		return;
+
+	vif = arvif->ahvif->vif;
 
 	if (ab->cu_mem_cfg_mask & WMI_TBTT_COUNT_DOWN_CFG_EHT_BPCC) {
 		ath12k_mac_read_cu_mem(arvif,
