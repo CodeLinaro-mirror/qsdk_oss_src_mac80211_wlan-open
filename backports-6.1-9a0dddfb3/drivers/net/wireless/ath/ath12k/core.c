@@ -3393,6 +3393,30 @@ static void ath12k_mac_peer_ab_disassoc(struct ath12k_base *ab)
 	}
 }
 
+static void ath12k_check_for_valid_chanctx(struct ath12k *ar)
+{
+	struct ath12k_link_vif *arvif, *tmp;
+	struct cfg80211_chan_def *def = NULL;
+
+	list_for_each_entry_safe_reverse(arvif, tmp, &ar->arvifs, list) {
+		if (!arvif->ar)
+			continue;
+
+		if (!ath12k_mac_is_bridge_vdev(arvif) && !arvif->chanctx.def.chan) {
+			list_del(&arvif->list);
+			arvif->ar = NULL;
+		} else if (arvif->chanctx.def.chan) {
+			def = &arvif->chanctx.def;
+		}
+	}
+
+	/* No valid channel context exist in any link so clear ar->rx_channel*/
+	if (!def || !def->chan) {
+		ar->rx_channel = NULL;
+		ar->chan_tx_pwr = ATH12K_PDEV_TX_POWER_INVALID;
+	}
+}
+
 void ath12k_core_halt(struct ath12k *ar)
 {
 	struct ath12k_base *ab = ar->ab;
@@ -3444,8 +3468,6 @@ void ath12k_core_halt(struct ath12k *ar)
 
 	ath12k_core_cu_mem_free_all(ar);
 
-	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE0)
-		INIT_LIST_HEAD(&ar->arvifs);
 	idr_init(&ar->txmgmt_idr);
 
 	cancel_work_sync(&ar->erp_handle_trigger_work);
@@ -3646,8 +3668,6 @@ cleanup:
 		ath12k_core_halt(ar);
 		wiphy_unlock(ah->hw->wiphy);
 	}
-	ab->post_reconfig_done = true;
-
 	complete(&ab->driver_recovery);
 }
 
@@ -3692,7 +3712,8 @@ static void ath12k_core_restart(struct work_struct *work)
 	struct ath12k_hw_group *ag = ab->ag;
 	bool is_ready = false;
 	struct ath12k_hw *ah;
-	int ret, i;
+	struct ath12k *ar;
+	int ret, i, j;
 
 	ret = ath12k_core_reconfigure_on_crash(ab, &is_ready);
 	if (ret) {
@@ -3715,6 +3736,16 @@ static void ath12k_core_restart(struct work_struct *work)
 			ab->is_reset = false;
 			atomic_set(&ab->fail_cont_count, 0);
 			ath12k_dbg(ab, ATH12K_DBG_BOOT, "reset success\n");
+		}
+
+		for (j = 0; j < ab->num_radios; j++) {
+			ar = ab->pdevs[j].ar;
+
+			spin_lock_bh(&ar->data_lock);
+			ath12k_check_for_valid_chanctx(ar);
+			if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE0)
+				INIT_LIST_HEAD(&ar->arvifs);
+			spin_unlock_bh(&ar->data_lock);
 		}
 
 		if (!is_ready)
@@ -4374,36 +4405,6 @@ static void ath12k_reset_group_key_slots(struct ath12k_link_vif *arvif,
  * will recover only the crashed radio
  * without affecting the other active radio
  */
-static void ath12k_check_for_valid_chanctx(struct ath12k *ar)
-{
-	struct ath12k_link_vif *arvif, *tmp;
-	struct cfg80211_chan_def *def = NULL;
-
-	list_for_each_entry_safe_reverse(arvif, tmp, &ar->arvifs, list) {
-		if (!arvif->ar)
-			continue;
-
-		if (!ath12k_mac_is_bridge_vdev(arvif) && !arvif->chanctx.def.chan) {
-			spin_lock_bh(&ar->data_lock);
-
-			if (!list_empty(&ar->arvifs))
-				list_del(&arvif->list);
-
-			spin_unlock_bh(&ar->data_lock);
-			arvif->ar = NULL;
-		} else if (arvif->chanctx.def.chan) {
-			def = &arvif->chanctx.def;
-		}
-	}
-
-	/* No valid channel context exist in any link so clear ar->rx_channel*/
-	if (!def || !def->chan) {
-		spin_lock_bh(&ar->data_lock);
-		ar->rx_channel = NULL;
-		spin_unlock_bh(&ar->data_lock);
-		ar->chan_tx_pwr = ATH12K_PDEV_TX_POWER_INVALID;
-	}
-}
 
 int ath12k_recovery_reconfig(struct ath12k_base *ab)
 {
@@ -4429,16 +4430,6 @@ int ath12k_recovery_reconfig(struct ath12k_base *ab)
 			wiphy_unlock(ah->hw->wiphy);
 			return ret;
 		}
-	}
-
-	for (j = 0; j < ab->num_radios; j++) {
-		pdev = &ab->pdevs[j];
-		ar = pdev->ar;
-
-		if (!ar || ar->ab->is_bypassed)
-			continue;
-
-		ath12k_check_for_valid_chanctx(ar);
 	}
 
 	/* add chanctx/hw_config/filter part */
@@ -4822,34 +4813,9 @@ static void ath12k_core_disable_ext_irq_during_recovery(struct ath12k_base *ab)
 	}
 }
 
-static void ath12k_fallback_cleanup(struct ath12k_hw_group *ag)
-{
-	int i, j;
-	struct ath12k_hw *ah;
-	struct ath12k *ar;
-
-	for (i = 0; i < ag->num_hw; i++) {
-		ah = ag->ah[i];
-
-		if (!ah)
-			continue;
-
-		for_each_ar(ah, ar, j) {
-			if (!ar || ar->ab->is_bypassed || !ar->ab->post_reconfig_done)
-				continue;
-
-			spin_lock_bh(&ar->data_lock);
-			INIT_LIST_HEAD(&ar->arvifs);
-			spin_unlock_bh(&ar->data_lock);
-		}
-	}
-}
-
 static void ath12k_update_recovery_mode(struct ath12k_hw_group *ag,
 					struct ath12k_base *asserted_ab)
 {
-	enum ath12k_mlo_recovery_mode host_rm = ag->recovery_mode;
-
 	if (asserted_ab->recovery_mode_address) {
 		/*get current recovery mode as per FW from shmem*/
 		switch (*asserted_ab->recovery_mode_address) {
@@ -4877,9 +4843,6 @@ static void ath12k_update_recovery_mode(struct ath12k_hw_group *ag,
 		ath12k_info(asserted_ab, "Recovery is falling back to Mode0 due to cumac HW assert\n");
 		ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
 	}
-
-	if (host_rm > ag->recovery_mode)
-		ath12k_fallback_cleanup(ag);
 }
 
 static void ath12k_core_reset(struct work_struct *work)
@@ -5018,7 +4981,6 @@ static void ath12k_core_reset(struct work_struct *work)
 				 */
 				ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
 				ath12k_info(ab, "Recovery is falling back to Mode0 as one of the partner chip is already in recovery\n");
-				ath12k_fallback_cleanup(ab->ag);
 				break;
 			} else {
 				/* Set dev flags to UMAC recovery START
@@ -5045,7 +5007,6 @@ static void ath12k_core_reset(struct work_struct *work)
 			 */
 			ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
 			/* TODO: DS: Handle any clean up necessary for Mode1 SSR */
-			ath12k_fallback_cleanup(ab->ag);
 			ath12k_info(ab, "Recovery is falling back to Mode0\n");
 		} else {
 			/* wake queues here as ping should continue for

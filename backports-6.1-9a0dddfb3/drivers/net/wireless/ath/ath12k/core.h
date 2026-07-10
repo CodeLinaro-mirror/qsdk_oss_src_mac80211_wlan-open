@@ -2650,7 +2650,6 @@ struct ath12k_base {
 	enum ath12k_fw_recovery_option fw_recovery_support;
 	u32 recovery_start_time;
 	bool recovery_start;
-	bool post_reconfig_done;
 
 	u32 *crash_info_address;
 	u32 *recovery_mode_address;
