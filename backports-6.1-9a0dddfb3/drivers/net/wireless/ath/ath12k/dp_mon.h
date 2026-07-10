@@ -278,6 +278,9 @@ struct ath12k_dp_arch_mon_ops {
 	void (*htt_tx_mon_cfg_fill_extended_wmask)
 		(struct htt_tx_mon_ring_selection_cfg_cmd *cmd,
 		 const struct htt_tx_ring_tlv_filter *htt_tlv_filter);
+
+	int (*ext_mon_tx_alloc)(struct ath12k_pdev_dp *dp_pdev);
+	void (*ext_mon_tx_free)(struct ath12k_pdev_dp *dp_pdev);
 };
 
 /**
@@ -662,6 +665,11 @@ struct ath12k_dp_tx_mon {
 
 struct ath12k_pdev_mon_dp;
 
+struct ath12k_dp_tx_ext_mon {
+	struct ath12k_dp_tx_ext_mon_config *tx_ext_mon_config;
+	spinlock_t tx_ext_mon_lock;	/* Protects tx_ext_mon_config */
+};
+
 /**
  * struct ath12k_pdev_tx_mon - TX monitor context
  * @mon_pdev: Back pointer to parent monitor pdev context
@@ -681,10 +689,13 @@ struct ath12k_pdev_mon_dp;
  * @tx_mon_ppdu_desc_initialized: TX monitor PPDU descriptor pool init state
  * @tx_mon_wq_initialized: TX monitor workqueue init state
  * @tx_pktlog_hybrid: TX pktlog hybrid mode state
+ * @tx_ext_mon: Wrapper embedding the TX extended monitor config pointer and
+ *		its protecting spinlock.
  */
 struct ath12k_pdev_tx_mon {
 	struct ath12k_pdev_mon_dp *mon_pdev;
 	struct ath12k_dp_tx_mon *dp_tx_mon;
+	struct ath12k_dp_tx_ext_mon tx_ext_mon;
 	struct dp_srng tx_mon_dst_ring;
 	struct dp_mon_tx_filter **tx_mon_filter;
 	bool tx_monitor_started:1;
@@ -940,6 +951,11 @@ enum ath12k_ext_mon_peer_action {
 	ATH12K_EXT_MON_PEER_ACTION_REMOVE = 2,
 };
 
+enum ath12k_ext_mon_monitor_flags {
+	ATH12K_EXT_MON_DEFAULT = 0,
+	ATH12K_EXT_MON_PKT_CAP,
+};
+
 struct ath12k_ext_mon_pkt_config {
 	u32 filter[ATH12K_EXT_MON_FRAME_MAX];
 	u8 len[ATH12K_EXT_MON_FRAME_MAX];
@@ -1001,6 +1017,19 @@ struct ath12k_dp_rx_ext_mon {
 	struct ath12k_ext_mon_pkt_config md;
 	u8 peer_count;
 	u8 ra_peer_count;
+	struct list_head peer_list;
+};
+
+struct ath12k_dp_tx_ext_mon_config {
+	bool enable;
+	enum ath12k_ext_mon_filter_level level;
+	enum ath12k_ext_mon_monitor_flags monitor_flags;
+	u8 metadata;
+	bool fp_enabled;
+	bool fpmo_enabled;
+	struct ath12k_ext_mon_pkt_config fp;
+	struct ath12k_ext_mon_pkt_config fpmo;
+	u8 peer_count;
 	struct list_head peer_list;
 };
 

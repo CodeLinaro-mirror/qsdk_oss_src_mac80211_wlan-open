@@ -313,4 +313,7 @@ void
 ath12k_dp_mon_tx_setup_mon_mode_filter(struct ath12k_dp *dp,
 				       struct htt_tx_ring_tlv_filter *src_tlv_filter);
 void ath12k_dp_mon_tx_update_buf_ownership_stats(struct ath12k_dp *dp);
+int ath12k_dp_ext_mon_tx_alloc(struct ath12k_pdev_dp *dp_pdev);
+void ath12k_dp_ext_mon_tx_free(struct ath12k_pdev_dp *dp_pdev);
+
 #endif /* ATH12K_DP_TX_MON_H */

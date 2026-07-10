@@ -77,6 +77,8 @@ const struct ath12k_dp_arch_mon_ops ath12k_wifi7_dp_arch_mon_dual_ring_ops = {
 	/* At Pdev Init/Exit */
 	.mon_tx_dst_ring_alloc_setup = ath12k_dp_mon_tx_dst_ring_alloc_setup,
 	.mon_tx_dst_ring_cleanup = ath12k_dp_mon_tx_dst_ring_cleanup,
+	.ext_mon_tx_alloc = ath12k_dp_ext_mon_tx_alloc,
+	.ext_mon_tx_free = ath12k_dp_ext_mon_tx_free,
 };
 
 static inline void
