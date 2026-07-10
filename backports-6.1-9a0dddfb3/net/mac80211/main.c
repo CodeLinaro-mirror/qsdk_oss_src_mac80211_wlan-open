@@ -1395,6 +1395,8 @@ int ieee80211_register_hw(struct ieee80211_hw *hw)
 			 * Assign the first enabled channel to dflt_chandef
 			 * from the list of channels
 			 */
+			if (!sband->n_channels)
+				continue;
 			for (i = 0; i < sband->n_channels; i++)
 				if (!(sband->channels[i].flags &
 						IEEE80211_CHAN_DISABLED))

@@ -53,6 +53,9 @@ ieee80211_link_or_deflink(struct ieee80211_sub_if_data *sdata, int link_id,
 		return &sdata->deflink;
 	}
 
+	if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
+		return ERR_PTR(-EINVAL);
+
 	link = sdata_dereference(sdata->link[link_id], sdata);
 	if (!link)
 		return ERR_PTR(-ENOLINK);

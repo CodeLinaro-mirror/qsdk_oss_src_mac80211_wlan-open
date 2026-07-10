@@ -3404,6 +3404,9 @@ int ieee80211_sta_allocate_link(struct sta_info *sta, unsigned int link_id)
 
 	lockdep_assert_wiphy(sdata->local->hw.wiphy);
 
+	if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
+		return -EINVAL;
+
 	WARN_ON(!test_sta_flag(sta, WLAN_STA_INSERTED));
 
 	/* must represent an MLD from the start */
@@ -3452,6 +3455,9 @@ int ieee80211_sta_allocate_link_pre_insert(struct sta_info *sta,
 
 	lockdep_assert_wiphy(sdata->local->hw.wiphy);
 
+	if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
+		return -EINVAL;
+
 	/* must represent an MLD from the start */
 	if (WARN_ON(!sta->sta.valid_links))
 		return -EINVAL;
@@ -3489,11 +3495,16 @@ int ieee80211_sta_activate_link(struct sta_info *sta, unsigned int link_id)
 	struct ieee80211_sub_if_data *sdata = sta->sdata;
 	struct link_sta_info *link_sta, *rem_link_sta;
 	u16 old_links = sta->sta.valid_links;
-	u16 new_links = old_links | BIT(link_id);
+	u16 new_links;
 	bool exists;
 	unsigned long rem_links = sta->sta.reconf.matched_rem_links;
 	unsigned long rem_link_id;
 	int ret;
+
+	if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
+		return -EINVAL;
+
+	new_links = old_links | BIT(link_id);
 
 	link_sta = rcu_dereference_protected(sta->link[link_id],
 					     lockdep_is_held(&sdata->local->hw.wiphy->mtx));
@@ -3522,6 +3533,9 @@ int ieee80211_sta_activate_link(struct sta_info *sta, unsigned int link_id)
 				 IEEE80211_MLD_MAX_NUM_LINKS) {
 			rem_link_sta = wiphy_dereference(sta->local->hw.wiphy,
 							 sta->link[rem_link_id]);
+
+			if (!rem_link_sta)
+				continue;
 
 			if (!ether_addr_equal(rem_link_sta->addr,
 					      link_sta->addr))
