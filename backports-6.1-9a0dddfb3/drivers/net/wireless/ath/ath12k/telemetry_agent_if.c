@@ -86,7 +86,7 @@ static int ath12k_telemetry_create_destroy_peer_agent(struct ath12k_base *ab,
 	peer_obj.psoc_id = ath12k_get_ab_device_id(ab);
 	peer_obj.pdev_id = ath12k_get_pdev_id(pdev);
 	ether_addr_copy(peer_obj.peer_mac_addr, peer->addr);
-	peer_obj.peer_id = peer->peer_id;
+	peer_obj.peer_id = ath12k_dp_link_peer_get_peer_id(ab, peer);
 	peer_obj.hw_link_id = peer->hw_link_id;
 	ath12k_dbg(NULL, ATH12K_DBG_RM,
 		   "id: %d peer: %p (ab:%p - pdev:%p) soc id: %d (pdev id: %d)\n",
@@ -696,7 +696,7 @@ static int ath12k_telemetry_peer_agent_update(struct ath12k_base *ab,
 	peer_obj.psoc_id = ath12k_get_ab_device_id(ab);
 	peer_obj.pdev_id = ath12k_get_pdev_id(pdev);
 	ether_addr_copy(peer_obj.peer_mac_addr, peer->addr);
-	peer_obj.peer_id = peer->peer_id;
+	peer_obj.peer_id = ath12k_dp_link_peer_get_peer_id(ab, peer);
 	peer_obj.hw_link_id = peer->hw_link_id;
 
 	if (is_create)
@@ -1120,12 +1120,13 @@ void ath12k_sawf_notify_breach(u8 *mac_addr,
 	ath12k_telemetry_breach_indication(mac_addr, svc_id, param, set_clear, tid);
 }
 
-int ath12k_telemetry_update_rssi_rate_breach(u8 soc_id, u16 peer_id, u8 *peer_mac,
-					     u8 path_type,
+int ath12k_telemetry_update_rssi_rate_breach(u8 soc_id, u8 pdev_id, u16 peer_id,
+					     u8 *peer_mac, u8 path_type,
 					     s32 rssi_value, u32 rate_value)
 {
 	if (g_agent_ops && g_agent_ops->agent_update_rssi_rate_breach)
 		return g_agent_ops->agent_update_rssi_rate_breach(soc_id,
+								  pdev_id,
 								  peer_id,
 								  peer_mac,
 								  path_type,

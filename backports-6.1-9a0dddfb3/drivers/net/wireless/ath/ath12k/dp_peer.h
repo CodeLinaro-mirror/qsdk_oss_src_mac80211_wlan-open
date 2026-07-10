@@ -499,4 +499,6 @@ void ath12k_dp_peer_hash_table_add(struct ath12k_dp_hw *dp_hw,
 				   struct ath12k_dp_peer *dp_peer);
 void ath12k_dp_peer_hash_table_delete(struct ath12k_dp_hw *dp_hw,
 				      struct ath12k_dp_peer *dp_peer);
+u16 ath12k_dp_link_peer_get_peer_id(struct ath12k_base *ab,
+				    struct ath12k_dp_link_peer *link_peer);
 #endif
