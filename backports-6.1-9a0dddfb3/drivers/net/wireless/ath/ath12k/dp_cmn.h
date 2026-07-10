@@ -263,7 +263,7 @@ struct ath12k_dp_link_peer_rate_info {
 	struct rate_info txrate;
 	u64 rx_duration;
 	u64 tx_duration;
-	u8 rssi_comb;
+	s8 rssi_comb;
 	s8 signal_avg;
 	u16 tx_retry_count;
 	u16 tx_retry_failed;
