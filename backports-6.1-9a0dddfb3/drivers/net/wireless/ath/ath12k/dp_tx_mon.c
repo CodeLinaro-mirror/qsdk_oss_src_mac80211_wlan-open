@@ -498,7 +498,7 @@ ath12k_dp_mon_tx_free_pkt_buf(struct ath12k_pdev_dp *dp_pdev,
 			ath12k_core_dma_unmap_page(dp->dev, pkt_desc->paddr,
 						   ATH12K_DP_MON_TX_BUF_SIZE,
 						   DMA_FROM_DEVICE);
-			ATH12K_TX_MON_STAT_INC(dp_pdev, pkt_tlv_free);
+			ATH12K_TX_MON_STAT_INC(dp_pdev, pkt_buf_free);
 
 			page_frag_free(pkt_desc->mon_buf);
 			pkt_desc->mon_buf = NULL;
@@ -1440,6 +1440,7 @@ ath12k_dp_tx_mon_extract_buffer_info(struct ath12k_pdev_dp *dp_pdev,
 	tx_ppdu_info->msdu_continuation = packet_info->msdu_continuation;
 	tx_ppdu_info->truncated = packet_info->truncated;
 	tx_ppdu_info->has_buffer_data = true;
+	ATH12K_TX_MON_STAT_INC(dp_pdev, pkt_buf_processed);
 
 return_mon_desc:
 
