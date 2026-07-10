@@ -1982,7 +1982,7 @@ int ath12k_dp_mon_rx_dual_ring_process(struct ath12k_pdev_dp *pdev_dp, int mac_i
 	struct ath12k_dp *dp = pdev_dp->dp;
 	struct ath12k_base *ab = dp->ab;
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = pdev_dp->dp_mon_pdev;
-	struct hal_mon_dest_desc *mon_dst_desc;
+	struct hal_mon_dest_desc *mon_dst_desc, *next_desc;
 	struct dp_srng *mon_dst_ring;
 	struct hal_srng *srng;
 	struct ath12k_dp_mon_desc *mon_desc;
@@ -2012,14 +2012,15 @@ int ath12k_dp_mon_rx_dual_ring_process(struct ath12k_pdev_dp *pdev_dp, int mac_i
 		 */
 		info0 = le32_to_cpu(mon_dst_desc->info0);
 		if (u32_get_bits(info0, HAL_MON_DEST_INFO0_EMPTY_DESC)) {
-			/* If empty descriptor gets received after the end of ppdu
-			 * flush the last received ppdu along with the msdus in status
-			 * buffer
-			 */
-			spin_lock_bh(&dp_mon_pdev->ppdu_desc_lock);
-			if (!list_empty(mon_desc_used_list))
-				ath12k_wifi7_dp_mon_rx_h_empty_desc(pdev_dp);
-			spin_unlock_bh(&dp_mon_pdev->ppdu_desc_lock);
+			if (!list_empty(mon_desc_used_list)) {
+				ath12k_wifi7_dp_mon_flush_used_list(pdev_dp,
+								    mon_desc_used_list);
+			} else {
+				spin_lock_bh(&dp_mon_pdev->ppdu_desc_lock);
+				if (!list_empty(&dp_mon_pdev->ppdu_desc_used_list))
+					ath12k_wifi7_dp_mon_rx_h_empty_desc(pdev_dp);
+				spin_unlock_bh(&dp_mon_pdev->ppdu_desc_lock);
+			}
 
 			mon_stats->ring_desc_empty++;
 			goto move_next;
@@ -2101,17 +2102,22 @@ int ath12k_dp_mon_rx_dual_ring_process(struct ath12k_pdev_dp *pdev_dp, int mac_i
 		 * reaped. This helps to efficiently utilize the NAPI budget.
 		 */
 		if (end_reason == HAL_MON_END_OF_PPDU) {
-			*budget -= 1;
 			mon_desc->end_of_ppdu = true;
 			mon_stats->num_ppdu_reaped++;
-			ret = ath12k_wifi7_dp_mon_rx_add_ppdu_desc(mon_desc_used_list,
-								   dp_mon_pdev);
-			if (ret) {
-				ath12k_dbg(dp->ab, ATH12K_DBG_DP_MON,
-					   "mon_dest: Failed to add mon desc to ppdu ret %d",
-					   ret);
-				ath12k_wifi7_dp_mon_flush_used_list(pdev_dp,
-								    mon_desc_used_list);
+			next_desc = ath12k_hal_srng_dst_next_peek_nolock(srng);
+			if (!next_desc ||
+			    !u32_get_bits(le32_to_cpu(next_desc->info0),
+					  HAL_MON_DEST_INFO0_EMPTY_DESC)) {
+				*budget -= 1;
+				ret = ath12k_wifi7_dp_mon_rx_add_ppdu_desc(
+						mon_desc_used_list, dp_mon_pdev);
+				if (unlikely(ret)) {
+					ath12k_dbg(dp->ab, ATH12K_DBG_DP_MON,
+						   "mon_dest: Failed to add mon desc to ppdu ret %d",
+						   ret);
+					ath12k_wifi7_dp_mon_flush_used_list(
+							pdev_dp, mon_desc_used_list);
+				}
 			}
 		}
 
