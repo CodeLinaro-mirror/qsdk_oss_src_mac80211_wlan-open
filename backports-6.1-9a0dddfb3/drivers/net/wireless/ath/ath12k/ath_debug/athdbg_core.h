@@ -68,7 +68,7 @@ struct ath_debug_base {
 	u8 wdbg_handlers_cnt;
 	char dev[DEV_NAME_LEN];
 	char bus[BUS_NAME_LEN];
-	struct mutex uio_lock; /* protects UIO data ring writes */
+	spinlock_t uio_lock; /* protects UIO data ring writes */
 	struct athdbg_uio_trace uio_trace;
 	u32 nl_portid;
 };

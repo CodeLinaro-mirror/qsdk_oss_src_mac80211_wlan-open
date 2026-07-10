@@ -146,7 +146,7 @@ void athdbg_uio_buff_write(struct ath12k_crit_record *payload)
 	offset = ATHDBG_UIO_DATA_RING_HEADER_BYTES +
 		 rear * ATHDBG_UIO_MAX_BUFFER_SIZE;
 
-	mutex_lock(&athdbg_base->uio_lock);
+	spin_lock_bh(&athdbg_base->uio_lock);
 
 	/* Set timestamp after acquiring lock so it reflects actual write time */
 	payload->ts_nsec = ktime_to_ns(ktime_get());
@@ -157,7 +157,7 @@ void athdbg_uio_buff_write(struct ath12k_crit_record *payload)
 	if (ret == -ENOSPC) {
 		pr_err("athdbg_uio: HOST data ring full, dropping critical event\n");
 		athdbg_base->uio_trace.dropped++;
-		mutex_unlock(&athdbg_base->uio_lock);
+		spin_unlock_bh(&athdbg_base->uio_lock);
 		return;
 	}
 
@@ -167,7 +167,7 @@ void athdbg_uio_buff_write(struct ath12k_crit_record *payload)
 	if (ret)
 		pr_err("athdbg_uio: debug_uio_notify failed: %d\n", ret);
 
-	mutex_unlock(&athdbg_base->uio_lock);
+	spin_unlock_bh(&athdbg_base->uio_lock);
 }
 
 void athdbg_uio_critical_failure_trigger(struct ath12k_base *ab, uint32_t crit_enum)
