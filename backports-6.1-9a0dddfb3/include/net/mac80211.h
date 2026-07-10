@@ -8927,6 +8927,22 @@ void ieee80211_cu_notify(struct ieee80211_hw *hw,
 			 unsigned int link_id,
 			 enum nl80211_cu_state cu_state);
 
+/**
+ * ieee80211_update_npca_configs - update NPCA channel parameters for a link
+ * @vif: virtual interface
+ * @link_id: the link whose NPCA configuration is being updated
+ * @npca_freq: NPCA primary channel frequency in MHz; 0 to clear
+ * @npca_punct_bitmap: NPCA disabled sub-channel puncture bitmap; 0 if unused
+ *
+ * Called by the driver to push a new NPCA frequency and puncture bitmap into
+ * the link's channel definition and notify mac80211 of the change via
+ * %BSS_CHANGED_NPCA.  Must be called with the wiphy mutex held.
+ */
+void ieee80211_update_npca_configs(struct ieee80211_vif *vif,
+				   unsigned int link_id,
+				   u32 npca_freq,
+				   u16 npca_punct_bitmap);
+
 /*
  * ieee80211_gstrings_stats - stats for ethtool interface
  */
