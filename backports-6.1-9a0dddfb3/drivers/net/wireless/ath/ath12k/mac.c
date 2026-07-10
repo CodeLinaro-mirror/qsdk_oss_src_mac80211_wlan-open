@@ -23781,7 +23781,7 @@ ath12k_mac_assign_vif_chanctx_handle(struct ieee80211_hw *hw,
 		return -ENOMEM;
 	}
 
-	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA)
+	if (!is_bridge_vdev && ahvif->vdev_type == WMI_VDEV_TYPE_STA)
 		memcpy(arvif->bssid, link_conf->addr, ETH_ALEN);
 
 	arvif = ath12k_mac_assign_vif_to_vdev(hw, arvif, ctx,
