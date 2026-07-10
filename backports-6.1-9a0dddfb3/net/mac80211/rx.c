@@ -1004,7 +1004,7 @@ ieee80211_rx_monitor(struct ieee80211_local *local, struct sk_buff *origskb,
 			ieee80211_rx_stats_reason(prev_sdata, skb->len,
 						  status->tid,
 						  RX_TOTAL_PKTS);
-		if ((prev_sdata->flags & IEEE80211_SDATA_EXT_MONITOR_ENABLED) &&
+		if ((prev_sdata->flags & IEEE80211_SDATA_EXT_RX_MONITOR_ENABLED) &&
 		    ieee80211_ext_mon_rx_notifier_has_listeners_extn()) {
 			rx_event.mpdu = skb;
 			rx_event.hw = &local->hw;
@@ -1035,7 +1035,8 @@ ieee80211_rx_monitor(struct ieee80211_local *local, struct sk_buff *origskb,
 				ieee80211_rx_stats_reason(prev_sdata, skb->len,
 							  status->tid,
 							  RX_TOTAL_PKTS);
-			if ((prev_sdata->flags & IEEE80211_SDATA_EXT_MONITOR_ENABLED) &&
+			if ((prev_sdata->flags &
+			     IEEE80211_SDATA_EXT_RX_MONITOR_ENABLED) &&
 			    ieee80211_ext_mon_rx_notifier_has_listeners_extn()) {
 				rx_event.mpdu = skb;
 				rx_event.hw = &local->hw;
