@@ -613,6 +613,14 @@ static ssize_t ath12k_dump_mgmt_stats(struct file *file,
 		"timing_advertisement", "reserved",
 		"beacon", "atim", "disassoc",
 		"auth", "deauth", "action", "action_no_ack"};
+	/*
+	 * Beacon Tx is offloaded to firmware in ath12k.
+	 * Skip beacon Tx stats for all vdev types and beacon Rx stats for AP.
+	 * Beacon Rx stats remain valid for Mesh/STA.
+	 * Skip the reserved management subtype as well for all modes.
+	 */
+	int beacon_frm_type = IEEE80211_STYPE_BEACON >> 4;
+	int reserved_frm_type = 0x0070 >> 4; /* mgmt reserved subtype */
 
 	if (ar->ah->state != ATH12K_HW_STATE_ON)
 		return -ENETDOWN;
@@ -661,15 +669,22 @@ static ssize_t ath12k_dump_mgmt_stats(struct file *file,
 				 "  Total TX Cmpl error bytes = %llu\n",
 				 mgmt_stats->tx_cmpl_err_bytes);
 		len += scnprintf(buf + len, size - len, "  Success frames:\n");
-		for (i = 0; i < ATH12K_STATS_MGMT_FRM_TYPE_MAX-1; i++)
+		for (i = 0; i < ATH12K_STATS_MGMT_FRM_TYPE_MAX - 1; i++) {
+			if (i == beacon_frm_type || i == reserved_frm_type)
+				continue;
 			len += scnprintf(buf + len, size - len, "       %s: %d\n",
-					mgmt_frm_type[i], mgmt_stats->tx_succ_cnt[i]);
+					mgmt_frm_type[i],
+					mgmt_stats->tx_succ_cnt[i]);
+		}
 
 		len += scnprintf(buf + len, size - len, "  Failed frames:\n");
 
-		for (i = 0; i < ATH12K_STATS_MGMT_FRM_TYPE_MAX-1; i++)
+		for (i = 0; i < ATH12K_STATS_MGMT_FRM_TYPE_MAX - 1; i++) {
+			if (i == beacon_frm_type || i == reserved_frm_type)
+				continue;
 			len += scnprintf(buf + len, size - len, "       %s: %d\n",
 					mgmt_frm_type[i], mgmt_stats->tx_fail_cnt[i]);
+		}
 
 		len += scnprintf(buf + len, size - len, "  RX stats :\n");
 		len += scnprintf(buf + len, size - len,
@@ -680,21 +695,34 @@ static ssize_t ath12k_dump_mgmt_stats(struct file *file,
 				 "  Total RX Mgmt frames = %llu\n",
 				 mgmt_stats->aggr_rx_mgmt);
 		len += scnprintf(buf + len, size - len, "  Success frames:\n");
-		for (i = 0; i < ATH12K_STATS_MGMT_FRM_TYPE_MAX-1; i++)
+		for (i = 0; i < ATH12K_STATS_MGMT_FRM_TYPE_MAX - 1; i++) {
+			/* Skip reserved frame types and Beacon frames in AP-only mode. */
+			if (i == reserved_frm_type ||
+			    (i == beacon_frm_type &&
+			     (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP &&
+			      arvif->vdev_subtype != WMI_VDEV_SUBTYPE_MESH_11S)))
+				continue;
 			len += scnprintf(buf + len, size - len, "       %s: %d\n",
 					mgmt_frm_type[i], mgmt_stats->rx_cnt[i]);
+		}
 
 		len += scnprintf(buf + len, size - len, " Tx completion stats :\n");
 		len += scnprintf(buf + len, size - len, " success completions:\n");
 
-		for (i = 0; i < ATH12K_STATS_MGMT_FRM_TYPE_MAX-1; i++)
+		for (i = 0; i < ATH12K_STATS_MGMT_FRM_TYPE_MAX - 1; i++) {
+			if (i == beacon_frm_type || i == reserved_frm_type)
+				continue;
 			len += scnprintf(buf + len, size - len, "       %s: %d\n",
 					mgmt_frm_type[i], mgmt_stats->tx_compl_succ[i]);
+		}
 
 		len += scnprintf(buf + len, size - len, " failure completions:\n");
 
-		for (i = 0; i < ATH12K_STATS_MGMT_FRM_TYPE_MAX-1; i++)
+		for (i = 0; i < ATH12K_STATS_MGMT_FRM_TYPE_MAX - 1; i++) {
+			if (i == beacon_frm_type || i == reserved_frm_type)
+				continue;
 			len += scnprintf(buf + len, size - len, "        %s: %d\n", mgmt_frm_type[i], mgmt_stats->tx_compl_fail[i]);
+		}
 
 		len += scnprintf(buf + len, size - len, "  Link Stats :\n ");
 		len += scnprintf(buf + len, size - len,
