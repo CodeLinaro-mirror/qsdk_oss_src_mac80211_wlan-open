@@ -7,7 +7,9 @@
 #include <linux/vmalloc.h>
 #include "core.h"
 #include "debug.h"
+#ifdef CPTCFG_ATHDEBUG_UIO_LOGGING
 #include "ath_debug/athdbg_uio.h"
+#endif
 
 void ath12k_info(struct ath12k_base *ab, const char *fmt, ...)
 {
@@ -19,14 +21,10 @@ void ath12k_info(struct ath12k_base *ab, const char *fmt, ...)
 	va_start(args, fmt);
 	vaf.va = &args;
 
-#ifdef CPTCFG_ATHDEBUG_UIO_LOGGING
-	athdbg_uio_log_info(ab, fmt, args);
-#else
 	if (likely(ab))
 		dev_info(ab->dev, "%pV", &vaf);
 	else
 		pr_info("ath12k: %pV", &vaf);
-#endif
 
 	va_end(args);
 }
@@ -42,14 +40,10 @@ void ath12k_err(struct ath12k_base *ab, const char *fmt, ...)
 	va_start(args, fmt);
 	vaf.va = &args;
 
-#ifdef CPTCFG_ATHDEBUG_UIO_LOGGING
-	athdbg_uio_log_err(ab, fmt, args);
-#else
 	if (likely(ab))
 		dev_err(ab->dev, "%pV", &vaf);
 	else
 		pr_err("ath12k: %pV", &vaf);
-#endif
 
 	va_end(args);
 }
@@ -65,11 +59,7 @@ void __ath12k_warn(struct device *dev, const char *fmt, ...)
 	va_start(args, fmt);
 	vaf.va = &args;
 
-#ifdef CPTCFG_ATHDEBUG_UIO_LOGGING
-	athdbg_uio_log_warn(dev ? dev_get_drvdata(dev) : NULL, fmt, args);
-#else
 	dev_warn_ratelimited(dev, "%pV", &vaf);
-#endif
 
 	va_end(args);
 }
@@ -87,9 +77,6 @@ void __ath12k_dbg(struct ath12k_base *ab, u64 mask,
 	vaf.fmt = fmt;
 	vaf.va = &args;
 
-#ifdef CPTCFG_ATHDEBUG_UIO_LOGGING
-	athdbg_uio_log_debug(ab, mask, fmt, args);
-#else
 	if (mask & ath12k_debug_mask) {
 		if (ab)
 #if defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
@@ -104,7 +91,6 @@ void __ath12k_dbg(struct ath12k_base *ab, u64 mask,
 		else
 			pr_info("ath12k: %pV", &vaf);
 	}
-#endif
 	va_end(args);
 }
 EXPORT_SYMBOL(__ath12k_dbg);
