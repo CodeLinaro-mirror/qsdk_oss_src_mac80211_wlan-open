@@ -359,6 +359,15 @@ struct sta_info *sta_info_get_by_idx(struct ieee80211_sub_if_data *sdata,
 	return NULL;
 }
 
+static void sta_info_link_rcu_free(struct rcu_head *rcu)
+{
+	struct sta_link_alloc *alloc = container_of(rcu, typeof(*alloc), rcu_head);
+
+	/* Safe to free per-cpu memory here: grace period is over */
+	free_percpu(alloc->info.pcpu_rx_stats);
+	kfree(alloc);
+}
+
 static void sta_info_free_link(struct link_sta_info *link_sta)
 {
 	free_percpu(link_sta->pcpu_rx_stats);
@@ -438,8 +447,7 @@ static void sta_remove_link(struct sta_info *sta, unsigned int link_id,
 	RCU_INIT_POINTER(sta->sta.link[link_id], NULL);
 	link_sta->sta = NULL;
 	if (alloc) {
-		sta_info_free_link(&alloc->info);
-		kfree_rcu(alloc, rcu_head);
+		call_rcu(&alloc->rcu_head, sta_info_link_rcu_free);
 	}
 
 	ieee80211_sta_recalc_aggregates(&sta->sta);
