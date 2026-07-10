@@ -4052,7 +4052,11 @@ void ieee80211_dfs_cac_cancel(struct ieee80211_local *local,
 			 * Release monitor VAP first to avoid
 			 * channel change in radar channel
 			 */
-			if (!link->conf->deferred_up) {
+			if (!link->conf->deferred_up
+#ifdef CPTCFG_QCN_EXTN
+			    && !cfg80211_support_bootup_cac(wiphy)
+#endif /* CPTCFG_QCN_EXTN */
+			) {
 				ieee80211_release_monitor_chandef(wiphy, curr_ctx,
 								  &chandef);
 				ieee80211_link_release_channel(link);
