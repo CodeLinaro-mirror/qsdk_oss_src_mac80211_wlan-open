@@ -339,6 +339,55 @@ int ath12k_spectral_nl80211_bw_to_idx(enum nl80211_chan_width bw)
 	}
 }
 
+static int ath12k_spectral_nl80211_bw_to_wmi_chwidth(enum nl80211_chan_width bw)
+{
+	switch (bw) {
+	case NL80211_CHAN_WIDTH_20_NOHT:
+	case NL80211_CHAN_WIDTH_20:
+		return WMI_PEER_CHWIDTH_20MHZ;
+	case NL80211_CHAN_WIDTH_40:
+		return WMI_PEER_CHWIDTH_40MHZ;
+	case NL80211_CHAN_WIDTH_80:
+		return WMI_PEER_CHWIDTH_80MHZ;
+	case NL80211_CHAN_WIDTH_160:
+		return WMI_PEER_CHWIDTH_160MHZ;
+	case NL80211_CHAN_WIDTH_320:
+		return WMI_PEER_CHWIDTH_320MHZ;
+	default:
+		return -1;
+	}
+}
+
+static void ath12k_spectral_update_chwidth(struct ath12k *ar,
+					   struct ath12k_link_vif *arvif)
+{
+	struct cfg80211_chan_def *chandef = &arvif->chanctx.def;
+	int wmi_bw;
+
+	if (!chandef->chan) {
+		ath12k_warn(ar->ab,
+			    "spectral start_scan: vdev %u has no channel context\n",
+			    arvif->vdev_id);
+		return;
+	}
+
+	wmi_bw = ath12k_spectral_nl80211_bw_to_wmi_chwidth(chandef->width);
+	if (wmi_bw < 0) {
+		ath12k_warn(ar->ab,
+			    "spectral start_scan: unsupported chandef width %u\n",
+			    chandef->width);
+		return;
+	}
+
+	spin_lock_bh(&ar->spectral.lock);
+	ar->spectral.ch_width     = wmi_bw;
+	ar->spectral.sscan_bw     = wmi_bw;
+	ar->spectral.pri20_freq   = chandef->chan->center_freq;
+	ar->spectral.sscan_cfreq1 = chandef->center_freq1;
+	ar->spectral.sscan_cfreq2 = chandef->center_freq2;
+	spin_unlock_bh(&ar->spectral.lock);
+}
+
 static void ath12k_spectral_init_param_min_max(struct ath12k *ar)
 {
 	struct ath12k_spectral_param_min_max *pmm = &ar->spectral.param_min_max;
@@ -384,6 +433,13 @@ int ath12k_spectral_start_scan(struct ath12k *ar)
 			    ar->pdev_idx);
 		return -ENODEV;
 	}
+
+	/* If no SESSION_INFO_SUPPORT in FW, seed it from the vdev's current chandef
+	 * so FFT reports still carry a valid width.
+	 */
+	if (!test_bit(WMI_TLV_SERVICE_SPECTRAL_SESSION_INFO_SUPPORT,
+		      ar->ab->wmi_ab.svc_map))
+		ath12k_spectral_update_chwidth(ar, arvif);
 
 	/* Clear any stale trigger state in firmware. */
 	ret = ath12k_wmi_vdev_spectral_enable(ar, arvif->vdev_id,

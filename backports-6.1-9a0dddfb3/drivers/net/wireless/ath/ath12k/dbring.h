@@ -38,6 +38,7 @@ struct wmi_pdev_sscan_fw_param_event {
 	struct ath12k_wmi_pdev_sscan_fft_bin_index *bin;
 	struct ath12k_wmi_pdev_sscan_chan_info ch_info;
 	struct ath12k_wmi_pdev_sscan_per_detector_info *det_info;
+	bool ch_info_valid;
 };
 
 struct wmi_spectral_capabilities_event {

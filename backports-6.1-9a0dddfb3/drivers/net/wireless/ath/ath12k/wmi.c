@@ -165,6 +165,7 @@ struct wmi_pdev_sscan_fw_param_parse {
 	struct ath12k_wmi_pdev_sscan_per_detector_info *det_info;
 	bool bin_entry_done;
 	bool det_info_entry_done;
+	bool ch_info_valid;
 	u32 num_fft_bin_index;
 	u32 num_det_info;
 
@@ -17106,6 +17107,7 @@ static int ath12k_wmi_tlv_sscan_fw_parse(struct ath12k_base *ab,
 	case WMI_TAG_PDEV_SSCAN_CHAN_INFO:
 	       memcpy(&parse->ch_info, ptr,
 		      sizeof(struct ath12k_wmi_pdev_sscan_chan_info));
+	       parse->ch_info_valid = true;
 	       parse->bin_entry_done = true;
 	       break;
 	default:
@@ -17142,20 +17144,32 @@ ath12k_wmi_pdev_sscan_fw_param_event(struct ath12k_base *ab,
 	param.fixed             = parse.fixed;
 	param.bin		= parse.bin;
 	param.ch_info		= parse.ch_info;
+	param.ch_info_valid	= parse.ch_info_valid;
 	param.det_info		= parse.det_info;
 
 	pdev_idx = param.fixed.pdev_id;
 	ar = ab->pdevs[pdev_idx].ar;
 
 #ifdef CPTCFG_ATH12K_SPECTRAL
-	ar->spectral.ch_width     = param.ch_info.operating_bw;
-	ar->spectral.pri20_freq   = param.ch_info.operating_pri20_freq;
-	ar->spectral.sscan_cfreq1 = param.ch_info.sscan_cfreq1;
-	ar->spectral.sscan_cfreq2 = param.ch_info.sscan_cfreq2;
-	ar->spectral.sscan_bw     = param.ch_info.sscan_bw;
+	/* chan_info is only meaningful when FW
+	 * advertises WMI_TLV_SERVICE_SPECTRAL_SESSION_INFO_SUPPORT.
+	 */
+	if (param.ch_info_valid &&
+	    test_bit(WMI_TLV_SERVICE_SPECTRAL_SESSION_INFO_SUPPORT,
+		     ab->wmi_ab.svc_map)) {
+		spin_lock_bh(&ar->spectral.lock);
+		ar->spectral.ch_width     = param.ch_info.operating_bw;
+		ar->spectral.pri20_freq   = param.ch_info.operating_pri20_freq;
+		ar->spectral.sscan_cfreq1 = param.ch_info.sscan_cfreq1;
+		ar->spectral.sscan_cfreq2 = param.ch_info.sscan_cfreq2;
+		ar->spectral.sscan_bw     = param.ch_info.sscan_bw;
+		spin_unlock_bh(&ar->spectral.lock);
+	}
 	if (param.det_info) {
+		spin_lock_bh(&ar->spectral.lock);
 		ar->spectral.start_freq = param.det_info->start_freq;
 		ar->spectral.end_freq   = param.det_info->end_freq;
+		spin_unlock_bh(&ar->spectral.lock);
 	}
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
