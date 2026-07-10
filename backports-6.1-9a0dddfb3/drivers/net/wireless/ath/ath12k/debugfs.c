@@ -542,7 +542,7 @@ int wmi_ctrl_path_btcoex_stat(struct ath12k *ar, char __user *ubuf,
 	if (!buf)
 		return -ENOMEM;
 
-	spin_lock_bh(&ar->wmi_ctrl_path_stats_lock);
+	spin_lock_bh(&ar->debug.wmi_ctrl_path_stats_lock);
 	list_for_each_entry(stats, &ar->debug.wmi_ctrl_path_stats.pdev_stats, list) {
 		if (!stats)
 			break;
@@ -590,7 +590,7 @@ int wmi_ctrl_path_btcoex_stat(struct ath12k *ar, char __user *ubuf,
 	}
 
 	ath12k_wmi_crl_path_stats_list_free(ar, &ar->debug.wmi_ctrl_path_stats.pdev_stats);
-	spin_unlock_bh(&ar->wmi_ctrl_path_stats_lock);
+	spin_unlock_bh(&ar->debug.wmi_ctrl_path_stats_lock);
 	ret_val =  simple_read_from_buffer(ubuf, count, ppos, buf, len);
 	kfree(buf);
 	return ret_val;
@@ -4019,9 +4019,9 @@ int wmi_ctrl_path_mem_stat(struct ath12k *ar, char __user *ubuf,
 	len += scnprintf(buf + len, size - len,
 			"WMI_CTRL_PATH_MEM_STATS:\n");
 
-	spin_lock_bh(&ar->wmi_ctrl_path_stats_lock);
+	spin_lock_bh(&ar->debug.wmi_ctrl_path_stats_lock);
 	list_splice_tail_init(&ar->debug.wmi_ctrl_path_stats.pdev_stats, &wmi_stats_list);
-	spin_unlock_bh(&ar->wmi_ctrl_path_stats_lock);
+	spin_unlock_bh(&ar->debug.wmi_ctrl_path_stats_lock);
 	list_for_each_entry_safe(stats, tmp, &wmi_stats_list, list) {
 		if (!stats)
 			break;
@@ -4077,9 +4077,9 @@ static ssize_t ath12k_read_all_wmi_ctrl_path_stats(struct file *file,
 
 	LIST_HEAD(periodic_stats_list);
 
-	spin_lock_bh(&ar->wmi_ctrl_path_stats_lock);
+	spin_lock_bh(&ar->debug.wmi_ctrl_path_stats_lock);
 	list_splice_tail_init(&ar->debug.period_wmi_list, &periodic_stats_list);
-	spin_unlock_bh(&ar->wmi_ctrl_path_stats_lock);
+	spin_unlock_bh(&ar->debug.wmi_ctrl_path_stats_lock);
 	list_for_each_entry_safe(stats, tmp, &periodic_stats_list, list) {
 		switch (stats->tagid) {
 		case WMI_CTRL_PATH_PMLO_STATS:
@@ -4109,10 +4109,10 @@ static ssize_t ath12k_read_all_wmi_ctrl_path_stats(struct file *file,
 	len += scnprintf(buf + len, size - len, "\nOn-Demand Stats:\n");
 	LIST_HEAD(on_demand_stats_list);
 
-	spin_lock_bh(&ar->wmi_ctrl_path_stats_lock);
+	spin_lock_bh(&ar->debug.wmi_ctrl_path_stats_lock);
 	list_splice_tail_init(&ar->debug.wmi_ctrl_path_stats.pdev_stats,
 			      &on_demand_stats_list);
-	spin_unlock_bh(&ar->wmi_ctrl_path_stats_lock);
+	spin_unlock_bh(&ar->debug.wmi_ctrl_path_stats_lock);
 	list_for_each_entry_safe(stats, tmp, &on_demand_stats_list, list) {
 		if (!stats)
 			break;
