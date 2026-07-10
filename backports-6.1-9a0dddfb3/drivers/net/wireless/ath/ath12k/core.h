@@ -830,7 +830,14 @@ struct ath12k_smd_params {
 	bool ptk_mode;
 };
 
-#define ATH12K_FLAG_BEACON_RECEIVED	0
+struct ath12k_uhr_cu_info {
+	enum nl80211_cu_state cu_state;
+	u32 mode_present;
+	u32 npca_freq;
+	u16 npca_puncture_bitmap;
+};
+
+#define ATH12K_FLAG_BEACON_RECEIVED     0
 
 struct ath12k_link_vif {
 	u32 vdev_id;
@@ -890,7 +897,7 @@ struct ath12k_link_vif {
 	u64 obss_color_bitmap;
 	struct wiphy_work update_obss_color_notify_work;
 	struct wiphy_work update_bcn_template_work;
-	enum nl80211_cu_state pending_cu_state;
+	struct ath12k_uhr_cu_info uhr_ecu;
 	struct wiphy_work uhr_cu_notify_work;
 	bool beacon_prot;
 	bool control_frame_prot;
