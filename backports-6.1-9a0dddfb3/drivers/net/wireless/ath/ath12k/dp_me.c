@@ -174,8 +174,17 @@ static int ath12k_dp_me_check(struct ath12k_dp_vif *dp_vif, struct ath12k_me_ctx
 	if (!is_multicast_ether_addr(skb_eth_hdr(skb)->h_dest))
 		goto fail;
 
-	if ((l3_proto == IPPROTO_IGMP) && !(flags & ATH12K_ME_FLAGS_BIT_IGMP_EN))
-		goto fail;
+	/*
+	 * In case of IGMP packets the handling depends upon the configuration
+	 * done by the user.
+	 */
+	if (l3_proto == IPPROTO_IGMP) {
+		if (!(flags & ATH12K_ME_FLAGS_BIT_IGMP_EN))
+			goto fail;
+
+		/* User intends to force convert all the IGMP into ucast */
+		ctx->me_flags |= ATH12K_ME_FLAGS_BIT_FORCE_ME;
+	}
 
 	return 0;
 
@@ -329,10 +338,11 @@ int ath12k_dp_me_tx(struct ath12k_dp_vif *dp_vif, struct sk_buff *skb,
 			 struct ath12k_dp_link_vif *dp_link_vif,
 			 struct ath12k_dp_peer *dp_peer, void *app_data,
 			 struct ath12k_dp_tx_msdu_info *msdu_info);
-	struct ath12k_me_ctx ctx = {0};
-	struct ath12k_me_db *me_db;
-	union nf_inet_addr addr = {0};
 	struct ath12k_vif *ahvif = container_of(dp_vif, struct ath12k_vif, dp_vif);
+	struct ath12k_me_ctx ctx = {0};
+	union nf_inet_addr addr = {0};
+	struct ath12k_me_db *me_db;
+	u8 force_mcuc = 0;
 	int action;
 	bool is_v6;
 
@@ -340,6 +350,7 @@ int ath12k_dp_me_tx(struct ath12k_dp_vif *dp_vif, struct sk_buff *skb,
 	if (!me_db)
 		return -ENOENT;
 
+	action_fn = ath12k_dp_me_tx_ucast_peer;
 	ctx.me_flags = me_db->me_flags;
 	ctx.skb = skb;
 
@@ -356,28 +367,28 @@ int ath12k_dp_me_tx(struct ath12k_dp_vif *dp_vif, struct sk_buff *skb,
 	action = ath12k_me_hmmc_lookup(me_db, (__be32 *)&addr, is_v6);
 	ath12k_me_db_put(me_db);
 
-	switch (action) {
-	case ATH12K_ME_HMMC_ACTION:
-		action_fn = ath12k_dp_me_tx_ucast_peer;
-		break;
-
-	case ATH12K_ME_DENYLIST_ACTION:
+	if (action == ATH12K_ME_DENYLIST_ACTION)
 		return -EINVAL;
 
-	default:
-		break;
-	}
+	force_mcuc += (action == ATH12K_ME_HMMC_ACTION);
+	force_mcuc += !!(ctx.me_flags & ATH12K_ME_FLAGS_BIT_FORCE_ME);
 
+	if (!force_mcuc) {
 #if defined(CONFIG_BRIDGE_MCAST_OFFLOAD)
-	if (action != ATH12K_ME_HMMC_ACTION) {
 		ctx.grp = ath12k_me_snoop_grp_find(dp_vif, skb);
 		if (!ctx.grp)
 			return -EINVAL;
 
 		bitmap_zero(ctx.tx_bmap, ATH12K_ME_MAX_SNOOP_PEERS);
 		action_fn = ath12k_dp_me_tx_ucast_grp_extn;
-	}
+#else
+		/*
+		 * If Snoop lookup is disabled & ME is not enforced then this payload
+		 * needs to be sent as multicast
+		 */
+		return -EINVAL;
 #endif
+	}
 
 	/*
 	 * Perform MCUC across all the relevant peers.
