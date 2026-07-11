@@ -24,11 +24,6 @@
 #define qmi_handle_init athdbg_qmi_handle_init
 #endif
 
-#include <linux/of_reserved_mem.h>
-#include <linux/mm.h>
-#include <linux/iommu.h>
-#include <linux/cma.h>
-
 #define SLEEP_CLOCK_SELECT_INTERNAL_BIT	0x02
 #define HOST_CSTATE_BIT			0x04
 #define PLATFORM_CAP_PCIE_GLOBAL_RESET	0x08
@@ -4244,7 +4239,15 @@ static void ath12k_qmi_free_mlo_mem_chunk(struct ath12k_base *ab,
 	mlo_chunk = &ag->mlo_mem.chunk[idx];
 
 	if (fixed_mem && mlo_chunk->v.ioaddr) {
+#ifdef PLATFORM_SDX
+		dma_free_attrs(dev,
+			       mlo_chunk->size,
+			       mlo_chunk->v.ioaddr,
+			       mlo_chunk->paddr,
+			       DMA_ATTR_FORCE_CONTIGUOUS);
+#else
 		iounmap(mlo_chunk->v.ioaddr);
+#endif
 		mlo_chunk->v.ioaddr = NULL;
 	} else if (mlo_chunk->v.addr) {
 		dma_free_coherent(dev,
@@ -4272,52 +4275,6 @@ static void ath12k_qmi_free_mlo_mem_chunk(struct ath12k_base *ab,
 	}
 }
 
-void ath12k_qmi_free_mlo_iommu_mem_chunk(struct ath12k_base *ab)
-{
-#ifdef PLATFORM_SDX
-	struct ath12k_hw_group *ag = ab->ag;
-	struct target_mem_chunk *mlo_chunk = &ag->mlo_mem.chunk[0];
-	struct reserved_mem *rmem = NULL;
-	struct cma *cma = NULL;
-	struct iommu_domain *dom = iommu_get_domain_for_dev(ab->dev);
-	size_t mapped_size = ag->mlo_mem.mlo_mem_size;
-
-	if (!ag->num_started && mlo_chunk->v.addr) {
-		if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags)) {
-			ath12k_dbg(ab, ATH12K_DBG_QMI,
-				   "MLO: skipping iommu_unmap during crash recovery (paddr=0x%llx)\n",
-				   (u64)mlo_chunk->paddr);
-			return;
-		}
-
-		if (dom && mlo_chunk->paddr) {
-			size_t unmapped_size =
-				iommu_unmap(dom, mlo_chunk->paddr, mapped_size);
-
-			if (unmapped_size != mapped_size)
-				ath12k_warn(ab, "MLO: iommu_unmap mismatch unm=0x%zx len=0x%zx\n",
-					    unmapped_size, mapped_size);
-		}
-
-		rmem = ath12k_core_get_reserved_mem_by_name(ab, "mlo-global-mem");
-		if (rmem && rmem->priv) {
-			cma = (struct cma *)rmem->priv;
-			if (cma)
-				cma_release(cma, virt_to_page(mlo_chunk->v.addr),
-					    ag->mlo_mem.mlo_mem_size >> PAGE_SHIFT);
-		} else {
-			ath12k_dbg(ab, ATH12K_DBG_QMI, "Failed to get cma handle\n");
-		}
-
-		mlo_chunk->v.addr            = NULL;
-		mlo_chunk->paddr             = 0;
-		mlo_chunk->size              = 0;
-		ag->mlo_mem.is_mlo_mem_avail = false;
-		ag->mlo_mem.mlo_mem_size     = 0;
-	}
-#endif
-}
-
 void ath12k_qmi_free_target_mem_chunk(struct ath12k_base *ab)
 {
 	struct ath12k_hw_group *ag = ab->ag;
@@ -4329,59 +4286,44 @@ void ath12k_qmi_free_target_mem_chunk(struct ath12k_base *ab)
 			if (ab->is_bypassed)
 				continue;
 
-			if (IS_ENABLED(CONFIG_IOMMU_SUPPORT)) {
-				if (test_bit(ATH12K_GROUP_FLAG_RECOVERY,
-					     &ab->dev_flags)) {
-					ath12k_info(ab, "In recovery! skip mem cleanup");
-					continue;
-				}
-				if (ab->qmi.target_mem[i].type ==
-				    MLO_GLOBAL_MEM_REGION_TYPE &&
-				    ab->qmi.target_mem[i].v.addr)
-					ath12k_qmi_free_mlo_iommu_mem_chunk(ab);
-
-				if (ab->qmi.target_mem[i].paddr) {
-					ab->qmi.target_mem[i].v.addr = NULL;
-					ab->qmi.target_mem[i].paddr = 0;
-				}
-			} else {
-				ath12k_qmi_free_mlo_mem_chunk(ab,
-							      &ab->qmi.target_mem[i],
-							      mlo_idx++);
-			}
+			ath12k_qmi_free_mlo_mem_chunk(ab,
+						      &ab->qmi.target_mem[i],
+						      mlo_idx++);
 		} else {
 			dev = ab->qmi_mem_dev.rmem_inited ?
 			      &ab->qmi_mem_dev.dev : ab->dev;
-			if (test_bit(ATH12K_FLAG_FIXED_MEM_REGION,
-				     &ab->dev_flags) &&
+			if (test_bit(ATH12K_FLAG_FIXED_MEM_REGION, &ab->dev_flags) &&
 			    ab->qmi.target_mem[i].v.ioaddr) {
-				if (IS_ENABLED(CONFIG_IOMMU_SUPPORT)) {
-					if (test_bit(ATH12K_GROUP_FLAG_RECOVERY,
-						     &ab->dev_flags)) {
-						ath12k_info(ab, "In recovery! skip mem cleanup");
-						continue;
-					}
-					dma_free_attrs(ab->dev,
+#ifdef PLATFORM_SDX
+				if (ab->qmi.target_mem[i].type == AFC_REGION_TYPE &&
+				    ab->qmi.target_mem[i].v.addr) {
+					dma_free_coherent(dev,
+							  ab->qmi.target_mem[i].size,
+							  ab->qmi.target_mem[i].v.addr,
+							  ab->qmi.target_mem[i].paddr);
+					ab->qmi.target_mem[i].v.addr = NULL;
+				} else {
+					dma_free_attrs(dev,
 						       ab->qmi.target_mem[i].size,
 						       ab->qmi.target_mem[i].v.ioaddr,
 						       ab->qmi.target_mem[i].paddr,
 						       DMA_ATTR_FORCE_CONTIGUOUS);
 					ab->qmi.target_mem[i].v.ioaddr = NULL;
-				} else {
-					if (ab->qmi.target_mem[i].type ==
-					    AFC_REGION_TYPE &&
-					    ab->hif.bus != ATH12K_BUS_HYBRID &&
-					    ab->qmi.target_mem[i].v.addr) {
-						dma_free_coherent(ab->dev,
-							ab->qmi.target_mem[i].size,
-							ab->qmi.target_mem[i].v.addr,
-							ab->qmi.target_mem[i].paddr);
-						ab->qmi.target_mem[i].v.addr = NULL;
-					} else {
-						iounmap(ab->qmi.target_mem[i].v.ioaddr);
-						ab->qmi.target_mem[i].v.ioaddr = NULL;
-					}
 				}
+#else
+				if (ab->qmi.target_mem[i].type == AFC_REGION_TYPE &&
+				    ab->hif.bus != ATH12K_BUS_HYBRID &&
+				    ab->qmi.target_mem[i].v.addr) {
+					dma_free_coherent(dev,
+							  ab->qmi.target_mem[i].size,
+							  ab->qmi.target_mem[i].v.addr,
+							  ab->qmi.target_mem[i].paddr);
+					ab->qmi.target_mem[i].v.addr = NULL;
+				} else {
+					iounmap(ab->qmi.target_mem[i].v.ioaddr);
+					ab->qmi.target_mem[i].v.ioaddr = NULL;
+				}
+#endif
 			} else {
 				if (!ab->qmi.target_mem[i].v.addr)
 					continue;
@@ -4398,13 +4340,8 @@ void ath12k_qmi_free_target_mem_chunk(struct ath12k_base *ab)
 	ab->host_ddr_fixed_mem_off = 0;
 
 	if (!ag->num_started && ag->mlo_mem.init_done) {
-		/* Keeping init_done = true causes alloc_target_mem_chunk() to
-		 * skip the memset and reuse the existing paddr/v.addr.
-		 */
-		if (!test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags)) {
-			ag->mlo_mem.init_done = false;
-			ag->mlo_mem.mlo_mem_size = 0;
-		}
+		ag->mlo_mem.init_done = false;
+		ag->mlo_mem.mlo_mem_size = 0;
 	}
 }
 
@@ -4797,6 +4734,7 @@ int ath12k_qmi_mlo_global_snapshot_mem_init(struct ath12k_base *ab)
 	return 0;
 }
 
+#ifndef PLATFORM_SDX
 static int ath12k_qmi_alloc_afc_reserved_mem(struct ath12k_base *ab, int dst_idx,
 					    int afc_seg_idx)
 {
@@ -4833,7 +4771,7 @@ static int ath12k_qmi_alloc_afc_reserved_mem(struct ath12k_base *ab, int dst_idx
 		ioremap(ab->qmi.target_mem[dst_idx].paddr,
 			ab->qmi.target_mem[afc_seg_idx].size);
 	if (!ab->qmi.target_mem[dst_idx].v.ioaddr) {
-		ath12k_err(ab, "AFC alloc reserved mem failed\n");
+		ath12k_err(ab, "AFC ioremap failed\n");
 		ab->qmi.target_mem[dst_idx].paddr = 0;
 		return -EIO;
 	}
@@ -4847,14 +4785,6 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab,
 {
 	struct reserved_mem *ddr_rmem = NULL, *rmem = NULL;
 	struct ath12k_hw_group *ag = ab->ag;
-#ifdef PLATFORM_SDX
-	struct cma *cma = NULL;
-	struct page *pg = NULL;
-	struct device_node *mlo_node = NULL;
-	struct iommu_domain *dom = NULL;
-	int iommu_flags = IOMMU_READ | IOMMU_WRITE | IOMMU_CACHE;
-	u32 iova_base = 0;
-#endif
 	int sz = 0, avail_sz;
 	int i, idx, ret;
 
@@ -4899,23 +4829,12 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab,
 				goto print_err;
 			}
 
+			ab->qmi.target_mem[idx].paddr = ddr_rmem->base + sz;
 			/*Try to update it to coherent*/
-			if (!IS_ENABLED(CONFIG_IOMMU_SUPPORT)) {
-				ab->qmi.target_mem[idx].paddr = ddr_rmem->base + sz;
-				ab->qmi.target_mem[idx].v.ioaddr =
-					ioremap(ab->qmi.target_mem[idx].paddr,
-						ab->qmi.target_mem[i].size);
-			} else if (!ab->qmi.target_mem[idx].v.ioaddr) {
-				ab->qmi.target_mem[idx].v.ioaddr =
-						dma_alloc_attrs(ab->dev,
-							ab->qmi.target_mem[i].size,
-							&ab->qmi.target_mem[idx].paddr,
-							GFP_KERNEL,
-							DMA_ATTR_FORCE_CONTIGUOUS);
-			}
-
+			ab->qmi.target_mem[idx].v.ioaddr =
+				ioremap(ab->qmi.target_mem[idx].paddr,
+					ab->qmi.target_mem[i].size);
 			if (!ab->qmi.target_mem[idx].v.ioaddr) {
-				ath12k_err(ab, "HOST_DDR_REGION_TYPE: Failed to allocate memory!");
 				ret = -EIO;
 				goto out;
 			}
@@ -4935,7 +4854,6 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab,
 			}
 			rmem = ath12k_core_get_reserved_mem_by_name(ab, "mlo-global-mem");
 			if (!rmem) {
-				ath12k_err(ab, "MLO_GLOBAL_MEM_REGION: DT entry is missing");
 				ret = -EINVAL;
 				goto out;
 			}
@@ -4945,97 +4863,18 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab,
 				goto print_err;
 			}
 
-#ifdef PLATFORM_SDX
-			if (IS_ENABLED(CONFIG_IOMMU_SUPPORT)) {
-				mlo_node = of_find_node_by_name(NULL, "mlo_global_mem_0");
-
-				if (!mlo_node) {
-					ath12k_err(ab, "MLO_GLOBAL_MEM not defined in device_tree\n");
-					ret = -EINVAL;
-					goto out;
-				}
-
-				if (!of_property_read_u32(mlo_node, "iova_base",
-							  &iova_base)) {
-					if (!iova_base || (iova_base & (SZ_4K - 1))) {
-						ath12k_err(ab, "Invalid iova-base address value.\n");
-						ret = -EINVAL;
-						goto out;
-					}
-				}
-				of_node_put(mlo_node);
-			}
-#endif
-
 			mlo_chunk = &ag->mlo_mem.chunk[0];
 			if (!mlo_chunk->paddr) {
-				if (!IS_ENABLED(CONFIG_IOMMU_SUPPORT)) {
-					mlo_chunk->paddr = rmem->base;
-					mlo_chunk->size = ab->qmi.target_mem[i].size;
-					mlo_chunk->type = ab->qmi.target_mem[i].type;
-					mlo_chunk->v.ioaddr = ioremap(mlo_chunk->paddr,
-								      mlo_chunk->size);
-					memset_io(mlo_chunk->v.ioaddr, 0,
-						  mlo_chunk->size);
-				}
-#ifdef PLATFORM_SDX
-				else {
-					cma = (struct cma *)rmem->priv;
-					if (!cma) {
-						ath12k_err(ab, "Failed to get CMA handle for MLO_GLOBAL_MEM.\n");
-						ret = -EINVAL;
-						goto out;
-					}
-
-					pg =
-					cma_alloc(cma,
-						  DIV_ROUND_UP(ab->qmi.target_mem[i].size,
-							       PAGE_SIZE),
-						  0, false);
-
-					if (!pg) {
-						ath12k_err(ab, "MLO_GLOBAL_MEM allocation failed\n");
-						ret = -ENOMEM;
-						goto out;
-					}
-
-					dom = iommu_get_domain_for_dev(ab->dev);
-					if (!dom) {
-						ath12k_err(ab, "MLO: invalid IOMMU domain or iova_base (0x%x)\n",
-							   iova_base);
-						ret = -EIO;
-						goto out;
-					}
-
-					ret = iommu_map(dom, (dma_addr_t)iova_base,
-							page_to_phys(pg),
-							ab->qmi.target_mem[i].size,
-							iommu_flags, GFP_KERNEL);
-					if (ret) {
-						ath12k_err(ab,
-							   "MLO: iommu_map fail iova=0x%x phys=%llx len=0x%x iommu_flags=0x%x err=%d\n",
-							   iova_base,
-							   page_to_phys(pg),
-							   ab->qmi.target_mem[i].size,
-							   iommu_flags, ret);
-						goto out;
-					}
-
-					mlo_chunk->v.addr = page_to_virt(pg);
-					mlo_chunk->paddr = (dma_addr_t)iova_base;
-					mlo_chunk->size = ab->qmi.target_mem[i].size;
-					mlo_chunk->type = ab->qmi.target_mem[i].type;
-
-					memset(mlo_chunk->v.addr, 0, mlo_chunk->size);
-				}
-#endif
+				mlo_chunk->size = ab->qmi.target_mem[i].size;
+				mlo_chunk->type = ab->qmi.target_mem[i].type;
+				mlo_chunk->paddr = rmem->base;
+				mlo_chunk->v.ioaddr = ioremap(mlo_chunk->paddr,
+							      mlo_chunk->size);
+				memset_io(mlo_chunk->v.ioaddr, 0, mlo_chunk->size);
 			}
-			ab->qmi.target_mem[idx].paddr = mlo_chunk->paddr;
-			if (!IS_ENABLED(CONFIG_IOMMU_SUPPORT))
-				ab->qmi.target_mem[idx].v.ioaddr = mlo_chunk->v.ioaddr;
-			else
-				ab->qmi.target_mem[idx].v.addr = mlo_chunk->v.addr;
 
+			ab->qmi.target_mem[idx].paddr = mlo_chunk->paddr;
+			ab->qmi.target_mem[idx].v.ioaddr = mlo_chunk->v.ioaddr;
 			ab->qmi.target_mem[idx].size = mlo_chunk->size;
 			ab->qmi.target_mem[idx].type = mlo_chunk->type;
 
@@ -5066,16 +4905,8 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab,
 			 * regions allocated outside FW reserved memory.
 			 * AFC_REGION_TYPE is supported for 6 GHz.
 			 */
-			if (IS_ENABLED(CONFIG_IOMMU_SUPPORT)) {
-				if (!ab->qmi.target_mem[idx].v.ioaddr) {
-					ab->qmi.target_mem[idx].v.ioaddr =
-						dma_alloc_attrs(ab->dev,
-							ab->qmi.target_mem[i].size,
-							&ab->qmi.target_mem[idx].paddr,
-							GFP_KERNEL,
-							DMA_ATTR_FORCE_CONTIGUOUS);
-				}
-			} else if (ab->hif.bus == ATH12K_BUS_HYBRID &&
+
+			if (ab->hif.bus == ATH12K_BUS_HYBRID &&
 			    ab->qmi.target_mem_mode != ATH12K_QMI_TARGET_MEM_MODE_256M) {
 				ret = ath12k_qmi_alloc_afc_reserved_mem(ab, idx, i);
 				if (ret)
@@ -5083,9 +4914,9 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab,
 			} else {
 				ab->qmi.target_mem[idx].v.addr =
 					dma_alloc_coherent(ab->dev,
-							   ab->qmi.target_mem[i].size,
-							   &ab->qmi.target_mem[idx].paddr,
-							   GFP_KERNEL);
+						ab->qmi.target_mem[i].size,
+						&ab->qmi.target_mem[idx].paddr,
+						GFP_KERNEL);
 
 				if (!ab->qmi.target_mem[idx].v.addr) {
 					ath12k_err(ab, "AFC mem allocation failed\n");
@@ -5132,6 +4963,180 @@ out:
 
 	return ret;
 }
+#else
+static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab,
+					      struct target_mem_chunk *req_mem,
+					      u32 req_mem_seg_count)
+{
+	struct reserved_mem *ddr_rmem = NULL, *rmem = NULL;
+	struct ath12k_hw_group *ag = ab->ag;
+	int sz = 0, avail_sz;
+	int i, idx, ret;
+
+	mutex_lock(&ag->mutex);
+	ab->qmi.mem_seg_count = req_mem_seg_count;
+	memcpy(ab->qmi.target_mem, req_mem,
+	       sizeof(struct target_mem_chunk) * req_mem_seg_count);
+	if (!ag->mlo_mem.init_done) {
+		memset(ag->mlo_mem.chunk, 0, sizeof(ag->mlo_mem.chunk));
+		ag->mlo_mem.init_done = true;
+	}
+
+	ddr_rmem = ath12k_core_get_reserved_mem_by_name(ab, "host-ddr-mem");
+
+	if (!ddr_rmem) {
+		ret = -ENODEV;
+		goto out;
+	}
+
+	for (i = 0, idx = 0; i < ab->qmi.mem_seg_count; i++) {
+		struct target_mem_chunk *mlo_chunk;
+
+		switch (ab->qmi.target_mem[i].type) {
+		case CALDB_MEM_REGION_TYPE:
+		case HOST_DDR_REGION_TYPE:
+		case BDF_MEM_REGION_TYPE:
+		case M3_DUMP_REGION_TYPE:
+		case PAGEABLE_MEM_REGION_TYPE:
+			if ((ab->qmi.target_mem[i].type == CALDB_MEM_REGION_TYPE &&
+			     (!ab->hw_params->cold_boot_calib ||
+			      !ath12k_dp_ring_cfg->cold_boot_calib)) ||
+			    !ab->qmi.target_mem[i].size) {
+				ab->qmi.target_mem[idx].paddr = 0;
+				ab->qmi.target_mem[idx].v.ioaddr = NULL;
+				ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
+				ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
+				idx++;
+				break;
+			}
+			if (ddr_rmem->size - sz < ab->qmi.target_mem[i].size) {
+				avail_sz = ddr_rmem->size - sz;
+				goto print_err;
+			}
+
+			ab->qmi.target_mem[idx].paddr = ddr_rmem->base + sz;
+			/*Try to update it to coherent*/
+			ab->qmi.target_mem[idx].v.ioaddr =
+					dma_alloc_attrs(ab->dev,
+							ab->qmi.target_mem[i].size,
+							&ab->qmi.target_mem[idx].paddr,
+							GFP_KERNEL,
+							DMA_ATTR_FORCE_CONTIGUOUS);
+			if (!ab->qmi.target_mem[idx].v.ioaddr) {
+				ret = -EIO;
+				goto out;
+			}
+			sz += ab->qmi.target_mem[i].size;
+			ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
+			ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
+			idx++;
+			break;
+		case MLO_GLOBAL_MEM_REGION_TYPE:
+			if (!ab->qmi.target_mem[i].size) {
+				ab->qmi.target_mem[idx].paddr = 0;
+				ab->qmi.target_mem[idx].v.ioaddr = NULL;
+				ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
+				ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
+				idx++;
+				break;
+			}
+			rmem = ath12k_core_get_reserved_mem_by_name(ab, "mlo-global-mem");
+			if (!rmem) {
+				ret = -EINVAL;
+				goto out;
+			}
+
+			if (rmem->size < ab->qmi.target_mem[i].size) {
+				avail_sz = rmem->size;
+				goto print_err;
+			}
+
+			mlo_chunk = &ag->mlo_mem.chunk[0];
+			if (!mlo_chunk->paddr) {
+				mlo_chunk->size = ab->qmi.target_mem[i].size;
+				mlo_chunk->type = ab->qmi.target_mem[i].type;
+				mlo_chunk->paddr = rmem->base;
+				mlo_chunk->v.ioaddr =
+					dma_alloc_attrs(ab->dev,
+							mlo_chunk->size,
+							&mlo_chunk->paddr,
+							GFP_KERNEL,
+							DMA_ATTR_FORCE_CONTIGUOUS);
+				memset_io(mlo_chunk->v.ioaddr, 0, mlo_chunk->size);
+			}
+
+			ab->qmi.target_mem[idx].paddr = mlo_chunk->paddr;
+			ab->qmi.target_mem[idx].v.ioaddr = mlo_chunk->v.ioaddr;
+			ab->qmi.target_mem[idx].size = mlo_chunk->size;
+			ab->qmi.target_mem[idx].type = mlo_chunk->type;
+
+			if (!ag->mlo_mem.mlo_mem_size) {
+				ag->mlo_mem.mlo_mem_size = mlo_chunk->size;
+			} else if (ag->mlo_mem.mlo_mem_size != mlo_chunk->size) {
+				ath12k_err(ab, "QMI MLO memory size error, expected size is %d"
+					   "but requested size is %d", ag->mlo_mem.mlo_mem_size,
+					   mlo_chunk->size);
+
+					ret = -EINVAL;
+					goto out;
+			}
+			ag->mlo_mem.is_mlo_mem_avail = true;
+			idx++;
+			break;
+		case AFC_REGION_TYPE:
+			if (ab->qmi.target_mem[i].size > AFC_MEM_SIZE) {
+				ath12k_warn(ab, "AFC mem request size %d is larger than allowed value\n",
+					    ab->qmi.target_mem[i].size);
+				return -EINVAL;
+			}
+
+			ab->qmi.target_mem[idx].v.addr =
+				dma_alloc_coherent(ab->dev, ab->qmi.target_mem[i].size,
+						&ab->qmi.target_mem[idx].paddr,
+						GFP_KERNEL);
+
+			if (!ab->qmi.target_mem[idx].v.addr) {
+				ath12k_err(ab, "AFC mem allocation failed\n");
+				ab->qmi.target_mem[idx].paddr = 0;
+				return -ENOMEM;
+			}
+
+			ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
+			ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
+			idx++;
+			break;
+		default:
+			ath12k_warn(ab, "qmi ignore invalid mem req type %d\n",
+				    ab->qmi.target_mem[i].type);
+			ab->qmi.target_mem[idx].paddr = 0;
+			ab->qmi.target_mem[idx].v.ioaddr = NULL;
+			ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
+			ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
+			idx++;
+			break;
+		}
+	}
+
+	ab->host_ddr_fixed_mem_off = sz;
+	ab->qmi.mem_seg_count = idx;
+
+	mutex_unlock(&ag->mutex);
+
+	return 0;
+print_err:
+	ath12k_dbg(ab, ATH12K_DBG_QMI, "failed to assign mem type %d req size %d avail size %u\n",
+		   ab->qmi.target_mem[i].type,
+		   ab->qmi.target_mem[i].size,
+		   avail_sz);
+	ret = -EINVAL;
+out:
+	ath12k_qmi_free_target_mem_chunk(ab);
+
+	mutex_unlock(&ag->mutex);
+
+	return ret;
+}
+#endif
 
 /* clang stack usage explodes if this is inlined */
 static noinline_for_stack
