@@ -344,7 +344,6 @@ ath12k_wifi8_cpy_hw_rx_desc_to_spad_desc(struct hal_reo_dest_ring *desc,
 					 struct hal_rx_spd_data *rx_spd)
 {
 	rx_spd->info0 = le32_to_cpu(desc->info0);
-	rx_spd->info1 = le32_to_cpu(desc->info1);
 	rx_spd->info2 = le32_to_cpu(desc->info2);
 
 	/* RX_MPDU_INFO */
