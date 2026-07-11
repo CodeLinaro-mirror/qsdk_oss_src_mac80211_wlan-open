@@ -5251,3 +5251,37 @@ unlock:
 	spin_unlock(&tx_ext_mon->tx_ext_mon_lock);
 	return ret;
 }
+
+int
+ath12k_dp_ext_mon_get_tx_peer(struct ath12k_pdev_dp *dp_pdev,
+				struct ath12k_ext_mon_config *resp)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct ath12k_dp_tx_ext_mon_config *tx_ext_mon;
+	struct ath12k_pdev_tx_mon *tx_mon;
+
+	if (unlikely(!dp_mon_pdev)) {
+		ath12k_warn(dp_pdev->dp, "monitor pdev is null\n");
+		return -EINVAL;
+	}
+
+	tx_mon = dp_mon_pdev->dp_pdev_tx_mon;
+	if (unlikely(!tx_mon)) {
+		ath12k_warn(dp_pdev->dp, "TX monitor is null\n");
+		return -EINVAL;
+	}
+
+	spin_lock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+	tx_ext_mon = tx_mon->tx_ext_mon.tx_ext_mon_config;
+	if (!tx_ext_mon) {
+		spin_unlock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+		ath12k_warn(dp_pdev->dp, "ext_mon in tx direction is null\n");
+		return -EINVAL;
+	}
+
+	ath12k_dp_get_ext_mon_peers(&tx_ext_mon->peer_list, resp,
+				    &tx_mon->tx_ext_mon.tx_ext_mon_lock);
+	spin_unlock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+
+	return 0;
+}

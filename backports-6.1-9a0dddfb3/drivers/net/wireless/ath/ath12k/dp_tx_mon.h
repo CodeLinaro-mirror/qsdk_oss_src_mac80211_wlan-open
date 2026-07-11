@@ -324,4 +324,7 @@ void ath12k_dp_ext_mon_tx_free(struct ath12k_pdev_dp *dp_pdev);
 int
 ath12k_dp_ext_mon_get_tx_filter(struct ath12k_pdev_dp *dp_pdev,
 				struct ath12k_ext_mon_config *resp);
+int ath12k_dp_ext_mon_get_tx_peer(struct ath12k_pdev_dp *dp_pdev,
+					struct ath12k_ext_mon_config *resp);
+
 #endif /* ATH12K_DP_TX_MON_H */

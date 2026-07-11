@@ -1918,6 +1918,29 @@ ath12k_dp_get_avg_snr(u8 snr, u8 avg_snr)
 	return avg_snr;
 }
 
+static inline void
+ath12k_dp_get_ext_mon_peers(struct list_head *peer_list,
+			    struct ath12k_ext_mon_config *resp,
+			    spinlock_t *lock)
+{
+	struct ath12k_dp_ext_mon_peer *peer;
+	u8 count = 0;
+
+	lockdep_assert_held(lock);
+	list_for_each_entry(peer, peer_list, list) {
+		if (count >= ATH12K_EXT_MON_MAX_PEERS) {
+			ath12k_err(NULL,
+				   "Number of peers exceeded max limit: %d",
+				   ATH12K_EXT_MON_MAX_PEERS);
+			break;
+		}
+
+		resp->peer.peer_info[count] = peer->peer_info;
+		count++;
+	}
+	resp->peer.count = count;
+}
+
 void ath12k_dp_mon_peer_telemetry_stats(const struct ath12k_dp_link_peer *peer,
 					struct ath12k_peer_telemetry_stats *stats);
 #endif
