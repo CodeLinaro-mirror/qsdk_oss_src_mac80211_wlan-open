@@ -945,6 +945,7 @@ struct ath12k_link_vif {
 	struct ath12k_mbssid_info *mbssid_info;
 
 	struct ath12k_smd_params smd_params;
+	bool self_peer_authorized;
 };
 
 struct ath12k_dp_link_vif {
@@ -1337,13 +1338,29 @@ enum ath12k_smd_tid {
 	ATH12K_SMD_RX_MGMT_TID = 16,
 };
 
-#define ATH12K_SMD_NUM_TIDS WMI_SMD_NUM_TIDS
 struct ath12k_ba_session_params {
+	u8 tid;
 	u16  buf_size;
 	u16  ssn;
 	u16  timeout;
 	bool amsdu;
+	bool policy;
 	bool valid;
+};
+
+struct ath12k_smd_info {
+	bool ctx_inflight;
+	u8 st_control;
+	bool latest_ctx_valid;
+	ktime_t latest_ctx_ts;
+	struct ath12k_smd_ctx latest_ctx;
+
+	/* protects @ctx_list */
+	spinlock_t ctx_list_lock;
+	struct list_head ctx_list;
+	struct work_struct ctx_wk;
+
+	struct ath12k_smd_ctx_req *current_req;
 };
 
 struct ath12k_sta {
@@ -1397,11 +1414,14 @@ struct ath12k_sta {
 #endif
 	u16 free_logical_idx_map;
 
-	struct ath12k_ba_session_params rx_ba_params[ATH12K_SMD_NUM_TIDS];
-	struct ath12k_ba_session_params tx_ba_params[ATH12K_SMD_NUM_TIDS];
+	spinlock_t ba_lock; /* protects ba_params arrays */
+	struct ath12k_ba_session_params rx_ba_params[IEEE80211_MAX_NUM_TIDS];
+	struct ath12k_ba_session_params tx_ba_params[IEEE80211_MAX_NUM_TIDS];
 
 	/* Opaque RCU pointer to ath12k_dp_peer */
 	void __rcu *dp_peer;
+
+	struct ath12k_smd_info smd_info;
 };
 
 #define ATH12K_INVALID_RSSI_FULL -1
@@ -1497,7 +1517,7 @@ struct ath12k_debug {
 	struct completion wmi_ctrl_path_stats_rcvd;
 	u8 wmi_ctrl_path_stats_reqid;
 	/* To protect wmi_list manipulation */
-	spinlock_t  wmi_ctrl_path_stats_lock;
+	spinlock_t wmi_ctrl_path_stats_lock;
 	bool wmi_ctrl_path_stats_more_enabled;
 	enum wmi_halphy_ctrl_path_stats_id tpc_stats_type;
 	bool tpc_request;
@@ -1776,7 +1796,7 @@ struct ath12k_cu_mem {
 	__le32 reconfig;
 	__le32 ttlm_max_ch_sw_time;
 	__le32 ttlm_expected_duration;
-	__le32 uhr_param_update;
+	__le32 uhr_countdown;
 	__le32 uhr_ebpcc;
 	__le32 max_chan_switch_time;
 } __packed;
@@ -1950,9 +1970,6 @@ struct ath12k {
 #ifdef CPTCFG_ATH12K_DEBUGFS
 	struct ath12k_debug debug;
 	struct dentry *wmi_ctrl_stat;
-	/* To protect wmi_list manipulation */
-	spinlock_t wmi_ctrl_path_stats_lock;
-
 	/* TODO: Add mac_filter, ampdu_aggr_size and wbm_tx_completion_stats stats*/
 #endif
 	bool supports_6ghz:1;
@@ -2588,6 +2605,12 @@ struct ath12k_base {
 
 	/* Current DFS Regulatory */
 	enum ath12k_dfs_region dfs_region;
+	/* Protects reg_freq_2g/5g/6g against concurrent reset+write in
+	 * ath12k_reg_build_regd() vs. read in ath12k_regd_update_freq_range(),
+	 * ath12k_mac_setup_channels_rates() and
+	 * ath12k_mac_setup_channels_rates_multiband().
+	 */
+	spinlock_t reg_freq_lock;
 	struct ath12k_reg_freq reg_freq_2g;
 	struct ath12k_reg_freq reg_freq_5g;
 	struct ath12k_reg_freq reg_freq_6g;
@@ -2627,7 +2650,6 @@ struct ath12k_base {
 	enum ath12k_fw_recovery_option fw_recovery_support;
 	u32 recovery_start_time;
 	bool recovery_start;
-	bool post_reconfig_done;
 
 	u32 *crash_info_address;
 	u32 *recovery_mode_address;
@@ -3416,5 +3438,6 @@ void ath12k_core_cu_mem_pool_deinit(struct ath12k_hw_group *ag);
 void ath12k_core_cu_notify(struct ath12k *ar, struct ath12k_link_vif *arvif);
 struct wireless_dev *ath12k_get_wdev_from_netdev(struct net_device *dev);
 int ath12k_wsi_bypass_precheck(struct ath12k_base *ab, unsigned int value);
+int ath12k_core_mlo_setup(struct ath12k_hw_group *ag);
 
 #endif /* _CORE_H_ */

@@ -241,6 +241,12 @@ ieee80211_smd_build_link_id_remap(struct ieee80211_sub_if_data *sdata,
 		target->sap_to_tap_link[sap_link_id] = tap_link_id;
 		if (tap_link_id != sap_link_id)
 			target->link_id_remap = true;
+
+		sdata_dbg(sdata, "smd: remap: tap[%d] bssid=%pM chan=%u band=%d -> sap[%d]\n",
+			  tap_link_id,
+			  target->assoc_data->link[tap_link_id].bss->bssid,
+			  target->assoc_data->link[tap_link_id].bss->channel->center_freq,
+			  tap_band, sap_link_id);
 	}
 }
 
@@ -858,7 +864,14 @@ void ieee80211_smd_free_target_links(struct ieee80211_smd_prep_target *target)
 		if (!tgt_link)
 			continue;
 
-		__ieee80211_link_release_channel(&tgt_link->data, false);
+		/* Skip __ieee80211_link_release_channel() if link->conf is NULL.
+		 * This happens when ieee80211_smd_alloc_target_link() succeeded
+		 * but ieee80211_smd_init_target_link() failed before calling
+		 * __ieee80211_link_init_data(), so link->conf was never set.
+		 */
+		if (tgt_link->data.conf)
+			__ieee80211_link_release_channel(&tgt_link->data, false);
+
 		kfree(target->new_links[link_id]);
 		target->new_links[link_id] = NULL;
 	}
@@ -993,10 +1006,17 @@ void ieee80211_smd_prep_reset_target(struct ieee80211_sub_if_data *sdata,
 	sdata_dbg(sdata, "smd: reset prep target %pM status=%u\n",
 		   target->target_mld_addr, status);
 
-	cfg80211_notify_smd_bss_transition(sdata->dev,
-					   target->target_mld_addr,
-					   NL80211_SMD_TRANSITION_ABORT,
-					   status);
+	/* Skip the notification if the STA is no longer associated.
+	 * cfg80211_notify_smd_bss_transition() asserts wdev->valid_links != 0.
+	 * On beacon loss, ieee80211_set_disassoc() clears valid_links under
+	 * the wiphy lock before the exec timeout work runs, so
+	 * sdata->vif.valid_links reliably reflects the association state here.
+	 */
+	if (sdata->vif.valid_links)
+		cfg80211_notify_smd_bss_transition(sdata->dev,
+						   target->target_mld_addr,
+						   NL80211_SMD_TRANSITION_ABORT,
+						   status);
 
 	/* Only clear the transition state bit when the last prepared target
 	 * is being reset — in multi-prep, other targets may still be active.
@@ -1048,11 +1068,21 @@ void ieee80211_smd_prep_reset_target(struct ieee80211_sub_if_data *sdata,
 		 * was inserted into the hash table. __sta_info_destroy() requires
 		 * the STA to be in the hash; sta_info_free() handles the
 		 * pre-insertion case (e.g. exec timeout before STA fully setup).
+		 *
+		 * A concurrent disconnect may have already removed the link
+		 * state that __sta_info_destroy() depends on; if it fails, log
+		 * and fall back to sta_info_free() to avoid leaking the object.
 		 */
-		if (target->sta_inserted)
-			WARN_ON(__sta_info_destroy(target->target_sta));
-		else
+		if (target->sta_inserted) {
+			if (__sta_info_destroy(target->target_sta)) {
+				sdata_info(sdata,
+					   "smd: sta_info_destroy failed for %pM, freeing directly\n",
+					   target->target_sta->sta.addr);
+				sta_info_free(local, target->target_sta);
+			}
+		} else {
 			sta_info_free(local, target->target_sta);
+		}
 		target->target_sta = NULL;
 	}
 
@@ -1551,7 +1581,7 @@ int ieee80211_smd_alloc_target_sta(struct ieee80211_sub_if_data *sdata,
 		/* Allocate link_sta at SAP slot (vdev routing).
 		 * BSS bssid is TAP-indexed.
 		 */
-		err = ieee80211_sta_allocate_link(sta, sap_link_id);
+		err = ieee80211_sta_allocate_link_pre_insert(sta, sap_link_id);
 		if (err) {
 			sdata_info(sdata,
 				   "smd: failed to allocate prepared link tap=%d sap=%d: %d\n",
@@ -1588,6 +1618,35 @@ out_free_sta:
 		sta_info_free(local, sta);
 
 	return err;
+}
+
+/*
+ * Validate that a diff-links tap_to_sap_link[] map is bijective.
+ * Each TAP link must resolve to a distinct SAP slot.  If two TAP links share
+ * the same operating band and the SAP has only one slot of that band, both
+ * map to the same slot and no valid remap exists.
+ */
+static int
+ieee80211_smd_validate_link_id_remap(struct ieee80211_sub_if_data *sdata,
+				     struct ieee80211_smd_prep_target *target)
+{
+	u16 used_sap_slots = 0;
+	int tap_link_id;
+
+	for (tap_link_id = 0; tap_link_id < IEEE80211_MLD_MAX_NUM_LINKS; tap_link_id++) {
+		int sap_link_id = target->tap_to_sap_link[tap_link_id];
+
+		if (sap_link_id < 0 || !(target->prepared_links_mask & BIT(tap_link_id)))
+			continue;
+		if (used_sap_slots & BIT(sap_link_id)) {
+			sdata_info(sdata,
+				   "smd: remap collision on SAP slot %d, aborting SMD BSS Transition\n",
+				   sap_link_id);
+			return -EINVAL;
+		}
+		used_sap_slots |= BIT(sap_link_id);
+	}
+	return 0;
 }
 
 int
@@ -1643,6 +1702,16 @@ ieee80211_smd_compute_prep_bitmaps(struct ieee80211_sub_if_data *sdata,
 			   target->primary_link_id);
 		return -EINVAL;
 	}
+
+	/* A diff-links remap requires a bijective mapping between TAP and SAP
+	 * link slots: each TAP link must resolve to a distinct SAP slot.  If
+	 * two TAP links have the same operating band and the SAP has only one
+	 * slot of that band, both map to the same slot and no valid remap
+	 * exists. Reject early before any resource allocation.
+	 */
+	if (target->link_id_remap &&
+	    ieee80211_smd_validate_link_id_remap(sdata, target))
+		return -EINVAL;
 
 	target->transitioning_links =
 		target->prepared_links_mask & ~target->dl_drain_link_mask;

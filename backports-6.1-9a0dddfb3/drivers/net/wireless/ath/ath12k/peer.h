@@ -128,6 +128,9 @@ int ath12k_peer_del_tracker_wait(struct ath12k_pdev *pdev, const u8 *addr,
 int ath12k_get_peer_telemetry_stats(struct ath12k_vif *ahvif,
 				    struct ath12k_telemetry_dp_peer *telemetry_peer,
 				    u8 *addr, u8 link_id);
+void ath12k_vif_iterate_peer(struct ath12k_link_vif *arvif,
+			     struct ath12k_dp_aggr_vif_stats *aggr_vif_stats,
+			     bool is_ds_vif);
 
 static inline
 struct ath12k_link_sta *ath12k_peer_get_link_sta(struct ath12k_base *ab,
@@ -184,14 +187,6 @@ typedef int (*ath12k_arsta_vdev_iter_cb)(struct ath12k *ar,
 
 bool ath12k_arsta_itr_on_ab_by_addr(struct ath12k_base *ab, const u8 *addr,
 				    ath12k_arsta_iter_cb cb, void *data);
-
-/**
- * Searches all radios and invokes @cb for the first matching arsta.
- * Returns true if found, false otherwise. Must be called from BH-disabled context.
- */
-bool ath12k_arsta_itr_on_ab_by_addr_bh(struct ath12k_base *ab, const u8 *addr,
-				       ath12k_arsta_iter_cb cb, void *data);
-
 int ath12k_arsta_itr_on_ar_by_vdev_id(struct ath12k *ar, u32 vdev_id,
 				      ath12k_arsta_vdev_iter_cb cb, void *data);
 /* ahsta (ath12k_sta) group-level hashtable */

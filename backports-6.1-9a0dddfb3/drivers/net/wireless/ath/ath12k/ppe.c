@@ -812,9 +812,9 @@ int ath12k_dp_srng_init_idx(struct ath12k_base *ab, struct dp_srng *ring,
 }
 EXPORT_SYMBOL(ath12k_dp_srng_init_idx);
 
-int ath12k_dp_srng_alloc(struct ath12k_base *ab, struct dp_srng *ring,
-			 enum hal_ring_type type, int ring_num,
-			 int num_entries)
+static int ath12k_ppe_ds_dp_srng_alloc(struct ath12k_base *ab, struct dp_srng *ring,
+				       enum hal_ring_type type, int ring_num,
+				       int num_entries)
 {
 	int entry_sz = ath12k_hal_srng_get_entrysize(ab, type);
 	int max_entries = ath12k_hal_srng_get_max_entries(ab, type);
@@ -851,7 +851,7 @@ int ath12k_ppeds_dp_srng_alloc(struct ath12k_base *ab, struct dp_srng *ring,
 {
 	int ret;
 
-	ret = ath12k_dp_srng_alloc(ab, ring, type, ring_num, num_entries);
+	ret = ath12k_ppe_ds_dp_srng_alloc(ab, ring, type, ring_num, num_entries);
 	if (ret != 0)
 		ath12k_warn(ab, "Failed to allocate dp srng ring.\n");
 
@@ -1226,10 +1226,12 @@ ath12k_dp_rx_ppeds_fse_add_flow_entry(struct ppe_drv_fse_rule_info *ppe_flow_inf
 		return false;
 	}
 
+	rcu_read_lock();
+
 	links = ahvif->links_map;
 
 	for_each_set_bit(link_id, &links, IEEE80211_MLD_MAX_NUM_LINKS) {
-		arvif = ahvif->link[link_id];
+		arvif = rcu_dereference(ahvif->link[link_id]);
 		if (!arvif)
 			continue;
 
@@ -1240,6 +1242,8 @@ ath12k_dp_rx_ppeds_fse_add_flow_entry(struct ppe_drv_fse_rule_info *ppe_flow_inf
 		if (ab)
 			break;
 	}
+
+	rcu_read_unlock();
 
 	/* TODO: protect ag->ab[] by spin lock */
 	/* NOTE: ag->ab[0] can be any arbitirary ab but first ab is used to cover non-MLO */

@@ -25,7 +25,11 @@
 #endif
 
 #define ATH12K_PCI_BAR_NUM		0
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
 #define ATH12K_PCI_DMA_MASK		32
+#else
+#define ATH12K_PCI_DMA_MASK		36
+#endif
 
 /* BAR0 + 4k is always accessible, and no
  * need to force wakeup.
@@ -431,13 +435,9 @@ static int ath12k_pci_claim(struct ath12k_pci *ab_pci, struct pci_dev *pdev)
 		goto disable_device;
 	}
 
-	ret = dma_set_mask_and_coherent(&pdev->dev,
-					DMA_BIT_MASK(ATH12K_PCI_DMA_MASK));
-	if (ret) {
-		ath12k_err(ab, "failed to set pci dma mask to %d: %d\n",
-			   ATH12K_PCI_DMA_MASK, ret);
-		goto release_region;
-	}
+	ab_pci->dma_mask = DMA_BIT_MASK(ATH12K_PCI_DMA_MASK);
+	dma_set_mask(&pdev->dev, ab_pci->dma_mask);
+	dma_set_coherent_mask(&pdev->dev, DMA_BIT_MASK(32));
 
 	pci_set_master(pdev);
 
@@ -1464,6 +1464,13 @@ static int ath12k_pci_probe(struct pci_dev *pdev,
 		}
 	}
 
+#ifdef CPTCFG_QCN_EXTN
+	if (ath12k_cfg_init(ab))
+		ath12k_info(ab, "Failed to initialize per radio INI data\n");
+	else
+		ath12k_info(ab, "Initialized per radio INI data in driver\n");
+#endif
+
 	if (of_property_match_string(ab->dev->of_node, "qcom,early_cal_enabled", "okay") >= 0) {
 		ab->early_cal_support = true;
 		ath12k_info(ab,"coldboot calibration supported in uboot\n");
@@ -1592,6 +1599,9 @@ err_pci_deinit_smmu:
 #endif
 
 err_pci_free_region:
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_cfg_deinit(ab);
+#endif
 	ath12k_pci_free_region(ab_pci);
 
 err_free_core:
@@ -1660,6 +1670,9 @@ qmi_fail:
 		ath12k_memdev_deinit(ab, &ab->qmi_mem_dev);
 	if (ab->mlo_mem_dev.rmem_inited)
 		ath12k_memdev_deinit(ab, &ab->mlo_mem_dev);
+#endif
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_cfg_deinit(ab);
 #endif
 	ath12k_core_free(ab);
 }

@@ -587,6 +587,9 @@ link_policy[NL80211_CU_MLD_LINK_ATTR_MAX + 1] = {
 	[NL80211_CU_MLD_LINK_ATTR_CRITICAL_FLAG] = { .type = NLA_FLAG },
 	[NL80211_CU_MLD_LINK_ATTR_BPCC] = { .type = NLA_U8 },
 	[NL80211_CU_MLD_LINK_ATTR_SWITCH_COUNT] = { .type = NLA_U8 },
+	[NL80211_CU_MLD_LINK_ATTR_ENHANCED_BPCC] = { .type = NLA_U8 },
+	[NL80211_CU_MLD_LINK_ATTR_ENHANCED_CRITICAL_FLAG] = { .type = NLA_FLAG },
+	[NL80211_CU_MLD_LINK_ATTR_ECU_COUNTDOWN] = { .type = NLA_U8 },
 };
 
 static const struct nla_policy
@@ -725,6 +728,43 @@ nl80211_pcie_policy[NL80211_PCIE_ATTR_MAX + 1] = {
 	[NL80211_PCIE_ATTR_CONFIG_TYPE] = { .type = NLA_U8 },
 	[NL80211_PCIE_ATTR_GEN] = { .type = NLA_U8 },
 	[NL80211_PCIE_ATTR_LANE] = { .type = NLA_U8 },
+};
+
+static struct nla_policy
+nl80211_smd_ctx_policy[NL80211_SMD_CTX_ATTR_MAX + 1] = {
+	[NL80211_SMD_CTX_ATTR_TYPE] = { .type = NLA_U8 },
+	[NL80211_SMD_CTX_ATTR_PN_LEN] = { .type = NLA_U8 },
+	[NL80211_SMD_CTX_ATTR_DL] = { .type = NLA_NESTED },
+	[NL80211_SMD_CTX_ATTR_UL] = { .type = NLA_NESTED },
+	[NL80211_SMD_CTX_ATTR_QOS] = { .type = NLA_NESTED },
+	[NL80211_SMD_CTX_ATTR_VENDOR] = { .type = NLA_BINARY },
+};
+
+static struct nla_policy
+nl80211_smd_ctx_dl_policy[NL80211_SMD_CTX_DL_ATTR_MAX + 1] = {
+	[NL80211_SMD_CTX_DL_ATTR_VALID_TID_BITMAP] = { .type = NLA_U8 },
+	[NL80211_SMD_CTX_DL_ATTR_SN] = { .type = NLA_NESTED },
+	[NL80211_SMD_CTX_DL_ATTR_PN] = { .type = NLA_BINARY },
+	[NL80211_SMD_CTX_DL_ATTR_BA_PARAMS] = { .type = NLA_NESTED },
+};
+
+static struct nla_policy
+nl80211_smd_ctx_ul_policy[NL80211_SMD_CTX_UL_ATTR_MAX + 1] = {
+	[NL80211_SMD_CTX_UL_ATTR_VALID_TID_BITMAP] = { .type = NLA_U8 },
+	[NL80211_SMD_CTX_UL_ATTR_SN] = { .type = NLA_NESTED },
+	[NL80211_SMD_CTX_UL_ATTR_PN] = { .type = NLA_NESTED },
+	[NL80211_SMD_CTX_UL_ATTR_BA_PARAMS] = { .type = NLA_NESTED },
+};
+
+static struct nla_policy
+nl80211_smd_ctx_ba_policy[NL80211_SMD_CTX_BA_ATTR_MAX + 1] = {
+	[NL80211_SMD_CTX_BA_ATTR_BUFF_SIZE] = { .type = NLA_U16 },
+	[NL80211_SMD_CTX_BA_ATTR_POLICY] = { .type = NLA_FLAG },
+	[NL80211_SMD_CTX_BA_ATTR_AMSDU_SUPPORT] = { .type = NLA_FLAG },
+	[NL80211_SMD_CTX_BA_ATTR_TIMEOUT] = { .type = NLA_U16 },
+	[NL80211_SMD_CTX_BA_ATTR_EXT_NO_FRAG] = { .type = NLA_FLAG },
+	[NL80211_SMD_CTX_BA_ATTR_EXT_FRAG_LEVEL] = { .type = NLA_U8 },
+	[NL80211_SMD_CTX_BA_ATTR_EXT_BUFF_SIZE] = { .type = NLA_U16 },
 };
 
 #if LINUX_VERSION_IS_GEQ(6,7,0)
@@ -1208,6 +1248,7 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_SMD_LINK_TRANSITION_STATE] = { .type = NLA_U8 },
 	[NL80211_ATTR_SMD_STA_LINK_MACS]    = { .type = NLA_NESTED },
 	[NL80211_ATTR_SMD_STA_LINK_MAC]     = { .type = NLA_BINARY, .len = ETH_ALEN },
+	[NL80211_ATTR_SMD_CTX] = { .type = NLA_NESTED },
 };
 
 /* policy for the key attributes */
@@ -1728,6 +1769,7 @@ static bool nl80211_put_txq_stats(struct sk_buff *msg,
 	return true;
 }
 
+#if LINUX_VERSION_IS_LESS(6, 8, 0)
 static inline u8 nla_get_u8_default(const struct nlattr *nla, u8 defvalue)
 {
 	if (!nla)
@@ -1748,6 +1790,7 @@ static inline u16 nla_get_u16_default(const struct nlattr *nla, u16 defvalue)
 		return defvalue;
 	return nla_get_u16(nla);
 }
+#endif
 
 /* netlink command implementations */
 
@@ -4687,6 +4730,7 @@ static int nl80211_set_wiphy(struct sk_buff *skb, struct genl_info *info)
 	if (info->attrs[NL80211_ATTR_WIPHY_ANTENNA_TX] &&
 	    info->attrs[NL80211_ATTR_WIPHY_ANTENNA_RX]) {
 		u32 tx_ant, rx_ant;
+		int ifindex = netdev ? netdev->ifindex : -1;
 
 		if ((!rdev->wiphy.available_antennas_tx &&
 		     !rdev->wiphy.available_antennas_rx) ||
@@ -4706,9 +4750,11 @@ static int nl80211_set_wiphy(struct sk_buff *skb, struct genl_info *info)
 		rx_ant = rx_ant & rdev->wiphy.available_antennas_rx;
 
 		if (info->attrs[NL80211_ATTR_DYNAMIC_CHAIN_MASK])
-			result = rdev_set_antenna(rdev, tx_ant, rx_ant, radio_idx, true);
+			result = rdev_set_antenna(rdev, tx_ant, rx_ant,
+						  radio_idx, true, ifindex);
 		else
-			result = rdev_set_antenna(rdev, tx_ant, rx_ant, radio_idx, false);
+			result = rdev_set_antenna(rdev, tx_ant, rx_ant,
+						  radio_idx, false, ifindex);
 		if (result)
 			return result;
 	}
@@ -5000,6 +5046,8 @@ static int nl80211_send_iface(struct sk_buff *msg, u32 portid, u32 seq, int flag
 {
 	struct net_device *dev = wdev->netdev;
 	void *hdr;
+	bool show_pwr_mode = (wdev->iftype != NL80211_IFTYPE_MONITOR &&
+			      wdev->iftype != NL80211_IFTYPE_AP_VLAN);
 
 	lockdep_assert_wiphy(&rdev->wiphy);
 
@@ -5100,7 +5148,9 @@ static int nl80211_send_iface(struct sk_buff *msg, u32 portid, u32 seq, int flag
 			if (ret == 0 && nl80211_send_chandef(msg, &chandef))
 				goto nla_put_failure;
 
-			if (chandef.chan && chandef.chan->band == NL80211_BAND_6GHZ) {
+			if (chandef.chan &&
+			    chandef.chan->band == NL80211_BAND_6GHZ &&
+			    show_pwr_mode) {
 				if (nla_put_u8(msg, NL80211_ATTR_6G_REG_POWER_MODE,
 					       rdev_get_ap_6ghz_pwr_mode(rdev, wdev,
 									 link_id)))
@@ -5129,7 +5179,9 @@ static int nl80211_send_iface(struct sk_buff *msg, u32 portid, u32 seq, int flag
 			if (ret == 0 && nl80211_send_chandef(msg, &chandef))
 				goto nla_put_failure;
 
-			if (chandef.chan && chandef.chan->band == NL80211_BAND_6GHZ) {
+			if (chandef.chan &&
+			    chandef.chan->band == NL80211_BAND_6GHZ &&
+			    show_pwr_mode) {
 				if (nla_put_u8(msg, NL80211_ATTR_6G_REG_POWER_MODE,
 					       rdev_get_ap_6ghz_pwr_mode(rdev,
 									 wdev, 0)))
@@ -8221,6 +8273,20 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 		pr_debug("nl80211: SMD AP mode enabled\n");
 	}
 
+#ifdef CPTCFG_QCN_EXTN
+	/*
+	 * Boot-up CAC + skip_cac: when the driver supports creating all 5 GHz
+	 * BSS interfaces during CAC (boot-up CAC) and the user space requests
+	 * skip_cac, propagate the flag into params so that ieee80211_start_ap
+	 * can handle it (send a dummy CAC_FINISHED event instead of starting
+	 * the boot-up CAC timer).
+	 */
+	if (cfg80211_bootup_cac_is_5g_dfs_chan_extn(&rdev->wiphy,
+						     &params->chandef) &&
+	    info->attrs[NL80211_ATTR_SKIP_CAC])
+		params->skip_cac = nla_get_flag(info->attrs[NL80211_ATTR_SKIP_CAC]);
+#endif /* CPTCFG_QCN_EXTN */
+
 	/* FIXME: validate MLO/link-id against driver capabilities */
 
 	err = rdev_start_ap(rdev, dev, params);
@@ -9242,7 +9308,7 @@ static void cfg80211_sta_set_mld_sinfo(struct station_info *sinfo)
 		    BIT_ULL(NL80211_STA_INFO_TX_DURATION) &&
 		    (!init ||
 		     link_inactive_time > link_sinfo->inactive_time)) {
-			sinfo->tx_duration += link_sinfo->tx_duration;
+			sinfo->tx_duration = link_sinfo->tx_duration;
 			sinfo->filled |=
 				BIT_ULL(NL80211_STA_INFO_TX_DURATION);
 		}
@@ -9250,7 +9316,7 @@ static void cfg80211_sta_set_mld_sinfo(struct station_info *sinfo)
 		    BIT_ULL(NL80211_STA_INFO_RX_DURATION) &&
 		    (!init ||
 		     link_inactive_time > link_sinfo->inactive_time)) {
-			sinfo->rx_duration += link_sinfo->rx_duration;
+			sinfo->rx_duration = link_sinfo->rx_duration;
 			sinfo->filled |=
 				BIT_ULL(NL80211_STA_INFO_RX_DURATION);
 		}
@@ -15736,7 +15802,11 @@ static int nl80211_remain_on_channel(struct sk_buff *skb,
 	if (err)
 		return err;
 
-	if (!cfg80211_off_channel_oper_allowed(wdev, chandef.chan)) {
+	if (!cfg80211_off_channel_oper_allowed(wdev, chandef.chan)
+#ifdef CPTCFG_QCN_EXTN
+	    && !wdev->wiphy->allow_scan_on_dfs_chan
+#endif /* CPTCFG_QCN_EXTN */
+	    ) {
 		const struct cfg80211_chan_def *oper_chandef, *compat_chandef;
 
 		oper_chandef = wdev_chandef(wdev, link_id);
@@ -20949,6 +21019,456 @@ static int nl80211_ap_power_save(struct sk_buff *skb, struct genl_info *info)
 	return 0;
 }
 
+static size_t nl80211_smd_ctx_nl_size(struct cfg80211_smd_transition_info *st_info)
+{
+	const struct ieee80211_smd_ctx *ctx = st_info->ctx;
+	int n_dl_tids = 0, n_ul_tids = 0;
+	u8 pn_len = ctx->pn_len;
+	size_t n = 0;
+
+	/* count valid TIDs */
+	n_dl_tids = bitmap_weight(ctx->dl.valid_tid_bmap, IEEE80211_SMD_CTX_NUM_TIDS);
+	n_ul_tids = bitmap_weight(ctx->ul.valid_tid_bmap, IEEE80211_SMD_CTX_NUM_TIDS);
+
+	/* outer NL80211_ATTR_SMD_CTX nest */
+	n += nla_total_size(0);                 /* nest header */
+
+	n += nla_total_size(sizeof(u8));        /* ST type */
+
+	n += nla_total_size(sizeof(u8));        /* PN_len */
+
+	/* DL nest */
+	n += nla_total_size(0);                 /* DL nest header */
+
+	n += nla_total_size(sizeof(u8));        /* valid_tid_bitmap */
+
+	if (test_bit(IEEE80211_SMD_CTX_VALID_DL_SN, ctx->valid_ctx_bmap)) {
+		n += nla_total_size(0);                         /* DL SN nest header */
+		n += n_dl_tids * nla_total_size(sizeof(u16));   /* DL SN */
+	}
+
+	if (test_bit(IEEE80211_SMD_CTX_VALID_PN, ctx->valid_ctx_bmap))
+		n += nla_total_size(pn_len);    /* DL PN */
+
+	if (test_bit(IEEE80211_SMD_CTX_VALID_BA_PARAMS, ctx->valid_ctx_bmap)) {
+		n += nla_total_size(0);                        /* ba_params nest header */
+		n += n_dl_tids * (nla_total_size(0) +          /* tid nest header */
+				nla_total_size(sizeof(u16)) +  /* buff_size */
+				nla_total_size(0) +            /* policy */
+				nla_total_size(0) +            /* amsdu_support */
+				nla_total_size(sizeof(u16)) +  /* timeout */
+				nla_total_size(0) +            /* ext_no_frag */
+				nla_total_size(sizeof(u8)) +   /* ext_frag_level */
+				nla_total_size(sizeof(u16)));  /* ext_buff_size */
+	}
+
+	/* UL nest */
+	n += nla_total_size(0);                 /* UL nest header */
+
+	n += nla_total_size(sizeof(u8));        /* valid_tid_bitmap */
+
+	if (test_bit(IEEE80211_SMD_CTX_VALID_UL_SN, ctx->valid_ctx_bmap)) {
+		n += nla_total_size(0);                         /* UL SN nest header */
+		n += n_ul_tids * nla_total_size(sizeof(u16));   /* UL SN */
+	}
+
+	if (test_bit(IEEE80211_SMD_CTX_VALID_PN, ctx->valid_ctx_bmap)) {
+		n += nla_total_size(0);                         /* UL PN nest header */
+		n += n_ul_tids * nla_total_size(pn_len);        /* UL PN */
+	}
+
+	if (test_bit(IEEE80211_SMD_CTX_VALID_BA_PARAMS, ctx->valid_ctx_bmap)) {
+		n += nla_total_size(0);
+		n += n_ul_tids * (nla_total_size(0) +
+				nla_total_size(sizeof(u16)) +
+				nla_total_size(0) +
+				nla_total_size(0) +
+				nla_total_size(sizeof(u16)) +
+				nla_total_size(0) +
+				nla_total_size(sizeof(u8)) +
+				nla_total_size(sizeof(u16)));
+	}
+
+	/* Vendor blob */
+	if (ctx->drv_ctx && ctx->drv_ctx_size)
+		n += nla_total_size(ctx->drv_ctx_size);
+
+	return n;
+}
+
+static int nl80211_put_smd_ctx_ba_params(struct sk_buff *msg,
+					 const unsigned long *tid_bmap,
+					 const struct ieee80211_smd_ctx_ba *ba_tids,
+					 bool dl)
+{
+	u32 ba_params_attr = NL80211_SMD_CTX_DL_ATTR_BA_PARAMS;
+	struct nlattr *dl_ul_ba = NULL, *tid_ba = NULL;
+	u8 tid;
+
+	if (!dl)
+		ba_params_attr = NL80211_SMD_CTX_UL_ATTR_BA_PARAMS;
+
+	dl_ul_ba = nla_nest_start(msg, ba_params_attr);
+	if (!dl_ul_ba)
+		return -ENOBUFS;
+
+	for_each_set_bit(tid, tid_bmap, IEEE80211_SMD_CTX_NUM_TIDS) {
+		const struct ieee80211_smd_ctx_ba *ba = &ba_tids[tid];
+
+		tid_ba = nla_nest_start(msg, tid + 1);
+		if (!tid_ba)
+			goto nla_fail;
+
+		if (nla_put_u16(msg, NL80211_SMD_CTX_BA_ATTR_BUFF_SIZE,
+				ba->buffer_size) ||
+		    (ba->ba_policy &&
+		     nla_put_flag(msg, NL80211_SMD_CTX_BA_ATTR_POLICY)) ||
+		    (ba->amsdu_supported &&
+		     nla_put_flag(msg, NL80211_SMD_CTX_BA_ATTR_AMSDU_SUPPORT)) ||
+		    nla_put_u16(msg, NL80211_SMD_CTX_BA_ATTR_TIMEOUT,
+				ba->timeout) ||
+		    (ba->ext_no_frag &&
+		     nla_put_flag(msg, NL80211_SMD_CTX_BA_ATTR_EXT_NO_FRAG)) ||
+		    nla_put_u8(msg, NL80211_SMD_CTX_BA_ATTR_EXT_FRAG_LEVEL,
+			       ba->extfrag_level) ||
+		    nla_put_u16(msg, NL80211_SMD_CTX_BA_ATTR_EXT_BUFF_SIZE,
+				ba->ext_buffer_size)) {
+			nla_nest_cancel(msg, tid_ba);
+			goto nla_fail;
+		}
+
+		nla_nest_end(msg, tid_ba);
+	}
+
+	nla_nest_end(msg, dl_ul_ba);
+	return 0;
+
+nla_fail:
+	nla_nest_cancel(msg, dl_ul_ba);
+	return -ENOBUFS;
+}
+
+static int nl80211_put_smd_ctx(struct sk_buff *msg,
+			       struct cfg80211_smd_transition_info *st_info)
+{
+	struct nlattr *dl_sn = NULL, *ul_sn = NULL, *ul_pn = NULL;
+	struct nlattr *smd_ctx = NULL, *dl = NULL, *ul = NULL;
+	const struct ieee80211_smd_ctx *ctx;
+	u8 dl_tid_bmap = 0, ul_tid_bmap = 0;
+	u8 tid, type;
+
+	smd_ctx = nla_nest_start(msg, NL80211_ATTR_SMD_CTX);
+	if (!smd_ctx)
+		return -ENOBUFS;
+
+	ctx = st_info->ctx;
+	type = st_info->type;
+
+	/* ST Type */
+	if (nla_put_u8(msg, NL80211_SMD_CTX_ATTR_TYPE, type))
+		goto nla_fail;
+
+	/* PN length */
+	if (nla_put_u8(msg, NL80211_SMD_CTX_ATTR_PN_LEN, ctx->pn_len))
+		goto nla_fail;
+
+	/* Build DL context */
+	for_each_set_bit(tid, ctx->dl.valid_tid_bmap, IEEE80211_SMD_CTX_NUM_TIDS)
+		dl_tid_bmap |= BIT(tid);
+
+	dl = nla_nest_start(msg, NL80211_SMD_CTX_ATTR_DL);
+	if (!dl)
+		goto nla_fail;
+
+	if (nla_put_u8(msg, NL80211_SMD_CTX_DL_ATTR_VALID_TID_BITMAP, dl_tid_bmap))
+		goto nla_fail_tx;
+
+	if (test_bit(IEEE80211_SMD_CTX_VALID_DL_SN, ctx->valid_ctx_bmap)) {
+		dl_sn = nla_nest_start(msg, NL80211_SMD_CTX_DL_ATTR_SN);
+		if (!dl_sn)
+			goto nla_fail_tx;
+
+		for_each_set_bit(tid, ctx->dl.valid_tid_bmap,
+				 IEEE80211_SMD_CTX_NUM_TIDS) {
+			if (nla_put_u16(msg, tid + 1, ctx->dl.sn[tid])) {
+				nla_nest_cancel(msg, dl_sn);
+				goto nla_fail_tx;
+			}
+		}
+		nla_nest_end(msg, dl_sn);
+	}
+
+	if (test_bit(IEEE80211_SMD_CTX_VALID_PN, ctx->valid_ctx_bmap) &&
+	    nla_put(msg, NL80211_SMD_CTX_DL_ATTR_PN, ctx->pn_len, ctx->dl.pn))
+		goto nla_fail_tx;
+
+	if (test_bit(IEEE80211_SMD_CTX_VALID_BA_PARAMS, ctx->valid_ctx_bmap) &&
+	    nl80211_put_smd_ctx_ba_params(msg, ctx->dl.valid_tid_bmap, ctx->dl.ba, true))
+		goto nla_fail_tx;
+
+	nla_nest_end(msg, dl);
+
+	/* Build UL context */
+	for_each_set_bit(tid, ctx->ul.valid_tid_bmap, IEEE80211_SMD_CTX_NUM_TIDS)
+		ul_tid_bmap |= BIT(tid);
+
+	ul = nla_nest_start(msg, NL80211_SMD_CTX_ATTR_UL);
+	if (!ul)
+		goto nla_fail;
+
+	if (nla_put_u8(msg, NL80211_SMD_CTX_UL_ATTR_VALID_TID_BITMAP, ul_tid_bmap))
+		goto nla_fail_rx;
+
+	if (test_bit(IEEE80211_SMD_CTX_VALID_UL_SN, ctx->valid_ctx_bmap)) {
+		ul_sn = nla_nest_start(msg, NL80211_SMD_CTX_UL_ATTR_SN);
+		if (!ul_sn)
+			goto nla_fail_rx;
+
+		for_each_set_bit(tid, ctx->ul.valid_tid_bmap,
+				 IEEE80211_SMD_CTX_NUM_TIDS) {
+			if (nla_put_u16(msg, tid + 1, ctx->ul.sn[tid])) {
+				nla_nest_cancel(msg, ul_sn);
+				goto nla_fail_rx;
+			}
+		}
+		nla_nest_end(msg, ul_sn);
+	}
+
+	if (ctx->pn_len && test_bit(IEEE80211_SMD_CTX_VALID_PN, ctx->valid_ctx_bmap)) {
+		ul_pn = nla_nest_start(msg, NL80211_SMD_CTX_UL_ATTR_PN);
+		if (!ul_pn)
+			goto nla_fail_rx;
+
+		for_each_set_bit(tid, ctx->ul.valid_tid_bmap,
+				 IEEE80211_SMD_CTX_NUM_TIDS) {
+			if (nla_put(msg, tid + 1, ctx->pn_len, ctx->ul.pn[tid])) {
+				nla_nest_cancel(msg, ul_pn);
+				goto nla_fail_rx;
+			}
+		}
+		nla_nest_end(msg, ul_pn);
+	}
+
+	if (test_bit(IEEE80211_SMD_CTX_VALID_BA_PARAMS, ctx->valid_ctx_bmap) &&
+	    nl80211_put_smd_ctx_ba_params(msg, ctx->ul.valid_tid_bmap, ctx->ul.ba, false))
+		goto nla_fail_rx;
+
+	nla_nest_end(msg, ul);
+
+	/* Vendor-specific blob */
+	if (ctx->drv_ctx && ctx->drv_ctx_size &&
+	    nla_put(msg, NL80211_SMD_CTX_ATTR_VENDOR, ctx->drv_ctx_size, ctx->drv_ctx))
+		goto nla_fail;
+
+	nla_nest_end(msg, smd_ctx);
+
+	return 0;
+
+nla_fail_rx:
+	nla_nest_cancel(msg, ul);
+
+nla_fail_tx:
+	nla_nest_cancel(msg, dl);
+
+nla_fail:
+	nla_nest_cancel(msg, smd_ctx);
+	return -EINVAL;
+}
+
+static void nl80211_set_smd_ctx_ba_params(struct nlattr *tb,
+					  struct ieee80211_smd_ctx_ba *ba_tids,
+					  unsigned long *valid_ctx_bmap)
+{
+	struct nlattr *ba_tb[NL80211_SMD_CTX_BA_ATTR_MAX + 1];
+	struct ieee80211_smd_ctx_ba *ba;
+	struct nlattr *ba_attr;
+	int rem, tid;
+
+	if (!tb)
+		return;
+
+	nla_for_each_nested(ba_attr, tb, rem) {
+		tid = nla_type(ba_attr) - 1;
+		if (tid >= IEEE80211_SMD_CTX_NUM_TIDS)
+			break;
+
+		if (nla_parse_nested(ba_tb, NL80211_SMD_CTX_BA_ATTR_MAX,
+				     ba_attr, nl80211_smd_ctx_ba_policy,
+				     NULL)) {
+			continue;
+		}
+
+		ba = &ba_tids[tid];
+
+		if (ba_tb[NL80211_SMD_CTX_BA_ATTR_BUFF_SIZE])
+			ba->buffer_size =
+				nla_get_u16(ba_tb[NL80211_SMD_CTX_BA_ATTR_BUFF_SIZE]);
+
+		ba->ba_policy = !!ba_tb[NL80211_SMD_CTX_BA_ATTR_POLICY];
+
+		ba->amsdu_supported = !!ba_tb[NL80211_SMD_CTX_BA_ATTR_AMSDU_SUPPORT];
+
+		if (ba_tb[NL80211_SMD_CTX_BA_ATTR_TIMEOUT])
+			ba->timeout = nla_get_u16(ba_tb[NL80211_SMD_CTX_BA_ATTR_TIMEOUT]);
+
+		ba->ext_no_frag = !!ba_tb[NL80211_SMD_CTX_BA_ATTR_EXT_NO_FRAG];
+
+		if (ba_tb[NL80211_SMD_CTX_BA_ATTR_EXT_FRAG_LEVEL])
+			ba->extfrag_level =
+				nla_get_u8(ba_tb[NL80211_SMD_CTX_BA_ATTR_EXT_FRAG_LEVEL]);
+
+		if (ba_tb[NL80211_SMD_CTX_BA_ATTR_EXT_BUFF_SIZE])
+			ba->ext_buffer_size =
+				nla_get_u16(ba_tb[NL80211_SMD_CTX_BA_ATTR_EXT_BUFF_SIZE]);
+
+		set_bit(IEEE80211_SMD_CTX_VALID_BA_PARAMS, valid_ctx_bmap);
+	}
+}
+
+static int nl80211_set_smd_ctx(struct sk_buff *skb, struct genl_info *info)
+{
+	struct cfg80211_registered_device *rdev = info->user_ptr[0];
+	struct nlattr *dl_tb[NL80211_SMD_CTX_DL_ATTR_MAX + 1];
+	struct nlattr *ul_tb[NL80211_SMD_CTX_UL_ATTR_MAX + 1];
+	struct cfg80211_smd_transition_info st_info = {};
+	struct nlattr *tb[NL80211_SMD_CTX_ATTR_MAX + 1];
+	struct net_device *dev = info->user_ptr[1];
+	struct wireless_dev *wdev = dev->ieee80211_ptr;
+	struct ieee80211_smd_ctx ctx;
+	struct nlattr *bmap_attr;
+	const u8 *addr;
+	u8 pn_len;
+
+	if (!rdev->ops->set_smd_ctx)
+		return -EOPNOTSUPP;
+
+	if (!info->attrs[NL80211_ATTR_MAC] || !info->attrs[NL80211_ATTR_SMD_CTX])
+		return -EINVAL;
+
+	addr = nla_data(info->attrs[NL80211_ATTR_MAC]);
+
+	if (nla_parse_nested(tb, NL80211_SMD_CTX_ATTR_MAX,
+			     info->attrs[NL80211_ATTR_SMD_CTX],
+			     nl80211_smd_ctx_policy, NULL))
+		return -EINVAL;
+
+	if (!tb[NL80211_SMD_CTX_ATTR_TYPE])
+		return -EINVAL;
+
+	memset(&ctx, 0, sizeof(ctx));
+
+	st_info.type = nla_get_u8(tb[NL80211_SMD_CTX_ATTR_TYPE]);
+	st_info.ctx = &ctx;
+
+	if (tb[NL80211_SMD_CTX_ATTR_PN_LEN]) {
+		pn_len = nla_get_u8(tb[NL80211_SMD_CTX_ATTR_PN_LEN]);
+		if (pn_len <= sizeof(ctx.dl.pn)) {
+			set_bit(IEEE80211_SMD_CTX_VALID_PN, ctx.valid_ctx_bmap);
+			ctx.pn_len = pn_len;
+		}
+	}
+
+	/* DL Context */
+	if (tb[NL80211_SMD_CTX_ATTR_DL]) {
+		if (nla_parse_nested(dl_tb, NL80211_SMD_CTX_DL_ATTR_MAX,
+				     tb[NL80211_SMD_CTX_ATTR_DL],
+				     nl80211_smd_ctx_dl_policy, NULL))
+			return -EINVAL;
+
+		bmap_attr = dl_tb[NL80211_SMD_CTX_DL_ATTR_VALID_TID_BITMAP];
+		if (bmap_attr)
+			bitmap_write(ctx.dl.valid_tid_bmap, nla_get_u8(bmap_attr),
+				     0, IEEE80211_SMD_CTX_NUM_TIDS);
+
+		if (dl_tb[NL80211_SMD_CTX_DL_ATTR_SN]) {
+			struct nlattr *sn_attr;
+			int rem, tid;
+
+			set_bit(IEEE80211_SMD_CTX_VALID_DL_SN, ctx.valid_ctx_bmap);
+
+			nla_for_each_nested(sn_attr, dl_tb[NL80211_SMD_CTX_DL_ATTR_SN],
+					    rem) {
+				tid = nla_type(sn_attr) - 1;
+				if (tid >= IEEE80211_SMD_CTX_NUM_TIDS)
+					break;
+
+				ctx.dl.sn[tid] = nla_get_u16(sn_attr);
+			}
+		}
+
+		if (dl_tb[NL80211_SMD_CTX_DL_ATTR_PN]) {
+			const u8 *pn_data =
+				nla_data(dl_tb[NL80211_SMD_CTX_DL_ATTR_PN]);
+
+			memcpy(ctx.dl.pn, pn_data, ctx.pn_len);
+		}
+
+		nl80211_set_smd_ctx_ba_params(dl_tb[NL80211_SMD_CTX_DL_ATTR_BA_PARAMS],
+					      ctx.dl.ba, ctx.valid_ctx_bmap);
+	}
+
+	/* UL Context */
+	if (tb[NL80211_SMD_CTX_ATTR_UL]) {
+		if (nla_parse_nested(ul_tb, NL80211_SMD_CTX_UL_ATTR_MAX,
+				     tb[NL80211_SMD_CTX_ATTR_UL],
+				     nl80211_smd_ctx_ul_policy, NULL))
+			return -EINVAL;
+
+		bmap_attr = ul_tb[NL80211_SMD_CTX_UL_ATTR_VALID_TID_BITMAP];
+		if (bmap_attr)
+			bitmap_write(ctx.ul.valid_tid_bmap, nla_get_u8(bmap_attr),
+				     0, IEEE80211_SMD_CTX_NUM_TIDS);
+
+		if (ul_tb[NL80211_SMD_CTX_UL_ATTR_SN]) {
+			struct nlattr *sn_attr;
+			int rem, tid;
+
+			set_bit(IEEE80211_SMD_CTX_VALID_UL_SN, ctx.valid_ctx_bmap);
+			nla_for_each_nested(sn_attr, ul_tb[NL80211_SMD_CTX_UL_ATTR_SN],
+					    rem) {
+				tid = nla_type(sn_attr) - 1;
+				if (tid >= IEEE80211_SMD_CTX_NUM_TIDS)
+					break;
+
+				ctx.ul.sn[tid] = nla_get_u16(sn_attr);
+			}
+		}
+
+		if (ul_tb[NL80211_SMD_CTX_UL_ATTR_PN]) {
+			struct nlattr *pn_attr;
+			int rem, tid;
+
+			nla_for_each_nested(pn_attr, ul_tb[NL80211_SMD_CTX_UL_ATTR_PN],
+					    rem) {
+				const u8 *pn_data = nla_data(pn_attr);
+
+				tid = nla_type(pn_attr) - 1;
+				if (tid >= IEEE80211_SMD_CTX_NUM_TIDS)
+					break;
+
+				memcpy(ctx.ul.pn[tid], pn_data, ctx.pn_len);
+			}
+		}
+
+		nl80211_set_smd_ctx_ba_params(ul_tb[NL80211_SMD_CTX_UL_ATTR_BA_PARAMS],
+					      ctx.ul.ba, ctx.valid_ctx_bmap);
+	}
+
+	/* QoS Context */
+	if (tb[NL80211_SMD_CTX_ATTR_QOS]) {
+		/* TODO: QoS parsing would go here - SCS/MSCS descriptors */
+		set_bit(IEEE80211_SMD_CTX_VALID_QOS, ctx.valid_ctx_bmap);
+	}
+
+	/* Vendor Context */
+	if (tb[NL80211_SMD_CTX_ATTR_VENDOR]) {
+		ctx.drv_ctx = nla_data(tb[NL80211_SMD_CTX_ATTR_VENDOR]);
+		ctx.drv_ctx_size = nla_len(tb[NL80211_SMD_CTX_ATTR_VENDOR]);
+	}
+
+	return rdev_set_smd_ctx(rdev, wdev, addr, &st_info);
+}
+
 #define NL80211_FLAG_NEED_WIPHY		0x01
 #define NL80211_FLAG_NEED_NETDEV	0x02
 #define NL80211_FLAG_NEED_RTNL		0x04
@@ -22455,6 +22975,12 @@ static const struct genl_small_ops nl80211_small_ops[] = {
 		.flags = GENL_UNS_ADMIN_PERM,
 		.internal_flags = IFLAGS(NL80211_FLAG_NEED_NETDEV_UP),
 	},
+	{
+		.cmd = NL80211_CMD_SET_SMD_CTX,
+		.doit = nl80211_set_smd_ctx,
+		.flags = GENL_UNS_ADMIN_PERM,
+		.internal_flags = IFLAGS(NL80211_FLAG_NEED_NETDEV_UP),
+	},
 };
 
 static struct genl_family nl80211_fam __ro_after_init = {
@@ -22778,15 +23304,9 @@ void nl80211_common_reg_change_event(enum nl80211_commands cmd_id,
 		goto nla_put_failure;
 
 	genlmsg_end(msg, hdr);
-#ifndef PLATFORM_SDX85
 #if LINUX_VERSION_IS_GEQ(6,6,59)
 	genlmsg_multicast_allns(&nl80211_fam, msg, 0,
 				NL80211_MCGRP_REGULATORY);
-#else
-	genlmsg_multicast_allns(&nl80211_fam, msg, 0,
-				NL80211_MCGRP_REGULATORY,
-				GFP_ATOMIC);
-#endif
 #else
 	genlmsg_multicast_allns(&nl80211_fam, msg, 0,
 				NL80211_MCGRP_REGULATORY,
@@ -22986,6 +23506,9 @@ void cfg80211_rx_unprot_mlme_mgmt(struct net_device *dev, const u8 *buf,
 	} else if (ieee80211_is_disassoc(mgmt->frame_control)) {
 		event.cmd = NL80211_CMD_UNPROT_DISASSOCIATE;
 	} else if (ieee80211_is_beacon(mgmt->frame_control)) {
+		if (wdev->iftype == NL80211_IFTYPE_AP ||
+		    wdev->iftype == NL80211_IFTYPE_P2P_GO)
+			return;
 		if (wdev->unprot_beacon_reported &&
 		    elapsed_jiffies_msecs(wdev->unprot_beacon_reported) < 10000)
 			return;
@@ -23681,15 +24204,9 @@ void nl80211_send_beacon_hint_event(struct wiphy *wiphy,
 	nla_nest_end(msg, nl_freq);
 
 	genlmsg_end(msg, hdr);
-#ifndef PLATFORM_SDX85
 #if LINUX_VERSION_IS_GEQ(6,6,59)
 	genlmsg_multicast_allns(&nl80211_fam, msg, 0,
 				NL80211_MCGRP_REGULATORY);
-#else
-	genlmsg_multicast_allns(&nl80211_fam, msg, 0,
-				NL80211_MCGRP_REGULATORY,
-				GFP_ATOMIC);
-#endif
 #else
 	genlmsg_multicast_allns(&nl80211_fam, msg, 0,
 				NL80211_MCGRP_REGULATORY,
@@ -24127,9 +24644,11 @@ static int nl80211_send_mgmt_critical_update_len(struct wireless_dev *wdev)
 		cu_len += 24;
 		for_each_valid_link(tmp_wdev, link_id) {
 			/*Add length for link nla_header and
-			 * length for link_id, critical flag, bpcc and CSA count
+			 * length for link_id, critical flag, bpcc, CSA count,
+			 * enhanced_bpcc + enhanced_critical_flag (ECU) and
+			 * ecu_countdown_timer
 			 */
-			cu_len += 24;
+			cu_len += 44;
 		}
 	}
 	return cu_len;
@@ -24191,6 +24710,17 @@ static int nl80211_send_mgmt_critical_update(struct sk_buff *msg, struct wireles
 				goto nla_fail_link;
 			if (nla_put_u8(msg, NL80211_CU_MLD_LINK_ATTR_SWITCH_COUNT,
 				       tmp_wdev->links[link_id].switch_count))
+				goto nla_fail_link;
+			if (nla_put_u8(msg, NL80211_CU_MLD_LINK_ATTR_ENHANCED_BPCC,
+				       tmp_wdev->links[link_id].enhanced_bpcc))
+				goto nla_fail_link;
+			if (tmp_wdev->links[link_id].enhanced_critical_update &&
+			    nla_put_flag(msg,
+					 NL80211_CU_MLD_LINK_ATTR_ENHANCED_CRITICAL_FLAG))
+				goto nla_fail_link;
+			if (tmp_wdev->links[link_id].ecu_countdown_timer &&
+			    nla_put_u8(msg, NL80211_CU_MLD_LINK_ATTR_ECU_COUNTDOWN,
+				       tmp_wdev->links[link_id].ecu_countdown_timer))
 				goto nla_fail_link;
 			nla_nest_end(msg, link);
 			j++;
@@ -24337,6 +24867,7 @@ int nl80211_send_mgmt(struct cfg80211_registered_device *rdev,
 	struct sk_buff *msg;
 	void *hdr;
 	int cu_len = 0, link_removal_update_len = 0, ttlm_expec_dur_update_len = 0;
+	int st_roaming_data_len = 0;
 
 	if (info->critical_update)
 		cu_len = nl80211_send_mgmt_critical_update_len(wdev);
@@ -24347,8 +24878,11 @@ int nl80211_send_mgmt(struct cfg80211_registered_device *rdev,
 	if (info->ttlm_expec_dur_update)
 		ttlm_expec_dur_update_len = nl80211_send_mgmt_ttlm_expec_dur_update_len(wdev);
 
+	if (info->st_info.ctx)
+		st_roaming_data_len = nl80211_smd_ctx_nl_size(&info->st_info);
+
 	msg = nlmsg_new(100 + info->len + cu_len + link_removal_update_len +
-			ttlm_expec_dur_update_len,
+			ttlm_expec_dur_update_len + st_roaming_data_len,
 			gfp);
 	if (!msg)
 		return -ENOMEM;
@@ -24402,6 +24936,10 @@ int nl80211_send_mgmt(struct cfg80211_registered_device *rdev,
 			goto nla_put_failure;
 		wdev->ttlm_expec_dur_update_flag = 0;
 	}
+
+	if (st_roaming_data_len &&
+	    nl80211_put_smd_ctx(msg, &info->st_info))
+		goto nla_put_failure;
 
 	genlmsg_end(msg, hdr);
 

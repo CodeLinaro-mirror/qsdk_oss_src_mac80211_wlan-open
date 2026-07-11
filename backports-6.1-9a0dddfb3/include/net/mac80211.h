@@ -4407,6 +4407,7 @@ enum ieee80211_ampdu_mlme_action {
  * @buf_size: reorder buffer size  (number of subframes). Valid only when the
  *	action is set to %IEEE80211_AMPDU_RX_START or
  *	%IEEE80211_AMPDU_TX_OPERATIONAL
+ * @policy: BlockAck policy (0=delayed, 1=immediate)
  * @amsdu: indicates the peer's ability to receive A-MSDU within A-MPDU.
  *	valid when the action is set to %IEEE80211_AMPDU_TX_OPERATIONAL
  * @timeout: BA session timeout. Valid only when the action is set to
@@ -4418,6 +4419,7 @@ struct ieee80211_ampdu_params {
 	u16 tid;
 	u16 ssn;
 	u16 buf_size;
+	bool policy;
 	bool amsdu;
 	u16 timeout;
 };
@@ -5231,6 +5233,8 @@ struct ieee80211_ppe_vp_ds_params {
  *	release any resources allocated at PREPARE_RESP time.
  *	@current_sta is the current (serving AP) peer; @target_sta is the
  *	target AP peer (NULL for ABORT). @info carries per-phase parameters.
+ * @set_smd_ctx: Set the UHR SMD context for the non-AP MLD. This is used in
+ *	the target AP MLD side to program dynamic context.
  */
 struct ieee80211_ops {
 	void (*tx)(struct ieee80211_hw *hw,
@@ -5450,7 +5454,7 @@ struct ieee80211_ops {
 			       struct ieee80211_vif *vif,
 			       struct ieee80211_channel_switch *ch_switch);
 	int (*set_antenna)(struct ieee80211_hw *hw, u32 tx_ant, u32 rx_ant,
-			   u8 radio_id, bool is_dynamic);
+			   u8 radio_id, bool is_dynamic, int ifindex);
 	int (*get_antenna)(struct ieee80211_hw *hw, u32 *tx_ant, u32 *rx_ant,
 			   u8 radio_id);
 
@@ -5701,6 +5705,9 @@ struct ieee80211_ops {
 	int (*set_muedca_mode)(struct ieee80211_hw *hw, int radio_idx,
 			       u8 muedca_mode);
 #endif /* CPTCFG_QCN_EXTN */
+	int (*set_smd_ctx)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+			   struct ieee80211_sta *sta,
+			   struct cfg80211_smd_transition_info *st_info);
 };
 
 /**
@@ -6469,7 +6476,8 @@ struct ieee80211_ema_beacons {
  * This function follows the same rules as ieee80211_beacon_get_template()
  * but allocates and returns a pointer to list of all beacon templates required
  * to cover all profiles in the multiple BSSID set. Each template includes only
- * one multiple BSSID element.
+ * one multiple BSSID element. If no MBSSID elements are present, this function
+ * will return the default template.
  *
  * Driver must call ieee80211_beacon_free_ema_list() to free the memory.
  *
@@ -8874,6 +8882,33 @@ mesh_nss_offld_proxy_path_exp_update(struct ieee80211_vif *vif, u8* da,
  */
 void ieee80211_critical_update(struct ieee80211_vif *vif, unsigned int link_id,
 				bool critical_flag, u8 bpcc);
+
+/**
+ * ieee80211_critical_update_ecu - update Enhanced Critical Update (ECU)
+ *	parameters for a link
+ * @vif: virtual interface
+ * @link_id: the link on which the ECU parameter was received
+ * @enhanced_critical_update: enhanced critical update flag (true when the
+ *	UHR Parameters Update element is present in the received frame)
+ * @enhanced_bpcc: Enhanced BSS Parameter Change Count (4-bit, modulo 16)
+ *	as defined in IEEE 802.11bn/D1.5 37.30.3
+ * @ecu_countdown_timer: Countdown Timer initialized to
+ *	advance notification interval; number of TBTTs until the
+ *	update(s) in the UHR Parameters Update element take effect. Value 1
+ *	means next TBTT. Value > 127 means the update already took effect
+ *	(Countdown Timer - 127) beacon intervals ago
+ *
+ * Called by the driver when it receives an updated enhanced BPCC from a
+ * peer in a management frame (Probe Request, (Re)Association Request).
+ * Stores the values in the per-link wdev state so that
+ * nl80211_send_mgmt_critical_update() can encode them and deliver them to
+ * hostapd via %NL80211_ATTR_RXMGMT_CRITICAL_UPDATE.
+ */
+void ieee80211_critical_update_ecu(struct ieee80211_vif *vif,
+				   unsigned int link_id,
+				   bool enhanced_critical_update,
+				   u8 enhanced_bpcc,
+				   u8 ecu_countdown_timer);
 
 /**
  * ieee80211_cu_notify - notify mac80211 of a UHR ECU state transition

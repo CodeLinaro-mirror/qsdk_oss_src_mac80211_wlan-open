@@ -145,6 +145,16 @@ static inline void ath12k_dmb(void)
 }
 #endif
 
+#ifdef PLATFORM_SDX
+#define ATH12K_TX_BUFFER_UNMAP(dev, paddr, len, dir) \
+	ath12k_dp_tx_buffer_unmap(dev, paddr, len, dir)
+#else
+#define ATH12K_TX_BUFFER_UNMAP(...) ((void)0)
+#endif
+
+#define ATH12K_TX_BUFFER_MAP(dp, skb, len, tx_desc, msdu_info, skb_ctrl) \
+	ath12k_dp_tx_dma_map(dp, skb, len, tx_desc, msdu_info, skb_ctrl)
+
 /*
  * DP TX Feature Bitmap (stored in ath12k_dp_vif.dp_features, 32-bit).
  *

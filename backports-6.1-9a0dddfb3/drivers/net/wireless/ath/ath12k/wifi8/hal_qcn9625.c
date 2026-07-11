@@ -1641,6 +1641,16 @@ static void ath12k_wifi8_hal_set_reg_writer_hptp_addr(struct ath12k_base *ab,
 	}
 }
 
+static bool ath12k_wifi8_hal_rx_reo_status(struct hal_reo_status *reo_status)
+{
+	return reo_status->tag == HAL_REO_GET_QUEUE_STATS_STATUS;
+}
+
+static bool ath12k_wifi8_hal_rx_reo_1k_status(struct hal_reo_status *reo_status)
+{
+	return reo_status->tag == HAL_REO_GET_QUEUE_1K_STATS_STATUS;
+}
+
 const struct hal_ops hal_qcn9625_ops = {
 	.hal_init = ath12k_wifi8_hal_init_qcn9625,
 	.hal_deinit = ath12k_wifi8_hal_deinit_qcn9625,
@@ -1710,4 +1720,6 @@ const struct hal_ops hal_qcn9625_ops = {
 	.hal_srng_idx_update_addr = ath12k_wifi8_hal_srng_idx_update_addr,
 	.hal_ppeds_reo2ppe_cc_config = ath12k_wifi8_hal_ppeds_reo2ppe_cc_config,
 	.hal_set_reg_writer_hptp_addr = ath12k_wifi8_hal_set_reg_writer_hptp_addr,
+	.hal_rx_reo_status = ath12k_wifi8_hal_rx_reo_status,
+	.hal_rx_reo_1k_status = ath12k_wifi8_hal_rx_reo_1k_status,
 };

@@ -297,34 +297,26 @@ void ath12k_dp_ast_entry_tbl_destroy(struct ath12k_dp_hw_group *dp_hw_grp)
 	ast_base->rhead_ast_entry = NULL;
 }
 
-int ath12k_dp_ast_table_init(struct ath12k_dp_hw_group *dp_hw_grp)
+int ath12k_dp_ast_table_alloc(struct ath12k_dp *dp)
 {
-	struct device *dev = NULL;
+	struct ath12k_base *ab = dp->ab;
+	struct device *dev = ab->dev;
+	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
 	struct ath12k_dp_global_ast_table *ast_base = NULL;
-	struct ath12k_hal_ast_param ast_info = {0};
-	struct ath12k_base *ab = NULL;
 	int ret;
-	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8 =
-			ath12k_get_dp_hw_group_wifi8(dp_hw_grp);
-	struct ath12k_dp *dp = NULL;
-	int i = 0;
 
 	if (!dp_hw_grp) {
-		ath12k_err(NULL, "ASE init dp_hw_grp is NULL\n");
+		ath12k_err(ab, "ASE alloc dp_hw_grp is NULL\n");
 		return -EINVAL;
 	}
 
-	dev = ath12k_dp_get_dev_from_dp_hw_group(dp_hw_grp);
 	ast_base = ath12k_dp_get_global_ast_table(dp_hw_grp);
-	ab = ath12k_dp_get_ab_from_dp_hw_group(dp_hw_grp);
-	dp_hw_grp_wifi8 = ath12k_get_dp_hw_group_wifi8(dp_hw_grp);
-
-	if (!ast_base || !dev || !ab) {
-		ath12k_err(NULL, "ASE init unable to fetch ast_base or dev or ab\n");
+	if (!ast_base) {
+		ath12k_err(ab, "ASE alloc unable to fetch ast_base\n");
 		return -EINVAL;
 	}
 
-	if (ast_base->ast_vaddr_aligned)
+	if (ast_base->ast_vaddr_unaligned)
 		return 0;
 
 	ast_base->num_ast_entries = MAX_NUM_AST_ENTRIES;
@@ -361,11 +353,59 @@ int ath12k_dp_ast_table_init(struct ath12k_dp_hw_group *dp_hw_grp)
 		ret = -ENOMEM;
 		goto unmap_hw_ast_table;
 	}
+
+	return 0;
+
+unmap_hw_ast_table:
+	ath12k_core_dma_unmap_single(dev, ast_base->ast_paddr,
+				     ast_base->hw_ast_table_size,
+				     DMA_BIDIRECTIONAL);
+free_hw_ast_table:
+	kfree(ast_base->ast_vaddr_unaligned);
+	ast_base->ast_vaddr_unaligned = NULL;
+	ast_base->ast_vaddr_aligned = NULL;
+	return ret;
+}
+
+int ath12k_dp_ast_table_init(struct ath12k_dp_hw_group *dp_hw_grp)
+{
+	struct ath12k_dp_global_ast_table *ast_base = NULL;
+	struct ath12k_hal_ast_param ast_info = {0};
+	struct ath12k_base *ab = NULL;
+	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8 =
+			ath12k_get_dp_hw_group_wifi8(dp_hw_grp);
+	struct ath12k_dp *dp = NULL;
+	int ret;
+	int i = 0;
+
+	if (!dp_hw_grp) {
+		ath12k_err(NULL, "ASE init dp_hw_grp is NULL\n");
+		return -EINVAL;
+	}
+
+	ast_base = ath12k_dp_get_global_ast_table(dp_hw_grp);
+	ab = ath12k_dp_get_ab_from_dp_hw_group(dp_hw_grp);
+	dp_hw_grp_wifi8 = ath12k_get_dp_hw_group_wifi8(dp_hw_grp);
+
+	if (!ast_base || !ab) {
+		ath12k_err(NULL, "ASE init unable to fetch ast_base or ab\n");
+		return -EINVAL;
+	}
+
+	/* Zero out the HW AST table memory on every init */
+	memset(ast_base->ast_vaddr_aligned, 0, ast_base->hw_ast_table_size);
+
+	/* Zero out the SW AST entry index table on every init */
+	memset(ast_base->ast_entries, 0,
+	       ast_base->num_ast_entries * sizeof(struct ath12k_ast_entry *));
+
+	spin_lock_init(&ast_base->ast_lock);
+
 	/* Hash table for SW AST entries */
 	ret = ath12k_dp_ast_entry_rhash_tbl_init(dp_hw_grp);
 	if (ret) {
 		ath12k_err(ab, "failed to init the hash table for SW ast entries\n");
-		goto free_sw_ast_table;
+		return ret;
 	}
 
 	ast_base->hash_keys.ase_hash_key1 = ATH12K_AST_HASH_KEY_1;
@@ -374,8 +414,6 @@ int ath12k_dp_ast_table_init(struct ath12k_dp_hw_group *dp_hw_grp)
 	ath12k_dp_init_ast_hash_keys(ast_base->hash_keys.ase_hash_key1,
 				     ast_base->hash_keys.ase_hash_key2,
 				     ast_base->hash_keys.ase_hash_key3);
-
-	spin_lock_init(&ast_base->ast_lock);
 
 	ast_base->ase_tx_cache_en = 1;
 	ast_base->ase_rx_cache_en = ATH12K_ASE_RX_CACHE_EN;
@@ -392,7 +430,7 @@ int ath12k_dp_ast_table_init(struct ath12k_dp_hw_group *dp_hw_grp)
 			ret = ath12k_dp_rx_htt_ast_info_setup(dp->ab, &ast_info);
 			if (ret) {
 				ath12k_err(ab, "failed to send ASE htt ret = %d", ret);
-				goto free_sw_ast_table;
+				return ret;
 			}
 		}
 	}
@@ -402,52 +440,21 @@ int ath12k_dp_ast_table_init(struct ath12k_dp_hw_group *dp_hw_grp)
 		init_completion(&dp_hw_grp_wifi8->peer_init_done);
 
 	return 0;
-
-free_sw_ast_table:
-	kfree(ast_base->ast_entries);
-
-unmap_hw_ast_table:
-	ath12k_core_dma_unmap_single(dev, ast_base->ast_paddr,
-				     ast_base->hw_ast_table_size,
-				     DMA_BIDIRECTIONAL);
-free_hw_ast_table:
-	kfree(ast_base->ast_vaddr_unaligned);
-	ast_base->ast_vaddr_unaligned = NULL;
-	ast_base->ast_vaddr_aligned = NULL;
-	return ret;
 }
 
 void ath12k_dp_ast_table_deinit(struct ath12k_dp_hw_group *dp_hw_grp)
 {
 	struct ath12k_dp_global_ast_table *ast_base = NULL;
-	struct device *dev = NULL;
 	u16 index;
 	struct ath12k_ast_entry *sw_ast_entry;
 
-	if (!dp_hw_grp) {
-		ath12k_err(NULL, "ASE deinit dp_hw_grp is NULL\n");
-		return;
-	}
-
-	dev = ath12k_dp_get_dev_from_dp_hw_group(dp_hw_grp);
 	ast_base = ath12k_dp_get_global_ast_table(dp_hw_grp);
 	if (!ast_base) {
-		ath12k_err(NULL, "ASE deinit unable to fetch ast_base\n");
+		ath12k_err(NULL, "ASE free unable to fetch ast_base\n");
 		return;
 	}
 
-	if (!ast_base->ast_vaddr_unaligned) {
-		ath12k_err(NULL, "ASE deinit vaddr unaligned is NULL\n");
-		return;
-	}
-
-	if (dev) {
-		ath12k_core_dma_unmap_single(dev, ast_base->ast_paddr,
-					     ast_base->hw_ast_table_size,
-					     DMA_BIDIRECTIONAL);
-	}
-
-	/* cleanup stale AST entries before destroying tables */
+	/* cleanup stale AST entries */
 	spin_lock_bh(&ast_base->ast_lock);
 	for (index = 0; index < ast_base->num_ast_entries; index++) {
 		sw_ast_entry = ath12k_dp_get_sw_ast_entry_by_index(dp_hw_grp, index);
@@ -459,9 +466,39 @@ void ath12k_dp_ast_table_deinit(struct ath12k_dp_hw_group *dp_hw_grp)
 		kfree(sw_ast_entry);
 	}
 	spin_unlock_bh(&ast_base->ast_lock);
+}
+
+void ath12k_dp_ast_table_free(struct ath12k_dp_hw_group *dp_hw_grp)
+{
+	struct ath12k_dp_global_ast_table *ast_base = NULL;
+	struct device *dev = NULL;
+
+	if (!dp_hw_grp) {
+		ath12k_err(NULL, "ASE free dp_hw_grp is NULL\n");
+		return;
+	}
+
+	dev = ath12k_dp_get_dev_from_dp_hw_group(dp_hw_grp);
+	ast_base = ath12k_dp_get_global_ast_table(dp_hw_grp);
+	if (!ast_base) {
+		ath12k_err(NULL, "ASE free unable to fetch ast_base\n");
+		return;
+	}
+
+	if (!ast_base->ast_vaddr_unaligned) {
+		ath12k_err(NULL, "ASE free vaddr unaligned is NULL\n");
+		return;
+	}
+
+	if (dev) {
+		ath12k_core_dma_unmap_single(dev, ast_base->ast_paddr,
+					     ast_base->hw_ast_table_size,
+					     DMA_BIDIRECTIONAL);
+	}
 
 	ath12k_dp_ast_entry_tbl_destroy(dp_hw_grp);
 	kfree(ast_base->ast_entries);
+	ast_base->ast_entries = NULL;
 
 	kfree(ast_base->ast_vaddr_unaligned);
 	ast_base->ast_vaddr_unaligned = NULL;

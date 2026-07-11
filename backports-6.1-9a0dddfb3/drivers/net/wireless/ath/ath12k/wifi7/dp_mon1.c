@@ -17,8 +17,13 @@
 struct ath12k_dp_arch_mon_ops ath12k_wifi7_dp_arch_mon_quad_ring_ops = {
 	.rx_srng_setup = ath12k_wifi7_dp_mon_rx_srng_setup,
 	.rx_srng_cleanup = ath12k_wifi7_dp_mon_rx_srng_cleanup,
-	.rx_buf_setup = ath12k_wifi7_dp_mon_rx_buf_setup,
-	.rx_buf_free = ath12k_wifi7_dp_mon_rx_buf_free,
+	.rx_ring_init = ath12k_wifi7_dp_mon_rx_ring_init,
+	.rx_ring_deinit = ath12k_wifi7_dp_mon_rx_ring_deinit,
+	/* The below 2 ops are required only for wifi6, remove this after wifi6
+	 * memory optimization
+	 */
+	.rx_buf_setup = NULL,
+	.rx_buf_free = NULL,
 	.rx_htt_srng_setup = ath12k_wifi7_dp_mon_rx_htt_srng_setup,
 	.mon_pdev_alloc = ath12k_dp_mon_pdev_alloc,
 	.mon_pdev_free = ath12k_dp_mon_pdev_free,
@@ -55,17 +60,12 @@ int ath12k_wifi7_dp_mon_rx_srng_setup(struct ath12k_dp *dp)
 	int i, ret;
 
 	for (i = 0; i < ab->hw_params->num_rxdma_per_pdev; i++) {
-		idr_init(&dp_mon->rx_mon_status_refill_ring[i].bufs_idr);
-		spin_lock_init(&dp_mon->rx_mon_status_refill_ring[i].idr_lock);
-	}
-
-	for (i = 0; i < ab->hw_params->num_rxdma_per_pdev; i++) {
 		srng = &dp_mon->rx_mon_status_refill_ring[i].refill_buf_ring;
-		ret = ath12k_dp_srng_setup(ab, srng,
+		ret = ath12k_dp_srng_alloc(ab, srng,
 					   HAL_RXDMA_MONITOR_STATUS, 0, i,
 					   dp_mon->mon_status_ring_size);
 		if (ret) {
-			ath12k_warn(dp, "failed to setup mon status ring %d\n", i);
+			ath12k_warn(dp, "srng alloc failed for status ring %d\n", i);
 			return ret;
 		}
 	}
@@ -176,7 +176,8 @@ fail_free_skb:
 	return req_entries - num_remain;
 }
 
-int ath12k_wifi7_dp_mon_rx_buf_setup(struct ath12k_dp *dp)
+static
+int ath12k_wifi7_dp_mon_rx_buf_replenish(struct ath12k_dp *dp)
 {
 	struct ath12k_base *ab = dp->ab;
 	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
@@ -196,7 +197,61 @@ int ath12k_wifi7_dp_mon_rx_buf_setup(struct ath12k_dp *dp)
 	return 0;
 }
 
-void ath12k_wifi7_dp_mon_rx_buf_free(struct ath12k_dp *dp)
+int ath12k_wifi7_dp_mon_rx_ring_init(struct ath12k_dp *dp)
+{
+	struct ath12k_base *ab = dp->ab;
+	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
+	struct dp_srng *srng;
+	int i, ret;
+
+	for (i = 0; i < ab->hw_params->num_rxdma_per_pdev; i++) {
+		idr_init(&dp_mon->rx_mon_status_refill_ring[i].bufs_idr);
+		spin_lock_init(&dp_mon->rx_mon_status_refill_ring[i].idr_lock);
+	}
+
+	for (i = 0; i < ab->hw_params->num_rxdma_per_pdev; i++) {
+		srng = &dp_mon->rx_mon_status_refill_ring[i].refill_buf_ring;
+		ret = ath12k_dp_srng_init(ab, srng,
+					  HAL_RXDMA_MONITOR_STATUS, 0, i);
+		if (ret) {
+			ath12k_warn(dp, "srng init failed for mon status ring %d\n", i);
+			return ret;
+		}
+	}
+
+	ret = ath12k_wifi7_dp_mon_rx_buf_replenish(dp);
+	if (ret) {
+		ath12k_warn(dp, "failed to allocate status ring buffers %d\n", ret);
+		return ret;
+	}
+
+	return 0;
+}
+
+static
+void ath12k_wifi7_dp_rxdma_mon_buf_ring_free(struct ath12k_dp *dp,
+					     struct dp_rxdma_mon_ring *rx_ring)
+{
+	struct ath12k_base *ab = dp->ab;
+	struct sk_buff *skb;
+	int buf_id;
+
+	spin_lock_bh(&rx_ring->idr_lock);
+	idr_for_each_entry(&rx_ring->bufs_idr, skb, buf_id) {
+		idr_remove(&rx_ring->bufs_idr, buf_id);
+		/* TODO: Understand where internal driver does this dma_unmap
+		 * of rxdma_buffer.
+		 */
+		dma_unmap_single(ab->dev, ATH12K_SKB_RXCB(skb)->paddr,
+				 skb->len + skb_tailroom(skb), DMA_FROM_DEVICE);
+		dev_kfree_skb_any(skb);
+	}
+
+	idr_destroy(&rx_ring->bufs_idr);
+	spin_unlock_bh(&rx_ring->idr_lock);
+}
+
+void ath12k_wifi7_dp_mon_rx_ring_deinit(struct ath12k_dp *dp)
 {
 	struct ath12k_base *ab = dp->ab;
 	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
@@ -205,7 +260,7 @@ void ath12k_wifi7_dp_mon_rx_buf_free(struct ath12k_dp *dp)
 
 	for (i = 0; i < ab->hw_params->num_rxdma_per_pdev; i++) {
 		rx_ring = &dp_mon->rx_mon_status_refill_ring[i];
-		ath12k_dp_rxdma_mon_buf_ring_free(dp, rx_ring);
+		ath12k_wifi7_dp_rxdma_mon_buf_ring_free(dp, rx_ring);
 	}
 }
 

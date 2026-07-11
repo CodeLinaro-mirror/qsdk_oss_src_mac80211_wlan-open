@@ -97,7 +97,7 @@ void __ath12k_dbg(struct ath12k_base *ab, u64 mask,
 			 * is disabled to save memory. Use dev_info() instead
 			 * to ensure debug messages are always emitted.
 			 */
-			dev_info(ab->dev, "%pV", &vaf);
+			dev_printk(KERN_DEBUG, ab->dev, "%pV", &vaf);
 #else
 			dev_dbg(ab->dev, "%pV", &vaf);
 #endif
@@ -132,7 +132,11 @@ void ath12k_dbg_dump(struct ath12k_base *ab,
 			hex_dump_to_buffer(ptr, len - (ptr - buf), 16, 1,
 					   linebuf + linebuflen,
 					   sizeof(linebuf) - linebuflen, true);
+#if defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
+			dev_printk(KERN_DEBUG, ab->dev, "%s\n", linebuf);
+#else
 			dev_dbg(ab->dev, "%s\n", linebuf);
+#endif
 		}
 	}
 }

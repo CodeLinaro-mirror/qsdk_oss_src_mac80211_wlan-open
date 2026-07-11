@@ -165,6 +165,7 @@ struct dp_mon_desc_list_params {
 	struct list_head *list_local;
 	struct page_frag_cache *pf_cache;
 	size_t buff_size;
+	bool is_tx_monitor;
 };
 
 enum dp_mon_stats_mode {
@@ -206,8 +207,11 @@ enum punc_type {
 struct ath12k_dp_arch_mon_ops {
 	int (*rx_srng_setup)(struct ath12k_dp *dp);
 	void (*rx_srng_cleanup)(struct ath12k_dp *dp);
+	int (*rx_ring_init)(struct ath12k_dp *dp);
+	void (*rx_ring_deinit)(struct ath12k_dp *dp);
 	int (*rx_buf_setup)(struct ath12k_dp *dp);
 	void (*rx_buf_free)(struct ath12k_dp *dp);
+
 	int (*rx_htt_srng_setup)(struct ath12k_dp *dp);
 	int (*mon_pdev_alloc)(struct ath12k_pdev_dp *dp_pdev);
 	void (*mon_pdev_free)(struct ath12k_pdev_dp *dp_pdev);
@@ -257,6 +261,7 @@ struct ath12k_dp_arch_mon_ops {
 	/* Below are TxMonitor ops */
 	int (*mon_tx_srng_alloc_setup)(struct ath12k_dp *dp);
 	void (*mon_tx_srng_cleanup)(struct ath12k_dp *dp);
+	int (*mon_tx_srng_init_setup)(struct ath12k_dp *dp);
 	int (*mon_tx_htt_srng_setup)(struct ath12k_dp *dp);
 	void (*mon_tx_htt_srng_cleanup)(struct ath12k_dp *dp);
 	int (*mon_tx_filter_configure)(struct ath12k_pdev_dp *dp_pdev, bool state);
@@ -265,6 +270,17 @@ struct ath12k_dp_arch_mon_ops {
 	void (*mon_tx_dst_ring_cleanup)(struct ath12k_pdev_dp *dp_pdev);
 	int (*mon_tx_wq_start)(struct ath12k_pdev_dp *dp_pdev, u32 mac_id);
 	void (*mon_tx_wq_stop)(struct ath12k_pdev_dp *dp_pdev);
+
+	/*
+	 * NULL on architectures that don't extend the command beyond WiFi7
+	 * length; only WiFi8/Boron currently populates words 13-14.
+	 */
+	void (*htt_tx_mon_cfg_fill_extended_wmask)
+		(struct htt_tx_mon_ring_selection_cfg_cmd *cmd,
+		 const struct htt_tx_ring_tlv_filter *htt_tlv_filter);
+
+	int (*ext_mon_tx_alloc)(struct ath12k_pdev_dp *dp_pdev);
+	void (*ext_mon_tx_free)(struct ath12k_pdev_dp *dp_pdev);
 };
 
 /**
@@ -624,51 +640,6 @@ struct ath12k_pdev_mon_dp_stats {
 };
 
 /**
- * struct ath12k_pdev_tx_mon_stats - TX Monitor Statistics
- * @empty_descriptors: Incremented when hardware provides empty descriptors
- * @truncated_ppdu: Incremented when PPDUs are truncated due to insufficient
- *                  buffer space or hardware limitations. This can indicate
- *                  buffer pool exhaustion.
- * @tx_pkt_tlv_free: Count of TX packet TLV buffers freed back to the pool.
- *                  Used for tracking buffer lifecycle and detecting leaks
- * @tx_status_buf_free: Count of TX status buffers freed back to the pool.
- * @tx_wq_scheduled: Number of times work queue is scheduled
- * @tx_ppdu_desc_invalid: Number of invalid PPDU descriptors encountered
- * @tx_ppdu_desc_overflow: Number of PPDU descriptor buffer overflows
- * @tx_work_queue_stalls: Work queue stall events (processing hangs)
- * @tx_ppdu_parse_errors: Number of PPDU parsing errors
- * @tx_status_buf_null: Number of null status buffer pointers encountered
- * @tx_ppdu_processed: Total number of TX PPDUs processed in work queue
- * @tx_status_desc_processed: Total number of status descriptors processed
- * @tx_data_frames: Total number of data frames transmitted
- * @tx_su_ppdu_count: Number of Single User (SU) PPDUs transmitted
- * @tx_mu_ppdu_count: Number of Multi User (MU) PPDUs transmitted
- * @tx_mu_user_count: Total number of users in all MU PPDUs
- */
-struct ath12k_pdev_tx_mon_stats {
-	u32 empty_descriptors;
-	u32 truncated_ppdu;
-	u32 tx_pkt_tlv_free;
-	u32 tx_status_buf_free;
-	u32 tx_wq_scheduled;
-	u32 tx_ppdu_desc_invalid;
-	u32 tx_ppdu_desc_overflow;
-	u32 tx_work_queue_stalls;
-	u32 tx_ppdu_parse_errors;
-	u32 tx_status_buf_null;
-	u32 tx_ppdu_processed;
-	u32 tx_status_desc_processed;
-	u32 tx_data_frames;
-	u32 tx_su_ppdu_count;
-	u32 tx_mu_ppdu_count;
-	u32 tx_mu_user_count;
-	u32 tx_ppdu_delivery_errors;
-	u32 tx_prot_ppdu_delivered;
-	u32 tx_data_ppdu_delivered;
-	u32 tx_ppdu_delivered;
-};
-
-/**
  * struct ath12k_dp_tx_mon - DP-level TX monitor context
  * @tx_mon_buf_ring: TX monitor refill buffer ring
  * @tx_mon_desc_pool: TX monitor descriptor pool
@@ -678,6 +649,7 @@ struct ath12k_pdev_tx_mon_stats {
  * @tx_num_frag_replenish: Count of replenished TX monitor fragments
  * @tx_num_frag_free: Count of freed TX monitor fragments
  * @tx_mon_buf_ring_ready: Refill ring descriptor availability state
+ * @tx_mon_stats: Buffer lifecycle statistics at SOC level
  */
 struct ath12k_dp_tx_mon {
 	struct dp_rxdma_mon_ring tx_mon_buf_ring;
@@ -688,9 +660,15 @@ struct ath12k_dp_tx_mon {
 	u32 tx_num_frag_replenish;
 	u32 tx_num_frag_free;
 	bool tx_mon_buf_ring_ready;
+	struct ath12k_dp_tx_mon_stats tx_mon_stats;
 };
 
 struct ath12k_pdev_mon_dp;
+
+struct ath12k_dp_tx_ext_mon {
+	struct ath12k_dp_tx_ext_mon_config *tx_ext_mon_config;
+	spinlock_t tx_ext_mon_lock;	/* Protects tx_ext_mon_config */
+};
 
 /**
  * struct ath12k_pdev_tx_mon - TX monitor context
@@ -699,7 +677,7 @@ struct ath12k_pdev_mon_dp;
  * @tx_mon_dst_ring: TX monitor destination ring
  * @tx_mon_filter: TX monitor filter table
  * @tx_monitor_started: TX monitor active state
- * @tx_mon_stats: TX monitor statistics
+ * @pdev_tx_mon_stats: TX monitor statistics
  * @txmon_wq: TX monitor worker queue
  * @txmon_work: TX monitor worker
  * @tx_mon_ppdu_desc_lock: Lock for TX monitor PPDU descriptors
@@ -711,18 +689,22 @@ struct ath12k_pdev_mon_dp;
  * @tx_mon_ppdu_desc_initialized: TX monitor PPDU descriptor pool init state
  * @tx_mon_wq_initialized: TX monitor workqueue init state
  * @tx_pktlog_hybrid: TX pktlog hybrid mode state
+ * @tx_ext_mon: Wrapper embedding the TX extended monitor config pointer and
+ *		its protecting spinlock.
  */
 struct ath12k_pdev_tx_mon {
 	struct ath12k_pdev_mon_dp *mon_pdev;
 	struct ath12k_dp_tx_mon *dp_tx_mon;
+	struct ath12k_dp_tx_ext_mon tx_ext_mon;
 	struct dp_srng tx_mon_dst_ring;
 	struct dp_mon_tx_filter **tx_mon_filter;
 	bool tx_monitor_started:1;
-	struct ath12k_pdev_tx_mon_stats tx_mon_stats;
+	u8 tx_monitor_mode;
+	struct ath12k_pdev_tx_mon_stats pdev_tx_mon_stats;
 	struct workqueue_struct *txmon_wq;
 	struct work_struct txmon_work;
 	spinlock_t tx_mon_ppdu_desc_lock;
-	struct ath12k_dp_mon_ppdu_desc *tx_mon_ppdu_desc_pool;
+	struct ath12k_dp_mon_ppdu_desc **tx_mon_ppdu_desc_pool;
 	struct list_head tx_mon_desc_work_list;
 	struct list_head tx_mon_ppdu_desc_used_list;
 	struct list_head tx_mon_ppdu_desc_free_list;
@@ -751,6 +733,7 @@ struct ath12k_dp_mon_status_desc {
 	u8 *mon_buf;
 	u16 buf_len:12,
 	    end_of_ppdu:1;
+	u8 pkt_buf_cnt;
 } __packed;
 
 /**
@@ -799,6 +782,7 @@ struct ath12k_mon_ring_desc_info {
 	u32 end_offset;
 	u32 end_reason;
 	bool empty_desc;
+	u8 pkt_buf_cnt;
 };
 
 /**
@@ -820,7 +804,6 @@ struct ath12k_mon_ring_desc_info {
  * @rxmon_wq: Dedicated work queue for RX monitor frame processing
  * @smart_mon_filter: Smart monitor filter configuration (4-bit CMDV format)
  * @smart_mon_state: Current state of smart monitor functionality
- * @dp_pdev_tx_mon: Per-pdev TX monitor context (rings, filters, stats, WQ)
  * @rx_ext_mon_config: Current filter and peer configs for Rx extended monitor.
  * @rx_ext_mon_lock: Spinlock protecting the Rx extended monitor struct.
  *
@@ -862,7 +845,7 @@ struct ath12k_pdev_mon_dp {
 	struct ieee80211_rx_status rx_status;
 	struct ath12k_mon_data mon_data;
 	struct dp_mon_rx_filter **rx_filter;
-	struct ath12k_dp_mon_ppdu_desc *ppdu_desc_pool;
+	struct ath12k_dp_mon_ppdu_desc **ppdu_desc_pool;
 	struct list_head ppdu_desc_used_list;
 	struct list_head ppdu_desc_free_list;
 	struct list_head ppdu_desc_proc_list;
@@ -926,6 +909,7 @@ struct ath12k_dp_mon_desc {
 	u16 buf_len:12,
 	    in_use:3,
 	    end_of_ppdu:1;
+	u8 pkt_buf_cnt;
 } __packed;
 
 enum ath12k_ext_mon_cmd_type {
@@ -965,6 +949,11 @@ enum ath12k_ext_mon_frame_type {
 enum ath12k_ext_mon_peer_action {
 	ATH12K_EXT_MON_PEER_ACTION_ADD = 1,
 	ATH12K_EXT_MON_PEER_ACTION_REMOVE = 2,
+};
+
+enum ath12k_ext_mon_monitor_flags {
+	ATH12K_EXT_MON_DEFAULT = 0,
+	ATH12K_EXT_MON_PKT_CAP,
 };
 
 struct ath12k_ext_mon_pkt_config {
@@ -1031,6 +1020,19 @@ struct ath12k_dp_rx_ext_mon {
 	struct list_head peer_list;
 };
 
+struct ath12k_dp_tx_ext_mon_config {
+	bool enable;
+	enum ath12k_ext_mon_filter_level level;
+	enum ath12k_ext_mon_monitor_flags monitor_flags;
+	u8 metadata;
+	bool fp_enabled;
+	bool fpmo_enabled;
+	struct ath12k_ext_mon_pkt_config fp;
+	struct ath12k_ext_mon_pkt_config fpmo;
+	u8 peer_count;
+	struct list_head peer_list;
+};
+
 static inline enum dp_monitor_type
 ath12k_dp_get_mon_type(struct ath12k_dp *dp)
 {
@@ -1080,14 +1082,11 @@ void ath12k_dp_mon_peer_telemetry_stats(const struct ath12k_dp_link_peer *peer,
 
 int ath12k_dp_mon_pdev_update_telemetry_stats(struct ath12k_base *ab,
                                              int pdev_id);
-
-void ath12k_dp_rxdma_mon_buf_ring_free(struct ath12k_dp *dp,
-				       struct dp_rxdma_mon_ring *rx_ring);
 void ath12k_dp_mon_cfg_init(struct ath12k_dp *dp);
 int ath12k_dp_mon_rx_srng_setup(struct ath12k_dp *dp);
 void ath12k_dp_mon_rx_srng_cleanup(struct ath12k_dp *dp);
-int ath12k_dp_mon_rx_buf_setup(struct ath12k_dp *dp);
-void ath12k_dp_mon_rx_buf_free(struct ath12k_dp *dp);
+int ath12k_dp_mon_rx_ring_init(struct ath12k_dp *dp);
+void ath12k_dp_mon_rx_ring_deinit(struct ath12k_dp *dp);
 int ath12k_dp_mon_rx_htt_srng_setup(struct ath12k_dp *dp);
 int ath12k_dp_mon_pdev_alloc(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_mon_pdev_free(struct ath12k_pdev_dp *dp_pdev);
@@ -1203,6 +1202,9 @@ int ath12k_dp_mon_rx_alloc(struct ath12k_dp *dp)
 			return ret;
 	}
 
+	/* This is required only for wifi6, remove this after wifi6
+	 * memory optimization
+	 */
 	if (mon_ops && mon_ops->rx_buf_setup) {
 		ret = mon_ops->rx_buf_setup(dp);
 		if (ret)
@@ -1225,8 +1227,45 @@ void ath12k_dp_mon_rx_free(struct ath12k_dp *dp)
 	if (mon_ops && mon_ops->rx_srng_cleanup)
 		mon_ops->rx_srng_cleanup(dp);
 
+	/* This is required only for wifi6, remove this after wifi6
+	 * memory optimization
+	 */
 	if (mon_ops && mon_ops->rx_buf_free)
 		mon_ops->rx_buf_free(dp);
+}
+
+static inline
+int ath12k_dp_mon_rx_init(struct ath12k_dp *dp)
+{
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	int ret;
+
+	if (unlikely(!dp || !dp->dp_mon))
+		return -EINVAL;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (mon_ops && mon_ops->rx_ring_init) {
+		ret = mon_ops->rx_ring_init(dp);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+
+static inline
+void ath12k_dp_mon_rx_deinit(struct ath12k_dp *dp)
+{
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+
+	if (unlikely(!dp || !dp->dp_mon))
+		return;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (mon_ops && mon_ops->rx_ring_deinit)
+		mon_ops->rx_ring_deinit(dp);
 }
 
 static inline

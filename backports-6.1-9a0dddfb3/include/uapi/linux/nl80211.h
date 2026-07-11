@@ -1443,6 +1443,9 @@
  * @NL80211_CMD_SMD_ROAM: Event indicating an SMD roam has completed.
  *	Carries %NL80211_ATTR_SMD_TARGET_MLD_ADDR and status information.
  *
+ * @NL80211_CMD_SET_SMD_CTX: Set UHR SMD dynamic context on the target AP MLD
+ *	for the non-AP MLD.
+ *
  * @NL80211_CMD_MAX: highest used command number
  * @__NL80211_CMD_AFTER_LAST: internal use
  */
@@ -1736,6 +1739,8 @@ enum nl80211_commands {
 
 	NL80211_CMD_SMD_TRANSITION_DONE,
 	NL80211_CMD_SMD_ROAM,
+
+	NL80211_CMD_SET_SMD_CTX,
 
 	/* add new commands above here */
 
@@ -3309,6 +3314,9 @@ enum nl80211_commands {
  *	link distribution state.  Values defined in
  *	&enum nl80211_smd_link_transition_state.
  *
+ * @NL80211_ATTR_SMD_CTX: Nested attribute associated with UHR SMD BSS
+ *	Transition data. See &enum nl80211_smd_ctx.
+ *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  *
  * @NL80211_ATTR_MAX: highest attribute number currently defined
@@ -3992,6 +4000,8 @@ enum nl80211_attrs {
 	NL80211_ATTR_SMD_PREFERRED_TARGET,
 
 	NL80211_ATTR_SMD_LINK_TRANSITION_STATE,
+
+	NL80211_ATTR_SMD_CTX,
 
 	/* add attributes here, update the policy in nl80211.c */
 	__NL80211_ATTR_AFTER_LAST,
@@ -9281,6 +9291,18 @@ enum nl80211_cu_mld_attrs {
  * @NL80211_CU_MLD_LINK_ATTR_BPCC: BSS parameter change count value
  * @NL80211_CU_MLD_LINK_ATTR_SWITCH_COUNT: CSA/CCA switch count
  * @NL80211_CU_ATTR_TTLM_EXPEC_DUR: Current expected duration
+ * @NL80211_CU_MLD_LINK_ATTR_ENHANCED_BPCC: Enhanced BSS Parameter Change
+ *	Count (4-bit, modulo 16) for the ECU procedure (IEEE 802.11bn 37.30.3).
+ *	Carried in %NL80211_ATTR_RXMGMT_CRITICAL_UPDATE when the driver reports
+ *	an ECU-capable peer's enhanced BPCC.
+ * @NL80211_CU_MLD_LINK_ATTR_ENHANCED_CRITICAL_FLAG: flag attribute; present
+ *	when the UHR Parameters Update element was included in the received
+ *	management frame (enhanced_critical_update, IEEE 802.11bn 37.30.3).
+ * @NL80211_CU_MLD_LINK_ATTR_ECU_COUNTDOWN: ECU Countdown Timer (u8);
+ *	advance notification interval; indicates
+ *	the number of TBTTs until the update(s) in the UHR Parameters Update
+ *	element take effect. Value 1 means next TBTT. Value > 127 means the
+ *	update already took effect (Countdown Timer - 127) beacon intervals ago.
  * @__NL80211_CU_MLD_LINK_ATTR_LAST: internal use
  * @NL80211_CU_MLD_LINK ATTR_MAX: maximum per link critical update attribute
  */
@@ -9293,6 +9315,9 @@ enum nl80211_cu_mld_link_attrs {
 	NL80211_CU_MLD_LINK_ATTR_SWITCH_COUNT,
 	NL80211_CU_ATTR_AP_REMOVAL_COUNT,
 	NL80211_CU_ATTR_TTLM_EXPEC_DUR,
+	NL80211_CU_MLD_LINK_ATTR_ENHANCED_BPCC,
+	NL80211_CU_MLD_LINK_ATTR_ENHANCED_CRITICAL_FLAG,
+	NL80211_CU_MLD_LINK_ATTR_ECU_COUNTDOWN,
 
 	/* keep last */
 	__NL80211_CU_MLD_LINK_ATTR_LAST,
@@ -9713,6 +9738,168 @@ enum nl80211_smd_link_transition_state {
 	NL80211_SMD_LINK_STATE_PARTIAL,
 	NL80211_SMD_LINK_STATE_DL_DRAIN,
 	NL80211_SMD_LINK_STATE_COMPLETE,
+};
+
+/**
+ * enum nl80211_smd_ctx_type - 11bn SMD Request Type values
+ *
+ * @NL80211_SMD_CTX_TYPE_PREP: SMD BSS Transition (ST) Preparation.
+ * @NL80211_SMD_CTX_TYPE_EXEC: ST Execution.
+ */
+enum nl80211_smd_ctx_type {
+	NL80211_SMD_CTX_TYPE_PREP,
+	NL80211_SMD_CTX_TYPE_EXEC,
+};
+
+/** enum nl80211_smd_ctx_ba_param - 11bn SMD Block Ack Context
+ *
+ * @NL80211_SMD_CTX_BA_ATTR_BUFF_SIZE: Required (u16) attribute to report
+ *	BA buffer size.
+ *
+ * @NL80211_SMD_CTX_BA_ATTR_POLICY: Required (flag) attribute to report
+ *	BA policy.
+ *
+ * @NL80211_SMD_CTX_BA_ATTR_AMSDU_SUPPORT: Required (flag) attribute to report
+ *	AMSDU support.
+ *
+ * @NL80211_SMD_CTX_BA_ATTR_TIMEOUT: Required (u16) value to indicate Block Ack
+ *	timeout.
+ *
+ * @NL80211_SMD_CTX_BA_ATTR_EXT_NO_FRAG: Required (flag) attribute to report
+ *	fragmentation support.
+ *
+ * @NL80211_SMD_CTX_BA_ATTR_EXT_FRAG_LEVEL: Required (u8) to report
+ *	HE Fragmentation level.
+ *
+ * @NL80211_SMD_CTX_BA_ATTR_EXT_BUFF_SIZE: Required (u16) attribute to report
+ *	extended buffer size.
+ *
+ * These attributes are used with %NL80211_SMD_CTX_DL_ATTR_BA_PARAMS and
+ * %NL80211_SMD_CTX_UL_ATTR_BA_PARAMS.
+ */
+enum nl80211_smd_ctx_ba_param {
+	__NL80211_SMD_CTX_BA_ATTR_INVALID,
+	NL80211_SMD_CTX_BA_ATTR_BUFF_SIZE,
+	NL80211_SMD_CTX_BA_ATTR_POLICY,
+	NL80211_SMD_CTX_BA_ATTR_AMSDU_SUPPORT,
+	NL80211_SMD_CTX_BA_ATTR_TIMEOUT,
+	NL80211_SMD_CTX_BA_ATTR_EXT_NO_FRAG,
+	NL80211_SMD_CTX_BA_ATTR_EXT_FRAG_LEVEL,
+	NL80211_SMD_CTX_BA_ATTR_EXT_BUFF_SIZE,
+
+	__NL80211_SMD_CTX_BA_ATTR_LAST,
+	NL80211_SMD_CTX_BA_ATTR_MAX = __NL80211_SMD_CTX_BA_ATTR_LAST - 1
+};
+
+/** enum nl80211_smd_ctx_dl - 11bn SMD Dynamic Context - DL
+ *
+ * @NL80211_SMD_CTX_DL_ATTR_VALID_TID_BITMAP: Optional (u8) attribute to
+ *	report which TIDs are included in the context.
+ *
+ * @NL80211_SMD_CTX_DL_ATTR_SN: Optional (nested) attribute to report
+ *	next SN (u16) to be assigned to DL individually addressed frames on
+ *	each TID.
+ *
+ * @NL80211_SMD_CTX_DL_ATTR_PN: Optional (binary) value to report
+ *	starting PN (16 bytes) to be assigned to DL individually addressed
+ *	frames.
+ *
+ * @NL80211_SMD_CTX_DL_ATTR_BA_PARAMS: Optional (nested) attribute to report
+ *	Block Ack parameters (uses &enum nl80211_smd_ctx_ba_param).
+ *
+ * These attributes are used with %NL80211_SMD_CTX_ATTR_DL.
+ */
+enum nl80211_smd_ctx_dl {
+	__NL80211_SMD_CTX_DL_ATTR_INVALID,
+	NL80211_SMD_CTX_DL_ATTR_VALID_TID_BITMAP,
+	NL80211_SMD_CTX_DL_ATTR_SN,
+	NL80211_SMD_CTX_DL_ATTR_PN,
+	NL80211_SMD_CTX_DL_ATTR_BA_PARAMS,
+
+	__NL80211_SMD_CTX_DL_ATTR_LAST,
+	NL80211_SMD_CTX_DL_ATTR_MAX = __NL80211_SMD_CTX_DL_ATTR_LAST - 1
+};
+
+/** enum nl80211_smd_ctx_ul - 11bn SMD Dynamic Context - UL
+ *
+ * @NL80211_SMD_CTX_UL_ATTR_VALID_TID_BITMAP: Optional (u8) attribute to
+ *	report which TIDs are included in the context.
+ *
+ * @NL80211_SMD_CTX_UL_ATTR_SN: Optional (nested) attribute to report
+ *	last SN received for UL indivudally addressed frames on each TID.
+ *
+ * @NL80211_SMD_CTX_UL_ATTR_PN: Optional (nested) value to report
+ *	last PN received for UL individually addressed frames on each TID.
+ *
+ * @NL80211_SMD_CTX_UL_ATTR_BA_PARAMS: Optional (nested) attribute to report
+ *	Block Ack parameters (uses &enum nl80211_smd_ctx_ba_param).
+ *
+ * These attributes are used with %NL80211_SMD_CTX_ATTR_UL.
+ */
+enum nl80211_smd_ctx_ul {
+	__NL80211_SMD_CTX_UL_ATTR_INVALID,
+	NL80211_SMD_CTX_UL_ATTR_VALID_TID_BITMAP,
+	NL80211_SMD_CTX_UL_ATTR_SN,
+	NL80211_SMD_CTX_UL_ATTR_PN,
+	NL80211_SMD_CTX_UL_ATTR_BA_PARAMS,
+
+	__NL80211_SMD_CTX_UL_ATTR_LAST,
+	NL80211_SMD_CTX_UL_ATTR_MAX = __NL80211_SMD_CTX_UL_ATTR_LAST - 1
+};
+
+/** enum nl80211_smd_ctx_qos - 11bn SMD QoS Context
+ *
+ * @NL80211_SMD_CTX_QOS_ATTR_SCS_DESCRIPTORS: Optional (nested) attribute to
+ *	report SCS Decriptor element information (max element length) for
+ *	each SCS ID.
+ *
+ * @ceNL80211_SMD_CTX_QOS_ATTR_MSCS_DESCRIPTOR: Optional (binary) value to
+ *	report MSCS Descriptor element information (max element length).
+ *
+ * These attributes are used with %NL80211_SMD_CTX_ATTR_QOS.
+ */
+enum nl80211_smd_ctx_qos {
+	__NL80211_SMD_CTX_QOS_ATTR_INVALID,
+	NL80211_SMD_CTX_QOS_ATTR_SCS_DESCRIPTORS,
+	NL80211_SMD_CTX_QOS_ATTR_MSCS_DESCRIPTOR,
+
+	__NL80211_SMD_CTX_QOS_ATTR_LAST,
+	NL80211_SMD_CTX_QOS_ATTR_MAX = __NL80211_SMD_CTX_QOS_ATTR_LAST - 1
+};
+
+/**
+ * enum nl80211_smd_ctx - 11bn SMD Context information
+ *
+ * @NL80211_SMD_CTX_ATTR_TYPE: Required (u8) attribute to report which type of
+ *	SMD Roaming Context is transported (uses &enum nl80211_smd_ctx_type).
+ *
+ * @NL80211_SMD_CTX_ATTR_PN_LEN: Optional (u8) attribute to report length of PN
+ *	contained in %NL80211_SMD_CTX_ATTR_DL and %NL80211_SMD_CTX_ATTR_UL.
+ *
+ * @NL80211_SMD_CTX_ATTR_DL: Optional (nested) attribute to report
+ *	DL parameters. See &enum nl80211_smd_ctx_dl.
+ *
+ * @NL80211_SMD_CTX_ATTR_UL: Optional (nested) attribute to report
+ *	UL parameters. See &enum nl80211_smd_ctx_ul.
+ *
+ * @NL80211_SMD_CTX_ATTR_QOS: Optional (nested) attribute to report
+ *	Qos parameters. See &enum nl80211_smd_ctx_qos.
+ *
+ * @NL80211_SMD_CTX_ATTR_VENDOR: Optional (binary) attribute to report any
+ *	vendor-specific information. This will be parsed only in driver layers
+ *	while nl80211 just relays this as a blob.
+ */
+enum nl80211_smd_ctx {
+	__NL80211_SMD_CTX_ATTR_INVALID,
+	NL80211_SMD_CTX_ATTR_TYPE,
+	NL80211_SMD_CTX_ATTR_PN_LEN,
+	NL80211_SMD_CTX_ATTR_DL,
+	NL80211_SMD_CTX_ATTR_UL,
+	NL80211_SMD_CTX_ATTR_QOS,
+	NL80211_SMD_CTX_ATTR_VENDOR,
+
+	__NL80211_SMD_CTX_ATTR_LAST,
+	NL80211_SMD_CTX_ATTR_MAX = __NL80211_SMD_CTX_ATTR_LAST - 1
 };
 
 #endif /* __LINUX_NL80211_H */

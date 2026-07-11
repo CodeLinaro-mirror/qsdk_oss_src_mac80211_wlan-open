@@ -491,24 +491,27 @@ static void ath12k_dp_rx_enqueue_free(struct ath12k_dp *dp,
  *
  * PPE-pool buffers must start on a page boundary so that the IPA SMMU mapping
  * covers the full buffer without straddling pages.  For DP_RX_PPE_POOL, allocate
- * an extra PAGE_SIZE bytes and advance skb->data to the next page boundary via
- * skb_reserve().  Regular pool buffers use the normal allocator.
+ * via alloc_skb to get PAGE_ALIGNED.
+ * Regular pool buffers use the normal allocator.
  */
 static struct sk_buff *ath12k_dp_alloc_rx_skb(struct ath12k_rx_desc_info *rx_desc)
 {
 	unsigned long pg_offset;
 	struct sk_buff *skb;
 
-	if (rx_desc->src_ring_type != DP_RX_PPE_POOL)
+	if (rx_desc->is_ppe_desc != DP_RX_PPE_POOL)
 		return ath12k_dp_alloc_skb(DP_RX_BUFFER_SIZE);
 
-	skb = dev_alloc_skb(DP_RX_BUFFER_SIZE + PAGE_SIZE);
+	skb = alloc_skb(ATH12K_IPA_DP_RX_BUF_SIZE, GFP_ATOMIC);
 	if (unlikely(!skb))
 		return NULL;
 
-	pg_offset = PAGE_ALIGN((unsigned long)skb->data) - (unsigned long)skb->data;
-	if (pg_offset)
-		skb_reserve(skb, pg_offset);
+	pg_offset = (unsigned long)skb->data & (PAGE_SIZE - 1);
+	if (pg_offset) {
+		dev_kfree_skb_any(skb);
+		skb = NULL;
+		ath12k_warn(ab, "IPA RX buf: Buf is not PAGE ALIGNED\n");
+	}
 
 	return skb;
 }
@@ -564,7 +567,7 @@ static int ath12k_dp_rx_ipa_smmu_buf_map(struct ath12k_base *ab,
 {
 	int ret;
 
-	if (!(rx_desc->src_ring_type == DP_RX_PPE_POOL && IPA_CTX(ab) &&
+	if (!(rx_desc->is_ppe_desc == DP_RX_PPE_POOL && IPA_CTX(ab) &&
 	      IPA_CTX(ab)->is_smmu_enabled &&
 	      IPA_CTX(ab)->ipa_init_state >= ATH12K_IPA_STATE_SETUP_DONE))
 		return 0;
@@ -750,14 +753,14 @@ void ath12k_dp_rx_reo_cleanup(struct ath12k_base *ab)
 }
 EXPORT_SYMBOL(ath12k_dp_rx_reo_cleanup);
 
-int ath12k_dp_rx_reo_setup(struct ath12k_base *ab)
+int ath12k_dp_rx_reo_alloc(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	int ret;
 	int i;
 
 	for (i = 0; i < ATH12K_DP_RX_REGULAR_RING_MAX; i++) {
-		ret = ath12k_dp_srng_setup(ab, &dp->reo_dst_ring[i],
+		ret = ath12k_dp_srng_alloc(ab, &dp->reo_dst_ring[i],
 					   HAL_REO_DST, i, 0,
 					   ath12k_dp_reo_dst_ring_size[i]);
 		if (ret) {
@@ -772,6 +775,43 @@ err_reo_cleanup:
 	ath12k_dp_rx_reo_cleanup(ab);
 
 	return ret;
+}
+EXPORT_SYMBOL(ath12k_dp_rx_reo_alloc);
+
+int ath12k_dp_rx_reo_init(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	int ret;
+	int i;
+
+	for (i = 0; i < ATH12K_DP_RX_REGULAR_RING_MAX; i++) {
+		ret = ath12k_dp_srng_init(ab, &dp->reo_dst_ring[i],
+					  HAL_REO_DST, i, 0);
+		if (ret) {
+			ath12k_warn(ab, "failed to setup reo_dst_ring\n");
+			return ret;
+		}
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_dp_rx_reo_init);
+
+int ath12k_dp_rx_reo_setup(struct ath12k_base *ab)
+{
+	int ret;
+
+	ret = ath12k_dp_rx_reo_alloc(ab);
+	if (ret)
+		return ret;
+
+	ret = ath12k_dp_rx_reo_init(ab);
+	if (ret) {
+		ath12k_dp_rx_reo_cleanup(ab);
+		return ret;
+	}
+
+	return 0;
 }
 EXPORT_SYMBOL(ath12k_dp_rx_reo_setup);
 
@@ -905,6 +945,7 @@ int ath12k_dp_rx_peer_tid_setup(struct ath12k *ar, struct ath12k_dp_peer *dp_pee
 	struct ath12k_dp_link_peer *peer;
 	struct ath12k_dp_rx_tid *rx_tid;
 	dma_addr_t paddr;
+	u16 stats_id;
 	int ret;
 
 	rcu_read_lock();
@@ -962,8 +1003,21 @@ int ath12k_dp_rx_peer_tid_setup(struct ath12k *ar, struct ath12k_dp_peer *dp_pee
 
 	rx_tid->ba_win_sz = ba_win_sz;
 
-	ret = ath12k_dp_arch_alloc_reo_qdesc(dp, rx_tid, ssn, pn_type, &addr_aligned,
-					     peer->dp_peer->stats_id);
+	/*
+	 * When VoW stats are disabled, program the peer-level stats_id
+	 * into the REO queue descriptor. When VoW stats are enabled,
+	 * program the per-TID stats_id so HW telemetry ring delivers
+	 * isolated per-TID RX descriptors for this REO queue.
+	 */
+
+	if (tid < ATH12K_DATA_TID_MAX &&
+	    peer->dp_peer->tid_stats_id[tid] < ATH12K_MAX_STATS_ID)
+		stats_id = peer->dp_peer->tid_stats_id[tid];
+	else
+		stats_id = peer->dp_peer->stats_id;
+
+	ret = ath12k_dp_arch_alloc_reo_qdesc(dp, rx_tid, ssn, pn_type,
+					     &addr_aligned, stats_id);
 	if (ret < 0) {
 		spin_unlock_bh(&rx_tid->tid_lock);
 		rcu_read_unlock();
@@ -1053,8 +1107,8 @@ int ath12k_dp_rx_ampdu_stop(struct ath12k *ar,
 	peer = ath12k_dp_link_peer_find_by_logical_link_id(dp_peer, link_id);
 	if (!peer) {
 		rcu_read_unlock();
-		ath12k_dbg(ab, ATH12K_DBG_PEER,
-			   "failed to find the peer to stop rx aggregation\n");
+		ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L0,
+				 "failed to find the peer to stop rx aggregation\n");
 		return -ENOENT;
 	}
 
@@ -1181,6 +1235,27 @@ struct sk_buff *ath12k_dp_rx_get_msdu_last_buf(struct sk_buff_head *msdu_list,
 	return NULL;
 }
 
+static struct ath12k_dp_link_peer *
+ath12k_dp_link_peer_find_by_addr(struct ath12k_pdev_dp *dp_pdev, const u8 *addr)
+{
+	u32 hash;
+	struct ath12k_dp_link_peer *peer;
+	struct ath12k_dp *dp = dp_pdev->dp;
+
+	lockdep_assert_held(&dp->dp_lock);
+
+	hash = jhash(addr, ETH_ALEN, 0);
+
+	/* Compare mac address and hw_link_id */
+	hash_for_each_possible(dp->link_peer_htbl, peer, hash_addr_node, hash) {
+		if (ether_addr_equal(peer->addr, addr) &&
+		    dp_pdev->ar->hw_link_id == peer->hw_link_id)
+			return peer;
+	}
+
+	return NULL;
+}
+
 struct ath12k_dp_link_peer *
 ath12k_dp_rx_h_find_peer(struct ath12k_pdev_dp *dp_pdev,
 			 struct hal_rx_desc *rx_desc,
@@ -1197,7 +1272,7 @@ ath12k_dp_rx_h_find_peer(struct ath12k_pdev_dp *dp_pdev,
 
 	peer_mac = ath12k_hal_rxdesc_get_mpdu_start_addr2(dp->hal, rx_desc);
 	if (peer_mac)
-		peer = ath12k_dp_link_peer_find_by_addr(dp, peer_mac);
+		peer = ath12k_dp_link_peer_find_by_addr(dp_pdev, peer_mac);
 
 	return peer;
 }
@@ -1821,9 +1896,10 @@ ath12k_dp_peer_migrate(struct ath12k_sta *ahsta, u16 peer_id,
 		goto out;
 	}
 
-	ath12k_info(ab, "htt current primary peer  %pM peer_id 0x%x ml_peer_id 0x%x link_id 0x%x\n",
-		    link_peer->addr, link_peer->peer_id, link_peer->ml_id,
-		    link_peer->link_id);
+	ath12k_dbg(ab, ATH12K_DBG_DP_HTT,
+		   "htt current primary peer %pM peer_id 0x%x ml_peer_id 0x%x link_id 0x%x\n",
+		   link_peer->addr, link_peer->peer_id, link_peer->ml_id,
+		   link_peer->link_id);
 
 	link_peer->primary_link = false;
 	arsta->arvif->primary_sta_link = false;
@@ -2028,6 +2104,7 @@ ath12k_dp_rx_update_peer_stats(struct ath12k_pdev_dp *pdev,
 	int i;
 	struct ath12k_dp_peer_stats *pstats = NULL;
 	struct ath12k_dp_peer_rx_stats *rx = NULL;
+	bool skip = ath12k_dp_hw_peer_stats_enabled(pdev);
 
 	hw_link_id = ath12k_dp_validate_hw_link_id(hw_link_id);
 	pstats = &peer->stats[hw_link_id];
@@ -2039,8 +2116,10 @@ ath12k_dp_rx_update_peer_stats(struct ath12k_pdev_dp *pdev,
 			continue;
 		}
 
-		rx->recv_from_reo.packets += stats->received_frm_reo_cnt;
-		rx->recv_from_reo.bytes += stats->received_frm_reo_bytes;
+		if (!skip) {
+			rx->recv_from_reo.packets += stats->received_frm_reo_cnt;
+			rx->recv_from_reo.bytes += stats->received_frm_reo_bytes;
+		}
 
 		/* ideally we should have both ucast and mcast pkts sent to stack
 		 * stats rather than just one sent_to_stack_fast stats
@@ -2061,8 +2140,10 @@ ath12k_dp_rx_update_peer_stats(struct ath12k_pdev_dp *pdev,
 		rx->mpdu_retry += stats->mpdu_retry;
 
 		if (stats->sent_to_stack_ucast) {
-			rx->ucast.packets += stats->sent_to_stack_ucast;
-			rx->ucast.bytes += stats->sent_to_stack_ucast_bytes;
+			if (!skip) {
+				rx->ucast.packets += stats->sent_to_stack_ucast;
+				rx->ucast.bytes += stats->sent_to_stack_ucast_bytes;
+			}
 
 			/* ideally we should have both ucast and mcast pkts sent to stack
 			 * stats rather than just one sent_to_stack stats.
@@ -2206,7 +2287,10 @@ ath12k_dp_rx_update_vow_stats(struct ath12k_pdev_dp *pdev,
 			continue;
 
 		tid_rx_stats = &pdev->tid_stats.tid_rx[ring_id][i];
-		tid_rx_stats->msdu_cnt           += stats->received_frm_reo_cnt;
+
+		if (!ath12k_dp_hw_peer_stats_enabled(pdev))
+			tid_rx_stats->msdu_cnt   += stats->received_frm_reo_cnt;
+
 		tid_rx_stats->mcast_msdu_cnt     += stats->mcast_cnt;
 		tid_rx_stats->bcast_msdu_cnt     += stats->bcast_cnt;
 		tid_rx_stats->delivered_to_stack += stats->sent_to_stack_ucast +

@@ -15,7 +15,8 @@
 #define ATH12K_SPECTRAL_DWORD_SIZE		4
 #define ATH12K_SPECTRAL_BIN_SIZE		1
 #define ATH12K_SPECTRAL_ATH12K_MIN_IB_BINS	(ATH12K_SPECTRAL_ATH12K_MIN_BINS>>1)
-#define ATH12K_SPECTRAL_ATH12K_MAX_IB_BINS(x)	((x)->hw_params->spectral.max_fft_bins >> 1)
+#define ATH12K_SPECTRAL_ATH12K_MAX_IB_BINS(x)	\
+					((x)->hw_params->spectral.max_fft_bins)
 
 #define ATH12K_SPECTRAL_SCAN_COUNT_MAX		4095
 

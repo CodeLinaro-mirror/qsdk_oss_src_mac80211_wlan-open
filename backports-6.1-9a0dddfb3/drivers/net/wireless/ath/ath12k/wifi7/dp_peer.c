@@ -43,7 +43,8 @@ static u16 ath12k_wifi7_peer_ml_id_alloc(struct ath12k_hw *ah)
 	if (i == ah->max_ml_peer_ids)
 		ml_peer_id = ATH12K_MLO_PEER_ID_INVALID;
 
-	ath12k_dbg(NULL, ATH12K_DBG_PEER, "Allocated ml_peer_id:%d", ml_peer_id);
+	ath12k_dbg_level(NULL, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+			 "Allocated ml_peer_id:%d", ml_peer_id);
 
 	return ml_peer_id;
 }
@@ -213,7 +214,8 @@ void ath12k_wifi7_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 
 
 	if (!dp_peer) {
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
-		ath12k_dbg(NULL, ATH12K_DBG_PEER, "Failed to find peer:%pM", addr);
+		ath12k_dbg_level(NULL, ATH12K_DBG_PEER, ATH12K_DBG_L0,
+				 "Failed to find peer:%pM", addr);
 		return;
 	}
 

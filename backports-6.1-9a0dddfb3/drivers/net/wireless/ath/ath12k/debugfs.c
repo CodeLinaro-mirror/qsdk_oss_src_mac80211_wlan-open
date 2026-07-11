@@ -542,7 +542,7 @@ int wmi_ctrl_path_btcoex_stat(struct ath12k *ar, char __user *ubuf,
 	if (!buf)
 		return -ENOMEM;
 
-	spin_lock_bh(&ar->wmi_ctrl_path_stats_lock);
+	spin_lock_bh(&ar->debug.wmi_ctrl_path_stats_lock);
 	list_for_each_entry(stats, &ar->debug.wmi_ctrl_path_stats.pdev_stats, list) {
 		if (!stats)
 			break;
@@ -590,7 +590,7 @@ int wmi_ctrl_path_btcoex_stat(struct ath12k *ar, char __user *ubuf,
 	}
 
 	ath12k_wmi_crl_path_stats_list_free(ar, &ar->debug.wmi_ctrl_path_stats.pdev_stats);
-	spin_unlock_bh(&ar->wmi_ctrl_path_stats_lock);
+	spin_unlock_bh(&ar->debug.wmi_ctrl_path_stats_lock);
 	ret_val =  simple_read_from_buffer(ubuf, count, ppos, buf, len);
 	kfree(buf);
 	return ret_val;
@@ -1214,10 +1214,8 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 		len += scnprintf(buf + len, size - len, "%s= %u\n",
 				 wbm_rx_drop[i], device_stats->wbm_err.drop[i]);
 
-	len += scnprintf(buf + len, size - len, "\nHAL_REO_errors:\n");
-	for (j = 0; j < DP_REO_DST_RING_MAX; j++)
-		len += scnprintf(buf + len, size - len, "ring%d= %u\n",
-				 j, device_stats->hal_reo_error[j]);
+	len += scnprintf(buf + len, size - len, "\nHAL_REO_routes: %u\n",
+			 device_stats->wbm_err.hal_reo_route);
 
 	len += scnprintf(buf + len, size - len, "\nREO_Rx_Received:");
 	for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
@@ -4019,9 +4017,9 @@ int wmi_ctrl_path_mem_stat(struct ath12k *ar, char __user *ubuf,
 	len += scnprintf(buf + len, size - len,
 			"WMI_CTRL_PATH_MEM_STATS:\n");
 
-	spin_lock_bh(&ar->wmi_ctrl_path_stats_lock);
+	spin_lock_bh(&ar->debug.wmi_ctrl_path_stats_lock);
 	list_splice_tail_init(&ar->debug.wmi_ctrl_path_stats.pdev_stats, &wmi_stats_list);
-	spin_unlock_bh(&ar->wmi_ctrl_path_stats_lock);
+	spin_unlock_bh(&ar->debug.wmi_ctrl_path_stats_lock);
 	list_for_each_entry_safe(stats, tmp, &wmi_stats_list, list) {
 		if (!stats)
 			break;
@@ -4077,9 +4075,9 @@ static ssize_t ath12k_read_all_wmi_ctrl_path_stats(struct file *file,
 
 	LIST_HEAD(periodic_stats_list);
 
-	spin_lock_bh(&ar->wmi_ctrl_path_stats_lock);
+	spin_lock_bh(&ar->debug.wmi_ctrl_path_stats_lock);
 	list_splice_tail_init(&ar->debug.period_wmi_list, &periodic_stats_list);
-	spin_unlock_bh(&ar->wmi_ctrl_path_stats_lock);
+	spin_unlock_bh(&ar->debug.wmi_ctrl_path_stats_lock);
 	list_for_each_entry_safe(stats, tmp, &periodic_stats_list, list) {
 		switch (stats->tagid) {
 		case WMI_CTRL_PATH_PMLO_STATS:
@@ -4109,10 +4107,10 @@ static ssize_t ath12k_read_all_wmi_ctrl_path_stats(struct file *file,
 	len += scnprintf(buf + len, size - len, "\nOn-Demand Stats:\n");
 	LIST_HEAD(on_demand_stats_list);
 
-	spin_lock_bh(&ar->wmi_ctrl_path_stats_lock);
+	spin_lock_bh(&ar->debug.wmi_ctrl_path_stats_lock);
 	list_splice_tail_init(&ar->debug.wmi_ctrl_path_stats.pdev_stats,
 			      &on_demand_stats_list);
-	spin_unlock_bh(&ar->wmi_ctrl_path_stats_lock);
+	spin_unlock_bh(&ar->debug.wmi_ctrl_path_stats_lock);
 	list_for_each_entry_safe(stats, tmp, &on_demand_stats_list, list) {
 		if (!stats)
 			break;
@@ -6914,6 +6912,10 @@ static ssize_t ath12k_write_reset_dp_stats(struct file *file,
 				memset(tmp_peer->peer_stats.tx_stats, 0,
 				       sizeof(struct ath12k_htt_tx_stats));
 
+			if (tmp_peer->peer_stats.tx_ppdu_stats)
+				memset(tmp_peer->peer_stats.tx_ppdu_stats, 0,
+				       sizeof(struct ath12k_htt_tx_ppdu_stats));
+
 			if (tmp_peer->peer_stats.rx_stats)
 				memset(tmp_peer->peer_stats.rx_stats, 0,
 				       sizeof(struct ath12k_rx_peer_stats));
@@ -6942,6 +6944,9 @@ static ssize_t ath12k_write_reset_dp_stats(struct file *file,
 			memset(&dp_pdev->tid_stats, 0, sizeof(dp_pdev->tid_stats));
 			dp_pdev->prev_tx_enq_tstamp = 0;
 			dp_pdev->prev_rx_timestamp = 0;
+
+			ath12k_dp_tid_tx_stats_hist_init(dp_pdev);
+			ath12k_dp_tid_rx_stats_hist_init(dp_pdev);
 		}
 		list_for_each_entry(arvif, &ar->arvifs, list) {
 			dp_vif = &arvif->ahvif->dp_vif;
@@ -7079,6 +7084,83 @@ static const struct file_operations ath12k_fops_set_sta_primary_link = {
 	.llseek = default_llseek,
 };
 
+static ssize_t
+ath12k_write_reset_dp_tx_mon_stats(struct file *file,
+						const char __user *user_buf,
+						size_t count, loff_t *ppos)
+{
+	struct ath12k_hw *ah = file->private_data;
+	struct ath12k *ar;
+	struct ath12k_base *ab, *prev_ab = NULL;
+	struct ath12k_dp *dp;
+	struct ath12k_pdev_dp *pdev;
+	struct ath12k_dp_mon *mon_dp;
+	struct ath12k_pdev_mon_dp *pdev_mon_dp;
+	struct ath12k_dp_tx_mon_stats *tx_mon_stats;
+	struct ath12k_pdev_tx_mon_stats *pdev_tx_mon_stats;
+	char buf[ATH12K_DBG_RESET_STR_LEN + 1] = {0};
+	int i, idx;
+
+	if (!ah->num_radio)
+		return -EINVAL;
+
+	if (count > sizeof(buf) - 1)
+		return -EINVAL;
+
+	if (copy_from_user(buf, user_buf, count))
+		return -EFAULT;
+
+	if (strncmp(buf, ATH12K_DBG_RESET_STR,
+		    ATH12K_DBG_RESET_STR_LEN - 1) ||
+	    (buf[ATH12K_DBG_RESET_STR_LEN - 1] != '\n' &&
+	     buf[ATH12K_DBG_RESET_STR_LEN - 1] != '\0'))
+		return -EINVAL;
+
+	wiphy_lock(ah->hw->wiphy);
+
+	for_each_ar(ah, ar, idx) {
+		if (ar->ab == prev_ab)
+			continue;
+		prev_ab = ar->ab;
+		ab = ar->ab;
+		dp = ath12k_ab_to_dp(ab);
+		if (!ath12k_dp_tx_mon_feature_eval(dp))
+			continue;
+
+		mon_dp = dp->dp_mon;
+		if (!mon_dp)
+			continue;
+
+		tx_mon_stats = &mon_dp->dp_tx_mon->tx_mon_stats;
+
+		memset(tx_mon_stats, 0, sizeof(struct ath12k_dp_tx_mon_stats));
+
+		for (i = 0; i < ah->num_radio; i++) {
+			if (ah->radio[i].ab != ab)
+				continue;
+
+			pdev = &ah->radio[i].dp;
+			pdev_mon_dp = pdev->dp_mon_pdev;
+			if (unlikely(!pdev_mon_dp))
+				continue;
+
+			pdev_tx_mon_stats =
+				&pdev_mon_dp->dp_pdev_tx_mon->pdev_tx_mon_stats;
+			memset(pdev_tx_mon_stats, 0,
+				sizeof(struct ath12k_pdev_tx_mon_stats));
+		}
+	}
+	wiphy_unlock(ah->hw->wiphy);
+
+	return count;
+}
+
+static const struct file_operations fops_reset_dp_tx_mon_stats = {
+	.write = ath12k_write_reset_dp_tx_mon_stats,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+};
+
 void ath12k_hw_debugfs_register(struct ath12k_hw *ah)
 {
 	struct ieee80211_hw *hw = ah->hw;
@@ -7100,6 +7182,9 @@ void ath12k_hw_debugfs_register(struct ath12k_hw *ah)
 
 	debugfs_create_file("reset_latency_stats", 0644, hw->wiphy->debugfsdir, ah,
 			    &fops_latency_stats);
+
+	debugfs_create_file("reset_dp_tx_mon_stats", 0200, hw->wiphy->debugfsdir, ah,
+			&fops_reset_dp_tx_mon_stats);
 }
 
 void ath12k_debugfs_register(struct ath12k *ar)

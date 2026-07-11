@@ -2589,10 +2589,16 @@ void ieee80211_color_collision_detection_work(struct wiphy *wiphy,
 void ieee80211_advertised_ttlm_evt_notify_work(struct wiphy *wiphy,
 					       struct wiphy_work *work);
 /* interface handling */
+#if LINUX_VERSION_IS_LESS(6, 8, 0)
 #define MAC80211_SUPPORTED_FEATURES_TX	(NETIF_F_IP_CSUM | NETIF_F_IPV6_CSUM | \
 					 NETIF_F_HW_CSUM | NETIF_F_SG | \
 					 NETIF_F_HIGHDMA | NETIF_F_GSO_SOFTWARE | \
 					 NETIF_F_LLTX)
+#else
+#define MAC80211_SUPPORTED_FEATURES_TX	(NETIF_F_IP_CSUM | NETIF_F_IPV6_CSUM | \
+					 NETIF_F_HW_CSUM | NETIF_F_SG | \
+					 NETIF_F_HIGHDMA | NETIF_F_GSO_SOFTWARE)
+#endif
 #define MAC80211_SUPPORTED_FEATURES_RX	(NETIF_F_RXCSUM)
 #define MAC80211_SUPPORTED_FEATURES	(MAC80211_SUPPORTED_FEATURES_TX | \
 					 MAC80211_SUPPORTED_FEATURES_RX)

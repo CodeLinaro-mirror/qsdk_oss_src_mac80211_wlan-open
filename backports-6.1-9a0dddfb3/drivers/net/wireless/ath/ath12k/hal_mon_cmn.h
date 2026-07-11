@@ -904,6 +904,19 @@ struct hal_tx_mon_wmask_config {
 	u8 tx_mpdu_start;
 	u8 rxpcu_user_setup;
 	u8 compaction_enable;
+	/* WiFi8 (Boron) word-mask additions — zero on WiFi7 */
+	u8 phytx_pkt_end;
+	u8 mactx_user_desc_common;
+	u8 mactx_mu_ul_user_setup;
+	u8 pdg_response;
+	u8 rcvd_resp_info;
+	u8 rx_resp_required_info;
+	u8 ranging_user_details;
+	u8 mactx_pre_phy_desc;
+	u16 ofdma_trigger_details;
+	u16 tqm_upd_tx_mpdu_cnt_sts;
+	u16 phytx_location;
+	u32 rcvd_resp_info_part2;
 };
 
 /**
@@ -1247,6 +1260,7 @@ struct hal_mon_ops {
 					void *ring_entry,
 					struct ath12k_mon_ring_desc_info *desc_info);
 	bool (*is_mon_buf_addr_tlv)(u32 tlv_tag);
+	bool (*tx_mon_pkt_buf_cnt_in_desc)(void);
 };
 
 static inline u16
@@ -1491,34 +1505,34 @@ ath12k_hal_mon_tx_pcu_ppdu_setup_init_info_get(struct ath12k_hal *hal,
 }
 
 static __always_inline void
-hal_get_radiotap_he_gi_ltf(u16 *he_gi, u16 *he_ltf)
+hal_get_radiotap_gi_ltf(u16 *gi, u16 *ltf)
 {
-	switch (*he_gi) {
+	switch (*gi) {
 	case HE_GI_0_8:
-		*he_gi = HE_GI_RADIOTAP_0_8;
+		*gi = HE_GI_RADIOTAP_0_8;
 		break;
 	case HE_GI_1_6:
-		*he_gi = HE_GI_RADIOTAP_1_6;
+		*gi = HE_GI_RADIOTAP_1_6;
 		break;
 	case HE_GI_3_2:
-		*he_gi = HE_GI_RADIOTAP_3_2;
+		*gi = HE_GI_RADIOTAP_3_2;
 		break;
 	default:
-		*he_gi = HE_GI_RADIOTAP_RESERVED;
+		*gi = HE_GI_RADIOTAP_RESERVED;
 	}
 
-	switch (*he_ltf) {
+	switch (*ltf) {
 	case HE_LTF_1_X:
-		*he_ltf = HE_LTF_RADIOTAP_1_X;
+		*ltf = HE_LTF_RADIOTAP_1_X;
 		break;
 	case HE_LTF_2_X:
-		*he_ltf = HE_LTF_RADIOTAP_2_X;
+		*ltf = HE_LTF_RADIOTAP_2_X;
 		break;
 	case HE_LTF_4_X:
-		*he_ltf = HE_LTF_RADIOTAP_4_X;
+		*ltf = HE_LTF_RADIOTAP_4_X;
 		break;
 	default:
-		*he_ltf = HE_LTF_RADIOTAP_UNKNOWN;
+		*ltf = HE_LTF_RADIOTAP_UNKNOWN;
 	}
 }
 
@@ -1560,6 +1574,15 @@ ath12k_hal_is_mon_buf_addr_tlv(struct ath12k_hal *hal, u32 tlv_tag)
 {
 	if (hal->hal_mon_ops->is_mon_buf_addr_tlv)
 		return hal->hal_mon_ops->is_mon_buf_addr_tlv(tlv_tag);
+
+	return false;
+}
+
+static inline bool
+ath12k_hal_mon_tx_pkt_buf_cnt_in_desc(struct ath12k_hal *hal)
+{
+	if (hal->hal_mon_ops->tx_mon_pkt_buf_cnt_in_desc)
+		return hal->hal_mon_ops->tx_mon_pkt_buf_cnt_in_desc();
 
 	return false;
 }

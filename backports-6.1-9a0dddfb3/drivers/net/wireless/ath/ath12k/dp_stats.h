@@ -227,6 +227,7 @@ enum ath12k_dp_debug_stats_mask {
 	DP_ENABLE_PROTO_STATS    = 0x00000030,
 	DP_ENABLE_VOW_STATS      = 0x00000040,
 	DP_ENABLE_LATENCY_STATS    = 0x00000080,
+	DP_ENABLE_TX_PPDU_STATS   = 0x00000100,
 	DP_ENABLE_QOS_STATS      = 0x80000000,
 };
 
@@ -438,7 +439,6 @@ struct ath12k_htt_data_stats {
 
 struct ath12k_htt_tx_stats {
 	struct ath12k_htt_data_stats stats[ATH12K_STATS_TYPE_MAX];
-	u8 rate_idx;
 	u64 tx_duration;
 	u64 ba_fails;
 	u64 ack_fails;
@@ -446,8 +446,34 @@ struct ath12k_htt_tx_stats {
 	u16 ru_tones;
 	u32 mu_group[MAX_MU_GROUP_ID];
 	u8 ppdu_type;
+	u8 rate_idx;
+};
 
-	/* Ext HTT stats */
+/**
+ * struct ath12k_htt_tx_ppdu_stats - Extended HTT TX statistics
+ *
+ * Holds all HTT TX fields removed from struct ath12k_htt_tx_stats.
+ * Independently controlled by DP_ENABLE_TX_PPDU_STATS knob.
+ * Allocated per link peer in ath12k_dp_link_peer_assign().
+ * Freed in __ath12k_link_peer_free().
+ * Reset in debugfs stats clear path.
+ */
+/* Different Packet Types */
+enum packet_std {
+	DOT11_A = 0,
+	DOT11_B = 1,
+	DOT11_N = 2,
+	DOT11_AC = 3,
+	DOT11_AX = 4,
+	DOT11_BA = 5,
+	DOT11_BE = 6,
+	DOT11_AZ = 7,
+	DOT11_N_GF = 8,
+	DOT11_BN = 9,	/* UHR */
+	DOT11_MAX,
+};
+
+struct ath12k_htt_tx_ppdu_stats {
 	/* MSDU Basic */
 	struct dp_pkt_info tx_ucast_success;
 
@@ -466,6 +492,15 @@ struct ath12k_htt_tx_stats {
 
 	/* Basic rate */
 	u32 tx_rate;
+
+	/* Basic rate counters */
+	struct pkt_type pkt_type[DOT11_MAX];
+	u32 gi_count[ATH12K_GI_NUM];
+	u32 nss[ATH12K_NSS_NUM];
+	u32 bw[ATH12K_BW_NUM];
+	u32 ru_start;
+	u32 ru_tones;
+	u32 mu_group[MAX_MU_GROUP_ID];
 
 	/* Advanced stats */
 	u32 stbc;
@@ -496,7 +531,6 @@ struct ath12k_htt_tx_stats {
 	u64 tx_ppdu_duration;
 	u8 tx_pwr;
 	u32 tx_msdu_flush_rsn[HTT_FLUSH_MAX];
-
 };
 
 #define MAX_PUNCTURED_MODE 5
@@ -510,20 +544,6 @@ struct ath12k_htt_tx_stats {
 #define DP_ATH_RATE_IN(c)  (DP_ATH_EP_MUL((c), DP_ATH_RATE_EP_MULTIPLIER))
 #define DUMMY_MARKER	  0
 
-/* Different Packet Types */
-enum packet_std {
-	DOT11_A = 0,
-	DOT11_B = 1,
-	DOT11_N = 2,
-	DOT11_AC = 3,
-	DOT11_AX = 4,
-	DOT11_BA = 5,
-	DOT11_BE = 6,
-	DOT11_AZ = 7,
-	DOT11_N_GF = 8,
-	DOT11_BN = 9,	/* UHR */
-	DOT11_MAX,
-};
 
 struct fw_mpdu_stats {
 	u64 success_cnt;
@@ -603,6 +623,13 @@ enum ath12k_dp_tid_rx_sw_drop {
 	DP_TID_RX_SW_DROP_MAX,
 };
 
+enum ath12k_dp_tid_rx_sw_drop_ext {
+	DP_TID_RX_HW_DROP1_UCAST = DP_TID_RX_SW_DROP_MAX,
+	DP_TID_RX_HW_DROP2_UCAST,
+	DP_TID_RX_HW_DROP_GCAST,
+	DP_TID_RX_SW_DROP_MAX_EXT,
+};
+
 /**
  * struct ath12k_reo_error_stats
  * @reo_code_inv: Count of unknown REO error codes
@@ -637,7 +664,7 @@ struct ath12k_tid_rx_stats {
 	u32 mcast_msdu_cnt;
 	u32 bcast_msdu_cnt;
 	u32 delivered_to_stack;
-	u32 fail_cnt[DP_TID_RX_SW_DROP_MAX];
+	u32 fail_cnt[DP_TID_RX_SW_DROP_MAX_EXT];
 };
 
 /**
@@ -653,7 +680,7 @@ struct ath12k_tid_tx_stats {
 	struct hist_stats swq_delay;
 	struct hist_stats hwtx_delay;
 	struct hist_stats intfrm_delay;
-	u32 tqm_status_cnt[HAL_WBM_TQM_REL_REASON_MAX];
+	u32 tqm_status_cnt[HAL_WBM_TQM_REL_REASON_MAX_EXT];
 	u32 htt_status_cnt[HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX];
 	u32 swdrop_cnt[DP_TID_TX_SW_DROP_MAX];
 };
@@ -899,6 +926,7 @@ struct ath12k_dp_mld_peer_stats {
 
 struct ath12k_dp_link_peer_stats {
 	struct ath12k_htt_tx_stats *tx_stats;
+	struct ath12k_htt_tx_ppdu_stats *tx_ppdu_stats;
 	struct ath12k_rx_peer_stats *rx_stats;
 	struct ath12k_dp_mon_peer_stats dp_mon_stats;
 	struct ath12k_dp_link_peer_qos_stats *link_qos_stats;
@@ -1050,6 +1078,7 @@ struct ath12k_stats_feat {
 	bool feat_jitter;
 	bool feat_sojourn;
 	bool feat_mon_stats;
+	bool feat_tx_mon_stats;
 };
 
 struct ath12k_telemetry_command {
@@ -1412,9 +1441,10 @@ void ath12k_dp_aggr_per_pkt_tx_stats(struct ath12k_dp_peer_tx_stats *dst,
 void ath12k_dp_aggr_per_pkt_rx_stats(struct ath12k_dp_peer_rx_stats *dst,
 				     struct ath12k_dp_peer_rx_stats *src);
 void
-ath12k_dp_update_tx_ext_htt_aggr_stats(struct ath12k_pdev_dp *dp_pdev,
-				       struct ath12k_htt_tx_stats *dst_peer_stats,
-				       struct ath12k_htt_tx_stats *src_peer_stats);
+ath12k_dp_update_tx_ppdu_stats_aggr(struct ath12k_pdev_dp *dp_pdev,
+				    struct ath12k_htt_tx_ppdu_stats *dst,
+				    struct ath12k_htt_tx_ppdu_stats *src);
+
 void ath12k_dp_aggr_wbm_rx_stats(struct ath12k_wbm_rx_stats *dst,
 				 struct ath12k_wbm_rx_stats *src);
 void ath12k_dp_aggr_del_stats(struct ath12k_dp_peer_stats *dst_peer_stats,
@@ -1845,4 +1875,12 @@ void ath12k_qos_stats_update(struct ath12k_dp_peer *mld_peer,
 			     struct ath12k_pdev_dp *dp_pdev,
 			     ktime_t timestamp,
 			     u32 hw_delay);
+
+void ath12k_dp_netstats_peer_update(struct ath12k_dp_hw *dp_hw,
+				    struct ath12k_pdev_dp *dp_pdev,
+				    const u8 *dp_peer_addr,
+				    u8 hw_link_id,
+				    const u8 *peer_mac_filter,
+				    bool is_ds_vif,
+				    struct rtnl_link_stats64 *stats);
 #endif

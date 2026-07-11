@@ -127,7 +127,6 @@ struct ath12k_ppeds_arch_ops {
 	int (*ath12k_ppeds_detach)(struct ath12k_base *ab);
 	int (*ath12k_ppeds_register_soc)(struct ath12k_dp *dp,
 						struct dp_ppe_ds_idxs *idx);
-	int (*ath12k_ppeds_srng_setup)(struct ath12k_base *ab);
 	void (*ath12k_ppeds_srng_cleanup)(struct ath12k_base *ab);
 	void (*ath12k_ppeds_interrupt_start)(struct ath12k_base *ab);
 	void (*ath12k_ppeds_interrupt_stop)(struct ath12k_base *ab);
@@ -141,7 +140,8 @@ struct ath12k_ppeds_arch_ops {
 						int ppe_vp_profile_idx);
 	int (*ath12k_dp_ppeds_alloc_vp_search_idx_tbl_entry)(struct ath12k_base *ab,
 						int ppe_vp_profile_idx);
-	int (*ath12k_ppeds_srng_cmn_setup)(struct ath12k_base *ab);
+	int (*ath12k_ppeds_srng_cmn_init)(struct ath12k_base *ab);
+	int (*ath12k_ppeds_srng_cmn_alloc)(struct ath12k_base *ab);
 	struct ath12k_dp_ppe_vp_profile *
 		(*ath12k_dp_ppeds_get_vp_profile_from_idx)(struct ath12k_base *ab,
 				uint32_t ppe_vp_idx);
@@ -260,10 +260,6 @@ int ath12k_dp_srng_init_idx(struct ath12k_base *ab, struct dp_srng *ring,
 			    enum hal_ring_type type, int ring_num,
 			    int mac_id,
 			    int num_entries, u32 restore_idx);
-
-int ath12k_dp_srng_alloc(struct ath12k_base *ab, struct dp_srng *ring,
-			 enum hal_ring_type type, int ring_num,
-			 int num_entries);
 
 int ath12k_ppeds_dp_srng_init(struct ath12k_base *ab, struct dp_srng *ring,
 			      enum hal_ring_type type, int ring_num,

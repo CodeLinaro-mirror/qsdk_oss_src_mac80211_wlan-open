@@ -27,6 +27,9 @@ struct ath12k;
 #define SMART_MON_FILTER_M	BIT(2)
 #define SMART_MON_FILTER_C	BIT(3)
 
+#define ATH12K_DBG_RESET_STR "reset"
+#define ATH12K_DBG_RESET_STR_LEN sizeof("reset")
+
 enum ath12k_dbg_aggr_mode {
 	ATH12K_DBG_AGGR_MODE_AUTO,
 	ATH12K_DBG_AGGR_MODE_MANUAL,
@@ -70,8 +73,22 @@ static inline bool ath12k_debugfs_is_pktlog_peer_valid(struct ath12k *ar, u8 *ad
 
 static inline int ath12k_extd_tx_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
 {
-	return ((dp_pdev->dp_stats_mask &  DP_ENABLE_STATS) &&
+	return ((dp_pdev->dp_stats_mask & DP_ENABLE_STATS) &&
 		(dp_pdev->dp_stats_mask & DP_ENABLE_EXT_TX_STATS));
+}
+
+/**
+ * ath12k_htt_tx_ppdu_stats_enabled - Check if extended HTT TX stats are enabled
+ * @dp_pdev: DP pdev handle
+ *
+ * Returns true when DP_ENABLE_TX_PPDU_STATS is set. This knob independently
+ * controls struct ath12k_htt_tx_ppdu_stats allocation and updates.
+ */
+static inline bool
+ath12k_htt_tx_ppdu_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
+{
+	return ((dp_pdev->dp_stats_mask & DP_ENABLE_STATS) &&
+		(dp_pdev->dp_stats_mask & DP_ENABLE_TX_PPDU_STATS));
 }
 
 static inline bool ath12k_extd_rx_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
@@ -309,6 +326,12 @@ static inline void ath12k_hw_debugfs_register(struct ath12k_hw *ah)
 static inline int ath12k_extd_tx_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
 {
 	return 0;
+}
+
+static inline bool
+ath12k_htt_tx_ppdu_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
+{
+	return false;
 }
 
 static inline bool ath12k_extd_rx_stats_enabled(struct ath12k_pdev_dp *dp_pdev)

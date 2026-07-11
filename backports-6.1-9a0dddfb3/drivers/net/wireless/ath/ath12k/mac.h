@@ -38,6 +38,10 @@ struct ath12k_generic_iter {
 	int ret;
 };
 
+/* Define ATH12K_IFINDEX_DEFAULT for invalid ifindex value.
+ */
+#define ATH12K_IFINDEX_DEFAULT			-1
+
 /* number of failed packets (20 packets with 16 sw reties each) */
 #define ATH12K_KICKOUT_THRESHOLD		(20 * 16)
 
@@ -437,7 +441,7 @@ int ath12k_mac_op_conf_tx(struct ieee80211_hw *hw,
 			  unsigned int link_id, u16 ac,
 			  const struct ieee80211_tx_queue_params *params);
 int ath12k_mac_op_set_antenna(struct ieee80211_hw *hw, u32 tx_ant, u32 rx_ant,
-			      u8 radio_id, bool is_dynamic);
+			      u8 radio_id, bool is_dynamic, int ifindex);
 int ath12k_mac_op_get_antenna(struct ieee80211_hw *hw, u32 *tx_ant, u32 *rx_ant,
 			      u8 radio_id);
 int ath12k_mac_op_ampdu_action(struct ieee80211_hw *hw,
@@ -923,4 +927,13 @@ void ath12k_mac_peer_assoc_prepare_smd(struct ath12k *ar,
 enum wmi_phy_mode ath12k_mac_get_phymode(struct ath12k *ar,
 					 enum nl80211_band band,
 					 enum nl80211_chan_width width);
+/* Context passed through the arsta iterator in ath12k_mac_op_get_netstats */
+struct ath12k_netstats_iter_ctx {
+	struct rtnl_link_stats64 *stats;
+	const u8 *peer_mac;
+	bool is_ds_vif;
+};
+
+bool ath12k_mac_mgmt_need_smd_sta_session_ctx(struct sk_buff *skb);
+
 #endif

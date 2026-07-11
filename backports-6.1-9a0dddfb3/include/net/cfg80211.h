@@ -22,6 +22,7 @@
 #include <linux/bug.h>
 #include <linux/netlink.h>
 #include <linux/skbuff.h>
+#include <linux/skb_wireless.h>
 #include <linux/nl80211.h>
 #include <linux/if_ether.h>
 #include <linux/ieee80211.h>
@@ -2063,6 +2064,7 @@ struct cfg80211_ttlm_params {
  * @uhr_cap: UHR capabilities element (or %NULL if not provided)
  * @residual_cac_ms: residual CAC time in milliseconds, derived from
  *	%NL80211_ATTR_MAX_CH_SWITCH_TIME for AP start
+ * @skip_cac: if set, skip CAC on a DFS channel
  */
 struct cfg80211_ap_settings {
 	struct cfg80211_chan_def chandef;
@@ -2109,6 +2111,7 @@ struct cfg80211_ap_settings {
 	bool dps_assist_disable;
 	struct cfg80211_smd_params smd_params;
 	u32 residual_cac_ms;
+	bool skip_cac;
 };
 
 
@@ -5585,6 +5588,20 @@ struct cfg80211_uhr_mode_update_params {
 };
 
 /**
+ * cfg80211_smd_transition_info - SMD BSS Transition info
+ *
+ * @type: Type of ST indication
+ * @ctx: Dynamic context to be transferred as part of ST
+ */
+struct cfg80211_smd_transition_info {
+	struct ieee80211_smd_ctx *ctx;
+	enum cfg80211_smd_transition_type {
+		CFG80211_ST_TYPE_PREP,
+		CFG80211_ST_PREP_EXEC,
+	} type;
+};
+
+/**
  * struct cfg80211_ops - backend description for wireless configuration
  *
  * This struct is registered by fullmac card drivers and/or wireless stacks
@@ -5842,7 +5859,8 @@ struct cfg80211_uhr_mode_update_params {
  * @set_antenna: Set antenna configuration (tx_ant, rx_ant) on the device.
  *	Parameters are bitmaps of allowed antennas to use for TX/RX. Drivers may
  *	reject TX/RX mask combinations they cannot support by returning -EINVAL
- *	(also see nl80211.h @NL80211_ATTR_WIPHY_ANTENNA_TX).
+ *	(also see nl80211.h @NL80211_ATTR_WIPHY_ANTENNA_TX). @ifindex contains
+ *	the originating netdev ifindex, or -1 if unavailable.
  *
  * @get_antenna: Get current antenna configuration from device (tx_ant, rx_ant).
  *
@@ -6028,6 +6046,7 @@ struct cfg80211_uhr_mode_update_params {
  *	@params carries per-link update flags and NPCA settings.
  * @set_muedca_mode: Set the mode of setting MU EDCA parameters.
  * @uhr_link_reconf: Initiate SMD preparation with target AP MLD
+ * @set_smd_ctx: Set UHR SMD context data for the non-AP MLD.
  */
 struct cfg80211_ops {
 	int	(*suspend)(struct wiphy *wiphy, struct cfg80211_wowlan *wow);
@@ -6246,8 +6265,8 @@ struct cfg80211_ops {
 						   struct wireless_dev *wdev,
 						   struct mgmt_frame_regs *upd);
 
-	int	(*set_antenna)(struct wiphy *wiphy, u32 tx_ant, u32 rx_ant, u8 radio_id,
-			       bool is_dynamic);
+	int	(*set_antenna)(struct wiphy *wiphy, u32 tx_ant, u32 rx_ant,
+			       u8 radio_id, bool is_dynamic, int ifindex);
 	int	(*get_antenna)(struct wiphy *wiphy, u32 *tx_ant, u32 *rx_ant,
 			       u8 radio_id);
 
@@ -6444,6 +6463,9 @@ struct cfg80211_ops {
 	int (*smd_roam)(struct wiphy *wiphy,
 			struct net_device *dev,
 			const struct cfg80211_smd_roam_req *req);
+	int	(*set_smd_ctx)(struct wiphy *wiphy, struct wireless_dev *wdev,
+			       const u8 *addr,
+			       struct cfg80211_smd_transition_info *st_info);
 };
 
 /*
@@ -7884,6 +7906,16 @@ enum ieee80211_ap_reg_power {
  * @links.cac_start_time: timestamp (jiffies) when the dfs state was
  *	entered.
  * @links.cac_time_ms: CAC time in ms
+ * @links.enhanced_bpcc: Enhanced BSS Parameter Change Count (4-bit, modulo 16)
+ *	as defined in IEEE 802.11bn/D1.5 37.30.3
+ * @links.enhanced_critical_update: true when the UHR Parameters Update
+ *	element is present in the received frame, indicating an Enhanced
+ *	Critical Update session is active for this link.
+ * @links.ecu_countdown_timer: Countdown Timer; initialized to
+ *	advance notification interval. Indicates the number of
+ *	TBTTs until the UHR Parameters Update element's update(s) take
+ *	effect. Value 1 = next TBTT. Value > 127 = update already took
+ *	effect (Countdown Timer - 127) beacon intervals ago.
  * @link[].link_removal_tbtt_count: Link removal count for the bss
  * @valid_links: bitmap describing what elements of @links are valid
  * @link_removal_flag: ML link reconfigure removal params updated on anyone
@@ -8013,6 +8045,9 @@ struct wireless_dev {
 		u32 link_removal_tbtt_count;
 		u32 ttlm_expec_dur;
 		u8 reg_6g_power_mode;
+		u8 enhanced_bpcc; /* Enhanced BPCC (IEEE 802.11bn 37.30.3) */
+		bool enhanced_critical_update;
+		u8 ecu_countdown_timer;
 	} links[IEEE80211_MLD_MAX_NUM_LINKS];
 	u16 valid_links;
 
@@ -10237,7 +10272,7 @@ void cfg80211_conn_failed(struct net_device *dev, const u8 *mac_addr,
  *	the rx info
  * @ttlm_expec_dur_update: Indicates whether expected duration update for TTLM
  *	element is present in the rx info
- * @st_roaming_data: ST roaming data in skb extension
+ * @st_info: SMD BSS Transition data in skb extension
  */
 struct cfg80211_rx_info {
 	int freq;
@@ -10253,7 +10288,7 @@ struct cfg80211_rx_info {
 	bool link_removal_update;
 	bool ttlm_expec_dur_update;
 	u16 bitrate;
-	const struct ieee80211_smd_ctx *st_roaming_data;
+	struct cfg80211_smd_transition_info st_info;
 };
 
 /**

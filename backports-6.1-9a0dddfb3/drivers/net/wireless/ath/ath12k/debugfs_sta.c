@@ -13,7 +13,7 @@
 #include "debugfs.h"
 #include "dp_cmn.h"
 
-static enum htt_ppdu_stats_gi
+enum htt_ppdu_stats_gi
 ath12k_debugfs_sta_get_gi_idx(const struct rate_info *txrate)
 {
 	if (txrate->flags & RATE_INFO_FLAGS_EHT_MCS) {
@@ -49,7 +49,7 @@ ath12k_debugfs_sta_get_gi_idx(const struct rate_info *txrate)
 	return HTT_PPDU_STATS_SGI_0_8_US;
 }
 
-static int ath12k_he_ru_alloc_to_ru_loc_idx(u16 nl_ru)
+int ath12k_he_ru_alloc_to_ru_loc_idx(u16 nl_ru)
 {
 	switch (nl_ru) {
 	case NL80211_RATE_INFO_HE_RU_ALLOC_26:
@@ -69,7 +69,7 @@ static int ath12k_he_ru_alloc_to_ru_loc_idx(u16 nl_ru)
 	}
 }
 
-static int ath12k_eht_ru_alloc_to_ru_loc_idx(u16 nl_ru)
+int ath12k_eht_ru_alloc_to_ru_loc_idx(u16 nl_ru)
 {
 	switch (nl_ru) {
 	case NL80211_RATE_INFO_EHT_RU_ALLOC_26:
@@ -185,9 +185,6 @@ ath12k_debugfs_sta_update_success(struct ath12k_dp_link_peer *peer,
 				STATS_OP_FMT(AMPDU).ru_loc[0][ru_loc_idx] += ampdu_bytes;
 				STATS_OP_FMT(AMPDU).ru_loc[1][ru_loc_idx] += ampdu_pkts;
 			}
-			if (ru_loc_idx < MAX_RU_LOCATIONS)
-				tx_stats->ru_loc_mpdu_succ_tried[ru_loc_idx].num_mpdu +=
-					peer_stats->succ_mpdu_pkts;
 		}
 	}
 
@@ -198,9 +195,6 @@ ath12k_debugfs_sta_update_success(struct ath12k_dp_link_peer *peer,
 			STATS_OP_FMT(AMPDU).transmit_type[0][ppdu_type] += ampdu_bytes;
 			STATS_OP_FMT(AMPDU).transmit_type[1][ppdu_type] += ampdu_pkts;
 		}
-
-		tx_stats->transmit_type_mpdu_succ_tried[ppdu_type].num_mpdu +=
-				peer_stats->succ_mpdu_pkts;
 	}
 
 	/* AMPDU and ACK/BA failure accounting */
@@ -365,7 +359,6 @@ ath12k_debugfs_sta_update_failure(struct ath12k_dp_link_peer *peer,
 	STATS_OP_FMT(FAIL).bw[1][bw] += failed_pkts;
 	STATS_OP_FMT(FAIL).nss[1][nss] += failed_pkts;
 	STATS_OP_FMT(FAIL).gi[1][gi] += failed_pkts;
-
 	/* RU location and transmit type failure updates */
 	if ((ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_MU_OFDMA ||
 	    ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_MU_MIMO_OFDMA) &&
@@ -394,38 +387,13 @@ ath12k_debugfs_sta_update_misc(struct ath12k_dp_link_peer *peer,
 			       struct ath12k_per_peer_tx_stats *peer_stats)
 {
 	struct ath12k_htt_tx_stats *tx_stats = peer->peer_stats.tx_stats;
-	struct rate_info *txrate = &peer->txrate;
-	int ppdu_type;
-	u16 ru_type;
 
-	ru_type = peer_stats->ru_tones;
-	ppdu_type = tx_stats->ppdu_type;
+	if (!tx_stats || !peer_stats)
+		return;
 
 	tx_stats->tx_duration += peer_stats->duration;
 	tx_stats->ru_start = peer_stats->ru_start;
 	tx_stats->ru_tones = peer_stats->ru_tones;
-
-	if ((ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_MU_OFDMA ||
-	    ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_MU_MIMO_OFDMA) &&
-	    (txrate->flags & RATE_INFO_FLAGS_HE_MCS ||
-	    txrate->flags & RATE_INFO_FLAGS_EHT_MCS)) {
-		int ru_loc_idx;
-
-		if (txrate->flags & RATE_INFO_FLAGS_HE_MCS)
-			ru_loc_idx = ath12k_he_ru_alloc_to_ru_loc_idx(ru_type);
-		else
-			ru_loc_idx = ath12k_eht_ru_alloc_to_ru_loc_idx(ru_type);
-
-		if (ru_loc_idx >= 0 && ru_loc_idx < MAX_RU_LOCATIONS) {
-			tx_stats->ru_loc_mpdu_succ_tried[ru_loc_idx].mpdu_tried +=
-						peer_stats->mpdu_tried;
-		}
-	}
-
-	if (ppdu_type < HTT_PPDU_STATS_PPDU_TYPE_MAX)
-		tx_stats->transmit_type_mpdu_succ_tried[ppdu_type].mpdu_tried +=
-						peer_stats->mpdu_tried;
-
 	if (peer_stats->mu_grpid < MAX_MU_GROUP_ID &&
 	    tx_stats->ppdu_type != HTT_PPDU_STATS_PPDU_TYPE_SU) {
 		if (peer_stats->mu_grpid & (MAX_MU_GROUP_ID - 1))

@@ -107,7 +107,8 @@ void ath12k_wifi8_hal_srng_idx_update_addr(struct ath12k_base *ab, struct hal_sr
 				reg_base + HAL_TCL1_RING_TP_ADDR_MSB_OFFSET(hal),
 				((u64)tp_paddr >> HAL_ADDR_MSB_REG_SHIFT));
 		srng->u.src_ring.tp_addr = tp_vaddr;
-		ath12k_info(ab, "PPEDS SRC_SRNG tp_paddr:%pad tp_vaddr:%p ring_id:%d\n",
+		ath12k_dbg(ab, ATH12K_DBG_HAL,
+				"PPEDS SRC_SRNG tp_paddr:%pad tp_vaddr:%p ring_id:%d\n",
 				&tp_paddr, tp_vaddr, srng->ring_id);
 	} else {
 		ath12k_hif_write32(ab,
@@ -117,7 +118,8 @@ void ath12k_wifi8_hal_srng_idx_update_addr(struct ath12k_base *ab, struct hal_sr
 				reg_base + ath12k_hal_reo1_ring_hp_addr_msb_offset(hal),
 				((u64)hp_paddr >> HAL_ADDR_MSB_REG_SHIFT));
 		srng->u.dst_ring.hp_addr = hp_vaddr;
-		ath12k_info(ab, "PPEDS DST_SRNG hp_paddr:%pad hp_vaddr:%p ring_id:%d\n",
+		ath12k_dbg(ab, ATH12K_DBG_HAL,
+				"PPEDS DST_SRNG hp_paddr:%pad hp_vaddr:%p ring_id:%d\n",
 				&hp_paddr, hp_vaddr, srng->ring_id);
 	}
 
@@ -1040,31 +1042,6 @@ void ath12k_wifi8_hal_reo_config_reo2ppe_dest_info(struct ath12k_base *ab)
 	val |= HAL_REO_PPE_DEST_OVERRIDE_EN;
 	ath12k_hif_write32(ab, reo_base + HAL_REO_MISC_CFG_BN_2,
 			   val);
-}
-
-void ath12k_wifi8_hal_tx_completion_process(struct hal_tqm2sw_completion_ring *desc,
-					    struct ath12k_dp_tx_comp_status *tx_comp_status)
-{
-	u64 desc_va = 0;
-
-	tx_comp_status->buf_rel_source =
-		FIELD_GET(HAL_TQM2SW_COMPLETION_RING_INFO0_RELEASE_SOURCE_MODULE,
-			  desc->info0);
-	tx_comp_status->u.tqm_status =
-		       le32_get_bits(desc->info0,
-				     HAL_TQM2SW_COMPLETION_RING_INFO0_TQM_RELEASE_REASON);
-	tx_comp_status->tx_desc = NULL;
-
-	if (likely(HAL_TQM2SW_COMPLETION_RING_INFO3_COOKIE_CONVERSION_STATUS &
-		   desc->info3)) {
-		desc_va = ((u64)le32_to_cpu(desc->buf_addr_info.info1) << 32 |
-			   le32_to_cpu(desc->buf_addr_info.info0));
-		tx_comp_status->tx_desc = (struct ath12k_ppeds_tx_desc_info *)
-						((unsigned long)desc_va);
-	} else {
-		tx_comp_status->desc_id = u32_get_bits(desc->buf_addr_info.info1,
-						       BUFFER_ADDR_INFO1_SW_COOKIE);
-	}
 }
 
 void ath12k_wifi8_hal_hw_ase_init(struct ath12k_base *ab,

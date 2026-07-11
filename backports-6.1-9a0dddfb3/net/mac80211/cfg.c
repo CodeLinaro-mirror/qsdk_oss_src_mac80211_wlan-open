@@ -1486,11 +1486,21 @@ ieee80211_assign_beacon(struct ieee80211_sub_if_data *sdata,
 
 	size = sizeof(*new) + new_head_len + new_tail_len;
 
+	/* new or old multiple BSSID elements? */
 	if (params->mbssid_ies) {
 		mbssid = params->mbssid_ies;
 		size += struct_size(new->mbssid_ies, elem, mbssid->cnt);
 		if (params->rnr_ies) {
 			rnr = params->rnr_ies;
+			size += struct_size(new->rnr_ies, elem, rnr->cnt);
+		}
+		size += ieee80211_get_mbssid_beacon_len(mbssid, rnr,
+							mbssid->cnt);
+	} else if (old && old->mbssid_ies) {
+		mbssid = old->mbssid_ies;
+		size += struct_size(new->mbssid_ies, elem, mbssid->cnt);
+		if (old->rnr_ies) {
+			rnr = old->rnr_ies;
 			size += struct_size(new->rnr_ies, elem, rnr->cnt);
 		}
 		size += ieee80211_get_mbssid_beacon_len(mbssid, rnr,
@@ -1893,14 +1903,16 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 			changed |= BSS_CHANGED_NPCA;
 		}
 
-		link_conf->uhr_config.adv_notification_interval =
-			(params->uhr_cap->fixed.mac.mac_cap[3] &
-			 IEEE80211_UHR_MAC_CAP3_PARAM_UPD_ADV_NOTIF_INTV) >> 2;
-		link_conf->uhr_config.update_in_tim_interval =
-			((params->uhr_cap->fixed.mac.mac_cap[3] &
-			  IEEE80211_UHR_MAC_CAP3_UPD_IND_TIM_INTV_LOW) >> 5) |
-			((params->uhr_cap->fixed.mac.mac_cap[4] &
-			  IEEE80211_UHR_MAC_CAP4_UPD_IND_TIM_INTV_HIGH) << 3);
+		if (params->uhr_cap) {
+			link_conf->uhr_config.adv_notification_interval =
+				(params->uhr_cap->fixed.mac.mac_cap[3] &
+				 IEEE80211_UHR_MAC_CAP3_PARAM_UPD_ADV_NOTIF_INTV) >> 2;
+			link_conf->uhr_config.update_in_tim_interval =
+				((params->uhr_cap->fixed.mac.mac_cap[3] &
+				  IEEE80211_UHR_MAC_CAP3_UPD_IND_TIM_INTV_LOW) >> 7) |
+				((params->uhr_cap->fixed.mac.mac_cap[4] &
+				  IEEE80211_UHR_MAC_CAP4_UPD_IND_TIM_INTV_HIGH) << 1);
+		}
 	}
 
 	if (sdata->vif.type == NL80211_IFTYPE_AP &&
@@ -2109,9 +2121,10 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 	 */
 	if (cfg80211_chandef_dfs_usable(local->hw.wiphy, &params->chandef) &&
 	    !cfg80211_chandef_dfs_available(local->hw.wiphy, &params->chandef))
-		ieee80211_bootup_cac_start_timer_extn(sdata, link,
+		ieee80211_bootup_cac_handle_skip_extn(sdata, link,
 						      &params->chandef,
-						      params->residual_cac_ms);
+						      params->residual_cac_ms,
+						      params->skip_cac);
 #endif /* CPTCFG_QCN_EXTN */
 
 	return 0;
@@ -4791,6 +4804,30 @@ void ieee80211_critical_update(struct ieee80211_vif *vif, unsigned int link_id,
 }
 EXPORT_SYMBOL(ieee80211_critical_update);
 
+void ieee80211_critical_update_ecu(struct ieee80211_vif *vif,
+				   unsigned int link_id,
+				   bool enhanced_critical_update,
+				   u8 enhanced_bpcc,
+				   u8 ecu_countdown_timer)
+{
+	struct wireless_dev *wdev = ieee80211_vif_to_wdev(vif);
+
+	if (!wdev || !wdev->valid_links)
+		return;
+	if (WARN_ON(link_id >= IEEE80211_MLD_MAX_NUM_LINKS))
+		return;
+
+	if (wdev->links[link_id].enhanced_critical_update != enhanced_critical_update ||
+	    wdev->links[link_id].enhanced_bpcc != enhanced_bpcc ||
+	    wdev->links[link_id].ecu_countdown_timer != ecu_countdown_timer) {
+		wdev->critical_update = true;
+		wdev->links[link_id].enhanced_critical_update = enhanced_critical_update;
+		wdev->links[link_id].enhanced_bpcc = enhanced_bpcc & 0x0F;
+		wdev->links[link_id].ecu_countdown_timer = ecu_countdown_timer;
+	}
+}
+EXPORT_SYMBOL(ieee80211_critical_update_ecu);
+
 void ieee80211_link_removal_count_update(struct ieee80211_vif *vif,
 					 unsigned int link_id, u16 count)
 {
@@ -5538,7 +5575,7 @@ ieee80211_update_mgmt_frame_registrations(struct wiphy *wiphy,
 }
 
 static int ieee80211_set_antenna(struct wiphy *wiphy, u32 tx_ant, u32 rx_ant,
-				 u8 radio_id, bool is_dynamic)
+				 u8 radio_id, bool is_dynamic, int ifindex)
 {
 	struct ieee80211_local *local = wiphy_priv(wiphy);
 	int ret;
@@ -5546,7 +5583,8 @@ static int ieee80211_set_antenna(struct wiphy *wiphy, u32 tx_ant, u32 rx_ant,
 	if (local->started && !is_dynamic)
 		return -EOPNOTSUPP;
 
-	ret = drv_set_antenna(local, tx_ant, rx_ant, radio_id, is_dynamic);
+	ret = drv_set_antenna(local, tx_ant, rx_ant, radio_id, is_dynamic,
+			      ifindex);
 	if (ret)
 		return ret;
 
@@ -7282,6 +7320,24 @@ static int ieee80211_critical_update_cmd(struct wiphy *wiphy,
 	return ret;
 }
 
+static int ieee80211_set_smd_ctx(struct wiphy *wiphy, struct wireless_dev *wdev,
+				 const u8 *addr,
+				 struct cfg80211_smd_transition_info *st_info)
+{
+	struct ieee80211_local *local = wiphy_priv(wiphy);
+	struct ieee80211_sub_if_data *sdata;
+	struct sta_info *sta;
+
+	lockdep_assert_wiphy(wiphy);
+
+	sdata = IEEE80211_WDEV_TO_SUB_IF(wdev);
+	sta = sta_info_get_bss(sdata, addr);
+	if (!sta || !sta->sta.smd_params.smd_enabled)
+		return -EINVAL;
+
+	return drv_set_smd_ctx(local, sdata, &sta->sta, st_info);
+}
+
 const struct cfg80211_ops mac80211_config_ops = {
 	.add_virtual_intf = ieee80211_add_iface,
 	.del_virtual_intf = ieee80211_del_iface,
@@ -7415,6 +7471,7 @@ const struct cfg80211_ops mac80211_config_ops = {
 	.abort_cac = ieee80211_dfs_abort_cac,
 	.uhr_mode_update = ieee80211_uhr_mode_update,
 	.critical_update = ieee80211_critical_update_cmd,
+	.set_smd_ctx = ieee80211_set_smd_ctx,
 };
 
 void ieee80211_cu_notify(struct ieee80211_hw *hw,

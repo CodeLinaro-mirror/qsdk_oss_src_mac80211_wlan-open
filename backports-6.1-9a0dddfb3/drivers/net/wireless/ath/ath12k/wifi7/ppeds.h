@@ -23,4 +23,6 @@
 #define PPEDS_ARCH_MODE_WIFI7 7
 extern struct ppe_ds_wlan_ops_v2 ppeds_wlanops_v2;
 extern struct ath12k_ppeds_arch_ops ath12k_wifi7_arch_ppeds_ops;
+int ath12k_ppeds_wifi7_srng_alloc(struct ath12k_base *ab);
+void ath12k_ppeds_wifi7_srng_cleanup(struct ath12k_base *ab);
 #endif

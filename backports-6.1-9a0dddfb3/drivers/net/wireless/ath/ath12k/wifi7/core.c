@@ -23,8 +23,9 @@ static int ath12k_wifi7_init(void)
 
 	ath12k_vendor_services_init();
 
+#ifdef CPTCFG_QCN_EXTN
 	ath12k_cfg_global_init();
-
+#endif
 	ahb_err = ath12k_wifi7_ahb_init();
 	if (ahb_err)
 		pr_warn("Failed to initialize ath12k WiFi7 AHB device: %d\n",
@@ -51,7 +52,10 @@ static void ath12k_wifi7_exit(void)
 
 	ath12k_erp_deinit();
 
+#ifdef CPTCFG_QCN_EXTN
 	ath12k_cfg_global_deinit();
+#endif
+
 }
 
 module_init(ath12k_wifi7_init);

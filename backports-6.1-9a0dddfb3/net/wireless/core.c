@@ -225,13 +225,13 @@ int cfg80211_switch_netns(struct cfg80211_registered_device *rdev,
 	list_for_each_entry(wdev, &rdev->wiphy.wdev_list, list) {
 		if (!wdev->netdev)
 			continue;
-#if LINUX_VERSION_IS_GEQ(6,12,0)
+#if LINUX_VERSION_IS_GEQ(6, 19, 0)
 		wdev->netdev->netns_local = false;
 #endif
 		err = dev_change_net_namespace(wdev->netdev, net, "wlan%d");
 		if (err)
 			break;
-#if LINUX_VERSION_IS_GEQ(6,12,0)
+#if LINUX_VERSION_IS_GEQ(6, 19, 0)
 		wdev->netdev->netns_local = true;
 #endif
 	}
@@ -245,13 +245,13 @@ int cfg80211_switch_netns(struct cfg80211_registered_device *rdev,
 						     list) {
 			if (!wdev->netdev)
 				continue;
-#if LINUX_VERSION_IS_GEQ(6,12,0)
+#if LINUX_VERSION_IS_GEQ(6, 19, 0)
 			wdev->netdev->netns_local = false;
 #endif
 			err = dev_change_net_namespace(wdev->netdev, net,
 							"wlan%d");
 			WARN_ON(err);
-#if LINUX_VERSION_IS_GEQ(6,12,0)
+#if LINUX_VERSION_IS_GEQ(6, 19, 0)
 			wdev->netdev->netns_local = true;
 #endif
 		}
@@ -1220,7 +1220,7 @@ EXPORT_SYMBOL(wiphy_rfkill_start_polling);
 void cfg80211_process_wiphy_works(struct cfg80211_registered_device *rdev,
 				  struct wiphy_work *end)
 {
-	unsigned int runaway_limit = 100;
+	unsigned int runaway_limit = 200;
 	unsigned long flags;
 
 	lockdep_assert_held(&rdev->wiphy.mtx);
@@ -1697,7 +1697,7 @@ static int cfg80211_netdev_notifier_call(struct notifier_block *nb,
 		SET_NETDEV_DEVTYPE(dev, &wiphy_type);
 		wdev->netdev = dev;
 		/* can only change netns with wiphy */
-#if LINUX_VERSION_IS_GEQ(6,12,0)
+#if LINUX_VERSION_IS_GEQ(6, 19, 0)
 		dev->netns_local = true;
 #endif
 		cfg80211_init_wdev(wdev);

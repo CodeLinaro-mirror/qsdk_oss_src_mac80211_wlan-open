@@ -29,6 +29,7 @@ struct dp_srng {
 	int size;
 	u32 ring_id;
 	u8 cached;
+	u32 num_entries;
 };
 
 struct ath12k_dp_hw_link {
@@ -110,6 +111,7 @@ struct ath12k_dp_hw_link {
 #define MAX_DP_PEER_LIST_SIZE  16384
 #define ATH12K_MAX_PEER_ID	2048
 #define ATH12K_MAX_STA_ID	1536
+#define ATH12K_MAX_STATS_ID	1624
 #define DP_TCL_SFE_NUM_RING_MAX  MIN(NR_CPUS, 5)
 #define ATH12K_DP_RX_REGULAR_RING_MAX MIN(NR_CPUS, 5)
 #define DP_REO_DST_RING_MAX  (ATH12K_DP_RX_REGULAR_RING_MAX + 1)
@@ -136,6 +138,10 @@ struct ath12k_dp_hw_link {
 
 /* Hash table size: 2^11 = 2048 buckets for up to 2048 peers */
 #define ATH12K_DP_PEER_HASH_BITS 11
+#define ATH12K_DP_HW_STATS_REO_IDX 0
+
+/* Hash table size for link peers: 2^11 = 2048 buckets */
+#define ATH12K_DP_LINK_PEER_HASH_BITS 11
 
 struct ath12k_dp_hw {
 	struct ath12k_dp_peer __rcu *dp_peer_list[MAX_DP_PEER_LIST_SIZE];
@@ -228,6 +234,8 @@ struct ath12k_per_peer_tx_stats {
 	u16 retried_mpdu_pkts;
 	u16 mpdu_tried;
 	u8 ba_fails;
+	u8 ppdu_type;
+	u8 rate_idx;
 	u8 mu_grpid;
 	u8 mu_pos;
 	u8 rate;
@@ -272,6 +280,7 @@ enum wme_ac {
 
 struct ath12k_dp_link_peer;
 struct ath12k_dp_link_peer_rate_info;
+struct ath12k_dp_aggr_vif_stats;
 void ath12k_dp_cmn_device_deinit(struct ath12k_dp *dp);
 int ath12k_dp_cmn_device_init(struct ath12k_dp *dp);
 void ath12k_dp_cmn_hw_group_unassign(struct ath12k_dp *dp,
@@ -511,4 +520,11 @@ int ath12k_dp_peer_set_key_config(struct ath12k_pdev_dp *dp_pdev, const u8 *addr
 				  struct ieee80211_sta *sta,
 				  enum hal_encrypt_type *enctype);
 void ath12k_dp_peer_cleanup_all(struct ath12k *ar);
+void ath12k_dp_vif_peer_stats_update(struct ath12k_dp_hw *dp_hw,
+				     struct ath12k_pdev_dp *dp_pdev,
+				     const u8 *dp_peer_addr,
+				     u8 hw_link_id,
+				     struct ath12k_link_vif *arvif,
+				     struct ath12k_dp_aggr_vif_stats *aggr_vif_stats,
+				     bool is_ds_vif);
 #endif

@@ -2905,6 +2905,15 @@ bool ieee80211_is_our_addr(struct ieee80211_sub_if_data *sdata,
 	unsigned int link_id;
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 	struct sta_info *sta;
+
+	if (sdata->wdev.vap_submode == IEEE80211_EXTN_VAP_SUBMODE_MESH) {
+		sta = sta_info_get_bss(sdata, addr);
+		if (sta) {
+			if (out_link_id && ieee80211_vif_is_mld(&sdata->vif))
+				*out_link_id = 0;
+			return true;
+		}
+	}
 #endif /* CPTCFG_QCN_EXTN_MESH_SUPPORT */
 
 	/* non-MLO, or MLD address replaced by hardware */
@@ -2927,16 +2936,6 @@ bool ieee80211_is_our_addr(struct ieee80211_sub_if_data *sdata,
 			return true;
 		}
 	}
-#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
-	if (sdata->wdev.vap_submode == IEEE80211_EXTN_VAP_SUBMODE_MESH) {
-		sta = sta_info_get_bss(sdata, addr);
-		if (sta) {
-			/* TODO: Assign link_id properly if MLO is enabled */
-			*out_link_id = 0;
-			return true;
-		}
-	}
-#endif /* CPTCFG_QCN_EXTN_MESH_SUPPORT */
 
 	return false;
 }
@@ -3978,6 +3977,8 @@ ieee80211_rx_h_mgmt_check(struct ieee80211_rx_data *rx)
 	}
 
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	if (ieee80211_process_mesh_peer_deauth_disassoc(rx) == RX_DROP_MONITOR)
+		return RX_DROP_MONITOR;
 	if (ieee80211_process_mesh_peer_beacon(rx) == RX_DROP_MONITOR)
 		return RX_DROP_MONITOR;
 #endif /* CPTCFG_QCN_EXTN_MESH_SUPPORT */
@@ -4479,6 +4480,42 @@ ieee80211_rx_h_action(struct ieee80211_rx_data *rx)
 	return RX_QUEUED;
 }
 
+static void debug_noinline
+ieee80211_rx_h_userspace_mgmt_action(struct cfg80211_rx_info *info,
+				     struct ieee80211_rx_data *rx)
+{
+	struct ieee80211_mgmt *mgmt = (void *)info->buf;
+	struct wireless_skb_ext *ext;
+	u8 action_code, type;
+
+	switch (mgmt->u.action.category) {
+	case WLAN_CATEGORY_PROTECTED_UHR:
+		action_code = mgmt->u.action.u.uhr_link_reconf_req.action_code;
+
+		switch (action_code) {
+		case WLAN_PROTECTED_UHR_ACTION_LINK_RECONFIG_REQ:
+		case WLAN_PROTECTED_UHR_ACTION_LINK_RECONFIG_RESP:
+			type = mgmt->u.action.u.uhr_link_reconf_req.type;
+
+			if (type == IEEE80211_UHR_LINK_RECONF_TYPE_ST_PREP ||
+			    type == IEEE80211_UHR_LINK_RECONF_TYPE_ST_EXEC) {
+				ext = skb_ext_find(rx->skb, SKB_EXT_WIRELESS);
+				if (!ext)
+					return;
+
+				info->st_info.type = type;
+				info->st_info.ctx = &ext->uhr_smd_ctx;
+			}
+			break;
+		default:
+			break;
+		}
+		break;
+	default:
+		break;
+	}
+}
+
 static ieee80211_rx_result debug_noinline
 ieee80211_rx_h_userspace_mgmt(struct ieee80211_rx_data *rx)
 {
@@ -4506,6 +4543,7 @@ ieee80211_rx_h_userspace_mgmt(struct ieee80211_rx_data *rx)
 		.link_removal_update = 0,
 		.ttlm_expec_dur_update = 0,
 		.bitrate = bitrate,
+		.st_info.ctx = NULL,
 	};
 
 	stype = mgmt->frame_control & cpu_to_le16(IEEE80211_FCTL_STYPE);
@@ -4520,7 +4558,10 @@ ieee80211_rx_h_userspace_mgmt(struct ieee80211_rx_data *rx)
 
 		if (wdev->ttlm_expec_dur_update_flag)
 			info.ttlm_expec_dur_update = 1;
+	} else if (ieee80211_is_action(mgmt->frame_control)) {
+		ieee80211_rx_h_userspace_mgmt_action(&info, rx);
 	}
+
 	/* skip known-bad action frames and return them in the next handler */
 	if (status->rx_flags & IEEE80211_RX_MALFORMED_ACTION_FRM)
 		return RX_CONTINUE;
@@ -4747,6 +4788,7 @@ ieee80211_rx_h_mgmt(struct ieee80211_rx_data *rx)
 	return RX_QUEUED;
 }
 
+#if LINUX_VERSION_IS_LESS(6, 15, 0)
 static void ieee80211_rx_cooked_monitor(struct ieee80211_rx_data *rx,
 					struct ieee80211_rate *rate,
 					ieee80211_rx_result reason)
@@ -4822,6 +4864,7 @@ static void ieee80211_rx_cooked_monitor(struct ieee80211_rx_data *rx,
  out_free_skb:
 	kfree_skb_reason(skb, (__force u32)reason);
 }
+#endif
 
 static void ieee80211_rx_handlers_result(struct ieee80211_rx_data *rx,
 					 ieee80211_rx_result res)
@@ -4851,7 +4894,9 @@ static void ieee80211_rx_handlers_result(struct ieee80211_rx_data *rx,
 	if (status->encoding == RX_ENC_LEGACY)
 		rate = &sband->bitrates[status->rate_idx];
 
+#if LINUX_VERSION_IS_LESS(6, 15, 0)
 	ieee80211_rx_cooked_monitor(rx, rate, res);
+#endif
 }
 
 static void ieee80211_rx_handlers(struct ieee80211_rx_data *rx,

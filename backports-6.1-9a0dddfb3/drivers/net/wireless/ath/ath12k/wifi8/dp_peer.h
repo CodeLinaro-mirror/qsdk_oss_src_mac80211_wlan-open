@@ -60,7 +60,9 @@ void ath12k_wifi8_dp_vif_update_4addr(struct ath12k_dp_hw *dp_hw,
 int ath12k_dp_peer_fetch_smd_tx_ctx(struct ath12k_base *ab,
 				    struct ath12k_dp_peer *dp_peer,
 				    u32 tx_tid_bitmap,
-				    u16 *tx_tid_ba_win_size);
+				    u16 *tx_tid_ba_win_size,
+				    void (*cb)(struct ath12k_dp *dp, void *ctx,
+					       u8 *addr, u8 tid));
 void ath12k_wifi8_dp_assoc_link_update(struct ath12k_dp *dp,
 				       struct ath12k_hw *ah,
 				       struct ieee80211_sta *sta);

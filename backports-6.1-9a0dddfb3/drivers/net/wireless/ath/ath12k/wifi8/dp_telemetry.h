@@ -31,7 +31,8 @@
 
 #define DP_TELEMETRY_INVALID_LINK_BAND_ID	2046
 
-int ath12k_wifi8_dp_telemetry_ring_setup(struct ath12k_base *ab);
+int ath12k_wifi8_dp_telemetry_ring_alloc(struct ath12k_base *ab);
+int ath12k_wifi8_dp_telemetry_ring_init(struct ath12k_base *ab);
 int ath12k_wifi8_dp_telemetry_ring_cleanup(struct ath12k_base *ab);
 int ath12k_wifi8_dp_process_tx_peer_telemetry(struct ath12k_dp *dp, int budget);
 int ath12k_wifi8_dp_process_rx_peer_telemetry(struct ath12k_dp *dp, int budget);
@@ -43,5 +44,5 @@ int ath12k_wifi8_dp_telemetry_peer_config(struct ath12k_dp *dp, u16 stats_id,
 					  u16 link_band_id[HAL_TASC_BAND_MAX]);
 int ath12k_wifi8_dp_telemetry_peer_delete(struct ath12k_dp *dp, u16 stats_id,
 					  u16 link_band_id[HAL_TASC_BAND_MAX]);
-int ath12k_wifi8_dp_telemetry_umac_setup(struct ath12k_base *ab);
+int ath12k_wifi8_dp_telemetry_umac_init(struct ath12k_base *ab);
 #endif

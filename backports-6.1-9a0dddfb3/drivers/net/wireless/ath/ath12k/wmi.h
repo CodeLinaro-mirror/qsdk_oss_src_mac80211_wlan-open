@@ -1457,6 +1457,9 @@ enum wmi_tlv_pdev_param {
 #endif /* CPTCFG_QCN_EXTN */
 	WMI_PDEV_PARAM_ENABLE_SR_PROHIBIT = 0xc6,
 	WMI_PDEV_PARAM_MPD_USERPD_SSR = 0xce,
+#ifdef CPTCFG_QCN_EXTN
+	WMI_PDEV_PARAM_SCAN_RADIO_TX_ON_DFS = 0xd0,
+#endif /* CPTCFG_QCN_EXTN */
 	WMI_PDEV_PARAM_ATF_VO_DEDICATED_TIME = 0xe8,
 	WMI_PDEV_PARAM_ATF_VI_DEDICATED_TIME = 0xe9,
 	WMI_PDEV_PARAM_TID_MAPPING_3LINK_MLO = 0xec,
@@ -1494,6 +1497,7 @@ enum wmi_tlv_pdev_param {
 	WMI_PDEV_PARAM_SET_SCAN_BLANKING_MODE = 0xE1,
 #ifdef CPTCFG_QCN_EXTN
 	WMI_PDEV_PARAM_SMART_ANTENNA_BEACON_ANTENNA = 0xFC,
+	WMI_PDEV_PARAM_SMART_ANTENNA_CONFIG_MPDU_MCS_PARAMS = 0x102,
 #endif
 };
 
@@ -2590,7 +2594,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_SMD_ROAM_CONFIG_PARAMS = 0x55B,
 	WMI_TAG_SMD_ROAM_CONFIG_EVENT = 0x55C,
 	WMI_TAG_SMD_ROAM_PEER_TID_INFO = 0x55D,
-	WMI_TAG_UHR_AP_MODE_TUP_ENABLE_DISABLE_UPDATE_PARAM = 0x560,
+	WMI_TAG_UHR_AP_MODE_TUPLE_UPDATE_PARAM = 0x560,
 	WMI_ENERGY_MGMT_OEM_DATA_FIXED_PARAM = 0x56E,
 	WMI_ENERGY_MGMT_OEM_DATA_EVENT_FIXED_PARAM,
 	WMI_TAG_SHARED_CU_MEM_CONFIG = 0x577,
@@ -2938,6 +2942,13 @@ enum wmi_peer_param {
 
 #define WMI_PEER_PUNCTURE_BITMAP		GENMASK(23, 8)
 
+enum wmi_peer_authorize_mode {
+	WMI_PEER_AUTHORIZE_CLEAR = 0,
+	WMI_PEER_AUTHORIZE_SECURED_MODE = 1,
+	WMI_PEER_AUTHORIZE_OPEN_MODE = 2,
+	WMI_PEER_AUTHORIZE_SW_ENCRYPTION_MODE = 3,
+};
+
 enum wmi_slot_time {
 	WMI_VDEV_SLOT_TIME_LONG = 1,
 	WMI_VDEV_SLOT_TIME_SHORT = 2,
@@ -3203,7 +3214,7 @@ struct ath12k_wmi_pdev_band_to_mac_params {
 #define WMI_TBTT_COUNT_DOWN_CFG_TTLM_EXP_DUR		BIT(5)
 #define WMI_TBTT_COUNT_DOWN_CFG_ML_RECONFIG		BIT(6)
 #define WMI_TBTT_COUNT_DOWN_CFG_UHR_EBPCC		BIT(7)
-#define WMI_TBTT_COUNT_DOWN_CFG_UHR_PARAM_UPD		BIT(8)
+#define WMI_TBTT_COUNT_DOWN_CFG_UHR_COUNTDOWN		BIT(8)
 
 struct ath12k_wmi_shared_cu_mem_config {
 	__le32 config;
@@ -3706,7 +3717,7 @@ struct ath12k_cu_mem_layout_arg {
 	};
 	union {
 		struct {
-			u16 uhr_param_update;
+			u16 uhr_countdown;
 			u16 uhr_ebpcc;
 		};
 		u32 offset4;
@@ -3755,7 +3766,7 @@ struct wmi_vdev_create_cu_mem_offset_info {
 	 *  - offset_info_2: [15:0] eht_bpcc, [31:16] ml-reconfig
 	 *  - offset_info_3: [15:0] ttlm_max_chan_switch_time,
 	 *                   [31:16] ttlm_expected_duration
-	 *  - offset_info_4: [15:0] uhr_param_update, [31:16] uhr_ebpcc
+	 *  - offset_info_4: [15:0] uhr_countdown, [31:16] uhr_ebpcc
 	 *  - offset_info_5: [15:0] max channel switch timer, [31:16] reserved
 	 */
 	__le32 offset_info_1;
@@ -4288,6 +4299,7 @@ struct ath12k_wmi_peer_create_arg {
 	u32 vdev_id;
 	bool ml_enabled;
 	bool mlo_bridge_peer;
+	bool epp_peer;
 	u32 peer_id;
 	u32 sta_id;
 };
@@ -4424,6 +4436,7 @@ enum wmi_peer_type {
 };
 
 #define ATH12K_WMI_FLAG_STA_ID_VALID	BIT(0)
+#define WMI_PEER_CREATE_EPP_PEER_INDICATION  BIT(1)
 struct wmi_peer_create_cmd {
 	__le32 tlv_header;
 	__le32 vdev_id;
@@ -5043,14 +5056,18 @@ struct wmi_uhr_ap_elr_reception_params {
 #define WMI_ELR_MODE_UPDATE	BIT(1)
 
 /**
- * struct wmi_uhr_ap_mode_tuple_params - per-vdev mode enable/disable/update
+ * struct wmi_uhr_ap_mode_tuple_params - per-vdev mode valid/invalid
  *     bitmap for WMI_VDEV_UHR_CU_CMDID
  * @tlv_header: TLV tag
- *     (WMI_TAG_UHR_AP_MODE_TUPLE_ENABLE_DISABLE_UPDATE_PARAMS) and length
- * @vdev_id_mode_bitmap: Bits 0:7 = vdev_id; Bits 8:9 = DPS state;
- *     Bits 10:11 = NPCA state; Bits 12:13 = DUO state;
- *     Bits 14:15 = PEDCA state; Bits 16:17 = DBE state;
- *     Bits 18:19 = PUO state; Bits 20:21 = ELR state; Bits 22:31 reserved
+ *     (WMI_TAG_UHR_AP_MODE_TUPLE_PARAM) and length
+ * @vdev_id_mode_bitmap: Bits 0:7 = vdev_id;
+ *     Every feature gets 2 bits, when the value is set to 1, it is
+ *     considered as valid and when the value is set to 0, it is
+ *     considered as invalid by firmware.
+ *     Bits 8:9 = DPS state;
+ *      Bits 10:11 = NPCA state; Bits 12:13 = DUO state;
+ *      Bits 14:15 = PEDCA state; Bits 16:17 = DBE state;
+ *      Bits 18:19 = PUO state; Bits 20:21 = ELR state; Bits 22:31 reserved
  */
 struct wmi_uhr_ap_mode_tuple_params {
 	__le32 tlv_header;
@@ -5089,6 +5106,10 @@ struct ath12k_wmi_uhr_ap_mode_arg {
  * @mode_tuple_field: Bit0 = mode enable/disable, Bit1 = mode update
  * @mhz: NPCA primary channel frequency in MHz
  * @band_center_freq1: BSS centre frequency in MHz
+ * @band_center_freq2: secondary centre frequency for 160/320 MHz (0 otherwise)
+ * @info: WMI_CHAN_INFO_* flags (PHY mode, allow_he/vht/ht, DFS, HT40+)
+ * @reg_info_1: max_power / max_reg_power fields
+ * @reg_info_2: max_antenna_gain / max_tx_power fields
  * @puncture_20mhz_bitmap: punctured 20 MHz subchannel bitmap
  * @npca_cap1: NPCA capability word 1
  * @npca_cap2: NPCA capability word 2
@@ -5098,6 +5119,10 @@ struct ath12k_wmi_uhr_ap_npca_arg {
 	u32 mode_tuple_field;
 	u32 mhz;
 	u32 band_center_freq1;
+	u32 band_center_freq2;
+	u32 info;
+	u32 reg_info_1;
+	u32 reg_info_2;
 	u32 puncture_20mhz_bitmap;
 	u32 npca_cap1;
 	u32 npca_cap2;
@@ -5114,6 +5139,9 @@ struct ath12k_wmi_uhr_ap_npca_arg {
  * @puo: PUO parameters; always sent, Bit1 of mode_tuple_field gates firmware action
  * @elr: ELR reception parameters; always sent, Bit1 of mode_tuple_field
  *       gates firmware action
+ * @mode_present_bitmap: bitmask of mode IDs present in the received IE;
+ *     bit N set means IEEE80211_UHR_MODE_ID_* N was seen in the
+ *     ieee80211_uhr_for_each_mode_tuple() iteration
  */
 struct ath12k_wmi_vdev_uhr_cu_arg {
 	u32 vdev_id;
@@ -5124,6 +5152,7 @@ struct ath12k_wmi_vdev_uhr_cu_arg {
 	struct ath12k_wmi_uhr_ap_mode_arg dbe;
 	struct ath12k_wmi_uhr_ap_mode_arg puo;
 	struct ath12k_wmi_uhr_ap_mode_arg elr;
+	u32 mode_present_bitmap;
 };
 
 enum wmi_sta_ps_mode {
@@ -5186,6 +5215,15 @@ struct wmi_pdev_check_cal_version_cmd {
 	__le32 tlv_header;
 	__le32 pdev_id;
 } __packed;
+
+#define WMI_BOARD_MCN_STRING_MAX_SIZE		19
+#define WMI_BOARD_MCN_STRING_BUF_SIZE		(WMI_BOARD_MCN_STRING_MAX_SIZE + 1)
+
+enum wmi_calibration_status {
+	WMI_CALIBRATION_NO_FEATURE,
+	WMI_CALIBRATION_OK,
+	WMI_CALIBRATION_NOT_OK,
+};
 
 #define WMI_P2P_MAX_NOA_DESCRIPTORS		4
 
@@ -5872,7 +5910,6 @@ struct wmi_stop_scan_cmd {
 struct ath12k_wmi_scan_chan_list_arg {
 	u32 pdev_id;
 	u16 nallchans;
-	bool append_chan_list;
 	struct ath12k_wmi_channel_arg channel[];
 };
 
@@ -6579,6 +6616,14 @@ struct wmi_probe_resp_tx_status_event {
 struct wmi_pdev_ctl_failsafe_chk_event {
 	__le32 pdev_id;
 	__le32 ctl_failsafe_status;
+} __packed;
+
+struct wmi_pdev_check_cal_version_event {
+	__le32 software_cal_version;
+	__le32 board_cal_version;
+	__le32 cal_status;
+	u8 board_mcn_detail[WMI_BOARD_MCN_STRING_BUF_SIZE];
+	__le32 pdev_id;
 } __packed;
 
 struct ath12k_wmi_pdev_csa_event {
@@ -10897,6 +10942,11 @@ int ath12k_wmi_vdev_up(struct ath12k *ar, struct ath12k_wmi_vdev_up_params *para
 int ath12k_wmi_vdev_stop(struct ath12k *ar, u8 vdev_id);
 int ath12k_wmi_vdev_start(struct ath12k *ar, struct wmi_vdev_start_req_arg *arg,
 			  bool restart);
+void ath12k_wmi_put_channel_info(struct ath12k_wmi_channel_params *chan,
+				 u32 freq, u32 band_center_freq1,
+				 u32 band_center_freq2,
+				 enum wmi_phy_mode mode,
+				 u32 cf_device, u32 width_device);
 int ath12k_wmi_set_peer_param(struct ath12k *ar, const u8 *peer_addr,
 			      u32 vdev_id, u32 param_id, u32 param_val);
 int ath12k_wmi_pdev_set_param(struct ath12k *ar, u32 param_id,
@@ -10914,6 +10964,8 @@ int ath12k_wmi_pdev_attach(struct ath12k_base *ab,
 			   u8 pdev_id);
 int ath12k_wmi_attach(struct ath12k_base *ab);
 void ath12k_wmi_detach(struct ath12k_base *ab);
+void ath12k_wmi_recording_init(struct ath12k_wmi_pdev *wmi_handle,
+			       struct ath12k_base *ab);
 int ath12k_wmi_vdev_create(struct ath12k *ar, u8 *macaddr,
 			   struct ath12k_wmi_vdev_create_arg *arg);
 int ath12k_wmi_send_peer_create_cmd(struct ath12k *ar,

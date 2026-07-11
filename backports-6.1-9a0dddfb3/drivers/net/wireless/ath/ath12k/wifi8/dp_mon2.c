@@ -20,8 +20,13 @@
 const struct ath12k_dp_arch_mon_ops ath12k_wifi8_dp_arch_mon_dual_ring_ops = {
 	.rx_srng_setup = ath12k_dp_mon_rx_srng_setup,
 	.rx_srng_cleanup = ath12k_dp_mon_rx_srng_cleanup,
-	.rx_buf_setup = ath12k_dp_mon_rx_buf_setup,
-	.rx_buf_free = ath12k_dp_mon_rx_buf_free,
+	.rx_ring_init = ath12k_dp_mon_rx_ring_init,
+	.rx_ring_deinit = ath12k_dp_mon_rx_ring_deinit,
+	/* The below 2 ops are required only for wifi6, remove this after wifi6
+	 * memory optimization
+	 */
+	.rx_buf_setup = NULL,
+	.rx_buf_free = NULL,
 	.rx_htt_srng_setup = ath12k_dp_mon_rx_htt_srng_setup,
 	.mon_pdev_alloc = ath12k_dp_mon_pdev_alloc,
 	.mon_pdev_free = ath12k_dp_mon_pdev_free,
@@ -53,6 +58,7 @@ const struct ath12k_dp_arch_mon_ops ath12k_wifi8_dp_arch_mon_dual_ring_ops = {
 	/* At Device Init/Exit */
 	.mon_tx_srng_alloc_setup = ath12k_dp_mon_tx_srng_alloc_setup,
 	.mon_tx_srng_cleanup = ath12k_dp_mon_tx_srng_cleanup,
+	.mon_tx_srng_init_setup = ath12k_dp_mon_tx_srng_init_setup,
 	/* At VAP up/down */
 	.mon_tx_htt_srng_setup = ath12k_dp_mon_tx_htt_srng_setup,
 	.mon_tx_htt_srng_cleanup = ath12k_dp_mon_tx_htt_srng_cleanup,
@@ -63,6 +69,8 @@ const struct ath12k_dp_arch_mon_ops ath12k_wifi8_dp_arch_mon_dual_ring_ops = {
 	.mon_tx_dst_ring_cleanup = ath12k_dp_mon_tx_dst_ring_cleanup,
 	.mon_tx_wq_start = ath12k_dp_mon_tx_wq_start,
 	.mon_tx_wq_stop = ath12k_dp_mon_tx_wq_stop,
+	.htt_tx_mon_cfg_fill_extended_wmask =
+		ath12k_wifi8_htt_tx_mon_cfg_fill_extended_wmask,
 };
 
 static inline void
@@ -1487,7 +1495,7 @@ ath12k_wifi8_dp_mon_rx_h_drop_tlv(struct ath12k_pdev_dp *pdev_dp,
 	struct sk_buff *mpdu;
 	u32 num_skb_free = 0;
 	u32 pkt_tlv_free = 0;
-	u8 status_desc_cnt, i;
+	u32 status_desc_cnt, i;
 
 	status_desc_cnt = ppdu_desc->status_desc_cnt;
 	for (; desc_cnt < status_desc_cnt; desc_cnt++) {
@@ -1858,55 +1866,64 @@ move_next:
 int ath12k_wifi8_dp_mon_rx_dual_ring_setup_ppdu_desc(struct ath12k_pdev_dp *dp_pdev)
 {
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
-	struct ath12k_dp_mon_ppdu_desc *ppdu_desc_pool = dp_mon_pdev->ppdu_desc_pool;
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
 	u32 mon_status_buf = ATH12K_DP_MON_STATUS_BUF;
-	int i;
+	int i, ret;
 
+	spin_lock_init(&dp_mon_pdev->ppdu_desc_lock);
 	dp_mon_pdev->ppdu_desc_pool = kcalloc(dp_mon->mon_num_ppdu_desc,
-					      sizeof(*ppdu_desc_pool), GFP_ATOMIC);
+					      sizeof(*dp_mon_pdev->ppdu_desc_pool),
+					      GFP_KERNEL);
 	if (unlikely(!dp_mon_pdev->ppdu_desc_pool)) {
 		ath12k_warn(dp_pdev->dp, "Failed to allocate monitor PPDU desc pool\n");
 		return -ENOMEM;
 	}
 
-	/* Allocate status_desc array for each RX PPDU descriptor.
-	 * The RX path (ath12k_wifi8_dp_mon_rx_add_ppdu_desc) directly accesses
-	 * ppdu_desc->status_desc[desc_cnt], so it must be allocated here.
-	 */
 	for (i = 0; i < dp_mon->mon_num_ppdu_desc; i++) {
-		dp_mon_pdev->ppdu_desc_pool[i].status_desc =
+		dp_mon_pdev->ppdu_desc_pool[i] =
+				kzalloc(sizeof(*dp_mon_pdev->ppdu_desc_pool[i]),
+					GFP_KERNEL);
+		if (!dp_mon_pdev->ppdu_desc_pool[i]) {
+			ath12k_warn(dp_pdev->dp,
+				    "Failed to allocate monitor PPDU desc pool\n");
+			ret = -ENOMEM;
+			goto fail;
+		}
+		/* Allocate status_desc array for each RX PPDU descriptor.
+		 * The RX path (ath12k_wifi8_dp_mon_rx_add_ppdu_desc) directly accesses
+		 * ppdu_desc->status_desc[desc_cnt], so it must be allocated here.
+		 */
+		dp_mon_pdev->ppdu_desc_pool[i]->status_desc =
 			kcalloc(mon_status_buf,
 				sizeof(struct ath12k_dp_mon_status_desc),
-				GFP_ATOMIC);
-		if (!dp_mon_pdev->ppdu_desc_pool[i].status_desc) {
+				GFP_KERNEL);
+		if (!dp_mon_pdev->ppdu_desc_pool[i]->status_desc) {
 			ath12k_warn(dp_pdev->dp,
 				    "Failed to allocate status_desc for RX PPDU desc %d\n",
 				    i);
-			while (--i >= 0)
-				kfree(dp_mon_pdev->ppdu_desc_pool[i].status_desc);
-			kfree(dp_mon_pdev->ppdu_desc_pool);
-			dp_mon_pdev->ppdu_desc_pool = NULL;
-			return -ENOMEM;
+			ret = -ENOMEM;
+			goto fail;
 		}
 	}
 
-	spin_lock_init(&dp_mon_pdev->ppdu_desc_lock);
 	INIT_LIST_HEAD(&dp_mon_pdev->ppdu_desc_free_list);
 	INIT_LIST_HEAD(&dp_mon_pdev->ppdu_desc_used_list);
 	INIT_LIST_HEAD(&dp_mon_pdev->ppdu_desc_proc_list);
 
 	spin_lock_bh(&dp_mon_pdev->ppdu_desc_lock);
 	for (i = 0; i < dp_mon->mon_num_ppdu_desc; i++) {
-		INIT_LIST_HEAD(&dp_mon_pdev->ppdu_desc_pool[i].list);
-		list_add_tail(&dp_mon_pdev->ppdu_desc_pool[i].list,
+		INIT_LIST_HEAD(&dp_mon_pdev->ppdu_desc_pool[i]->list);
+		list_add_tail(&dp_mon_pdev->ppdu_desc_pool[i]->list,
 			      &dp_mon_pdev->ppdu_desc_free_list);
 		dp_mon_pdev->mon_stats.ppdu_desc_free++;
 	}
 	spin_unlock_bh(&dp_mon_pdev->ppdu_desc_lock);
 
 	return 0;
+fail:
+	ath12k_wifi8_dp_mon_rx_dual_ring_cleanup_ppdu_desc(dp_pdev);
+	return ret;
 }
 
 void ath12k_wifi8_dp_mon_rx_dual_ring_cleanup_ppdu_desc(struct ath12k_pdev_dp *dp_pdev)
@@ -1916,15 +1933,25 @@ void ath12k_wifi8_dp_mon_rx_dual_ring_cleanup_ppdu_desc(struct ath12k_pdev_dp *d
 	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
 	int i;
 
-	if (!dp_mon_pdev->ppdu_desc_pool)
+	spin_lock_bh(&dp_mon_pdev->ppdu_desc_lock);
+	if (!dp_mon_pdev->ppdu_desc_pool) {
+		spin_unlock_bh(&dp_mon_pdev->ppdu_desc_lock);
 		return;
+	}
 
-	/* Free status_desc arrays allocated for each RX PPDU descriptor */
-	for (i = 0; i < dp_mon->mon_num_ppdu_desc; i++)
-		kfree(dp_mon_pdev->ppdu_desc_pool[i].status_desc);
+	for (i = 0; i < dp_mon->mon_num_ppdu_desc; i++) {
+		if (dp_mon_pdev->ppdu_desc_pool[i]) {
+		/* Free status_desc arrays allocated for each RX PPDU descriptor */
+			kfree(dp_mon_pdev->ppdu_desc_pool[i]->status_desc);
+			dp_mon_pdev->ppdu_desc_pool[i]->status_desc = NULL;
+			kfree(dp_mon_pdev->ppdu_desc_pool[i]);
+		}
+		dp_mon_pdev->ppdu_desc_pool[i] = NULL;
+	}
 
 	kfree(dp_mon_pdev->ppdu_desc_pool);
 	dp_mon_pdev->ppdu_desc_pool = NULL;
+	spin_unlock_bh(&dp_mon_pdev->ppdu_desc_lock);
 }
 
 int ath12k_wifi8_dp_mon_rx_wq_init(struct ath12k_pdev_dp *dp_pdev)
@@ -2049,4 +2076,23 @@ int ath12k_wifi8_dp_ext_mon_validate_request(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 	return 0;
+}
+
+void ath12k_wifi8_htt_tx_mon_cfg_fill_extended_wmask(
+		struct htt_tx_mon_ring_selection_cfg_cmd *cmd,
+		const struct htt_tx_ring_tlv_filter *htt_tlv_filter)
+{
+	/*word 13*/
+	cmd->tlv_word_mask_in6 |=
+		le32_encode_bits(htt_tlv_filter->wmask.mactx_user_desc_common,
+				 HTT_TX_MON_WMASK_IN6_MACTX_USR_DESC_CMN_MASK);
+	/*word 14*/
+	cmd->tlv_word_mask_in7 |=
+		le32_encode_bits(htt_tlv_filter->wmask.rx_resp_required_info,
+				 HTT_TX_MON_WMASK_IN7_RX_RESP_REQD_INFO_MASK);
+	cmd->tlv_filter_mask_in4 |=
+		le32_encode_bits(htt_tlv_filter->tx_mon_upstream_tlv_flags3,
+				 HTT_TX_FILTER_MASK_IN4_UPSTREAM_TLV_FLAGS3) |
+		le32_encode_bits(htt_tlv_filter->tx_mon_downstream_tlv_flags1,
+				 HTT_TX_FILTER_MASK_IN4_DOWNSTREAM_TLV_FLAGS1);
 }

@@ -699,6 +699,14 @@ enum hal_wbm_tqm_rel_reason {
 	HAL_WBM_TQM_REL_REASON_MAX,
 };
 
+enum hal_wbm_tqm_rel_reason_ext {
+	HAL_TASC_REASON_HW_COMPLETION = HAL_WBM_TQM_REL_REASON_MAX,
+	HAL_TASC_REASON_HW_DROP1,
+	HAL_TASC_REASON_HW_DROP2,
+	HAL_TASC_REASON_HW_FAILED,
+	HAL_WBM_TQM_REL_REASON_MAX_EXT,
+};
+
 enum hal_tx_rate_stats_pkt_type {
 	HAL_TX_RATE_STATS_PKT_TYPE_11A,
 	HAL_TX_RATE_STATS_PKT_TYPE_11B,
@@ -1745,6 +1753,8 @@ struct hal_ops {
 					     int mac_id,
 					     int idx,
 					     enum hal_ring_type);
+	bool (*hal_rx_reo_status)(struct hal_reo_status *reo_status);
+	bool (*hal_rx_reo_1k_status)(struct hal_reo_status *reo_status);
 };
 
 static inline
@@ -2017,4 +2027,9 @@ void *__ath12k_hal_get_dst_srng_desc(struct hal_srng *srng,
 int __ath12k_hal_srng_dst_num_available_to_reap(struct hal_srng *srng,
 						bool sync_hw_ptr);
 void *ath12k_hal_srng_fetch_entry(struct hal_srng *srng, u16 offset);
+
+bool ath12k_hal_rx_reo_status(struct ath12k_base *ab, struct hal_reo_status *reo_status);
+bool ath12k_hal_rx_reo_1k_status(struct ath12k_base *ab,
+				 struct hal_reo_status *reo_status);
+
 #endif

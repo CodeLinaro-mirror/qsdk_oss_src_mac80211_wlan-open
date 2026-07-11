@@ -906,6 +906,8 @@ void ath12k_wifi7_hal_extract_rx_spd_data_qcn9274(struct hal_rx_spd_data *rx_inf
 	rx_info->tlv_info.rate_mcs = ath12k_wifi7_hal_rx_h_rate_mcs_qcn9274(rx_desc);
 	rx_info->tlv_info.nss = hweight8(ath12k_wifi7_hal_rx_h_nss_qcn9274(rx_desc));
 	rx_info->tlv_info.sgi = ath12k_wifi7_hal_rx_h_sgi_qcn9274(rx_desc);
+	rx_info->tlv_info.is_decrypted =
+		ath12k_wifi7_hal_rx_h_is_decrypted_qcn9274(rx_desc);
 
 	__le32 flow_idx_info = rx_desc->u.qcn9274_compact.msdu_end.info7;
 

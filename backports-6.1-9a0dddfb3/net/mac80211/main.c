@@ -1915,6 +1915,7 @@ void ieee80211_free_hw(struct ieee80211_hw *hw)
 }
 EXPORT_SYMBOL(ieee80211_free_hw);
 
+#if LINUX_VERSION_IS_LESS(6, 15, 0)
 static const char * const drop_reasons_monitor[] = {
 #define V(x)	#x,
 	[0] = "RX_DROP_MONITOR",
@@ -1925,6 +1926,9 @@ static struct drop_reason_list drop_reason_list_monitor = {
 	.reasons = drop_reasons_monitor,
 	.n_reasons = ARRAY_SIZE(drop_reasons_monitor),
 };
+#else
+#define V(x)	(#x),
+#endif
 
 static const char * const drop_reasons_unusable[] = {
 	[0] = "RX_DROP_UNUSABLE",
@@ -1954,8 +1958,10 @@ static int __init ieee80211_init(void)
 	if (ret)
 		goto err_netdev;
 
+#if LINUX_VERSION_IS_LESS(6, 15, 0)
 	drop_reasons_register_subsys(SKB_DROP_REASON_SUBSYS_MAC80211_MONITOR,
 				     &drop_reason_list_monitor);
+#endif
 	drop_reasons_register_subsys(SKB_DROP_REASON_SUBSYS_MAC80211_UNUSABLE,
 				     &drop_reason_list_unusable);
 
@@ -1974,7 +1980,9 @@ static void __exit ieee80211_exit(void)
 
 	ieee80211_iface_exit();
 
+#if LINUX_VERSION_IS_LESS(6, 15, 0)
 	drop_reasons_unregister_subsys(SKB_DROP_REASON_SUBSYS_MAC80211_MONITOR);
+#endif
 	drop_reasons_unregister_subsys(SKB_DROP_REASON_SUBSYS_MAC80211_UNUSABLE);
 
 	rcu_barrier();

@@ -456,10 +456,10 @@ int ath12k_wifi7_peer_rx_tid_reo_update(struct ath12k *ar,
 
 	rx_tid->ba_win_sz = ba_win_sz;
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
-		   "rx tid queue update successful for tid: %u, peer_id: %d, peer: %pM, link_id: %u ba_win_sz: %u\n",
-		   rx_tid->tid, peer->peer_id, peer->addr,
-		   peer->link_id, rx_tid->ba_win_sz);
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+			 "rx tid queue update successful for tid: %u, peer_id: %d, peer: %pM, link_id: %u ba_win_sz: %u\n",
+			 rx_tid->tid, peer->peer_id, peer->addr,
+			 peer->link_id, rx_tid->ba_win_sz);
 
 	return 0;
 }
@@ -1683,8 +1683,8 @@ err_free_desc:
 	spin_unlock_bh(&dp->rx_desc_lock);
 err_unmap_dma:
 	IPA_SET_RX_BUF_SMMU_UNMAP(ab, defrag_skb, false);
-	ath12k_core_dma_unmap_single(ab->dev, buf_paddr, DP_RX_BUFFER_SIZE,
-				     DMA_TO_DEVICE);
+	ATH12K_DMA_UNMAP_SINGLE(ab->dev, buf_paddr, DP_RX_BUFFER_SIZE,
+				DMA_FROM_DEVICE);
 	return ret;
 }
 
@@ -3072,29 +3072,86 @@ void ath12k_wifi7_dp_rx_ring_free(struct ath12k_base *ab)
 	ath12k_dp_rx_reo_cleanup(ab);
 }
 
-int ath12k_wifi7_dp_rx_ring_setup(struct ath12k_base *ab)
+int ath12k_wifi7_dp_rx_ring_alloc(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	int i, ret;
 
-	ret = ath12k_dp_rx_reo_setup(ab);
+	ret = ath12k_dp_rx_reo_alloc(ab);
 	if (ret) {
 		ath12k_err(ab, "failed to initialize reo destination rings: %d\n", ret);
 		return ret;
 	}
 
-	ret = ath12k_dp_srng_setup(ab, &dp->rx_rel_ring, HAL_WBM2SW_RELEASE,
+	ret = ath12k_dp_srng_alloc(ab, &dp->rx_rel_ring, HAL_WBM2SW_RELEASE,
 				   HAL_WBM2SW_REL_ERR_RING_NUM, 0,
 				   DP_RX_RELEASE_RING_SIZE);
+	if (ret) {
+		ath12k_warn(ab, "failed to set up rx_rel ring :%d\n", ret);
+		goto err;
+	}
+
+	ret = ath12k_dp_srng_alloc(ab,
+				   &dp->rx_refill_buf_ring.refill_buf_ring,
+				   HAL_RXDMA_BUF, 0, 0,
+				   DP_RXDMA_BUF_RING_SIZE);
+	if (ret) {
+		ath12k_warn(ab, "failed to setup rx_refill_buf_ring\n");
+		goto err;
+	}
+
+	if (ab->hw_params->rx_mac_buf_ring) {
+		for (i = 0; i < ab->hw_params->num_rxdma_per_pdev; i++) {
+			ret = ath12k_dp_srng_alloc(ab,
+						   &dp->rx_mac_buf_ring[i],
+						   HAL_RXDMA_BUF, 1,
+						   i, DP_RX_MAC_BUF_RING_SIZE);
+			if (ret) {
+				ath12k_warn(ab, "failed to setup rx_mac_buf_ring %d\n",
+					    i);
+				goto err;
+			}
+		}
+	}
+
+	for (i = 0; i < ab->hw_params->num_rxdma_dst_ring; i++) {
+		ret = ath12k_dp_srng_alloc(ab, &dp->rxdma_err_dst_ring[i],
+					   HAL_RXDMA_DST, 0, i,
+					   DP_RXDMA_ERR_DST_RING_SIZE);
+		if (ret) {
+			ath12k_warn(ab, "failed to setup rxdma_err_dst_ring %d\n", i);
+			goto err;
+		}
+	}
+
+	return 0;
+
+err:
+	ath12k_wifi7_dp_rx_ring_free(ab);
+	return ret;
+}
+
+int ath12k_wifi7_dp_rx_ring_init(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	int i, ret;
+
+	ret = ath12k_dp_rx_reo_init(ab);
+	if (ret) {
+		ath12k_err(ab, "failed to initialize reo destination rings: %d\n", ret);
+		return ret;
+	}
+
+	ret = ath12k_dp_srng_init(ab, &dp->rx_rel_ring, HAL_WBM2SW_RELEASE,
+				  HAL_WBM2SW_REL_ERR_RING_NUM, 0);
 	if (ret) {
 		ath12k_warn(ab, "failed to set up rx_rel ring :%d\n", ret);
 		return ret;
 	}
 
-	ret = ath12k_dp_srng_setup(ab,
-				   &dp->rx_refill_buf_ring.refill_buf_ring,
-				   HAL_RXDMA_BUF, 0, 0,
-				   DP_RXDMA_BUF_RING_SIZE);
+	ret = ath12k_dp_srng_init(ab,
+				  &dp->rx_refill_buf_ring.refill_buf_ring,
+				  HAL_RXDMA_BUF, 0, 0);
 	if (ret) {
 		ath12k_warn(ab, "failed to setup rx_refill_buf_ring\n");
 		return ret;
@@ -3102,10 +3159,10 @@ int ath12k_wifi7_dp_rx_ring_setup(struct ath12k_base *ab)
 
 	if (ab->hw_params->rx_mac_buf_ring) {
 		for (i = 0; i < ab->hw_params->num_rxdma_per_pdev; i++) {
-			ret = ath12k_dp_srng_setup(ab,
-						   &dp->rx_mac_buf_ring[i],
-						   HAL_RXDMA_BUF, 1,
-						   i, DP_RX_MAC_BUF_RING_SIZE);
+			ret = ath12k_dp_srng_init(ab,
+						  &dp->rx_mac_buf_ring[i],
+						  HAL_RXDMA_BUF, 1,
+						  i);
 			if (ret) {
 				ath12k_warn(ab, "failed to setup rx_mac_buf_ring %d\n",
 					    i);
@@ -3115,9 +3172,8 @@ int ath12k_wifi7_dp_rx_ring_setup(struct ath12k_base *ab)
 	}
 
 	for (i = 0; i < ab->hw_params->num_rxdma_dst_ring; i++) {
-		ret = ath12k_dp_srng_setup(ab, &dp->rxdma_err_dst_ring[i],
-					   HAL_RXDMA_DST, 0, i,
-					   DP_RXDMA_ERR_DST_RING_SIZE);
+		ret = ath12k_dp_srng_init(ab, &dp->rxdma_err_dst_ring[i],
+					  HAL_RXDMA_DST, 0, i);
 		if (ret) {
 			ath12k_warn(ab, "failed to setup rxdma_err_dst_ring %d\n", i);
 			return ret;

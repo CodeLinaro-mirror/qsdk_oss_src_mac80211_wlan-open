@@ -702,6 +702,15 @@ static void ieee80211_process_smd_prep_resp(struct ieee80211_sub_if_data *sdata,
 		goto out;
 	}
 
+	/* Drop AP retransmissions of a Prep Response we already processed. */
+	if (target->target_sta) {
+		sdata_dbg(sdata,
+			  "smd: duplicate ST Prep Resp from %pM (token=%u), dropping\n",
+			  mgmt->sa,
+			  mgmt->u.action.u.uhr_link_reconf_resp.dialog_token);
+		return;
+	}
+
 	if (len < mgmt->u.action.u.uhr_link_reconf_resp.count * 3) {
 		sdata_info(sdata,
 			   "smd: unexpected len=%zu, count=%u\n",
@@ -761,23 +770,29 @@ static void ieee80211_process_smd_prep_resp(struct ieee80211_sub_if_data *sdata,
 
 	for (tap_link_id = 0; tap_link_id < IEEE80211_MLD_MAX_NUM_LINKS; tap_link_id++) {
 		struct cfg80211_bss *fresh_bss;
+		struct cfg80211_bss *old_bss = target->assoc_data->link[tap_link_id].bss;
 		const u8 *tap_bssid = target->assoc_data->link[tap_link_id].addr;
 
-		if (!target->assoc_data->link[tap_link_id].bss)
+		if (!old_bss)
 			continue;
 		if (is_zero_ether_addr(tap_bssid))
 			continue;
 
+		/* Refresh the BSS entry but constrain the lookup to the channel
+		 * the AP was operating on at PREP-request time.  Without this,
+		 * cfg80211_get_bss() may return a stale entry from a different
+		 * channel if the AP changed bands between the last scan and the
+		 * PREP response, producing a wrong band-to-SAP-slot remap.
+		 */
 		fresh_bss = cfg80211_get_bss(sdata->local->hw.wiphy,
-					     NULL, tap_bssid,
+					     old_bss->channel, tap_bssid,
 					     NULL, 0,
 					     IEEE80211_BSS_TYPE_ANY,
 					     IEEE80211_PRIVACY_ANY);
 		if (!fresh_bss)
 			continue;
 
-		cfg80211_put_bss(sdata->local->hw.wiphy,
-				 target->assoc_data->link[tap_link_id].bss);
+		cfg80211_put_bss(sdata->local->hw.wiphy, old_bss);
 		target->assoc_data->link[tap_link_id].bss = fresh_bss;
 	}
 
@@ -1003,6 +1018,18 @@ static void ieee80211_process_smd_exec_resp(struct ieee80211_sub_if_data *sdata,
 
 	if (!target) {
 		sdata_err(sdata, "smd: exec no target for token=%d\n",
+			  mgmt->u.action.u.uhr_link_reconf_resp.dialog_token);
+		return;
+	}
+
+	/*
+	 * Drop AP retransmissions during the async DL-drain window;
+	 * re-entering execute_transition() corrupts the transition FSM.
+	 */
+	if (target->execution_in_progress) {
+		sdata_dbg(sdata,
+			  "smd: duplicate ST Exec Resp from %pM (token=%u), dropping\n",
+			  mgmt->sa,
 			  mgmt->u.action.u.uhr_link_reconf_resp.dialog_token);
 		return;
 	}

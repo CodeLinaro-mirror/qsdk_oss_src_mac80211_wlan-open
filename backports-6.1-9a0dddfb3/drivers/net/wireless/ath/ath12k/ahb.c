@@ -1727,6 +1727,13 @@ static int ath12k_ahb_probe(struct platform_device *pdev)
 		}
 	}
 
+#ifdef CPTCFG_QCN_EXTN
+	if (ath12k_cfg_init(ab))
+		ath12k_info(ab, "Failed to initialize per radio INI data\n");
+	else
+		ath12k_info(ab, "Initialized per radio INI data in driver\n");
+#endif
+
 	ath12k_fw_map(ab);
 
 	ret = ath12k_ahb_resource_init(ab);
@@ -1794,6 +1801,9 @@ err_resource_deinit:
 	ath12k_ahb_resource_deinit(ab);
 
 err_core_free:
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_cfg_deinit(ab);
+#endif
 	ath12k_core_free(ab);
 	platform_set_drvdata(pdev, NULL);
 
@@ -1825,6 +1835,9 @@ static void ath12k_ahb_free_resources(struct ath12k_base *ab)
 	if (ab->hif.bus == ATH12K_BUS_HYBRID) {
 		ath12k_pcic_free_hybrid_irq(ab);
 		ath12k_ahb_deconfigure_rproc(ab);
+#ifdef CPTCFG_QCN_EXTN
+		ath12k_cfg_deinit(ab);
+#endif
 		return;
 	}
 
@@ -1834,6 +1847,9 @@ static void ath12k_ahb_free_resources(struct ath12k_base *ab)
 	ath12k_ahb_deconfigure_rproc(ab);
 	if (ab_ahb->device_ops->dp_deinit)
 		ab_ahb->device_ops->dp_deinit(ab->dp);
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_cfg_deinit(ab);
+#endif
 	ath12k_core_free(ab);
 	platform_set_drvdata(pdev, NULL);
 }

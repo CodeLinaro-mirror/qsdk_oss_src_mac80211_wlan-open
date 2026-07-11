@@ -4052,7 +4052,11 @@ void ieee80211_dfs_cac_cancel(struct ieee80211_local *local,
 			 * Release monitor VAP first to avoid
 			 * channel change in radar channel
 			 */
-			if (!link->conf->deferred_up) {
+			if (!link->conf->deferred_up
+#ifdef CPTCFG_QCN_EXTN
+			    && !cfg80211_support_bootup_cac(wiphy)
+#endif /* CPTCFG_QCN_EXTN */
+			) {
 				ieee80211_release_monitor_chandef(wiphy, curr_ctx,
 								  &chandef);
 				ieee80211_link_release_channel(link);
@@ -4152,8 +4156,13 @@ void ieee80211_punct_obj_init(struct ieee80211_local *local,
 	obj->radar_ts = radar_hit_ts;
 	obj->ctx = ctx;
 	obj->local = local;
+#if LINUX_VERSION_IS_GEQ(6, 18, 0)
+	hrtimer_setup(&obj->cac_timer, ieee80211_punct_cac_timeout,
+		      CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+#else
 	hrtimer_init(&obj->cac_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	obj->cac_timer.function = ieee80211_punct_cac_timeout;
+#endif
 	wiphy_work_init(&obj->cac_work, ieee80211_punct_cac_work);
 }
 

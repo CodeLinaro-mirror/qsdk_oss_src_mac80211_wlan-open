@@ -436,17 +436,13 @@ int ath12k_ppeds_wifi7_register_soc(struct ath12k_dp *dp, struct dp_ppe_ds_idxs 
 	return 0;
 }
 
-int ath12k_ppeds_wifi7_srng_setup(struct ath12k_base *ab)
+int ath12k_ppeds_wifi7_srng_alloc(struct ath12k_base *ab)
 {
-	struct ath12k_dp *dp = ab->dp;
-	struct dp_ppe_ds_idxs restore_idx = {0};
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	int ret, size;
 
 	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
 		return 0;
-
-	if (ath12k_dp_umac_reset_in_progress(ab))
-		goto skip_ppeds_dp_srng_ring_alloc;
 
 	/*
 	 * BUG-ON: Wi-Fi7 supports single ring.
@@ -471,18 +467,47 @@ int ath12k_ppeds_wifi7_srng_setup(struct ath12k_base *ab)
 		goto err;
 	}
 
+	ret = ath12k_dp_srng_alloc(ab, &dp->ppe.ppeds_comp_ring.ppeds_txcmpl_ring,
+				   HAL_WBM2SW_RELEASE,
+				   HAL_WBM2SW_PPEDS_TX_CMPLN_RING_NUM, 0,
+				   DP_PPE_WBM2SW_RING_SIZE);
+	if (ret) {
+		ath12k_err(ab, "failed to alloc wbm2sw ppeds tx completion ring :%d\n",
+			   ret);
+		goto err;
+	}
+
 	size = ath12k_hal_srng_get_entrysize(ab, HAL_WBM2SW_RELEASE) *
 					     DP_TX_COMP_PPEDS_RING_SIZE;
 	dp->ppe.ppeds_comp_ring.tx_status_head = 0;
 	dp->ppe.ppeds_comp_ring.tx_status_tail = DP_TX_COMP_PPEDS_RING_SIZE - 1;
 	dp->ppe.ppeds_comp_ring.tx_status = kmalloc(size, GFP_KERNEL);
 
-skip_ppeds_dp_srng_ring_alloc:
 	if (!dp->ppe.ppeds_comp_ring.tx_status) {
 		ath12k_err(ab, "PPE tx status completion buffer alloc failed\n");
 		ret = -ENOMEM;
 		goto err;
 	}
+
+	return 0;
+err:
+	ath12k_ppeds_wifi7_srng_cleanup(ab);
+	return ret;
+}
+
+int ath12k_ppeds_wifi7_srng_init(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct dp_ppe_ds_idxs restore_idx = {0};
+	int ret;
+
+	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
+		return 0;
+
+	/*
+	 * BUG-ON: Wi-Fi7 supports single ring.
+	 */
+	BUILD_BUG_ON(PPE2TCL_RING_WIFI7 != 0);
 
 	ret = ath12k_ppeds_wifi7_register_soc(dp, &restore_idx);
 	if (ret) {
@@ -513,13 +538,12 @@ skip_ppeds_dp_srng_ring_alloc:
 	}
 
 	/* TODO: Use ring idx fetched from ppe for avoiding edma hang during SSR */
-	ret = ath12k_dp_srng_setup(ab, &dp->ppe.ppeds_comp_ring.ppeds_txcmpl_ring,
-				   HAL_WBM2SW_RELEASE,
-				   HAL_WBM2SW_PPEDS_TX_CMPLN_RING_NUM, 0,
-				   DP_PPE_WBM2SW_RING_SIZE);
+	ret = ath12k_dp_srng_init(ab, &dp->ppe.ppeds_comp_ring.ppeds_txcmpl_ring,
+				  HAL_WBM2SW_RELEASE,
+				  HAL_WBM2SW_PPEDS_TX_CMPLN_RING_NUM, 0);
 	if (ret) {
 		ath12k_err(ab,
-			    "failed to set up wbm2sw ppeds tx completion ring :%d\n",
+			    "failed to init wbm2sw ppeds tx completion ring :%d\n",
 			    ret);
 		goto err;
 	}
@@ -1118,7 +1142,8 @@ struct ath12k_ppeds_arch_ops ath12k_wifi7_arch_ppeds_ops  = {
 	.ath12k_ppeds_attach = ath12k_ppeds_wifi7_inst_attach,
 	.ath12k_ppeds_detach = ath12k_ppeds_wifi7_inst_detach,
 	.ath12k_ppeds_register_soc = ath12k_ppeds_wifi7_register_soc,
-	.ath12k_ppeds_srng_cmn_setup = ath12k_ppeds_wifi7_srng_setup,
+	.ath12k_ppeds_srng_cmn_init = ath12k_ppeds_wifi7_srng_init,
+	.ath12k_ppeds_srng_cmn_alloc = ath12k_ppeds_wifi7_srng_alloc,
 	.ath12k_ppeds_srng_cleanup = ath12k_ppeds_wifi7_srng_cleanup,
 	.ath12k_ppeds_interrupt_start = ath12k_ppeds_wifi7_interrupt_start,
 	.ath12k_ppeds_interrupt_stop = ath12k_ppeds_wifi7_interrupt_stop,

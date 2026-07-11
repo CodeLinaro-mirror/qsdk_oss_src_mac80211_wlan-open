@@ -1970,6 +1970,7 @@ struct hal_mon_buf_ring {
 #define HAL_MON_DEST_INFO0_END_OFFSET			GENMASK(11, 0)
 #define HAL_MON_DEST_INFO0_END_REASON			GENMASK(17, 16)
 #define HAL_MON_DEST_INFO0_EMPTY_DESC			BIT(19)
+#define HAL_MON_DEST_INFO0_PKT_BUFFER_CNT		GENMASK(27, 20)
 
 struct hal_mon_dest_desc {
 	__le64 stat_buf_va;
@@ -2731,6 +2732,7 @@ struct hal_tqm_update_tx_msdu_flow_params {
 	bool update_hard_drop_threshold;
 	bool update_peer_id;
 	bool update_tid;
+	bool flow_valid;
 	bool update_flow_valid;
 	bool update_flow_number;
 	bool update_smd_roaming;

@@ -214,178 +214,134 @@ void ath12k_dp_aggr_per_pkt_rx_stats(struct ath12k_dp_peer_rx_stats *dst_rx_stat
 }
 
 /**
- * ath12k_dp_update_tx_ext_htt_aggr_stats - Aggregate HTT TX statistics
- * @dst: Destination HTT TX stats structure
- * @src: Source HTT TX stats structure to aggregate from
-*/
+ * ath12k_dp_update_tx_ppdu_stats_aggr - Aggregate extended HTT TX stats
+ * @dp_pdev: DP pdev handle
+ * @dst: Destination tx_ppdu_stats structure
+ * @src: Source tx_ppdu_stats structure
+ *
+ * Aggregates all fields of struct ath12k_htt_tx_ppdu_stats from src to dst.
+ * Gated by DP_ENABLE_TX_PPDU_STATS knob at call sites.
+ */
 void
-ath12k_dp_update_tx_ext_htt_aggr_stats(struct ath12k_pdev_dp *dp_pdev,
-				       struct ath12k_htt_tx_stats *dst_peer_stats,
-				       struct ath12k_htt_tx_stats *src_peer_stats)
+ath12k_dp_update_tx_ppdu_stats_aggr(struct ath12k_pdev_dp *dp_pdev,
+				    struct ath12k_htt_tx_ppdu_stats *dst_tx_ppdu_stats,
+				    struct ath12k_htt_tx_ppdu_stats *src_tx_ppdu_stats)
 {
-	int i, j, k;
+	int i, j;
 
-	if (!dst_peer_stats || !src_peer_stats)
+	if (!dst_tx_ppdu_stats || !src_tx_ppdu_stats)
 		return;
 
-	/* htt stats */
-	for (i = 0; i < ATH12K_STATS_TYPE_MAX; i++) {
-		for (j = 0; j < ATH12K_COUNTER_TYPE_MAX; j++) {
-			for (k = 0; k < ATH12K_LEGACY_NUM; k++) {
-				dst_peer_stats->stats[i].legacy[j][k] +=
-					src_peer_stats->stats[i].legacy[j][k];
-			}
-
-			for (k = 0; k < ATH12K_HT_MCS_NUM; k++) {
-				dst_peer_stats->stats[i].ht[j][k] +=
-					src_peer_stats->stats[i].ht[j][k];
-			}
-
-			for (k = 0; k < ATH12K_VHT_MCS_NUM; k++) {
-				dst_peer_stats->stats[i].vht[j][k] +=
-					src_peer_stats->stats[i].vht[j][k];
-			}
-
-			for (k = 0; k < ATH12K_HE_MCS_NUM; k++) {
-				dst_peer_stats->stats[i].he[j][k] +=
-					src_peer_stats->stats[i].he[j][k];
-			}
-
-			for (k = 0; k < ATH12K_EHT_MCS_NUM; k++) {
-				dst_peer_stats->stats[i].eht[j][k] +=
-					src_peer_stats->stats[i].eht[j][k];
-			}
-
-			for (k = 0; k < ATH12K_UHR_MCS_NUM; k++) {
-				dst_peer_stats->stats[i].uhr[j][k] +=
-					src_peer_stats->stats[i].uhr[j][k];
-			}
-
-			for (k = 0; k < ATH12K_BW_NUM; k++) {
-				dst_peer_stats->stats[i].bw[j][k] +=
-					src_peer_stats->stats[i].bw[j][k];
-			}
-
-			for (k = 0; k < ATH12K_NSS_NUM; k++) {
-				dst_peer_stats->stats[i].nss[j][k] +=
-					src_peer_stats->stats[i].nss[j][k];
-			}
-
-			for (k = 0; k < ATH12K_GI_NUM; k++) {
-				dst_peer_stats->stats[i].gi[j][k] +=
-					src_peer_stats->stats[i].gi[j][k];
-			}
-
-			for (k = 0; k < HTT_PPDU_STATS_PPDU_TYPE_MAX; k++) {
-				dst_peer_stats->stats[i].transmit_type[j][k] +=
-					src_peer_stats->stats[i].transmit_type[j][k];
-			}
-
-			for (k = 0; k < HAL_RX_RU_ALLOC_TYPE_MAX; k++) {
-				dst_peer_stats->stats[i].ru_loc[j][k] +=
-					src_peer_stats->stats[i].ru_loc[j][k];
-			}
-		}
-	}
-
-	dst_peer_stats->ba_fails += src_peer_stats->ba_fails;
-	dst_peer_stats->ack_fails += src_peer_stats->ack_fails;
-
 	/* TX Unicast Success */
-	dst_peer_stats->tx_ucast_success.num += src_peer_stats->tx_ucast_success.num;
-	dst_peer_stats->tx_ucast_success.bytes += src_peer_stats->tx_ucast_success.bytes;
+	dst_tx_ppdu_stats->tx_ucast_success.num +=
+		src_tx_ppdu_stats->tx_ucast_success.num;
+	dst_tx_ppdu_stats->tx_ucast_success.bytes +=
+		src_tx_ppdu_stats->tx_ucast_success.bytes;
 
 	/* TX PPDUs */
-	dst_peer_stats->tx_ppdus += src_peer_stats->tx_ppdus;
+	dst_tx_ppdu_stats->tx_ppdus += src_tx_ppdu_stats->tx_ppdus;
 
 	/* MPDU BASIC */
-	dst_peer_stats->tx_mpdus_success += src_peer_stats->tx_mpdus_success;
-	dst_peer_stats->tx_mpdus_tried += src_peer_stats->tx_mpdus_tried;
-	dst_peer_stats->retries_mpdu += src_peer_stats->retries_mpdu;
+	dst_tx_ppdu_stats->tx_mpdus_success += src_tx_ppdu_stats->tx_mpdus_success;
+	dst_tx_ppdu_stats->tx_mpdus_tried += src_tx_ppdu_stats->tx_mpdus_tried;
+	dst_tx_ppdu_stats->retries_mpdu += src_tx_ppdu_stats->retries_mpdu;
+
+	/* pkt_type: per-standard MCS success counts */
+	for (i = 0; i < DOT11_MAX; i++)
+		for (j = 0; j < MAX_MCS; j++)
+			dst_tx_ppdu_stats->pkt_type[i].mcs_count[j] +=
+				src_tx_ppdu_stats->pkt_type[i].mcs_count[j];
+
+	/* sgi_count: GI type success counts */
+	for (i = 0; i < ATH12K_GI_NUM; i++)
+		dst_tx_ppdu_stats->gi_count[i] += src_tx_ppdu_stats->gi_count[i];
+
+	/* nss: spatial stream success counts */
+	for (i = 0; i < ATH12K_NSS_NUM; i++)
+		dst_tx_ppdu_stats->nss[i] += src_tx_ppdu_stats->nss[i];
+
+	/* bw: bandwidth success counts */
+	for (i = 0; i < ATH12K_BW_NUM; i++)
+		dst_tx_ppdu_stats->bw[i] += src_tx_ppdu_stats->bw[i];
+
 
 	if (!ath12k_dp_advance_stats_enabled(dp_pdev))
 		return;
 
 	/* DEBUG/ADV */
-	dst_peer_stats->stbc += src_peer_stats->stbc;
-	dst_peer_stats->ldpc += src_peer_stats->ldpc;
+	dst_tx_ppdu_stats->stbc += src_tx_ppdu_stats->stbc;
+	dst_tx_ppdu_stats->ldpc += src_tx_ppdu_stats->ldpc;
 
 	/* WME AC Type Array */
-	for (i = 0; i < WME_AC_MAX; i++)
-		dst_peer_stats->wme_ac_type[i] += src_peer_stats->wme_ac_type[i];
-
-	/* WME AC Type Bytes Array */
-	for (i = 0; i < WME_AC_MAX; i++)
-		dst_peer_stats->wme_ac_type_bytes[i] +=
-			src_peer_stats->wme_ac_type_bytes[i];
-
-	/* Excess Retries Per AC Array */
-	for (i = 0; i < WME_AC_MAX; i++)
-		dst_peer_stats->excess_retries_per_ac[i] +=
-			src_peer_stats->excess_retries_per_ac[i];
+	for (i = 0; i < WME_AC_MAX; i++) {
+		dst_tx_ppdu_stats->wme_ac_type[i] +=
+			src_tx_ppdu_stats->wme_ac_type[i];
+		dst_tx_ppdu_stats->wme_ac_type_bytes[i] +=
+			src_tx_ppdu_stats->wme_ac_type_bytes[i];
+		dst_tx_ppdu_stats->excess_retries_per_ac[i] +=
+			src_tx_ppdu_stats->excess_retries_per_ac[i];
+	}
 
 	/* AMPDU/Non-AMPDU Counts */
-	dst_peer_stats->ampdu_cnt += src_peer_stats->ampdu_cnt;
-	dst_peer_stats->non_ampdu_cnt += src_peer_stats->non_ampdu_cnt;
-	dst_peer_stats->num_ppdu_cookie_valid += src_peer_stats->num_ppdu_cookie_valid;
+	dst_tx_ppdu_stats->ampdu_cnt += src_tx_ppdu_stats->ampdu_cnt;
+	dst_tx_ppdu_stats->non_ampdu_cnt += src_tx_ppdu_stats->non_ampdu_cnt;
+	dst_tx_ppdu_stats->num_ppdu_cookie_valid +=
+		src_tx_ppdu_stats->num_ppdu_cookie_valid;
 
-	dst_peer_stats->pream_punct_cnt += src_peer_stats->pream_punct_cnt;
+	dst_tx_ppdu_stats->pream_punct_cnt += src_tx_ppdu_stats->pream_punct_cnt;
 
 	/* RU Location Array */
 	for (i = 0; i < MAX_RU_LOCATIONS; i++) {
-		dst_peer_stats->ru_loc_mpdu_succ_tried[i].num_mpdu +=
-			src_peer_stats->ru_loc_mpdu_succ_tried[i].num_mpdu;
-		dst_peer_stats->ru_loc_mpdu_succ_tried[i].mpdu_tried +=
-			src_peer_stats->ru_loc_mpdu_succ_tried[i].mpdu_tried;
+		dst_tx_ppdu_stats->ru_loc_mpdu_succ_tried[i].num_mpdu +=
+			src_tx_ppdu_stats->ru_loc_mpdu_succ_tried[i].num_mpdu;
+		dst_tx_ppdu_stats->ru_loc_mpdu_succ_tried[i].mpdu_tried +=
+			src_tx_ppdu_stats->ru_loc_mpdu_succ_tried[i].mpdu_tried;
 	}
 
 	/* Transmit Type Array */
 	for (i = 0; i < MAX_TRANSMIT_TYPES; i++) {
-		dst_peer_stats->transmit_type_mpdu_succ_tried[i].num_mpdu +=
-			src_peer_stats->transmit_type_mpdu_succ_tried[i].num_mpdu;
-		dst_peer_stats->transmit_type_mpdu_succ_tried[i].mpdu_tried +=
-			src_peer_stats->transmit_type_mpdu_succ_tried[i].mpdu_tried;
+		dst_tx_ppdu_stats->transmit_type_mpdu_succ_tried[i].num_mpdu +=
+			src_tx_ppdu_stats->transmit_type_mpdu_succ_tried[i].num_mpdu;
+		dst_tx_ppdu_stats->transmit_type_mpdu_succ_tried[i].mpdu_tried +=
+			src_tx_ppdu_stats->transmit_type_mpdu_succ_tried[i].mpdu_tried;
 	}
 
 	/* SU BE PPDU Count */
 	for (i = 0; i < MAX_MCS; i++)
-		dst_peer_stats->su_be_ppdu_cnt.mcs_count[i] +=
-			src_peer_stats->su_be_ppdu_cnt.mcs_count[i];
+		dst_tx_ppdu_stats->su_be_ppdu_cnt.mcs_count[i] +=
+			src_tx_ppdu_stats->su_be_ppdu_cnt.mcs_count[i];
 
 	/* MU BE PPDU Count Array */
-	for (i = 0; i < TXRX_TYPE_MU_MAX; i++) {
+	for (i = 0; i < TXRX_TYPE_MU_MAX; i++)
 		for (j = 0; j < MAX_MCS; j++)
-			dst_peer_stats->mu_be_ppdu_cnt[i].mcs_count[j] +=
-				src_peer_stats->mu_be_ppdu_cnt[i].mcs_count[j];
-	}
+			dst_tx_ppdu_stats->mu_be_ppdu_cnt[i].mcs_count[j] +=
+				src_tx_ppdu_stats->mu_be_ppdu_cnt[i].mcs_count[j];
 
 	/* SU BN PPDU Count */
 	for (i = 0; i < MAX_MCS; i++)
-		dst_peer_stats->su_bn_ppdu_cnt.mcs_count[i] +=
-			src_peer_stats->su_bn_ppdu_cnt.mcs_count[i];
+		dst_tx_ppdu_stats->su_bn_ppdu_cnt.mcs_count[i] +=
+			src_tx_ppdu_stats->su_bn_ppdu_cnt.mcs_count[i];
 
 	/* MU BN PPDU Count Array */
-	for (i = 0; i < TXRX_TYPE_MU_MAX; i++) {
+	for (i = 0; i < TXRX_TYPE_MU_MAX; i++)
 		for (j = 0; j < MAX_MCS; j++)
-			dst_peer_stats->mu_bn_ppdu_cnt[i].mcs_count[j] +=
-				src_peer_stats->mu_bn_ppdu_cnt[i].mcs_count[j];
-	}
+			dst_tx_ppdu_stats->mu_bn_ppdu_cnt[i].mcs_count[j] +=
+				src_tx_ppdu_stats->mu_bn_ppdu_cnt[i].mcs_count[j];
 
 	/* Punctured BW Array */
 	for (i = 0; i < MAX_PUNCTURED_MODE; i++)
-		dst_peer_stats->punc_bw[i] += src_peer_stats->punc_bw[i];
+		dst_tx_ppdu_stats->punc_bw[i] += src_tx_ppdu_stats->punc_bw[i];
 
 	/* RTS/BAR/NDPA Counts */
-	dst_peer_stats->rts_success += src_peer_stats->rts_success;
-	dst_peer_stats->rts_failure += src_peer_stats->rts_failure;
-	dst_peer_stats->bar_cnt += src_peer_stats->bar_cnt;
-	dst_peer_stats->ndpa_cnt += src_peer_stats->ndpa_cnt;
+	dst_tx_ppdu_stats->rts_success += src_tx_ppdu_stats->rts_success;
+	dst_tx_ppdu_stats->rts_failure += src_tx_ppdu_stats->rts_failure;
+	dst_tx_ppdu_stats->bar_cnt += src_tx_ppdu_stats->bar_cnt;
+	dst_tx_ppdu_stats->ndpa_cnt += src_tx_ppdu_stats->ndpa_cnt;
 
 	/* TX MSDU Flush Reason Array */
 	for (i = 0; i < HTT_FLUSH_MAX; i++)
-		dst_peer_stats->tx_msdu_flush_rsn[i] +=
-			src_peer_stats->tx_msdu_flush_rsn[i];
-
+		dst_tx_ppdu_stats->tx_msdu_flush_rsn[i] +=
+			src_tx_ppdu_stats->tx_msdu_flush_rsn[i];
 }
 
 /**
@@ -648,7 +604,7 @@ int ath12k_dp_pdev_get_tid_stats(struct ath12k *ar,
 			per_ring_tx = &ar->dp.tid_stats.tid_tx[ring_id][tid];
 
 			/* Aggregate TQM status counters */
-			for (i = 0; i < HAL_WBM_TQM_REL_REASON_MAX; i++)
+			for (i = 0; i < HAL_WBM_TQM_REL_REASON_MAX_EXT; i++)
 				aggr_tx->tqm_status_cnt[i] +=
 					per_ring_tx->tqm_status_cnt[i];
 
@@ -682,7 +638,7 @@ int ath12k_dp_pdev_get_tid_stats(struct ath12k *ar,
 			aggr_rx->delivered_to_stack += per_ring_rx->delivered_to_stack;
 
 			/* Aggregate Rx SW drop counters */
-			for (i = 0; i < DP_TID_RX_SW_DROP_MAX; i++)
+			for (i = 0; i < DP_TID_RX_SW_DROP_MAX_EXT; i++)
 				aggr_rx->fail_cnt[i] += per_ring_rx->fail_cnt[i];
 
 			ath12k_dp_accumulate_hist_stats(&per_ring_rx->to_stack_delay,
@@ -1000,7 +956,7 @@ void ath12k_qos_stats_update(struct ath12k_dp_peer *mld_peer,
 	if (!mld_peer || !ts || !dp_pdev)
 		return;
 
-	if (!(skb->mark & QOS_VALID_TAG))
+	if (!(skb->mark & SDWF_VALID_MASK))
 		return;
 
 	msduq_id = u32_get_bits(skb->mark, SDWF_MSDUQ_ID);
@@ -1257,3 +1213,111 @@ out:
 	spin_unlock_bh(&mld_peer->qos->lock);
 }
 EXPORT_SYMBOL(ath12k_qos_stats_update);
+
+/**
+ * ath12k_dp_netstats_peer_update - DP-only: accumulate net stats for one peer
+ * @dp_hw:          group-level DP hardware context (DP object)
+ * @dp_pdev         Radio level DP context
+ * @dp_peer_addr:   MAC address used to key dp_peer (MLD MAC or link MAC)
+ * @hw_link_id:     hardware link ID of the radio
+ * @peer_mac_filter: if non-NULL, skip peers whose dp_peer->addr doesn't match
+ * @is_ds_vif:      true if this is a DS VIF
+ * @stats:          destination net stats buffer
+ *
+ * Called with ar->arsta_lock held (BH-disabled).
+ * Acquires dp_hw->peer_hash_lock internally (arsta_lock -> peer_hash_lock ordering).
+ */
+void
+ath12k_dp_netstats_peer_update(struct ath12k_dp_hw *dp_hw,
+			       struct ath12k_pdev_dp *dp_pdev,
+			       const u8 *dp_peer_addr,
+			       u8 hw_link_id,
+			       const u8 *peer_mac_filter,
+			       bool is_ds_vif,
+			       struct rtnl_link_stats64 *stats)
+{
+	struct ath12k_dp_peer *dp_peer = NULL;
+	struct ath12k_dp_link_peer *link_peer = NULL;
+	struct ath12k_dp_peer_stats *peer_stats = NULL;
+	struct ath12k_dp_peer_rx_stats *rx_stats = NULL;
+	int i;
+	u32 rx_packets = 0;
+	u64 rx_bytes = 0;
+
+	if (hw_link_id >= ATH12K_DP_PEER_MAX_MLO_LINKS)
+		return;
+
+	/* DP: find MLD/legacy peer by MAC address */
+	spin_lock_bh(&dp_hw->peer_hash_lock);
+	dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, dp_peer_addr);
+	if (!dp_peer) {
+		spin_unlock_bh(&dp_hw->peer_hash_lock);
+		return;
+	}
+
+	rcu_read_lock();
+	link_peer = ath12k_dp_link_peer_find_by_hw_link_id(dp_peer, hw_link_id);
+	if (!link_peer) {
+		rcu_read_unlock();
+		spin_unlock_bh(&dp_hw->peer_hash_lock);
+		return;
+	}
+
+	if (peer_mac_filter &&
+	    !ether_addr_equal(link_peer->addr, peer_mac_filter) &&
+	    !ether_addr_equal(link_peer->ml_addr, peer_mac_filter)) {
+		rcu_read_unlock();
+		spin_unlock_bh(&dp_hw->peer_hash_lock);
+		return;
+	}
+
+	peer_stats = &dp_peer->stats[hw_link_id];
+	rx_packets = 0;
+	rx_bytes = 0;
+
+	if (ath12k_dp_hw_peer_stats_enabled(dp_pdev)) {
+		/* When HW stats are enabled, recv_from_reo has
+		 * all the Rx traffic data stored in
+		 * ATH12K_DP_HW_STATS_REO_IDX for SFE or
+		 * DS mode.
+		 */
+		rx_stats = &peer_stats->rx[ATH12K_DP_HW_STATS_REO_IDX];
+		rx_packets += rx_stats->recv_from_reo.packets;
+		rx_bytes += rx_stats->recv_from_reo.bytes;
+	} else {
+		for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
+			/* PPE sync credits DS VIF WDS peer traffic only on
+			 * DP_REO_PPEDS_RING_IDX. Skip lower ring indices
+			 * to avoid double-counting.
+			 */
+			if (is_ds_vif && i < DP_REO_PPEDS_RING_IDX)
+				continue;
+			rx_packets +=
+				(peer_stats->rx[i].sent_to_stack.packets +
+				 peer_stats->rx[i].sent_to_stack_fast.packets);
+			rx_bytes +=
+				(peer_stats->rx[i].sent_to_stack.bytes +
+				 peer_stats->rx[i].sent_to_stack_fast.bytes);
+		}
+
+		if (dp_pdev && ath12k_extd_rx_stats_enabled(dp_pdev) &&
+		    link_peer && link_peer->peer_stats.rx_stats) {
+			/* Override PPEDS ring sent_to_stack with extended RX
+			 * monitor MSDU totals.
+			 */
+			rx_packets = link_peer->peer_stats.rx_stats->num_msdu;
+			rx_bytes = link_peer->peer_stats.rx_stats->num_msdu_bytes;
+		}
+	}
+	stats->rx_packets += rx_packets;
+	stats->rx_bytes += rx_bytes;
+
+	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++) {
+		stats->tx_packets += peer_stats->tx[i].comp_pkt.packets;
+		stats->tx_bytes   += peer_stats->tx[i].comp_pkt.bytes;
+		stats->tx_packets += peer_stats->tx[i].tx_dropped.packets;
+		stats->tx_bytes   += peer_stats->tx[i].tx_dropped.bytes;
+	}
+	rcu_read_unlock();
+	spin_unlock_bh(&dp_hw->peer_hash_lock);
+}

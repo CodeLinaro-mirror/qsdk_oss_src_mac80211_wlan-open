@@ -878,13 +878,14 @@ static inline void drv_channel_switch(struct ieee80211_local *local,
 
 static inline int drv_set_antenna(struct ieee80211_local *local,
 				  u32 tx_ant, u32 rx_ant, u8 radio_id,
-				  bool is_dynamic)
+				  bool is_dynamic, int ifindex)
 {
 	int ret = -EOPNOTSUPP;
 	might_sleep();
 	lockdep_assert_wiphy(local->hw.wiphy);
 	if (local->ops->set_antenna)
-		ret = local->ops->set_antenna(&local->hw, tx_ant, rx_ant, radio_id, is_dynamic);
+		ret = local->ops->set_antenna(&local->hw, tx_ant, rx_ant,
+					      radio_id, is_dynamic, ifindex);
 	trace_drv_set_antenna(local, tx_ant, rx_ant, ret);
 	return ret;
 }
@@ -2093,5 +2094,18 @@ drv_set_muedca_mode(struct ieee80211_local *local,
 	return ret;
 }
 #endif /* CPTCFG_QCN_EXTN */
+
+static inline int drv_set_smd_ctx(struct ieee80211_local *local,
+				  struct ieee80211_sub_if_data *sdata,
+				  struct ieee80211_sta *sta,
+				  struct cfg80211_smd_transition_info *st_info)
+{
+	if (!sdata || !local->ops->set_smd_ctx)
+		return -EOPNOTSUPP;
+
+	lockdep_assert_wiphy(local->hw.wiphy);
+
+	return local->ops->set_smd_ctx(&local->hw, &sdata->vif, sta, st_info);
+}
 
 #endif /* __MAC80211_DRIVER_OPS */

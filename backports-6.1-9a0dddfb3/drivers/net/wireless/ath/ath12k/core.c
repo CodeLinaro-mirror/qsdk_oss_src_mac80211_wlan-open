@@ -132,7 +132,8 @@ MODULE_PARM_DESC(probe_order, "Probe order (hex bitfield, 4-bit per device)");
 extern struct ath12k_ps_context ath12k_global_ps_ctx;
 #endif
 
-u64 ath12k_debug_mask = ATH12K_DBG_MAC | ATH12K_DBG_EAPOL | ATH12K_DBG_MLME;
+u64 ath12k_debug_mask = ATH12K_DBG_MAC | ATH12K_DBG_EAPOL |
+			ATH12K_DBG_MLME | ATH12K_DBG_PEER;
 module_param_named(debug_mask, ath12k_debug_mask, ullong, 0644);
 MODULE_PARM_DESC(debug_mask, "Debugging mask (64-bit)");
 EXPORT_SYMBOL(ath12k_debug_mask);
@@ -155,6 +156,10 @@ bool ath12k_waltest_mode;
 module_param_named(waltest_mode, ath12k_waltest_mode, bool, 0444);
 MODULE_PARM_DESC(waltest_mode, "Boots up in Wal test mode");
 EXPORT_SYMBOL(ath12k_waltest_mode);
+
+bool ath12k_boot_time_qdss = true;
+module_param_named(boot_time_qdss, ath12k_boot_time_qdss, bool, 0444);
+MODULE_PARM_DESC(boot_time_qdss, "QDSS tracing at boot time (0: disabled, 1: enabled (default))");
 
 unsigned int ath12k_frame_mode = ATH12K_HW_TXRX_ETHERNET;
 module_param_named(frame_mode, ath12k_frame_mode, uint, 0644);
@@ -466,11 +471,18 @@ extern struct ath12k_coredump_info ath12k_coredump_ram_info;
 #ifdef CONFIG_IO_COHERENCY
 int ath12k_core_config_iocoherency(struct ath12k_base *ab, bool enable)
 {
-	int ret, num_elem, idx = 0;
+	int ret = 0, num_elem, idx = 0;
+	void __iomem *map_addr;
+	bool no_tmel;
 	struct tmel_secure_io secure_reg;
 
 	if (!ath12k_io_coherency_enabled) {
 		ath12k_err(ab, "io-coherency Disabled\n");
+		return 0;
+	}
+
+	if (!ab->dev || !ab->dev->of_node) {
+		ath12k_err(ab, "improper dts node\n");
 		return 0;
 	}
 
@@ -508,12 +520,24 @@ int ath12k_core_config_iocoherency(struct ath12k_base *ab, bool enable)
 		ath12k_info(ab, "Configuring secure reg: 0x%x val: 0x%x\n",
 			    secure_reg.reg_addr, secure_reg.reg_val);
 
-		ret = tmelcom_secure_io_write(&secure_reg, sizeof(struct tmel_secure_io));
+		no_tmel = of_property_read_bool(ab->dev->of_node, "qcom,no-tmel");
+		if (!no_tmel) {
+			ret = tmelcom_secure_io_write(&secure_reg,
+						      sizeof(struct tmel_secure_io));
+			if (ret) {
+				ath12k_err(ab, "Failed secure_reg settings\n");
+				goto err;
+			};
 
-		if (ret) {
-			ath12k_err(ab, "Failed to update secure_reg settings, ret = %d reg: 0x%x val: 0x%x\n",
-				   ret, secure_reg.reg_addr, secure_reg.reg_val);
-			goto err;
+		} else {
+			map_addr = ioremap(secure_reg.reg_addr, sizeof(uint32_t));
+			if (!map_addr) {
+				ret = -ENOMEM;
+				ath12k_err(ab, "Failed secure_reg mapping\n");
+				goto err;
+			}
+			writel(secure_reg.reg_val, map_addr);
+			iounmap(map_addr);
 		}
 	}
 
@@ -1263,24 +1287,40 @@ int ath12k_core_power_up(struct ath12k_hw_group *ag)
 {
 	struct ath12k_base *ab;
 	unsigned long time_left;
-	int i;
+	bool wait_for_power_up = false;
+	struct ath12k *ar = NULL;
+	int i, j, ret;
 
 	reinit_completion(&ag->power_up);
 	for (i = 0; i < ag->num_probed; i++) {
 		ab =  ag->ab[i];
 		if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags) &&
 		    !ath12k_hw_group_recovery_in_progress(ag)) {
+			for (j = 0; j < ab->num_radios; j++) {
+				ar = ab->pdevs[j].ar;
+				ar->pdev_suspend = false;
+			}
+
 			ath12k_hif_power_up(ab);
 			ab->powerup_triggered = true;
+			wait_for_power_up = true;
 			ath12k_info(ab, "Q6 power up is started\n");
 		}
 	}
 
-	time_left = wait_for_completion_timeout(&ag->power_up,
-						ATH12K_Q6_POWER_UP_TIMEOUT);
-	if (!time_left) {
-		ath12k_err(ab, "Q6 power up wait timed out\n");
-		return -ETIMEDOUT;
+	if (wait_for_power_up) {
+		time_left = wait_for_completion_timeout(&ag->power_up,
+							ATH12K_Q6_POWER_UP_TIMEOUT);
+		if (!time_left) {
+			ath12k_err(NULL, "Q6 power up wait timed out\n");
+			return -ETIMEDOUT;
+		}
+	} else {
+		ret = ath12k_core_mlo_setup(ag);
+		if (ret) {
+			ath12k_err(NULL, "mlo setup is failed: %d\n", ret);
+			return ret;
+		}
 	}
 
 	return 0;
@@ -1448,7 +1488,6 @@ static void ath12k_core_stop(struct ath12k_base *ab)
 	ath12k_wmi_detach(ab);
 	ath12k_mgmt_device_deinit(ab->mgmt);
 	ath12k_dp_cmn_device_deinit(ab->dp);
-	ath12k_cfg_deinit(ab);
 
 	/* De-Init of components as needed */
 }
@@ -2145,7 +2184,7 @@ int ath12k_mac_mlo_ready(struct ath12k_hw_group *ag)
 	return 0;
 }
 
-static int ath12k_core_mlo_setup(struct ath12k_hw_group *ag)
+int ath12k_core_mlo_setup(struct ath12k_hw_group *ag)
 {
 	int ret;
 
@@ -2535,6 +2574,58 @@ static int ath12k_core_complete_cumac_config(struct ath12k_hw_group *ag)
 	return 0;
 }
 
+static void ath12k_core_mlo_deinit(struct ath12k_hw_group *ag)
+{
+	struct ath12k_base *partner_ab;
+	int i;
+
+	for (i = 0; i < ag->num_devices; i++) {
+		partner_ab = ag->ab[i];
+
+		if (ath12k_ftm_mode || !partner_ab || partner_ab->is_bypassed)
+			continue;
+
+		if (partner_ab->mgmt)
+			ath12k_mgmt_device_deinit(partner_ab->mgmt);
+
+		if (partner_ab->dp)
+			ath12k_dp_arch_op_mlo_deinit(partner_ab->dp);
+	}
+}
+
+static int ath12k_core_mlo_init(struct ath12k_hw_group *ag)
+{
+	struct ath12k_base *partner_ab;
+	int ret, i;
+
+	/* DP/MGMT MLO init must complete before mac80211 registration so that
+	 * cumac_dp is set before userspace can trigger vdev creation.
+	 */
+	for (i = 0; i < ag->num_devices; i++) {
+		partner_ab = ag->ab[i];
+
+		if (ath12k_ftm_mode || !partner_ab || partner_ab->is_bypassed)
+			continue;
+
+		if (partner_ab->dp) {
+			ret = ath12k_dp_arch_op_mlo_init(partner_ab->dp);
+			if (ret) {
+				ath12k_err(partner_ab, "DP MLO init failed\n");
+				return ret;
+			}
+		}
+
+		if (partner_ab->mgmt) {
+			ret = ath12k_mgmt_device_init(partner_ab->mgmt);
+			if (ret) {
+				ath12k_err(partner_ab, "MGMT MLO init failed\n");
+				return ret;
+			}
+		}
+	}
+	return 0;
+}
+
 static int ath12k_core_hw_group_start(struct ath12k_hw_group *ag)
 {
 	struct ath12k_base *ab = NULL;
@@ -2550,6 +2641,11 @@ static int ath12k_core_hw_group_start(struct ath12k_hw_group *ag)
 		ret = ath12k_core_mlo_setup(ag);
 		if (WARN_ON(ret))
 			goto err_mac_destroy;
+
+		ret = ath12k_core_mlo_init(ag);
+		if (WARN_ON(ret))
+			goto err_mlo_teardown;
+
 		goto core_pdev_create;
 	}
 
@@ -2588,6 +2684,10 @@ static int ath12k_core_hw_group_start(struct ath12k_hw_group *ag)
 	ret = ath12k_core_mlo_setup(ag);
 	if (WARN_ON(ret))
 		goto err_mac_destroy;
+
+	ret = ath12k_core_mlo_init(ag);
+	if (WARN_ON(ret))
+		goto err_mlo_teardown;
 
 	ret = ath12k_core_cu_mem_pool_init(ag);
 	if (ret)
@@ -2685,10 +2785,12 @@ core_pdev_create:
 
 err:
 	ath12k_core_hw_group_stop(ag);
+	ath12k_core_mlo_deinit(ag);
 	return ret;
 
 err_mlo_teardown:
 	ath12k_mac_mlo_teardown(ag);
+	ath12k_core_mlo_deinit(ag);
 
 err_mac_destroy:
 	ath12k_mac_destroy(ag);
@@ -2719,7 +2821,8 @@ static int ath12k_core_start_firmware(struct ath12k_base *ab,
 	 * configuration in both Mission and FTM modes.
 	 */
 #ifdef CPTCFG_ATHDEBUG
-	if (ab->hw_params->en_qdsslog && !ath12k_waltest_mode) {
+	if (ab->hw_params->en_qdsslog && !ath12k_waltest_mode &&
+	    ath12k_boot_time_qdss) {
 		ath12k_info(ab, "QDSS trace enabled\n");
 		qdss_ret = athdbg_if_get_service(ab, ATHDBG_SRV_CONFIG_QDSS);
 		if (qdss_ret < 0) {
@@ -2885,30 +2988,13 @@ int ath12k_wsi_bypass_precheck(struct ath12k_base *ab, unsigned int value)
 int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 {
 	struct ath12k_hw_group *ag = ath12k_ab_to_ag(ab);
-	int ret, i, j;
+	int ret, i;
 	struct ath12k *ar = NULL;
 	struct ath12k_bridge_iter bridge_iter = {};
 	u8 active_num_devices;
 	struct ath12k_base *partner_ab;
 	bool hw_grp_ready = false;
 
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	/* TODO: DS: revisit this for new DS design in WDS mode */
-	if (ath12k_ppe_ds_enabled) {
-		if (ath12k_frame_mode != ATH12K_HW_TXRX_ETHERNET) {
-			ath12k_warn(ab,
-				    "Force enabling Ethernet frame mode in PPE DS for" \
-				    " AP and STA modes.\n");
-			/* MESH and WDS VAPs will still use NATIVE_WIFI mode
-			 * @ath12k_mac_update_vif_offload()
-			 * TODO: add device capability check
-			 */
-			ath12k_ppe_ds_enabled = 0;
-		} else if (ab->hw_params->ds_support) {
-			set_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags);
-		}
-	}
-#endif
 	ret = ath12k_core_start_firmware(ab, ab->fw_mode);
 	if (ret) {
 		ath12k_err(ab, "failed to start firmware in mode: %d ret: %d\n",
@@ -2929,19 +3015,11 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 		}
 	}
 
-	mutex_lock(&ab->core_lock);
-	if (ath12k_cfg_init(ab))
-		ath12k_err(ab, "Failed to initialize per radio INI data in driver\n");
-	else
-		ath12k_info(ab, "Initialized per radio INI data in driver\n");
-
 	/* Cache rf_switch_config INI value for use in WMI init and mac registration */
 	ab->rf_switch_config = ath12k_cfg_get(ab, ATH12K_CFG_RF_SWITCH_CONFIG) ? 1 : 0;
 	ath12k_info(ab, "rf_switch_config: %u (%s 5G range)\n",
 		    ab->rf_switch_config,
 		    ab->rf_switch_config ? "secondary/high" : "primary/full");
-
-	mutex_unlock(&ab->core_lock);
 
 	ret = ath12k_dp_cmn_device_init(ab->dp);
 	if (ret) {
@@ -3002,41 +3080,6 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 		if (ath12k_ftm_mode)
 			ath12k_info(ab, "FTM mode interface is up\n");
 
-		/* DP/MGMT MLO init has to be done post MLO ready event is received */
-		for (i = 0; i < ag->num_devices; i++) {
-			/* Assigning the current initialized soc which will be used
-			 * on error cleanup.
-			 */
-			j = i;
-			partner_ab = ag->ab[i];
-
-			if (ath12k_ftm_mode || !partner_ab || partner_ab->is_bypassed)
-				continue;
-
-			if (partner_ab->dp) {
-				ret = ath12k_dp_arch_op_mlo_init(partner_ab->dp);
-				if (ret) {
-					ath12k_err(partner_ab, "DP MLO init failed");
-					goto err_mlo_init;
-				}
-			}
-
-			if (partner_ab->mgmt) {
-				ret = ath12k_mgmt_device_init(partner_ab->mgmt);
-				if (ret) {
-					ath12k_err(partner_ab, "MGMT MLO init failed");
-					/* DP MLO deinit should be done for the
-					 * current device as well if MGMT failed.
-					 */
-					if (partner_ab->dp)
-						ath12k_dp_arch_op_mlo_deinit(
-							partner_ab->dp);
-					goto err_mlo_init;
-				}
-			}
-		}
-
-		j = ag->num_devices;
 		for (i = 0; i < ag->num_devices; i++) {
 			partner_ab = ag->ab[i];
 			if (ath12k_ftm_mode || !partner_ab || partner_ab->is_bypassed)
@@ -3065,7 +3108,7 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 			if (ret) {
 				ath12k_err(partner_ab, "failed to setup rxdma ring selection config\n: %d",
 					   ret);
-				goto err_mlo_init;
+				goto err_core_stop;
 			}
 		}
 
@@ -3106,7 +3149,7 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 		if (!ath12k_ftm_mode) {
 			ret = ath12k_mgmt_htt_setup(ag);
 			if (ret)
-				goto err_mlo_init;
+				goto err_core_stop;
 		}
 
 		if (ath12k_check_erp_power_down(ag)) {
@@ -3137,20 +3180,6 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 
 out:
 	return 0;
-
-err_mlo_init:
-	/* Do deinits only for the SOCs for which init was successful.
-	 * The failed soc's cleanup is taken care inside mlo_init itself.
-	 */
-	for (i = j - 1; i >= 0; i--) {
-		partner_ab = ag->ab[i];
-		if (!partner_ab || partner_ab->is_bypassed)
-			continue;
-		if (partner_ab->mgmt)
-			ath12k_mgmt_device_deinit(partner_ab->mgmt);
-		if (partner_ab->dp)
-			ath12k_dp_arch_op_mlo_deinit(partner_ab->dp);
-	}
 
 err_core_stop:
 	for (i = ag->num_devices - 1; i >= 0; i--) {
@@ -3364,6 +3393,30 @@ static void ath12k_mac_peer_ab_disassoc(struct ath12k_base *ab)
 	}
 }
 
+static void ath12k_check_for_valid_chanctx(struct ath12k *ar)
+{
+	struct ath12k_link_vif *arvif, *tmp;
+	struct cfg80211_chan_def *def = NULL;
+
+	list_for_each_entry_safe_reverse(arvif, tmp, &ar->arvifs, list) {
+		if (!arvif->ar)
+			continue;
+
+		if (!ath12k_mac_is_bridge_vdev(arvif) && !arvif->chanctx.def.chan) {
+			list_del(&arvif->list);
+			arvif->ar = NULL;
+		} else if (arvif->chanctx.def.chan) {
+			def = &arvif->chanctx.def;
+		}
+	}
+
+	/* No valid channel context exist in any link so clear ar->rx_channel*/
+	if (!def || !def->chan) {
+		ar->rx_channel = NULL;
+		ar->chan_tx_pwr = ATH12K_PDEV_TX_POWER_INVALID;
+	}
+}
+
 void ath12k_core_halt(struct ath12k *ar)
 {
 	struct ath12k_base *ab = ar->ab;
@@ -3415,8 +3468,6 @@ void ath12k_core_halt(struct ath12k *ar)
 
 	ath12k_core_cu_mem_free_all(ar);
 
-	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE0)
-		INIT_LIST_HEAD(&ar->arvifs);
 	idr_init(&ar->txmgmt_idr);
 
 	cancel_work_sync(&ar->erp_handle_trigger_work);
@@ -3617,8 +3668,6 @@ cleanup:
 		ath12k_core_halt(ar);
 		wiphy_unlock(ah->hw->wiphy);
 	}
-	ab->post_reconfig_done = true;
-
 	complete(&ab->driver_recovery);
 }
 
@@ -3663,7 +3712,8 @@ static void ath12k_core_restart(struct work_struct *work)
 	struct ath12k_hw_group *ag = ab->ag;
 	bool is_ready = false;
 	struct ath12k_hw *ah;
-	int ret, i;
+	struct ath12k *ar;
+	int ret, i, j;
 
 	ret = ath12k_core_reconfigure_on_crash(ab, &is_ready);
 	if (ret) {
@@ -3686,6 +3736,16 @@ static void ath12k_core_restart(struct work_struct *work)
 			ab->is_reset = false;
 			atomic_set(&ab->fail_cont_count, 0);
 			ath12k_dbg(ab, ATH12K_DBG_BOOT, "reset success\n");
+		}
+
+		for (j = 0; j < ab->num_radios; j++) {
+			ar = ab->pdevs[j].ar;
+
+			spin_lock_bh(&ar->data_lock);
+			ath12k_check_for_valid_chanctx(ar);
+			if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE0)
+				INIT_LIST_HEAD(&ar->arvifs);
+			spin_unlock_bh(&ar->data_lock);
 		}
 
 		if (!is_ready)
@@ -4345,36 +4405,6 @@ static void ath12k_reset_group_key_slots(struct ath12k_link_vif *arvif,
  * will recover only the crashed radio
  * without affecting the other active radio
  */
-static void ath12k_check_for_valid_chanctx(struct ath12k *ar)
-{
-	struct ath12k_link_vif *arvif, *tmp;
-	struct cfg80211_chan_def *def = NULL;
-
-	list_for_each_entry_safe_reverse(arvif, tmp, &ar->arvifs, list) {
-		if (!arvif->ar)
-			continue;
-
-		if (!ath12k_mac_is_bridge_vdev(arvif) && !arvif->chanctx.def.chan) {
-			spin_lock_bh(&ar->data_lock);
-
-			if (!list_empty(&ar->arvifs))
-				list_del(&arvif->list);
-
-			spin_unlock_bh(&ar->data_lock);
-			arvif->ar = NULL;
-		} else if (arvif->chanctx.def.chan) {
-			def = &arvif->chanctx.def;
-		}
-	}
-
-	/* No valid channel context exist in any link so clear ar->rx_channel*/
-	if (!def || !def->chan) {
-		spin_lock_bh(&ar->data_lock);
-		ar->rx_channel = NULL;
-		spin_unlock_bh(&ar->data_lock);
-		ar->chan_tx_pwr = ATH12K_PDEV_TX_POWER_INVALID;
-	}
-}
 
 int ath12k_recovery_reconfig(struct ath12k_base *ab)
 {
@@ -4400,16 +4430,6 @@ int ath12k_recovery_reconfig(struct ath12k_base *ab)
 			wiphy_unlock(ah->hw->wiphy);
 			return ret;
 		}
-	}
-
-	for (j = 0; j < ab->num_radios; j++) {
-		pdev = &ab->pdevs[j];
-		ar = pdev->ar;
-
-		if (!ar || ar->ab->is_bypassed)
-			continue;
-
-		ath12k_check_for_valid_chanctx(ar);
 	}
 
 	/* add chanctx/hw_config/filter part */
@@ -4793,34 +4813,9 @@ static void ath12k_core_disable_ext_irq_during_recovery(struct ath12k_base *ab)
 	}
 }
 
-static void ath12k_fallback_cleanup(struct ath12k_hw_group *ag)
-{
-	int i, j;
-	struct ath12k_hw *ah;
-	struct ath12k *ar;
-
-	for (i = 0; i < ag->num_hw; i++) {
-		ah = ag->ah[i];
-
-		if (!ah)
-			continue;
-
-		for_each_ar(ah, ar, j) {
-			if (!ar || ar->ab->is_bypassed || !ar->ab->post_reconfig_done)
-				continue;
-
-			spin_lock_bh(&ar->data_lock);
-			INIT_LIST_HEAD(&ar->arvifs);
-			spin_unlock_bh(&ar->data_lock);
-		}
-	}
-}
-
 static void ath12k_update_recovery_mode(struct ath12k_hw_group *ag,
 					struct ath12k_base *asserted_ab)
 {
-	enum ath12k_mlo_recovery_mode host_rm = ag->recovery_mode;
-
 	if (asserted_ab->recovery_mode_address) {
 		/*get current recovery mode as per FW from shmem*/
 		switch (*asserted_ab->recovery_mode_address) {
@@ -4848,9 +4843,6 @@ static void ath12k_update_recovery_mode(struct ath12k_hw_group *ag,
 		ath12k_info(asserted_ab, "Recovery is falling back to Mode0 due to cumac HW assert\n");
 		ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
 	}
-
-	if (host_rm > ag->recovery_mode)
-		ath12k_fallback_cleanup(ag);
 }
 
 static void ath12k_core_reset(struct work_struct *work)
@@ -4989,7 +4981,6 @@ static void ath12k_core_reset(struct work_struct *work)
 				 */
 				ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
 				ath12k_info(ab, "Recovery is falling back to Mode0 as one of the partner chip is already in recovery\n");
-				ath12k_fallback_cleanup(ab->ag);
 				break;
 			} else {
 				/* Set dev flags to UMAC recovery START
@@ -5016,7 +5007,6 @@ static void ath12k_core_reset(struct work_struct *work)
 			 */
 			ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
 			/* TODO: DS: Handle any clean up necessary for Mode1 SSR */
-			ath12k_fallback_cleanup(ab->ag);
 			ath12k_info(ab, "Recovery is falling back to Mode0\n");
 		} else {
 			/* wake queues here as ping should continue for
@@ -5220,6 +5210,7 @@ static struct ath12k_hw_group *ath12k_core_hw_group_alloc(struct ath12k_base *ab
 	/* Initialize multi-core task queue infrastructure */
 	INIT_LIST_HEAD(&ag->mlo_umac_reset.task_queue);
 	spin_lock_init(&ag->mlo_umac_reset.task_queue_lock);
+	spin_lock_init(&ag->mlo_umac_reset.lock);
 	atomic_set(&ag->mlo_umac_reset.task_id, 0);
 
 	/* Initialize high-priority tasklet for each possible CPU */
@@ -5778,6 +5769,7 @@ int ath12k_core_dynamic_wsi_remap(struct ath12k_base *ab)
 	int ret = 0, i;
 	struct ath12k_hw *ah;
 	struct ath12k_hw_group *ag;
+	struct ath12k *ar = NULL;
 
 	ag = ab->ag;
 
@@ -5877,6 +5869,11 @@ int ath12k_core_dynamic_wsi_remap(struct ath12k_base *ab)
 		if (ret) {
 			ath12k_err(ab, "srng init failed %d\n", ret);
 			return ret;
+		}
+
+		for (i = 0; i < ab->num_radios; i++) {
+			ar = ab->pdevs[i].ar;
+			ar->pdev_suspend = false;
 		}
 
 		ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS, "WSI Bypass: Power on Q6");
@@ -6402,6 +6399,12 @@ int ath12k_core_init(struct ath12k_base *ab)
 		athdbg_if_register(ab);
 #endif
 
+	ret = ath12k_smd_global_init(ab);
+	if (ret) {
+		ath12k_err(ab, "SMD global init failed: %d", ret);
+		goto err;
+	}
+
 	return 0;
 
 err:
@@ -6420,6 +6423,8 @@ void ath12k_core_deinit(struct ath12k_base *ab)
 	if (test_and_clear_bit(__NB_FLAGS_REGISTERED, &ab->me.nb_flags))
 		ath12k_core_me_notifier_unregister_extn(ab);
 #endif
+
+	ath12k_smd_global_deinit();
 
 	if (ath12k_telemetry_ab_agent_delete_handler(ab))
 		ath12k_err(ab, "failed to destroy soc agent\n");
@@ -6472,6 +6477,7 @@ struct ath12k_base *ath12k_core_alloc(struct device *dev, size_t priv_size,
 
 	mutex_init(&ab->core_lock);
 	spin_lock_init(&ab->base_lock);
+	spin_lock_init(&ab->reg_freq_lock);
 	init_completion(&ab->reset_complete);
 
 	init_waitqueue_head(&ab->peer_mapping_wq);

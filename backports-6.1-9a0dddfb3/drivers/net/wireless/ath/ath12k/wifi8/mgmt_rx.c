@@ -641,8 +641,11 @@ ath12k_wifi8_cu_mem_update(struct ath12k_base *ab,
 			   struct ath12k_link_vif *arvif, bool is_probe_req)
 {
 	struct ieee80211_vif *vif = arvif->ahvif->vif;
-	u32 eht_bpcc, cu_flags, reconfig, expec_dur;
-	bool eht_cu;
+	struct ieee80211_bss_conf *link_conf;
+	u32 eht_bpcc = 0, cu_flags = 0, reconfig = 0, expec_dur = 0;
+	u32 uhr_ebpcc = 0, uhr_countdown = 0;
+	bool eht_cu = false, uhr_cu = false;
+	unsigned int dbg_level = is_probe_req ? ATH12K_DBG_L1 : ATH12K_DBG_L0;
 
 	if (ab->cu_mem_cfg_mask & WMI_TBTT_COUNT_DOWN_CFG_EHT_BPCC) {
 		ath12k_mac_read_cu_mem(arvif,
@@ -654,9 +657,6 @@ ath12k_wifi8_cu_mem_update(struct ath12k_base *ab,
 						eht_bpcc) / sizeof(u32),
 				       &eht_bpcc);
 		eht_cu = u32_get_bits(cu_flags, BIT(0));
-		ath12k_dbg(ab, ATH12K_DBG_CU,
-			   "cu_update vdev %d eht_cu %d eht_bpcc %u\n",
-			   arvif->vdev_id, eht_cu, eht_bpcc);
 		ieee80211_critical_update(vif, arvif->link_id,
 					  !!eht_cu, (u8)eht_bpcc);
 	}
@@ -667,12 +667,37 @@ ath12k_wifi8_cu_mem_update(struct ath12k_base *ab,
 						reconfig) / sizeof(u32),
 				       &reconfig);
 		if (arvif->is_link_removal_in_progress)
-			ath12k_dbg(ab, ATH12K_DBG_CU,
-				   "cu_update vdev %d reconfig %u\n",
-				   arvif->vdev_id, reconfig);
-		if (reconfig)
 			ieee80211_link_removal_count_update(vif, arvif->link_id,
 							    (u16)reconfig);
+	}
+
+	link_conf = rcu_dereference(vif->link_conf[arvif->link_id]);
+
+	if (link_conf && link_conf->cu_info.cu_in_progress) {
+		if (ab->cu_mem_cfg_mask & WMI_TBTT_COUNT_DOWN_CFG_UHR_EBPCC) {
+			ath12k_mac_read_cu_mem(arvif,
+					       offsetof(struct ath12k_cu_mem,
+							cu_flags) / sizeof(u32),
+					       &cu_flags);
+			ath12k_mac_read_cu_mem(arvif,
+					       offsetof(struct ath12k_cu_mem,
+							uhr_ebpcc) / sizeof(u32),
+					       &uhr_ebpcc);
+			uhr_cu = u32_get_bits(cu_flags, BIT(1));
+		}
+
+		if (ab->cu_mem_cfg_mask & WMI_TBTT_COUNT_DOWN_CFG_UHR_COUNTDOWN) {
+			ath12k_mac_read_cu_mem(arvif,
+					       offsetof(struct ath12k_cu_mem,
+							uhr_countdown) / sizeof(u32),
+					       &uhr_countdown);
+		}
+		if (((ab->cu_mem_cfg_mask & WMI_TBTT_COUNT_DOWN_CFG_UHR_EBPCC) ||
+		     (ab->cu_mem_cfg_mask & WMI_TBTT_COUNT_DOWN_CFG_UHR_COUNTDOWN)) &&
+		    uhr_countdown)
+			ieee80211_critical_update_ecu(vif, arvif->link_id,
+						      !!uhr_cu, (u8)uhr_ebpcc,
+						       uhr_countdown);
 	}
 
 	if (is_probe_req &&
@@ -683,14 +708,18 @@ ath12k_wifi8_cu_mem_update(struct ath12k_base *ab,
 				       sizeof(u32),
 				       &expec_dur);
 		if (expec_dur) {
-			ath12k_dbg(ab, ATH12K_DBG_CU,
-				   "cu_update vdev %d expec_dur %u\n",
-				   arvif->vdev_id, expec_dur);
 			ieee80211_ttlm_info_expec_dur_update(vif, arvif->link_id,
 							     expec_dur);
 		}
 	}
+
+	ath12k_dbg_level(ab, ATH12K_DBG_CU, dbg_level,
+			 "cu_update vdev %d eht_cu %d eht_bpcc %u reconfig %u uhr_cu %d uhr_ebpcc %u uhr_countdown %u expec_dur %u\n",
+			 arvif->vdev_id, eht_cu, eht_bpcc, reconfig,
+			 uhr_cu, uhr_ebpcc,
+			 uhr_countdown, expec_dur);
 }
+
 
 static u8 ath12k_wifi8_mgmt_rx_get_vdev_id(struct ath12k_base *ab,
 					   enum ath12k_peer_metadata_version ver,
@@ -897,6 +926,10 @@ void ath12k_wifi8_mgmt_rx_deliver_mmpdu(struct ath12k_mgmt *mgmt,
 	rx_status = IEEE80211_SKB_RXCB(mmpdu);
 	*rx_status = *status;
 
+	if (ath12k_mac_mgmt_need_smd_sta_session_ctx(mmpdu) &&
+	    !ath12k_smd_collect_sta_session_ctx(partner_ar, mmpdu))
+		return;
+
 	ieee80211_rx_ni(hw, mmpdu);
 }
 
@@ -946,11 +979,6 @@ static bool ath12k_wifi8_mgmt_rx_h_reo_err(struct ath12k_mgmt *mgmt,
 
 	hdr = (struct ieee80211_hdr *)(mmpdu->data + buf_hdr_len);
 
-	if (ieee80211_is_action(hdr->frame_control) &&
-	    (mmpdu_len < IEEE80211_MIN_ACTION_SIZE ||
-	     buf_hdr_len + IEEE80211_MIN_ACTION_SIZE > MGMT_RX_BUFFER_SIZE))
-		goto drop;
-
 	fc = le16_to_cpu(hdr->frame_control);
 	frm_stype = FIELD_GET(IEEE80211_FCTL_STYPE, fc);
 
@@ -958,18 +986,13 @@ static bool ath12k_wifi8_mgmt_rx_h_reo_err(struct ath12k_mgmt *mgmt,
 	if (partner_ar)
 		partner_mgmt = partner_ar->ab->mgmt ? partner_ar->ab->mgmt : mgmt;
 
-	/**
-	 * Allow pre-connection frames such as (Authentication,
-	 * (Re)Association Request, (Re)Association Response, Deauthentication,
-	 * Disassociation, and non-robust Action) frames with SN related errors
-	 * as we might have a stale peer entry.
+	/* There may be stations using different SN spaces for management frames though
+	 * they are all individually addressed.
+	 *
+	 * Accept them to avoid interoperability issues.
 	 */
-	if ((ieee80211_is_deauth(hdr->frame_control) ||
-	     ieee80211_is_disassoc(hdr->frame_control) ||
-	     !_ieee80211_is_robust_mgmt_frame(hdr))) {
-		partner_mgmt->srng_stats.reo_err_rx[frm_stype]++;
-		return false;
-	}
+	partner_mgmt->srng_stats.reo_err_rx[frm_stype]++;
+	return false;
 
 drop:
 	return true;
@@ -1102,6 +1125,7 @@ ath12k_wifi8_mgmt_rx_parse_desc_err(struct ath12k_mgmt *mgmt,
 	struct ath12k_base *ab = mgmt->ab;
 	struct hal_rx_mpdu_desc *mpdu_info = &desc->rx_mpdu_info;
 	struct hal_rx_mpdu_ext_desc_info *mpdu_ext_info = &desc->rx_mpdu_ext_info;
+	u32 rxdma_push_reason, rxdma_err_code, reo_push_reason, reo_err_code;
 	struct hal_rx_msdu_desc *rx_msdu_info = &desc->rx_msdu_info;
 	enum hal_reo_dest_ring_buffer_type type;
 	enum hal_reo_dest_rel_src_module rel_src;
@@ -1119,12 +1143,26 @@ ath12k_wifi8_mgmt_rx_parse_desc_err(struct ath12k_mgmt *mgmt,
 	if (type != HAL_REO_DEST_RING_BUFFER_TYPE_MSDU)
 		return -EINVAL;
 
+	rxdma_push_reason =
+		le32_get_bits(mpdu_ext_info->info0,
+			      HAL_RX_MPDU_EXT_DESC_INFO_INFO0_RXDMA_PUSH_REASON);
+	rxdma_err_code =
+		le32_get_bits(mpdu_ext_info->info0,
+			      HAL_RX_MPDU_EXT_DESC_INFO_INFO0_RXDMA_ERROR_CODE);
+	reo_push_reason =
+		le32_get_bits(mpdu_ext_info->info0,
+			      HAL_RX_MPDU_EXT_DESC_INFO_INFO0_REO_PUSH_REASON);
+	reo_err_code =
+		le32_get_bits(mpdu_ext_info->info0,
+			      HAL_RX_MPDU_EXT_DESC_INFO_INFO0_REO_ERROR_CODE);
+
 	rel_src = le32_get_bits(mpdu_ext_info->info0,
 				HAL_RX_MPDU_EXT_DESC_INFO_INFO0_RELEASE_SOURCE_MODULE);
-	if (rel_src != HAL_REO_REL_SRC_MODULE_RXDMA &&
-	    rel_src != HAL_REO_REL_SRC_MODULE_REO) {
-		ath12k_warn(ab, "Invalid source module %u for error packets",
-			    rel_src);
+	if (rel_src != HAL_REO_REL_SRC_MODULE_REO) {
+		ath12k_warn(ab,
+			    "Invalid source module %u for error packets, rxdma (%u %u) reo (%u %u)",
+			    rel_src, rxdma_push_reason, rxdma_err_code,
+			    reo_push_reason, reo_err_code);
 		return -EINVAL;
 	}
 
@@ -1132,7 +1170,6 @@ ath12k_wifi8_mgmt_rx_parse_desc_err(struct ath12k_mgmt *mgmt,
 					 BUFFER_ADDR_INFO1_SW_COOKIE);
 	err_info->rx_desc = ath12k_mgmt_get_rx_desc_from_cookie(mgmt, err_info->cookie);
 
-	err_info->err_rel_src = rel_src;
 	err_info->first_msdu = le32_get_bits(rx_msdu_info->info0,
 		HAL_RX_MSDU_DESC_INFO_INFO0_FIRST_MSDU_IN_MPDU_FLAG);
 	err_info->last_msdu = le32_get_bits(rx_msdu_info->info0,
@@ -1140,21 +1177,16 @@ ath12k_wifi8_mgmt_rx_parse_desc_err(struct ath12k_mgmt *mgmt,
 	err_info->continuation = le32_get_bits(rx_msdu_info->info0,
 		HAL_RX_MSDU_DESC_INFO_INFO0_MSDU_CONTINUATION);
 
-	if (rel_src == HAL_REO_REL_SRC_MODULE_REO) {
-		err_info->push_reason =
-			le32_get_bits(mpdu_ext_info->info0,
-				      HAL_RX_MPDU_EXT_DESC_INFO_INFO0_REO_PUSH_REASON);
-		err_info->err_code =
-			le32_get_bits(mpdu_ext_info->info0,
-				      HAL_RX_MPDU_EXT_DESC_INFO_INFO0_REO_ERROR_CODE);
+	if (rxdma_push_reason !=
+	    HAL_REO_ENTR_RING_RXDMA_PUSH_REASON_ROUTING_INSTRUCTION) {
+		err_info->push_reason = rxdma_push_reason;
+		err_info->err_code = rxdma_err_code;
+		rel_src = HAL_REO_REL_SRC_MODULE_RXDMA;
 	} else {
-		err_info->push_reason =
-			le32_get_bits(mpdu_ext_info->info0,
-				      HAL_RX_MPDU_EXT_DESC_INFO_INFO0_RXDMA_PUSH_REASON);
-		err_info->err_code =
-			le32_get_bits(mpdu_ext_info->info0,
-				      HAL_RX_MPDU_EXT_DESC_INFO_INFO0_RXDMA_ERROR_CODE);
+		err_info->push_reason = reo_push_reason;
+		err_info->err_code = reo_err_code;
 	}
+	err_info->err_rel_src = rel_src;
 
 	return 0;
 }

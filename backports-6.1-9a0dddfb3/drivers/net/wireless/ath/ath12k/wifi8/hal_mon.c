@@ -459,7 +459,7 @@ ath12k_wifi8_hal_mon_parse_he_sig_mu(
 	}
 
 	ppdu_info->gi = he_gi;
-	hal_get_radiotap_he_gi_ltf(&he_gi, &he_ltf);
+	hal_get_radiotap_gi_ltf(&he_gi, &he_ltf);
 	value = he_gi << HE_GI_SHIFT;
 	ppdu_info->he_data5 |= value;
 
@@ -625,7 +625,7 @@ ath12k_wifi8_hal_mon_parse_he_sig_su(const struct hal_rx_he_sig_a_su_info *he_si
 	}
 	ppdu_info->gi = he_gi;
 	ppdu_info->ltf_size = he_ltf;
-	hal_get_radiotap_he_gi_ltf(&he_gi, &he_ltf);
+	hal_get_radiotap_gi_ltf(&he_gi, &he_ltf);
 	value = he_gi << HE_GI_SHIFT;
 	ppdu_info->he_data5 |= value;
 	value = he_ltf << HE_LTF_SIZE_SHIFT;
@@ -2481,15 +2481,13 @@ ath12k_wifi8_hal_mon_rx_mpdu_start_info_get(const void *tlv_data, u32 userid,
 		u32_get_bits(info[1],
 			     HAL_RX_MPDU_START_INFO1_FC_VALID);
 
-	if (userid < HAL_MAX_UL_MU_USERS) {
-		ppdu_info->mpdu_info[user_id].raw_mpdu =
-			u32_get_bits(info[4], HAL_RX_MPDU_START_INFO4_RAW_MPDU);
-		if (ppdu_info->mpdu_info[user_id].raw_mpdu)
-			ppdu_info->mpdu_info[user_id].decap_type = DP_RX_DECAP_TYPE_RAW;
-		else
-			ppdu_info->mpdu_info[user_id].decap_type =
-				u32_get_bits(info[4], HAL_RX_MPDU_START_INFO4_DECAP_TYPE);
-	}
+	ppdu_info->mpdu_info[user_id].raw_mpdu =
+		u32_get_bits(info[4], HAL_RX_MPDU_START_INFO4_RAW_MPDU);
+	if (ppdu_info->mpdu_info[user_id].raw_mpdu)
+		ppdu_info->mpdu_info[user_id].decap_type = DP_RX_DECAP_TYPE_RAW;
+	else
+		ppdu_info->mpdu_info[user_id].decap_type =
+			u32_get_bits(info[4], HAL_RX_MPDU_START_INFO4_DECAP_TYPE);
 
 	ppdu_info->mpdu_len += u32_get_bits(info[5],
 					    HAL_RX_MPDU_START_INFO5_MPDU_LEN);
@@ -2508,21 +2506,18 @@ ath12k_wifi8_hal_mon_rx_mpdu_start_info_get(const void *tlv_data, u32 userid,
 		ath12k_wifi8_hal_mon_get_nrp_mac_addr(addr_16, addr_32,
 						      ppdu_info->nrp_info.mac_addr2);
 
-	if (userid < HAL_MAX_UL_MU_USERS) {
-		ppdu_info->userid = userid;
-		ppdu_info->userstats[userid].sw_peer_id = peer_id;
-		ppdu_info->userstats[userid].ampdu_id =
-			u32_get_bits(info[3], HAL_RX_MPDU_START_INFO3_PPDU_ID);
-		ppdu_info->userstats[userid].filter_category =
-			u32_get_bits(info[3],
-				     HAL_RX_MPDU_START_INFO3_FILTER_CAT);
-		ppdu_info->userstats[userid].mpdu_retry +=
-			u32_get_bits(info[1], HAL_RX_MPDU_START_INFO1_MPDU_RETRY);
-		ppdu_info->userstats[userid].frame_control_info_valid =
-				ppdu_info->nrp_info.fc_valid;
-		ppdu_info->userstats[userid].frame_control =
-				ppdu_info->nrp_info.frame_control;
-	}
+	ppdu_info->userstats[user_id].sw_peer_id = peer_id;
+	ppdu_info->userstats[user_id].ampdu_id =
+		u32_get_bits(info[3], HAL_RX_MPDU_START_INFO3_PPDU_ID);
+	ppdu_info->userstats[user_id].filter_category =
+		u32_get_bits(info[3],
+			     HAL_RX_MPDU_START_INFO3_FILTER_CAT);
+	ppdu_info->userstats[user_id].mpdu_retry +=
+		u32_get_bits(info[1], HAL_RX_MPDU_START_INFO1_MPDU_RETRY);
+	ppdu_info->userstats[user_id].frame_control_info_valid =
+			ppdu_info->nrp_info.fc_valid;
+	ppdu_info->userstats[user_id].frame_control =
+			ppdu_info->nrp_info.frame_control;
 
 	ath12k_wifi8_hal_mon_rx_set_decap_type_raw_mode(ppdu_info);
 }
@@ -2591,21 +2586,18 @@ ath12k_wifi8_hal_mon_rx_mpdu_start_info_get_compact(
 		ath12k_wifi8_hal_mon_get_nrp_mac_addr(addr_16, addr_32,
 						      ppdu_info->nrp_info.mac_addr2);
 
-	if (userid < HAL_MAX_UL_MU_USERS) {
-		ppdu_info->userid = userid;
-		ppdu_info->userstats[userid].sw_peer_id = peer_id;
-		ppdu_info->userstats[userid].ampdu_id =
-			u32_get_bits(info[3], HAL_RX_MPDU_START_INFO3_PPDU_ID_CMPCT);
-		ppdu_info->userstats[userid].filter_category =
-			u32_get_bits(info[3],
-				     HAL_RX_MPDU_START_INFO3_FILTER_CAT_CMPCT);
-		ppdu_info->userstats[userid].mpdu_retry +=
-			u32_get_bits(info[1], HAL_RX_MPDU_START_INFO1_MPDU_RETRY_CMPCT);
-		ppdu_info->userstats[userid].frame_control_info_valid =
-				ppdu_info->nrp_info.fc_valid;
-		ppdu_info->userstats[userid].frame_control =
-				ppdu_info->nrp_info.frame_control;
-	}
+	ppdu_info->userstats[user_id].sw_peer_id = peer_id;
+	ppdu_info->userstats[user_id].ampdu_id =
+		u32_get_bits(info[3], HAL_RX_MPDU_START_INFO3_PPDU_ID_CMPCT);
+	ppdu_info->userstats[user_id].filter_category =
+		u32_get_bits(info[3],
+			     HAL_RX_MPDU_START_INFO3_FILTER_CAT_CMPCT);
+	ppdu_info->userstats[user_id].mpdu_retry +=
+		u32_get_bits(info[1], HAL_RX_MPDU_START_INFO1_MPDU_RETRY_CMPCT);
+	ppdu_info->userstats[user_id].frame_control_info_valid =
+			ppdu_info->nrp_info.fc_valid;
+	ppdu_info->userstats[user_id].frame_control =
+			ppdu_info->nrp_info.frame_control;
 }
 
 void
@@ -4908,30 +4900,59 @@ ath12k_wifi8_hal_mon_tx_parse_user_desc_per_user(const void *tlv_data,
 }
 
 static __always_inline void
+ath12k_wifi8_hal_tx_mon_user_desc_info_compact(
+	u32 *info, const struct hal_tx_mon_user_desc_common_compact *c)
+{
+	info[0]  = __le32_to_cpu(c->info0);
+	info[1]  = __le32_to_cpu(c->info1);
+	info[2]  = __le32_to_cpu(c->info2);
+	info[3]  = __le32_to_cpu(c->info3);
+	info[4]  = __le32_to_cpu(c->info4);
+	info[5]  = __le32_to_cpu(c->info5);
+	info[6]  = __le32_to_cpu(c->info6);
+	info[7]  = __le32_to_cpu(c->info7);
+	info[8]  = __le32_to_cpu(c->info8);
+	info[9]  = __le32_to_cpu(c->info9);
+	info[10] = __le32_to_cpu(c->info10);
+	info[11] = __le32_to_cpu(c->info11);
+	info[12] = __le32_to_cpu(c->info12);
+	info[13] = __le32_to_cpu(c->info13);
+}
+
+static __always_inline void
+ath12k_wifi8_hal_tx_mon_user_desc_info(u32 *info,
+				       const struct hal_tx_mon_user_desc_common *f)
+{
+	info[0]  = __le32_to_cpu(f->info0);
+	info[1]  = __le32_to_cpu(f->info1);
+	info[2]  = __le32_to_cpu(f->info2);
+	info[3]  = __le32_to_cpu(f->info3);
+	info[4]  = __le32_to_cpu(f->info4);
+	info[5]  = __le32_to_cpu(f->info5);
+	info[6]  = __le32_to_cpu(f->info6);
+	info[7]  = __le32_to_cpu(f->info7);
+	info[8]  = __le32_to_cpu(f->info8);
+	info[9]  = __le32_to_cpu(f->info9);
+	info[10] = __le32_to_cpu(f->info10);
+	info[11] = __le32_to_cpu(f->info11);
+	info[12] = __le32_to_cpu(f->info12);
+	info[13] = __le32_to_cpu(f->info13);
+}
+
+static __always_inline void
 ath12k_wifi8_hal_mon_tx_get_user_desc_common
 			(const void *tlv_data,
-			 struct hal_mon_tx_usr_desc_common *usr_common)
+			 struct hal_mon_tx_usr_desc_common *usr_common,
+			 u16 tlv_len)
 {
 	u8 num_ltf_symbols;
 	u32 info[15];
-	const struct hal_tx_mon_user_desc_common *user_desc_common = tlv_data;
-	const struct hal_tx_mon_phy_desc *phy_desc = tlv_data;
 
-	info[0] = __le32_to_cpu(user_desc_common->info0);
-	info[1] = __le32_to_cpu(user_desc_common->info1);
-	info[2] = __le32_to_cpu(user_desc_common->info2);
-	info[3] = __le32_to_cpu(user_desc_common->info3);
-	info[4] = __le32_to_cpu(user_desc_common->info4);
-	info[5] = __le32_to_cpu(user_desc_common->info5);
-	info[6] = __le32_to_cpu(user_desc_common->info6);
-	info[7] = __le32_to_cpu(user_desc_common->info7);
-	info[8] = __le32_to_cpu(user_desc_common->info8);
-	info[9] = __le32_to_cpu(user_desc_common->info9);
-	info[10] = __le32_to_cpu(user_desc_common->info10);
-	info[11] = __le32_to_cpu(user_desc_common->info11);
-	info[12] = __le32_to_cpu(user_desc_common->info12);
-	info[13] = __le32_to_cpu(user_desc_common->info13);
-	info[14] = __le32_to_cpu(phy_desc->info3);
+	if (likely(tlv_len < HAL_MON_TX_USER_DESC_COMMON_TLV_SIZE))
+		ath12k_wifi8_hal_tx_mon_user_desc_info_compact(info, tlv_data);
+	else
+		ath12k_wifi8_hal_tx_mon_user_desc_info(info, tlv_data);
+	info[14] = info[3];
 
 	usr_common->ltf_size =
 		u32_get_bits(info[0],
@@ -5089,6 +5110,7 @@ ath12k_wifi8_hal_mon_tx_populate_eht_sig_common
 	u32 eht_data[4] = {0};
 	u8  num_ru_allocation_known = 0;
 	u8  i = 0;
+	u16 gi, ltf = 0;
 
 	eht_known = (IEEE80211_RADIOTAP_EHT_KNOWN_SPATIAL_REUSE |
 			IEEE80211_RADIOTAP_EHT_KNOWN_GI |
@@ -5098,7 +5120,9 @@ ath12k_wifi8_hal_mon_tx_populate_eht_sig_common
 			IEEE80211_RADIOTAP_EHT_KNOWN_PE_DISAMBIGUITY_OM |
 			IEEE80211_RADIOTAP_EHT_KNOWN_DISREGARD_O);
 	eht_data[0] |= (usr_common->spatial_reuse << EHT_SPATIAL_REUSE_SHIFT);
-	eht_data[0] |= (usr_common->gi << EHT_GI_SHIFT);
+	gi = usr_common->gi;
+	hal_get_radiotap_gi_ltf(&gi, &ltf);
+	eht_data[0] |= (gi << EHT_GI_SHIFT);
 	eht_data[0] |= (usr_common->ltf_size << EHT_LTF_SHIFT);
 	eht_data[0] |= (usr_common->num_ltf_symbols << EHT_EHT_LTF_SHIFT);
 	eht_data[0] |= (usr_common->a_factor << EHT_PRE_FEC_PADDING_FACTOR_SHIFT);
@@ -5161,6 +5185,7 @@ ath12k_wifi8_hal_mon_tx_populate_uhr_sig_common
 	struct hal_rx_radiotap_uhr *uhr = &uhr_info->uhr;
 	u32 known, data0, data1, data2, data3, data4, data5, data6, data7;
 	bool is_non_ofdma;
+	u16 gi, ltf = 0;
 
 	known = __le32_to_cpu(uhr->known);
 	data0 = __le32_to_cpu(uhr->data[0]);
@@ -5178,9 +5203,12 @@ ath12k_wifi8_hal_mon_tx_populate_uhr_sig_common
 		 IEEE80211_RADIOTAP_UHR_KNOWN_PRE_PAD_FACTOR |
 		 IEEE80211_RADIOTAP_UHR_KNOWN_PE_DISAMBIGUITY;
 
+	gi = usr_common->gi;
+	hal_get_radiotap_gi_ltf(&gi, &ltf);
+
 	data0 |= u32_encode_bits(usr_common->spatial_reuse,
 				 IEEE80211_RADIOTAP_UHR_DATA0_SPATIAL_REUSE) |
-		 u32_encode_bits(usr_common->gi,
+		 u32_encode_bits(gi,
 				 IEEE80211_RADIOTAP_UHR_DATA0_GI) |
 		 u32_encode_bits(usr_common->num_ltf_symbols,
 				 IEEE80211_RADIOTAP_UHR_DATA0_UHR_LTF) |
@@ -5329,7 +5357,8 @@ ath12k_wifi8_hal_mon_tx_parse_elr_sig_uhr(const void *tlv_data,
 
 static __always_inline void
 ath12k_wifi8_hal_mon_tx_parse_user_desc_common(const void *tlv_data,
-					       struct hal_tx_mon_ppdu_info *ppdu_info)
+					       struct hal_tx_mon_ppdu_info *ppdu_info,
+					       u16 tlv_len)
 {
 	struct hal_mon_tx_usr_desc_common usr_common = {0};
 	u8 su_or_mu = ppdu_info->su_or_mu;
@@ -5337,7 +5366,7 @@ ath12k_wifi8_hal_mon_tx_parse_user_desc_common(const void *tlv_data,
 	u8 num_users = ppdu_info->num_users;
 
 	usr_common.num_users = num_users;
-	ath12k_wifi8_hal_mon_tx_get_user_desc_common(tlv_data, &usr_common);
+	ath12k_wifi8_hal_mon_tx_get_user_desc_common(tlv_data, &usr_common, tlv_len);
 
 	switch (ppdu_info->rx_status.preamble_type) {
 	case HAL_RX_PREAMBLE_11AX:
@@ -5470,6 +5499,11 @@ bool ath12k_wifi8_is_mon_buf_addr_tlv(u32 tlv_tag)
 	return (tlv_tag == HAL_MON_BUF_ADDR);
 }
 
+bool ath12k_wifi8_tx_mon_pkt_buf_cnt_in_desc(void)
+{
+	return true;
+}
+
 enum hal_tx_mon_status
 ath12k_wifi8_hal_mon_tx_status_get_num_user(struct ath12k_hal *hal,
 					    u16 tlv_tag,
@@ -5502,11 +5536,18 @@ ath12k_wifi8_hal_mon_tx_status_get_num_user(struct ath12k_hal *hal,
 	}
 
 	case HAL_RX_RESPONSE_REQUIRED_INFO: {
-		struct hal_tx_mon_rx_resp_req_info *rx_resp_req_info =
-				(struct hal_tx_mon_rx_resp_req_info *)tx_tlv;
+		if (likely(tlv_len < HAL_MON_TX_RX_RESP_REQ_INFO_TLV_SIZE)) {
+			const struct hal_tx_mon_rx_resp_req_info_compact *rx_resp_req =
+				(const struct hal_tx_mon_rx_resp_req_info_compact *)
+				tx_tlv;
 
-		info = __le32_to_cpu(rx_resp_req_info->info1);
+			info = __le32_to_cpu(rx_resp_req->info1);
+		} else {
+			const struct hal_tx_mon_rx_resp_req_info *rx_resp_req =
+				(const struct hal_tx_mon_rx_resp_req_info *)tx_tlv;
 
+			info = __le32_to_cpu(rx_resp_req->info1);
+		}
 		*num_users =
 		u32_get_bits(info,
 			     HAL_TX_MON_RX_RESPONSE_REQUIRED_INFO1_RESPONSE_STA_COUNT);
@@ -5595,26 +5636,49 @@ ath12k_wifi8_hal_tx_mon_get_wmask_config(struct hal_tx_mon_wmask_config *wmsk)
 	wmsk->tx_fes_status_end = HAL_TX_MON_WMASK_FES_STATUS_END_CFG;
 	wmsk->response_end_status = HAL_TX_MON_WMASK_RESPONSE_END_STATUS_CFG;
 	wmsk->tx_fes_status_prot = HAL_TX_MON_WMASK_FES_STATUS_PROT_CFG;
+	wmsk->mactx_user_desc_common = HAL_TX_MON_WMASK_USER_DESC_COMMON_CFG;
+	wmsk->rx_resp_required_info = HAL_TX_MON_WMASK_RX_RESP_REQUIRED_INFO_CFG;
+}
+
+static __always_inline void
+ath12k_wifi8_hal_tx_mon_rx_resp_req_info_compact(
+	u32 *info, const struct hal_tx_mon_rx_resp_req_info_compact *r)
+{
+	info[0] = __le32_to_cpu(r->info0);
+	info[1] = __le32_to_cpu(r->info1);
+	info[2] = __le32_to_cpu(r->info2);
+	info[3] = __le32_to_cpu(r->info3);
+	info[4] = __le32_to_cpu(r->info4);
+}
+
+static __always_inline void
+ath12k_wifi8_hal_tx_mon_rx_resp_req_info(u32 *info,
+					 const struct hal_tx_mon_rx_resp_req_info *r)
+{
+	info[0] = __le32_to_cpu(r->info0);
+	info[1] = __le32_to_cpu(r->info1);
+	info[2] = __le32_to_cpu(r->info2);
+	info[3] = __le32_to_cpu(r->info3);
+	info[4] = __le32_to_cpu(r->info4);
 }
 
 static __always_inline void
 ath12k_wifi8_hal_mon_tx_parse_rx_resp_req_info
 				(const void *tlv_data,
 				 struct hal_tx_mon_ppdu_info *tx_ppdu_info,
-				 struct hal_tx_mon_status_info *status_info)
+				 struct hal_tx_mon_status_info *status_info,
+				 u16 tlv_len)
 {
-	const struct hal_tx_mon_rx_resp_req_info *rx_resp_req_info = tlv_data;
 	u32 info[5];
 	u32 ppdu_id;
 	u32 addr_32;
 	u16 addr_16;
 	u8 reception_type;
 
-	info[0] = __le32_to_cpu(rx_resp_req_info->info0);
-	info[1] = __le32_to_cpu(rx_resp_req_info->info1);
-	info[2] = __le32_to_cpu(rx_resp_req_info->info2);
-	info[3] = __le32_to_cpu(rx_resp_req_info->info3);
-	info[4] = __le32_to_cpu(rx_resp_req_info->info4);
+	if (likely(tlv_len < HAL_MON_TX_RX_RESP_REQ_INFO_TLV_SIZE))
+		ath12k_wifi8_hal_tx_mon_rx_resp_req_info_compact(info, tlv_data);
+	else
+		ath12k_wifi8_hal_tx_mon_rx_resp_req_info(info, tlv_data);
 
 	ppdu_id = u32_get_bits(info[0],
 			       HAL_TX_MON_RX_RESPONSE_REQUIRED_INFO0_PHY_PPDU_ID);
@@ -5926,7 +5990,7 @@ ath12k_wifi8_hal_mon_tx_parse_mactx_phy_desc(const void *tlv_data,
 		    IEEE80211_RADIOTAP_HE_DATA2_NUM_LTF_SYMS_KNOWN;
 	he_data3 |= is_stbc << HE_STBC_SHIFT;
 
-	hal_get_radiotap_he_gi_ltf(&gi, &ltf_size);
+	hal_get_radiotap_gi_ltf(&gi, &ltf_size);
 	he_data5 |= (gi << HE_GI_SHIFT) | ((1 + ltf_size) << HE_LTF_SIZE_SHIFT);
 	he_data5 = (he_data5 & HE_DATA5_INFO_MASK) | bandwidth;
 
@@ -6123,7 +6187,8 @@ ath12k_wifi8_hal_mon_tx_parse_status_tlv(struct ath12k_hal *hal,
 	case HAL_RX_RESPONSE_REQUIRED_INFO: {
 		ath12k_wifi8_hal_mon_tx_parse_rx_resp_req_info(tlv_data,
 							       tx_ppdu_info,
-							       status_info);
+							       status_info,
+							       tlv_len);
 		status = HAL_TX_MON_RESPONSE_REQUIRED_INFO;
 		break;
 	}
@@ -6430,7 +6495,8 @@ ath12k_wifi8_hal_mon_tx_parse_status_tlv(struct ath12k_hal *hal,
 
 	case HAL_MACTX_USER_DESC_COMMON:
 		ath12k_wifi8_hal_mon_tx_parse_user_desc_common(tlv_data,
-							       tx_ppdu_info);
+							       tx_ppdu_info,
+							       tlv_len);
 		break;
 
 	case HAL_FW2SW_MON: {
@@ -6463,6 +6529,8 @@ ath12k_wifi8_extract_tx_mon_ring_desc(struct ath12k_hal *hal,
 					      HAL_MON_DEST_INFO0_END_OFFSET);
 	desc_info->end_reason = le32_get_bits(info0,
 					      HAL_MON_DEST_INFO0_END_REASON);
+	desc_info->pkt_buf_cnt = le32_get_bits(info0,
+					       HAL_MON_DEST_INFO0_PKT_BUFFER_CNT);
 
 	if (desc_info->empty_desc)
 		return 0;

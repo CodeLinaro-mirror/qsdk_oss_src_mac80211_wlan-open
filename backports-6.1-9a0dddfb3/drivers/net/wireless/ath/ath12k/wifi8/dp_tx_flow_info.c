@@ -175,7 +175,11 @@ int ath12k_wifi8_dp_tx_pool_create(struct ath12k_dp_hw_group *dp_hw_grp)
 	spin_lock_init(&dp_hw_grp_wifi8->tx_pool_lock);
 	dp_hw_grp_wifi8->msduq_ctxt = init_memory_pool(ab, MSDU_STRUCT_SZ,
 						       NUM_TOTAL_MSDU_QUEUES,
+#ifdef PLATFORM_SDX
+						       false);
+#else
 						       true);
+#endif
 	if (!dp_hw_grp_wifi8->msduq_ctxt)
 		goto error;
 
@@ -188,13 +192,21 @@ int ath12k_wifi8_dp_tx_pool_create(struct ath12k_dp_hw_group *dp_hw_grp)
 	aligned_size = roundup_pow_of_two(aligned_size);
 	dp_hw_grp_wifi8->sw_msduq_ctxt = init_memory_pool(ab, aligned_size,
 							  NUM_TOTAL_MSDU_QUEUES,
+#ifdef PLATFORM_SDX
+							  false);
+#else
 							  true);
+#endif
 	if (!dp_hw_grp_wifi8->sw_msduq_ctxt)
 		goto error1;
 
 	dp_hw_grp_wifi8->mpduq_ctxt = init_memory_pool(ab, MPDU_STRUCT_SZ,
 						       NUM_TOTAL_MPDU_QUEUES,
+#ifdef PLATFORM_SDX
+						       false);
+#else
 						       true);
+#endif
 	if (!dp_hw_grp_wifi8->mpduq_ctxt)
 		goto error2;
 
@@ -207,7 +219,11 @@ int ath12k_wifi8_dp_tx_pool_create(struct ath12k_dp_hw_group *dp_hw_grp)
 	aligned_size = roundup_pow_of_two(aligned_size);
 	dp_hw_grp_wifi8->sw_mpduq_ctxt = init_memory_pool(ab, aligned_size,
 							  NUM_TOTAL_MPDU_QUEUES,
+#ifdef PLATFORM_SDX
+							  false);
+#else
 							  true);
+#endif
 	if (!dp_hw_grp_wifi8->sw_mpduq_ctxt)
 		goto error3;
 

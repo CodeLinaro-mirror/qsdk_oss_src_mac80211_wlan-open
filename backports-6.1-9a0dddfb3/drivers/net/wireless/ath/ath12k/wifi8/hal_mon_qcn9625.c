@@ -49,5 +49,6 @@ const struct hal_mon_ops hal_qcn9625_mon_ops = {
 	.tx_pcu_ppdu_setup_init_info_get =
 		ath12k_wifi8_hal_mon_tx_pcu_ppdu_setup_init_info_parse,
 	.extract_tx_mon_ring_desc = ath12k_wifi8_extract_tx_mon_ring_desc,
+	.tx_mon_pkt_buf_cnt_in_desc = ath12k_wifi8_tx_mon_pkt_buf_cnt_in_desc,
 
 };

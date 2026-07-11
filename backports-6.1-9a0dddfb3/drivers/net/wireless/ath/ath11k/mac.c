@@ -8572,7 +8572,8 @@ static int ath11k_mac_op_get_antenna(struct ieee80211_hw *hw, u32 *tx_ant,
 }
 
 static int ath11k_mac_op_set_antenna(struct ieee80211_hw *hw, u32 tx_ant,
-				     u32 rx_ant, u8 radio_id, bool is_dynamic)
+				     u32 rx_ant, u8 radio_id, bool is_dynamic,
+				     int ifindex)
 {
 	struct ath11k *ar = hw->priv;
 	int ret;
@@ -13750,4 +13751,3 @@ void ath11k_mac_background_dfs_event(struct ath11k *ar,
 			   ret);
 	}
 }
-
