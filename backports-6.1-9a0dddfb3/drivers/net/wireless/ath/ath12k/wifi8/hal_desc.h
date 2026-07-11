@@ -2776,7 +2776,7 @@ struct hal_tqm_update_tx_msdu_flow {
 	__le16 l4s_dropping_credit;
 	__le16 l4s_dropping_probability_numerator;
 	__le16 l4s_dropping_probability_denominator;
-	__le32 rsvd0;
+	__le32 rsvd0[5];
 } __packed;
 
 #define HAL_TQM_FLOW_UPDSTAT_INFO0_REQUIREMENTS_NOT_MET	BIT(0)
