@@ -1713,13 +1713,10 @@ void ieee80211_txq_purge(struct ieee80211_local *local,
 	struct fq *fq = &local->fq;
 	struct fq_tin *tin = &txqi->tin;
 
-	if (!ieee80211_hw_check(&local->hw, HAS_TX_QUEUE)) {
-		spin_lock_bh(&fq->lock);
-		fq_tin_reset(fq, tin, fq_skb_free_func);
-		spin_unlock_bh(&fq->lock);
-	}
-
+	spin_lock_bh(&fq->lock);
+	fq_tin_reset(fq, tin, fq_skb_free_func);
 	ieee80211_purge_tx_queue(&local->hw, &txqi->frags);
+	spin_unlock_bh(&fq->lock);
 
 	spin_lock_bh(&local->active_txq_lock[txqi->txq.ac]);
 	list_del_init(&txqi->schedule_order);
