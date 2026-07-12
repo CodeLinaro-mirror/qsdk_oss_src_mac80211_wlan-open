@@ -16,7 +16,7 @@ static int fw_anomaly_genl_cmd_register(struct sk_buff *skb,
 					struct genl_info *info)
 {
 	athdbg_base->nl_portid = info->snd_portid;
-	pr_info("athdbg: userspace registered portid=%u\n",
+	pr_debug("athdbg: userspace registered portid=%u\n",
 		athdbg_base->nl_portid);
 	return 0;
 }
@@ -26,6 +26,7 @@ fw_anomaly_genl_policy[__NL_FW_ANAMOLY_ATTR_MAX] = {
 	[NL_FW_ANAMOLY_ATTR_EVENT_ID] = { .type = NLA_U32    },
 	[NL_FW_ANAMOLY_ATTR_WMI_TLV]  = { .type = NLA_BINARY },
 	[NL_FW_ANAMOLY_ATTR_HW_LINK_ID] = { .type = NLA_U32    },
+	[NL_FW_ANAMOLY_ATTR_RADIO_IDX]   = { .type = NLA_U32    },
 };
 
 static const struct genl_ops fw_anomaly_genl_ops[] = {
@@ -49,7 +50,7 @@ static struct genl_family fw_anomaly_genl_family = {
 /* Send path: called from ath12k.ko via athdbg_if.c                    */
 /* ------------------------------------------------------------------ */
 void athdbg_netlink_send(struct ath12k_base *ab, u32 event_id,
-			 const void *tlv_data, size_t tlv_len)
+			 const struct athdbg_wmi_event_info *info)
 {
 	int rc;
 	struct sk_buff *skb;
@@ -62,7 +63,8 @@ void athdbg_netlink_send(struct ath12k_base *ab, u32 event_id,
 		return;
 
 	skb = genlmsg_new(nla_total_size(sizeof(u32)) +
-			  nla_total_size(tlv_len), GFP_ATOMIC);
+			  nla_total_size(sizeof(u32)) +
+			  nla_total_size(info->tlv_len), GFP_ATOMIC);
 	if (!skb)
 		return;
 
@@ -78,30 +80,37 @@ void athdbg_netlink_send(struct ath12k_base *ab, u32 event_id,
 		return;
 	}
 
+	pr_debug("athdbg_netlink: radio_idx=%u hw_link_id=%u\n",
+		info->radio_idx, ar->hw_link_id);
 	hdr = genlmsg_put(skb, 0, 0, &fw_anomaly_genl_family, 0,
 			  NL_FW_ANAMOLY_ATTR_WMI_TLV);
 	if (!hdr)
 		goto err;
 
 	if (nla_put_u32(skb, NL_FW_ANAMOLY_ATTR_EVENT_ID, event_id)) {
-		pr_debug("athdbg_netlink: nla_put failed for fw_anomaly event_id");
+		pr_err("athdbg_netlink: nla_put failed for fw_anomaly event_id");
 		goto err;
 	}
 
 	if (nla_put_u32(skb, NL_FW_ANAMOLY_ATTR_HW_LINK_ID, ar->hw_link_id)) {
-		pr_debug("athdbg_netlink: nla_put failed for fw_anomaly_hw_link_id");
+		pr_err("athdbg_netlink: nla_put failed for fw_anomaly_hw_link_id");
 		goto err;
 	}
 
-	if (nla_put(skb, NL_FW_ANAMOLY_ATTR_WMI_TLV, tlv_len, tlv_data)) {
-		pr_debug("athdbg_netlink: nla_put failed for fw_anomaly_wmi_tlv");
+	if (nla_put_u32(skb, NL_FW_ANAMOLY_ATTR_RADIO_IDX, info->radio_idx)) {
+		pr_err("athdbg_netlink: nla_put failed for fw_anomaly radio_id");
+		goto err;
+	}
+
+	if (nla_put(skb, NL_FW_ANAMOLY_ATTR_WMI_TLV, info->tlv_len, info->tlv_data)) {
+		pr_err("athdbg_netlink: nla_put failed for fw_anomaly_wmi_tlv");
 		goto err;
 	}
 
 	genlmsg_end(skb, hdr);
 	rc = genlmsg_unicast(&init_net, skb, athdbg_base->nl_portid);
 	if (rc)
-		pr_debug("athdbg_netlink: unicast failed for FW_SS_HANDLER: %d\n", rc);
+		pr_err("athdbg_netlink: unicast failed for FW_SS_HANDLER: %d\n", rc);
 	return;
 err:
 	nlmsg_free(skb);
