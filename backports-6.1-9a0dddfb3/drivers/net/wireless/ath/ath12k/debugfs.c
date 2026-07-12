@@ -3016,7 +3016,6 @@ static int ath12k_open_link_stats(struct inode *inode, struct file *file)
 	struct ath12k_link_stats linkstat;
 	struct ath12k_link_vif *arvif;
 	unsigned long links_map;
-	struct wiphy *wiphy;
 	int link_id, i;
 	char *buf;
 
@@ -3027,16 +3026,14 @@ static int ath12k_open_link_stats(struct inode *inode, struct file *file)
 	if (!buf)
 		return -ENOMEM;
 
-	wiphy = ahvif->ah->hw->wiphy;
-	wiphy_lock(wiphy);
+	rcu_read_lock();
 
 	links_map = ahvif->links_map;
 	for_each_set_bit(link_id, &links_map,
 			 ATH12K_NUM_MAX_LINKS) {
 		if (ATH12K_SCAN_LINKS_MASK & BIT(link_id))
 			continue;
-		arvif = rcu_dereference_protected(ahvif->link[link_id],
-						  lockdep_is_held(&wiphy->mtx));
+		arvif = rcu_dereference(ahvif->link[link_id]);
 
 		spin_lock_bh(&arvif->link_stats_lock);
 		linkstat = arvif->link_stats;
@@ -3093,7 +3090,7 @@ static int ath12k_open_link_stats(struct inode *inode, struct file *file)
 				"------------------------------------------------------\n");
 	}
 
-	wiphy_unlock(wiphy);
+	rcu_read_unlock();
 
 	file->private_data = buf;
 
