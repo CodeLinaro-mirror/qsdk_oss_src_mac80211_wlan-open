@@ -692,9 +692,9 @@ int ath12k_wifi8_hal_tqm_cmd_send(struct ath12k_base *ab, struct hal_srng *srng,
 		break;
 	}
 
-	ath12k_dbg(ab, ATH12K_DBG_PEER,
-		   "hal-tqm-cmd-send: ENTRY type=%s(%d) peer_id=%u\n",
-		   cmd_type_str, type, cmd->std.peer_id);
+	ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+			 "hal-tqm-cmd-send: ENTRY type=%s(%d) peer_id=%u\n",
+			 cmd_type_str, type, cmd->std.peer_id);
 	spin_lock_bh(&srng->lock);
 	ath12k_hal_srng_access_begin(ab, srng);
 
@@ -705,9 +705,9 @@ int ath12k_wifi8_hal_tqm_cmd_send(struct ath12k_base *ab, struct hal_srng *srng,
 			    cmd_type_str, cmd->std.peer_id);
 		goto out;
 	}
-	ath12k_dbg(ab, ATH12K_DBG_PEER,
-		   "hal-tqm-cmd-send: Got TQM descriptor, processing %s command\n",
-		   cmd_type_str);
+	ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+			 "hal-tqm-cmd-send: Got TQM descriptor, processing %s command\n",
+			 cmd_type_str);
 
 	switch (type) {
 	case HAL_TQM_REMOVE_MSDU_BO:
@@ -760,9 +760,9 @@ out:
 	ath12k_hal_srng_access_end(ab, srng);
 	spin_unlock_bh(&srng->lock);
 
-	ath12k_dbg(ab, ATH12K_DBG_PEER,
-		   "hal-tqm-cmd-send: EXIT %s ret=%d peer_id=%u\n",
-		   cmd_type_str, ret, cmd->std.peer_id);
+	ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+			 "hal-tqm-cmd-send: EXIT %s ret=%d peer_id=%u\n",
+			 cmd_type_str, ret, cmd->std.peer_id);
 
 	return ret;
 }
@@ -893,13 +893,13 @@ void ath12k_wifi8_hal_tqm_update_mpduq_cmd_status(struct ath12k_base *ab,
 	status->update_mpdu_queue.allocated_sequence_number = allocated_seq_num;
 	status->update_mpdu_queue.allocated_pn = allocated_pn;
 
-	ath12k_dbg(ab, ATH12K_DBG_PEER,
-		   "tqm-mpdu-status: s=%u e=%u r=%u nm=%u q=%u p=%u tid=%u sn=%u pn=0x%llx\n",
-		   status->status_hdr.status_num,
-		   status->status_hdr.cmd_execution_status,
-		   status->status_hdr.tqm_status_ring,
-		   update_req_not_met, tx_mpdu_queue_number,
-		   sw_peer_id, tid, allocated_seq_num, allocated_pn);
+	ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+			 "tqm-mpdu-status: s=%u e=%u r=%u nm=%u q=%u p=%u tid=%u sn=%u pn=0x%llx\n",
+			 status->status_hdr.status_num,
+			 status->status_hdr.cmd_execution_status,
+			 status->status_hdr.tqm_status_ring,
+			 update_req_not_met, tx_mpdu_queue_number,
+			 sw_peer_id, tid, allocated_seq_num, allocated_pn);
 }
 
 void ath12k_wifi8_hal_tqm_sync_cmd_status(struct ath12k_base *ab,
@@ -1375,18 +1375,18 @@ void ath12k_wifi8_hal_tqm_update_msduq_cmd_status(struct ath12k_base *ab,
 	status->update_msdu_flow.sw_peer_id = sw_peer_id;
 	status->update_msdu_flow.tid = tid;
 
-	ath12k_dbg(ab, ATH12K_DBG_PEER,
-		   "tqm-msdu-status: s=%u e=%u r=%u nm=%u flow=0x%x peer=%u tid=%u\n",
-		   status->status_hdr.status_num,
-		   status->status_hdr.cmd_execution_status,
-		   status->status_hdr.tqm_status_ring, update_req_not_met,
-		   tx_flow_number, sw_peer_id, tid);
+	ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+			 "tqm-msdu-status: s=%u e=%u r=%u nm=%u flow=0x%x peer=%u tid=%u\n",
+			 status->status_hdr.status_num,
+			 status->status_hdr.cmd_execution_status,
+			 status->status_hdr.tqm_status_ring, update_req_not_met,
+			 tx_flow_number, sw_peer_id, tid);
 
 	if (status->status_hdr.cmd_execution_status == HAL_TQM_SUCCESSFUL_EXECUTION &&
 	    !update_req_not_met)
-		ath12k_dbg(ab, ATH12K_DBG_PEER,
-			   "tqm-msdu-status: UPDATE OK peer=%u flow=0x%x tid=%u\n",
-			   sw_peer_id, tx_flow_number, tid);
+		ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+				 "tqm-msdu-status: UPDATE OK peer=%u flow=0x%x tid=%u\n",
+				 sw_peer_id, tx_flow_number, tid);
 	else
 		ath12k_warn(ab,
 			    "tqm-msdu-status: FAILED peer=%u flow=0x%x tid=%u exec=%u nm=%u\n",

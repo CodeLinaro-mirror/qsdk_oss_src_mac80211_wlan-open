@@ -834,9 +834,9 @@ send_cmd:
 done:
 	spin_unlock_bh(&rx_tid->tid_lock);
 	spin_unlock_bh(&dp_hw->peer_hash_lock);
-	ath12k_dbg(ab, ATH12K_DBG_PEER,
-		   "SMD REO update done for peer %pM tid %d: SSN=0x%x\n",
-		   peer_addr, rx_tid_ctx->tid, rx_tid_ctx->ssn);
+	ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+			 "SMD REO update done for peer %pM tid %d: SSN=0x%x\n",
+			 peer_addr, rx_tid_ctx->tid, rx_tid_ctx->ssn);
 
 	return 0;
 }
@@ -876,9 +876,9 @@ int ath12k_wifi8_peer_rx_tid_svld_reset(struct ath12k_base *ab,
 		if (!rx_tid->active)
 			continue;
 
-		ath12k_dbg(ab, ATH12K_DBG_PEER,
-			   "SMD SVLD reset: peer %pM tid %u REO SVLD -> 0\n",
-			   peer_addr, tid);
+		ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+				 "SMD SVLD reset: peer %pM tid %u REO SVLD -> 0\n",
+				 peer_addr, tid);
 
 		memset(&cmd, 0, sizeof(cmd));
 		cmd.addr_lo = lower_32_bits(rx_tid->paddr);
@@ -900,9 +900,9 @@ int ath12k_wifi8_peer_rx_tid_svld_reset(struct ath12k_base *ab,
 	/* Management Rx TID (ATH12K_SMD_RX_MGMT_TID = 16) */
 	rx_tid = &dp_peer->rx_tid[ATH12K_SMD_RX_MGMT_TID];
 	if (rx_tid->active) {
-		ath12k_dbg(ab, ATH12K_DBG_PEER,
-			   "SMD SVLD reset: peer %pM tid %u (mgmt) REO SVLD -> 0\n",
-			   peer_addr, ATH12K_SMD_RX_MGMT_TID);
+		ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+				 "SMD SVLD reset: peer %pM tid %u (mgmt) REO SVLD -> 0\n",
+				 peer_addr, ATH12K_SMD_RX_MGMT_TID);
 
 		memset(&cmd, 0, sizeof(cmd));
 		cmd.addr_lo = lower_32_bits(rx_tid->paddr);
@@ -922,8 +922,8 @@ int ath12k_wifi8_peer_rx_tid_svld_reset(struct ath12k_base *ab,
 
 	spin_unlock_bh(&dp_hw->peer_hash_lock);
 
-	ath12k_dbg(ab, ATH12K_DBG_PEER,
-		   "SMD SVLD reset done for peer %pM\n", peer_addr);
+	ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+			 "SMD SVLD reset done for peer %pM\n", peer_addr);
 
 	return ret;
 }
@@ -3956,9 +3956,9 @@ void ath12k_wifi8_dp_smd_clear_old_peer_rx_lut(struct ath12k_dp *dp,
 		return;
 	}
 
-	ath12k_dbg(ab, ATH12K_DBG_PEER,
-		   "smd phase-c: clearing REO LUT for old peer_id=%u tids=0x%x\n",
-		   dp_peer->peer_id, tids);
+	ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+			 "smd phase-c: clearing REO LUT for old peer_id=%u tids=0x%x\n",
+			 dp_peer->peer_id, tids);
 
 	for_each_set_bit(tid, (unsigned long *)&tids,
 			 ab->hal.hal_params->num_tids) {

@@ -230,9 +230,9 @@ void ath12k_dp_peer_cleanup(struct ath12k *ar, void *ptr, int vdev_id, const u8 
 	rcu_read_lock();
 	peer = ath12k_dp_link_peer_find_by_mac_addr(dp_peer, addr);
 	if (!peer) {
-		ath12k_dbg(ab, ATH12K_DBG_PEER,
-			   "failed to lookup peer %pM on vdev %d\n",
-			   addr, vdev_id);
+		ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+				 "failed to lookup peer %pM on vdev %d\n",
+				 addr, vdev_id);
 		rcu_read_unlock();
 		return;
 	}
