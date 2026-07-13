@@ -15806,10 +15806,8 @@ static void ath12k_wmi_event_teardown_complete(struct ath12k_base *ab,
 		return;
 	}
 
-	kfree(tb);
-
 	if (ev->pdev_id > ab->num_radios)
-		return;
+		goto end;
 
 	for (i = 0; i < ab->num_radios; i++) {
 		pdev = &ab->pdevs[i];
@@ -15821,7 +15819,7 @@ static void ath12k_wmi_event_teardown_complete(struct ath12k_base *ab,
 	if (!ar) {
 		ath12k_warn(ab, "invalid pdev id in teardown complete ev %d",
 			    ev->pdev_id);
-		return;
+		goto end;
 	}
 
 	ar->teardown_complete_event = true;
@@ -15842,6 +15840,8 @@ static void ath12k_wmi_event_teardown_complete(struct ath12k_base *ab,
 		ag->trigger_umac_reset = false;
 		ag->mlo_teardown = false;
 	}
+end:
+	kfree(tb);
 }
 
 static int ath12k_wmi_uhr_cu_status_parse(struct ath12k_base *ab,
@@ -17469,13 +17469,13 @@ static void ath12k_wmi_suspend_event(struct ath12k_base *ab, struct sk_buff *skb
 	kfree(tb);
 	ath12k_dbg(ab, ATH12K_DBG_WMI, "WMI suspend event received for pdev_id %d\n", pdev_id);
 
-	if (ev->pdev_id > ab->num_radios)
+	if (pdev_id > ab->num_radios)
 		return;
 
 	for (i = 0; i < ab->num_radios; i++) {
 		pdev = &ab->pdevs[i];
 
-		if (pdev && pdev->pdev_id == ev->pdev_id) {
+		if (pdev && pdev->pdev_id == pdev_id) {
 			ar = pdev->ar;
 			break;
 		}
@@ -17516,13 +17516,13 @@ static void ath12k_wmi_pdev_resume_event(struct ath12k_base *ab, struct sk_buff 
 	kfree(tb);
 	ath12k_dbg(ab, ATH12K_DBG_WMI, "WMI resume event received for pdev_id %d\n", pdev_id);
 
-	if (ev->pdev_id > ab->num_radios)
+	if (pdev_id > ab->num_radios)
 		return;
 
 	for (i = 0; i < ab->num_radios; i++) {
 		pdev = &ab->pdevs[i];
 
-		if (pdev && pdev->pdev_id == ev->pdev_id) {
+		if (pdev && pdev->pdev_id == pdev_id) {
 			ar = pdev->ar;
 			break;
 		}
@@ -19120,8 +19120,7 @@ static void ath12k_wmi_energy_mgmt_oem_data_event(struct ath12k_base *ab,
 	oem_data_event = tb[WMI_ENERGY_MGMT_OEM_DATA_EVENT_FIXED_PARAM];
 	if (!oem_data_event) {
 		ath12k_warn(ab, "failed to fetch OEM data event\n");
-		kfree(tb);
-		return;
+		goto end;
 	}
 
 	content_type = le32_to_cpu(oem_data_event->content_type);
@@ -19134,7 +19133,7 @@ static void ath12k_wmi_energy_mgmt_oem_data_event(struct ath12k_base *ab,
 	if (!ar) {
 		ath12k_warn(ab, "invalid ar for Energy Service OEM data event\n");
 		rcu_read_unlock();
-		return;
+		goto end;
 	}
 	hw = ar->ah->hw;
 	radio_id = ar->radio_idx;
@@ -19144,6 +19143,8 @@ static void ath12k_wmi_energy_mgmt_oem_data_event(struct ath12k_base *ab,
 
 	ath12k_vendor_send_es_oem_data(hw, radio_id, content_type,
 				       num_bytes_valid, tlv->value);
+end:
+	kfree(tb);
 }
 
 static void ath12k_wmi_pdev_rf_path_resp_event(struct ath12k_base *ab,
