@@ -239,9 +239,10 @@ u32 ath12k_get_metadata_info(struct ath_dp_metadata_param *md_param)
 	metadata = ath_encode_metadata(link_id, msduq_peer);
 
 	if (md_param->ast_param.valid) {
-		ath12k_dbg(NULL, ATH12K_DBG_PEER, "ast_info:%d hw_peer_id:%d\n",
-			   md_param->ast_param.ast_info,
-			   md_param->ast_param.hw_peer_id);
+		ath12k_dbg_level(NULL, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+				 "ast_info:%d hw_peer_id:%d\n",
+				 md_param->ast_param.ast_info,
+				 md_param->ast_param.hw_peer_id);
 	}
 
 	return metadata;

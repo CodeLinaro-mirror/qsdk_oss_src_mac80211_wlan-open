@@ -236,8 +236,8 @@ void ath12k_dp_peer_cleanup_tqm_sync(struct ath12k_dp *dp, void *ctx,
 		return;
 	}
 
-	ath12k_dbg(ab, ATH12K_DBG_PEER,
-		   "tqm-cleanup-sync: TQM status successful, proceeding with cleanup\n");
+	ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+			 "tqm-cleanup-sync: TQM status successful, proceeding with cleanup\n");
 
 	pdev_id = ath12k_hw_mac_id_to_pdev_id(dp->hw_params,
 					      dp_hw_grp->hw_links[hw_link_id].pdev_idx);
@@ -245,16 +245,16 @@ void ath12k_dp_peer_cleanup_tqm_sync(struct ath12k_dp *dp, void *ctx,
 	dp_pdev = ath12k_dp_to_dp_pdev(dp, pdev_id);
 	if (!dp_pdev) {
 		rcu_read_unlock();
-		ath12k_dbg(ab, ATH12K_DBG_PEER,
-			   "tqm-cleanup-sync: dp_pdev NULL, EXIT\n");
+		ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+				 "tqm-cleanup-sync: dp_pdev NULL, EXIT\n");
 		return;
 	}
 
 	dp_hw = dp_pdev->dp_hw;
 	if (!dp_hw) {
 		rcu_read_unlock();
-		ath12k_dbg(ab, ATH12K_DBG_PEER,
-			   "tqm-cleanup-sync: dp_hw NULL, EXIT\n");
+		ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+				 "tqm-cleanup-sync: dp_hw NULL, EXIT\n");
 		return;
 	}
 
@@ -266,23 +266,23 @@ void ath12k_dp_peer_cleanup_tqm_sync(struct ath12k_dp *dp, void *ctx,
 		return;
 	}
 
-	ath12k_dbg(ab, ATH12K_DBG_PEER,
-		   "tqm-cleanup-sync: found dp_peer %pM peer_state=%d peer_ext_ctx=%p\n",
-		   dp_peer->addr, dp_peer->dp_peer_state, dp_peer->peer_ext_ctx);
+	ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+			 "tqm-cleanup-sync: found dp_peer %pM peer_state=%d peer_ext_ctx=%p\n",
+			 dp_peer->addr, dp_peer->dp_peer_state, dp_peer->peer_ext_ctx);
 
 	/* SMD case: peer_ext_ctx was already detached and parked for target AP.
 	 * Skip freeing resources as they will be reused by target AP peer.
 	 */
 	if (!dp_peer->peer_ext_ctx) {
-		ath12k_dbg(ab, ATH12K_DBG_PEER,
-			   "tqm-cleanup-sync: peer_ext_ctx NULL (SMD, resources transferred)\n");
+		ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+				 "tqm-cleanup-sync: peer_ext_ctx NULL (SMD, resources transferred)\n");
 		goto update_peer_state;
 	}
 
 	if (dp_peer->dp_peer_state < ATH12K_DP_PEER_LOGICALLY_DELETED) {
-		ath12k_dbg(ab, ATH12K_DBG_PEER,
-			   "tqm-cleanup-sync: deleting AST entry ast_index=%u\n",
-			   dp_peer->peer_ext_ctx->ast_index);
+		ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+				 "tqm-cleanup-sync: deleting AST entry ast_index=%u\n",
+				 dp_peer->peer_ext_ctx->ast_index);
 		ath12k_dp_ast_entry_delete(dp->dp_hw_grp,
 					   dp_peer->peer_ext_ctx->ast_index);
 	}
@@ -296,8 +296,8 @@ void ath12k_dp_peer_cleanup_tqm_sync(struct ath12k_dp *dp, void *ctx,
 	ath12k_dp_tx_classify_info_free(dp_hw_grp, tx_classify_info_paddr,
 					tx_classify_info_vaddr);
 
-	ath12k_dbg(ab, ATH12K_DBG_PEER,
-		   "tqm-cleanup-sync: freeing peer_ext_ctx\n");
+	ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+			 "tqm-cleanup-sync: freeing peer_ext_ctx\n");
 
 	kfree(dp_peer->peer_ext_ctx);
 	dp_peer->peer_ext_ctx = NULL;
@@ -305,23 +305,23 @@ void ath12k_dp_peer_cleanup_tqm_sync(struct ath12k_dp *dp, void *ctx,
 update_peer_state:
 
 	if (dp_peer->dp_peer_state < ATH12K_DP_PEER_LOGICALLY_DELETED) {
-		ath12k_dbg(ab, ATH12K_DBG_PEER,
-			   "tqm-cleanup-sync: setting peer_state to LOGICALLY_DELETED\n");
+		ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+				 "tqm-cleanup-sync: setting peer_state to LOGICALLY_DELETED\n");
 		dp_peer->dp_peer_state = ATH12K_DP_PEER_LOGICALLY_DELETED;
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		rcu_read_unlock();
 	} else {
-		ath12k_dbg(ab, ATH12K_DBG_PEER,
-			   "tqm-cleanup-sync: calling dp_peer_cleanup and kfree_rcu\n");
+		ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+				 "tqm-cleanup-sync: calling dp_peer_cleanup and kfree_rcu\n");
 		ath12k_wifi8_dp_peer_cleanup(dp_hw, dp_peer);
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		rcu_read_unlock();
 		kfree_rcu(dp_peer, rcu_head);
 	}
 
-	ath12k_dbg(ab, ATH12K_DBG_PEER,
-		   "tqm-cleanup-sync: EXIT peer_id=%u cleanup complete\n",
-		   peer_id);
+	ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+			 "tqm-cleanup-sync: EXIT peer_id=%u cleanup complete\n",
+			 peer_id);
 }
 
 static inline u32 ath12k_qos_get_metadata(u16 qos_id)
