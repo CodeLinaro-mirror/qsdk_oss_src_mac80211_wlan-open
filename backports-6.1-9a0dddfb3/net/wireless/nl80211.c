@@ -24784,8 +24784,9 @@ static bool __nl80211_unexpected_frame(struct net_device *dev, u8 cmd,
 	    nla_put(msg, NL80211_ATTR_MAC, ETH_ALEN, addr))
 		goto nla_put_failure;
 
-	if (link_id != -1)
-		nla_put_u8(msg, NL80211_ATTR_MLO_LINK_ID, link_id);
+	if (link_id != -1 &&
+	    nla_put_u8(msg, NL80211_ATTR_MLO_LINK_ID, link_id))
+		goto nla_put_failure;
 
 	genlmsg_end(msg, hdr);
 	genlmsg_unicast(wiphy_net(&rdev->wiphy), msg, nlportid);
