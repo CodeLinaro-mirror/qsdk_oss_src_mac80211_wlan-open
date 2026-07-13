@@ -254,8 +254,11 @@ void ieee80211_ttlm_info_expec_dur_update(struct ieee80211_vif *vif,
 	    WARN_ON(link_id >= IEEE80211_MLD_MAX_NUM_LINKS))
 		return;
 
+	spin_lock_bh(&wdev->ttlm_expec_dur_lock);
 	wdev->links[link_id].ttlm_expec_dur = expec_dur;
+	wdev->links[link_id].ttlm_expec_dur_gen++;
 	wdev->ttlm_expec_dur_update_flag = true;
+	spin_unlock_bh(&wdev->ttlm_expec_dur_lock);
 }
 EXPORT_SYMBOL(ieee80211_ttlm_info_expec_dur_update);
 

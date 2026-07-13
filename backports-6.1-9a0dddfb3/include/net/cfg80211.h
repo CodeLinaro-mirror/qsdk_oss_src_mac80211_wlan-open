@@ -8108,6 +8108,8 @@ struct wireless_dev {
 		u8 switch_count;
 		u32 link_removal_tbtt_count;
 		u32 ttlm_expec_dur;
+		u32 ttlm_expec_dur_gen;
+		u32 ttlm_expec_dur_sent_gen;
 		u8 reg_6g_power_mode;
 		u8 enhanced_bpcc; /* Enhanced BPCC (IEEE 802.11bn 37.30.3) */
 		bool enhanced_critical_update;
@@ -8123,6 +8125,7 @@ struct wireless_dev {
 	u8 ppe_vp_type;
 	bool link_removal_flag;
 	bool ttlm_expec_dur_update_flag;
+	spinlock_t ttlm_expec_dur_lock; /* protects TTLM expected duration state */
 	u8 vap_submode;
 	u16 repurposed_links;
 };
