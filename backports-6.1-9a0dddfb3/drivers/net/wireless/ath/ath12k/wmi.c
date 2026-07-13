@@ -7350,6 +7350,175 @@ int ath12k_wmi_peer_set_cfr_capture_conf(struct ath12k *ar,
 	return ret;
 }
 
+static void
+ath12k_wmi_populate_cfr_rcc_param(struct ath12k *ar,
+				  struct cfr_rcc_param *rcc,
+				  struct wmi_cfr_filter_group_config *param,
+				  u8 grp_id)
+{
+	struct ta_ra_cfr_cfg *tgt_cfg = &rcc->curr[grp_id];
+
+	param->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_CFR_FILTER_GROUP_CONFIG,
+						   sizeof(*param));
+
+	param->filter_group_id = cpu_to_le32(grp_id);
+	if (tgt_cfg->valid_ta)
+		param->filter_set_valid_mask |=
+			cpu_to_le32(WMI_CFR_FILTER_GRP_CFG_VALID_TA);
+	if (tgt_cfg->valid_ta_mask)
+		param->filter_set_valid_mask |=
+			cpu_to_le32(WMI_CFR_FILTER_GRP_CFG_VALID_TA_MASK);
+	if (tgt_cfg->valid_ra)
+		param->filter_set_valid_mask |=
+			cpu_to_le32(WMI_CFR_FILTER_GRP_CFG_VALID_RA);
+	if (tgt_cfg->valid_ra_mask)
+		param->filter_set_valid_mask |=
+			cpu_to_le32(WMI_CFR_FILTER_GRP_CFG_VALID_RA_MASK);
+	if (tgt_cfg->valid_bw_mask)
+		param->filter_set_valid_mask |=
+			cpu_to_le32(WMI_CFR_FILTER_GRP_CFG_VALID_BW);
+	if (tgt_cfg->valid_nss_mask)
+		param->filter_set_valid_mask |=
+			cpu_to_le32(WMI_CFR_FILTER_GRP_CFG_VALID_NSS);
+	if (tgt_cfg->valid_mgmt_subtype)
+		param->filter_set_valid_mask |=
+			cpu_to_le32(WMI_CFR_FILTER_GRP_CFG_VALID_MGMT_SUBTYPE);
+	if (tgt_cfg->valid_ctrl_subtype)
+		param->filter_set_valid_mask |=
+			cpu_to_le32(WMI_CFR_FILTER_GRP_CFG_VALID_CTRL_SUBTYPE);
+	if (tgt_cfg->valid_data_subtype)
+		param->filter_set_valid_mask |=
+			cpu_to_le32(WMI_CFR_FILTER_GRP_CFG_VALID_DATA_SUBTYPE);
+
+	ether_addr_copy(param->ta_addr.addr, tgt_cfg->ta_addr);
+	ether_addr_copy(param->ta_addr_mask.addr, tgt_cfg->ta_addr_mask);
+	ether_addr_copy(param->ra_addr.addr, tgt_cfg->ra_addr);
+	ether_addr_copy(param->ra_addr_mask.addr, tgt_cfg->ra_addr_mask);
+
+	param->bw_nss_filter =
+		cpu_to_le32(u32_encode_bits(tgt_cfg->bw, WMI_CFR_FILTER_GRP_CFG_BW) |
+			    u32_encode_bits(tgt_cfg->nss, WMI_CFR_FILTER_GRP_CFG_NSS));
+
+	param->mgmt_subtype_filter = cpu_to_le32(tgt_cfg->mgmt_subtype_filter);
+	param->ctrl_subtype_filter = cpu_to_le32(tgt_cfg->ctrl_subtype_filter);
+	param->data_subtype_filter = cpu_to_le32(tgt_cfg->data_subtype_filter);
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_WMI | ATH12K_DBG_CFR, ATH12K_DBG_L1,
+			 "RCC grp %d v_msk %x ta %pM ta_msk %pM ra %pM ra_msk %pM bwnss %x mgmt %x ctrl %x data %x",
+			 le32_to_cpu(param->filter_group_id),
+			 le32_to_cpu(param->filter_set_valid_mask),
+			 param->ta_addr.addr,
+			 param->ta_addr_mask.addr,
+			 param->ra_addr.addr,
+			 param->ra_addr_mask.addr,
+			 le32_to_cpu(param->bw_nss_filter),
+			 le32_to_cpu(param->mgmt_subtype_filter),
+			 le32_to_cpu(param->ctrl_subtype_filter),
+			 le32_to_cpu(param->data_subtype_filter));
+}
+
+int ath12k_wmi_send_cfr_rcc_cmd(struct ath12k *ar, struct cfr_rcc_param *rcc)
+{
+	struct wmi_cfr_capture_filter_cmd_fixed_param *cmd;
+	struct wmi_cfr_filter_group_config *param;
+	struct wmi_tlv *tlv;
+	struct sk_buff *skb;
+	void *ptr;
+	u32 len, i;
+	u8 num_grp_tlvs;
+	int ret;
+
+	if (!rcc)
+		return -EINVAL;
+
+	num_grp_tlvs = hweight_long(rcc->modified_in_curr_session);
+
+	len = sizeof(*cmd) + TLV_HDR_SIZE;
+	len += num_grp_tlvs * sizeof(*param);
+
+	skb = ath12k_wmi_alloc_skb(ar->wmi->wmi_ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_cfr_capture_filter_cmd_fixed_param *)skb->data;
+	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_CFR_CAPTURE_FILTER_CMD,
+						 sizeof(*cmd));
+	cmd->pdev_id = cpu_to_le32(rcc->pdev_id);
+
+	/* set filter types that are enabled */
+	if (rcc->m_directed_ftm)
+		cmd->filter_type |= cpu_to_le32(WMI_CFR_DIRECTED_FTM_ACK_EN);
+	if (rcc->m_all_ftm_ack)
+		cmd->filter_type |= cpu_to_le32(WMI_CFR_ALL_FTM_ACK_EN);
+	if (rcc->m_ndpa_ndp_directed)
+		cmd->filter_type |= cpu_to_le32(WMI_CFR_NDPA_NDP_DIRECTED_EN);
+	if (rcc->m_ndpa_ndp_all)
+		cmd->filter_type |= cpu_to_le32(WMI_CFR_NDPA_NDP_ALL_EN);
+	if (rcc->m_ta_ra_filter)
+		cmd->filter_type |= cpu_to_le32(WMI_CFR_TA_RA_TYPE_FILTER_EN);
+	if (rcc->m_all_packet)
+		cmd->filter_type |= cpu_to_le32(WMI_CFR_ALL_PACKET_EN);
+	if (rcc->en_ta_ra_filter_in_as_fp)
+		cmd->filter_type |= cpu_to_le32(WMI_CFR_FILTER_IN_AS_FP_TA_RA_TYPE);
+
+	cmd->capture_interval = le32_encode_bits(rcc->capture_interval,
+						 WMI_CFR_CAPTURE_INTERVAL);
+	cmd->capture_duration = le32_encode_bits(rcc->capture_duration,
+						 WMI_CFR_CAPTURE_DURATION);
+	cmd->filter_group_bitmap = le32_encode_bits(rcc->filter_group_bitmap,
+						    WMI_CFR_FILTER_GROUP_BITMAP);
+	cmd->ul_mu_user_mask_lower = cpu_to_le32(rcc->ul_mu_user_mask_lower);
+	cmd->ul_mu_user_mask_upper = le32_encode_bits(rcc->ul_mu_user_mask_upper,
+						      WMI_CFR_UL_MU_USER_UPPER);
+	cmd->freeze_tlv_delay_cnt =
+		cpu_to_le32(u32_encode_bits(!!rcc->freeze_tlv_delay_cnt_en,
+					    WMI_CFR_FREEZE_DELAY_CNT_EN) |
+			    u32_encode_bits(rcc->freeze_tlv_delay_cnt_thr,
+					    WMI_CFR_FREEZE_DELAY_CNT_THR));
+	cmd->capture_count =
+		cpu_to_le32(u32_encode_bits(rcc->capture_count, WMI_CFR_CAPTURE_COUNT) |
+			    u32_encode_bits(!!rcc->capture_intval_mode_sel,
+					    WMI_CFR_CAPTURE_INTERVAL_MODE_SEL));
+
+	ptr = skb->data + sizeof(*cmd);
+	tlv = (struct wmi_tlv *)ptr;
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT,
+					 num_grp_tlvs * sizeof(*param));
+
+	if (num_grp_tlvs) {
+		ptr += TLV_HDR_SIZE;
+		param = (struct wmi_cfr_filter_group_config *)ptr;
+
+		for (i = 0; i < MAX_TA_RA_ENTRIES; i++) {
+			if (!test_bit(i, &rcc->modified_in_curr_session))
+				continue;
+			ath12k_wmi_populate_cfr_rcc_param(ar, rcc, param, i);
+			param++;
+		}
+	}
+
+	ret = ath12k_wmi_cmd_send(ar->wmi, skb, WMI_CFR_CAPTURE_FILTER_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "WMI RCC: failed to send capture filter cmd (%d)\n",
+			    ret);
+		dev_kfree_skb(skb);
+		return ret;
+	}
+
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_WMI | ATH12K_DBG_CFR, ATH12K_DBG_L1,
+			 "RCC: pdev %d ftype %x intv %u dur %u gbit %x ul_l %x ul_u %x frz %x cnt %x",
+			 le32_to_cpu(cmd->pdev_id),
+			 le32_to_cpu(cmd->filter_type),
+			 le32_to_cpu(cmd->capture_interval),
+			 le32_to_cpu(cmd->capture_duration),
+			 le32_to_cpu(cmd->filter_group_bitmap),
+			 le32_to_cpu(cmd->ul_mu_user_mask_lower),
+			 le32_to_cpu(cmd->ul_mu_user_mask_upper),
+			 le32_to_cpu(cmd->freeze_tlv_delay_cnt),
+			 le32_to_cpu(cmd->capture_count));
+	return ret;
+}
+
 int ath12k_wmi_probe_resp_tmpl(struct ath12k *ar,
 			       struct ath12k_link_vif *arvif,
 			       struct sk_buff *tmpl)

@@ -34,6 +34,7 @@ struct ath12k_reg_tpc_power_info;
 struct ath12k_qos_params;
 struct ath12k_atf_peer_params;
 struct ath12k_mbssid_info;
+struct cfr_rcc_param;
 
 extern const char *mgmt_frame_name[];
 
@@ -10509,6 +10510,186 @@ struct ath12k_wmi_peer_cfr_capture_conf {
 	u32 capture_method;
 };
 
+#define WMI_CFR_DIRECTED_FTM_ACK_EN BIT(0)
+#define WMI_CFR_ALL_FTM_ACK_EN BIT(1)
+#define WMI_CFR_NDPA_NDP_DIRECTED_EN BIT(2)
+#define WMI_CFR_NDPA_NDP_ALL_EN BIT(3)
+#define WMI_CFR_TA_RA_TYPE_FILTER_EN BIT(4)
+#define WMI_CFR_ALL_PACKET_EN BIT(5)
+#define WMI_CFR_FILTER_IN_AS_FP_TA_RA_TYPE BIT(6)
+
+#define WMI_CFR_CAPTURE_INTERVAL GENMASK(23, 0)
+#define WMI_CFR_CAPTURE_DURATION GENMASK(23, 0)
+#define WMI_CFR_FILTER_GROUP_BITMAP GENMASK(15, 0)
+#define WMI_CFR_UL_MU_USER_UPPER GENMASK(4, 0)
+#define WMI_CFR_FREEZE_DELAY_CNT_EN GENMASK(0, 0)
+#define WMI_CFR_FREEZE_DELAY_CNT_THR GENMASK(8, 1)
+#define WMI_CFR_CAPTURE_COUNT GENMASK(15, 0)
+#define WMI_CFR_CAPTURE_INTERVAL_MODE_SEL GENMASK(16, 16)
+
+#define WMI_CFR_FILTER_GRP_CFG_VALID_TA BIT(0)
+#define WMI_CFR_FILTER_GRP_CFG_VALID_TA_MASK BIT(1)
+#define WMI_CFR_FILTER_GRP_CFG_VALID_RA BIT(2)
+#define WMI_CFR_FILTER_GRP_CFG_VALID_RA_MASK BIT(3)
+#define WMI_CFR_FILTER_GRP_CFG_VALID_BW BIT(4)
+#define WMI_CFR_FILTER_GRP_CFG_VALID_NSS BIT(5)
+#define WMI_CFR_FILTER_GRP_CFG_VALID_MGMT_SUBTYPE BIT(6)
+#define WMI_CFR_FILTER_GRP_CFG_VALID_CTRL_SUBTYPE BIT(7)
+#define WMI_CFR_FILTER_GRP_CFG_VALID_DATA_SUBTYPE BIT(8)
+
+#define WMI_CFR_FILTER_GRP_CFG_BW GENMASK(4, 0)
+#define WMI_CFR_FILTER_GRP_CFG_NSS GENMASK(23, 16)
+
+struct wmi_cfr_filter_group_config {
+	/* tlv tag and len */
+	__le32 tlv_header;
+	/* Filter group number for which the below filters needs to be applied */
+	__le32 filter_group_id;
+	/* Indicates which of the below filter's value is valid
+	 * Bit 0: Ta_addr is valid if set
+	 * Bit 1: Ta_addr_mask is valid if set
+	 * Bit 2: Ra_addr is valid if set
+	 * Bit 3: Ra_addr_mask is valid if set
+	 * Bit 4: Bandwidth is valid if set
+	 * Bit 5: NSS is valid if set
+	 * Bit 6: Mgmt_subtype is valid if set
+	 * Bit 7: Ctrl_subtype is valid if set
+	 * Bit 8: Data_subtype is valid if set
+	 * Bits 31:9 Reserved for future use
+	 */
+	__le32 filter_set_valid_mask;
+	/* ta_addr: Packets matching the TA_mac addr will be filtered in by MAC
+	 * for CFR capture.
+	 */
+	struct ath12k_wmi_mac_addr_params ta_addr;
+	/* ta_addr_mask:
+	 * Packets matching the TA_mac addr Mask will be filtered in by MAC
+	 * for CFR capture.
+	 */
+	struct ath12k_wmi_mac_addr_params ta_addr_mask;
+	/* ra_addr:
+	 * Packets matching the RA_mac addr will be filtered in by MAC
+	 * for CFR capture.
+	 */
+	struct ath12k_wmi_mac_addr_params ra_addr;
+	/* ra_addr_mask:
+	 * Packets matching the RA_mac addr Mask will be filtered in by MAC
+	 * for CFR capture.
+	 */
+	struct ath12k_wmi_mac_addr_params ra_addr_mask;
+	/* bw_nss_filter:
+	 * Indicates which bw and nss packets will be filtered for CFR capture
+	 * Bits 4:0   CFR capture will be done for packets matching the bandwidths
+	 *	specified within this bitmask
+	 * Bits 15:5  Reserved for future
+	 * Bits 23:16 CFR capture will be done for packets matching the Nss
+	 *	specified within this bitmask
+	 * Bits 31:24 Reserved for future
+	 */
+	__le32 bw_nss_filter;
+	/* mgmt_subtype_filter:
+	 * Managments Packets matching the subtype filter categories will be
+	 * filtered in by MAC for CFR capture.
+	 */
+	__le32 mgmt_subtype_filter;
+	/* ctrl_subtype_filter:
+	 * Control Packets matching the subtype filter category will be filtered
+	 * in by MAC for CFR capture.
+	 */
+	__le32 ctrl_subtype_filter;
+	/* data_subtype_filter:
+	 * Data Packets matching the subtype filter category will be filtered in
+	 * by MAC for CFR capture.
+	 */
+	__le32 data_subtype_filter;
+} __packed;
+
+struct wmi_cfr_capture_filter_cmd_fixed_param {
+	/* TLV tag & len */
+	__le32 tlv_header;
+	/* pdev_id for identifying the MAC */
+	__le32 pdev_id;
+	/* filter_type:
+	 * Indicates the type of filter to be enabled
+	 * Bit 0:    Filter Directed FTM ACK frames for CFR capture
+	 * Bit 1:    Filter All FTM ACK frames for CFR capture
+	 * Bit 2:    Filter NDPA NDP Directed Frames for CFR capture
+	 * Bit 3:    Filter NDPA NDP All Frames for CFR capture
+	 * Bit 4:    Filter Frames based on TA/RA/Subtype as provided in CFR Group config
+	 * Bit 5:    Filter in All packets for CFR Capture
+	 * Bit 6:    Filter in TA/RA frames as FP if this bit is set else as MO
+	 * Bits 31:7 Reserved for future use
+	 */
+	__le32 filter_type;
+	/* capture_interval:
+	 * Capture interval field which is time in between consecutive
+	 * CFR capture, in microsecond units
+	 * Bits 23:0  Capture interval
+	 * Bits 31:24 Reserved for future use
+	 */
+	__le32 capture_interval;
+	/* capture_duration:
+	 * Capture Duration field for which CFR capture has to happen,
+	 * in microsecond units
+	 * Bits 23:0  Capture Duration
+	 * Bits 31:24 Reserved for future use
+	 */
+	__le32 capture_duration;
+	/* Bitfields set indicates which of the CFR group config is enabled
+	 * Bits 15:0 Filter Group enable bitmap
+	 * Bits 31:16 Reserved for future use
+	 * If Bit 0 is set, then CFR filter group 0 alone is enabled and so on
+	 */
+	__le32 filter_group_bitmap;
+	/* ul_mu_user_mask_lower:
+	 * Bitfields indicates which of the users in the current UL MU
+	 * transmission are enabled for CFR capture.
+	 * Bits 31 to 0 indicates user indexes for 32 users in a UL MU transmission.
+	 * If bit 0 is set, then the CFR capture will happen for user index 0
+	 * in the current UL MU Transmission.
+	 * If bits 0,2 are set, then CFR capture for UL MU TX corresponds to
+	 * user indices 0 and 2.
+	 */
+	__le32 ul_mu_user_mask_lower;
+	/* ul_mu_user_mask_upper:
+	 * This is continuation of the above lower mask.
+	 * Bits 4:0  Bitfields indicates user indices from 33 to 37 users.
+	 * Bits 31:5 Reserved for future use
+	 * If bit 0 is set, then CFR capture is enabled for user index 33
+	 * in a UL MU transmission.
+	 */
+	__le32 ul_mu_user_mask_upper;
+	/* freeze_tlv_delay_cnt
+	 * Indicates the number of consecutive Rx packets to be skipped
+	 * before CFR capture is enabled again.
+	 * Bit 0: Flag indicating if freeze_tlv_delay_cnt threshold need to be
+	 * enabled or not.
+	 * Bits 8:1   Freeze Delay Count value
+	 * Bits 31:9  Reserved for future use
+	 */
+	__le32 freeze_tlv_delay_cnt;
+	/* capture_count:
+	 * Indicates the number of consecutive packets for which CFR capture
+	 * is to be enabled.
+	 * Interpretation of capture_interval_mode_select (bit 16):
+	 *	Value 0: capture_interval + capture_duration fields are used
+	 *		 to capture CFR for capture_duration after every
+	 *		 capture_interval.
+	 *	Value 1: capture_interval + capture_count fields are used to
+	 *		 capture CFR for capture_count+1 number of packets
+	 *		 after every capture interval
+	 * Bit 15:0   : capture_count
+	 * Bit 16     : capture_interval_mode_select
+	 * Bits 31:17 : Reserved
+	 */
+	__le32 capture_count;
+
+	/* A variable-length TLV array of wmi_cfr_filter_group_config will
+	 * follow this fixed_param TLV
+	 * wmi_cfr_filter_group_config filter_group_config[];
+	 */
+} __packed;
+
 struct wmi_atf_ssid_grp_request_fixed_param {
 	__le32 tlv_header;
 	__le32 pdev_id;
@@ -11279,6 +11460,7 @@ int ath12k_wmi_send_afc_cmd_tlv(struct ath12k *ar, int data_type,
 int ath12k_wmi_peer_set_cfr_capture_conf(struct ath12k *ar,
 					 u32 vdev_id, const u8 *mac,
 					 struct wmi_peer_cfr_capture_conf_arg *arg);
+int ath12k_wmi_send_cfr_rcc_cmd(struct ath12k *ar, struct cfr_rcc_param *rcc);
 int ath12k_wmi_send_mlo_peer_tid_to_link_map_cmd(struct ath12k *ar,
 						 struct ath12k_wmi_ttlm_peer_params *params,
 						 bool ttlm_info);
