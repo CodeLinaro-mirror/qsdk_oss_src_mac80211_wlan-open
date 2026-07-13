@@ -1174,12 +1174,12 @@ static bool ath12k_wifi8_handle_reo_route(struct ath12k_pdev_dp *dp_pdev,
 	return false;
 }
 
-static bool ath12k_wifi8_handle_null_queue(struct ath12k_pdev_dp *dp_pdev,
-					   struct ath12k_dp_peer *peer,
-					   struct ieee80211_rx_status *rx_status,
-					   struct hal_rx_spd_data *spd_desc_l,
-					   struct napi_struct *napi,
-					   struct rx_tlv_info_1 *prev_tlv_info)
+bool ath12k_wifi8_handle_null_queue(struct ath12k_pdev_dp *dp_pdev,
+				    struct ath12k_dp_peer *peer,
+				    struct ieee80211_rx_status *rx_status,
+				    struct hal_rx_spd_data *spd_desc_l,
+				    struct napi_struct *napi,
+				    struct rx_tlv_info_1 *prev_tlv_info)
 
 {
 	struct rx_msdu_desc_info *rx_msdu_info = &spd_desc_l->rx_msdu_info;
