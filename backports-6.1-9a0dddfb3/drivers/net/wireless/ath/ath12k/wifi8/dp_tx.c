@@ -228,11 +228,12 @@ void ath12k_dp_peer_cleanup_tqm_sync(struct ath12k_dp *dp, void *ctx,
 	dma_addr_t tx_classify_info_paddr;
 	void *tx_classify_info_vaddr;
 
-	if (!tqm_status) {
-		ath12k_err(ab, "Error: TQM STATUS is not valid");
-		return;
-	}
-	if (tqm_status->status_hdr.cmd_execution_status != HAL_TQM_SUCCESSFUL_EXECUTION) {
+	/* NULL tqm_status means the TQM status ring was not drained before
+	 * cleanup (e.g. wifi down races a pending TQM_SYNC_CMD).  Treat it
+	 * as a forced cleanup so peer_ext_ctx is not leaked.
+	 */
+	if (tqm_status &&
+	    tqm_status->status_hdr.cmd_execution_status != HAL_TQM_SUCCESSFUL_EXECUTION) {
 		ath12k_err(ab, "Error: TQM STATUS FAILED with reason %d",
 			   tqm_status->status_hdr.cmd_execution_status);
 		return;
@@ -281,6 +282,41 @@ void ath12k_dp_peer_cleanup_tqm_sync(struct ath12k_dp *dp, void *ctx,
 		goto update_peer_state;
 	}
 
+	/*
+	 * SMD BSS Transition: protect peer_ext_ctx from being freed prematurely
+	 * in two related scenarios:
+	 *
+	 * (1) PREP not yet started (or in progress before prep_transfer_ext_ctx):
+	 *     A partner link is removed during PREP setup (assoc_success path).
+	 *     The per-link TXQ teardown sends TQM REMOVE+SYNC even though the
+	 *     peer still has other active hw-links (peer_links_map non-zero).
+	 *     Free only at the last link — when peer_links_map == 0.
+	 *
+	 * (2) PREP already parked ext_ctx (prep_transfer_ext_ctx ran):
+	 *     smd_parked_ext_ctx == dp_peer->peer_ext_ctx means ext_ctx is now
+	 *     owned by the target peer via smd_parked_ext_ctx.  Do not free.
+	 *
+	 * Both conditions apply only to STA BSS peers (the only peers that
+	 * carry peer_ext_ctx through SMD BSS Transition).
+	 */
+	if (dp_peer->is_sta_bss_peer) {
+		bool parked;
+
+		spin_lock_bh(&dp->dp_hw_grp->smd_transition_lock);
+		parked = (dp->dp_hw_grp->smd_parked_ext_ctx &&
+			  dp->dp_hw_grp->smd_parked_ext_ctx ==
+			  dp_peer->peer_ext_ctx);
+		spin_unlock_bh(&dp->dp_hw_grp->smd_transition_lock);
+
+		if (parked || dp_peer->peer_links_map) {
+			ath12k_dbg(ab, ATH12K_DBG_SMD | ATH12K_DBG_PEER,
+				   "tqm-cleanup-sync: SMD PREP in progress for peer %pM id=%u (parked=%d links_map=0x%x) — defer ext_ctx free\n",
+				   dp_peer->addr, peer_id, parked,
+				   dp_peer->peer_links_map);
+			goto update_peer_state;
+		}
+	}
+
 	if (dp_peer->dp_peer_state < ATH12K_DP_PEER_LOGICALLY_DELETED) {
 		ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
 				 "tqm-cleanup-sync: deleting AST entry ast_index=%u\n",
@@ -313,12 +349,28 @@ update_peer_state:
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		rcu_read_unlock();
 	} else {
+		/* Peer is already LOGICALLY_DELETED. Two sub-cases:
+		 *
+		 * (a) Forced cleanup (tqm_status == NULL): tqm_cmd_list_cleanup fired
+		 *     during wifi-down before the WMI peer-delete response arrived.
+		 *     ath12k_wifi8_dp_peer_delete() owns the final kfree() when the
+		 *     response arrives. Do nothing here.
+		 *
+		 * (b) Second TQM_SYNC response for a multi-link peer
+		 *     (e.g. Serving AP roam generates one peer-cleanup-ind
+		 *     per hw-link). The first tqm-cleanup-sync already set
+		 *     LOGICALLY_DELETED and then ath12k_wifi8_dp_peer_delete()
+		 *     freed dp_peer (synchronize_rcu + kfree). The dp_peer
+		 *     pointer we hold was obtained through RCU before that
+		 *     kfree, so it is dangling.  Do NOT touch dp_peer.
+		 *
+		 * In both cases: just unlock and return.
+		 */
 		ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
-				 "tqm-cleanup-sync: calling dp_peer_cleanup and kfree_rcu\n");
-		ath12k_wifi8_dp_peer_cleanup(dp_hw, dp_peer);
+				 "tqm-cleanup-sync: peer already LOGICALLY_DELETED, skip free (forced=%d peer_id=%u)\n",
+				 !tqm_status, peer_id);
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		rcu_read_unlock();
-		kfree_rcu(dp_peer, rcu_head);
 	}
 
 	ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,

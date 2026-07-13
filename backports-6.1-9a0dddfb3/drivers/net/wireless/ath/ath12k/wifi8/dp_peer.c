@@ -30,6 +30,10 @@ void ath12k_dp_tqm_update_completion(struct ath12k_dp *dp, void *ctx,
 	struct ath12k_dp_tx_queue *data = ctx;
 	struct ath12k_base *ab = dp->ab;
 
+	/* NULL tqm_status = forced cleanup from tqm_cmd_list_cleanup; no-op. */
+	if (!tqm_status)
+		return;
+
 	ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
 			 "dp tqm update: peer_id=%u hw_link_id=%u status=%d\n",
 			 data ? data->peer_id : 0, data ? data->hw_link_id : 0,
@@ -2156,11 +2160,32 @@ void ath12k_dp_peer_cleanup_indication(struct ath12k_dp *dp,
 
 	tx_info = ath12k_dp_get_tx_flow_info_from_peer(dp_peer);
 	if (!tx_info) {
-		/* SMD case: peer_ext_ctx was detached during PREP phase (MLO).
-		 * exec_activate_links() already NULLed peer_ext_ctx on the
-		 * current peer during EXEC resp.  Now we just need to send
-		 * TQM_SYNC to trigger the cleanup callback which will skip
-		 * resource freeing (since peer_ext_ctx is NULL).
+		if (dp_peer->is_sta_bss_peer && dp_peer->smd_exec_transferred) {
+			/* SMD BSS Transition EXEC completed on this STA BSS
+			 * peer: all TXQ queues were re-pointed to the target
+			 * peer_id via tqm-update and peer_ext_ctx was NULLed.
+			 * TQM no longer holds queues for this peer_id and will
+			 * not generate a TQM_SYNC status response.
+			 *
+			 * Mark the peer as LOGICALLY_DELETED so that
+			 * ath12k_wifi8_dp_peer_delete() frees it when the WMI
+			 * peer delete response arrives.  Do NOT free here —
+			 * dp_peer_delete() is the owner of the final kfree.
+			 */
+			ath12k_dbg(dp->ab, ATH12K_DBG_SMD | ATH12K_DBG_PEER,
+				   "peer-cleanup-ind: SMD exec complete, skipping TQM_SYNC for dp_peer %pM id=%u\n",
+				   dp_peer->addr, peer_id);
+			dp_peer->dp_peer_state = ATH12K_DP_PEER_LOGICALLY_DELETED;
+			spin_unlock_bh(&dp_hw->peer_hash_lock);
+			rcu_read_unlock();
+			return;
+		}
+
+		/* SMD PREP in progress: peer_ext_ctx still set, EXEC has not
+		 * yet run. Send TQM_SYNC to ensure all in-flight TQM
+		 * completions drain before EXEC transfers ownership.
+		 * tqm-cleanup-sync will find peer_ext_ctx NULL (NULLed by EXEC
+		 * before it fires) and skip resource freeing.
 		 */
 		ath12k_dbg_level(dp->ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
 				 "peer-cleanup-ind: tx_info NULL (SMD case), sending TQM_SYNC only\n");
@@ -2499,6 +2524,7 @@ void ath12k_wifi8_dp_smd_exec_activate_links(struct ath12k_dp *dp,
 		if (current_dp_peer &&
 		    current_dp_peer->peer_ext_ctx == ext_ctx) {
 			current_dp_peer->peer_ext_ctx = NULL;
+			current_dp_peer->smd_exec_transferred = true;
 			ath12k_dbg(dp->ab, ATH12K_DBG_SMD,
 				   "smd exec: NULLed ext_ctx on current peer id=%u\n",
 				   old_peer_id);

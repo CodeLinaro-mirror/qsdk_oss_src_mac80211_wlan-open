@@ -166,6 +166,15 @@ struct ath12k_dp_peer {
 	bool is_vdev_peer;
 	bool is_sta_bss_peer;
 	bool is_epp_peer;
+	/* Set on the SAP peer when SMD BSS Transition EXEC completes: TXQ
+	 * queues have been re-pointed to the target peer_id via tqm-update,
+	 * and peer_ext_ctx has been NULLed. Used in peer-cleanup-ind to skip
+	 * TQM_SYNC, TQM no longer holds queues for this peer_id and will not
+	 * generate a status response and free the dp_peer directly instead.
+	 *
+	 * Protected by dp_hw->peer_hash_lock.
+	 */
+	bool smd_exec_transferred;
 	/* hw_link_id of the radio, valid only for self bss peer */
 	u8 hw_link_id;
 
