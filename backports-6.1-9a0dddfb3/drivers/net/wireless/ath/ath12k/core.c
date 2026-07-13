@@ -4817,6 +4817,9 @@ static void ath12k_core_disable_ext_irq_during_recovery(struct ath12k_base *ab)
 static void ath12k_update_recovery_mode(struct ath12k_hw_group *ag,
 					struct ath12k_base *asserted_ab)
 {
+	int i;
+	struct ath12k_base *partner_ab;
+
 	if (asserted_ab->recovery_mode_address) {
 		/*get current recovery mode as per FW from shmem*/
 		switch (*asserted_ab->recovery_mode_address) {
@@ -4843,6 +4846,16 @@ static void ath12k_update_recovery_mode(struct ath12k_hw_group *ag,
 	    !test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &asserted_ab->dev_flags)) {
 		ath12k_info(asserted_ab, "Recovery is falling back to Mode0 due to cumac HW assert\n");
 		ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
+		for (i = 0; i < ag->num_devices; i++) {
+			partner_ab = ag->ab[i];
+
+			if (asserted_ab == partner_ab)
+				continue;
+			/* Skip RDDM collection of partner chips if cumac hw error causes
+			 * fallback to mode
+			 */
+			partner_ab->recovery_skip_dump = true;
+		}
 	}
 }
 
