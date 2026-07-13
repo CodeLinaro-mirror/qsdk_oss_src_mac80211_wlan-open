@@ -9425,7 +9425,7 @@ void ath12k_mac_bss_info_changed(struct ath12k *ar,
 		     ahvif->vdev_type == WMI_VDEV_TYPE_STA) &&
 		    test_bit(WMI_TLV_SERVICE_EXT_TPC_REG_SUPPORT,
 			     ar->ab->wmi_ab.svc_map)) {
-
+			memset(&arvif->reg_tpc_info, 0, sizeof(arvif->reg_tpc_info));
 			if (ahvif->vdev_type == WMI_VDEV_TYPE_STA)
 				ath12k_mac_parse_tx_pwr_env(ar, arvif);
 
@@ -21862,6 +21862,7 @@ void ath12k_mac_set_tpc_power(struct ath12k *ar, struct ath12k_link_vif *arvif)
 	if (!test_bit(WMI_TLV_SERVICE_EXT_TPC_REG_SUPPORT, ar->ab->wmi_ab.svc_map))
 		return;
 
+	memset(&arvif->reg_tpc_info, 0, sizeof(arvif->reg_tpc_info));
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA)
 		ath12k_mac_parse_tx_pwr_env(ar, arvif);
 
@@ -21895,6 +21896,7 @@ ath12k_mac_vdev_config_after_start(struct ath12k_link_vif *arvif,
 		 * SET_TPC will be sent after MVR completion in
 		 * ath12k_mvr_ch_switch_notify_work().
 		 */
+		memset(&arvif->reg_tpc_info, 0, sizeof(arvif->reg_tpc_info));
 		if (ahvif->vdev_type == WMI_VDEV_TYPE_STA)
 			ath12k_mac_parse_tx_pwr_env(ar, arvif);
 
