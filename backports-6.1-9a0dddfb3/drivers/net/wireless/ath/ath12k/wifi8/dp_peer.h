@@ -79,6 +79,7 @@ int ath12k_wifi8_dp_smd_prep_transfer_ext_ctx(
 	struct ath12k_dp_peer *current_dp_peer,
 	const u8 *target_mld_addr,
 	u16 transitioning_links);
+void ath12k_wifi8_dp_smd_abort_prep(struct ath12k_dp *dp);
 void ath12k_wifi8_dp_smd_exec_activate_links(
 	struct ath12k_dp *dp,
 	struct ath12k_dp_hw *dp_hw,

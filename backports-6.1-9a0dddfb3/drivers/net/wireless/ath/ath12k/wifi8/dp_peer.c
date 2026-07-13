@@ -2377,6 +2377,90 @@ int ath12k_wifi8_dp_smd_prep_transfer_ext_ctx(struct ath12k_dp *dp,
 	return 0;
 }
 
+/**
+ * ath12k_wifi8_dp_smd_abort_prep()
+ *	Undo the ext_ctx sharing done during PREP.
+ *
+ * PREP phase did two things to ext_ctx:
+ *   1. prep_transfer_ext_ctx: smd_parked_ext_ctx = SAP->peer_ext_ctx (parked ref)
+ *   2. peer_assoc_smd_transition: TAP->peer_ext_ctx = smd_parked_ext_ctx (shared)
+ *
+ * The correct reverse:
+ *   1. NULL the TAP peer's peer_ext_ctx: removes the shared reference.
+ *   2. Clear smd_parked_ext_ctx and tracking state.
+ *
+ * After this, the SAP peer remains the sole owner of its peer_ext_ctx.
+ * It will free ext_ctx naturally via peer-cleanup-ind -> tqm-cleanup-sync
+ * when the SAP peer is deleted by sta_info_flush().
+ *
+ * Do NOT delete the AST, free TXQ memory, or kfree ext_ctx here, those
+ * resources are still in active use by the SAP peer.
+ */
+void ath12k_wifi8_dp_smd_abort_prep(struct ath12k_dp *dp)
+{
+	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
+	struct ath12k_dp_peer_ext_ctx *ext_ctx;
+	struct ath12k_dp_peer *target_dp_peer;
+	struct ath12k_pdev_dp *dp_pdev;
+	struct ath12k_dp_hw *dp_hw;
+	u8 target_mld_addr[ETH_ALEN];
+	int pdev_idx;
+
+	spin_lock_bh(&dp_hw_grp->smd_transition_lock);
+	ext_ctx = dp_hw_grp->smd_parked_ext_ctx;
+	if (!ext_ctx) {
+		spin_unlock_bh(&dp_hw_grp->smd_transition_lock);
+		return;
+	}
+	ether_addr_copy(target_mld_addr, dp_hw_grp->smd_target_mld_addr);
+
+	/* Unpark: clear group-level tracking first. */
+	dp_hw_grp->smd_parked_ext_ctx = NULL;
+	dp_hw_grp->smd_old_peer_id = 0;
+	eth_zero_addr(dp_hw_grp->smd_target_mld_addr);
+	spin_unlock_bh(&dp_hw_grp->smd_transition_lock);
+
+	ath12k_dbg(dp->ab, ATH12K_DBG_SMD,
+		   "smd abort prep: removing shared ext_ctx from target peer %pM\n",
+		   target_mld_addr);
+
+	/* Find the target (TAP) MLD BSS peer across all pdevs and NULL its
+	 * peer_ext_ctx.  This removes the shared reference — the ext_ctx
+	 * remains owned by the SAP peer which will free it on peer delete.
+	 * The target peer may not exist yet (e.g. if PREP failed before
+	 * peer_assoc ran) — silently skip in that case.
+	 */
+	rcu_read_lock();
+	for (pdev_idx = 0; pdev_idx < dp->ab->num_radios; pdev_idx++) {
+		dp_pdev = ath12k_dp_to_dp_pdev(dp, pdev_idx);
+		if (!dp_pdev || !dp_pdev->dp_hw)
+			continue;
+
+		dp_hw = dp_pdev->dp_hw;
+		spin_lock_bh(&dp_hw->peer_hash_lock);
+		target_dp_peer = ath12k_dp_peer_find_by_addr(dp_hw,
+							     target_mld_addr);
+		if (target_dp_peer) {
+			if (WARN_ONCE(target_dp_peer->peer_ext_ctx != ext_ctx,
+				      "smd abort prep: target peer %pM peer_ext_ctx mismatch (got %p, expected %p)\n",
+				      target_mld_addr,
+				      target_dp_peer->peer_ext_ctx, ext_ctx)) {
+				spin_unlock_bh(&dp_hw->peer_hash_lock);
+				break;
+			}
+			target_dp_peer->peer_ext_ctx = NULL;
+			spin_unlock_bh(&dp_hw->peer_hash_lock);
+			ath12k_dbg(dp->ab, ATH12K_DBG_SMD,
+				   "smd abort prep: NULLed peer_ext_ctx on target %pM pdev=%d\n",
+				   target_mld_addr, pdev_idx);
+			break;
+		}
+		spin_unlock_bh(&dp_hw->peer_hash_lock);
+	}
+	rcu_read_unlock();
+}
+EXPORT_SYMBOL(ath12k_wifi8_dp_smd_abort_prep);
+
 void ath12k_wifi8_dp_smd_update_msduq_chip_status_via_tqm(struct ath12k_base *ab,
 					struct ath12k_dp_hw_group *dp_hw_grp,
 					struct ath12k_dp_tx_flow_info *tx_info,

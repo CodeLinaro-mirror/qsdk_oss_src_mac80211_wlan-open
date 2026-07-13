@@ -499,10 +499,6 @@ static int ath12k_uhr_prepare_links(struct ath12k_vif *ahvif,
 		if (ret) {
 			ath12k_hw_warn(ahvif->ah,
 				       "smd prep: ext_ctx transfer failed: %d\n", ret);
-			/* peer_ext_ctx is required for EXEC phase AST/TQM
-			 * migration. Abort the transition now so EXEC is never
-			 * sent with a NULL peer_ext_ctx.
-			 */
 			return ret;
 		} else {
 			struct ath12k *first_ar = NULL;
@@ -684,7 +680,9 @@ static int ath12k_uhr_abort_transition(struct ath12k_vif *ahvif,
 				       struct ieee80211_sta *target_sta,
 				       struct ieee80211_uhr_link_reconfig_info *info)
 {
+	struct ath12k_link_vif *primary_arvif;
 	struct ath12k_hw *ah = ahvif->ah;
+	struct ath12k_dp *dp;
 
 	ath12k_dbg(NULL, ATH12K_DBG_MAC,
 		   "uhr abort transition: links=0x%x\n",
@@ -696,7 +694,18 @@ static int ath12k_uhr_abort_transition(struct ath12k_vif *ahvif,
 	eth_zero_addr(ahvif->smd.target_mld_addr);
 	ahvif->smd.transitioning_links = 0;
 
-	ath12k_hw_warn(ah, "uhr_abort_transition: WMI sequence not implemented - requires FW support\n");
+	/* Release the parked ext_ctx.  Use the primary link's ab — this is
+	 * the same ab used by prep_transfer_ext_ctx to park the ext_ctx, so
+	 * its dp contains the correct dp_pdevs[] for the MLD BSS peer lookup.
+	 */
+	primary_arvif = wiphy_dereference(ah->hw->wiphy,
+					  ahvif->link[info->primary_link_id]);
+	if (primary_arvif && primary_arvif->ar) {
+		dp = ath12k_ab_to_dp(primary_arvif->ar->ab);
+		if (dp)
+			ath12k_dp_arch_smd_abort_prep(dp);
+	}
+
 	return 0;
 }
 
