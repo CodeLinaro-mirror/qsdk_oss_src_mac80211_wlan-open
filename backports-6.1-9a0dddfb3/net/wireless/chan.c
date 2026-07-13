@@ -608,8 +608,28 @@ _cfg80211_chandef_compatible(const struct cfg80211_chan_def *c1,
 		return c2;
 
 	/* otherwise, must have same control channel */
-	if (c1->chan != c2->chan)
+	if (!c1->chan || !c2->chan)
 		return NULL;
+	/*
+	 * For 6 GHz, ieee80211_get_6g_channel_khz() returns a pointer from
+	 * sband->chan_6g[mode]->channels[] where mode is the regulatory power
+	 * type (LPI/SP/VLP).  Different callers may use different power modes:
+	 * the AP path (nl80211_parse_chandef) uses the configured AP power mode
+	 * while the STA path uses the mode derived from the BSS's advertised
+	 * power type.  Both point to the same physical 6 GHz frequency but in
+	 * different chan_6g[mode] arrays — pointer identity fails.  Compare by
+	 * center_freq and freq_offset for 6 GHz; pointer identity is sufficient
+	 * for 2.4/5 GHz where only one channel array exists.
+	 */
+	if (c1->chan->band == NL80211_BAND_6GHZ ||
+	    c2->chan->band == NL80211_BAND_6GHZ) {
+		if (c1->chan->center_freq != c2->chan->center_freq ||
+		    c1->chan->freq_offset != c2->chan->freq_offset)
+			return NULL;
+	} else {
+		if (c1->chan != c2->chan)
+			return NULL;
+	}
 
 	/*
 	 * If they have the same width, but aren't identical,
