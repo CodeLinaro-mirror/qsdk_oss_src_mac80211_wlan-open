@@ -1523,13 +1523,7 @@ ath12k_wifi8_dp_process_reo_rx_err_packets(struct ath12k_dp *dp,
 				break;
 			case HAL_REO_ENTR_RING_RXDMA_ECODE_DECRYPT_ERR:
 				dp_pdev->stats.telemetry_stats.rx_decrypt_err++;
-				drop = ath12k_wifi8_dp_tkip_mic_err(dp_pdev,
-								    peer,
-								    &rx_status,
-								    spd_desc_l,
-								    napi,
-								    &prev_tlv);
-
+				drop = true;
 				drop_reason = ATH_RX_TKIP_MIC_ERR;
 				break;
 			case HAL_REO_ENTR_RING_RXDMA_ECODE_TKIP_MIC_ERR:
