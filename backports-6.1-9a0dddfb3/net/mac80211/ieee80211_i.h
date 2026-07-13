@@ -661,6 +661,13 @@ struct ieee80211_smd_prep_target {
 	bool execution_in_progress;
 	bool exec_timeout_started; /* true if exec timeout timer was queued */
 	bool prep_timeout_started; /* true if prep timeout timer was queued */
+	/*
+	 * Set when ieee80211_smd_prep_activate() completes successfully.
+	 * When true, exec timeout must trigger a full disconnect because
+	 * sdata->link[] has been partially remapped to TAP links and cannot
+	 * be safely rolled back to the pre-PREP state in-place.
+	 */
+	bool prep_activated;
 
 	/*
 	 * EXEC phase tracking - computed at start of execution
@@ -3584,7 +3591,8 @@ void ieee80211_smd_remove_prep_target(struct ieee80211_sub_if_data *sdata,
 				      int slot);
 void ieee80211_smd_prep_reset_target(struct ieee80211_sub_if_data *sdata,
 				     struct ieee80211_smd_prep_target *target,
-				     u16 status, u16 type);
+				     u16 status, u16 type,
+				     bool skip_sta_destroy);
 void ieee80211_smd_start_prep_timeout(struct ieee80211_sub_if_data *sdata,
 				      struct ieee80211_smd_prep_target *target,
 				      u16 timeout_tu);

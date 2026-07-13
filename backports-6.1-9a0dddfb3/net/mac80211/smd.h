@@ -23,6 +23,7 @@ void ieee80211_smd_prep_timeout_work(struct wiphy *wiphy,
 				     struct wiphy_work *work);
 void ieee80211_smd_prep_init(struct ieee80211_sub_if_data *sdata);
 void ieee80211_smd_prep_deinit(struct ieee80211_sub_if_data *sdata);
+void ieee80211_smd_cancel_all_targets(struct ieee80211_sub_if_data *sdata);
 void ieee80211_smd_dl_drain_work(struct wiphy *wiphy,
 				 struct wiphy_work *work);
 
@@ -68,6 +69,8 @@ void ieee80211_smd_stop_old_link(struct ieee80211_vif *vif,
 				  unsigned int link_id);
 void ieee80211_smd_free_old_links(struct ieee80211_sub_if_data *sdata,
 				  struct ieee80211_smd_prep_target *target);
+void ieee80211_smd_rollback_link_assign(struct ieee80211_sub_if_data *sdata,
+					struct ieee80211_smd_prep_target *target);
 void ieee80211_smd_free_target_links(struct ieee80211_smd_prep_target *target);
 int ieee80211_smd_find_sap_lid_for_band(struct ieee80211_sub_if_data *sdata,
 					       enum nl80211_band band);

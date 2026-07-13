@@ -4788,6 +4788,8 @@ static void ieee80211_set_disassoc(struct ieee80211_sub_if_data *sdata,
 
 	sdata->vif.cfg.ssid_len = 0;
 
+	ieee80211_smd_cancel_all_targets(sdata);
+
 	/* Remove TDLS peers */
 	__sta_info_flush(sdata, false, -1, ap_sta);
 
@@ -4930,6 +4932,11 @@ static void ieee80211_set_disassoc(struct ieee80211_sub_if_data *sdata,
 	 * when the flow started.
 	 */
 	ieee80211_ml_reconf_reset(sdata);
+
+	wiphy_delayed_work_cancel(sdata->local->hw.wiphy,
+				  &sdata->dec_tailroom_needed_wk);
+	ieee80211_delayed_tailroom_dec(sdata->local->hw.wiphy,
+				       &sdata->dec_tailroom_needed_wk.work);
 
 	ieee80211_vif_set_links(sdata, 0, 0);
 
@@ -12261,12 +12268,6 @@ static int ieee80211_smd_init_target_link(struct ieee80211_sub_if_data *sdata,
 		return -EINVAL;
 	}
 
-
-	struct ieee80211_link_data *old =
-		sdata_dereference(sdata->link[sap_link_id], sdata);
-	if (old)
-		ieee80211_link_debugfs_remove(old);
-
 	__ieee80211_link_init_data(sdata, sap_link_id, link, conf);
 
 	if (conf && target->assoc_data->smd_enabled) {
@@ -12792,7 +12793,7 @@ out_free_sta:
  * all in-flight RCU readers see the restored pointers before the tgt_links are
  * released.
  */
-static void
+void
 ieee80211_smd_rollback_link_assign(struct ieee80211_sub_if_data *sdata,
 				   struct ieee80211_smd_prep_target *target)
 {
@@ -12908,6 +12909,7 @@ int ieee80211_smd_prep_activate(struct ieee80211_sub_if_data *sdata,
 	kfree(target->drv_info);
 	target->drv_info = NULL;
 
+	target->prep_activated = true;
 	return 0;
 
 out_free_links:
@@ -12924,12 +12926,7 @@ out_free_links:
 		 * fail; fall back to sta_info_free() to avoid leaking the object.
 		 */
 		if (target->sta_inserted) {
-			if (__sta_info_destroy(target->target_sta)) {
-				sdata_info(sdata,
-					   "smd: sta_info_destroy failed for %pM, freeing directly\n",
-					   target->target_sta->sta.addr);
-				sta_info_free(local, target->target_sta);
-			}
+			WARN_ON(__sta_info_destroy(target->target_sta));
 			target->sta_inserted = false;
 		} else {
 			sta_info_free(local, target->target_sta);
