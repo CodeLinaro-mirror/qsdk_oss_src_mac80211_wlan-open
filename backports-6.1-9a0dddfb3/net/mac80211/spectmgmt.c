@@ -392,13 +392,27 @@ int ieee80211_parse_ch_switch_ie(struct ieee80211_sub_if_data *sdata,
 			new_chandef = csa_ie->chanreq.oper;
 	}
 
-	/* check if the new chandef fits the capabilities */
-	if (new_band == NL80211_BAND_6GHZ)
-		validate_chandef_by_6ghz_he_eht_oper(sdata, link_id, conn, &new_chandef,
-						     pwr_mode_6ghz);
-	else
-		validate_chandef_by_ht_vht_oper(sdata, conn, vht_cap_info,
-						&new_chandef);
+#ifdef CPTCFG_QCN_EXTN
+	/*
+	 * Skip standard HT/VHT validation when the QCN extension supplies a
+	 * validated 5 GHz 320 MHz chandef. Non-6 GHz HT/VHT operation elements
+	 * cannot represent this vendor 320 MHz channel definition and would
+	 * otherwise reject or downgrade it.
+	 */
+	if (!ieee80211_qcn_5g_320mhz_csa_extn(sdata, elems, support_320,
+					     &new_chandef)) {
+#endif
+		/* check if the new chandef fits the capabilities */
+		if (new_band == NL80211_BAND_6GHZ)
+			validate_chandef_by_6ghz_he_eht_oper(sdata, link_id, conn,
+							     &new_chandef,
+							     pwr_mode_6ghz);
+		else
+			validate_chandef_by_ht_vht_oper(sdata, conn, vht_cap_info,
+							&new_chandef);
+#ifdef CPTCFG_QCN_EXTN
+	}
+#endif
 
 	/* if data is there validate the bandwidth & use it */
 	if (new_chandef.chan) {
