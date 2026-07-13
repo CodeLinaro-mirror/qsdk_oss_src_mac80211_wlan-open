@@ -1228,14 +1228,19 @@ static int ieee80211_init_cipher_suites(struct ieee80211_local *local)
 }
 
 static bool
-ieee80211_ifcomb_check(const struct ieee80211_iface_combination *c, int n_comb)
+ieee80211_ifcomb_check(struct wiphy *wiphy,
+                       const struct ieee80211_iface_combination *c, int n_comb)
 {
 	int i, j;
 
 	for (i = 0; i < n_comb; i++, c++) {
-		/* DFS is not supported with multi-channel combinations yet */
+		/* DFS with multi-channel is not supported except for MLO,
+		 * where each link has its own per-link channel context and
+		 * DFS CAC runs independently per link.
+		 */
 		if (c->radar_detect_widths &&
-		    c->num_different_channels > 1)
+		    c->num_different_channels > 1 &&
+		    !(wiphy->flags & WIPHY_FLAG_SUPPORTS_MLO))
 			return false;
 
 		/* mac80211 doesn't support more than one IBSS interface */
@@ -1356,12 +1361,12 @@ int ieee80211_register_hw(struct ieee80211_hw *hw)
 		for (i = 0; i < hw->wiphy->n_radio; i++) {
 			const struct wiphy_radio *radio = &hw->wiphy->radio[i];
 
-			if (!ieee80211_ifcomb_check(radio->iface_combinations,
+			if (!ieee80211_ifcomb_check(hw->wiphy, radio->iface_combinations,
 						    radio->n_iface_combinations))
 				return -EINVAL;
 		}
 	} else {
-		if (!ieee80211_ifcomb_check(hw->wiphy->iface_combinations,
+		if (!ieee80211_ifcomb_check(hw->wiphy, hw->wiphy->iface_combinations,
 					    hw->wiphy->n_iface_combinations))
 			return -EINVAL;
 	}
