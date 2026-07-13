@@ -581,7 +581,7 @@ bool ath12k_wifi8_dp_mlo_peer_tid_teardown_ready(struct ath12k_dp_peer *dp_peer,
 	 * (ath12k_dp_peer_cleanup, which defers it to
 	 * ath12k_dp_cp_link_peer_unassign).
 	 */
-	return (dp_peer->peer_links_map & ~BIT(link_peer->link_id)) == 0;
+	return (dp_peer->peer_links_map & ~BIT(link_peer->hw_link_id)) == 0;
 }
 
 void  ath12k_wifi8_dp_setup_pn_check_reo_cmd(struct ath12k_hal_reo_cmd *cmd,

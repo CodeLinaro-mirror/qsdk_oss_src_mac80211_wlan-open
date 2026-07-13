@@ -5033,7 +5033,7 @@ ath12k_dp_get_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 	/* Error case handling for non-associated links */
-	if (valid_link && !(dp_peer->peer_links_map & BIT(link_id))) {
+	if (valid_link && !(dp_peer->peer_links_map & BIT(stats_link_id))) {
 		ath12k_err(NULL, "Error MLO peer with invalid link id");
 		return -EINVAL;
 	}

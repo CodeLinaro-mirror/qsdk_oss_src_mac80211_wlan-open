@@ -542,7 +542,7 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 	}
 
 	if (!dp_peer->is_vdev_peer) {
-		dp_peer->peer_links_map |= BIT(link_id);
+		dp_peer->peer_links_map |= BIT(peer->hw_link_id);
 		/* if this is the first link, assign primary link early for EPP peers */
 		if (dp_peer->is_epp_peer && hweight32(dp_peer->peer_links_map) == 1) {
 			peer->primary_link = true;
@@ -737,7 +737,7 @@ static void __ath12k_dp_link_peer_unassign(struct ath12k *ar,
 	ath12k_dp_arch_link_peer_unassign_id(dp, ar, peer);
 
 	if (!dp_peer->is_vdev_peer) {
-		dp_peer->peer_links_map &= ~BIT(peer->link_id);
+		dp_peer->peer_links_map &= ~BIT(peer->hw_link_id);
 		if (stats_link_id < ATH12K_DP_PEER_MAX_MLO_LINKS) {
 			/* Preserve link peer stats to MLD peer before deletion */
 			ath12k_dp_aggr_link_peer_to_mld_peer(ar, peer, dp_peer,
@@ -2672,7 +2672,7 @@ static void ath12k_mac_dp_peer_cleanup_cb(struct ath12k_pdev_dp *dp_pdev,
 		dp_peer = link_peer->dp_peer;
 
 		if (!dp_peer->is_vdev_peer)
-			dp_peer->peer_links_map &= ~BIT(link_peer->link_id);
+			dp_peer->peer_links_map &= ~BIT(link_peer->hw_link_id);
 
 		rcu_assign_pointer(dp_peer->link_peers[link_peer->hw_link_id], NULL);
 
