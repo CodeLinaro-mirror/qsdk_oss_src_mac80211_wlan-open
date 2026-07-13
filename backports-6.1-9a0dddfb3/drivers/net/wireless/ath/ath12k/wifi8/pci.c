@@ -109,9 +109,22 @@ static int ath12k_wifi8_pci_probe(struct pci_dev *pdev,
 		return -EOPNOTSUPP;
 	}
 
+#if defined(ATH12K_CMA_SUPPORT)
+	ret = ath12k_memdev_init(ab, &ab->qmi_mem_dev, "host-ddr-mem");
+	if (ret)
+		ath12k_err(ab,
+			   "failed to init qmi mem helper device: %d, falling back to global cma\n",
+			   ret);
+	if (ab->qmi_mem_dev.rmem_inited)
+		clear_bit(ATH12K_FLAG_FIXED_MEM_REGION, &ab->dev_flags);
+#endif
+
 	ret = ath12k_wifi8_hw_init(ab);
 	if (ret) {
 		dev_err(&pdev->dev, "WiFi-8 hw_init failed: %d\n", ret);
+#if defined(ATH12K_CMA_SUPPORT)
+		ath12k_memdev_deinit(ab, &ab->qmi_mem_dev);
+#endif
 		return ret;
 	}
 
