@@ -1456,7 +1456,7 @@ int ath12k_dp_link_desc_init(struct ath12k_base *ab,
 	struct wbm_link_desc *desc;
 	u16 link_desc_size;
 	u32 tot_mem_sz;
-	u32 paddr;
+	u64 paddr;
 	int i, ret;
 	u32 cookie;
 
