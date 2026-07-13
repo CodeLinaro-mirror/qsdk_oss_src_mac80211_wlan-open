@@ -2928,10 +2928,10 @@ static int ath12k_vendor_send_tpc_eirp_event(struct ath12k_link_vif *arvif,
 			tpc_eirp_dbm))
 		goto fail;
 
-	ath12k_info(arvif->ar->ab,
-			"TPC: sending vendor NL event subcmd=%u vdev=%u link=%d eirp_dbm=%d\n",
-			QCA_NL80211_VENDOR_SUBCMD_TPC_EIRP_EVENT,
-			arvif->vdev_id, link_id, tpc_eirp_dbm);
+	ath12k_dbg(arvif->ar->ab, ATH12K_DBG_MAC,
+		   "TPC: sending vendor NL event subcmd=%u vdev=%u link=%d eirp_dbm=%d\n",
+		   QCA_NL80211_VENDOR_SUBCMD_TPC_EIRP_EVENT,
+		   arvif->vdev_id, link_id, tpc_eirp_dbm);
 	cfg80211_vendor_event(vendor_event, GFP_KERNEL);
 	return 0;
 
