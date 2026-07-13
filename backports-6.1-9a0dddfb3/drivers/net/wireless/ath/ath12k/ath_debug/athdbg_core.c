@@ -242,7 +242,7 @@ static int __init athdbg_driver_init(void)
 	INIT_WORK(&athdbg_base->dbg_wk, athdbg_process_request);
 	INIT_LIST_HEAD(&athdbg_base->req_list);
 	mutex_init(&athdbg_base->req_lock);
-	mutex_init(&athdbg_base->uio_lock);
+	spin_lock_init(&athdbg_base->uio_lock);
 
 #ifdef CPTCFG_ATHDEBUG_UIO_LOGGING
 	if (athdbg_uio_register()) {
