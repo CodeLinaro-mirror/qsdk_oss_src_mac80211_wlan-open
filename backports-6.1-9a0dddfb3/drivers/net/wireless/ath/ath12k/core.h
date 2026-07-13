@@ -212,7 +212,6 @@ struct ath12k_dp_params {
 	unsigned int ppe2tcl_ring;
 	unsigned int tqm2ppe_ring_size;
 	unsigned int tx_comp_ppeds_ring_size;
-	unsigned int num_pool_tx_desc;
 	unsigned int ppe_wbm2sw_ring_size;
 	unsigned int rxdma_monitor_buf_ring_size;
 	unsigned int rxdma_monitor_dst_ring_size;
@@ -233,6 +232,7 @@ struct ath12k_dp_params {
 	unsigned int reo_dst_ring_size[5];
 	unsigned int tcl_data_ring_size[5];
 	unsigned int tx_compl_ring_size[5];
+	unsigned int tx_desc_count[5];
 };
 
 /**

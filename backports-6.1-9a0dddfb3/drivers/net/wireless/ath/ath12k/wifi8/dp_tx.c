@@ -5367,7 +5367,7 @@ int ath12k_wifi8_dp_tx_congestion_control_init(struct ath12k_dp *dp)
 	congstn->weights[HAL_TQM_SERVICE_CATEGORY_SC3] = 50;
 
 	congstn->used_threshold =
-			ATH12K_DP_TX_GET_USED_THRSHLD(ATH12K_NUM_POOL_TX_DESC,
+			ATH12K_DP_TX_GET_USED_THRSHLD(DP_TX_DESC_COUNT_POOL0,
 						      ATH12K_HW_MAX_ACTIVE_QUEUES);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	congstn->ppeds_used_threshold =

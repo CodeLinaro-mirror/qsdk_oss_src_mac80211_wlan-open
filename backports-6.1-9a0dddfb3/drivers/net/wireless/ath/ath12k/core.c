@@ -1682,11 +1682,18 @@ static void ath12k_core_dump_mem_profile_info(struct ath12k_base *ab)
 		    cfg->num_max_vdevs_nlink);
 
 	ath12k_info(ab,
-		    "mem_params: mem_mode=%u pool_tx=%u ppe_wbm2sw=%u mon_buf=%u\n",
+		    "mem_params: mem_mode=%u ppe_wbm2sw=%u mon_buf=%u\n",
 		    cfg->target_mem_mode,
-		    cfg->dp_params.num_pool_tx_desc,
 		    cfg->dp_params.ppe_wbm2sw_ring_size,
 		    cfg->dp_params.rxdma_monitor_buf_ring_size);
+
+	ath12k_info(ab,
+		    "mem_params: tx_desc_count=[%u,%u,%u,%u,%u]\n",
+		    cfg->dp_params.tx_desc_count[0],
+		    cfg->dp_params.tx_desc_count[1],
+		    cfg->dp_params.tx_desc_count[2],
+		    cfg->dp_params.tx_desc_count[3],
+		    cfg->dp_params.tx_desc_count[4]);
 
 	ath12k_info(ab,
 		    "mem_params: mon_dst=%u smart_mon=0x%x ppdu=%u rx_desc=%u\n",
