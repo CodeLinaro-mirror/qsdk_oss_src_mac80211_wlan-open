@@ -12602,7 +12602,7 @@ ieee80211_smd_assoc_success_finalize(struct ieee80211_sub_if_data *sdata,
 	kfree(dyn_info);
 
 skip_dyn_info:
-	ieee80211_smd_free_old_links(sdata, target);
+	ieee80211_smd_free_old_links(sdata, target, true);
 
 	WARN_ON(sdata->vif.dormant_links != 0);
 	WARN_ON(!ether_addr_equal(sdata->vif.cfg.ap_addr, target->target_mld_addr));
