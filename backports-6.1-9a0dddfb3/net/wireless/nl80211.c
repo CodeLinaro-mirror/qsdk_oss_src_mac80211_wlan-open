@@ -21095,6 +21095,11 @@ nl80211_qos_mgmt_cfg(struct sk_buff *skb, struct genl_info *info)
 		if (!tb_qm_desc)
 			return ret;
 
+		if (idx >= QM_MAX_DESCPRIPTORS_PER_REQUEST) {
+			GENL_SET_ERR_MSG(info, "Too many QM descriptors");
+			return -EINVAL;
+		}
+
 		ret = nl80211_parse_qm_desc(tb_qm_desc,
 					    &qm_req.qm_req_desc[idx], idx);
 		if (ret) {
