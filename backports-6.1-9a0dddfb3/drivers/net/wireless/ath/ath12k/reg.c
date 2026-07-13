@@ -9,6 +9,9 @@
 #include "debug.h"
 #include "ahb.h"
 #include "vendor.h"
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+#include "ppe.h"
+#endif
 
 /* World regdom to be used in case default regd from fw is unavailable */
 #define ATH12K_2GHZ_CH01_11      REG_RULE(2412 - 10, 2462 + 10, 40, 0, 20, 0)
@@ -378,6 +381,9 @@ static void ath12k_regd_update_freq_range(struct ath12k *ar)
 			ath12k_dbg(ab, ATH12K_DBG_REG,
 				   "pdev %u 5G WMI filter restricted (RF secondary): [%u, %u] MHz\n",
 				   ar->pdev->pdev_id, freq_low, freq_high);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+			ath12k_ppe_ds_notify_freq_range(ar, freq_low, freq_high);
+#endif
 		} else {
 			ath12k_mac_update_freq_range(ar, freq_low, freq_high);
 		}

@@ -1090,6 +1090,7 @@ void ath12k_wifi8_dp_ppeds_stop(struct ath12k_base *ab)
 int ath12k_wifi8_dp_ppeds_register_soc(struct ath12k_dp *dp, struct dp_ppe_ds_idxs *idx)
 {
 	struct ath12k_base *ab = dp->ab;
+	struct ath12k *ar = ab->pdevs[0].ar;
 	struct hal_srng *ppe2tcl_ring, *reo2ppe_ring, *tqm2ppe_ring, *ppe2wbm_ring;
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
 	struct ppe_ds_wlan_arch_reg_info reg_info = {0};
@@ -1264,6 +1265,13 @@ int ath12k_wifi8_dp_ppeds_register_soc(struct ath12k_dp *dp, struct dp_ppe_ds_id
 				reg_offset, &reg_paddr);
 
 		reg_info.wifi8_cfg.hw_buff_mgmt_en = true;
+	}
+
+	if (ar) {
+		spin_lock_bh(&ar->data_lock);
+		reg_info.freq.low_freq = ar->chan_info.low_freq;
+		reg_info.freq.high_freq = ar->chan_info.high_freq;
+		spin_unlock_bh(&ar->data_lock);
 	}
 
 	if (ab->dp->ppe.nss_plugin_ops->ds_inst_register_wifi_arch_mode(&reg_info,

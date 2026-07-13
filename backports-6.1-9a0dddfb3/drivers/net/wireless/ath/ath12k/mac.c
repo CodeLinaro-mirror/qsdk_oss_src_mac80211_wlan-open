@@ -28206,6 +28206,9 @@ void ath12k_mac_update_freq_range(struct ath12k *ar,
 		   "mac pdev %u freq limit updated. New range %u->%u MHz\n",
 		   ar->pdev->pdev_id, KHZ_TO_MHZ(ar->freq_range.start_freq),
 		   KHZ_TO_MHZ(ar->freq_range.end_freq));
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	ath12k_ppe_ds_notify_freq_range(ar, freq_low, freq_high);
+#endif
 }
 
 /**
