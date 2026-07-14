@@ -1204,11 +1204,11 @@ skip_link_agnostic_tx:
  *
  * Returns: 0 on success, negative on error
  */
-static int ath12k_wifi8_tx_setup_link(struct ieee80211_vif *vif,
-				      struct ieee80211_sta *sta,
-				      struct ieee80211_tx_info *info,
-				      struct sk_buff *skb,
-				      u8 *link_id)
+int ath12k_wifi8_tx_setup_link(struct ieee80211_vif *vif,
+			       struct ieee80211_sta *sta,
+			       struct ieee80211_tx_info *info,
+			       struct sk_buff *skb,
+			       u8 *link_id)
 {
 	u32 info_flags = info->flags;
 
