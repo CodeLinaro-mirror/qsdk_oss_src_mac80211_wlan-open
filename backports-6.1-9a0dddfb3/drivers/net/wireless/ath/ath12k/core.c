@@ -1400,6 +1400,29 @@ static void ath12k_core_power_down_device(struct ath12k_hw_group *ag,
 	}
 }
 
+bool ath12k_core_complete_teardown_required(struct ath12k_hw *ah)
+{
+	struct ath12k *ar;
+	int i;
+
+	mutex_lock(&ah->hw_mutex);
+
+	for_each_ar(ah, ar, i) {
+		if (ar->ab->is_bypassed ||
+#ifdef CPTCFG_QCN_EXTN
+		    ar->ab->hw_rev == ATH12K_HW_QCN9074_HW10 ||
+		    ar->ab->hw_rev == ATH12K_HW_QCN9160_HW10 ||
+#endif
+		    ath12k_erp_get_sm_state() == ATH12K_ERP_ENTER_COMPLETE) {
+			mutex_unlock(&ah->hw_mutex);
+			return false;
+		}
+	}
+
+	mutex_unlock(&ah->hw_mutex);
+	return true;
+}
+
 void ath12k_core_cleanup_power_down_q6(struct ath12k_hw_group *ag, bool standby_mode)
 {
 	struct ath12k_hw *ah;
