@@ -70,6 +70,12 @@
 #define DP_TX_COMP_RING2_SIZE	16384
 #define DP_TX_COMP_RING3_SIZE	16384
 #define DP_TX_COMP_RING4_SIZE	16384
+
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+#define ATH12K_NUM_POOL_PPEDS_TX_DESC_DEFAULT	0x8000
+#define ATH12K_PPEDS_HOTLIST_LEN_MAX_DEFAULT	1024
+#endif
+
 #elif defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
 /* From 256M profile values */
 #define DP_REO2PPE_RING_SIZE	2048
@@ -99,6 +105,11 @@
 #define DP_TX_COMP_RING3_SIZE	1024
 #define DP_TX_COMP_RING4_SIZE	1024
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+#define ATH12K_NUM_POOL_PPEDS_TX_DESC_DEFAULT	0x2000
+#define ATH12K_PPEDS_HOTLIST_LEN_MAX_DEFAULT	256
+#endif
+
 #else
 /* Runtime: ring sizes selected
  */
@@ -110,6 +121,13 @@
 #define DP_PPE_WBM2SW_RING_SIZE		(ath12k_dp_ring_cfg->ppe_wbm2sw_ring_size)
 #define DP_TQM2PPE_RING_SIZE		(ath12k_dp_ring_cfg->tqm2ppe_ring_size)
 #define DP_NUM_CLIENTS_MAX (ath12k_dp_ring_cfg->dp_num_clients_max)
+
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+#define ATH12K_NUM_POOL_PPEDS_TX_DESC_DEFAULT \
+	(ath12k_dp_ring_cfg->num_pool_ppeds_tx_desc)
+#define ATH12K_PPEDS_HOTLIST_LEN_MAX_DEFAULT \
+	(ath12k_dp_ring_cfg->ppeds_hotlist_len_max)
+#endif
 
 #define DP_REO_DST_RING0_SIZE		(ath12k_dp_ring_cfg->reo_dst_ring_size[0])
 #define DP_REO_DST_RING1_SIZE		(ath12k_dp_ring_cfg->reo_dst_ring_size[1])
@@ -206,6 +224,11 @@
 #define DP_TX_COMP_RING3_SIZE           ATH12K_DP_INI_GET(TX_COMPL_RING_SIZE_3)
 #define DP_TX_COMP_RING4_SIZE		ATH12K_DP_INI_GET(TX_COMPL_RING_SIZE_4)
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+#define ATH12K_NUM_POOL_PPEDS_TX_DESC_DEFAULT	ATH12K_DP_INI_GET(NUM_POOL_PPEDS_TX_DESC)
+#define ATH12K_PPEDS_HOTLIST_LEN_MAX_DEFAULT	ATH12K_DP_INI_GET(PPEDS_HOTLIST_LEN_MAX)
+#endif
+
 #endif /* CPTCFG_QCN_EXTN*/
 
 #define HTT_TCL_META_DATA_PEER_ID_MISSION       GENMASK(15, 3)
@@ -228,9 +251,6 @@
 
 #define TX_NAPI_BUDGET             127
 
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-extern struct ath12k_ppeds_desc_params ath12k_ppeds_desc_params;
-#endif
 
 struct ath12k_base;
 struct ath12k_hw;

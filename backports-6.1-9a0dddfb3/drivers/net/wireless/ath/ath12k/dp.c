@@ -1808,12 +1808,13 @@ struct ath12k_rx_desc_info *ath12k_dp_get_rx_desc(struct ath12k_dp *dp,
 {
 	struct ath12k_rx_desc_info **desc_addr_ptr;
 	u16 start_ppt_idx, end_ppt_idx, ppt_idx, spt_idx, rx_spt_offset;
+	struct ath12k_base *ab = dp->ab;
 
 	ppt_idx = u32_get_bits(cookie, ATH12K_DP_CC_COOKIE_PPT);
 	spt_idx = u32_get_bits(cookie, ATH12K_DP_CC_COOKIE_SPT);
 
 	start_ppt_idx = dp->rx_ppt_base + ATH12K_RX_SPT_PAGE_OFFSET;
-	end_ppt_idx = start_ppt_idx + dp->ab->hw_params->num_rx_spt_pages;
+	end_ppt_idx = start_ppt_idx + ab->hw_params->num_rx_spt_pages;
 
 	if (ppt_idx < start_ppt_idx ||
 	    ppt_idx >= end_ppt_idx ||
@@ -1833,6 +1834,10 @@ struct ath12k_tx_desc_info *ath12k_dp_get_tx_desc(struct ath12k_dp *dp,
 {
 	struct ath12k_tx_desc_info **desc_addr_ptr;
 	u16 start_ppt_idx, end_ppt_idx, ppt_idx, spt_idx, tx_spt_offset;
+	struct ath12k_base *ab = dp->ab;
+
+	if (!ab)
+		return NULL;
 
 	ppt_idx = u32_get_bits(cookie, ATH12K_DP_CC_COOKIE_PPT);
 	spt_idx = u32_get_bits(cookie, ATH12K_DP_CC_COOKIE_SPT);
@@ -1995,7 +2000,8 @@ int ath12k_dp_ppeds_cc_desc_cleanup(struct ath12k_base *ab)
 }
 EXPORT_SYMBOL(ath12k_dp_ppeds_cc_desc_cleanup);
 
-void ath12k_dp_ppeds_spt_free_and_deinit(struct ath12k_dp_hw_group *dp_hw_grp)
+void ath12k_dp_ppeds_spt_free_and_deinit(struct ath12k_base *ab,
+					 struct ath12k_dp_hw_group *dp_hw_grp)
 {
 	struct ath12k_ppeds_tx_desc_info *ppeds_tx_descs;
 	struct sk_buff *skb;
@@ -2151,7 +2157,7 @@ unlock:
 
 free:
 	mutex_unlock(&dp_hw_grp->ppeds_tx_init_lock);
-	ath12k_dp_ppeds_spt_free_and_deinit(dp_hw_grp);
+	ath12k_dp_ppeds_spt_free_and_deinit(ab, dp_hw_grp);
 	return ret;
 }
 #endif
@@ -2803,7 +2809,7 @@ void ath12k_dp_cmn_hw_group_unassign(struct ath12k_dp *dp,
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (dp_hw_grp->ppeds_tx_desc_initialized &&
 	    dp->dev == dp_hw_grp->ppeds_tx_spt_dev)
-		ath12k_dp_ppeds_spt_free_and_deinit(dp_hw_grp);
+		ath12k_dp_ppeds_spt_free_and_deinit(dp->ab, dp_hw_grp);
 #endif
 	dp_hw_grp->dp[dp->device_id] = NULL;
 	dp->dp_hw_grp = NULL;

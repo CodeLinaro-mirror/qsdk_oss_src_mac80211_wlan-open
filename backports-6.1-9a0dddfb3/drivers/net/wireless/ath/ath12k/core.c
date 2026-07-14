@@ -62,25 +62,6 @@
 #endif
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-#if defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
-#define ATH12K_NUM_POOL_PPEDS_TX_DESC_DEFAULT 0x2000
-#define ATH12K_PPEDS_HOTLIST_LEN_MAX_DEFAULT 256
-#else
-#define ATH12K_NUM_POOL_PPEDS_TX_DESC_DEFAULT 0x8000
-#define ATH12K_PPEDS_HOTLIST_LEN_MAX_DEFAULT 1024
-#endif
-
-struct ath12k_ppeds_desc_params ath12k_ppeds_desc_params = {
-	.num_ppeds_desc = ATH12K_NUM_POOL_PPEDS_TX_DESC_DEFAULT,
-	.ppeds_hotlist_len = ATH12K_PPEDS_HOTLIST_LEN_MAX_DEFAULT,
-};
-
-module_param_named(num_ppeds_tx_desc, ath12k_ppeds_desc_params.num_ppeds_desc, uint, 0644);
-MODULE_PARM_DESC(num_ppeds_tx_desc, "Number of PPEDS descriptors");
-
-module_param_named(ppeds_hotlist_len, ath12k_ppeds_desc_params.ppeds_hotlist_len, uint, 0644);
-MODULE_PARM_DESC(ppeds_hotlist_len, "PPEDS hotlist length");
-
 unsigned int ath12k_ppe_ds_enabled = 1;
 module_param_named(ppe_ds_enable, ath12k_ppe_ds_enabled, uint, 0644);
 MODULE_PARM_DESC(ppe_ds_enable, "ppe_ds_enable: 0-disable, 1-enable");
@@ -370,13 +351,6 @@ static void ath12k_detect_mem_profile(void)
 	 */
 	ath12k_dp_ring_cfg = &ath12k_dp_ring_cfgs[ath12k_active_mem_profile];
 	ath12k_max_clients = ath12k_dp_ring_cfg->dp_max_clients;
-
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-		ath12k_ppeds_desc_params.num_ppeds_desc =
-			ath12k_dp_ring_cfg->num_pool_ppeds_tx_desc;
-		ath12k_ppeds_desc_params.ppeds_hotlist_len =
-			ath12k_dp_ring_cfg->ppeds_hotlist_len_max;
-#endif
 }
 
 static unsigned int ath12k_en_fwlog = true;
