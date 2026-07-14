@@ -5089,6 +5089,7 @@ static void ath12k_peer_assoc_h_eht(struct ath12k *ar,
 {
 	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(arsta->ahsta);
 	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(arvif->ahvif);
+	const struct ieee80211_eht_mcs_nss_supp_20mhz_only *own_bw_20;
 	const struct ieee80211_eht_mcs_nss_supp_20mhz_only *bw_20;
 	const struct ieee80211_eht_mcs_nss_supp_bw *own_bw;
 	const struct ieee80211_eht_mcs_nss_supp_bw *bw;
@@ -5101,6 +5102,7 @@ static void ath12k_peer_assoc_h_eht(struct ath12k *ar,
 	u32 *peer_rx_mcs, *peer_tx_mcs;
 	struct cfg80211_chan_def def;
 	enum nl80211_band band;
+	bool own_is_20mhz_only;
 	int eht_nss;
 	u8 max_nss;
 
@@ -5133,6 +5135,10 @@ static void ath12k_peer_assoc_h_eht(struct ath12k *ar,
 		band = ath12k_get_band_based_on_freq(ar->chan_info.low_freq);
 	else
 		band = def.chan->band;
+
+	own_is_20mhz_only =
+		!(ar->mac.sbands[band].iftype_data->he_cap.he_cap_elem.phy_cap_info[0] &
+		  IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_MASK_ALL);
 
 	if (vif->type == NL80211_IFTYPE_AP && !ath12k_mac_is_bridge_vdev(arvif)) {
 		tx_arvif = ath12k_mac_get_tx_arvif(arvif, link_conf);
@@ -5248,6 +5254,22 @@ static void ath12k_peer_assoc_h_eht(struct ath12k *ar,
 					bw_20->rx_tx_mcs9_max_nss,
 					bw_20->rx_tx_mcs11_max_nss,
 					bw_20->rx_tx_mcs13_max_nss,
+					&peer_rx_mcs[WMI_EHTCAP_TXRX_MCS_NSS_IDX_80],
+					&peer_tx_mcs[WMI_EHTCAP_TXRX_MCS_NSS_IDX_80]);
+		} else if (!(vif->type == NL80211_IFTYPE_AP ||
+			     vif->type == NL80211_IFTYPE_MESH_POINT) &&
+			   own_is_20mhz_only) {
+			own_bw_20 = &own_mcs_nss.only_20mhz;
+			bw = &eht_cap->eht_mcs_nss_supp.bw._80;
+			ath12k_mac_set_eht_mcs(
+					own_bw_20->rx_tx_mcs7_max_nss,
+					own_bw_20->rx_tx_mcs9_max_nss,
+					own_bw_20->rx_tx_mcs11_max_nss,
+					own_bw_20->rx_tx_mcs13_max_nss,
+					bw->rx_tx_mcs9_max_nss,
+					bw->rx_tx_mcs9_max_nss,
+					bw->rx_tx_mcs11_max_nss,
+					bw->rx_tx_mcs13_max_nss,
 					&peer_rx_mcs[WMI_EHTCAP_TXRX_MCS_NSS_IDX_80],
 					&peer_tx_mcs[WMI_EHTCAP_TXRX_MCS_NSS_IDX_80]);
 		} else {
