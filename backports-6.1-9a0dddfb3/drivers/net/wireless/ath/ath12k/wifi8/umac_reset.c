@@ -507,7 +507,8 @@ static int ath12k_check_txrx_idle(struct ath12k_base *ab, u32 address)
 				HAL_MAC_IDLE_CHECK_DELAY_USEC,
 				HAL_MAC_IDLE_CHECK_TIMEOUT_USEC);
 	if (ret)
-		ath12k_err(ab, "TXRX idle check timeout at address 0x%x", address);
+		ath12k_err(ab, "TXRX idle check timeout at address 0x%x value 0x%x",
+			   address, ath12k_hif_read32(ab, address));
 
 	return ret;
 }
@@ -552,7 +553,9 @@ static int ath12k_check_mxi_idle(struct ath12k_base *ab, u32 mxi_base)
 				HAL_MAC_IDLE_CHECK_DELAY_USEC,
 				HAL_MAC_IDLE_CHECK_TIMEOUT_USEC);
 	if (ret) {
-		ath12k_err(ab, "sm states idle check failed");
+		ath12k_err(ab, "sm states idle check failed at address 0x%x value 0x%x",
+			   mxi_base + HAL_WMAC_GXI_SM_STATES_IX_0,
+			   ath12k_hif_read32(ab, mxi_base + HAL_WMAC_GXI_SM_STATES_IX_0));
 		return ret;
 	}
 
@@ -562,7 +565,9 @@ static int ath12k_check_mxi_idle(struct ath12k_base *ab, u32 mxi_base)
 				HAL_MAC_IDLE_CHECK_DELAY_USEC,
 				HAL_MAC_IDLE_CHECK_TIMEOUT_USEC);
 	if (ret) {
-		ath12k_err(ab, "wdog warn status check failed");
+		ath12k_err(ab, "wdog warn status check failed at address 0x%x value 0x%x",
+			   mxi_base + HAL_GXI_WDOG_WARN_STATUS,
+			   ath12k_hif_read32(ab, mxi_base + HAL_GXI_WDOG_WARN_STATUS));
 		return ret;
 	}
 
@@ -611,7 +616,10 @@ static int ath12k_check_dmac_cmn_idle(struct ath12k_base *ab, u32 dmcmn_base)
 				HAL_MAC_IDLE_CHECK_DELAY_USEC,
 				HAL_MAC_IDLE_CHECK_TIMEOUT_USEC);
 	if (ret)
-		ath12k_err(ab, "DMAC common idle check timeout");
+		ath12k_err(ab, "DMAC common idle check timeout at address 0x%x value 0x%x",
+			   dmcmn_base + HAL_DMAC_DMCMN_DMAC_IDLE_COMMON,
+			   ath12k_hif_read32(ab, dmcmn_base +
+					     HAL_DMAC_DMCMN_DMAC_IDLE_COMMON));
 
 	return ret;
 }
@@ -696,9 +704,20 @@ static int ath12k_halt_mlo_doorbells(struct ath12k_base *ab, u32 is_halt)
 	return 0;
 }
 
+static void ath12k_wsib_reset(struct ath12k_base *ab)
+{
+	ath12k_hif_rmw32(ab, HAL_SEQ_WCSS_WFSS_CC_REG + HAL_WFSS_WCSS_MLO_WSI_CBCR,
+			 HAL_WSI_RESET_MASK, 1);
+	udelay(HAL_WSI_RESET_DELAY_USEC);
+	ath12k_hif_rmw32(ab, HAL_SEQ_WCSS_WFSS_CC_REG + HAL_WFSS_WCSS_MLO_WSI_CBCR,
+			 HAL_WSI_RESET_MASK, 0);
+	ath12k_hif_write32(ab, HAL_SEQ_WCSS_MAC_WSIB_REG + HAL_MAC_WSIB_MASTER_SYNC, 1);
+}
+
 static int ath12k_pause_global_wsi(struct ath12k_base *ab, u32 pause)
 {
 	int ret;
+	int value;
 
 	ath12k_hif_rmw32(ab, HAL_SEQ_WCSS_MAC_WSIB_REG + HAL_MAC_WSIB_CFG,
 			 HAL_WSIB_PAUSE_MASK, pause);
@@ -711,15 +730,16 @@ static int ath12k_pause_global_wsi(struct ath12k_base *ab, u32 pause)
 					HAL_WSIB_IDLE_CHECK_TIMEOUT_USEC);
 
 		if (ret) {
-			ath12k_hif_rmw32(ab, HAL_SEQ_WCSS_WFSS_CC_REG +
-					 HAL_WFSS_WCSS_MLO_WSI_CBCR,
-					 HAL_WSI_RESET_MASK, 1);
-			udelay(HAL_WSI_RESET_DELAY_USEC);
-			ath12k_hif_rmw32(ab, HAL_SEQ_WCSS_WFSS_CC_REG +
-					 HAL_WFSS_WCSS_MLO_WSI_CBCR,
-					 HAL_WSI_RESET_MASK, 0);
+			ath12k_info(ab, "WSI is not idle, address 0x%x value 0x%x proceed to reset",
+				    HAL_SEQ_WCSS_MAC_WSIB_REG + HAL_MAC_WSIB_IDLE_STATUS,
+				    ath12k_hif_read32(ab, HAL_SEQ_WCSS_MAC_WSIB_REG +
+						      HAL_MAC_WSIB_IDLE_STATUS));
+			/* Read the value of CFG and write back after WSI reset */
+			value = ath12k_hif_read32(ab, HAL_SEQ_WCSS_MAC_WSIB_REG +
+						  HAL_MAC_WSIB_CFG);
+			ath12k_wsib_reset(ab);
 			ath12k_hif_write32(ab, HAL_SEQ_WCSS_MAC_WSIB_REG +
-					   HAL_MAC_WSIB_MASTER_SYNC, 1);
+					   HAL_MAC_WSIB_CFG, value);
 		}
 	}
 	return 0;
@@ -753,7 +773,10 @@ static int ath12k_pmac_tx_flush(struct ath12k_base *ab, int pmac_hwsch_base,
 				HAL_MAC_IDLE_CHECK_DELAY_USEC,
 				HAL_MAC_IDLE_CHECK_TIMEOUT_USEC);
 	if (ret) {
-		ath12k_err(ab, "PMAC: HWSCH flush timeout\n");
+		ath12k_err(ab, "PMAC: HWSCH flush timeout at address 0x%x value 0x%x\n",
+			   pmac_hwsch_base + HAL_PMAC_HWSCH_FLUSH_STATUS,
+			   ath12k_hif_read32(ab, pmac_hwsch_base +
+					     HAL_PMAC_HWSCH_FLUSH_STATUS));
 		return ret;
 	}
 
@@ -766,12 +789,12 @@ static int ath12k_pmac_tx_flush(struct ath12k_base *ab, int pmac_hwsch_base,
 static int ath12k_pmac_tx_abort(struct ath12k_base *ab)
 {
 	int i, ret;
-	int pmac_pmcmn_base[] = HAL_SEQ_WCSS_PMAC_PMCMN_REG;
 	int pmac_hwsch_base[] = HAL_SEQ_WCSS_PMAC_HWSCH_REG;
+	int pmac_rxpcu_base[] = HAL_SEQ_WCSS_PMAC_RXPCU_REG;
 
 	for (i = 0; i < ab->num_radios; i++) {
-		ath12k_hif_rmw32(ab, pmac_pmcmn_base[i] + HAL_PMAC_PMCMN_MAC_PCU_DIAG_SW,
-				 HAL_PMAC_PMCMN_MAC_PCU_DIAG_SW_HALT_RX_MASK, 1);
+		ath12k_hif_rmw32(ab, pmac_rxpcu_base[i] + HAL_PMAC_RXPCU_SIFS_RESP_CTRL,
+				 HAL_PMAC_RXPCU_UL_TRIGGER_EN_MASK, 1);
 
 		ret = ath12k_pmac_tx_flush(ab, pmac_hwsch_base[i],
 					   HAL_TX_FLUSH_REASON_HALT_TX);
@@ -784,11 +807,15 @@ static int ath12k_pmac_tx_abort(struct ath12k_base *ab)
 	return 0;
 }
 
-static int ath12k_pmac_rx_abort(struct ath12k_base *ab, int pmac_rxpcu_base)
+static int ath12k_pmac_rx_abort(struct ath12k_base *ab, int pmac_rxpcu_base,
+				int pmac_pmcmn_base)
 {
 	ath12k_hif_rmw32(ab, HAL_SEQ_WCSS_DMAC_RXOLE_REG +
 			 HAL_DMAC_RXOLE_CLKGATE_DISABLE,
 			 HAL_DMAC_RXOLE_CLKGATE_DISABLE_SFM_WRITE_MASK, 1);
+
+	ath12k_hif_rmw32(ab, pmac_pmcmn_base + HAL_PMAC_PMCMN_MAC_PCU_DIAG_SW,
+				 HAL_PMAC_PMCMN_MAC_PCU_DIAG_SW_HALT_RX_MASK, 1);
 
 	ath12k_hif_rmw32(ab, pmac_rxpcu_base +
 			 HAL_PMAC_RXPCU_RX_ERR_INJECTION_CFG,
@@ -821,7 +848,10 @@ static int ath12k_pmac_rx_flush(struct ath12k_base *ab, int pmac_rxpcu_base, int
 				HAL_PMAC_RXPCU_RX_FLUSH_RX_FLUSH_ACK_MASK,
 				HAL_RX_FLUSH_DELAY_USEC, HAL_RX_FLUSH_TIMEOUT_USEC);
 	if (ret) {
-		ath12k_err(ab, "pmac rx flush failed\n");
+		ath12k_err(ab, "pmac rx flush failed at address 0x%x value 0x%x\n",
+			   pmac_rxpcu_base + HAL_PMAC_RXPCU_RX_FLUSH_CTRL,
+			   ath12k_hif_read32(ab, pmac_rxpcu_base +
+					     HAL_PMAC_RXPCU_RX_FLUSH_CTRL));
 		return ret;
 	}
 
@@ -829,7 +859,9 @@ static int ath12k_pmac_rx_flush(struct ath12k_base *ab, int pmac_rxpcu_base, int
 				HAL_DMAC_DMCMN_ISR_S24_VALUE, HAL_DMAC_DMCMN_ISR_S24_MASK,
 				HAL_RX_FLUSH_DELAY_USEC, HAL_RX_FLUSH_TIMEOUT_USEC);
 	if (ret) {
-		ath12k_err(ab, "rxdma flush failed\n");
+		ath12k_err(ab, "rxdma flush failed at address 0x%x value 0x%x\n",
+			   HAL_SEQ_WCSS_DMAC_DMCMN_REG + isr,
+			   ath12k_hif_read32(ab, HAL_SEQ_WCSS_DMAC_DMCMN_REG + isr));
 		return ret;
 	}
 
@@ -847,11 +879,15 @@ static int ath12k_pmac_rx_suspend(struct ath12k_base *ab)
 	int i, ret;
 	int pmac_hwsch_base[] = HAL_SEQ_WCSS_PMAC_HWSCH_REG;
 	int pmac_rxpcu_base[] = HAL_SEQ_WCSS_PMAC_RXPCU_REG;
+	int pmac_pmcmn_base[] = HAL_SEQ_WCSS_PMAC_PMCMN_REG;
 	int isr[] = HAL_DMAC_DMCMN_ISR_S24;
 
 	for (i = 0; i < ab->num_radios; i++) {
-		ath12k_hif_rmw32(ab, pmac_rxpcu_base[i] + HAL_PMAC_RXPCU_SIFS_RESP_CTRL,
-				 HAL_PMAC_RXPCU_UL_TRIGGER_EN_MASK, 1);
+		ath12k_hif_write32(ab, pmac_pmcmn_base[i] +
+				 HAL_PMAC_HWSCH_R0_MTU_FOR_HMAC_CONTROLS_IX_0, 0);
+
+		ath12k_hif_rmw32(ab, pmac_pmcmn_base[i] + HAL_PMAC_PMCMN_MAC_PCU_DIAG_SW,
+				 HAL_PMAC_PMCMN_MAC_PCU_DIAG_SW_HALT_RX_MASK, 1);
 
 		ret = ath12k_pmac_tx_flush(ab, pmac_hwsch_base[i],
 					   HAL_TX_FLUSH_REASON_HALT_RX);
@@ -860,7 +896,7 @@ static int ath12k_pmac_rx_suspend(struct ath12k_base *ab)
 			return ret;
 		}
 
-		ret = ath12k_pmac_rx_abort(ab, pmac_rxpcu_base[i]);
+		ret = ath12k_pmac_rx_abort(ab, pmac_rxpcu_base[i], pmac_pmcmn_base[i]);
 		if (ret) {
 			ath12k_err(ab, "pmac rx abort failed\n");
 			return ret;
@@ -1052,7 +1088,11 @@ static int ath12k_is_tqm_prefetch_idle(struct ath12k_base *ab)
 				HAL_MAC_IDLE_CHECK_DELAY_USEC,
 				HAL_MAC_IDLE_CHECK_TIMEOUT_USEC);
 	if (ret) {
-		ath12k_err(ab, "TQM TCL2TQM ring consumer prefetch status check failed");
+		ath12k_err(ab, "TQM TCL2TQM ring consumer prefetch status check failed at address 0x%x value 0x%x",
+			   HAL_SEQ_WCSS_UMAC_TQM_REG +
+			   TCL2TQM_RING_CONSUMER_PREFETCH_STATUS,
+			   ath12k_hif_read32(ab, HAL_SEQ_WCSS_UMAC_TQM_REG +
+					     TCL2TQM_RING_CONSUMER_PREFETCH_STATUS));
 		return -EINVAL;
 	}
 
@@ -1062,7 +1102,11 @@ static int ath12k_is_tqm_prefetch_idle(struct ath12k_base *ab)
 				HAL_MAC_IDLE_CHECK_DELAY_USEC,
 				HAL_MAC_IDLE_CHECK_TIMEOUT_USEC);
 	if (ret) {
-		ath12k_err(ab, "TQM SW_CMD ring consumer prefetch status check failed");
+		ath12k_err(ab, "TQM SW_CMD ring consumer prefetch status check failed at address 0x%x value 0x%x",
+			   HAL_SEQ_WCSS_UMAC_TQM_REG +
+			   SW_CMD_RING_CONSUMER_PREFETCH_STATUS,
+			   ath12k_hif_read32(ab, HAL_SEQ_WCSS_UMAC_TQM_REG +
+					     SW_CMD_RING_CONSUMER_PREFETCH_STATUS));
 		return -EINVAL;
 	}
 
@@ -1072,7 +1116,11 @@ static int ath12k_is_tqm_prefetch_idle(struct ath12k_base *ab)
 				HAL_MAC_IDLE_CHECK_DELAY_USEC,
 				HAL_MAC_IDLE_CHECK_TIMEOUT_USEC);
 	if (ret) {
-		ath12k_err(ab, "TQM SW_CMD1 ring consumer prefetch status check failed");
+		ath12k_err(ab, "TQM SW_CMD1 ring consumer prefetch status check failed at address 0x%x value 0x%x",
+			   HAL_SEQ_WCSS_UMAC_TQM_REG +
+			   SW_CMD1_RING_CONSUMER_PREFETCH_STATUS,
+			   ath12k_hif_read32(ab, HAL_SEQ_WCSS_UMAC_TQM_REG +
+					     SW_CMD1_RING_CONSUMER_PREFETCH_STATUS));
 		return -EINVAL;
 	}
 
@@ -1082,7 +1130,11 @@ static int ath12k_is_tqm_prefetch_idle(struct ath12k_base *ab)
 				HAL_MAC_IDLE_CHECK_DELAY_USEC,
 				HAL_MAC_IDLE_CHECK_TIMEOUT_USEC);
 	if (ret) {
-		ath12k_err(ab, "TQM TQM2TQM_IN1 ring consumer prefetch status check failed");
+		ath12k_err(ab, "TQM TQM2TQM_IN1 ring consumer prefetch status check failed at address 0x%x value 0x%x",
+			   HAL_SEQ_WCSS_UMAC_TQM_REG +
+			   TQM2TQM_IN1_RING_CONSUMER_PREFETCH_STATUS,
+			   ath12k_hif_read32(ab, HAL_SEQ_WCSS_UMAC_TQM_REG +
+					     TQM2TQM_IN1_RING_CONSUMER_PREFETCH_STATUS));
 		return -EINVAL;
 	}
 
@@ -1092,7 +1144,11 @@ static int ath12k_is_tqm_prefetch_idle(struct ath12k_base *ab)
 				HAL_MAC_IDLE_CHECK_DELAY_USEC,
 				HAL_MAC_IDLE_CHECK_TIMEOUT_USEC);
 	if (ret) {
-		ath12k_err(ab, "TQM TQM2TQM_IN2 ring consumer prefetch status check failed");
+		ath12k_err(ab, "TQM TQM2TQM_IN2 ring consumer prefetch status check failed at address 0x%x value 0x%x",
+			   HAL_SEQ_WCSS_UMAC_TQM_REG +
+			   TQM2TQM_IN2_RING_CONSUMER_PREFETCH_STATUS,
+			   ath12k_hif_read32(ab, HAL_SEQ_WCSS_UMAC_TQM_REG +
+					     TQM2TQM_IN2_RING_CONSUMER_PREFETCH_STATUS));
 		return -EINVAL;
 	}
 
@@ -1102,7 +1158,11 @@ static int ath12k_is_tqm_prefetch_idle(struct ath12k_base *ab)
 				HAL_MAC_IDLE_CHECK_DELAY_USEC,
 				HAL_MAC_IDLE_CHECK_TIMEOUT_USEC);
 	if (ret) {
-		ath12k_err(ab, "TQM TQM2TQM_IN3 ring consumer prefetch status check failed");
+		ath12k_err(ab, "TQM TQM2TQM_IN3 ring consumer prefetch status check failed at address 0x%x value 0x%x",
+			   HAL_SEQ_WCSS_UMAC_TQM_REG +
+			   TQM2TQM_IN3_RING_CONSUMER_PREFETCH_STATUS,
+			   ath12k_hif_read32(ab, HAL_SEQ_WCSS_UMAC_TQM_REG +
+					     TQM2TQM_IN3_RING_CONSUMER_PREFETCH_STATUS));
 		return -EINVAL;
 	}
 
@@ -1112,7 +1172,11 @@ static int ath12k_is_tqm_prefetch_idle(struct ath12k_base *ab)
 				HAL_MAC_IDLE_CHECK_DELAY_USEC,
 				HAL_MAC_IDLE_CHECK_TIMEOUT_USEC);
 	if (ret) {
-		ath12k_err(ab, "TQM TQM2TQM_IN4 ring consumer prefetch status check failed");
+		ath12k_err(ab, "TQM TQM2TQM_IN4 ring consumer prefetch status check failed at address 0x%x value 0x%x",
+			   HAL_SEQ_WCSS_UMAC_TQM_REG +
+			   TQM2TQM_IN4_RING_CONSUMER_PREFETCH_STATUS,
+			   ath12k_hif_read32(ab, HAL_SEQ_WCSS_UMAC_TQM_REG +
+					     TQM2TQM_IN4_RING_CONSUMER_PREFETCH_STATUS));
 		return -EINVAL;
 	}
 
@@ -1122,7 +1186,11 @@ static int ath12k_is_tqm_prefetch_idle(struct ath12k_base *ab)
 				HAL_MAC_IDLE_CHECK_DELAY_USEC,
 				HAL_MAC_IDLE_CHECK_TIMEOUT_USEC);
 	if (ret) {
-		ath12k_err(ab, "TQM FW2TQM ring consumer prefetch status check failed");
+		ath12k_err(ab, "TQM FW2TQM ring consumer prefetch status check failed at address 0x%x value 0x%x",
+			   HAL_SEQ_WCSS_UMAC_TQM_REG +
+			   FW2TQM_RING_CONSUMER_PREFETCH_STATUS,
+			   ath12k_hif_read32(ab, HAL_SEQ_WCSS_UMAC_TQM_REG +
+					     FW2TQM_RING_CONSUMER_PREFETCH_STATUS));
 		return -EINVAL;
 	}
 
@@ -1138,7 +1206,10 @@ static int ath12k_is_tqm_sm_idle(struct ath12k_base *ab)
 				HAL_MAC_IDLE_CHECK_DELAY_USEC,
 				HAL_MAC_IDLE_CHECK_TIMEOUT_USEC);
 	if (ret) {
-		ath12k_err(ab, "TQM state machine IX0 idle check failed");
+		ath12k_err(ab, "TQM state machine IX0 idle check failed at address 0x%x value 0x%x",
+			   HAL_SEQ_WCSS_UMAC_TQM_REG + HAL_TQM_SM_STATES_IX0,
+			   ath12k_hif_read32(ab, HAL_SEQ_WCSS_UMAC_TQM_REG +
+					     HAL_TQM_SM_STATES_IX0));
 		return -EINVAL;
 	}
 
@@ -1147,7 +1218,10 @@ static int ath12k_is_tqm_sm_idle(struct ath12k_base *ab)
 				HAL_MAC_IDLE_CHECK_DELAY_USEC,
 				HAL_MAC_IDLE_CHECK_TIMEOUT_USEC);
 	if (ret) {
-		ath12k_err(ab, "TQM state machine IX1 idle check failed");
+		ath12k_err(ab, "TQM state machine IX1 idle check failed at address 0x%x value 0x%x",
+			   HAL_SEQ_WCSS_UMAC_TQM_REG + HAL_TQM_SM_STATES_IX1,
+			   ath12k_hif_read32(ab, HAL_SEQ_WCSS_UMAC_TQM_REG +
+					     HAL_TQM_SM_STATES_IX1));
 		return -EINVAL;
 	}
 
@@ -1156,7 +1230,10 @@ static int ath12k_is_tqm_sm_idle(struct ath12k_base *ab)
 				HAL_MAC_IDLE_CHECK_DELAY_USEC,
 				HAL_MAC_IDLE_CHECK_TIMEOUT_USEC);
 	if (ret) {
-		ath12k_err(ab, "TQM state machine IX2 idle check failed");
+		ath12k_err(ab, "TQM state machine IX2 idle check failed at address 0x%x value 0x%x",
+			   HAL_SEQ_WCSS_UMAC_TQM_REG + HAL_TQM_SM_STATES_IX2,
+			   ath12k_hif_read32(ab, HAL_SEQ_WCSS_UMAC_TQM_REG +
+					     HAL_TQM_SM_STATES_IX2));
 		return -EINVAL;
 	}
 
@@ -1165,7 +1242,10 @@ static int ath12k_is_tqm_sm_idle(struct ath12k_base *ab)
 				HAL_MAC_IDLE_CHECK_DELAY_USEC,
 				HAL_MAC_IDLE_CHECK_TIMEOUT_USEC);
 	if (ret) {
-		ath12k_err(ab, "TQM state machine IX3 idle check failed");
+		ath12k_err(ab, "TQM state machine IX3 idle check failed at address 0x%x value 0x%x",
+			   HAL_SEQ_WCSS_UMAC_TQM_REG + HAL_TQM_SM_STATES_IX3,
+			   ath12k_hif_read32(ab, HAL_SEQ_WCSS_UMAC_TQM_REG +
+					     HAL_TQM_SM_STATES_IX3));
 		return -EINVAL;
 	}
 
@@ -1200,7 +1280,10 @@ static int ath12k_reo_idle_check(struct ath12k_base *ab)
 				HAL_MAC_IDLE_CHECK_DELAY_USEC,
 				HAL_MAC_IDLE_CHECK_TIMEOUT_USEC);
 	if (ret) {
-		ath12k_err(ab, "REO state machine all idle check failed");
+		ath12k_err(ab, "REO state machine all idle check failed at address 0x%x value 0x%x",
+			   HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO_SM_ALL_IDLE,
+			   ath12k_hif_read32(ab, HAL_SEQ_WCSS_UMAC_REO_REG +
+					     HAL_REO_SM_ALL_IDLE));
 		return -EINVAL;
 	}
 
@@ -1209,7 +1292,10 @@ static int ath12k_reo_idle_check(struct ath12k_base *ab)
 				HAL_MAC_IDLE_CHECK_DELAY_USEC,
 				HAL_MAC_IDLE_CHECK_TIMEOUT_USEC);
 	if (ret) {
-		ath12k_err(ab, "REO idle states IX0 check failed");
+		ath12k_err(ab, "REO idle states IX0 check failed at address 0x%x value 0x%x",
+			   HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO_IDLE_STATES_IX0,
+			   ath12k_hif_read32(ab, HAL_SEQ_WCSS_UMAC_REO_REG +
+					     HAL_REO_IDLE_STATES_IX0));
 		return -EINVAL;
 	}
 
@@ -1218,7 +1304,10 @@ static int ath12k_reo_idle_check(struct ath12k_base *ab)
 				HAL_MAC_IDLE_CHECK_DELAY_USEC,
 				HAL_MAC_IDLE_CHECK_TIMEOUT_USEC);
 	if (ret) {
-		ath12k_err(ab, "REO idle states IX1 check failed");
+		ath12k_err(ab, "REO idle states IX1 check failed at address 0x%x value 0x%x",
+			   HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO_IDLE_STATES_IX1,
+			   ath12k_hif_read32(ab, HAL_SEQ_WCSS_UMAC_REO_REG +
+					     HAL_REO_IDLE_STATES_IX1));
 		return -EINVAL;
 	}
 
@@ -1292,7 +1381,9 @@ static int ath12k_mlo_ring_idle_check(struct ath12k_base *ab, int i,
 				HAL_MAC_IDLE_CHECK_DELAY_USEC,
 				HAL_MAC_IDLE_CHECK_TIMEOUT_USEC);
 	if (ret) {
-		ath12k_err(ab, "Reset ring %d SM STATE1 check failed", i);
+		ath12k_err(ab, "Reset ring %d SM STATE1 check failed at address 0x%x value 0x%x",
+			   i, reset_rings->srng_misc_reg,
+			   ath12k_hif_read32(ab, reset_rings->srng_misc_reg));
 		return -EINVAL;
 	}
 
@@ -1301,7 +1392,9 @@ static int ath12k_mlo_ring_idle_check(struct ath12k_base *ab, int i,
 				HAL_MAC_IDLE_CHECK_DELAY_USEC,
 				HAL_MAC_IDLE_CHECK_TIMEOUT_USEC);
 	if (ret) {
-		ath12k_err(ab, "Reset ring %d SM STATE2 check failed", i);
+		ath12k_err(ab, "Reset ring %d SM STATE2 check failed at address 0x%x value 0x%x",
+			   i, reset_rings->srng_misc_reg,
+			   ath12k_hif_read32(ab, reset_rings->srng_misc_reg));
 		return -EINVAL;
 	}
 
@@ -1310,7 +1403,9 @@ static int ath12k_mlo_ring_idle_check(struct ath12k_base *ab, int i,
 				HAL_MAC_IDLE_CHECK_DELAY_USEC,
 				HAL_MAC_IDLE_CHECK_TIMEOUT_USEC);
 	if (ret) {
-		ath12k_err(ab, "Reset ring %d SM STATE3 check failed", i);
+		ath12k_err(ab, "Reset ring %d SM STATE3 check failed at address 0x%x value 0x%x",
+			   i, reset_rings->consumer_producer_mlo,
+			   ath12k_hif_read32(ab, reset_rings->consumer_producer_mlo));
 		return -EINVAL;
 	}
 
@@ -1327,7 +1422,9 @@ static int ath12k_ring_idle_check(struct ath12k_base *ab, int i,
 				HAL_MAC_IDLE_CHECK_DELAY_USEC,
 				HAL_MAC_IDLE_CHECK_TIMEOUT_USEC);
 	if (ret) {
-		ath12k_err(ab, "Reset ring %d idle check failed", i);
+		ath12k_err(ab, "Reset ring %d idle check failed at address 0x%x value 0x%x",
+			   i, reset_rings->srng_misc_reg,
+			   ath12k_hif_read32(ab, reset_rings->srng_misc_reg));
 		return -EINVAL;
 	}
 
@@ -1403,11 +1500,11 @@ static const u32 umcmn_isr_s_fatal_mask[] = {
 	[9]  = 0x00000000,
 	[10] = 0x4007FFFF,
 	[11] = 0x01140415,
-	[12] = 0x1150D04F,
+	[12] = 0x1140D04F,
 	[13] = 0x0002ABEA,
 	[14] = 0x7A497FFF,
 	[15] = 0x00033E02,
-	[16] = 0x000001FE,
+	[16] = 0x000001EE,
 	[17] = 0x00000000,
 	[18] = 0x6002AAAA,
 	[19] = 0x00003492,
