@@ -1852,7 +1852,7 @@ static int ath12k_wifi7_dp_rx_frag_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 
 	if (frag_no == 0) {
 		rx_tid->desc = kmemdup(ring_desc,
-				       sizeof(*rx_tid->desc),
+				       sizeof(struct hal_reo_dest_ring),
 				       GFP_ATOMIC);
 		if (!rx_tid->desc) {
 			ret = -ENOMEM;
