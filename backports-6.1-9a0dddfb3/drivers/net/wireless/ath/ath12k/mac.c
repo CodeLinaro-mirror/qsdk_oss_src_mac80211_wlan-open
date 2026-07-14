@@ -20693,7 +20693,12 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	case NL80211_IFTYPE_MONITOR:
 		ahvif->vdev_type = WMI_VDEV_TYPE_MONITOR;
 		ar->monitor_vdev_id = vdev_id;
-		get_random_mask_addr(mac_addr, ar->mac_addr, mask);
+		if (memcmp(arvif->bssid, ah->radio[0].mac_addr, ETH_ALEN) == 0) {
+			get_random_mask_addr(mac_addr, ar->mac_addr, mask);
+			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
+					 "Using random mac address for monitor vdev\n");
+		} else
+			memcpy(mac_addr, arvif->bssid, ETH_ALEN);
 		break;
 	case NL80211_IFTYPE_P2P_DEVICE:
 		ahvif->vdev_type = WMI_VDEV_TYPE_STA;
