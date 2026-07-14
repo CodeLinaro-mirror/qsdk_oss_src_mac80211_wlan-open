@@ -38,6 +38,29 @@ enum hal_reg_write_selection {
 
 extern const struct hal_ops hal_qcn9625_ops;
 
+/*
+ * Generic QCN9625 monitor ops (shared entries only), defined in
+ * hal_mon_qcn9625.c. Each revision's mon-ops-init helper copies this and
+ * overrides the version-specific entries.
+ */
+extern const struct hal_mon_ops hal_qcn9625_mon_ops_base;
+
+/* Per-revision monitor ops init: copy the base, override version-specific
+ * entries, and point hal->hal_mon_ops at the result.
+ */
+void ath12k_wifi8_hal_qcn9625_hw20_mon_ops_init(struct ath12k_hal *hal);
+void ath12k_wifi8_hal_qcn9625_hw10_mon_ops_init(struct ath12k_hal *hal);
+
+/* HAL init/deinit and core config — shared between HW1.0 and HW2.0 ops tables */
+int ath12k_wifi8_hal_init_qcn9625(struct ath12k_hal *hal, u8 hw_version);
+void ath12k_wifi8_hal_deinit_qcn9625(struct ath12k_hal *hal);
+int ath12k_wifi8_hal_srng_create_config_qcn9625(struct ath12k_hal *hal);
+void ath12k_wifi8_hal_set_reg_writer_hptp_addr(struct ath12k_base *ab,
+					       struct hal_srng *srng,
+					       int mac_id,
+					       int idx,
+					       enum hal_ring_type ring_type);
+
 u32 ath12k_wifi8_hal_rx_h_mpdu_err_qcn9625(struct hal_rx_desc *desc);
 void
 ath12k_wifi8_hal_rx_desc_get_crypto_header_qcn9625(struct hal_rx_desc *desc,

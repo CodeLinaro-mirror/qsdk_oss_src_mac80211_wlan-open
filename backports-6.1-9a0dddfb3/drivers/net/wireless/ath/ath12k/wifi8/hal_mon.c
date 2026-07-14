@@ -13,8 +13,6 @@
 #include "dp_rx.h"
 #include "../hw.h"
 
-extern const struct hal_mon_ops hal_qcn9625_mon_ops;
-
 #define HAL_TX_MON_WMASK_COMPACT_EN_CFG			0x1
 #define HAL_TX_MON_WMASK_PCU_PPDU_SETUP_INIT_CFG	0x1E800000
 #define HAL_TX_MON_WMASK_FES_SETUP_CFG			0x3
@@ -6487,8 +6485,10 @@ void ath12k_wifi8_hal_mon_ops_init(struct ath12k_hal *hal,
 	switch (hw_version) {
 	case ATH12K_HW_QCN9625_HW10:
 	case ATH12K_HW_QCN9589_HW10:
+		ath12k_wifi8_hal_qcn9625_hw10_mon_ops_init(hal);
+		break;
 	case ATH12K_HW_QCN9625_HW20:
-		hal->hal_mon_ops = &hal_qcn9625_mon_ops;
+		ath12k_wifi8_hal_qcn9625_hw20_mon_ops_init(hal);
 		hal->tlv_hdr_tag_shift = HAL_TLV_64_HDR_TAG_NOSHIFT;
 		break;
 	default:
