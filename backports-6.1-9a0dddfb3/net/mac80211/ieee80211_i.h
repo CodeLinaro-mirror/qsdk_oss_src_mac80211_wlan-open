@@ -1064,7 +1064,8 @@ enum ieee80211_sub_if_data_flags {
 	IEEE80211_SDATA_IN_DRIVER		= BIT(5),
 	IEEE80211_SDATA_DISCONNECT_HW_RESTART	= BIT(6),
 	IEEE80211_SDATA_OFFCHAN_PACKETS		= BIT(7),
-	IEEE80211_SDATA_EXT_MONITOR_ENABLED	= BIT(8),
+	IEEE80211_SDATA_EXT_RX_MONITOR_ENABLED	= BIT(8),
+	IEEE80211_SDATA_EXT_TX_MONITOR_ENABLED	= BIT(9),
 };
 
 /**
@@ -1573,6 +1574,10 @@ struct ieee80211_sub_if_data {
 	u32 rx_dropped;
 
 	int chan_hw_idx;
+
+#ifdef CPTCFG_QCN_EXTN
+	enum ieee80211_ext_mon_event_type_extn extn_tx_mon_evt_typ;
+#endif /* CPTCFG_QCN_EXTN */
 
 	/* must be last, dynamically sized area in this! */
 	struct ieee80211_vif vif;
