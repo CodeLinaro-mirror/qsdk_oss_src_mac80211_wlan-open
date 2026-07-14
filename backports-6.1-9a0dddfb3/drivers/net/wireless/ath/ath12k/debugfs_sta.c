@@ -1548,6 +1548,8 @@ static ssize_t ath12k_dbg_sta_dump_tx_stats(struct file *file,
 		 [HAL_WBM_REL_HTT_TX_COMP_STATUS_INSPECT] = "Inspect pkt count",
 		 [HAL_WBM_REL_HTT_TX_COMP_STATUS_MEC_NOTIFY] = "MEC notify pkt count"};
 
+	u8 *buf __free(kfree) = kzalloc(size, GFP_ATOMIC);
+
 	wiphy_lock(ah->hw->wiphy);
 
 	if (!(BIT(link_id) & ahsta->links_map)) {
@@ -1591,7 +1593,6 @@ static ssize_t ath12k_dbg_sta_dump_tx_stats(struct file *file,
 		goto unlock_rcu;
 	}
 
-	u8 *buf __free(kfree) = kzalloc(size, GFP_ATOMIC);
 	if (!buf) {
 		retval = -ENOENT;
 		goto unlock_rcu;
@@ -1861,6 +1862,7 @@ ath12k_dbg_sta_dump_driver_rx_pkts_flow(struct file *file,
 	u8 link_id = link_sta->link_id;
 	int len = 0, i, ret = 0;
 	u32 recv_from_reo = 0, sent_to_stack = 0;
+	u8 *buf __free(kfree) = kzalloc(size, GFP_ATOMIC);
 
 	wiphy_lock(ah->hw->wiphy);
 
@@ -1899,7 +1901,6 @@ ath12k_dbg_sta_dump_driver_rx_pkts_flow(struct file *file,
 		goto unlock_rcu;
 	}
 
-	u8 *buf __free(kfree) = kzalloc(size, GFP_ATOMIC);
 	if (!buf) {
 		ret = -ENOENT;
 		goto unlock_rcu;
@@ -2080,6 +2081,7 @@ static ssize_t ath12k_dbg_sta_dump_rx_stats(struct file *file,
 	bool he_rates_avail;
 	struct ath12k *ar;
 	struct ath12k_dp_link_peer *link_peer;
+	u8 *buf __free(kfree) = kzalloc(size, GFP_ATOMIC);
 
 	wiphy_lock(ah->hw->wiphy);
 
@@ -2124,7 +2126,6 @@ static ssize_t ath12k_dbg_sta_dump_rx_stats(struct file *file,
 		goto unlock_rcu;
 	}
 
-	u8 *buf __free(kfree) = kzalloc(size, GFP_ATOMIC);
 	if (!buf) {
 		ret = -ENOENT;
 		goto unlock_rcu;

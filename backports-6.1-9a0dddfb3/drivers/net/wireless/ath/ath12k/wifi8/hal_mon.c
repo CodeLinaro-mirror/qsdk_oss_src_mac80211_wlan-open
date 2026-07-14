@@ -3013,7 +3013,7 @@ ath12k_wifi8_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 		}
 
 		return HAL_RX_MON_STATUS_MSDU_END;
-	case HAL_RX_MPDU_END:
+	case HAL_RX_MPDU_END: {
 		const struct hal_rx_mpdu_end *mpdu_end = tlv_data;
 		u32 info0;
 
@@ -3024,6 +3024,7 @@ ath12k_wifi8_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 				u32_get_bits(info0, HAL_RX_MPDU_END_INFO0_FCS_ERR);
 
 		return HAL_RX_MON_STATUS_MPDU_END;
+	}
 	case HAL_PHYRX_GENERIC_U_SIG:
 		ath12k_wifi8_hal_mon_rx_parse_u_sig_hdr(tlv_data, ppdu_info);
 		break;
@@ -3044,7 +3045,7 @@ ath12k_wifi8_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 		break;
 	case HAL_DUMMY:
 		return HAL_RX_MON_STATUS_BUF_DONE;
-	case HAL_RX_HEADER:
+	case HAL_RX_HEADER: {
 		const struct hal_mon_rx_hdr *rx_hdr = tlv_data;
 
 		if (userid < HAL_MAX_UL_MU_USERS) {
@@ -3061,6 +3062,7 @@ ath12k_wifi8_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 						      HAL_MON_RX_HDR_INFO0_DECAP_TYPE);
 		}
 		return HAL_RX_MON_STATUS_RX_HDR;
+	}
 	case HAL_MON_DROP:
 		ppdu_info->is_drop_tlv = true;
 		return HAL_RX_MON_STATUS_DROP_TLV;

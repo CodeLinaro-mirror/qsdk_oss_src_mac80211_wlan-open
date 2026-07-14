@@ -54,7 +54,9 @@ struct ath12k_dp_hw_link {
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 #define DP_RX_BUFFER_SIZE		2048
 #else
-#define DP_RX_BUFFER_SIZE		(skb_active_profile->value)
+//#define DP_RX_BUFFER_SIZE		(skb_active_profile->value)
+/* Overriding for SDX85 Wi-Fi8 cards */
+#define DP_RX_BUFFER_SIZE		2048
 #endif
 #endif
 #else					/* recycler not enabled */

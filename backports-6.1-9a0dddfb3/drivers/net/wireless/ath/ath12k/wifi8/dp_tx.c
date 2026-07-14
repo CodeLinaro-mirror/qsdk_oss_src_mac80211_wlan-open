@@ -1449,7 +1449,7 @@ ath12k_wifi8_dp_ext_desc_populate(struct ath12k_dp *dp,
 	memset(ext_desc, 0, ATH12K_DP_EXT_DESC_SZ);
 
 	switch (msdu_info->ext_desc.ext_feature) {
-	case DP_EXT_ME5:
+	case DP_EXT_ME5: {
 		dma_addr_t mac_paddr, buf_paddr;
 		u8 *mac_addr;
 		u16 buf_len;
@@ -1467,6 +1467,7 @@ ath12k_wifi8_dp_ext_desc_populate(struct ath12k_dp *dp,
 		ext_data_len = ATH12K_DP_EXT_DESC_SZ;
 
 		break;
+	}
 	case DP_EXT_ENCAP_OVERRIDE:
 		ath12k_dp_ext_desc_set_buf0(ext_desc, msdu_info->paddr,
 					    msdu_info->data_len);
