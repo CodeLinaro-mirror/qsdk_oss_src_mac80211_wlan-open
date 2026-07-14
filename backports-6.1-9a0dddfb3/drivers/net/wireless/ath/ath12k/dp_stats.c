@@ -1221,7 +1221,6 @@ EXPORT_SYMBOL(ath12k_qos_stats_update);
  * @dp_peer_addr:   MAC address used to key dp_peer (MLD MAC or link MAC)
  * @hw_link_id:     hardware link ID of the radio
  * @peer_mac_filter: if non-NULL, skip peers whose dp_peer->addr doesn't match
- * @is_ds_vif:      true if this is a DS VIF
  * @stats:          destination net stats buffer
  *
  * Called with ar->arsta_lock held (BH-disabled).
@@ -1233,7 +1232,6 @@ ath12k_dp_netstats_peer_update(struct ath12k_dp_hw *dp_hw,
 			       const u8 *dp_peer_addr,
 			       u8 hw_link_id,
 			       const u8 *peer_mac_filter,
-			       bool is_ds_vif,
 			       struct rtnl_link_stats64 *stats)
 {
 	struct ath12k_dp_peer *dp_peer = NULL;
@@ -1285,29 +1283,11 @@ ath12k_dp_netstats_peer_update(struct ath12k_dp_hw *dp_hw,
 		rx_packets += rx_stats->recv_from_reo.packets;
 		rx_bytes += rx_stats->recv_from_reo.bytes;
 	} else {
-		for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
-			/* PPE sync credits DS VIF WDS peer traffic only on
-			 * DP_REO_PPEDS_RING_IDX. Skip lower ring indices
-			 * to avoid double-counting.
-			 */
-			if (is_ds_vif && i < DP_REO_PPEDS_RING_IDX)
-				continue;
-			rx_packets +=
-				(peer_stats->rx[i].sent_to_stack.packets +
-				 peer_stats->rx[i].sent_to_stack_fast.packets);
-			rx_bytes +=
-				(peer_stats->rx[i].sent_to_stack.bytes +
-				 peer_stats->rx[i].sent_to_stack_fast.bytes);
-		}
-
-		if (dp_pdev && ath12k_extd_rx_stats_enabled(dp_pdev) &&
-		    link_peer && link_peer->peer_stats.rx_stats) {
-			/* Override PPEDS ring sent_to_stack with extended RX
-			 * monitor MSDU totals.
-			 */
-			rx_packets = link_peer->peer_stats.rx_stats->num_msdu;
-			rx_bytes = link_peer->peer_stats.rx_stats->num_msdu_bytes;
-		}
+		/* SW/monitor mode: use link_peer->rx_bytes/rx_packets
+		 * (DS and SFE unified).
+		 */
+		rx_packets = link_peer->rx_packets;
+		rx_bytes = link_peer->rx_bytes;
 	}
 	stats->rx_packets += rx_packets;
 	stats->rx_bytes += rx_bytes;

@@ -1433,6 +1433,7 @@ struct ath12k_dp_preserved_stats {
 	struct ath12k_dp_peer_tx_stats per_pkt_tx[DP_TCL_NUM_RING_MAX];
 	struct ath12k_dp_peer_rx_stats per_pkt_rx[DP_REO_DST_RING_MAX];
 	struct ath12k_wbm_rx_stats wbm_err;
+	struct ath12k_dp_pkt_info rx_counters;
 };
 
 /* Stats aggregation functions */
@@ -1881,6 +1882,5 @@ void ath12k_dp_netstats_peer_update(struct ath12k_dp_hw *dp_hw,
 				    const u8 *dp_peer_addr,
 				    u8 hw_link_id,
 				    const u8 *peer_mac_filter,
-				    bool is_ds_vif,
 				    struct rtnl_link_stats64 *stats);
 #endif
