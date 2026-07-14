@@ -3798,8 +3798,10 @@ int ath12k_qmi_host_cap_send(struct ath12k_base *ab)
 	}
 
 #ifdef ATH12K_CMA_SUPPORT
+	if (ab->qmi_mem_dev.rmem_inited) {
 		req.cma_support_valid = 1;
 		req.cma_support = 1;
+	}
 #endif
 
 	ret = qmi_txn_init(&ab->qmi.handle, &txn,
