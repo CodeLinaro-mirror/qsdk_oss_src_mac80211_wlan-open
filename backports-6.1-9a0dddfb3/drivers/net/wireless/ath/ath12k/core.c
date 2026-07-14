@@ -193,7 +193,7 @@ static void ath12k_detect_mem_profile(void)
 	ath12k_active_mem_profile = ATH12K_MEM_PROFILE_BALANCED;
 	ath12k_info(NULL, "ath12k: compile-time 512M profile -> BALANCED\n");
 #else
-#if LINUX_VERSION_IS_LESS(6,15,0)
+#ifndef PLATFORM_SDX
 	if (strstr(saved_command_line, "mem-profile=optimized")) {
 		ath12k_active_mem_profile = ATH12K_MEM_PROFILE_OPTIMIZED;
 		ath12k_info(NULL, "ath12k: mem-profile=optimized -> OPTIMIZED\n");
