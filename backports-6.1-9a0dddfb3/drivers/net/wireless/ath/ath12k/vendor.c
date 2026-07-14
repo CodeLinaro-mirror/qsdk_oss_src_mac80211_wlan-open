@@ -8171,10 +8171,15 @@ static int ath12k_stats_peer_setup(struct ath12k_telemetry_command *cmd)
 	struct sk_buff *vendor_event;
 	int len, ret;
 
+	if (!cmd->wdev) {
+		ath12k_err(NULL, "wdev not present\n");
+		return -EINVAL;
+	}
+
 	ahvif = ath12k_get_ahvif_from_wdev(cmd->wdev);
 
 	if (!ahvif) {
-		ath12k_err(NULL, "ahvif not present");
+		ath12k_err(NULL, "ahvif not present\n");
 		return -EINVAL;
 	}
 
@@ -8714,10 +8719,15 @@ static int ath12k_stats_vif_setup(struct ath12k_telemetry_command *cmd)
 	struct sk_buff *vendor_event;
 	int len, ret;
 
+	if (!cmd->wdev) {
+		ath12k_err(NULL, "wdev not present\n");
+		return -EINVAL;
+	}
+
 	ahvif = ath12k_get_ahvif_from_wdev(cmd->wdev);
 
 	if (!ahvif) {
-		ath12k_err(NULL, "ahvif not present");
+		ath12k_err(NULL, "ahvif not present\n");
 		return -EINVAL;
 	}
 
