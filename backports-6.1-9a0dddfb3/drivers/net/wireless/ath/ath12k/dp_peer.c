@@ -640,6 +640,8 @@ static void ath12k_dp_aggr_link_peer_to_mld_peer(struct ath12k *ar,
 
 	ath12k_dp_capture_link_peer_stats(ar, &dp_peer->link_peer_delete_stats,
 					  peer, dp_peer, stats_link_id);
+	dp_peer->link_peer_delete_stats.rx_counters.packets += peer->rx_packets;
+	dp_peer->link_peer_delete_stats.rx_counters.bytes += peer->rx_bytes;
 }
 
 /**

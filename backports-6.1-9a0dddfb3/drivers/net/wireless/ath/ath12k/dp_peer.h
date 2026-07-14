@@ -145,6 +145,8 @@ struct ath12k_dp_link_peer {
 
 	u16 link_band_id;
 	u16 tid_band_id[ATH12K_DATA_TID_MAX];
+	u32 rx_packets;
+	u64 rx_bytes;
 };
 
 #define ATH12K_PEER_EVENT_RSSI_LOW      BIT(0)
