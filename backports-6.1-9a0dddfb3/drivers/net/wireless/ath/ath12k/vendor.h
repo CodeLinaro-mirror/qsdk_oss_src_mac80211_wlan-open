@@ -2137,6 +2137,10 @@ enum qca_nl80211_vendor_fw_recovery_event_type {
  *     Mandatory attribute (u8) representing the hardware link ID (HW_LINK_ID)
  *     or SoC identifier where the crash or recovery event occurred.
  *
+ * @QCA_WLAN_VENDOR_FW_RECOVERY_RADIO_IDX:
+ *     Mandatory attribute (u8) representing the radio index (RADIO_IDX)
+ *     identifying the radio interface where the crash or recovery event occurred.
+ *
  * @QCA_VENDOR_ATTR_FW_RECOVERY_AFTER_LAST:
  *     Internal marker for the end of attributes.
  *
@@ -2147,6 +2151,7 @@ enum qca_nl80211_vendor_fw_recovery_attr {
 	QCA_VENDOR_ATTR_FW_RECOVERY_INVALID = 0,
 	QCA_VENDOR_ATTR_FW_RECOVERY_EVENT_TYPE = 1,
 	QCA_WLAN_VENDOR_FW_RECOVERY_HW_LINK_ID = 2,
+	QCA_WLAN_VENDOR_FW_RECOVERY_RADIO_IDX = 3,
 	QCA_VENDOR_ATTR_FW_RECOVERY_AFTER_LAST,
 	QCA_VENDOR_ATTR_FW_RECOVERY_MAX = QCA_VENDOR_ATTR_FW_RECOVERY_AFTER_LAST - 1,
 };
