@@ -9761,10 +9761,8 @@ static int ath12k_wmi_afc_event_parser(struct ath12k_base *ab,
 			return 0;
 		}
 
-		if (afc->event_type != ATH12K_AFC_EVENT_TIMER_EXPIRY) {
-			ath12k_warn(ab, "Invalid event_type %d received\n", afc->event_type);
+		if (afc->event_type != ATH12K_AFC_EVENT_TIMER_EXPIRY)
 			return 0;
-		}
 
 		ret = ath12k_copy_afc_expiry_event(ab, afc, ptr, len);
 		if (ret) {
@@ -9832,6 +9830,10 @@ static void ath12k_wmi_afc_event(struct ath12k_base *ab,
 			    afc_info->event_type, ret);
 		return;
 	}
+
+	if (afc_info->event_type == ATH12K_AFC_EVENT_POWER_INFO)
+		ath12k_info(ab, "Received AFC Event  event_type (%d)",
+			    afc_info->event_type);
 
 #ifdef CPTCFG_QCN_EXTN
 	if (afc_info->event_type == ATH12K_AFC_EVENT_POWER_INFO &&
