@@ -20695,6 +20695,7 @@ skip_state_check:
 
 			ar->ab->powerup_triggered = false;
 			ar->pdev_suspend = false;
+			ar->pdev_user_suspend = false;
 		}
 	}
 
@@ -20866,7 +20867,8 @@ void ath12k_mac_stop(struct ath12k *ar)
 	ath12k_debugfs_nrp_cleanup_all(ar);
 
 	if ((ath12k_erp_get_sm_state() == ATH12K_ERP_ENTER_COMPLETE ||
-	    (ag->wsi_remap_in_progress && ar->ab->is_cumac_chip)) &&
+	    (ag->wsi_remap_in_progress && ar->ab->is_cumac_chip) ||
+	    ar->pdev_user_suspend) &&
 	    !ar->allocated_vdev_map && !ar->pdev_suspend) {
 		ret = ath12k_mac_pdev_suspend(ar);
 		if (ret)
