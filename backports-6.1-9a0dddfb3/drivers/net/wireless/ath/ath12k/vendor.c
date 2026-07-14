@@ -4479,6 +4479,7 @@ static int ath12k_get_dp_vif_attr_len(struct ath12k_telemetry_command *cmd)
 #ifdef CPTCFG_QCN_EXTN
 	if (cmd->feat.feat_rx)
 		total_size += ath12k_get_dp_rx_scan_radio_stats_len();
+	total_size += ath12k_get_dp_rx_undecoded_stats_len();
 #endif /* CPTCFG_QCN_EXTN */
 
 	/*Aggregated Sta Stats Size */
@@ -8958,6 +8959,10 @@ static int ath12k_fill_vap_rx_stats(struct ath12k *ar,
 	if (ath12k_scan_radio_supported(ar->pdev)) {
 		ret = ath12k_fill_rx_scan_radio_stats(
 				vendor_event, &telemetry_vif->rx_scan_radio_stats);
+		if (ret)
+			return ret;
+		ret = ath12k_fill_rx_undecoded_stats(
+				vendor_event, &telemetry_vif->rx_undecoded_stats);
 		return ret;
 	}
 #endif /* CPTCFG_QCN_EXTN */
