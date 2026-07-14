@@ -121,6 +121,8 @@
 
 #define ATH12K_TX_MON_STAT_INC_ERR(dp_pdev, field) _ATH12K_STAT_INC(dp_pdev, field)
 
+#define ATH12K_BA_USER_ID_INVAL            255
+
 enum dp_mon_tx_filter_mode;
 struct dp_mon_tx_filter;
 
