@@ -4529,6 +4529,60 @@ static const struct ieee80211_sband_iftype_data sband_capa_2ghz[] = {
 			},
 			/* PPE threshold information is not supported */
 		},
+		.uhr_cap = {
+			.has_uhr = true,
+			.mac = {
+				.mac_cap[0] =
+					IEEE80211_UHR_MAC_CAP0_DPS_SUPP |
+					IEEE80211_UHR_MAC_CAP0_DPS_ASSIST_SUPP |
+					IEEE80211_UHR_MAC_CAP0_DPS_AP_STATIC_HCM_SUPP |
+					IEEE80211_UHR_MAC_CAP0_NPCA_SUPP |
+					IEEE80211_UHR_MAC_CAP0_ENH_BSR_SUPP |
+					IEEE80211_UHR_MAC_CAP0_ADD_MAP_TID_SUPP |
+					IEEE80211_UHR_MAC_CAP0_EOTSP_SUPP,
+				.mac_cap[1] =
+					(u8)(((u64)IEEE80211_UHR_MAC_CAP1_DSO_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP1_PEDCA_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP1_DBE_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP1_UL_LLI_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP1_P2P_LLI_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP1_PUO_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP1_AP_PUO_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP1_DUO_SUPP) >> 8),
+				.mac_cap[2] =
+					(u8)(((u64)IEEE80211_UHR_MAC_CAP2_OMC_UL_MU_DIS_RX_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP2_AOM_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP2_IFCS_LOC_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP2_UHR_TRS_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP2_TXSPG_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP2_TXOP_RET_IN_TXSPG) >> 16),
+				.mac_cap[3] = 0,
+				.mac_cap[4] =
+					(u8)(((u64)IEEE80211_UHR_MAC_CAP4_BOUNDED_ESS |
+					(u64)IEEE80211_UHR_MAC_CAP4_BTM_ASSURANCE) >> 32),
+			},
+			.phy = {
+				.cap = {
+					IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_SND_NDP_LE80 |
+					IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_DL_MU_LE80 |
+					IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_SND_NDP_160 |
+					IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_DL_MU_160 |
+					IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_SND_NDP_320 |
+					IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_DL_MU_320 |
+					IEEE80211_UHR_PHY_CAP0_ELR_RX_SUPP |
+					IEEE80211_UHR_PHY_CAP0_ELR_TX_SUPP,
+				},
+			},
+			/* PPE threshold information is not supported */
+		},
+		.npca_info = {
+			.npca_enabled = true,
+			.npca_min_dur_threshold = 1,
+			.npca_switch_delay = 2,
+			.npca_switch_back_delay = 4,
+			.npca_initial_qsrc = 3,
+			.npca_moplen = 1,
+		},
 	},
 	{
 		.types_mask = BIT(NL80211_IFTYPE_AP) |
@@ -4636,6 +4690,60 @@ static const struct ieee80211_sband_iftype_data sband_capa_2ghz[] = {
 				},
 			},
 			/* PPE threshold information is not supported */
+		},
+		.uhr_cap = {
+			.has_uhr = true,
+			.mac = {
+				.mac_cap[0] =
+					IEEE80211_UHR_MAC_CAP0_DPS_SUPP |
+					IEEE80211_UHR_MAC_CAP0_DPS_ASSIST_SUPP |
+					IEEE80211_UHR_MAC_CAP0_DPS_AP_STATIC_HCM_SUPP |
+					IEEE80211_UHR_MAC_CAP0_NPCA_SUPP |
+					IEEE80211_UHR_MAC_CAP0_ENH_BSR_SUPP |
+					IEEE80211_UHR_MAC_CAP0_ADD_MAP_TID_SUPP |
+					IEEE80211_UHR_MAC_CAP0_EOTSP_SUPP,
+				.mac_cap[1] =
+					(u8)(((u64)IEEE80211_UHR_MAC_CAP1_DSO_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP1_PEDCA_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP1_DBE_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP1_UL_LLI_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP1_P2P_LLI_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP1_PUO_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP1_AP_PUO_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP1_DUO_SUPP) >> 8),
+				.mac_cap[2] =
+					(u8)(((u64)IEEE80211_UHR_MAC_CAP2_OMC_UL_MU_DIS_RX_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP2_AOM_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP2_IFCS_LOC_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP2_UHR_TRS_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP2_TXSPG_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP2_TXOP_RET_IN_TXSPG) >> 16),
+				.mac_cap[3] = 0,
+				.mac_cap[4] =
+					(u8)(((u64)IEEE80211_UHR_MAC_CAP4_BOUNDED_ESS |
+					(u64)IEEE80211_UHR_MAC_CAP4_BTM_ASSURANCE) >> 32),
+			},
+			.phy = {
+				.cap = {
+					IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_SND_NDP_LE80 |
+					IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_DL_MU_LE80 |
+					IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_SND_NDP_160 |
+					IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_DL_MU_160 |
+					IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_SND_NDP_320 |
+					IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_DL_MU_320 |
+					IEEE80211_UHR_PHY_CAP0_ELR_RX_SUPP |
+					IEEE80211_UHR_PHY_CAP0_ELR_TX_SUPP,
+				},
+			},
+			/* PPE threshold information is not supported */
+		},
+		.npca_info = {
+			.npca_enabled = true,
+			.npca_min_dur_threshold = 1,
+			.npca_switch_delay = 2,
+			.npca_switch_back_delay = 4,
+			.npca_initial_qsrc = 3,
+			.npca_moplen = 1,
 		},
 	},
 #ifdef CPTCFG_MAC80211_MESH
@@ -4806,6 +4914,60 @@ static const struct ieee80211_sband_iftype_data sband_capa_5ghz[] = {
 			},
 			/* PPE threshold information is not supported */
 		},
+		.uhr_cap = {
+			.has_uhr = true,
+			.mac = {
+				.mac_cap[0] =
+					IEEE80211_UHR_MAC_CAP0_DPS_SUPP |
+					IEEE80211_UHR_MAC_CAP0_DPS_ASSIST_SUPP |
+					IEEE80211_UHR_MAC_CAP0_DPS_AP_STATIC_HCM_SUPP |
+					IEEE80211_UHR_MAC_CAP0_NPCA_SUPP |
+					IEEE80211_UHR_MAC_CAP0_ENH_BSR_SUPP |
+					IEEE80211_UHR_MAC_CAP0_ADD_MAP_TID_SUPP |
+					IEEE80211_UHR_MAC_CAP0_EOTSP_SUPP,
+				.mac_cap[1] =
+					(u8)(((u64)IEEE80211_UHR_MAC_CAP1_DSO_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP1_PEDCA_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP1_DBE_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP1_UL_LLI_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP1_P2P_LLI_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP1_PUO_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP1_AP_PUO_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP1_DUO_SUPP) >> 8),
+				.mac_cap[2] =
+					(u8)(((u64)IEEE80211_UHR_MAC_CAP2_OMC_UL_MU_DIS_RX_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP2_AOM_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP2_IFCS_LOC_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP2_UHR_TRS_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP2_TXSPG_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP2_TXOP_RET_IN_TXSPG) >> 16),
+				.mac_cap[3] = 0,
+				.mac_cap[4] =
+					(u8)(((u64)IEEE80211_UHR_MAC_CAP4_BOUNDED_ESS |
+					(u64)IEEE80211_UHR_MAC_CAP4_BTM_ASSURANCE) >> 32),
+			},
+			.phy = {
+				.cap = {
+					IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_SND_NDP_LE80 |
+					IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_DL_MU_LE80 |
+					IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_SND_NDP_160 |
+					IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_DL_MU_160 |
+					IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_SND_NDP_320 |
+					IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_DL_MU_320 |
+					IEEE80211_UHR_PHY_CAP0_ELR_RX_SUPP |
+					IEEE80211_UHR_PHY_CAP0_ELR_TX_SUPP,
+				},
+			},
+			/* PPE threshold information is not supported */
+		},
+		.npca_info = {
+			.npca_enabled = true,
+			.npca_min_dur_threshold = 1,
+			.npca_switch_delay = 2,
+			.npca_switch_back_delay = 4,
+			.npca_initial_qsrc = 3,
+			.npca_moplen = 1,
+		},
 	},
 	{
 		.types_mask = BIT(NL80211_IFTYPE_AP) |
@@ -4931,6 +5093,60 @@ static const struct ieee80211_sband_iftype_data sband_capa_5ghz[] = {
 			},
 			/* PPE threshold information is not supported */
 		},
+		.uhr_cap = {
+			.has_uhr = true,
+			.mac = {
+				.mac_cap[0] =
+					IEEE80211_UHR_MAC_CAP0_DPS_SUPP |
+					IEEE80211_UHR_MAC_CAP0_DPS_ASSIST_SUPP |
+					IEEE80211_UHR_MAC_CAP0_DPS_AP_STATIC_HCM_SUPP |
+					IEEE80211_UHR_MAC_CAP0_NPCA_SUPP |
+					IEEE80211_UHR_MAC_CAP0_ENH_BSR_SUPP |
+					IEEE80211_UHR_MAC_CAP0_ADD_MAP_TID_SUPP |
+					IEEE80211_UHR_MAC_CAP0_EOTSP_SUPP,
+				.mac_cap[1] =
+					(u8)(((u64)IEEE80211_UHR_MAC_CAP1_DSO_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP1_PEDCA_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP1_DBE_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP1_UL_LLI_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP1_P2P_LLI_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP1_PUO_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP1_AP_PUO_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP1_DUO_SUPP) >> 8),
+				.mac_cap[2] =
+					(u8)(((u64)IEEE80211_UHR_MAC_CAP2_OMC_UL_MU_DIS_RX_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP2_AOM_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP2_IFCS_LOC_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP2_UHR_TRS_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP2_TXSPG_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP2_TXOP_RET_IN_TXSPG) >> 16),
+				.mac_cap[3] = 0,
+				.mac_cap[4] =
+					(u8)(((u64)IEEE80211_UHR_MAC_CAP4_BOUNDED_ESS |
+					(u64)IEEE80211_UHR_MAC_CAP4_BTM_ASSURANCE) >> 32),
+			},
+			.phy = {
+				.cap = {
+					IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_SND_NDP_LE80 |
+					IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_DL_MU_LE80 |
+					IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_SND_NDP_160 |
+					IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_DL_MU_160 |
+					IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_SND_NDP_320 |
+					IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_DL_MU_320 |
+					IEEE80211_UHR_PHY_CAP0_ELR_RX_SUPP |
+					IEEE80211_UHR_PHY_CAP0_ELR_TX_SUPP,
+				},
+			},
+			/* PPE threshold information is not supported */
+		},
+		.npca_info = {
+			.npca_enabled = true,
+			.npca_min_dur_threshold = 1,
+			.npca_switch_delay = 2,
+			.npca_switch_back_delay = 4,
+			.npca_initial_qsrc = 3,
+			.npca_moplen = 1,
+		},
 	},
 #ifdef CPTCFG_MAC80211_MESH
 	{
@@ -4973,6 +5189,14 @@ static const struct ieee80211_sband_iftype_data sband_capa_5ghz[] = {
 				.rx_mcs_80p80 = cpu_to_le16(0xfffa),
 				.tx_mcs_80p80 = cpu_to_le16(0xfffa),
 			},
+		},
+		.npca_info = {
+			.npca_enabled = true,
+			.npca_min_dur_threshold = 1,
+			.npca_switch_delay = 2,
+			.npca_switch_back_delay = 4,
+			.npca_initial_qsrc = 3,
+			.npca_moplen = 1,
 		},
 	},
 #endif
@@ -5124,6 +5348,60 @@ static const struct ieee80211_sband_iftype_data sband_capa_6ghz[] = {
 			},
 			/* PPE threshold information is not supported */
 		},
+		.uhr_cap = {
+			.has_uhr = true,
+			.mac = {
+				.mac_cap[0] =
+					IEEE80211_UHR_MAC_CAP0_DPS_SUPP |
+					IEEE80211_UHR_MAC_CAP0_DPS_ASSIST_SUPP |
+					IEEE80211_UHR_MAC_CAP0_DPS_AP_STATIC_HCM_SUPP |
+					IEEE80211_UHR_MAC_CAP0_NPCA_SUPP |
+					IEEE80211_UHR_MAC_CAP0_ENH_BSR_SUPP |
+					IEEE80211_UHR_MAC_CAP0_ADD_MAP_TID_SUPP |
+					IEEE80211_UHR_MAC_CAP0_EOTSP_SUPP,
+				.mac_cap[1] =
+					(u8)(((u64)IEEE80211_UHR_MAC_CAP1_DSO_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP1_PEDCA_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP1_DBE_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP1_UL_LLI_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP1_P2P_LLI_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP1_PUO_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP1_AP_PUO_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP1_DUO_SUPP) >> 8),
+				.mac_cap[2] =
+					(u8)(((u64)IEEE80211_UHR_MAC_CAP2_OMC_UL_MU_DIS_RX_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP2_AOM_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP2_IFCS_LOC_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP2_UHR_TRS_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP2_TXSPG_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP2_TXOP_RET_IN_TXSPG) >> 16),
+				.mac_cap[3] = 0,
+				.mac_cap[4] =
+					(u8)(((u64)IEEE80211_UHR_MAC_CAP4_BOUNDED_ESS |
+					(u64)IEEE80211_UHR_MAC_CAP4_BTM_ASSURANCE) >> 32),
+			},
+			.phy = {
+				.cap = {
+					IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_SND_NDP_LE80 |
+					IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_DL_MU_LE80 |
+					IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_SND_NDP_160 |
+					IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_DL_MU_160 |
+					IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_SND_NDP_320 |
+					IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_DL_MU_320 |
+					IEEE80211_UHR_PHY_CAP0_ELR_RX_SUPP |
+					IEEE80211_UHR_PHY_CAP0_ELR_TX_SUPP,
+				},
+			},
+			/* PPE threshold information is not supported */
+		},
+		.npca_info = {
+			.npca_enabled = true,
+			.npca_min_dur_threshold = 1,
+			.npca_switch_delay = 2,
+			.npca_switch_back_delay = 4,
+			.npca_initial_qsrc = 3,
+			.npca_moplen = 1,
+		},
 	},
 	{
 		.types_mask = BIT(NL80211_IFTYPE_AP) |
@@ -5269,6 +5547,60 @@ static const struct ieee80211_sband_iftype_data sband_capa_6ghz[] = {
 				},
 			},
 			/* PPE threshold information is not supported */
+		},
+		.uhr_cap = {
+			.has_uhr = true,
+			.mac = {
+				.mac_cap[0] =
+					IEEE80211_UHR_MAC_CAP0_DPS_SUPP |
+					IEEE80211_UHR_MAC_CAP0_DPS_ASSIST_SUPP |
+					IEEE80211_UHR_MAC_CAP0_DPS_AP_STATIC_HCM_SUPP |
+					IEEE80211_UHR_MAC_CAP0_NPCA_SUPP |
+					IEEE80211_UHR_MAC_CAP0_ENH_BSR_SUPP |
+					IEEE80211_UHR_MAC_CAP0_ADD_MAP_TID_SUPP |
+					IEEE80211_UHR_MAC_CAP0_EOTSP_SUPP,
+				.mac_cap[1] =
+					(u8)(((u64)IEEE80211_UHR_MAC_CAP1_DSO_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP1_PEDCA_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP1_DBE_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP1_UL_LLI_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP1_P2P_LLI_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP1_PUO_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP1_AP_PUO_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP1_DUO_SUPP) >> 8),
+				.mac_cap[2] =
+					(u8)(((u64)IEEE80211_UHR_MAC_CAP2_OMC_UL_MU_DIS_RX_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP2_AOM_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP2_IFCS_LOC_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP2_UHR_TRS_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP2_TXSPG_SUPP |
+					(u64)IEEE80211_UHR_MAC_CAP2_TXOP_RET_IN_TXSPG) >> 16),
+				.mac_cap[3] = 0,
+				.mac_cap[4] =
+					(u8)(((u64)IEEE80211_UHR_MAC_CAP4_BOUNDED_ESS |
+					(u64)IEEE80211_UHR_MAC_CAP4_BTM_ASSURANCE) >> 32),
+			},
+			.phy = {
+				.cap = {
+					IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_SND_NDP_LE80 |
+					IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_DL_MU_LE80 |
+					IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_SND_NDP_160 |
+					IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_DL_MU_160 |
+					IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_SND_NDP_320 |
+					IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_DL_MU_320 |
+					IEEE80211_UHR_PHY_CAP0_ELR_RX_SUPP |
+					IEEE80211_UHR_PHY_CAP0_ELR_TX_SUPP,
+				},
+			},
+			/* PPE threshold information is not supported */
+		},
+		.npca_info = {
+			.npca_enabled = true,
+			.npca_min_dur_threshold = 1,
+			.npca_switch_delay = 2,
+			.npca_switch_back_delay = 4,
+			.npca_initial_qsrc = 3,
+			.npca_moplen = 1,
 		},
 	},
 #ifdef CPTCFG_MAC80211_MESH
