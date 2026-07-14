@@ -16,6 +16,7 @@
 #include "qcn_extns/ath12k_cmn_extn.h"
 #include "qcn_extns/dp_stats_extn.h"
 #include "dp_tx_mon.h"
+#include "qcn_extns/dp_mon_extn.h"
 #include "qcn_extns/ini.h"
 
 #ifndef CPTCFG_QCN_EXTN
@@ -1301,6 +1302,9 @@ int ath12k_dp_mon_pdev_init(struct ath12k_pdev_dp *dp_pdev)
 	if (mon_ops && mon_ops->mon_pdev_alloc)
 		ret = mon_ops->mon_pdev_alloc(dp_pdev);
 
+	if (ath12k_dp_mon_pdev_tlv_logger_init(dp_pdev))
+		ath12k_warn(dp, "failed to init TLV logger for mon pdev\n");
+
 	return ret;
 }
 
@@ -1315,6 +1319,8 @@ void ath12k_dp_mon_pdev_deinit(struct ath12k_pdev_dp *dp_pdev)
 
 	dp = dp_pdev->dp;
 	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	ath12k_dp_mon_pdev_tlv_logger_deinit(dp_pdev);
 
 	if (mon_ops && mon_ops->mon_pdev_free)
 		mon_ops->mon_pdev_free(dp_pdev);

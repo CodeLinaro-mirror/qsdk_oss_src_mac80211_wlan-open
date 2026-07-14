@@ -18,6 +18,7 @@
 #include "../trace.h"
 #include "../ath12k_notif.h"
 #include "../../net/mac80211/qcn_extns/cmn_extn.h"
+#include "qcn_extns/dp_mon_extn.h"
 
 const struct ath12k_dp_arch_mon_ops ath12k_wifi7_dp_arch_mon_dual_ring_ops = {
 	.rx_srng_setup = ath12k_dp_mon_rx_srng_setup,
@@ -529,6 +530,7 @@ ath12k_wifi7_dp_mon_rx_parse_dest(struct ath12k_pdev_dp *dp_pdev,
 				  struct ath12k_dp_mon_status_desc *status_desc)
 {
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct ath12k_base *ab = dp_pdev->dp->ab;
 	struct ath12k_mon_data *pmon = (struct ath12k_mon_data *)&dp_mon_pdev->mon_data;
 	struct hal_tlv_64_hdr *tlv;
 	struct hal_tlv_parsed_hdr tlv_parsed_hdr = {0};
@@ -539,6 +541,11 @@ ath12k_wifi7_dp_mon_rx_parse_dest(struct ath12k_pdev_dp *dp_pdev,
 	u8 *mon_buf = status_desc->mon_buf;
 	u8 *ptr = mon_buf;
 	int ret;
+
+	if ((ab->hw_params->tlv_logger_support & ATH12K_TLV_LOGGER_RX_ENABLED) &&
+	    dp_mon_pdev->pdev_mon_dp_extn.rx_tlv_log &&
+	    dp_mon_pdev->pdev_mon_dp_extn.rx_tlv_log->tlv_logging_enable)
+		ath12k_dp_mon_tlv_logger_clear_buf(dp_mon_pdev, TLV_LOGGER_RX_MODE);
 
 	do {
 		tlv = (struct hal_tlv_64_hdr *)ptr;
@@ -565,6 +572,13 @@ ath12k_wifi7_dp_mon_rx_parse_dest(struct ath12k_pdev_dp *dp_pdev,
 			ath12k_wifi7_hal_mon_rx_parse_status_tlv(dp_pdev->dp->hal,
 								 &pmon->mon_ppdu_info,
 								 &tlv_parsed_hdr);
+
+		if ((ab->hw_params->tlv_logger_support & ATH12K_TLV_LOGGER_RX_ENABLED) &&
+		    dp_mon_pdev->pdev_mon_dp_extn.rx_tlv_log &&
+		    dp_mon_pdev->pdev_mon_dp_extn.rx_tlv_log->tlv_logging_enable)
+			ath12k_wifi7_dp_mon_rx_record_tlv(dp_mon_pdev,
+							  &pmon->mon_ppdu_info,
+							  tlv_tag);
 
 		ret = ath12k_wifi7_dp_mon_rx_parse_dest_tlv(dp_pdev, pmon,
 							    hal_status,
@@ -605,7 +619,10 @@ ath12k_wifi7_dp_mon_rx_parse_dest(struct ath12k_pdev_dp *dp_pdev,
 		status_desc->mon_buf = NULL;
 		mon_stats->status_buf_free++;
 	}
-
+	if ((ab->hw_params->tlv_logger_support & ATH12K_TLV_LOGGER_RX_ENABLED) &&
+	    dp_mon_pdev->pdev_mon_dp_extn.rx_tlv_log &&
+	    dp_mon_pdev->pdev_mon_dp_extn.rx_tlv_log->tlv_logging_enable)
+		ath12k_dp_mon_record_index_update(dp_mon_pdev, TLV_LOGGER_RX_MODE);
 	return hal_status;
 }
 
