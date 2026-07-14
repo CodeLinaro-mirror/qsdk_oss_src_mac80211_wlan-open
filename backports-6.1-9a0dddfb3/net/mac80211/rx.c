@@ -2908,11 +2908,8 @@ bool ieee80211_is_our_addr(struct ieee80211_sub_if_data *sdata,
 
 	if (sdata->wdev.vap_submode == IEEE80211_EXTN_VAP_SUBMODE_MESH) {
 		sta = sta_info_get_bss(sdata, addr);
-		if (sta) {
-			if (out_link_id && ieee80211_vif_is_mld(&sdata->vif))
-				*out_link_id = 0;
+		if (sta)
 			return true;
-		}
 	}
 #endif /* CPTCFG_QCN_EXTN_MESH_SUPPORT */
 
