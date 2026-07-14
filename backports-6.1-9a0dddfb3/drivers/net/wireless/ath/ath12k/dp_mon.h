@@ -231,6 +231,9 @@ struct ath12k_dp_arch_mon_ops {
 	void (*rx_nrp_reset)(struct ath12k_pdev_dp *dp_pdev);
 	void (*rx_smart_mon_set)(struct ath12k_pdev_dp *dp_pdev);
 	void (*rx_smart_mon_reset)(struct ath12k_pdev_dp *dp_pdev);
+	void (*rx_cfr_rcc_config)(struct ath12k_pdev_dp *dp_pdev,
+				  bool enable, u8 rcc_type);
+	bool (*rx_get_cfr_rcc_filter_valid)(struct ath12k_pdev_dp *dp_pdev);
 	void (*mon_rx_wmask)(void *ptr, struct htt_rx_ring_tlv_filter *tlv_filter);
 	void (*rx_enable_packet_filters)(void *ptr,
 						struct htt_rx_ring_tlv_filter *filter);
@@ -1694,6 +1697,42 @@ ath12k_dp_mon_pktlog_config(struct ath12k *ar, bool enable,
 
 	if(mon_ops && mon_ops->pktlog_config)
 		mon_ops->pktlog_config(dp_pdev, mode, filter, enable);
+}
+
+static inline void
+ath12k_dp_mon_cfr_rcc_config(struct ath12k *ar, bool enable, u8 rcc_type)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
+
+	if (unlikely(!dp_pdev || !dp_pdev->dp_mon_pdev))
+		return;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (mon_ops && mon_ops->rx_cfr_rcc_config)
+		mon_ops->rx_cfr_rcc_config(dp_pdev, enable, rcc_type);
+}
+
+static inline bool
+ath12k_dp_mon_get_cfr_rcc_filter_valid(struct ath12k *ar)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
+
+	if (unlikely(!dp_pdev || !dp_pdev->dp_mon_pdev))
+		return false;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (mon_ops && mon_ops->rx_get_cfr_rcc_filter_valid)
+		return mon_ops->rx_get_cfr_rcc_filter_valid(dp_pdev);
+
+	return false;
 }
 
 static inline void
