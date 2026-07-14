@@ -1436,9 +1436,7 @@ ath12k_wifi8_deliver_raw_frame(struct ath12k_pdev_dp *dp_pdev,
 	ath12k_dp_rx_h_undecap_raw(dp_pdev, msdu,
 				   rx_tlv_hdr,
 				   enctype,
-				   status, decrypted, peer_id,
-				   rx_msdu_info->first_msdu,
-				   rx_msdu_info->last_msdu);
+				   status, decrypted, peer_id);
 
 	rx_status = IEEE80211_SKB_RXCB(msdu);
 	*rx_status = *status;

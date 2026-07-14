@@ -387,18 +387,12 @@ void ath12k_dp_rx_h_undecap_raw(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *
 				struct hal_rx_desc *rx_desc,
 				enum hal_encrypt_type enctype,
 				struct ieee80211_rx_status *status, bool decrypted,
-				u16 peer_id, bool is_first_msdu, bool is_last_msdu)
+				u16 peer_id)
 {
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ieee80211_hdr *hdr;
 	size_t hdr_len;
 	size_t crypto_len;
-
-	if (!is_first_msdu || !(is_first_msdu && is_last_msdu)) {
-		/* TODO: Change below stats increment back to WARN_ON_ONCE(1) */
-		dp->device_stats.first_and_last_msdu_bit_miss++;
-		return;
-	}
 
 	pskb_trim(msdu, msdu->len - FCS_LEN);
 
