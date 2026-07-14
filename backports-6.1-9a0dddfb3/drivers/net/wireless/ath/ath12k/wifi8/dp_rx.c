@@ -3567,7 +3567,78 @@ int ath12k_wifi8_dp_rx_ring_init(struct ath12k_base *ab)
 	return 0;
 }
 
-int ath12k_wifi8_dp_rx_process_reo_flush_err(struct ath12k_dp *dp, int budget)
+static bool
+ath12k_wifi8_flush_handle_null_queue(struct ath12k_dp *dp,
+				     struct ath12k_rx_desc_info *desc_info,
+				     struct hal_reo_dest_ring *rx_desc,
+				     struct napi_struct *napi)
+{
+	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
+	struct ieee80211_rx_status rx_status = {0};
+	struct rx_tlv_info_1 prev_tlv = {0};
+	struct hal_rx_spd_data rx_spd = {0};
+	struct ath12k_dp_peer *peer;
+	struct ath12k_pdev_dp *dp_pdev;
+	struct hal_rx_desc *hal_rx_desc;
+	u32 hal_rx_desc_sz;
+	u32 peer_metadata;
+	u16 peer_id;
+	u8 hw_link_id;
+	int msdu_idx = 0;
+	bool drop;
+
+	if (!desc_info->skb)
+		return false;
+
+	ath12k_core_dmac_inv_range(desc_info->vaddr,
+				   desc_info->vaddr + DP_RX_BUFFER_SIZE);
+
+	hal_rx_desc = (struct hal_rx_desc *)desc_info->vaddr;
+
+	ath12k_wifi8_cpy_hw_rx_desc_to_spad_desc(rx_desc, &rx_spd);
+	ath12k_wifi8_dp_extract_rx_spd_data(dp->hal, &rx_spd, hal_rx_desc);
+
+	if (rx_spd.rx_mpdu_info.reo_dest_buffer_type ==
+	    HAL_REO_DEST_RING_BUFFER_TYPE_LINK_DESC)
+		return false;
+
+	rx_spd.msdu = desc_info->skb;
+	rx_spd.vaddr = desc_info->vaddr;
+
+	hw_link_id = ath12k_dp_validate_hw_link_id(rx_spd.rx_mpdu_info.src_link_id);
+	dp_pdev = ath12k_dp_hw_grp_to_dp_pdev(dp_hw_grp, hw_link_id);
+	if (unlikely(!dp_pdev))
+		return false;
+
+	if (!rcu_dereference(dp_pdev->dp->ab->pdevs_active[dp_pdev->ar->pdev_idx]))
+		return false;
+
+	peer_metadata = rx_spd.rx_mpdu_info.peer_meta_data;
+	peer_id = ath12k_wifi8_dp_rx_get_peer_id(dp->ab, dp->peer_metadata_ver,
+						 peer_metadata);
+
+	peer = ath12k_dp_peer_find_by_peerid_index(dp_pdev->dp, dp_pdev, peer_id);
+	if (!peer)
+		return false;
+
+	hw_link_id = ath12k_dp_validate_hw_link_id(hw_link_id);
+	rx_spd.rx_mpdu_info.src_link_id = hw_link_id;
+
+	hal_rx_desc_sz = dp->hal->hal_desc_sz;
+	ath12k_wifi8_dp_adjust_skb(&rx_spd, NULL, &msdu_idx, hal_rx_desc_sz);
+
+	drop = ath12k_wifi8_handle_null_queue(dp_pdev, peer, &rx_status,
+					      &rx_spd, napi, &prev_tlv);
+	if (drop)
+		dev_kfree_skb_any(rx_spd.msdu);
+
+	desc_info->skb = NULL;
+	return true;
+}
+
+int ath12k_wifi8_dp_rx_process_reo_flush_err(struct ath12k_dp *dp,
+					     struct napi_struct *napi,
+					     int budget)
 {
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
 	struct ath12k_wifi8_rx_stats *stats = &dp_wifi8->stats.rx_stats;
@@ -3615,14 +3686,46 @@ int ath12k_wifi8_dp_rx_process_reo_flush_err(struct ath12k_dp *dp, int budget)
 				desc_info->paddr = 0;
 				list_add_tail(&desc_info->list, &ppe2wbm_used_list);
 			} else {
+				struct hal_rx_reo_dest_rel_info err_info = {0};
+				int ret;
+
+				ret = ath12k_wifi8_hal_reo_rel_parse_err(dp, rx_desc,
+									 &err_info);
+				if (!ret) {
+					if (err_info.err_rel_src !=
+					    HAL_REO_REL_SRC_MODULE_REO ||
+					    err_info.push_reason !=
+					    HAL_REO_DEST_RING_PUSH_REASON_ERR_DETECTED ||
+					    err_info.err_code !=
+					    HAL_REO_DEST_RING_ERROR_CODE_DESC_ADDR_ZERO) {
+						ret = -EINVAL;
+					}
+				}
+
+				if (!ret) {
+					rcu_read_lock();
+
+					ath12k_wifi8_flush_handle_null_queue(dp,
+									     desc_info,
+									     rx_desc,
+									     napi);
+					rcu_read_unlock();
+				} else {
+					stats->rx_flush_pkts++;
+				}
+
+				if (desc_info->skb)
+					dev_kfree_skb_any(desc_info->skb);
+
 				list_add_tail(&desc_info->list, &rx_desc_used_list);
 			}
-
-			stats->rx_flush_pkts++;
 		} else if (rbm == dp->hal->hal_params->rx_mgmt_buf_rbm) {
 			desc_info = ath12k_mgmt_get_rx_desc_from_cookie(mgmt, cookie);
 			if (!desc_info)
 				continue;
+
+			if (desc_info->skb)
+				dev_kfree_skb_any(desc_info->skb);
 
 			list_add_tail(&desc_info->list, &rx_mgmt_desc_used_list);
 			stats->rx_mgmt_flush_pkts++;

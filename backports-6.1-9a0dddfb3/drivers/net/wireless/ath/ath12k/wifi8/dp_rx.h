@@ -121,7 +121,9 @@ void ath12k_wifi8_dp_pdev_free(struct ath12k_base *ab);
 int ath12k_wifi8_dp_rx_flow_fse_cache_operation(struct ath12k_base *ab,
 						enum dp_flow_fst_operation op_code,
 						struct hal_flow_tuple_info *tuple_info);
-int ath12k_wifi8_dp_rx_process_reo_flush_err(struct ath12k_dp *dp, int budget);
+int ath12k_wifi8_dp_rx_process_reo_flush_err(struct ath12k_dp *dp,
+					     struct napi_struct *napi,
+					     int budget);
 int
 ath12k_wifi8_peer_rx_tid_reo_update_for_smd(struct ath12k_base *ab,
 					    struct ath12k_dp_hw *dp_hw,
@@ -194,6 +196,12 @@ void ath12k_wifi8_convert_n_deliver_nw_frame(struct ath12k_pdev_dp *dp_pdev,
 					     struct ieee80211_rx_status *status,
 					     struct napi_struct *napi,
 					     struct rx_tlv_info_1 *prev_tlv_info);
+bool ath12k_wifi8_handle_null_queue(struct ath12k_pdev_dp *dp_pdev,
+				    struct ath12k_dp_peer *peer,
+				    struct ieee80211_rx_status *rx_status,
+				    struct hal_rx_spd_data *spd_desc_l,
+				    struct napi_struct *napi,
+				    struct rx_tlv_info_1 *prev_tlv_info);
 static inline
 void ath12k_wifi8_dp_extract_rx_spd_data(struct ath12k_hal *hal,
 					 struct hal_rx_spd_data *rx_info,
