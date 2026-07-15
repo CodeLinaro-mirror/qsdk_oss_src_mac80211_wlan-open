@@ -239,7 +239,7 @@ void ath12k_dp_peer_cleanup(struct ath12k *ar, void *ptr, int vdev_id, const u8 
 
 	spin_lock_bh(&dp->dp_lock);
 
-	if (!peer->primary_link) {
+	if (!ath12k_dp_arch_mlo_peer_tid_teardown_ready(dp, peer->dp_peer, peer)) {
 		spin_unlock_bh(&dp->dp_lock);
 		rcu_read_unlock();
 		return;
@@ -250,8 +250,7 @@ void ath12k_dp_peer_cleanup(struct ath12k *ar, void *ptr, int vdev_id, const u8 
 
 	ath12k_dp_rx_peer_tid_cleanup(ar, peer);
 	crypto_free_shash(peer->dp_peer->tfm_mmic);
-	if (peer->primary_link)
-		peer->dp_peer->primary_link_frag_setup = false;
+	peer->dp_peer->primary_link_frag_setup = false;
 	spin_unlock_bh(&dp->dp_lock);
 	rcu_read_unlock();
 }

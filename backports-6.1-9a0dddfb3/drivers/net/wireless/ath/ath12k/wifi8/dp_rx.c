@@ -505,25 +505,9 @@ void ath12k_wifi8_dp_rx_peer_tid_delete(struct ath12k *ar,
 	if (!rx_tid->active)
 		return;
 
-	/* For MLO peers, rx_tid[] is shared at the MLD level across all links.
-	 * Skip the full delete (REO cmd + qref reset + paddr zero) when this is
-	 * a partial-link removal and other links remain.  Tearing down the HW
-	 * REO queue now would leave a dangling paddr in rx_tid[] that
-	 * smd_prep_rx_tid() still needs to park during BSS Transition.
-	 * The full cleanup runs when the last link is removed (peer_links_map==0).
-	 */
-	if (peer->mlo && hweight32(peer->dp_peer->peer_links_map) > 0) {
-		ath12k_dbg(ab, ATH12K_DBG_SMD,
-			   "dp_rx_peer_tid_delete: MLO skip %pM tid=%u paddr=%pad links=0x%x\n",
-			   peer->addr, tid, &rx_tid->paddr,
-			   peer->dp_peer->peer_links_map);
-		return;
-	}
-
-	ath12k_dbg(ab, ATH12K_DBG_SMD,
-		   "dp_rx_peer_tid_delete: peer %pM peer_id=%u tid=%u paddr=%pad active=%d\n",
-		   peer->addr, peer->dp_peer->peer_id, tid,
-		   &rx_tid->paddr, rx_tid->active);
+	ath12k_dbg_level(ab, ATH12K_DBG_PEER | ATH12K_DBG_SMD, ATH12K_DBG_L2,
+			 "dp_rx_peer_tid_delete: peer %pM peer_id=%u tid=%u\n",
+			 peer->addr, peer->dp_peer->peer_id, tid);
 
 	elem = kzalloc(sizeof(*elem), GFP_ATOMIC);
 	if (!elem)
@@ -568,6 +552,36 @@ void ath12k_wifi8_dp_rx_peer_tid_delete(struct ath12k *ar,
 	rx_tid->paddr = 0;
 	rx_tid->size = 0;
 	rx_tid->pending_desc_size = 0;
+}
+
+bool ath12k_wifi8_dp_mlo_peer_tid_teardown_ready(struct ath12k_dp_peer *dp_peer,
+						 struct ath12k_dp_link_peer *link_peer)
+{
+	/* AP-mode MLO peers: primary_link is stable for the peer lifetime,
+	 * same as wifi7.  Only the link that set up rx_tid[] tears it down.
+	 *
+	 * TODO: revisit if AP-side link reconfiguration or future AP UMAC
+	 * migration can also move primary_link at runtime; if so, drop the
+	 * is_sta_bss_peer restriction and use the peer_links_map check for
+	 * all wifi8 MLO peers.
+	 */
+	if (!dp_peer->is_sta_bss_peer)
+		return link_peer->primary_link;
+
+	/* STA-mode BSS peers: during SMD BSS Transition the STA must keep the
+	 * Serving AP's rx_tid[] active until all its links are torn down, so
+	 * that in-flight frames from the Serving AP continue to drain through
+	 * the existing REO queues.  Once the last Serving AP link is removed,
+	 * the Target AP MLD peer owns the rx_tid[] state, so this is the only
+	 * safe point to tear it down.
+	 *
+	 * (peer_links_map & ~BIT(link_id)) == 0 evaluates to true when this is
+	 * the only remaining link, regardless of whether the caller has already
+	 * decremented peer_links_map (ath12k_mac_dp_peer_cleanup_cb) or not
+	 * (ath12k_dp_peer_cleanup, which defers it to
+	 * ath12k_dp_cp_link_peer_unassign).
+	 */
+	return (dp_peer->peer_links_map & ~BIT(link_peer->link_id)) == 0;
 }
 
 void  ath12k_wifi8_dp_setup_pn_check_reo_cmd(struct ath12k_hal_reo_cmd *cmd,

@@ -364,6 +364,12 @@ void ath12k_wifi7_dp_rx_peer_tid_delete(struct ath12k *ar,
 	rx_tid->pending_desc_size = 0;
 }
 
+bool ath12k_wifi7_dp_mlo_peer_tid_teardown_ready(struct ath12k_dp_peer *dp_peer,
+						 struct ath12k_dp_link_peer *link_peer)
+{
+	return link_peer->primary_link;
+}
+
 void  ath12k_wifi7_dp_setup_pn_check_reo_cmd(struct ath12k_hal_reo_cmd *cmd,
 					     struct ath12k_dp_rx_tid *rx_tid,
 					     u32 cipher, enum set_key_cmd key_cmd)
