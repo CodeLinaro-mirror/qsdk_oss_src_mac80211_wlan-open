@@ -1143,9 +1143,9 @@ void ath12k_qos_stats_update(struct ath12k_dp_peer *mld_peer,
 	if (telemetry_peer_ctx && !(do_div(tmp_div, pkt_win))) {
 		u32 nwdelay_avg, hwdelay_avg, swdelay_avg;
 
-		nwdelay_avg = div_u64(mld_qos->nwdelay_win_total, pkt_win);
-		swdelay_avg = div_u64(mld_qos->swdelay_win_total, pkt_win);
-		hwdelay_avg = div_u64(mld_qos->hwdelay_win_total, pkt_win);
+		nwdelay_avg = mld_qos->nwdelay_win_total / pkt_win;
+		swdelay_avg = mld_qos->swdelay_win_total / pkt_win;
+		hwdelay_avg = mld_qos->hwdelay_win_total / pkt_win;
 		mld_qos->nwdelay_win_total = 0;
 		mld_qos->swdelay_win_total = 0;
 		mld_qos->hwdelay_win_total = 0;
