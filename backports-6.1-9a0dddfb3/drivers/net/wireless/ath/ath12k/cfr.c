@@ -290,11 +290,11 @@ int ath12k_cfr_parse_enh_dma_hdr(struct ath12k *ar, u8 *data,
 	memcpy(&lut->dma_hdr.enh_hdr, &dma_hdr,
 	       sizeof(struct ath12k_cfir_enh_dma_hdr));
 
-	meta = &lut->header.u.meta_enh;
+	meta = &lut->header.meta_enh;
 
 	if (capture_type != CFR_CAPTURE_METHOD_ACK_RESP_TO_TM_FTM) {
 		if (!dma_hdr.mu_rx_data_incl) {
-			peer_macaddr = meta->peer_addr.su_peer_addr;
+			peer_macaddr = meta->su_peer_addr;
 			if (dma_hdr.freeze_data_incl)
 				extract_peer_mac_from_freeze_tlv(freeze_tlv,
 								 peer_macaddr);
@@ -474,10 +474,9 @@ int ath12k_process_cfr_capture_event(struct ath12k_base *ab,
 	header = &lut->header;
 	header->start_magic_num = ATH12K_CFR_START_MAGIC;
 	header->vendorid = VENDOR_QCA;
-	header->pltform_type = PLATFORM_TYPE_ARM;
 
 	ab->hw_params->hw_ops->fill_cfr_hdr_info(ar, header, params);
-	header->u.meta_enh.puncture_bitmap = arvif->chanctx.def.punctured;
+	header->meta_enh.puncture_bitmap = arvif->chanctx.def.punctured;
 
 	status = ath12k_cfr_correlate_and_relay(ar, lut,
 						ATH12K_CORRELATE_TX_EVENT);
