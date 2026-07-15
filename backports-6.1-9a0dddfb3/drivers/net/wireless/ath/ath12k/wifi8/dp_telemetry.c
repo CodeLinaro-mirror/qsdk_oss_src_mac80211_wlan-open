@@ -107,6 +107,7 @@ ath12k_wifi8_dp_update_tx_link_telemetry(struct ath12k_dp_peer *dp_peer,
 {
 	struct ath12k_dp_link_peer_hw_tx_stats *hw_link_tx;
 	struct ath12k_dp_peer_tx_stats *tx;
+	u32 success_packets;
 
 	if (!link_peer->peer_stats.hw_link_stats)
 		return;
@@ -125,9 +126,13 @@ ath12k_wifi8_dp_update_tx_link_telemetry(struct ath12k_dp_peer *dp_peer,
 			((u64)le32_get_bits(band->info1,
 			 TX_PEER_BAND_TELEMETRY_STATS_INFO1_UPPER_SUCCESS_BYTES) << 32);
 
-		tx->tx_success.packets +=
+		success_packets =
 			le32_get_bits(band->info1,
 			      TX_PEER_BAND_TELEMETRY_STATS_INFO1_NUM_SUCCESS_PACKETS);
+		tx->tx_success.packets += success_packets;
+
+		if (success_packets)
+			WRITE_ONCE(link_peer->peer_stats.last_ack, jiffies);
 
 		tx->ucast.bytes +=
 			(u64)le32_to_cpu(band->info0) |
