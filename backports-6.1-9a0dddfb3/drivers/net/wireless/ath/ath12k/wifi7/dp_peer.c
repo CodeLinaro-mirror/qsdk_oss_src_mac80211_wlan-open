@@ -202,11 +202,19 @@ void ath12k_wifi7_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 
 	u16 peerid_index;
 	struct ath12k_sta *ahsta;
 	struct ath12k_dp_hw *dp_hw = &ah->dp_hw;
+	bool pre_rcu_remove_done = false;
 
 	spin_lock_bh(&dp_hw->peer_hash_lock);
 
 	if (sta) {
 		ahsta = ath12k_sta_to_ahsta(sta);
+		/*
+		 * ahsta->dp_peer was already cleared in
+		 * sta_pre_rcu_remove() before mac80211's synchronize_net().
+		 * This rcu_assign_pointer() is a no-op in that case but is
+		 * kept as a safety net for paths where sta_pre_rcu_remove()
+		 * was not called.
+		 */
 		rcu_assign_pointer(ahsta->dp_peer, NULL);
 		dp_peer = ath12k_dp_peer_find_by_addr_and_sta(dp_hw, addr, sta);
 	} else {
@@ -234,9 +242,23 @@ void ath12k_wifi7_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 
 	list_del(&dp_peer->list);
 	spin_unlock_bh(&dp_hw->peer_list_lock);
 
+	/*
+	 * pre_rcu_remove mutate under wiphy->mtx
+	 * since this function is under wiphy lock reading this flag here is safe
+	 */
+	pre_rcu_remove_done = dp_peer->pre_rcu_remove_done;
+
 	spin_unlock_bh(&dp_hw->peer_hash_lock);
 
-	synchronize_rcu();
+	if (!pre_rcu_remove_done) {
+		/*
+		 * sta_pre_rcu_remove() was not called (unlikely).
+		 * Wait for all RCU readers that may hold a reference to dp_peer
+		 * (via dp_peer_list[] or ahsta->dp_peer) before freeing it.
+		 */
+
+		synchronize_net();
+	}
 
 	if (dp_peer->qos && dp_peer->qos->telemetry_peer_ctx)
 		ath12k_telemetry_peer_ctx_free(dp_peer->qos->telemetry_peer_ctx);

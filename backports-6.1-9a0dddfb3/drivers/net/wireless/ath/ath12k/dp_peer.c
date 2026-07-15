@@ -429,6 +429,7 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 	if (!peer)
 		return -ENOMEM;
 
+	peer->dp = dp;
 	peer->pdev_idx = ar->pdev_idx;
 	peer->is_bridge_peer = mlo_bridge_peer;
 	peer->vdev_id = vdev_id;
@@ -788,6 +789,7 @@ void ath12k_dp_cp_link_peer_unassign(struct ath12k *ar,
 	struct ath12k_hw *ah = ar->ah;
 	struct ath12k_dp_peer *dp_peer;
 	struct wiphy *wiphy = ah->hw->wiphy;
+	bool pre_rcu_remove_done = false;
 
 	lockdep_assert_wiphy(wiphy);
 
@@ -801,27 +803,60 @@ void ath12k_dp_cp_link_peer_unassign(struct ath12k *ar,
 	/* Flush the pending events to be safe */
 	ath12k_event_queue_flush(&ahvif->event_queue);
 
-	dp_peer = (struct ath12k_dp_peer *)ath12k_sta_get_dp_peer_wiphy_locked(wiphy,
-									       ahsta);
-	if (!dp_peer)
-		return;
+	/*
+	 * Step 1: Find dp_peer by STA MAC address.
+	 * Use peer_hash_lock to protect the hash table lookup.
+	 * Note: ahsta->addr is the MLD MAC for MLO STA, link MAC for non-MLO.
+	 */
+	spin_lock_bh(&dp_hw->peer_hash_lock);
 
-	rcu_read_lock();
-
-	peer = ath12k_dp_link_peer_find_by_mac_addr(dp_peer, addr);
-	if (!peer) {
-		rcu_read_unlock();
+	dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, ahsta->addr);
+	if (!dp_peer) {
+		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		return;
 	}
 
-	spin_lock_bh(&dp_hw->peer_hash_lock);
+	/*
+	 * Step 2: Find the link peer within dp_peer.
+	 * ath12k_dp_link_peer_find_by_mac_addr() walks dp_peer->link_peers[]
+	 * under rcu_read_lock(). sta_pre_rcu_remove() does NOT clear
+	 * link_peers[] — only dp_peer_list[] is cleared there — so this
+	 * lookup succeeds even after sta_pre_rcu_remove() has run.
+	 */
+	rcu_read_lock();
+
+	peer = ath12k_dp_link_peer_find_by_logical_link_id(dp_peer, link_id);
+	if (!peer) {
+		rcu_read_unlock();
+		spin_unlock_bh(&dp_hw->peer_hash_lock);
+		return;
+	}
+
+	ath12k_dp_peer_cleanup(ar, dp_peer, arvif->vdev_id, peer->addr);
+
+	/*
+	 * Step 3: Remove link peer from all DP data structures.
+	 * dp_lock serializes concurrent modifications.
+	 */
 	spin_lock_bh(&dp->dp_lock);
 
 	__ath12k_dp_link_peer_unassign(ar, dp, dp_hw, peer, dp_link_vif, addr);
 
 	spin_unlock_bh(&dp->dp_lock);
-	spin_unlock_bh(&dp_hw->peer_hash_lock);
 	rcu_read_unlock();
+
+	/*
+	 * pre_rcu_remove mutate under wiphy->mtx
+	 * since this function is under wiphy lock reading this flag here is safe
+	 */
+	pre_rcu_remove_done = dp_peer->pre_rcu_remove_done;
+
+	spin_unlock_bh(&dp_hw->peer_hash_lock);
+
+	/*
+	 * TODO: Move to CP — the following MAC-layer teardown (ahsta->link[],
+	 * links_map, etc.) belongs in the control path, not the DP path.
+	 */
 
 	/*
 	 * ahsta->link[link_id] may already be NULL if sta_pre_rcu_remove()
@@ -842,12 +877,20 @@ void ath12k_dp_cp_link_peer_unassign(struct ath12k *ar,
 
 	ahsta->free_logical_idx_map |= BIT(arsta->link_idx);
 	ahsta->num_peer--;
+
+	/*
+	 * ahsta->link[link_id] is already NULL if sta_pre_rcu_remove() ran.
+	 * This rcu_assign_pointer() is a no-op in that case but is kept as
+	 * a safety net for paths where sta_pre_rcu_remove() was not called.
+	 */
 	rcu_assign_pointer(ahsta->link[link_id], NULL);
 
 	ath12k_cfr_decrement_peer_count(ar, arsta);
-	synchronize_rcu();
 
-	/* Important: Link peer delete is done after synchronization */
+	if (!pre_rcu_remove_done)
+		synchronize_net();
+
+	/* Link peer is freed after the RCU grace period has passed */
 	__ath12k_link_peer_free(peer);
 
 	spin_lock_bh(&ar->arsta_lock);
@@ -875,6 +918,9 @@ void ath12k_dp_link_peer_unassign(struct ath12k *ar, u8 vdev_id, u8 *addr,
 	struct ath12k_vif *ahvif;
 	struct ath12k_dp_link_vif *link_vif = NULL;
 	struct ath12k_dp_peer *dp_peer;
+	bool pre_rcu_remove_done = false;
+
+	lockdep_assert_wiphy(ath12k_dp_pdev_to_hw(dp_pdev)->wiphy);
 
 	arvif = ath12k_mac_get_arvif(ar, vdev_id);
 	if (arvif) {
@@ -886,7 +932,10 @@ void ath12k_dp_link_peer_unassign(struct ath12k *ar, u8 vdev_id, u8 *addr,
 		}
 	}
 
-	rcu_read_lock();
+	/*
+	 * Step 1: Find dp_peer by MAC address.
+	 * If sta is NULL this is a vdev peer (BSS self-peer).
+	 */
 	spin_lock_bh(&dp_hw->peer_hash_lock);
 
 	if (sta)
@@ -896,28 +945,64 @@ void ath12k_dp_link_peer_unassign(struct ath12k *ar, u8 vdev_id, u8 *addr,
 
 	if (!dp_peer) {
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
-		rcu_read_unlock();
 		return;
 	}
 
+	/*
+	 * Step 2: Find the link peer within dp_peer.
+	 *
+	 * ath12k_dp_link_peer_find_by_mac_addr() walks dp_peer->link_peers[]
+	 * under rcu_read_lock(). sta_pre_rcu_remove() does NOT clear
+	 * dp_peer->link_peers[] — only dp_peer_list[peer_id] is cleared there.
+	 * dp_peer->link_peers[] is cleared by __ath12k_dp_link_peer_unassign()
+	 * in Step 3 below, so this lookup succeeds even in the pre-RCU path.
+	 */
+	rcu_read_lock();
 	peer = ath12k_dp_link_peer_find_by_mac_addr(dp_peer, addr);
 	if (!peer) {
-		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		rcu_read_unlock();
+		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		return;
 	}
 
+	/*
+	 * Step 3: Remove link peer from all DP data structures.
+	 *
+	 * __ath12k_dp_link_peer_unassign() removes the link peer from:
+	 *   - dp->rhead_peer_addr (per-card rhashtable, RCU B domain)
+	 *   - dp_peer->link_peers[] (RCU array)
+	 *   - dp->peers list and other bookkeeping
+	 */
 	spin_lock_bh(&dp->dp_lock);
 
 	__ath12k_dp_link_peer_unassign(ar, dp, dp_hw, peer, link_vif, addr);
 
 	spin_unlock_bh(&dp->dp_lock);
-	spin_unlock_bh(&dp_hw->peer_hash_lock);
+
 	rcu_read_unlock();
 
-	synchronize_rcu();
+	/*
+	 * pre_rcu_remove mutate under wiphy->mtx
+	 * since this function is under wiphy lock reading this flag here is safe
+	 */
+	pre_rcu_remove_done = dp_peer->pre_rcu_remove_done;
 
-	/* Important: Link peer delete is done after synchronization */
+	spin_unlock_bh(&dp_hw->peer_hash_lock);
+
+	if (!pre_rcu_remove_done) {
+		/*
+		 * sta_pre_rcu_remove() was not called.
+		 * Wait for all RCU readers that may hold a reference to
+		 * link_peer before freeing it.
+		 */
+		synchronize_net();
+	}
+
+	/*
+	 * All lookup paths for link_peer have been removed and the RCU grace
+	 * period has passed (either via synchronize_net() above or via
+	 * mac80211's synchronize_net() in the pre-RCU path). Safe to free.
+	 */
 	__ath12k_link_peer_free(peer);
 }
 
@@ -2791,4 +2876,68 @@ void ath12k_dp_peer_cleanup_all(struct ath12k *ar)
 			kfree(dp_peer);
 		}
 	}
+}
+
+void ath12k_dp_peer_pre_rcu_remove(struct ieee80211_hw *hw, struct ath12k_sta *ahsta)
+{
+	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
+	struct ath12k_dp_hw *dp_hw = &ah->dp_hw;
+	struct ath12k_dp_peer *dp_peer;
+	int i;
+
+	lockdep_assert_wiphy(hw->wiphy);
+
+	/*
+	 * ── DP layer: clear dp_peer_list[] for all peer_id entries ──
+	 *
+	 * dp_peer_list[] is the global RCU lookup table used by the RX NAPI
+	 * fast path to reach dp_peer (and from there, ieee80211_sta).
+	 * Clearing all entries here, before synchronize_net(), ensures that
+	 * after synchronize_net() no RX NAPI reader can reach dp_peer.
+	 *
+	 * NOTE: dp_peer->link_peers[] is intentionally NOT cleared here.
+	 * ath12k_dp_link_peer_unassign() uses link_peers[] to locate the
+	 * link peer. Clearing it here would break that lookup.
+	 * link_peers[] is cleared by __ath12k_dp_link_peer_unassign().
+	 */
+	dp_peer = ath12k_sta_get_dp_peer_wiphy_locked(hw->wiphy, ahsta);
+	if (!dp_peer)
+		return;
+
+	if (dp_peer->is_mlo && dp_peer->peer_id < MAX_DP_PEER_LIST_SIZE) {
+		rcu_assign_pointer(dp_hw->dp_peer_list[dp_peer->peer_id], NULL);
+		ath12k_dbg_level(NULL, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+				 "%s: sta=%pM cleared dp_peer_list[%u] mlo_peer_id\n",
+				 __func__, dp_peer->addr, dp_peer->peer_id);
+	}
+
+	for (i = 0; i < ATH12K_DP_PEER_MAX_MLO_LINKS; i++) {
+		struct ath12k_dp_link_peer *link_peer;
+		u16 peerid_index;
+
+		link_peer = wiphy_dereference(hw->wiphy, dp_peer->link_peers[i]);
+		if (!link_peer)
+			continue;
+
+		if (link_peer->peer_id == ATH12K_MLO_PEER_ID_INVALID)
+			continue;
+
+		peerid_index = ath12k_dp_peer_get_peerid_index(link_peer->dp,
+							       link_peer->peer_id);
+
+		rcu_assign_pointer(dp_hw->dp_peer_list[peerid_index], NULL);
+
+		ath12k_dbg_level(NULL, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+				 "%s: sta=%pM cleared dp_peer_list[%u] hw_link_id=%u peer_id=%u\n",
+				 __func__, link_peer->addr, peerid_index, i,
+				 link_peer->peer_id);
+	}
+
+	rcu_assign_pointer(ahsta->dp_peer, NULL);
+
+	dp_peer->pre_rcu_remove_done = true;
+
+	ath12k_dbg_level(NULL, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+			 "%s: dp_peer=%pM done mlo=%d\n",
+			 __func__, dp_peer->addr, dp_peer->is_mlo);
 }
