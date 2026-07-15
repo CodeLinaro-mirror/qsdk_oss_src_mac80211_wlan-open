@@ -21649,17 +21649,27 @@ int ath12k_mac_op_ampdu_action(struct ieee80211_hw *hw,
 			       struct ieee80211_vif *vif,
 			       struct ieee80211_ampdu_params *params)
 {
-	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
-	unsigned long links_map = ahvif->links_map;
+	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(params->sta);
+	unsigned long links_map = ahsta->links_map;
 	int ret = -EINVAL;
 	u8 link_id;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
-	if (WARN_ON(!links_map))
-		return ret;
+	if (!links_map) {
+		switch (params->action) {
+		case IEEE80211_AMPDU_RX_STOP:
+		case IEEE80211_AMPDU_TX_STOP_CONT:
+		case IEEE80211_AMPDU_TX_STOP_FLUSH:
+		case IEEE80211_AMPDU_TX_STOP_FLUSH_CONT:
+			return 0;
+		default:
+			WARN_ON(1);
+			return ret;
+		}
+	}
 
-	for_each_set_bit(link_id, &links_map, ATH12K_NUM_MAX_LINKS) {
+	for_each_set_bit(link_id, &links_map, IEEE80211_MLD_MAX_NUM_LINKS) {
 		ret = ath12k_mac_ampdu_action(hw, vif, params, link_id);
 		if (ret)
 			return ret;
