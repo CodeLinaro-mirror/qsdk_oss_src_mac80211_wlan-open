@@ -9473,9 +9473,9 @@ static int ath12k_fill_radio_tx_mon_stats(struct sk_buff *vendor_event,
 		return -EMSGSIZE;
 	}
 
-	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_PKT_TLV_FREE,
-			pdev_tx_mon_stats->pkt_tlv_free)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s", "pkt_tlv_free");
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_PKT_BUF_FREE,
+			pdev_tx_mon_stats->pkt_buf_free)) {
+		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s", "pkt_buf_free");
 		return -EMSGSIZE;
 	}
 
@@ -9532,6 +9532,13 @@ static int ath12k_fill_radio_tx_mon_stats(struct sk_buff *vendor_event,
 			pdev_tx_mon_stats->get_num_users_failed)) {
 		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
 			"get_num_users_failed");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_PACKET_BUF_PROCESSED,
+			pdev_tx_mon_stats->pkt_buf_processed)) {
+		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
+			"pkt_buf_processed");
 		return -EMSGSIZE;
 	}
 

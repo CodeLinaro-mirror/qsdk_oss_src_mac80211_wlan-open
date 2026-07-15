@@ -139,6 +139,8 @@ struct dp_mon_tx_filter;
  * @empty_descriptor: Empty descriptors provided by hardware
  * @ppdu_processed: PPDUs fully processed through the work queue handler
  * @status_desc_processed: individual status descriptors parsed inside a PPDU
+ * @pkt_buf_processed: packet data buffers successfully DMA-unmapped and attached
+ *			to an MPDU skb fragment during PPDU reconstruction
  * @ppdu_desc_overflow: PPDUs dropped because status descriptor count exceeded the
  *						pool limit
  * @zero_status_desc: PPDUs skipped because the descriptor list was empty at
@@ -149,7 +151,7 @@ struct dp_mon_tx_filter;
  * @data_gen_failed: failures attaching a payload buffer as an skb fragment
  * @buf_extract_failed: failures extracting buffer address info from a buffer-address TLV
  * @magic_value_error: descriptors rejected due to magic-value mismatch
- * @pkt_tlv_free: packet TLV buffers released back to the page-fragment allocator
+ * @pkt_buf_free: packet TLV buffers released back to the page-fragment allocator
  * @status_buf_free: status buffers released back to the page-fragment allocator
  * @mu_user_frame: MU frames generated for individual users within a MU-MIMO PPDU
  * @data_ppdu_delivered: Data PPDUs successfully delivered up to mac80211
@@ -174,6 +176,7 @@ struct ath12k_pdev_tx_mon_stats {
 	/* ppdu descriptor stats */
 	u32 ppdu_processed;
 	u32 status_desc_processed;
+	u32 pkt_buf_processed;
 	u32 ppdu_desc_overflow;
 	u32 zero_status_desc;
 	u32 ppdu_prep_failed;
@@ -181,7 +184,7 @@ struct ath12k_pdev_tx_mon_stats {
 	u32 data_gen_failed;
 	u32 buf_extract_failed;
 	u32 magic_value_error;
-	u32 pkt_tlv_free;
+	u32 pkt_buf_free;
 	u32 status_buf_free;
 	u32 mu_user_frame;
 
