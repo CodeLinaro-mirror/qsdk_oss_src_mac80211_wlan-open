@@ -499,7 +499,11 @@ static int ath12k_uhr_prepare_links(struct ath12k_vif *ahvif,
 		if (ret) {
 			ath12k_hw_warn(ahvif->ah,
 				       "smd prep: ext_ctx transfer failed: %d\n", ret);
-			/* Non-fatal: continue — flowq params will be missing */
+			/* peer_ext_ctx is required for EXEC phase AST/TQM
+			 * migration. Abort the transition now so EXEC is never
+			 * sent with a NULL peer_ext_ctx.
+			 */
+			return ret;
 		} else {
 			struct ath12k *first_ar = NULL;
 			struct ath12k_link_vif *primary_arvif =
