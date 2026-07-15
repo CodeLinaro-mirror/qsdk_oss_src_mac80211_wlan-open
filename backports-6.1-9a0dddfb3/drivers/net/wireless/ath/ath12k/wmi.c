@@ -8377,6 +8377,14 @@ static int ath12k_wmi_tlv_mac_phy_chainmask_caps(struct ath12k_base *soc,
 			if (cmask_table->table_id == pdev_cap->chainmask_table_id)
 				break;
 		}
+
+		if (j == svc_rdy_ext->n_mac_phy_chainmask_combo) {
+			ath12k_warn(soc,
+				    "failed to find chainmask table for pdev %d table_id %u\n",
+				    i, pdev_cap->chainmask_table_id);
+			return -EINVAL;
+		}
+
 		for (j = 0; j < cmask_table->num_valid_chainmasks; j++) {
 			if (cmask_table->cap_list[j].supported_caps & WMI_SUPPORT_CHAIN_MASK_ADFS)
 				pdev_cap->adfs_chain_mask |= (1 << cmask_table->cap_list[j].chainmask);
@@ -8727,6 +8735,7 @@ static int ath12k_wmi_svc_rdy_ext_parse(struct ath12k_base *ab,
 	struct ath12k_wmi_pdev *wmi_handle = &ab->wmi_ab.wmi[0];
 	struct ath12k_wmi_svc_rdy_ext_parse *svc_rdy_ext = data;
 	int ret;
+	u32 num_chainmask_tables;
 
 	switch (tag) {
 	case WMI_TAG_SERVICE_READY_EXT_EVENT:
@@ -8742,7 +8751,16 @@ static int ath12k_wmi_svc_rdy_ext_parse(struct ath12k_base *ab,
 		svc_rdy_ext->hw_caps = ptr;
 		svc_rdy_ext->arg.num_hw_modes =
 			le32_to_cpu(svc_rdy_ext->hw_caps->num_hw_modes);
-		svc_rdy_ext->arg.num_chainmask_tables = le32_to_cpu(svc_rdy_ext->hw_caps->num_chainmask_tables);
+		num_chainmask_tables =
+			le32_to_cpu(svc_rdy_ext->hw_caps->num_chainmask_tables);
+		if (num_chainmask_tables > ATH12K_MAX_CHAINMASK_TABLES) {
+			ath12k_warn(ab,
+				    "invalid num_chainmask_tables %u max %u\n",
+				    num_chainmask_tables,
+				    ATH12K_MAX_CHAINMASK_TABLES);
+			return -EINVAL;
+		}
+		svc_rdy_ext->arg.num_chainmask_tables = num_chainmask_tables;
 		break;
 
 	case WMI_TAG_SOC_HAL_REG_CAPABILITIES:
