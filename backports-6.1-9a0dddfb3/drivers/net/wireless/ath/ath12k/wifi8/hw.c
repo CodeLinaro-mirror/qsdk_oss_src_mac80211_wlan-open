@@ -1201,7 +1201,8 @@ static void ath12k_wifi8_mgmt_handler(struct ieee80211_hw *hw,
 	 */
 	if (sta) {
 		ahsta = ath12k_sta_to_ahsta(sta);
-		if (ahsta->state == IEEE80211_STA_AUTHORIZED)
+		if (ahsta->state == IEEE80211_STA_AUTHORIZED ||
+		    (sta->epp_peer && ahsta->state > IEEE80211_STA_AUTH))
 			skb_cb->flags |= ATH12K_SKB_MGMT_MLO_PARAMS;
 	}
 
