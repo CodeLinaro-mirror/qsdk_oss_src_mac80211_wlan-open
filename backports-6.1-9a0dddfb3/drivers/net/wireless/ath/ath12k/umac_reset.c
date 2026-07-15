@@ -706,7 +706,8 @@ int ath12k_umac_reset_initiate_recovery(struct ath12k_base *ab,
 		struct ath12k_base *partner_ab = ag->ab[i];
 
 		if (partner_ab->is_bypassed ||
-		    test_bit(ATH12K_FLAG_RECOVERY, &partner_ab->dev_flags))
+		    (test_bit(ATH12K_FLAG_RECOVERY, &partner_ab->dev_flags) &&
+		    !partner_ab->skip_cumac_hw_reset))
 			continue;
 
 		/* Transition to INIT state */
@@ -1245,8 +1246,8 @@ void ath12k_dp_umac_reset_handle(struct ath12k_base *ab)
 
 	/* All chips have sent requests - process event for entire group serially */
 	ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET,
-		   "All chips ready: request_chip=%d, processing event for entire group\n",
-		   atomic_read(&mlo_umac_reset->request_chip));
+		   "All chips ready: request_chip=%d num_started=%d, processing event for entire group\n",
+		   atomic_read(&mlo_umac_reset->request_chip), ag->num_started);
 
 	/* set the reserved bit 0 to hold the premature execution of enqueued tasks.
 	 * Without this there is a possibility of task_map becoming 0 before other tasks
@@ -1263,7 +1264,8 @@ void ath12k_dp_umac_reset_handle(struct ath12k_base *ab)
 		partner_ab = ag->ab[i];
 
 		if (partner_ab->is_bypassed ||
-		    test_bit(ATH12K_FLAG_RECOVERY, &partner_ab->dev_flags))
+		    (test_bit(ATH12K_FLAG_RECOVERY, &partner_ab->dev_flags) &&
+		     !partner_ab->skip_cumac_hw_reset))
 			continue;
 
 		if (umac_reset_handlers[rx_event])

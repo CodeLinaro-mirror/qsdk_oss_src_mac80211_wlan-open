@@ -2813,6 +2813,7 @@ struct ath12k_base {
 	struct ath12k_mem_dev mlo_mem_dev;
 
 	bool map_event_required;
+	bool skip_cumac_hw_reset;
 
 	struct ath12k_mem_profile_based_param mem_params;
 

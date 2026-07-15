@@ -2463,6 +2463,45 @@ static int ath12k_core_mlo_init(struct ath12k_hw_group *ag)
 	return 0;
 }
 
+static int ath12k_dp_umac_reset_init_wrapper(struct ath12k_hw_group *ag)
+{
+	int i, ret;
+	struct ath12k_base *ab;
+
+	for (i = 0; i < ag->num_devices; i++) {
+		ab = ag->ab[i];
+		if (!ab || ab->is_bypassed)
+			continue;
+
+		if (ag->wsi_remap_in_progress &&
+		    ab->wsi_remap_state != ATH12K_WSI_BYPASS_ADD_DEVICE)
+			continue;
+
+		if (ath12k_check_erp_power_down(ag) && !ab->powerup_triggered)
+			continue;
+
+		mutex_lock(&ab->core_lock);
+
+		if (ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE0 &&
+		    !ab->recovery_start) {
+			mutex_unlock(&ab->core_lock);
+			continue;
+		}
+
+		ret = ath12k_dp_umac_reset_init(ab);
+		if (ret) {
+			ath12k_warn(ab, "Failed to initialize UMAC RESET for device %d: %d\n",
+				    i, ret);
+			mutex_unlock(&ab->core_lock);
+			return ret;
+		}
+
+		mutex_unlock(&ab->core_lock);
+	}
+
+	return 0;
+}
+
 static int ath12k_core_hw_group_start(struct ath12k_hw_group *ag)
 {
 	struct ath12k_base *ab = NULL;
@@ -2473,6 +2512,10 @@ static int ath12k_core_hw_group_start(struct ath12k_hw_group *ag)
 	if (test_bit(ATH12K_GROUP_FLAG_REGISTERED, &ag->flags)) {
 		ret = ath12k_core_complete_cumac_config(ag);
 		if (WARN_ON(ret))
+			goto err_mac_destroy;
+
+		ret = ath12k_dp_umac_reset_init_wrapper(ag);
+		if (ret)
 			goto err_mac_destroy;
 
 		ret = ath12k_core_mlo_setup(ag);
@@ -2516,6 +2559,10 @@ static int ath12k_core_hw_group_start(struct ath12k_hw_group *ag)
 
 	ret = ath12k_core_complete_cumac_config(ag);
 	if (WARN_ON(ret))
+		goto err_mac_destroy;
+
+	ret = ath12k_dp_umac_reset_init_wrapper(ag);
+	if (ret)
 		goto err_mac_destroy;
 
 	ret = ath12k_core_mlo_setup(ag);
@@ -2605,13 +2652,6 @@ core_pdev_create:
 			ret = ath12k_enable_fwlog(ab);
 			if (ret < 0)
 				ath12k_err(ab, "failed to enable fwlog: %d\n", ret);
-		}
-
-		ret = ath12k_dp_umac_reset_init(ab);
-		if (ret) {
-			mutex_unlock(&ab->core_lock);
-			ath12k_warn(ab, "Failed to initialize UMAC RESET: %d\n", ret);
-			goto err;
 		}
 
 		ath12k_core_pdev_enable_telemetry_stats(ab);
