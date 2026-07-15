@@ -250,6 +250,7 @@ void ath12k_dp_peer_cleanup(struct ath12k *ar, void *ptr, int vdev_id, const u8 
 
 	ath12k_dp_rx_peer_tid_cleanup(ar, peer);
 	crypto_free_shash(peer->dp_peer->tfm_mmic);
+	peer->dp_peer->tfm_mmic = NULL;
 	peer->dp_peer->primary_link_frag_setup = false;
 	spin_unlock_bh(&dp->dp_lock);
 	rcu_read_unlock();
