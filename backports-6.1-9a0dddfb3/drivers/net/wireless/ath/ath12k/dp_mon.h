@@ -1181,8 +1181,11 @@ int ath12k_dp_mon_rx_alloc(struct ath12k_dp *dp)
 	 */
 	if (mon_ops && mon_ops->rx_buf_setup) {
 		ret = mon_ops->rx_buf_setup(dp);
-		if (ret)
+		if (ret) {
+			if (mon_ops->rx_srng_cleanup)
+				mon_ops->rx_srng_cleanup(dp);
 			return ret;
+		}
 	}
 
 	return 0;
