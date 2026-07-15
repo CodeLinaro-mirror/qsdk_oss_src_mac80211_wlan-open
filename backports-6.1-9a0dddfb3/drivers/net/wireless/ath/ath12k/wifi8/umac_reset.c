@@ -19,6 +19,8 @@
 #endif
 
 
+void ath12k_wifi8_umac_reset_ppeds_rx_rings_disable(struct ath12k_base *cumac_ab);
+
 /**
  * ath12k_wifi8_clear_link_desc_pool_task - Task to clear link desc pool
  * @ab: Pointer to ath12k_base structure
@@ -236,6 +238,7 @@ void ath12k_wifi8_umac_reset_handle_pre_reset(struct ath12k_base *ab)
 	}
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	ath12k_wifi8_umac_reset_ppeds_rx_rings_disable(cumac_ab);
 	ath12k_wifi8_umac_reset_ppeds_stop(cumac_ab);
 #endif
 	ath12k_umac_reset_set_post_send_cb(cumac_ab,
@@ -313,17 +316,13 @@ static void ath12k_wifi8_dp_telemetry_umac_setup_wrapper(struct ath12k_base *ab)
 }
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-static void ath12k_wifi8_umac_reset_ppeds_ring_disable(struct ath12k_base *cumac_ab)
+void ath12k_wifi8_umac_reset_ppeds_rx_rings_disable(struct ath12k_base *cumac_ab)
 {
 	uint32_t ring_idx;
 
 	/*
-	 * Disabling PPE2TCL/REO2PPE/TQM2PPE SRNG.
+	 * Disabling REO2PPE/TQM2PPE SRNG.
 	 */
-	for (ring_idx = 0; ring_idx < ath12k_ppeds_ppe2tcl_rings_max; ring_idx++)
-		ath12k_dp_srng_hw_disable(cumac_ab,
-				&cumac_ab->dp->ppe.ppe2tcl_ring[ring_idx]);
-
 	for (ring_idx = 0; ring_idx < ath12k_ppeds_reo2ppe_rings_max; ring_idx++)
 		ath12k_dp_srng_hw_disable(cumac_ab,
 				&cumac_ab->dp->ppe.reo2ppe_ring[ring_idx]);
@@ -331,6 +330,18 @@ static void ath12k_wifi8_umac_reset_ppeds_ring_disable(struct ath12k_base *cumac
 	if (cumac_ab->dp->ppe.hw_buff_mgmt)
 		ath12k_dp_srng_hw_disable(cumac_ab,
 			&cumac_ab->dp->ppe.tqm2ppe_txcmp_ring);
+}
+
+static void ath12k_wifi8_umac_reset_ppeds_tx_rings_disable(struct ath12k_base *cumac_ab)
+{
+	uint32_t ring_idx;
+
+	/*
+	 * Disabling PPE2TCL.
+	 */
+	for (ring_idx = 0; ring_idx < ath12k_ppeds_ppe2tcl_rings_max; ring_idx++)
+		ath12k_dp_srng_hw_disable(cumac_ab,
+				&cumac_ab->dp->ppe.ppe2tcl_ring[ring_idx]);
 }
 
 static void ath12k_wifi8_umac_reset_ppeds_srng_init(struct ath12k_base *cumac_ab)
@@ -388,7 +399,7 @@ void ath12k_wifi8_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
 	ath12k_wifi8_srng_hw_ring_disable(cumac_ab);
 	ath12k_wifi8_srng_hw_mgmt_rings_disable(cumac_ab);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	ath12k_wifi8_umac_reset_ppeds_ring_disable(cumac_ab);
+	ath12k_wifi8_umac_reset_ppeds_tx_rings_disable(cumac_ab);
 #endif
 
 	end = jiffies + msecs_to_jiffies(2);
