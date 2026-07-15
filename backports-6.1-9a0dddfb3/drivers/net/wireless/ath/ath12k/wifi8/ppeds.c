@@ -1384,17 +1384,6 @@ static int ath12k_wifi8_dp_srng_alloc(struct ath12k_base *ab, struct dp_srng *ri
 	return 0;
 }
 
-int ath12k_wifi8_ppeds_dp_srng_setup(struct ath12k_base *ab, struct dp_srng *ring,
-			       enum hal_ring_type type, int ring_num,
-			       int num_entries)
-{
-	return ath12k_dp_srng_setup(ab, ring,
-					type,
-					ring_num,
-					0,
-					num_entries);
-}
-
 int ath12k_wifi8_ppeds_dp_srng_alloc(struct ath12k_base *ab, struct dp_srng *ring,
 			       enum hal_ring_type type, int ring_num,
 			       int num_entries)
