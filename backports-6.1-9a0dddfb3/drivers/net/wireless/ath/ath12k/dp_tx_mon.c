@@ -761,8 +761,8 @@ ath12k_dp_mon_tx_deep_free_ppdu_info(struct ath12k_pdev_dp *dp_pdev,
 	memset(&mon_data->prot_ppdu_info, 0, sizeof(mon_data->prot_ppdu_info));
 	memset(&mon_data->data_ppdu_info, 0, sizeof(mon_data->data_ppdu_info));
 
-	mon_data->prot_ppdu_info.tx_info.ba_user_id = -1;
-	mon_data->data_ppdu_info.tx_info.ba_user_id = -1;
+	mon_data->prot_ppdu_info.tx_info.ba_user_id = ATH12K_BA_USER_ID_INVAL;
+	mon_data->data_ppdu_info.tx_info.ba_user_id = ATH12K_BA_USER_ID_INVAL;
 }
 
 /**
@@ -1519,7 +1519,7 @@ ath12k_dp_tx_mon_check_ba_tlv_missing(struct dp_mon_tx_ppdu_info *ppdu_info)
 	if (!tx_info)
 		return true;
 
-	if (unlikely(tx_info->ba_user_id == -1))
+	if (unlikely(tx_info->ba_user_id == ATH12K_BA_USER_ID_INVAL))
 		return true;
 
 	return false;
