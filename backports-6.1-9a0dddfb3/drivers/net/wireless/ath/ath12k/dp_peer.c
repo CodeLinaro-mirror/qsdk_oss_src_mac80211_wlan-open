@@ -1016,8 +1016,8 @@ ath12k_link_peer_get_sta_rate_info_stats(struct ath12k_dp_link_peer *link_peer,
 	rate_info->txrate.eht_gi = link_peer->txrate.eht_gi;
 	rate_info->txrate.eht_ru_alloc = link_peer->txrate.eht_ru_alloc;
 	rate_info->txrate.flags = link_peer->txrate.flags;
-	rate_info->rssi_comb = link_peer->rssi_comb;
-	rate_info->signal_avg = ewma_avg_rssi_read(&link_peer->avg_rssi);
+	rate_info->rssi_comb = link_peer->signal_stats.rssi;
+	rate_info->signal_avg = (s8)link_peer->signal_stats.rssi_avg;
 	rate_info->tx_retry_count = link_peer->tx_retry_count;
 	rate_info->tx_retry_failed = link_peer->tx_retry_failed;
 	rate_info->rx_retries = link_peer->peer_stats.rx_retries;

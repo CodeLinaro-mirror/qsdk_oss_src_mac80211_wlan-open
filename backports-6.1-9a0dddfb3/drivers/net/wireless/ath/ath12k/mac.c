@@ -26165,14 +26165,14 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 	struct ath12k_sta *ahsta;
 	struct ath12k_dp_link_peer_rate_info rate_info = {0};
 	struct ath12k_fw_stats_req_params params = {};
-	s8 signal, rssi_signal, rssi_offset;
+	s8 signal;
 	struct ath12k_link_sta *arsta;
 	struct ath12k_base *ab;
 	struct ath12k_dp_peer *dp_peer;
 	struct ath12k_dp_peer_stats *peer_stats = NULL;
 	struct ath12k_dp_peer_rx_stats *rx_stats;
 	struct ath12k *ar;
-	bool db2dbm, stats_valid = false;
+	bool stats_valid = false;
 	struct ath12k_dp_link_peer *link_peer;
 	u32 pn_errors = 0, mic_errors = 0, decrypt_errors = 0;
 	int i;
@@ -26328,9 +26328,6 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 	}
 	rcu_read_unlock();
 
-	db2dbm = test_bit(WMI_TLV_SERVICE_HW_DB2DBM_CONVERSION_SUPPORT,
-			  ar->ab->wmi_ab.svc_map);
-
 	link_sinfo->rx_duration = rate_info.rx_duration;
 	link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_RX_DURATION);
 
@@ -26356,11 +26353,6 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 		link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_BITRATE);
 	}
 
-	rssi_offset = rate_info.rssi_comb + ar->rssi_offsets.avg_nf_dbm;
-	rssi_signal = rate_info.rssi_comb > ar->rssi_offsets.xlna_bypass_threshold ?
-		      rssi_offset + ar->rssi_offsets.xlna_bypass_offset :
-		      rssi_offset;
-
 	signal = rate_info.rssi_comb;
 	if (ahsta->ahvif->vdev_type == WMI_VDEV_TYPE_STA) {
 		/* Limit the requests to Firmware for fetching the signal strength */
@@ -26380,14 +26372,11 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 
 
 	if (signal) {
-		link_sinfo->signal =
-			db2dbm ? rate_info.rssi_comb : rssi_signal;
+		link_sinfo->signal = signal;
 		link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_SIGNAL);
 	}
 
-	link_sinfo->signal_avg =
-		rate_info.signal_avg + (!db2dbm ? ar->rssi_offsets.rssi_offset : 0);
-
+	link_sinfo->signal_avg = rate_info.signal_avg;
 	link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_SIGNAL_AVG);
 
 	link_sinfo->tx_retries = rate_info.tx_retry_count;
@@ -26432,8 +26421,8 @@ void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 	struct ath12k_link_sta *arsta;
 	struct ath12k *ar;
 	struct ath12k_base *ab;
-	s8 signal, rssi_signal, rssi_offset;
-	bool db2dbm, stats_valid = false;
+	s8 signal;
+	bool stats_valid = false;
 	struct ath12k_dp_link_peer_rate_info rate_info = {0};
 	struct ath12k_dp_link_peer *link_peer;
 	u32 pn_errors = 0, mic_errors = 0, decrypt_errors = 0;
@@ -26537,9 +26526,6 @@ void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 	}
 	rcu_read_unlock();
 
-	db2dbm = test_bit(WMI_TLV_SERVICE_HW_DB2DBM_CONVERSION_SUPPORT,
-			  ab->wmi_ab.svc_map);
-
 	sinfo->rx_duration = rate_info.rx_duration;
 	sinfo->filled |= BIT_ULL(NL80211_STA_INFO_RX_DURATION);
 
@@ -26590,10 +26576,6 @@ void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 	}
 
 	spin_unlock_bh(&ab->base_lock);
-	rssi_offset = rate_info.rssi_comb + ar->rssi_offsets.avg_nf_dbm;
-	rssi_signal = rate_info.rssi_comb > ar->rssi_offsets.xlna_bypass_threshold ?
-		      rssi_offset + ar->rssi_offsets.xlna_bypass_offset :
-		      rssi_offset;
 
 	signal = rate_info.rssi_comb;
 
@@ -26618,15 +26600,11 @@ void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 		ath12k_mac_put_chain_rssi(sinfo, arsta);
 
 	if (signal) {
-		sinfo->signal = db2dbm ? rate_info.rssi_comb : rssi_signal;
+		sinfo->signal = signal;
 		sinfo->filled |= BIT_ULL(NL80211_STA_INFO_SIGNAL);
 	}
 
 	sinfo->signal_avg = rate_info.signal_avg;
-
-	if (!db2dbm)
-		sinfo->signal_avg += ar->rssi_offsets.rssi_offset;
-
 	sinfo->filled |= BIT_ULL(NL80211_STA_INFO_SIGNAL_AVG);
 
 	sinfo->rx_retries = rate_info.rx_retries;
