@@ -19,38 +19,23 @@
 #include "qcn_extns/dp_mon_extn.h"
 #include "qcn_extns/ini.h"
 
+#define DP_RXDMA_MONITOR_BUF_RING_SIZE(ab) \
+	((ab)->mem_params.dp_params.rxdma_monitor_buf_ring_size)
+#define DP_RXDMA_MONITOR_DST_RING_SIZE(ab) \
+	((ab)->mem_params.dp_params.rxdma_monitor_dst_ring_size)
+#define DP_MON_NUM_PPDU_DESC(ab) \
+	((ab)->mem_params.dp_params.mon_num_ppdu_desc)
+
 #ifndef CPTCFG_QCN_EXTN
 
 #define DP_RXDMA_MON_STATUS_RING_SIZE	1024
 #define DP_RXDMA_MONITOR_DESC_RING_SIZE	4096
 
-#if defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
-#define DP_RXDMA_MONITOR_BUF_RING_SIZE  256
-#define DP_RXDMA_MONITOR_DST_RING_SIZE  512
-#define DP_MON_NUM_PPDU_DESC 8
-
-#elif defined(CONFIG_ATH12K_MEM_PROFILE_512M) || defined(CPTCFG_ATH12K_MEM_PROFILE_512M)
-#define DP_RXDMA_MONITOR_BUF_RING_SIZE  256
-#define DP_RXDMA_MONITOR_DST_RING_SIZE  512
-#define DP_MON_NUM_PPDU_DESC 128
-
-#else
-#define DP_RXDMA_MONITOR_BUF_RING_SIZE	(ath12k_dp_ring_cfg->rxdma_monitor_buf_ring_size)
-#define DP_RXDMA_MONITOR_DST_RING_SIZE	(ath12k_dp_ring_cfg->rxdma_monitor_dst_ring_size)
-#define DP_MON_NUM_PPDU_DESC	(ath12k_dp_ring_cfg->mon_num_ppdu_desc)
-#endif
-
 #else
 #define DP_RXDMA_MON_STATUS_RING_SIZE(ab)	ath12k_cfg_get(ab, \
-	ATH12K_CFG_DP_RXDMA_MON_STATUS_RING_SIZE)
+	ATH12K_INI_DP_RXDMA_MON_STATUS_RING_SIZE)
 #define DP_RXDMA_MONITOR_DESC_RING_SIZE(ab)	ath12k_cfg_get(ab, \
-	ATH12K_CFG_DP_RXDMA_MONITOR_DESC_RING_SIZE)
-#define DP_RXDMA_MONITOR_BUF_RING_SIZE(ab)	ath12k_cfg_get(ab, \
-	ATH12K_CFG_DP_RXDMA_MONITOR_BUF_RING_SIZE)
-#define DP_RXDMA_MONITOR_DST_RING_SIZE(ab)	ath12k_cfg_get(ab, \
-	ATH12K_CFG_DP_RXDMA_MONITOR_DST_RING_SIZE)
-#define DP_MON_NUM_PPDU_DESC(ab)		ath12k_cfg_get(ab, \
-	ATH12K_CFG_DP_MON_NUM_PPDU_DESC)
+	ATH12K_INI_DP_RXDMA_MONITOR_DESC_RING_SIZE)
 #endif
 
 #define ATH12K_DP_MON_TX_BUF_SIZE	2048
@@ -73,17 +58,9 @@
 #define ATH12K_DP_MON_ETH_TYPE_DOUBLE_VLAN_LEN	8
 #define DP_RXDMA_MONITOR_DEFAULT_RING_FILL_LVL 1024
 
-#if defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
-#define ATH12K_DP_SMART_MON_FILTER_DEFAULT	(DP_SMART_MON_PROFILE_256M | \
-						 (DP_SMART_MON_FILTER_MASK & \
-						  ~DP_SMART_MON_VALID))
-#elif defined(CONFIG_ATH12K_MEM_PROFILE_512M) || defined(CPTCFG_ATH12K_MEM_PROFILE_512M)
-#define ATH12K_DP_SMART_MON_FILTER_DEFAULT	(DP_SMART_MON_PROFILE_512M | \
-						 (DP_SMART_MON_FILTER_MASK & \
-						  ~DP_SMART_MON_VALID))
-#else
-#define ATH12K_DP_SMART_MON_FILTER_DEFAULT (ath12k_dp_ring_cfg->smart_mon_filter_default)
-#endif
+#define ATH12K_DP_SMART_MON_FILTER_DEFAULT \
+	((ab)->mem_params.dp_params.smart_mon_filter_default)
+
 #define DP_TX_MONITOR_BUF_RING_SIZE	8192
 #define DP_TX_MONITOR_DEST_RING_SIZE	8192
 
@@ -115,11 +92,7 @@
 
 #define DP_SMART_MON_VALID       BIT(0)
 
-#if defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
-#define ATH12K_DP_MON_STATUS_BUF   20
-#else
-#define ATH12K_DP_MON_STATUS_BUF   (ath12k_dp_ring_cfg->dp_mon_status_buf)
-#endif
+#define ATH12K_DP_MON_STATUS_BUF   (ab->mem_params.dp_params.dp_mon_status_buf)
 
 #define ATH12K_EXT_MON_MAX_PEERS	16
 #define ATH12K_EXT_MON_FILTER_ALL	0xFFFFU
@@ -1735,6 +1708,7 @@ ath12k_dp_smart_mon_filter_type_set(struct ath12k *ar,
 				    u8 new_filter)
 {
 	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
+	struct ath12k_base *ab = ar->ab;
 	u8 old_filter, smart_mon_profile;
 
 	if (unlikely(!dp_pdev || !dp_pdev->dp_mon_pdev))

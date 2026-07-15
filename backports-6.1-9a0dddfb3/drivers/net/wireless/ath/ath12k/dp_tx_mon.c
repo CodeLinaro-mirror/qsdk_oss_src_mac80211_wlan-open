@@ -3386,6 +3386,7 @@ void ath12k_dp_tx_mon_process_ppdu(struct work_struct *work)
 	struct ath12k_mon_data *mon_data;
 	int desc_idx, ppdu_prep_failed = 0;
 	int ppdu_processed_cnt = 0, total_status_desc_cnt = 0;
+	struct ath12k_base *ab;
 
 	if (unlikely(!dp_pdev_tx_mon)) {
 		ath12k_err(NULL, "TX Mon: NULL dp_pdev_tx_mon in work queue\n");
@@ -3414,6 +3415,8 @@ void ath12k_dp_tx_mon_process_ppdu(struct work_struct *work)
 	list_splice_init(&dp_pdev_tx_mon->tx_mon_ppdu_desc_used_list,
 			 &dp_pdev_tx_mon->tx_mon_ppdu_desc_proc_list);
 	spin_unlock_bh(&dp_pdev_tx_mon->tx_mon_ppdu_desc_lock);
+
+	ab = dp_pdev->dp->ab;
 
 	list_for_each_entry(ppdu_desc,
 			    &dp_pdev_tx_mon->tx_mon_ppdu_desc_proc_list,
@@ -3558,6 +3561,7 @@ static int ath12k_dp_tx_mon_prep_wq(struct list_head *mon_desc_used_list,
 	struct ath12k_pdev_tx_mon *dp_pdev_tx_mon = dp_mon_pdev->dp_pdev_tx_mon;
 	struct ath12k_dp_mon_ppdu_desc *ppdu_desc;
 	struct ath12k_dp_mon_desc *desc;
+	struct ath12k_base *ab = dp_mon_pdev->dp_pdev->dp->ab;
 	int desc_cnt;
 	struct ath12k_pdev_dp *dp_pdev = dp_mon_pdev->dp_pdev;
 

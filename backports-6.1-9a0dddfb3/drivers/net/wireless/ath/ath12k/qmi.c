@@ -3322,7 +3322,6 @@ static inline bool ath12k_cold_boot_cal_needed(struct ath12k_base *ab)
 {
 	return (!ath12k_waltest_mode && !ab->early_cal_support &&
 		ab->hw_params->cold_boot_calib && ath12k_cold_boot_cal &&
-		ath12k_dp_ring_cfg->cold_boot_calib &&
 		ab->qmi.cal_done == 0);
 }
 
@@ -4638,8 +4637,7 @@ static int ath12k_qmi_alloc_target_mem_chunk(struct ath12k_base *ab,
 		case CALDB_MEM_REGION_TYPE:
 		case BDF_MEM_REGION_TYPE:
 			if ((chunk->type == CALDB_MEM_REGION_TYPE &&
-			     (!ab->hw_params->cold_boot_calib ||
-			      !ath12k_dp_ring_cfg->cold_boot_calib)) ||
+			     !ab->hw_params->cold_boot_calib) ||
 			     !chunk->size) {
 				chunk->paddr = 0;
 				chunk->v.addr = NULL;
@@ -5000,8 +4998,7 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab,
 		case PAGEABLE_MEM_REGION_TYPE:
 			host_fw_req_total += ab->qmi.target_mem[i].size;
 			if ((ab->qmi.target_mem[i].type == CALDB_MEM_REGION_TYPE &&
-			     (!ab->hw_params->cold_boot_calib ||
-			      !ath12k_dp_ring_cfg->cold_boot_calib)) ||
+			     !ab->hw_params->cold_boot_calib) ||
 			    !ab->qmi.target_mem[i].size) {
 				ab->qmi.target_mem[idx].paddr = 0;
 				ab->qmi.target_mem[idx].v.ioaddr = NULL;
@@ -5206,8 +5203,7 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab,
 		case M3_DUMP_REGION_TYPE:
 		case PAGEABLE_MEM_REGION_TYPE:
 			if ((ab->qmi.target_mem[i].type == CALDB_MEM_REGION_TYPE &&
-			     (!ab->hw_params->cold_boot_calib ||
-			      !ath12k_dp_ring_cfg->cold_boot_calib)) ||
+			     !ab->hw_params->cold_boot_calib) ||
 			    !ab->qmi.target_mem[i].size) {
 				ab->qmi.target_mem[idx].paddr = 0;
 				ab->qmi.target_mem[idx].v.ioaddr = NULL;

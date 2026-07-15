@@ -10177,6 +10177,7 @@ static int ath12k_mac_set_mbssid_info(struct ieee80211_bss_conf *bss_conf,
 	struct ath12k_link_vif *tx_arvif;
 	struct ath12k *ar = arvif->ar;
 	struct ath12k_mbssid_info *mbssid_info;
+	struct ath12k_base *ab = ar->ab;
 
 	if (!bss_conf->mbssid_tx_vif)
 		return 0;
@@ -21206,6 +21207,7 @@ EXPORT_SYMBOL(ath12k_mac_op_add_interface);
 
 void ath12k_mac_vif_unref(struct ath12k_dp *dp, struct ieee80211_vif *vif)
 {
+	struct ath12k_base *ab = dp->ab;
 	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
 	struct ath12k_tx_desc_info *tx_desc_info;
 	struct ath12k_skb_cb *skb_cb;
@@ -24305,6 +24307,7 @@ static int ath12k_mac_get_link_idx_for_bridge(struct ieee80211_hw *hw,
 	struct ath12k_hw *ah = hw->priv;
 	struct ath12k_hw_group *ag;
 	struct ath12k *ar1, *ar2;
+	struct ath12k_base *ab;
 	int ret = -ENODATA;
 	u32 adj_device1, adj_device2;
 	struct ath12k_wsi_info *wsi_info, *adj_wsi_info;
@@ -24315,7 +24318,8 @@ static int ath12k_mac_get_link_idx_for_bridge(struct ieee80211_hw *hw,
 		if (!ar1)
 			continue;
 
-		ret = ath12k_mac_target_supp_n_link_mlo(ar1->ab);
+		ab = ar1->ab;
+		ret = ath12k_mac_target_supp_n_link_mlo(ab);
 		if (ret)
 			goto err;
 
@@ -28424,6 +28428,7 @@ static int ath12k_mac_setup_register(struct ath12k *ar,
 	int level;
 	int ret;
 	u8 total_vdevs;
+	struct ath12k_base *ab = ar->ab;
 
 	init_waitqueue_head(&ar->txmgmt_empty_waitq);
 	idr_init(&ar->txmgmt_idr);
@@ -28677,7 +28682,7 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 		 * disabled, or if radio is a scan radio
 		 */
 		if (!ar->ab->hw_params->supports_monitor ||
-		    !ath12k_dp_ring_cfg->monitor_support ||
+		    !ar->ab->mem_params.monitor_support ||
 		    ath12k_scan_radio_supported(ar->pdev))
 			is_monitor_disable = true;
 

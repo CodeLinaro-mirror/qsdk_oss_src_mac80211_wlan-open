@@ -601,6 +601,7 @@ static ssize_t ath12k_dump_mgmt_stats(struct file *file,
 					size_t count, loff_t *ppos)
 {
 	struct ath12k *ar = file->private_data;
+	struct ath12k_base *ab = ar->ab;
 	struct ath12k_link_vif *arvif = NULL;
 	struct ath12k_mgmt_frame_stats *mgmt_stats;
 	int len = 0, ret, i;

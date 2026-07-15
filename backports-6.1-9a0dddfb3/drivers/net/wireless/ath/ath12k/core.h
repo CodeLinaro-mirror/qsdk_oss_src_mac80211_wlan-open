@@ -187,34 +187,25 @@ enum ath12k_mem_profile {
 extern enum ath12k_mem_profile ath12k_active_mem_profile;
 
 /**
- * struct ath12k_dp_ring_cfg - DP ring size configuration per memory profile.
+ * struct ath12k_dp_params - DP-specific ring and resource sizing parameters
  *
- * The global pointer ath12k_dp_ring_cfg is set once at
- * module load time by ath12k_detect_mem_profile() based on the
- * mem-profile= kernel cmdline parameter.
+ * This structure contains all datapath-specific ring and resource sizing
+ * configurations that vary by memory profile.
  */
-struct ath12k_dp_ring_cfg {
+struct ath12k_dp_params {
 	unsigned int rxdma_buf_ring_size;
 	unsigned int rx_release_ring_size;
 	unsigned int reo2ppe_ring;
 	unsigned int ppe2tcl_ring;
 	unsigned int tqm2ppe_ring_size;
 	unsigned int tx_comp_ppeds_ring_size;
-	unsigned int num_vdevs;
-	unsigned int num_bridge_vdevs;
-	unsigned int num_max_vdevs_nlink;
-	unsigned int target_mem_mode;
 	unsigned int num_pool_tx_desc;
 	unsigned int ppe_wbm2sw_ring_size;
 	unsigned int rxdma_monitor_buf_ring_size;
 	unsigned int rxdma_monitor_dst_ring_size;
 	unsigned int smart_mon_filter_default;
 	unsigned int mon_num_ppdu_desc;
-	unsigned int rx_desc_count_wifi7;
-	unsigned int rx_desc_count_wifi8;
-	unsigned int num_stations_single;
-	unsigned int num_stations_dbs;
-	unsigned int num_stations_dbs_sbs;
+	unsigned int rx_desc_count;
 	unsigned int dp_max_clients;
 	unsigned int num_pool_ppeds_tx_desc;
 	unsigned int ppeds_hotlist_len_max;
@@ -223,15 +214,31 @@ struct ath12k_dp_ring_cfg {
 	unsigned int reo_dst_ring_size[5];
 	unsigned int tcl_data_ring_size[5];
 	unsigned int tx_compl_ring_size[5];
-	unsigned int monitor_support : 1;
-	unsigned int cfr_support : 1;
-	unsigned int spectral_support : 1;
-	unsigned int tx_monitor_support : 1;
-	unsigned int sdwf_support : 1;
-	unsigned int cold_boot_calib : 1;
 };
 
-extern const struct ath12k_dp_ring_cfg *ath12k_dp_ring_cfg;
+/**
+ * struct ath12k_mem_profile_based_param - Memory profile configuration per
+ * memory profile.
+ *
+ * The global pointer ath12k_mem_profile_based_param is set once at
+ * module load time by ath12k_detect_mem_profile() based on the
+ * mem-profile= kernel cmdline parameter.
+ */
+struct ath12k_mem_profile_based_param {
+	unsigned int num_vdevs;
+	unsigned int num_bridge_vdevs;
+	unsigned int num_max_vdevs_nlink;
+	unsigned int target_mem_mode;
+	unsigned int num_stations_single;
+	unsigned int num_stations_dbs;
+	unsigned int num_stations_dbs_sbs;
+	bool monitor_support;
+	bool cfr_support;
+	bool spectral_support;
+	bool tx_monitor_support;
+	struct ath12k_dp_params dp_params;
+};
+
 extern bool ath12k_mlo_3_link_tx;
 extern bool ath12k_waltest_mode;
 extern bool ath12k_fw_q6_dump_collection;
@@ -2791,6 +2798,8 @@ struct ath12k_base {
 	struct ath12k_mem_dev mlo_mem_dev;
 
 	bool map_event_required;
+
+	struct ath12k_mem_profile_based_param mem_params;
 
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));

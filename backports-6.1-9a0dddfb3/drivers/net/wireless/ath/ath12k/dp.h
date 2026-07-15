@@ -19,9 +19,46 @@
 #include "dp_ext_desc.h"
 #include "qcn_extns/ini.h"
 
+#define DP_TX_MONITOR			(ab->mem_params.tx_monitor_support)
+#define DP_PPE_WBM2SW_RING_SIZE		(ab->mem_params.dp_params.ppe_wbm2sw_ring_size)
+#define DP_TQM2PPE_RING_SIZE		(ab->mem_params.dp_params.tqm2ppe_ring_size)
+#define DP_REO2PPE_RING_SIZE		(ab->mem_params.dp_params.reo2ppe_ring)
+#define DP_PPE2TCL_RING_SIZE		(ab->mem_params.dp_params.ppe2tcl_ring)
+#define DP_RX_RELEASE_RING_SIZE		(ab->mem_params.dp_params.rx_release_ring_size)
+#define DP_RXDMA_BUF_RING_SIZE		(ab->mem_params.dp_params.rxdma_buf_ring_size)
+#define DP_TX_COMP_PPEDS_RING_SIZE	(ab->mem_params.dp_params.tx_comp_ppeds_ring_size)
+#define ATH12K_RX_DESC_COUNT		(ab->mem_params.dp_params.rx_desc_count)
+#define DP_NUM_CLIENTS_MAX		(ab->mem_params.dp_params.dp_num_clients_max)
+
+#define DP_REO_DST_RING0_SIZE		(ab->mem_params.dp_params.reo_dst_ring_size[0])
+#define DP_REO_DST_RING1_SIZE		(ab->mem_params.dp_params.reo_dst_ring_size[1])
+#define DP_REO_DST_RING2_SIZE		(ab->mem_params.dp_params.reo_dst_ring_size[2])
+#define DP_REO_DST_RING3_SIZE		(ab->mem_params.dp_params.reo_dst_ring_size[3])
+#define DP_REO_DST_RING4_SIZE		(ab->mem_params.dp_params.reo_dst_ring_size[4])
+
+#define DP_TCL_DATA_RING0_SIZE		(ab->mem_params.dp_params.tcl_data_ring_size[0])
+#define DP_TCL_DATA_RING1_SIZE		(ab->mem_params.dp_params.tcl_data_ring_size[1])
+#define DP_TCL_DATA_RING2_SIZE		(ab->mem_params.dp_params.tcl_data_ring_size[2])
+#define DP_TCL_DATA_RING3_SIZE		(ab->mem_params.dp_params.tcl_data_ring_size[3])
+#define DP_TCL_DATA_RING4_SIZE		(ab->mem_params.dp_params.tcl_data_ring_size[4])
+
+#define DP_TX_COMP_RING0_SIZE		(ab->mem_params.dp_params.tx_compl_ring_size[0])
+#define DP_TX_COMP_RING1_SIZE		(ab->mem_params.dp_params.tx_compl_ring_size[1])
+#define DP_TX_COMP_RING2_SIZE		(ab->mem_params.dp_params.tx_compl_ring_size[2])
+#define DP_TX_COMP_RING3_SIZE		(ab->mem_params.dp_params.tx_compl_ring_size[3])
+#define DP_TX_COMP_RING4_SIZE		(ab->mem_params.dp_params.tx_compl_ring_size[4])
+
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+#define ATH12K_NUM_POOL_PPEDS_TX_DESC_DEFAULT \
+	(ab->mem_params.dp_params.num_pool_ppeds_tx_desc)
+#define ATH12K_PPEDS_HOTLIST_LEN_MAX_DEFAULT \
+	(ab->mem_params.dp_params.ppeds_hotlist_len_max)
+#endif
+
+#define ATH12K_NUM_RX_SPT_PAGES \
+	(ATH12K_RX_DESC_COUNT / ATH12K_MAX_SPT_ENTRIES)
 /* Macros parsing INI */
 #ifndef CPTCFG_QCN_EXTN
-#define DP_TX_MONITOR	ath12k_dp_ring_cfg->tx_monitor_support
 #define DP_UMAC_RESET_TIMEOUT_IN_MS	1000
 #define DP_REO_EXCEPTION_RING_SIZE	128
 #define DP_REO_REINJECT_RING_SIZE	32
@@ -42,99 +79,6 @@
 #define HAL_SRNG_INT_TIMER_THRESHOLD_TX 1000
 #define DP_UMCMN_INTR_HANDLING_DISABLE false
 
-#if defined(CONFIG_ATH12K_MEM_PROFILE_512M) || defined(CPTCFG_ATH12K_MEM_PROFILE_512M)
-/* From 512M profile values */
-#define DP_REO2PPE_RING_SIZE	2048
-#define DP_PPE2TCL_RING_SIZE	2048
-#define DP_RX_RELEASE_RING_SIZE	8192
-#define DP_RXDMA_BUF_RING_SIZE	8192
-#define DP_TX_COMP_PPEDS_RING_SIZE	16384
-#define DP_PPE_WBM2SW_RING_SIZE	8192
-#define DP_TQM2PPE_RING_SIZE	8192
-#define DP_NUM_CLIENTS_MAX	64
-
-#define DP_REO_DST_RING0_SIZE	8192
-#define DP_REO_DST_RING1_SIZE	8192
-#define DP_REO_DST_RING2_SIZE	8192
-#define DP_REO_DST_RING3_SIZE	8192
-#define DP_REO_DST_RING4_SIZE	8192
-
-#define DP_TCL_DATA_RING0_SIZE	2048
-#define DP_TCL_DATA_RING1_SIZE	2048
-#define DP_TCL_DATA_RING2_SIZE	2048
-#define DP_TCL_DATA_RING3_SIZE	2048
-#define DP_TCL_DATA_RING4_SIZE	2048
-
-#define DP_TX_COMP_RING0_SIZE	16384
-#define DP_TX_COMP_RING1_SIZE	16384
-#define DP_TX_COMP_RING2_SIZE	16384
-#define DP_TX_COMP_RING3_SIZE	16384
-#define DP_TX_COMP_RING4_SIZE	16384
-
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-#define ATH12K_NUM_POOL_PPEDS_TX_DESC_DEFAULT	0x8000
-#define ATH12K_PPEDS_HOTLIST_LEN_MAX_DEFAULT	1024
-#endif
-
-#elif defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
-/* From 256M profile values */
-#define DP_REO2PPE_RING_SIZE	2048
-#define DP_PPE2TCL_RING_SIZE	2048
-#define DP_RX_RELEASE_RING_SIZE	4096
-#define DP_RXDMA_BUF_RING_SIZE	2048
-#define DP_TX_COMP_PPEDS_RING_SIZE	8192
-#define DP_PPE_WBM2SW_RING_SIZE	8192
-#define DP_TQM2PPE_RING_SIZE	8192
-#define DP_NUM_CLIENTS_MAX	56
-
-#define DP_REO_DST_RING0_SIZE	2048
-#define DP_REO_DST_RING1_SIZE	2048
-#define DP_REO_DST_RING2_SIZE	2048
-#define DP_REO_DST_RING3_SIZE	512
-#define DP_REO_DST_RING4_SIZE	512
-
-#define DP_TCL_DATA_RING0_SIZE	512
-#define DP_TCL_DATA_RING1_SIZE	512
-#define DP_TCL_DATA_RING2_SIZE	512
-#define DP_TCL_DATA_RING3_SIZE	128
-#define DP_TCL_DATA_RING4_SIZE	128
-
-#define DP_TX_COMP_RING0_SIZE	8192
-#define DP_TX_COMP_RING1_SIZE	8192
-#define DP_TX_COMP_RING2_SIZE	8192
-#define DP_TX_COMP_RING3_SIZE	1024
-#define DP_TX_COMP_RING4_SIZE	1024
-
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-#define ATH12K_NUM_POOL_PPEDS_TX_DESC_DEFAULT	0x2000
-#define ATH12K_PPEDS_HOTLIST_LEN_MAX_DEFAULT	256
-#endif
-
-#else
-/* Runtime: ring sizes selected
- */
-#define DP_REO2PPE_RING_SIZE		(ath12k_dp_ring_cfg->reo2ppe_ring)
-#define DP_PPE2TCL_RING_SIZE		(ath12k_dp_ring_cfg->ppe2tcl_ring)
-#define DP_RX_RELEASE_RING_SIZE		(ath12k_dp_ring_cfg->rx_release_ring_size)
-#define DP_RXDMA_BUF_RING_SIZE		(ath12k_dp_ring_cfg->rxdma_buf_ring_size)
-#define DP_TX_COMP_PPEDS_RING_SIZE	(ath12k_dp_ring_cfg->tx_comp_ppeds_ring_size)
-#define DP_PPE_WBM2SW_RING_SIZE		(ath12k_dp_ring_cfg->ppe_wbm2sw_ring_size)
-#define DP_TQM2PPE_RING_SIZE		(ath12k_dp_ring_cfg->tqm2ppe_ring_size)
-#define DP_NUM_CLIENTS_MAX (ath12k_dp_ring_cfg->dp_num_clients_max)
-
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-#define ATH12K_NUM_POOL_PPEDS_TX_DESC_DEFAULT \
-	(ath12k_dp_ring_cfg->num_pool_ppeds_tx_desc)
-#define ATH12K_PPEDS_HOTLIST_LEN_MAX_DEFAULT \
-	(ath12k_dp_ring_cfg->ppeds_hotlist_len_max)
-#endif
-
-#define DP_REO_DST_RING0_SIZE		(ath12k_dp_ring_cfg->reo_dst_ring_size[0])
-#define DP_REO_DST_RING1_SIZE		(ath12k_dp_ring_cfg->reo_dst_ring_size[1])
-#define DP_REO_DST_RING2_SIZE		(ath12k_dp_ring_cfg->reo_dst_ring_size[2])
-#define DP_REO_DST_RING3_SIZE		(ath12k_dp_ring_cfg->reo_dst_ring_size[3])
-#define DP_REO_DST_RING4_SIZE		(ath12k_dp_ring_cfg->reo_dst_ring_size[4])
-
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 #define DP_TCL_DATA_RING0_SIZE		8192
 #define DP_TCL_DATA_RING1_SIZE		8192
@@ -147,26 +91,11 @@
 #define DP_TX_COMP_RING2_SIZE		8192
 #define DP_TX_COMP_RING3_SIZE		8192
 #define DP_TX_COMP_RING4_SIZE		8192
-#else /* CPTCFG_EXT_IPA_OFFLOAD */
-#define DP_TCL_DATA_RING0_SIZE		(ath12k_dp_ring_cfg->tcl_data_ring_size[0])
-#define DP_TCL_DATA_RING1_SIZE		(ath12k_dp_ring_cfg->tcl_data_ring_size[1])
-#define DP_TCL_DATA_RING2_SIZE		(ath12k_dp_ring_cfg->tcl_data_ring_size[2])
-#define DP_TCL_DATA_RING3_SIZE		(ath12k_dp_ring_cfg->tcl_data_ring_size[3])
-#define DP_TCL_DATA_RING4_SIZE		(ath12k_dp_ring_cfg->tcl_data_ring_size[4])
-
-#define DP_TX_COMP_RING0_SIZE		(ath12k_dp_ring_cfg->tx_compl_ring_size[0])
-#define DP_TX_COMP_RING1_SIZE		(ath12k_dp_ring_cfg->tx_compl_ring_size[1])
-#define DP_TX_COMP_RING2_SIZE		(ath12k_dp_ring_cfg->tx_compl_ring_size[2])
-#define DP_TX_COMP_RING3_SIZE		(ath12k_dp_ring_cfg->tx_compl_ring_size[3])
-#define DP_TX_COMP_RING4_SIZE		(ath12k_dp_ring_cfg->tx_compl_ring_size[4])
 #endif /* CPTCFG_EXT_IPA_OFFLOAD */
-#endif /* CONFIG_ATH12K_MEM_PROFILE_512M / 256M / runtime */
 
 #else /* CPTCFG_QCN_EXTN */
-#define ATH12K_DP_INI_GET(__ini__)	ath12k_cfg_get(ab, ATH12K_CFG_DP_##__ini__)
+#define ATH12K_DP_INI_GET(__ini__)	ath12k_cfg_get(ab, ATH12K_INI_DP_##__ini__)
 
-#define DP_TX_MONITOR \
-	ath12k_cfg_get(ab, ATH12K_CFG_DP_TX_MONITOR)
 #define DP_UMAC_RESET_TIMEOUT_IN_MS	ATH12K_DP_INI_GET(UMAC_RESET_TIMEOUT)
 #define DP_REO_EXCEPTION_RING_SIZE	ATH12K_DP_INI_GET(REO_EXCEPTION_RING_SIZE)
 #define DP_REO_REINJECT_RING_SIZE	ATH12K_DP_INI_GET(REO_REINJECT_RING_SIZE)
@@ -175,21 +104,7 @@
 #define DP_TCL_STATUS_RING_SIZE		ATH12K_DP_INI_GET(TCL_STATUS_RING_SIZE)
 #define DP_WBM_RELEASE_RING_SIZE	ATH12K_DP_INI_GET(WBM_RELEASE_RING_SIZE)
 #define DP_RXDMA_ERR_DST_RING_SIZE	ATH12K_DP_INI_GET(RXDMA_ERR_DST_RING_SIZE)
-#define DP_REO2PPE_RING_SIZE		ATH12K_DP_INI_GET(REO2PPE_RING_SIZE)
-#define DP_PPE2TCL_RING_SIZE		ATH12K_DP_INI_GET(PPE2TCL_RING_SIZE)
-#define DP_RX_RELEASE_RING_SIZE		ATH12K_DP_INI_GET(RX_RELEASE_RING_SIZE)
-#define DP_RXDMA_BUF_RING_SIZE		ATH12K_DP_INI_GET(RXDMA_BUF_RING)
 #define DP_RXDMA_REFILL_RING_SIZE	ATH12K_DP_INI_GET(RXDMA_REFILL_RING_SIZE)
-#define DP_TX_COMP_PPEDS_RING_SIZE	ATH12K_DP_INI_GET(TX_COMP_PPEDS_RING_SIZE)
-#define DP_PPE_WBM2SW_RING_SIZE		ATH12K_DP_INI_GET(PPE_WBM2SW_RING_SIZE)
-#define DP_TQM2PPE_RING_SIZE		ATH12K_DP_INI_GET(TQM2PPE_RING_SIZE)
-#define DP_NUM_CLIENTS_MAX		ATH12K_DP_INI_GET(NUM_CLIENTS_MAX)
-
-#define DP_REO_DST_RING0_SIZE		ATH12K_DP_INI_GET(REO_DST_RING0_SIZE)
-#define DP_REO_DST_RING1_SIZE		ATH12K_DP_INI_GET(REO_DST_RING1_SIZE)
-#define DP_REO_DST_RING2_SIZE		ATH12K_DP_INI_GET(REO_DST_RING2_SIZE)
-#define DP_REO_DST_RING3_SIZE		ATH12K_DP_INI_GET(REO_DST_RING3_SIZE)
-#define DP_REO_DST_RING4_SIZE		ATH12K_DP_INI_GET(REO_DST_RING4_SIZE)
 #define DP_HTT_LOGGING_ENABLE		ATH12K_DP_INI_GET(HTT_LOGGING_ENABLE)
 
 #define HAL_SRNG_INT_BATCH_THRESHOLD_OTHER \
@@ -212,23 +127,6 @@
 #define DP_UMCMN_INTR_HANDLING_DISABLE \
 	ATH12K_DP_INI_GET(UMCMN_INTR_HANDLING_DISABLE)
 
-#define DP_TCL_DATA_RING0_SIZE		ATH12K_DP_INI_GET(TCL_DATA_RING0_SIZE)
-#define DP_TCL_DATA_RING1_SIZE		ATH12K_DP_INI_GET(TCL_DATA_RING1_SIZE)
-#define DP_TCL_DATA_RING2_SIZE		ATH12K_DP_INI_GET(TCL_DATA_RING2_SIZE)
-#define DP_TCL_DATA_RING3_SIZE		ATH12K_DP_INI_GET(TCL_DATA_RING3_SIZE)
-#define DP_TCL_DATA_RING4_SIZE		ATH12K_DP_INI_GET(TCL_DATA_RING4_SIZE)
-
-#define DP_TX_COMP_RING0_SIZE           ATH12K_DP_INI_GET(TX_COMPL_RING_SIZE_0)
-#define DP_TX_COMP_RING1_SIZE           ATH12K_DP_INI_GET(TX_COMPL_RING_SIZE_1)
-#define DP_TX_COMP_RING2_SIZE           ATH12K_DP_INI_GET(TX_COMPL_RING_SIZE_2)
-#define DP_TX_COMP_RING3_SIZE           ATH12K_DP_INI_GET(TX_COMPL_RING_SIZE_3)
-#define DP_TX_COMP_RING4_SIZE		ATH12K_DP_INI_GET(TX_COMPL_RING_SIZE_4)
-
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-#define ATH12K_NUM_POOL_PPEDS_TX_DESC_DEFAULT	ATH12K_DP_INI_GET(NUM_POOL_PPEDS_TX_DESC)
-#define ATH12K_PPEDS_HOTLIST_LEN_MAX_DEFAULT	ATH12K_DP_INI_GET(PPEDS_HOTLIST_LEN_MAX)
-#endif
-
 #endif /* CPTCFG_QCN_EXTN*/
 
 #define HTT_TCL_META_DATA_PEER_ID_MISSION       GENMASK(15, 3)
@@ -250,7 +148,6 @@
 #define RX_STATUS_BUFFER_SIZE       (RX_STATUS_ENTRY_MAX_SIZE * MAX_NAPI_BUDGET)
 
 #define TX_NAPI_BUDGET             127
-
 
 struct ath12k_base;
 struct ath12k_hw;
