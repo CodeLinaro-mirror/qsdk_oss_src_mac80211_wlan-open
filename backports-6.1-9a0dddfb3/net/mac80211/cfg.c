@@ -1875,7 +1875,7 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 		link_conf->eht_mu_beamformer = false;
 	}
 
-	link_conf->dps_assist_support = false;
+	link_conf->dps_assist_support = params->dps_assist;
 	if (params->uhr_oper) {
 		const struct ieee80211_uhr_npca_info *npca;
 		struct ieee80211_bss_npca_params npca_params = {};

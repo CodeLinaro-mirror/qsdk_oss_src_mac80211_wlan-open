@@ -2059,7 +2059,7 @@ struct cfg80211_ttlm_params {
  * @ml_max_rec_links_valid: Indicates valid ML Max recommended links
  * @ml_max_rec_links: ML Max recommended links
  * @ttlm_params: tid-to-link mapping parameters
- * @dps_assist_disable: indicates AP to disable DPS Assist Support.
+ * @dps_assist: indicates AP to enable/disable DPS Assist Support.
  * @smd_params: SMD params for a AP
  * @uhr_cap: UHR capabilities element (or %NULL if not provided)
  * @residual_cac_ms: residual CAC time in milliseconds, derived from
@@ -2108,7 +2108,7 @@ struct cfg80211_ap_settings {
 	enum nl80211_regulatory_power_modes he_6ghz_power_type;
 	struct cfg80211_ttlm_params ttlm_params;
 	bool is_cfp_enabled;
-	bool dps_assist_disable;
+	bool dps_assist;
 	struct cfg80211_smd_params smd_params;
 	u32 residual_cac_ms;
 	bool skip_cac;
