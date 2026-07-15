@@ -1364,6 +1364,11 @@ void ath12k_smd_ctx_collector_work(struct work_struct *work)
 		/* lock per-request to enable callers to submit new requests */
 		spin_lock_bh(&smd_info->ctx_list_lock);
 
+		if (smd_info->teardown) {
+			spin_unlock_bh(&smd_info->ctx_list_lock);
+			break;
+		}
+
 		req = list_first_entry_or_null(&smd_info->ctx_list,
 					       struct ath12k_smd_ctx_req, list);
 		if (!req) {
