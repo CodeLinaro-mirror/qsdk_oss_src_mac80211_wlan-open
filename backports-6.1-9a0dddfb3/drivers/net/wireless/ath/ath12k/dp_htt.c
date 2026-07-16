@@ -3511,6 +3511,8 @@ int ath12k_dp_tx_htt_rx_filter_setup(struct ath12k_base *ab, u32 ring_id,
 		le32_encode_bits(tlv_filter->enable_log_data_type,
 				 HTT_RX_RING_SELECTION_CFG_CMD_INFO2_EN_LOG_DATA_TYPE);
 
+	ath12k_dp_mon_rx_phy_err_filter_cfg(dp, cmd, tlv_filter);
+
 	cmd->info3 =
 		le32_encode_bits(tlv_filter->enable_rx_tlv_offset,
 				 HTT_RX_RING_SELECTION_CFG_CMD_INFO3_EN_TLV_PKT_OFFSET);

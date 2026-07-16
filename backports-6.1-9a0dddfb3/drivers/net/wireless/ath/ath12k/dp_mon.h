@@ -211,6 +211,12 @@ struct ath12k_dp_arch_mon_ops {
 	int (*rx_filter_update)(struct ath12k_pdev_dp *dp_pdev);
 	void (*rx_monitor_mode_set)(struct ath12k_pdev_dp *dp_pdev);
 	void (*rx_monitor_mode_reset)(struct ath12k_pdev_dp *dp_pdev);
+	void (*rx_undecoded_metadata_config_filter)(struct ath12k_pdev_dp *dp_pdev);
+	void (*rx_undecoded_metadata_reset_filter)(struct ath12k_pdev_dp *dp_pdev);
+	int  (*rx_undecoded_metadata_capture_set)(struct ath12k_pdev_dp *dp_pdev,
+					      u32 value);
+	int  (*rx_undecoded_phy_err_mask_set)(struct ath12k_pdev_dp *dp_pdev,
+					      u32 mask, u32 mask_cont);
 	int (*setup_ppdu_desc)(struct ath12k_pdev_dp *pdev_dp);
 	void (*cleanup_ppdu_desc)(struct ath12k_pdev_dp *pdev_dp);
 	int (*mon_rx_wq_init)(struct ath12k_pdev_dp *pdev_dp);
