@@ -52,6 +52,8 @@
 #define ATH12K_WIFI8_REGULAR_RX_RING_MASK(_ring) \
 	((ATH12K_DP_RX_REGULAR_RING_MAX > (_ring)) ? BIT(_ring) : 0)
 
+#define ATH12K_WIFI8_BOARD_SIZE		(750 * 1024)
+
 static u8 ath12k_wifi8_hw_qcn9625_mac_from_pdev_id(int pdev_idx)
 {
 	return pdev_idx;
@@ -489,7 +491,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.hw_rev = ATH12K_HW_QCN9625_HW10,
 		.fw = {
 			.dir = "QCN9625/hw1.0",
-			.board_size = 256 * 1024,
+			.board_size = ATH12K_WIFI8_BOARD_SIZE,
 			.cal_offset = 128 * 1024,
 			.m3_loader = ath12k_m3_fw_loader_driver,
 			.unified_fw_image = true,
@@ -624,7 +626,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.hw_rev = ATH12K_HW_QCN9589_HW10,
 		.fw = {
 			.dir = "QCN9589/hw1.0",
-			.board_size = 256 * 1024,
+			.board_size = ATH12K_WIFI8_BOARD_SIZE,
 			.cal_offset = 128 * 1024,
 			.m3_loader = ath12k_m3_fw_loader_driver,
 			.unified_fw_image = true,
@@ -750,7 +752,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.hw_rev = ATH12K_HW_QCN9625_HW20,
 		.fw = {
 			.dir = "QCN9625/hw1.0",
-			.board_size = 256 * 1024,
+			.board_size = ATH12K_WIFI8_BOARD_SIZE,
 			.cal_offset = 128 * 1024,
 			.m3_loader = ath12k_m3_fw_loader_driver,
 			.unified_fw_image = true,
