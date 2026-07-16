@@ -7,11 +7,13 @@
 #ifndef ATH12K_CFR_H
 #define ATH12K_CFR_H
 
+#include <linux/timer.h>
 #include "dbring.h"
 #include "wmi.h"
 
 #define ATH12K_CFR_NUM_RESP_PER_EVENT   1
 #define ATH12K_CFR_EVENT_TIMEOUT_MS     1
+#define ATH12K_CFR_LUT_AGE_TIMER        3000
 
 #define ATH12K_CORRELATE_TX_EVENT 1
 #define ATH12K_CORRELATE_DBR_EVENT 0
@@ -823,6 +825,8 @@ struct ath12k_cfr {
 	u32 max_mu_users;
 	/* protect look up table data */
 	spinlock_t lut_lock;
+	struct timer_list lut_age_timer;
+	bool lut_age_timer_init;
 	u64 tx_evt_cnt;
 	u64 dbr_evt_cnt;
 	u64 total_tx_evt_cnt;
