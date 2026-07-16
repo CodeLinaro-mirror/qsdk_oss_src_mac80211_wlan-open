@@ -1452,6 +1452,7 @@ static int ath12k_wifi8_mac_op_set_smd_ctx(struct ieee80211_hw *hw,
 					   struct cfg80211_smd_transition_info *st_info)
 {
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
+	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
 	struct ath12k_dp_hw *dp_hw = &ahvif->ah->dp_hw;
 	struct ieee80211_smd_ctx *ctx = st_info->ctx;
 	struct ath12k_smd_ctx *drv_ctx __free(kfree) = NULL; /* to parse vendor ctx */
@@ -1504,6 +1505,9 @@ static int ath12k_wifi8_mac_op_set_smd_ctx(struct ieee80211_hw *hw,
 				 tid, rx_tid.ssn, rx_tid.pn_len,
 				 rx_tid.pn_len, ctx->ul.pn[tid], rx_tid.ba_win_sz);
 
+		/* for WMI smd roam config cmd */
+		ahsta->smd_info.rx_ba_buf_size[tid] = rx_tid.ba_win_sz;
+
 		ret = ath12k_dp_arch_peer_rx_tid_reo_update_for_smd(dp, dp_hw, sta->addr,
 								    &rx_tid);
 		if (ret)
@@ -1531,6 +1535,11 @@ static int ath12k_wifi8_mac_op_set_smd_ctx(struct ieee80211_hw *hw,
 				 "DL tid: %u sn: %u pn_len: %u pn: %*ph ba_buf_size: %u",
 				 tid, tx_tid.ssn, ctx->pn_len,
 				 ctx->pn_len, tx_tid.pn_number, ba_buf_size);
+
+		/* for WMI smd roam config cmd */
+		ahsta->smd_info.sn[tid] = tx_tid.ssn + tx_tid.lsn_offset;
+		ahsta->smd_info.lsn_offset[tid] = tx_tid.lsn_offset;
+		ahsta->smd_info.tx_ba_buf_size[tid] = ba_buf_size;
 
 		ret = ath12k_dp_arch_peer_tx_tid_update_for_smd(dp, dp_hw, sta->addr,
 								&tx_tid);

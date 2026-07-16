@@ -5644,6 +5644,8 @@ enum smd_roam_config_flags {
 struct ath12k_wmi_smd_roam_tid_ba_info {
 	u32 tx_buf_size;
 	u32 rx_buf_size;
+	u32 mlsn;
+	u32 offset;
 };
 
 #define WMI_SMD_CTX_NUM_TIDS 8 /* Match it to ATH12K_SMD_CTX_NUM_TIDS */
@@ -5830,7 +5832,7 @@ struct wmi_peer_assoc_hol_q_params {
 /* TBD: Remaining 4 bits is reserved */
 
 #define WMI_SMD_ROAM_CONFIG_PEER_TID_INFO_MLSN		GENMASK(15, 0)
-#define WMI_SMD_ROAM_CONFIG_PEER_TID_INFO_OFFSET	GENMASK(31, 16)
+#define WMI_SMD_ROAM_CONFIG_PEER_TID_INFO_OFFS		GENMASK(31, 16)
 
 struct wmi_smd_roam_config_peer_tid_info {
 	__le32 tlv_header;
