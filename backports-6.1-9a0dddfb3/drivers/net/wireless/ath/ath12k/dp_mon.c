@@ -792,6 +792,10 @@ static void ath12k_dp_rx_fill_rate_info(struct rate_info *rate,
 
 	memset(rate, 0, sizeof(*rate));
 	rate->nss = nss;
+
+	if ((preamble_type > HAL_RX_PREAMBLE_11B) && (nss < 1 || nss > HAL_RX_MAX_NSS))
+		return;
+
 	rate->bw = ath12k_mac_bw_to_mac80211_bw(ppdu_info->bw);
 
 	switch (preamble_type) {
@@ -805,7 +809,7 @@ static void ath12k_dp_rx_fill_rate_info(struct rate_info *rate,
 		break;
 
 	case HAL_RX_PREAMBLE_11N:
-		if (mcs > HAL_RX_MAX_MCS_HT || nss < 1 || nss > HAL_RX_MAX_NSS)
+		if (mcs > HAL_RX_MAX_MCS_HT)
 			return;
 		rate->mcs = mcs + 8 * (nss - 1);
 		rate->flags = RATE_INFO_FLAGS_MCS;
@@ -895,7 +899,9 @@ static void ath12k_dp_rx_rate_stats_update(struct ath12k_rx_peer_stats *rx_stats
 			return;
 	}
 
+	spin_lock_bh(&peer->ppdu_stats_lock);
 	ath12k_dp_rx_fill_rate_info(&peer->rxrate, ppdu_info, user_stats, is_su);
+	spin_unlock_bh(&peer->ppdu_stats_lock);
 }
 
 void ath12k_dp_mon_rx_update_advance_stats(struct ath12k_rx_peer_stats *rx_stats,
