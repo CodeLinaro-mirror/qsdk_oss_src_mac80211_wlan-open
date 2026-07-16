@@ -1184,6 +1184,11 @@ static ssize_t ath12k_wifi8_dump_srng_stats(struct ath12k_dp *dp,
 	struct ath12k_base *ab = dp->ab;
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
 
+	for (i = 0; i < ab->hw_params->max_tx_ring; i++)
+		len += ath12k_hal_dump_ring_stats(ab, HAL_TX_COMPLETION,
+						  dp->tx_ring[i].tcl_comp_ring.ring_id,
+						  buf + len, size - len);
+
 	for (i = 0; i < DP_WBM_REFILL_RING_MAX; i++)
 		len += ath12k_hal_dump_ring_stats(ab, HAL_WBM_BUF,
 						  dp_wifi8->wbm_refill_ring[i].ring_id,
