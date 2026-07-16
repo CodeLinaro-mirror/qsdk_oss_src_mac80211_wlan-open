@@ -15019,15 +15019,17 @@ static int ath12k_mac_reconfig_ahsta_links_mode0(struct ath12k_hw *ah,
 static void ath12k_mac_sta_smd_info_cleanup(struct ath12k_sta *ahsta)
 {
 	struct ath12k_smd_ctx_req *req, *tmp;
+	LIST_HEAD(cleanup_list);
 
 	cancel_work_sync(&ahsta->smd_info.ctx_wk);
 	kfree(ahsta->smd_info.current_req);
 	ahsta->smd_info.current_req = NULL;
 
-	if (list_empty(&ahsta->smd_info.ctx_list))
-		return;
+	spin_lock_bh(&ahsta->smd_info.ctx_list_lock);
+	list_splice_init(&ahsta->smd_info.ctx_list, &cleanup_list);
+	spin_unlock_bh(&ahsta->smd_info.ctx_list_lock);
 
-	list_for_each_entry_safe(req, tmp, &ahsta->smd_info.ctx_list, list) {
+	list_for_each_entry_safe(req, tmp, &cleanup_list, list) {
 		list_del(&req->list);
 		kfree(req);
 	}
