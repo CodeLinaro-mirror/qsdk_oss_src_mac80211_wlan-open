@@ -840,6 +840,30 @@ void ath12k_wifi8_srng_hw_ring_disable(struct ath12k_base *ab)
 	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->sam_status_ring);
 }
 
+int ath12k_ase_srng_setup(struct ath12k_dp *dp)
+{
+	int ret;
+	struct ath12k_base *ab = dp->ab;
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
+
+	ret = ath12k_dp_srng_alloc(ab, &dp_wifi8->rx_ase_status_ring, HAL_ASE_STATUS_RING,
+				   0, 0, DP_RX_ASE_STATUS_RING_SIZE);
+	if (ret) {
+		ath12k_warn(ab, "failed to alloc ase srng: %d\n", ret);
+		return ret;
+	}
+
+	ret = ath12k_dp_srng_init(ab, &dp_wifi8->rx_ase_status_ring, HAL_ASE_STATUS_RING,
+				  0, 0);
+	if (ret) {
+		ath12k_warn(ab, "failed to init ase srng: %d\n", ret);
+		ath12k_dp_srng_cleanup(ab, &dp_wifi8->rx_ase_status_ring);
+		return ret;
+	}
+
+	return 0;
+}
+
 static int ath12k_wifi8_dp_op_device_init(struct ath12k_dp *dp)
 {
 	struct ath12k_base *ab = dp->ab;
@@ -863,9 +887,7 @@ static int ath12k_wifi8_dp_op_device_init(struct ath12k_dp *dp)
 		goto fail_dp_mon_rx_deinit;
 	}
 
-	ret = ath12k_dp_srng_setup(ab, &dp_wifi8->rx_ase_status_ring,
-				   HAL_ASE_STATUS_RING, 0, 0,
-				   DP_RX_ASE_STATUS_RING_SIZE);
+	ret = ath12k_ase_srng_setup(dp);
 	if (ret) {
 		ath12k_warn(dp->ab, "failed to setup ase status ring : %d\n", ret);
 		goto fail_dp_mon_rx_deinit;
