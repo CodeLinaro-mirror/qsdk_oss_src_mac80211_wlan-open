@@ -25,6 +25,8 @@
 	((ab)->mem_params.dp_params.rxdma_monitor_dst_ring_size)
 #define DP_MON_NUM_PPDU_DESC(ab) \
 	((ab)->mem_params.dp_params.mon_num_ppdu_desc)
+#define DP_TX_MON_BUF_RING_SIZE(ab) \
+	((ab)->mem_params.dp_params.tx_monitor_buf_ring_size)
 
 #ifndef CPTCFG_QCN_EXTN
 
@@ -61,7 +63,6 @@
 #define ATH12K_DP_SMART_MON_FILTER_DEFAULT \
 	((ab)->mem_params.dp_params.smart_mon_filter_default)
 
-#define DP_TX_MONITOR_BUF_RING_SIZE	8192
 #define DP_TX_MONITOR_DEST_RING_SIZE	8192
 
 #define DP_TX_MONITOR_BUF_SIZE		2048

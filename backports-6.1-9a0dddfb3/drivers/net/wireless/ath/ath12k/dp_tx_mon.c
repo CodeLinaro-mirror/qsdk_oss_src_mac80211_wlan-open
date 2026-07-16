@@ -4161,7 +4161,7 @@ int ath12k_dp_mon_tx_desc_pool_alloc(struct ath12k_dp *dp)
 	spin_lock_init(&dp_tx_mon->tx_mon_desc_lock);
 	spin_lock_bh(&dp_tx_mon->tx_mon_desc_lock);
 	dp_tx_mon->tx_mon_buf_ring_ready = false;
-	dp_tx_mon->tx_mon_desc_pool = kcalloc(DP_TX_MONITOR_BUF_RING_SIZE,
+	dp_tx_mon->tx_mon_desc_pool = kcalloc(DP_TX_MON_BUF_RING_SIZE(dp->ab),
 					      sizeof(*dp_tx_mon->tx_mon_desc_pool),
 					      GFP_ATOMIC);
 	if (!dp_tx_mon->tx_mon_desc_pool) {
@@ -4388,6 +4388,9 @@ bool ath12k_dp_tx_mon_feature_eval(struct ath12k_dp *dp)
 		return false;
 	}
 
+	if (!DP_TX_MON_BUF_RING_SIZE(ab))
+		return false;
+
 	return true;
 }
 EXPORT_SYMBOL(ath12k_dp_tx_mon_feature_eval);
@@ -4411,7 +4414,7 @@ void ath12k_dp_mon_tx_buff_free(struct ath12k_dp *dp)
 		return;
 	}
 
-	for (i = 0; i < DP_TX_MONITOR_BUF_RING_SIZE; i++) {
+	for (i = 0; i < DP_TX_MON_BUF_RING_SIZE(dp->ab); i++) {
 		if (dp_tx_mon->tx_mon_desc_pool[i].in_use != DP_MON_DESC_TO_HW)
 			continue;
 
@@ -4763,13 +4766,10 @@ int ath12k_dp_mon_tx_srng_alloc_setup(struct ath12k_dp *dp)
 
 	dp_tx_mon = dp_mon->dp_tx_mon;
 
-	/*Todo : DP_TX_MONITOR_BUF_RING_SIZE is 8192 - 512M profile will need
-	 *	 smaller size
-	 */
 	ret = ath12k_dp_srng_alloc(ab,
 				   &dp_tx_mon->tx_mon_buf_ring.refill_buf_ring,
 				   HAL_TX_MONITOR_BUF, 0, 0,
-				   DP_TX_MONITOR_BUF_RING_SIZE);
+				   DP_TX_MON_BUF_RING_SIZE(ab));
 	if (ret) {
 		ath12k_warn(dp, "Tx Mon: failed to alloc buffer srng (%d)\n", ret);
 		return ret;
@@ -4822,9 +4822,9 @@ int ath12k_dp_mon_tx_desc_pool_init(struct ath12k_dp *dp)
 	}
 
 	 memset(dp_tx_mon->tx_mon_desc_pool, 0,
-		DP_TX_MONITOR_BUF_RING_SIZE * sizeof(*dp_tx_mon->tx_mon_desc_pool));
+		DP_TX_MON_BUF_RING_SIZE(dp->ab) * sizeof(*dp_tx_mon->tx_mon_desc_pool));
 
-	for (i = 0; i < DP_TX_MONITOR_BUF_RING_SIZE; i++) {
+	for (i = 0; i < DP_TX_MON_BUF_RING_SIZE(dp->ab); i++) {
 		dp_tx_mon->tx_mon_desc_pool[i].magic = ATH12K_MON_MAGIC_VALUE;
 		INIT_LIST_HEAD(&dp_tx_mon->tx_mon_desc_pool[i].list);
 		list_add_tail(&dp_tx_mon->tx_mon_desc_pool[i].list,
@@ -5037,7 +5037,7 @@ void ath12k_dp_mon_tx_update_buf_ownership_stats(struct ath12k_dp *dp)
 
 	stats = &mon_dp->dp_tx_mon->tx_mon_stats;
 	/* lockdep_assert_held(&dp_mon->tx_mon_desc_lock) */
-	for (i = 0; i < DP_TX_MONITOR_BUF_RING_SIZE; i++) {
+	for (i = 0; i < DP_TX_MON_BUF_RING_SIZE(dp->ab); i++) {
 		desc = &mon_dp->dp_tx_mon->tx_mon_desc_pool[i];
 		switch (desc->in_use) {
 		case DP_MON_DESC_TO_HW:
