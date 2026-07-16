@@ -19,7 +19,8 @@
 #define ATH12K_SPECTRAL_DETECTOR_PHYA1_NORMAL	1
 #define ATH12K_SPECTRAL_DETECTOR_AGILE		1
 
-#define ATH12K_SPECTRAL_SCAN_COUNT_MAX		4095
+#define ATH12K_SPECTRAL_SCAN_COUNT_MAX_DEFAULT	512
+#define ATH12K_SPECTRAL_SCAN_COUNT_MAX_HW_LIMIT	4095
 #define ATH12K_SPECTRAL_ATH12K_MIN_BINS		32
 #define ATH12K_SPECTRAL_RPT_MODE_0		0
 #define ATH12K_SPECTRAL_RPT_MODE_1		1
@@ -122,6 +123,8 @@ struct ath12k_spectral {
 	u32 samples_done;
 	u32 sub_buf_size;
 	u32 num_sub_bufs;
+	/* Runtime configurable max scan count from INI */
+	u32 scan_count_max;
 	/* fields populated from WMI_PDEV_SSCAN_FW_PARAM_EVENTID */
 	u32 pri20_freq;
 	u32 sscan_cfreq1;
