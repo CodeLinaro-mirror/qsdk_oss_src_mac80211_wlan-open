@@ -223,8 +223,8 @@ ath12k_wifi8_hal_reo_cmd_update_rx_queue(struct hal_tlv_64_hdr *tlv,
 		le32_encode_bits(!!(cmd->upd2 & HAL_REO_CMD_UPD2_PN_VALID),
 				 HAL_REO_UPD_RX_QUEUE_INFO2_PN_VALID);
 
-	if (cmd->upd2 & HAL_REO_CMD_UPD2_FLUSH_FROM_CACHE)
-		desc->info2 |= cpu_to_le32(HAL_REO_UPD_RX_QUEUE_INFO2_FLUSH_FROM_CACHE);
+	/* Enable write back to DDR for every Update queue command */
+	desc->info2 |= cpu_to_le32(HAL_REO_UPD_RX_QUEUE_INFO2_FLUSH_FROM_CACHE);
 
 	if (cmd->upd0 & HAL_REO_CMD_UPD0_PN) {
 		desc->pn_31_0 = cpu_to_le32(cmd->pn[0]);
