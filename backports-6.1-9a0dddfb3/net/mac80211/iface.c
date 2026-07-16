@@ -1254,6 +1254,8 @@ int ieee80211_add_virtual_monitor(struct ieee80211_local *local)
 
 	ret = ieee80211_check_queues(sdata, NL80211_IFTYPE_MONITOR);
 	if (ret) {
+		if (ieee80211_hw_check(&local->hw, WANT_MONITOR_VIF))
+			drv_remove_interface(local, sdata);
 		kfree(sdata);
 		return ret;
 	}
@@ -1340,6 +1342,8 @@ void receive_from_nss(struct net_device *dev, struct sk_buff *sk_buff, struct na
 		kfree(sk_buff);
 		return;
 	}
+	if (!sk_buff)
+		return;
 	skb = (struct sk_buff *)sk_buff;
 	skb->dev = netdev;
 	skb->protocol = eth_type_trans(skb, netdev);
@@ -2383,8 +2387,13 @@ int ieee80211_if_add(struct ieee80211_local *local, const char *name,
 
 	local->hw.tid_stats_disable = true;
 	sdata->txrx_stats = alloc_percpu_gfp(struct pcpu_txrx_stats, GFP_KERNEL);
-	if (!sdata->txrx_stats)
+	if (!sdata->txrx_stats) {
+		if (!ndev)
+			kfree(sdata);
+		else
+			free_netdev(ndev);
 		return -ENOMEM;
+	}
 
 	ieee80211_init_frag_cache(&sdata->frags);
 
@@ -2449,6 +2458,7 @@ int ieee80211_if_add(struct ieee80211_local *local, const char *name,
 
 		ret = cfg80211_register_netdevice(ndev);
 		if (ret) {
+			free_percpu(sdata->txrx_stats);
 			free_netdev(ndev);
 			return ret;
 		}
@@ -2623,7 +2633,7 @@ void ieee80211_enable_offchan_packet_capture(struct ieee80211_vif *vif,
 	struct ieee80211_sub_if_data *sdata = vif_to_sdata(vif);
 	struct ieee80211_local *local = sdata->local;
 	struct cfg80211_chan_def *chandef = &sdata->vif.bss_conf.chanreq.oper;
-	u32 ctr_freq = MHZ_TO_KHZ(chandef->chan->center_freq);
+	u32 ctr_freq;
 
 	if (enable) {
 		if (!chandef->chan) {
@@ -2631,6 +2641,7 @@ void ieee80211_enable_offchan_packet_capture(struct ieee80211_vif *vif,
 				sdata->name);
 			return;
 		}
+		ctr_freq = MHZ_TO_KHZ(chandef->chan->center_freq);
 		sdata->flags |= IEEE80211_SDATA_OFFCHAN_PACKETS;
 		sdata->chan_hw_idx = cfg80211_get_hw_idx_by_freq(local->hw.wiphy,
 								 ctr_freq);
