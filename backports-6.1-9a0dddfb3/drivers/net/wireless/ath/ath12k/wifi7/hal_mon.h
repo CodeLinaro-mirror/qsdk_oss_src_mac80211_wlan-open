@@ -540,6 +540,44 @@ struct hal_rx_ppdu_end_duration {
 	__le32 rsvd2[18];
 } __packed;
 
+#define HAL_RXPCU_PPDU_END_INFO_BB_CAPTURED_CHANNEL_MASK	GENMASK(25, 25)
+#define HAL_RXPCU_PPDU_END_INFO_BB_CAPTURED_REASON_MASK	GENMASK(28, 26)
+#define HAL_RXPCU_PPDU_END_INFO_BB_CAPTURED_TIMEOUT_MASK	GENMASK(29, 29)
+
+struct hal_rx_ppdu_bb_capture_info {
+	__le32 rsvd0[3];
+	__le32 info;
+	__le32 rsvd1[24];
+} __packed;
+
+#define HAL_PHYRX_LOCATION_RX_LOCATION_INFO_VALID_MASK	GENMASK(0, 0)
+#define HAL_PHYRX_LOCATION_RTT_CFR_STATUS_MASK	GENMASK(23, 16)
+#define HAL_PHYRX_LOCATION_RTT_CHE_BUFFER_POINTER_LOW32_MASK	GENMASK(31, 0)
+#define HAL_PHYRX_LOCATION_RTT_CHE_BUFFER_POINTER_HIGH8_MASK	GENMASK(7, 0)
+#define HAL_PHYRX_LOCATION_RTT_MCS_RATE_MASK		GENMASK(31, 24)
+#define HAL_PHYRX_LOCATION_RTT_CFO_MEASUREMENT_MASK	GENMASK(15, 0)
+#define HAL_PHYRX_LOCATION_RTT_GI_TYPE_MASK	GENMASK(31, 24)
+#define HAL_PHYRX_LOCATION_RX_START_TS_MASK	GENMASK(31, 0)
+#define HAL_PHYRX_LOCATION_GAIN_CHAIN0_MASK	GENMASK(15, 0)
+#define HAL_PHYRX_LOCATION_GAIN_CHAIN1_MASK	GENMASK(31, 16)
+#define HAL_PHYRX_LOCATION_GAIN_CHAIN2_MASK	GENMASK(15, 0)
+#define HAL_PHYRX_LOCATION_GAIN_CHAIN3_MASK	GENMASK(31, 16)
+#define HAL_PHYRX_LOCATION_CHAN_CAPTURE_STATUS_MASK	GENMASK(2, 1)
+#define HAL_PHYRX_LOCATION_CHAN_CAPTURE_STATUS_SHIFT	1
+
+struct hal_rx_ppdu_rtt_info {
+	__le32 info0; /* rx_location_info_valid */
+	__le32 info1; /* rtt_cfr_status */
+	__le32 info2; /* rtt_che_buffer_pointer_low32 */
+	__le32 info3; /* rtt_che_buffer_pointer_high8, mcs rate */
+	__le32 info4; /* rtt_cfo_measurement, gi_type*/
+	__le32 info5; /* rx_start_ts */
+	__le32 rsvd0[2];
+	__le32 info6; /* gain_chain0, 1 */
+	__le32 info7; /* gain_chain2, 3 */
+	__le32 rsvd1[18];
+} __packed;
+
 #define HAL_TX_MON_FES_SETUP_INFO0_NUM_OF_USERS		GENMASK(28, 23)
 
 struct hal_tx_mon_fes_setup {
