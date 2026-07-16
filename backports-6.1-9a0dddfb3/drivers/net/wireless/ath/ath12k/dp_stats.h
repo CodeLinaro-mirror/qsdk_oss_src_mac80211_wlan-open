@@ -1021,6 +1021,14 @@ struct ath12k_dp_peer_stats {
 #endif
 };
 
+struct ath12k_me_stats {
+	u32 total_mc;
+	u32 me_mcuc;
+	u32 me5_hits;
+	u32 me6_hits;
+	u32 me_fail;
+};
+
 struct ath12k_dp_tx_ingress_stats {
 	/* Basic */
 	struct ath12k_dp_pkt_info recv_from_stack;
@@ -1036,6 +1044,7 @@ struct ath12k_dp_tx_ingress_stats {
 	u32 encrypt_type[HAL_ENCRYPT_TYPE_MAX];
 	u32 desc_type[DP_TCL_DESC_TYPE_MAX];
 	struct ath12k_dp_pkt_info mcast;
+	struct ath12k_me_stats me;
 
 	/* Drop */
 	u32 drop[DP_TX_ENQ_ERR_MAX];

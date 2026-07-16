@@ -63,6 +63,22 @@ struct ath12k_wifi_generic_params {
 	u8 radio_idx;
 };
 
+/* ME Dump List Operations */
+enum ieee80211_wlanconfig_me_stats_op {
+	IEEE80211_ME_STATS_PRINT_INFO  = 0,
+};
+
+/* ME Dump List Attributes */
+enum qca_wlan_vendor_attr_me_stats_print {
+	QCA_WLAN_VENDOR_ATTR_ME_STATS_PRINT_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_ME_STATS_PRINT_OPERATION = 1,
+	QCA_WLAN_VENDOR_ATTR_ME_STATS_PRINT_TYPE = 2,
+
+	QCA_WLAN_VENDOR_ATTR_ME_STATS_PRINT_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_ME_STATS_PRINT_MAX =
+		QCA_WLAN_VENDOR_ATTR_ME_STATS_PRINT_AFTER_LAST - 1,
+};
+
 struct atf_peer_stat {
 	u8 addr[ETH_ALEN];
 	u32 atf_actual_airtime;
@@ -213,6 +229,7 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_WLAN_NFCAL_POWER_EVENT = 531,
 	QCA_NL80211_VENDOR_SUBCMD_RF_PATH_MODE = 532,
 	QCA_NL80211_VENDOR_SUBCMD_SCAN_RADIO_CHAN_STATS = 533,
+	QCA_NL80211_VENDOR_SUBCMD_ME_STATS_PRINT = 534,
 };
 
 /**

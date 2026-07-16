@@ -21,6 +21,7 @@
 #include "dp_tx.h"
 #include "dp_ext_desc.h"
 #include "qcn_extns/me_snoop_extn.h"
+#include "dp_stats.h"
 
 static inline u16 ath12k_dp_get_me_peer_id(struct ath12k_dp *dp,
 					   struct ath12k_dp_peer *dp_peer,
@@ -76,10 +77,12 @@ static int ath12k_dp_tx_me5(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vif,
 	if (unlikely(err != DP_TX_ENQ_SUCCESS))
 		goto fail;
 
+	DP_STATS_INC(dp_vif, tx_i.me.me5_hits, 1, ring_id);
 	atomic_inc(&dp_pdev->num_tx_pending);
 	return 0;
 fail:
 	DP_STATS_INC(dp_vif, tx_i.drop[err], 1, ring_id);
+	DP_STATS_INC(dp_vif, tx_i.me.me_fail, 1, ring_id);
 	return -ENOMEM;
 }
 
@@ -131,12 +134,13 @@ static int ath12k_dp_tx_me6(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vif,
 	if (unlikely(err != DP_TX_ENQ_SUCCESS))
 		goto fail;
 
+	DP_STATS_INC(dp_vif, tx_i.me.me6_hits, 1, ring_id);
 	atomic_inc(&dp_pdev->num_tx_pending);
-	/* TODO: Update MCUC statistics and return*/
 	return 0;
 
 fail:
 	DP_STATS_INC(dp_vif, tx_i.drop[err], 1, ring_id);
+	DP_STATS_INC(dp_vif, tx_i.me.me_fail, 1, ring_id);
 	return -ENOMEM;
 }
 
@@ -209,6 +213,7 @@ int ath12k_dp_me_tx_ucast_peer(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vi
 			       void *app_data, struct ath12k_dp_tx_msdu_info *msdu_info)
 {
 	struct ath12k_me_ctx *ctx = app_data;
+	u8 ring_id = smp_processor_id();
 	int ret = 0;
 	u32 flags;
 
@@ -230,6 +235,7 @@ int ath12k_dp_me_tx_ucast_peer(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vi
 	default:
 		ath12k_dbg(NULL, ATH12K_DBG_DP_TX, "Invalid ME flags(0%x) for TX\n",
 			   ctx->me_flags);
+		DP_STATS_INC(dp_vif, tx_i.me.me_fail, 1, ring_id);
 		ret = -EINVAL;
 		break;
 	}
@@ -339,6 +345,7 @@ int ath12k_dp_me_tx(struct ath12k_dp_vif *dp_vif, struct sk_buff *skb,
 			 struct ath12k_dp_peer *dp_peer, void *app_data,
 			 struct ath12k_dp_tx_msdu_info *msdu_info);
 	struct ath12k_vif *ahvif = container_of(dp_vif, struct ath12k_vif, dp_vif);
+	u8 ring_id = smp_processor_id();
 	struct ath12k_me_ctx ctx = {0};
 	union nf_inet_addr addr = {0};
 	struct ath12k_me_db *me_db;
@@ -354,13 +361,17 @@ int ath12k_dp_me_tx(struct ath12k_dp_vif *dp_vif, struct sk_buff *skb,
 	ctx.me_flags = me_db->me_flags;
 	ctx.skb = skb;
 
-	if (ahvif->vif->type != NL80211_IFTYPE_AP)
+	if (ahvif->vif->type != NL80211_IFTYPE_AP) {
+		ath12k_me_db_put(me_db);
 		return -EINVAL;
+	}
 
 	if (ath12k_dp_me_check(dp_vif, &ctx) < 0) {
 		ath12k_me_db_put(me_db);
 		return -EINVAL;
 	}
+
+	DP_STATS_INC(dp_vif, tx_i.me.total_mc, 1, ring_id);
 
 	is_v6 = __skb_get_inet_daddr(skb, &addr);
 
@@ -389,6 +400,8 @@ int ath12k_dp_me_tx(struct ath12k_dp_vif *dp_vif, struct sk_buff *skb,
 		return -EINVAL;
 #endif
 	}
+
+	DP_STATS_INC(dp_vif, tx_i.me.me_mcuc, 1, ring_id);
 
 	/*
 	 * Perform MCUC across all the relevant peers.
