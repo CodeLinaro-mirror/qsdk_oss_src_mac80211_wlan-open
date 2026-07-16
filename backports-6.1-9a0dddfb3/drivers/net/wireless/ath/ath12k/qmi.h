@@ -384,6 +384,8 @@ struct qmi_wlanfw_host_cap_req_msg_v01 {
 	u8 dynamic_mem_support;
 	u8 cma_support_valid;
 	u8 cma_support;
+	u8 ftm_mode_valid;
+	u8 ftm_mode;
 };
 
 struct qmi_wlanfw_host_cap_resp_msg_v01 {

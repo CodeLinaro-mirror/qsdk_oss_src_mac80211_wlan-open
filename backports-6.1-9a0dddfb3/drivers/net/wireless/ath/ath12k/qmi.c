@@ -658,6 +658,24 @@ static const struct qmi_elem_info qmi_wlanfw_host_cap_req_msg_v01_ei[] = {
 		.elem_len	= 1,
 		.elem_size	= sizeof(u8),
 		.array_type	= NO_ARRAY,
+		.tlv_type	= 0x34,
+		.offset		= offsetof(struct qmi_wlanfw_host_cap_req_msg_v01,
+					   ftm_mode_valid),
+	},
+	{
+		.data_type	= QMI_UNSIGNED_1_BYTE,
+		.elem_len	= 1,
+		.elem_size	= sizeof(u8),
+		.array_type	= NO_ARRAY,
+		.tlv_type	= 0x34,
+		.offset		= offsetof(struct qmi_wlanfw_host_cap_req_msg_v01,
+					   ftm_mode),
+	},
+	{
+		.data_type	= QMI_OPT_FLAG,
+		.elem_len	= 1,
+		.elem_size	= sizeof(u8),
+		.array_type	= NO_ARRAY,
 		.tlv_type	= 0x35,
 		.offset		= offsetof(struct qmi_wlanfw_host_cap_req_msg_v01,
 					   cma_support_valid),
@@ -3802,6 +3820,11 @@ int ath12k_qmi_host_cap_send(struct ath12k_base *ab)
 		req.cma_support = 1;
 	}
 #endif
+
+	if (ath12k_ftm_mode) {
+		req.ftm_mode_valid = 1;
+		req.ftm_mode = 1;
+	}
 
 	ret = qmi_txn_init(&ab->qmi.handle, &txn,
 			   qmi_wlanfw_host_cap_resp_msg_v01_ei, &resp);
