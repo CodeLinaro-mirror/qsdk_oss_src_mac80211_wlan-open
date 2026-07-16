@@ -38,13 +38,10 @@ ath12k_dp_mon_tx_setup_ppdu_desc(struct ath12k_pdev_dp *dp_pdev)
 {
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
 	struct ath12k_pdev_tx_mon *dp_pdev_tx_mon;
-	struct ath12k_dp *dp = dp_pdev->dp;
-	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
 	struct ath12k_base *ab = dp_pdev->dp->ab;
 	size_t alloc_size = sizeof(struct ath12k_dp_mon_ppdu_desc);
 	size_t status_desc_size;
 	int i, ret;
-	u32 mon_num_ppdu_desc = dp_mon->mon_num_ppdu_desc;
 	u32 mon_status_buf = ATH12K_DP_MON_STATUS_BUF;
 
 	if (unlikely(!dp_mon_pdev || !dp_mon_pdev->dp_pdev_tx_mon))
@@ -62,7 +59,7 @@ ath12k_dp_mon_tx_setup_ppdu_desc(struct ath12k_pdev_dp *dp_pdev)
 	spin_lock_init(&dp_pdev_tx_mon->tx_mon_ppdu_desc_lock);
 
 	dp_pdev_tx_mon->tx_mon_ppdu_desc_pool =
-			kcalloc(mon_num_ppdu_desc,
+			kcalloc(DP_TX_MON_NUM_PPDU_DESC(ab),
 				sizeof(*dp_pdev_tx_mon->tx_mon_ppdu_desc_pool),
 				GFP_KERNEL);
 
@@ -74,7 +71,7 @@ ath12k_dp_mon_tx_setup_ppdu_desc(struct ath12k_pdev_dp *dp_pdev)
 
 	status_desc_size = sizeof(struct ath12k_dp_mon_status_desc) * mon_status_buf;
 
-	for (i = 0; i < mon_num_ppdu_desc; i++) {
+	for (i = 0; i < DP_TX_MON_NUM_PPDU_DESC(ab); i++) {
 		dp_pdev_tx_mon->tx_mon_ppdu_desc_pool[i] =
 			kzalloc(sizeof(*dp_pdev_tx_mon->tx_mon_ppdu_desc_pool[i]),
 				GFP_KERNEL);
@@ -99,7 +96,7 @@ ath12k_dp_mon_tx_setup_ppdu_desc(struct ath12k_pdev_dp *dp_pdev)
 	ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
 		   "TX MON SETUP: Allocated PPDU desc pool at %p, size=%zu\n",
 		   dp_pdev_tx_mon->tx_mon_ppdu_desc_pool,
-		   alloc_size * mon_num_ppdu_desc);
+		   alloc_size * DP_TX_MON_NUM_PPDU_DESC(ab));
 
 
 	ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX,
@@ -111,7 +108,7 @@ ath12k_dp_mon_tx_setup_ppdu_desc(struct ath12k_pdev_dp *dp_pdev)
 	INIT_LIST_HEAD(&dp_pdev_tx_mon->tx_mon_ppdu_desc_proc_list);
 
 	spin_lock_bh(&dp_pdev_tx_mon->tx_mon_ppdu_desc_lock);
-	for (i = 0; i < mon_num_ppdu_desc; i++) {
+	for (i = 0; i < DP_TX_MON_NUM_PPDU_DESC(ab); i++) {
 		INIT_LIST_HEAD(&dp_pdev_tx_mon->tx_mon_ppdu_desc_pool[i]->list);
 		list_add_tail(&dp_pdev_tx_mon->tx_mon_ppdu_desc_pool[i]->list,
 			      &dp_pdev_tx_mon->tx_mon_ppdu_desc_free_list);
@@ -212,7 +209,6 @@ static void ath12k_dp_mon_tx_cleanup_ppdu_desc(struct ath12k_pdev_dp *dp_pdev)
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
 	struct ath12k_pdev_tx_mon *dp_pdev_tx_mon;
 	struct ath12k_dp *dp = dp_pdev->dp;
-	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
 	struct ath12k_dp_mon_ppdu_desc *tx_ppdu_desc;
 	int i;
 
@@ -228,7 +224,7 @@ static void ath12k_dp_mon_tx_cleanup_ppdu_desc(struct ath12k_pdev_dp *dp_pdev)
 		return;
 	}
 
-	for (i = 0; i < dp_mon->mon_num_ppdu_desc; i++) {
+	for (i = 0; i < DP_TX_MON_NUM_PPDU_DESC(dp->ab); i++) {
 		if (dp_pdev_tx_mon->tx_mon_ppdu_desc_pool[i]) {
 			tx_ppdu_desc = dp_pdev_tx_mon->tx_mon_ppdu_desc_pool[i];
 			/* Free status_desc arrays for each PPDU descriptor */
@@ -4388,7 +4384,8 @@ bool ath12k_dp_tx_mon_feature_eval(struct ath12k_dp *dp)
 		return false;
 	}
 
-	if (!DP_TX_MON_BUF_RING_SIZE(ab) || !DP_TX_MON_DST_RING_SIZE(ab))
+	if (!DP_TX_MON_BUF_RING_SIZE(ab) || !DP_TX_MON_DST_RING_SIZE(ab) ||
+	    !DP_TX_MON_NUM_PPDU_DESC(ab))
 		return false;
 
 	return true;
