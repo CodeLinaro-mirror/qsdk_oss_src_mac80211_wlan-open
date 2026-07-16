@@ -751,6 +751,21 @@ enum htt_stats_frametype {
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO2_EN_CTRL_TYPE	BIT(18)
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO2_EN_LOG_DATA_TYPE	BIT(19)
 
+/* PHY error filter fields in info2 (word 11) for undecoded metadata capture */
+#define HTT_RX_RING_SELECTION_CFG_CMD_INFO2_FP_PHY_ERR		BIT(12)
+#define HTT_RX_RING_SELECTION_CFG_CMD_INFO2_FP_PHY_ERR_BUF_SRC	GENMASK(14, 13)
+#define HTT_RX_RING_SELECTION_CFG_CMD_INFO2_FP_PHY_ERR_BUF_DEST	GENMASK(16, 15)
+
+/*
+ * PHY error mask fields (words 12-13) for undecoded metadata capture.
+ * These occupy the two reserved dwords after info2 in
+ * htt_rx_ring_selection_cfg_cmd and carry the 64-bit RXPCU_PHY_ERROR_MASK:
+ *   phy_err_mask      -> bits [31:0]  (RXPCU_PHY_ERROR_MASK)
+ *   phy_err_mask_cont -> bits [63:32] (RXPCU_PHY_ERROR_MASK_CONT)
+ */
+#define HTT_RX_RING_SELECTION_CFG_CMD_PHY_ERR_MASK	GENMASK(31, 0)
+#define HTT_RX_RING_SELECTION_CFG_CMD_PHY_ERR_MASK_CONT	GENMASK(31, 0)
+
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO3_EN_TLV_PKT_OFFSET	BIT(0)
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO3_PKT_TLV_OFFSET	GENMASK(14, 1)
 
@@ -1075,7 +1090,8 @@ struct htt_rx_ring_selection_cfg_cmd {
 	__le32 rx_msdu_offset;
 	__le32 rx_attn_offset;
 	__le32 info2;
-	__le32 reserved[2];
+	__le32 phy_err_mask;
+	__le32 phy_err_mask_cont;
 	__le32 rx_mpdu_start_end_mask;
 	__le32 rx_msdu_end_word_mask;
 	__le32 info3;
@@ -1175,6 +1191,13 @@ struct htt_rx_ring_tlv_filter {
 	u8 rx_mon_md_mgmt_hdrlen;
 	u8 rx_mon_enable_hdr_per_ppdu;
 	u32 rdi_based_source_cfg;
+	/* PHY error filter fields for undecoded metadata capture */
+	u8 fp_phy_err;
+	u8 fp_phy_err_buf_src;
+	u8 fp_phy_err_buf_dest;
+	u32 phy_err_mask;
+	u32 phy_err_mask_cont;
+	bool phy_err_filter_valid;
 };
 
 #define HTT_STATS_FRAME_CTRL_TYPE_MGMT  0x0
