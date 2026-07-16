@@ -5106,6 +5106,10 @@ struct ath12k_wmi_uhr_ap_mode_arg {
  * @mode_tuple_field: Bit0 = mode enable/disable, Bit1 = mode update
  * @mhz: NPCA primary channel frequency in MHz
  * @band_center_freq1: BSS centre frequency in MHz
+ * @band_center_freq2: secondary centre frequency for 160/320 MHz (0 otherwise)
+ * @info: WMI_CHAN_INFO_* flags (PHY mode, allow_he/vht/ht, DFS, HT40+)
+ * @reg_info_1: max_power / max_reg_power fields
+ * @reg_info_2: max_antenna_gain / max_tx_power fields
  * @puncture_20mhz_bitmap: punctured 20 MHz subchannel bitmap
  * @npca_cap1: NPCA capability word 1
  * @npca_cap2: NPCA capability word 2
@@ -5115,6 +5119,10 @@ struct ath12k_wmi_uhr_ap_npca_arg {
 	u32 mode_tuple_field;
 	u32 mhz;
 	u32 band_center_freq1;
+	u32 band_center_freq2;
+	u32 info;
+	u32 reg_info_1;
+	u32 reg_info_2;
 	u32 puncture_20mhz_bitmap;
 	u32 npca_cap1;
 	u32 npca_cap2;
@@ -10934,6 +10942,11 @@ int ath12k_wmi_vdev_up(struct ath12k *ar, struct ath12k_wmi_vdev_up_params *para
 int ath12k_wmi_vdev_stop(struct ath12k *ar, u8 vdev_id);
 int ath12k_wmi_vdev_start(struct ath12k *ar, struct wmi_vdev_start_req_arg *arg,
 			  bool restart);
+void ath12k_wmi_put_channel_info(struct ath12k_wmi_channel_params *chan,
+				 u32 freq, u32 band_center_freq1,
+				 u32 band_center_freq2,
+				 enum wmi_phy_mode mode,
+				 u32 cf_device, u32 width_device);
 int ath12k_wmi_set_peer_param(struct ath12k *ar, const u8 *peer_addr,
 			      u32 vdev_id, u32 param_id, u32 param_val);
 int ath12k_wmi_pdev_set_param(struct ath12k *ar, u32 param_id,

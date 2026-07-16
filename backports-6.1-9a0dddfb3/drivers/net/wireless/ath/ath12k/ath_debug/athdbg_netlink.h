@@ -4,6 +4,7 @@
 #define ATHDBG_NETLINK_H
 
 #include "../core.h"
+#include "../athdbg_if.h"
 
 /* Generic Netlink family constants - shared between kernel and userspace */
 #define WLAN_FW_SS_HANDLER_FAMILY_NAME   "WLAN_FW_SS_HDL"
@@ -23,12 +24,13 @@ enum nl_fw_anomaly_genl_attr {
 	NL_FW_ANAMOLY_ATTR_EVENT_ID,  /* NLA_U32:    WMI event ID */
 	NL_FW_ANAMOLY_ATTR_WMI_TLV,   /* NLA_BINARY: raw TLV bytes */
 	NL_FW_ANAMOLY_ATTR_HW_LINK_ID,
+	NL_FW_ANAMOLY_ATTR_RADIO_IDX,
 	__NL_FW_ANAMOLY_ATTR_MAX,
 };
 
 int  athdbg_netlink_init(void);
 void athdbg_netlink_exit(void);
 void athdbg_netlink_send(struct ath12k_base *ab, u32 event_id,
-			 const void *tlv_data, size_t tlv_len);
+			 const struct athdbg_wmi_event_info *info);
 
 #endif /* ATHDBG_NETLINK_H */

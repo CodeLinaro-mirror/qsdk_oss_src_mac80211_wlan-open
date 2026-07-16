@@ -574,6 +574,7 @@ enum ath12k_dev_flags {
 	ATH12K_FLAG_SOC_CREATE_FAIL,
 	ATH12K_FLAG_MGMT_IRQ_ENABLED,
 	ATH12K_FLAG_RECOVERY_Q6_BCR,
+	ATH12K_FLAG_UCAST_ENABLE_AST_OVERRIDE,
 };
 
 enum ath12k_mlo_recovery_mode {
@@ -1517,7 +1518,7 @@ struct ath12k_debug {
 	struct completion wmi_ctrl_path_stats_rcvd;
 	u8 wmi_ctrl_path_stats_reqid;
 	/* To protect wmi_list manipulation */
-	spinlock_t  wmi_ctrl_path_stats_lock;
+	spinlock_t wmi_ctrl_path_stats_lock;
 	bool wmi_ctrl_path_stats_more_enabled;
 	enum wmi_halphy_ctrl_path_stats_id tpc_stats_type;
 	bool tpc_request;
@@ -1970,9 +1971,6 @@ struct ath12k {
 #ifdef CPTCFG_ATH12K_DEBUGFS
 	struct ath12k_debug debug;
 	struct dentry *wmi_ctrl_stat;
-	/* To protect wmi_list manipulation */
-	spinlock_t wmi_ctrl_path_stats_lock;
-
 	/* TODO: Add mac_filter, ampdu_aggr_size and wbm_tx_completion_stats stats*/
 #endif
 	bool supports_6ghz:1;
@@ -2653,7 +2651,6 @@ struct ath12k_base {
 	enum ath12k_fw_recovery_option fw_recovery_support;
 	u32 recovery_start_time;
 	bool recovery_start;
-	bool post_reconfig_done;
 
 	u32 *crash_info_address;
 	u32 *recovery_mode_address;
@@ -3442,5 +3439,6 @@ void ath12k_core_cu_mem_pool_deinit(struct ath12k_hw_group *ag);
 void ath12k_core_cu_notify(struct ath12k *ar, struct ath12k_link_vif *arvif);
 struct wireless_dev *ath12k_get_wdev_from_netdev(struct net_device *dev);
 int ath12k_wsi_bypass_precheck(struct ath12k_base *ab, unsigned int value);
+int ath12k_core_mlo_setup(struct ath12k_hw_group *ag);
 
 #endif /* _CORE_H_ */

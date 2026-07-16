@@ -1505,34 +1505,34 @@ ath12k_hal_mon_tx_pcu_ppdu_setup_init_info_get(struct ath12k_hal *hal,
 }
 
 static __always_inline void
-hal_get_radiotap_he_gi_ltf(u16 *he_gi, u16 *he_ltf)
+hal_get_radiotap_gi_ltf(u16 *gi, u16 *ltf)
 {
-	switch (*he_gi) {
+	switch (*gi) {
 	case HE_GI_0_8:
-		*he_gi = HE_GI_RADIOTAP_0_8;
+		*gi = HE_GI_RADIOTAP_0_8;
 		break;
 	case HE_GI_1_6:
-		*he_gi = HE_GI_RADIOTAP_1_6;
+		*gi = HE_GI_RADIOTAP_1_6;
 		break;
 	case HE_GI_3_2:
-		*he_gi = HE_GI_RADIOTAP_3_2;
+		*gi = HE_GI_RADIOTAP_3_2;
 		break;
 	default:
-		*he_gi = HE_GI_RADIOTAP_RESERVED;
+		*gi = HE_GI_RADIOTAP_RESERVED;
 	}
 
-	switch (*he_ltf) {
+	switch (*ltf) {
 	case HE_LTF_1_X:
-		*he_ltf = HE_LTF_RADIOTAP_1_X;
+		*ltf = HE_LTF_RADIOTAP_1_X;
 		break;
 	case HE_LTF_2_X:
-		*he_ltf = HE_LTF_RADIOTAP_2_X;
+		*ltf = HE_LTF_RADIOTAP_2_X;
 		break;
 	case HE_LTF_4_X:
-		*he_ltf = HE_LTF_RADIOTAP_4_X;
+		*ltf = HE_LTF_RADIOTAP_4_X;
 		break;
 	default:
-		*he_ltf = HE_LTF_RADIOTAP_UNKNOWN;
+		*ltf = HE_LTF_RADIOTAP_UNKNOWN;
 	}
 }
 

@@ -10741,8 +10741,19 @@ static struct ath12k *ath12k_get_radio_by_index(struct wiphy *wiphy,
 {
 	u8 radio_idx;
 
-	if (!tb[QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX])
-		return NULL;
+	if (!tb[QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX]) {
+		struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
+		struct ath12k_hw *ah;
+
+		if (!hw)
+			return NULL;
+
+		ah = ath12k_hw_to_ah(hw);
+		if (!ah || ah->num_radio != 1)
+			return NULL;
+
+		return ath12k_ah_to_ar(ah, 0);
+	}
 
 	radio_idx = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX]);
 
@@ -15706,11 +15717,17 @@ nla_fail:
 	return ret;
 }
 
-void ath12k_vendor_event_chain_mask_changed(struct ath12k *ar)
+void ath12k_vendor_event_chain_mask_changed(struct ath12k *ar, int ifindex)
 {
 	struct sk_buff *event;
+	int hw_idx;
+	int len;
 
-	event = cfg80211_vendor_event_alloc(ar->ah->hw->wiphy, NULL, 0,
+	len = nla_total_size(sizeof(u32));
+	if (ifindex > 0)
+		len += nla_total_size(sizeof(u32));
+
+	event = cfg80211_vendor_event_alloc(ar->ah->hw->wiphy, NULL, len,
 					    QCA_NL80211_VENDOR_SUBCMD_CHAIN_MASK_INDEX,
 					    GFP_ATOMIC);
 	if (!event) {
@@ -15719,8 +15736,38 @@ void ath12k_vendor_event_chain_mask_changed(struct ath12k *ar)
 		return;
 	}
 
+	hw_idx = cfg80211_get_hw_idx_by_freq(ar->ah->hw->wiphy,
+					     ar->freq_range.start_freq);
+	if (hw_idx < 0) {
+		ath12k_warn(ar->ab,
+			    "failed to get hw_idx for dynamic chain mask event freq %u\n",
+			    ar->freq_range.start_freq);
+		kfree_skb(event);
+		return;
+	}
+
+	if (nla_put_u32(event, QCA_WLAN_VENDOR_ATTR_CHAIN_MASK_EVENT_HW_IDX,
+			hw_idx)) {
+		ath12k_warn(ar->ab,
+			    "failed to build dynamic chain mask vendor event for hw_idx %d\n",
+			    hw_idx);
+		kfree_skb(event);
+		return;
+	}
+
+	if (ifindex > 0 &&
+	    nla_put_u32(event, QCA_WLAN_VENDOR_ATTR_CHAIN_MASK_EVENT_IFINDEX,
+			ifindex)) {
+		ath12k_warn(ar->ab,
+			    "failed to build dynamic chain mask vendor event for ifindex %d\n",
+			    ifindex);
+		kfree_skb(event);
+		return;
+	}
+
 	ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
-		   "sending dynamic chain mask vendor event\n");
+		   "sending dynamic chain mask vendor event for hw_idx %d ifindex %d\n",
+		   hw_idx, ifindex);
 	cfg80211_vendor_event(event, GFP_ATOMIC);
 }
 

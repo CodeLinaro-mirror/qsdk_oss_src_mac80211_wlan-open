@@ -5859,7 +5859,8 @@ struct cfg80211_smd_transition_info {
  * @set_antenna: Set antenna configuration (tx_ant, rx_ant) on the device.
  *	Parameters are bitmaps of allowed antennas to use for TX/RX. Drivers may
  *	reject TX/RX mask combinations they cannot support by returning -EINVAL
- *	(also see nl80211.h @NL80211_ATTR_WIPHY_ANTENNA_TX).
+ *	(also see nl80211.h @NL80211_ATTR_WIPHY_ANTENNA_TX). @ifindex contains
+ *	the originating netdev ifindex, or -1 if unavailable.
  *
  * @get_antenna: Get current antenna configuration from device (tx_ant, rx_ant).
  *
@@ -6264,8 +6265,8 @@ struct cfg80211_ops {
 						   struct wireless_dev *wdev,
 						   struct mgmt_frame_regs *upd);
 
-	int	(*set_antenna)(struct wiphy *wiphy, u32 tx_ant, u32 rx_ant, u8 radio_id,
-			       bool is_dynamic);
+	int	(*set_antenna)(struct wiphy *wiphy, u32 tx_ant, u32 rx_ant,
+			       u8 radio_id, bool is_dynamic, int ifindex);
 	int	(*get_antenna)(struct wiphy *wiphy, u32 *tx_ant, u32 *rx_ant,
 			       u8 radio_id);
 

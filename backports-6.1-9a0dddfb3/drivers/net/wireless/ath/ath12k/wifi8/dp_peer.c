@@ -30,18 +30,18 @@ void ath12k_dp_tqm_update_completion(struct ath12k_dp *dp, void *ctx,
 	struct ath12k_dp_tx_queue *data = ctx;
 	struct ath12k_base *ab = dp->ab;
 
-	ath12k_dbg(ab, ATH12K_DBG_PEER,
-		   "dp tqm update: peer_id=%u hw_link_id=%u status=%d\n",
-		   data ? data->peer_id : 0, data ? data->hw_link_id : 0,
-		   tqm_status->status_hdr.cmd_execution_status);
+	ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+			 "dp tqm update: peer_id=%u hw_link_id=%u status=%d\n",
+			 data ? data->peer_id : 0, data ? data->hw_link_id : 0,
+			 tqm_status->status_hdr.cmd_execution_status);
 
 	if (tqm_status->status_hdr.cmd_execution_status !=
 	    HAL_TQM_SUCCESSFUL_EXECUTION)
 		ath12k_warn(ab, "dp tqm update command failed with status %d",
 			    tqm_status->status_hdr.cmd_execution_status);
 	else
-		ath12k_dbg(ab, ATH12K_DBG_PEER,
-			   "dp tqm update completion successful\n");
+		ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+				 "dp tqm update completion successful\n");
 }
 
 static u16 ath12k_wifi8_peer_id_alloc(struct ath12k_dp_hw *dp_hw)
@@ -70,7 +70,8 @@ static u16 ath12k_wifi8_peer_id_alloc(struct ath12k_dp_hw *dp_hw)
 		peer_id = ATH12K_MLO_PEER_ID_INVALID;
 
 	spin_unlock_bh(&dp_hw->peer_hash_lock);
-	ath12k_dbg(NULL, ATH12K_DBG_PEER, "Allocated peer_id:%d", peer_id);
+	ath12k_dbg_level(NULL, ATH12K_DBG_PEER, ATH12K_DBG_L1, "Allocated peer_id:%d",
+			 peer_id);
 
 	return peer_id;
 }
@@ -97,7 +98,8 @@ static u16 ath12k_wifi8_sta_id_alloc(struct ath12k_dp_hw *dp_hw)
 		sta_id = ATH12K_STA_ID_INVALID;
 
 	spin_unlock_bh(&dp_hw->peer_hash_lock);
-	ath12k_dbg(NULL, ATH12K_DBG_PEER, "Allocated sta_id:%d", sta_id);
+	ath12k_dbg_level(NULL, ATH12K_DBG_PEER, ATH12K_DBG_L1, "Allocated sta_id:%d",
+			 sta_id);
 
 	return sta_id;
 }
@@ -131,8 +133,8 @@ ath12k_wifi8_ucast_stats_id_alloc(struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wif
 		dp_hw_grp_wifi8->stats_id_map[stats_id].tid = tid;
 		dp_hw_grp_wifi8->stats_id_map[stats_id].hw_link_id = hw_link_id;
 
-		ath12k_dbg(NULL, ATH12K_DBG_PEER, "allocated stats_id:%d",
-			   stats_id);
+		ath12k_dbg_level(NULL, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+				 "allocated stats_id:%d", stats_id);
 		return stats_id;
 	}
 	return ATH12K_MAX_STATS_ID;
@@ -167,7 +169,8 @@ ath12k_wifi8_downlink_gcast_stats_id(struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_
 		dp_hw_grp_wifi8->stats_id_map[stats_id].tid = tid;
 		dp_hw_grp_wifi8->stats_id_map[stats_id].hw_link_id = hw_link_id;
 
-		ath12k_dbg(NULL, ATH12K_DBG_PEER, "allocated stats_id:%d", stats_id);
+		ath12k_dbg_level(NULL, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+				 "allocated stats_id:%d", stats_id);
 		return stats_id;
 	}
 	return ATH12K_MAX_STATS_ID;
@@ -218,8 +221,8 @@ ath12k_wifi8_link_band_id_alloc(struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8
 			continue;
 
 		set_bit(link_band_id, dp_hw_grp_wifi8->free_link_band_id);
-		ath12k_dbg(NULL, ATH12K_DBG_PEER, "allocated link_band_id:%d",
-			   link_band_id);
+		ath12k_dbg_level(NULL, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+				 "allocated link_band_id:%d", link_band_id);
 		return link_band_id;
 	}
 
@@ -1248,10 +1251,11 @@ int ath12k_wifi8_dp_peer_assoc(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 		ath12k_wifi8_hal_ppeds_cfg_ast(dp->ab, dp_vif->ppe_vp_num,
 						ppeds_idx_map_val);
 
-		ath12k_dbg(NULL, ATH12K_DBG_PEER, "STA ast_idx:%d hash:%d ppe_vp:%d\n",
-				dp_vif->ast_idx,
-				dp_vif->ast_hash,
-				dp_vif->ppe_vp_num);
+		ath12k_dbg_level(NULL, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+				 "STA ast_idx:%d hash:%d ppe_vp:%d\n",
+				 dp_vif->ast_idx,
+				 dp_vif->ast_hash,
+				 dp_vif->ppe_vp_num);
 #endif
 	} else if (dp_peer->is_vdev_peer) {
 		dp_link_vif = &dp_vif->dp_link_vif[vdev_peer_link_id];
@@ -1586,9 +1590,9 @@ int ath12k_wifi8_peer_tx_tid_sn_reset(struct ath12k_base *ab,
 		if (!sw_mpduq_ptr)
 			continue;
 
-		ath12k_dbg(ab, ATH12K_DBG_PEER,
-			   "SMD SN reset: peer %pM tid %u TQM SN -> 0\n",
-			   peer_addr, tid);
+		ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+				 "SMD SN reset: peer %pM tid %u TQM SN -> 0\n",
+				 peer_addr, tid);
 
 		ret = ath12k_dp_tqm_reset_mpduq_sn(ab, sw_mpduq_ptr, dp_peer);
 		if (ret)
@@ -1599,9 +1603,9 @@ int ath12k_wifi8_peer_tx_tid_sn_reset(struct ath12k_base *ab,
 	/* Management TID (ATH12K_SMD_TX_MGMT_TID = 15) uses a separate mpduq */
 	sw_mpduq_ptr = tx_flow_info->mgmt_mpduq;
 	if (sw_mpduq_ptr) {
-		ath12k_dbg(ab, ATH12K_DBG_PEER,
-			   "SMD SN reset: peer %pM tid %u (mgmt) TQM SN -> 0\n",
-			   peer_addr, 15);
+		ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+				 "SMD SN reset: peer %pM tid %u (mgmt) TQM SN -> 0\n",
+				 peer_addr, 15);
 		ret = ath12k_dp_tqm_reset_mpduq_sn(ab, sw_mpduq_ptr, dp_peer);
 		if (ret)
 			ath12k_err(ab, "SMD SN reset failed mgmt tid peer %pM: %d\n",
@@ -1611,8 +1615,8 @@ int ath12k_wifi8_peer_tx_tid_sn_reset(struct ath12k_base *ab,
 	spin_unlock_bh(&tx_flow_info->tx_q_lock);
 	spin_unlock_bh(&dp_hw->peer_hash_lock);
 
-	ath12k_dbg(ab, ATH12K_DBG_PEER,
-		   "SMD SN reset done for peer %pM\n", peer_addr);
+	ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+			 "SMD SN reset done for peer %pM\n", peer_addr);
 
 	return ret;
 }
@@ -2002,9 +2006,9 @@ int ath12k_dp_tqm_sync_remove_queues(struct ath12k_base *ab,
 	struct ath12k_hal_tqm_cmd cmd;
 	int ret = 0;
 
-	ath12k_dbg(ab, ATH12K_DBG_PEER,
-		   "tqm-sync: ENTRY peer %pM peer_id=%u hw_link_id=%u\n",
-		   dp_peer->addr, data->peer_id, data->hw_link_id);
+	ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+			 "tqm-sync: ENTRY peer %pM peer_id=%u hw_link_id=%u\n",
+			 dp_peer->addr, data->peer_id, data->hw_link_id);
 
 	memset(&cmd, 0, sizeof(cmd));
 	cmd.std.peer_id = 0xFFFF;
@@ -2014,19 +2018,19 @@ int ath12k_dp_tqm_sync_remove_queues(struct ath12k_base *ab,
 	if (!cmd.tqm_sync_params.cb_func)
 		cmd.tqm_sync_params.data_only = 1;
 
-	ath12k_dbg(ab, ATH12K_DBG_PEER,
-		   "tqm-sync: sending TQM_SYNC_CMD with cb_func=%p cb_ctxt=%p\n",
-		   cmd.tqm_sync_params.cb_func, cmd.tqm_sync_params.cb_ctxt);
+	ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+			 "tqm-sync: sending TQM_SYNC_CMD with cb_func=%p cb_ctxt=%p\n",
+			 cmd.tqm_sync_params.cb_func, cmd.tqm_sync_params.cb_ctxt);
 	ret = ath12k_wifi8_dp_tqm_cmd_send(ab, HAL_TQM_SYNC_CMD_BO, &cmd, data,
 					   ath12k_dp_peer_cleanup_tqm_sync);
 	if (ret)
 		ath12k_err(ab, "tqm-sync: TQM_SYNC_CMD send failed ret=%d\n", ret);
 	else
-		ath12k_dbg(ab, ATH12K_DBG_PEER,
-			   "tqm-sync: TQM_SYNC_CMD sent successfully\n");
+		ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+				 "tqm-sync: TQM_SYNC_CMD sent successfully\n");
 
-	ath12k_dbg(ab, ATH12K_DBG_PEER,
-		   "tqm-sync: EXIT peer_id=%u ret=%d\n", data->peer_id, ret);
+	ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+			 "tqm-sync: EXIT peer_id=%u ret=%d\n", data->peer_id, ret);
 	return ret;
 }
 
@@ -2041,8 +2045,8 @@ int ath12k_dp_tqm_remove_mgmt_link_queues(struct ath12k_base *ab,
 	ab = central_dp->ab;
 
 	if (dp_peer->is_vdev_peer) {
-		ath12k_dbg(ab, ATH12K_DBG_PEER, "peer %d is mcast peer",
-			   dp_peer->peer_id);
+		ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+				 "peer %d is mcast peer", dp_peer->peer_id);
 		return 0;
 	}
 	ret_mgmt = ath12k_dp_tqm_remove_link_mgmt_queues(ab, dp_peer, hw_link_id);
@@ -2108,26 +2112,26 @@ void ath12k_dp_peer_cleanup_indication(struct ath12k_dp *dp,
 	u8 pdev_id;
 	int ret = 0;
 
-	ath12k_dbg(dp->ab, ATH12K_DBG_PEER,
-		   "peer-cleanup-ind: ENTRY peer_id=%u hw_link_id=%u\n",
-		   peer_id, hw_link_id);
+	ath12k_dbg_level(dp->ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+			 "peer-cleanup-ind: ENTRY peer_id=%u hw_link_id=%u\n",
+			 peer_id, hw_link_id);
 
 	pdev_id = ath12k_hw_mac_id_to_pdev_id(dp->hw_params,
 					      dp_hw_grp->hw_links[hw_link_id].pdev_idx);
 	rcu_read_lock();
 	dp_pdev = ath12k_dp_to_dp_pdev(dp, pdev_id);
 	if (!dp_pdev) {
-		ath12k_dbg(dp->ab, ATH12K_DBG_PEER,
-			   "peer-cleanup-ind: dp_pdev NULL for pdev_id=%u\n",
-			   pdev_id);
+		ath12k_dbg_level(dp->ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+				 "peer-cleanup-ind: dp_pdev NULL for pdev_id=%u\n",
+				 pdev_id);
 		rcu_read_unlock();
 		return;
 	}
 
 	dp_hw = dp_pdev->dp_hw;
 	if (!dp_hw) {
-		ath12k_dbg(dp->ab, ATH12K_DBG_PEER,
-			   "peer-cleanup-ind: dp_hw NULL\n");
+		ath12k_dbg_level(dp->ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+				 "peer-cleanup-ind: dp_hw NULL\n");
 		rcu_read_unlock();
 		return;
 	}
@@ -2136,16 +2140,16 @@ void ath12k_dp_peer_cleanup_indication(struct ath12k_dp *dp,
 	dp_peer = rcu_dereference(dp_pdev->dp_hw->dp_peer_list[peer_id]);
 	if (!dp_peer) {
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
-		ath12k_dbg(dp->ab, ATH12K_DBG_PEER,
-			   "peer-cleanup-ind: dp_peer NULL for peer_id=%u\n",
-			   peer_id);
+		ath12k_dbg_level(dp->ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+				 "peer-cleanup-ind: dp_peer NULL for peer_id=%u\n",
+				 peer_id);
 		rcu_read_unlock();
 		return;
 	}
 
-	ath12k_dbg(dp->ab, ATH12K_DBG_PEER,
-		   "peer-cleanup-ind: found dp_peer %pM peer_id=%u peer_ext_ctx=%p\n",
-		   dp_peer->addr, dp_peer->peer_id, dp_peer->peer_ext_ctx);
+	ath12k_dbg_level(dp->ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+			 "peer-cleanup-ind: found dp_peer %pM peer_id=%u peer_ext_ctx=%p\n",
+			 dp_peer->addr, dp_peer->peer_id, dp_peer->peer_ext_ctx);
 
 	tx_info = ath12k_dp_get_tx_flow_info_from_peer(dp_peer);
 	if (!tx_info) {
@@ -2155,8 +2159,8 @@ void ath12k_dp_peer_cleanup_indication(struct ath12k_dp *dp,
 		 * TQM_SYNC to trigger the cleanup callback which will skip
 		 * resource freeing (since peer_ext_ctx is NULL).
 		 */
-		ath12k_dbg(dp->ab, ATH12K_DBG_PEER,
-			   "peer-cleanup-ind: tx_info NULL (SMD case), sending TQM_SYNC only\n");
+		ath12k_dbg_level(dp->ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+				 "peer-cleanup-ind: tx_info NULL (SMD case), sending TQM_SYNC only\n");
 
 		ret = ath12k_dp_tqm_sync_remove_queues(dp->ab, dp_peer,
 						       &(struct ath12k_dp_tx_queue){
@@ -2168,8 +2172,8 @@ void ath12k_dp_peer_cleanup_indication(struct ath12k_dp *dp,
 				   "ERROR: TQM_SYNC failed for SMD peer %pM id=%d ret=%d\n",
 				   dp_peer->addr, dp_peer->peer_id, ret);
 		} else {
-			ath12k_dbg(dp->ab, ATH12K_DBG_PEER,
-				   "peer-cleanup-ind: TQM_SYNC sent for SMD case\n");
+			ath12k_dbg_level(dp->ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+					 "peer-cleanup-ind: TQM_SYNC sent for SMD case\n");
 		}
 
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
@@ -2200,9 +2204,9 @@ void ath12k_dp_peer_cleanup_indication(struct ath12k_dp *dp,
 	spin_lock_bh(&dp_hw_grp->smd_transition_lock);
 	if (dp_hw_grp->smd_parked_ext_ctx &&
 	    dp_hw_grp->smd_parked_ext_ctx == dp_peer->peer_ext_ctx) {
-		ath12k_dbg(dp->ab, ATH12K_DBG_PEER,
-			   "peer-cleanup-ind: SMD pending (SLO), detach ext_ctx %pM (id=%u)\n",
-			   dp_peer->addr, dp_peer->peer_id);
+		ath12k_dbg_level(dp->ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+				 "peer-cleanup-ind: SMD pending (SLO), detach ext_ctx %pM (id=%u)\n",
+				 dp_peer->addr, dp_peer->peer_id);
 		dp_peer->peer_ext_ctx = NULL;
 		spin_unlock_bh(&dp_hw_grp->smd_transition_lock);
 
@@ -2216,8 +2220,8 @@ void ath12k_dp_peer_cleanup_indication(struct ath12k_dp *dp,
 				   "ERROR: TQM_SYNC failed for SMD transition peer %pM id=%d ret=%d\n",
 				   dp_peer->addr, dp_peer->peer_id, ret);
 		else
-			ath12k_dbg(dp->ab, ATH12K_DBG_PEER,
-				   "peer-cleanup-ind: TQM_SYNC sent for SMD transition (SLO) case\n");
+			ath12k_dbg_level(dp->ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+					 "peer-cleanup-ind: TQM_SYNC sent for SMD transition (SLO) case\n");
 
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		rcu_read_unlock();
@@ -2225,9 +2229,9 @@ void ath12k_dp_peer_cleanup_indication(struct ath12k_dp *dp,
 	}
 	spin_unlock_bh(&dp_hw_grp->smd_transition_lock);
 
-	ath12k_dbg(dp->ab, ATH12K_DBG_PEER,
-		   "peer-cleanup-ind: before clear_bit txq_links=0x%lx\n",
-		   tx_info->txq_hw_links_bitmap);
+	ath12k_dbg_level(dp->ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+			 "peer-cleanup-ind: before clear_bit txq_links=0x%lx\n",
+			 tx_info->txq_hw_links_bitmap);
 
 	clear_bit(hw_link_id, &tx_info->txq_hw_links_bitmap);
 
@@ -2237,21 +2241,21 @@ void ath12k_dp_peer_cleanup_indication(struct ath12k_dp *dp,
 			   "ERROR: TQM REMOVE MGMT LINK QUEUE CMD peer %d link %d",
 			   dp_peer->peer_id, hw_link_id);
 	}
-	ath12k_dbg(dp->ab, ATH12K_DBG_PEER,
-		   "peer-cleanup-ind: after clear_bit txq_links=0x%lx\n",
-		   tx_info->txq_hw_links_bitmap);
+	ath12k_dbg_level(dp->ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+			 "peer-cleanup-ind: after clear_bit txq_links=0x%lx\n",
+			 tx_info->txq_hw_links_bitmap);
 
 	/* Check whether event is for last link or not */
 	if (tx_info->txq_hw_links_bitmap) {
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
-		ath12k_dbg(dp->ab, ATH12K_DBG_PEER,
-			   "peer-cleanup-ind: not last link, skipping TQM remove\n");
+		ath12k_dbg_level(dp->ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+				 "peer-cleanup-ind: not last link, skipping TQM remove\n");
 		rcu_read_unlock();
 		return;
 	}
 
-	ath12k_dbg(dp->ab, ATH12K_DBG_PEER,
-		   "peer-cleanup-ind: last link, calling TQM remove queues\n");
+	ath12k_dbg_level(dp->ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+			 "peer-cleanup-ind: last link, calling TQM remove queues\n");
 
 	ret = ath12k_dp_tqm_remove_queues_cmd(dp->ab, dp_peer, hw_link_id);
 	if (ret) {
@@ -2259,14 +2263,14 @@ void ath12k_dp_peer_cleanup_indication(struct ath12k_dp *dp,
 			   "ERROR: TQM REMOVE QUEUE CMD peer %d ret=%d",
 			   dp_peer->peer_id, ret);
 	} else {
-		ath12k_dbg(dp->ab, ATH12K_DBG_PEER,
-			   "peer-cleanup-ind: TQM remove queues cmd sent successfully\n");
+		ath12k_dbg_level(dp->ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+				 "peer-cleanup-ind: TQM remove queues cmd sent successfully\n");
 	}
 
 	spin_unlock_bh(&dp_hw->peer_hash_lock);
 	rcu_read_unlock();
-	ath12k_dbg(dp->ab, ATH12K_DBG_PEER,
-		   "peer-cleanup-ind: EXIT peer_id=%u\n", peer_id);
+	ath12k_dbg_level(dp->ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+			 "peer-cleanup-ind: EXIT peer_id=%u\n", peer_id);
 }
 
 void ath12k_wifi8_dp_link_peer_assoc(struct ath12k_dp_hw *dp_hw,
@@ -2718,8 +2722,9 @@ void ath12k_wifi8_dp_vif_update_4addr(struct ath12k_dp_hw *dp_hw,
 	dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, addr);
 
 	if (!dp_peer || !dp_peer->peer_ext_ctx) {
-		ath12k_dbg(NULL, ATH12K_DBG_PEER, "unable for find peer/peer_ext_ctx for mac addr in set 4 addr %pM",
-			   addr);
+		ath12k_dbg_level(NULL, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+				 "unable for find peer/peer_ext_ctx for mac addr in set 4 addr %pM",
+				 addr);
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		return;
 	}
@@ -2826,15 +2831,17 @@ bool ath12k_wifi8_dp_peer_ast_param_get(struct ath12k_hw *ah,
 	dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, addr);
 	if (!dp_peer) {
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
-		ath12k_dbg(NULL, ATH12K_DBG_PEER, "Invalid peer - ast param get failed\n");
+		ath12k_dbg_level(NULL, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+				 "Invalid peer - ast param get failed\n");
 		return false;
 	}
 
 	peer_ext_ctx = dp_peer->peer_ext_ctx;
 	if (!peer_ext_ctx) {
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
-		ath12k_dbg(NULL, ATH12K_DBG_PEER, "Invalid peer ext ctx for peer_id:%d\n",
-				dp_peer->peer_id);
+		ath12k_dbg_level(NULL, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+				 "Invalid peer ext ctx for peer_id:%d\n",
+				 dp_peer->peer_id);
 		return false;
 	}
 
@@ -2845,8 +2852,10 @@ bool ath12k_wifi8_dp_peer_ast_param_get(struct ath12k_hw *ah,
 		(peer_ext_ctx->ast_hash & ATH12K_AST_HASH_MASK);
 	*hw_peer_id = dp_peer->peer_id;
 
-	ath12k_dbg(NULL, ATH12K_DBG_PEER, "Peer param pid:%u ast_idx:%u ast_hash:%u\n",
-		   dp_peer->peer_id, peer_ext_ctx->ast_index, peer_ext_ctx->ast_hash);
+	ath12k_dbg_level(NULL, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+			 "Peer param pid:%u ast_idx:%u ast_hash:%u\n",
+			 dp_peer->peer_id, peer_ext_ctx->ast_index,
+			 peer_ext_ctx->ast_hash);
 
 	spin_unlock_bh(&dp_hw->peer_hash_lock);
 	return true;

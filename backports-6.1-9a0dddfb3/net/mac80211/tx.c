@@ -6219,26 +6219,37 @@ ieee80211_beacon_get_ap_ema_list(struct ieee80211_hw *hw,
 				 struct ieee80211_chanctx_conf *chanctx_conf)
 {
 	struct ieee80211_ema_beacons *ema = NULL;
-	u8 cnt = (beacon->mbssid_ies && beacon->mbssid_ies->cnt) ?
-			beacon->mbssid_ies->cnt : 1;
+	u8 cnt, i;
+
+	if (beacon->mbssid_ies && beacon->mbssid_ies->cnt) {
+		cnt = beacon->mbssid_ies->cnt;
+	} else {
+		/* In the absence of MBSSID elements, even when EMA is enabled,
+		 * retrieve the default beacon template
+		 */
+		cnt = 1;
+	}
 
 	ema = kzalloc(struct_size(ema, bcn, cnt), GFP_ATOMIC);
 	if (!ema)
 		return NULL;
 
-	for (ema->cnt = 0; ema->cnt < cnt; ema->cnt++) {
-		ema->bcn[ema->cnt].skb =
+	/* set cnt before bcn[] access in case bcn[] gains __counted_by(cnt) */
+	ema->cnt = cnt;
+
+	for (i = 0; i < cnt; i++) {
+		ema->bcn[i].skb =
 			ieee80211_beacon_get_ap(hw, vif, link,
-						&ema->bcn[ema->cnt].offs,
+						&ema->bcn[i].offs,
 						is_template, beacon,
-						chanctx_conf, ema->cnt);
-		if (!ema->bcn[ema->cnt].skb)
-			break;
+						chanctx_conf, i);
+		if (!ema->bcn[i].skb)
+			goto free;
 	}
 
-	if (ema->cnt == cnt)
-		return ema;
+	return ema;
 
+free:
 	ieee80211_beacon_free_ema_list(ema);
 	return NULL;
 }

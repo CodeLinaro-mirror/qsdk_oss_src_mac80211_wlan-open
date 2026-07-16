@@ -236,8 +236,8 @@ void ath12k_dp_peer_cleanup_tqm_sync(struct ath12k_dp *dp, void *ctx,
 		return;
 	}
 
-	ath12k_dbg(ab, ATH12K_DBG_PEER,
-		   "tqm-cleanup-sync: TQM status successful, proceeding with cleanup\n");
+	ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+			 "tqm-cleanup-sync: TQM status successful, proceeding with cleanup\n");
 
 	pdev_id = ath12k_hw_mac_id_to_pdev_id(dp->hw_params,
 					      dp_hw_grp->hw_links[hw_link_id].pdev_idx);
@@ -245,16 +245,16 @@ void ath12k_dp_peer_cleanup_tqm_sync(struct ath12k_dp *dp, void *ctx,
 	dp_pdev = ath12k_dp_to_dp_pdev(dp, pdev_id);
 	if (!dp_pdev) {
 		rcu_read_unlock();
-		ath12k_dbg(ab, ATH12K_DBG_PEER,
-			   "tqm-cleanup-sync: dp_pdev NULL, EXIT\n");
+		ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+				 "tqm-cleanup-sync: dp_pdev NULL, EXIT\n");
 		return;
 	}
 
 	dp_hw = dp_pdev->dp_hw;
 	if (!dp_hw) {
 		rcu_read_unlock();
-		ath12k_dbg(ab, ATH12K_DBG_PEER,
-			   "tqm-cleanup-sync: dp_hw NULL, EXIT\n");
+		ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+				 "tqm-cleanup-sync: dp_hw NULL, EXIT\n");
 		return;
 	}
 
@@ -266,23 +266,23 @@ void ath12k_dp_peer_cleanup_tqm_sync(struct ath12k_dp *dp, void *ctx,
 		return;
 	}
 
-	ath12k_dbg(ab, ATH12K_DBG_PEER,
-		   "tqm-cleanup-sync: found dp_peer %pM peer_state=%d peer_ext_ctx=%p\n",
-		   dp_peer->addr, dp_peer->dp_peer_state, dp_peer->peer_ext_ctx);
+	ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+			 "tqm-cleanup-sync: found dp_peer %pM peer_state=%d peer_ext_ctx=%p\n",
+			 dp_peer->addr, dp_peer->dp_peer_state, dp_peer->peer_ext_ctx);
 
 	/* SMD case: peer_ext_ctx was already detached and parked for target AP.
 	 * Skip freeing resources as they will be reused by target AP peer.
 	 */
 	if (!dp_peer->peer_ext_ctx) {
-		ath12k_dbg(ab, ATH12K_DBG_PEER,
-			   "tqm-cleanup-sync: peer_ext_ctx NULL (SMD, resources transferred)\n");
+		ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+				 "tqm-cleanup-sync: peer_ext_ctx NULL (SMD, resources transferred)\n");
 		goto update_peer_state;
 	}
 
 	if (dp_peer->dp_peer_state < ATH12K_DP_PEER_LOGICALLY_DELETED) {
-		ath12k_dbg(ab, ATH12K_DBG_PEER,
-			   "tqm-cleanup-sync: deleting AST entry ast_index=%u\n",
-			   dp_peer->peer_ext_ctx->ast_index);
+		ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+				 "tqm-cleanup-sync: deleting AST entry ast_index=%u\n",
+				 dp_peer->peer_ext_ctx->ast_index);
 		ath12k_dp_ast_entry_delete(dp->dp_hw_grp,
 					   dp_peer->peer_ext_ctx->ast_index);
 	}
@@ -296,8 +296,8 @@ void ath12k_dp_peer_cleanup_tqm_sync(struct ath12k_dp *dp, void *ctx,
 	ath12k_dp_tx_classify_info_free(dp_hw_grp, tx_classify_info_paddr,
 					tx_classify_info_vaddr);
 
-	ath12k_dbg(ab, ATH12K_DBG_PEER,
-		   "tqm-cleanup-sync: freeing peer_ext_ctx\n");
+	ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+			 "tqm-cleanup-sync: freeing peer_ext_ctx\n");
 
 	kfree(dp_peer->peer_ext_ctx);
 	dp_peer->peer_ext_ctx = NULL;
@@ -305,23 +305,23 @@ void ath12k_dp_peer_cleanup_tqm_sync(struct ath12k_dp *dp, void *ctx,
 update_peer_state:
 
 	if (dp_peer->dp_peer_state < ATH12K_DP_PEER_LOGICALLY_DELETED) {
-		ath12k_dbg(ab, ATH12K_DBG_PEER,
-			   "tqm-cleanup-sync: setting peer_state to LOGICALLY_DELETED\n");
+		ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+				 "tqm-cleanup-sync: setting peer_state to LOGICALLY_DELETED\n");
 		dp_peer->dp_peer_state = ATH12K_DP_PEER_LOGICALLY_DELETED;
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		rcu_read_unlock();
 	} else {
-		ath12k_dbg(ab, ATH12K_DBG_PEER,
-			   "tqm-cleanup-sync: calling dp_peer_cleanup and kfree_rcu\n");
+		ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+				 "tqm-cleanup-sync: calling dp_peer_cleanup and kfree_rcu\n");
 		ath12k_wifi8_dp_peer_cleanup(dp_hw, dp_peer);
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		rcu_read_unlock();
 		kfree_rcu(dp_peer, rcu_head);
 	}
 
-	ath12k_dbg(ab, ATH12K_DBG_PEER,
-		   "tqm-cleanup-sync: EXIT peer_id=%u cleanup complete\n",
-		   peer_id);
+	ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+			 "tqm-cleanup-sync: EXIT peer_id=%u cleanup complete\n",
+			 peer_id);
 }
 
 static inline u32 ath12k_qos_get_metadata(u16 qos_id)
@@ -3858,61 +3858,61 @@ static int ath12k_wifi8_dp_tx_reinject(struct ath12k_dp *dp,
 				   FIELD_GET(HAL_TCL_EXIT_BASE_INFO0_BUF_OR_EXT_DESC_TYPE,
 					     le32_to_cpu(tx_exception_desc->info0))) |
 			FIELD_PREP(HAL_TCL_DATA_CMD_INFO0_BANK_ID,
-				   FIELD_GET(HAL_TCL_EXIT_BASE_INFO12_BANK_ID,
-					      le32_to_cpu(tx_exception_desc->info12))) |
+				   FIELD_GET(HAL_TCL_EXIT_BASE_INFO8_BANK_ID,
+					     le32_to_cpu(tx_exception_desc->info8))) |
 			FIELD_PREP(HAL_TCL_DATA_CMD_INFO0_VDEV_ID,
-				   FIELD_GET(HAL_TCL_EXIT_BASE_INFO11_VDEV_ID,
-					     le32_to_cpu(tx_exception_desc->info11))) |
+				   FIELD_GET(HAL_TCL_EXIT_BASE_INFO7_VDEV_ID,
+					     le32_to_cpu(tx_exception_desc->info7))) |
 			FIELD_PREP(HAL_TCL_DATA_CMD_INFO0_DATA_LENGTH,
-				   FIELD_GET(HAL_TCL_EXIT_BASE_INFO9_DATA_LENGTH,
-					     le32_to_cpu(tx_exception_desc->info9)));
-	if (le32_get_bits(tx_exception_desc->info5,
-			  HAL_TCL_EXIT_BASE_INFO5_INDEX_LOOKUP_OVERRIDE)) {
+				   FIELD_GET(HAL_TCL_EXIT_BASE_INFO6_DATA_LENGTH,
+					     le32_to_cpu(tx_exception_desc->info6)));
+	if (le16_get_bits(tx_exception_desc->info3,
+			  HAL_TCL_EXIT_BASE_INFO3_INDEX_LOOKUP_OVERRIDE)) {
 		tcl_desc.search_index = tx_exception_desc->addrx_ast_hash_idx;
 		tcl_desc.info1 =
 			FIELD_PREP(HAL_TCL_DATA_CMD_INFO1_CACHE_SET_NUM,
-				   FIELD_GET(HAL_TCL_EXIT_BASE_INFO11_CACHE_SET_NUM,
-					     le32_to_cpu(tx_exception_desc->info11))) |
+				   FIELD_GET(HAL_TCL_EXIT_BASE_INFO7_CACHE_SET_NUM,
+					     le32_to_cpu(tx_exception_desc->info7))) |
 			FIELD_PREP(HAL_TCL_DATA_CMD_INFO1_INDEX_LOOKUP_OVERRIDE,
 				   INDEX_LOOKUP_OVERRIDE_ENABLED);
 	}
 	tcl_desc.info2 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO2_TO_FW_SW,
-				    FIELD_GET(HAL_TCL_EXIT_BASE_INFO11_TO_FW_SW,
-					      le32_to_cpu(tx_exception_desc->info11))) |
+				    FIELD_GET(HAL_TCL_EXIT_BASE_INFO7_TO_FW_SW,
+					      le32_to_cpu(tx_exception_desc->info7))) |
 			 FIELD_PREP(HAL_TCL_DATA_CMD_INFO2_IPV4_CHECKSUM_EN,
-				    FIELD_GET(HAL_TCL_EXIT_BASE_INFO9_IPV4_CHECKSUM_EN,
-					      le32_to_cpu(tx_exception_desc->info9))) |
+				    FIELD_GET(HAL_TCL_EXIT_BASE_INFO6_IPV4_CHECKSUM_EN,
+					      le32_to_cpu(tx_exception_desc->info6))) |
 			 FIELD_PREP(HAL_TCL_DATA_CMD_INFO2_UDP_OVER_IPV4_CHECKSUM_EN,
 				    FIELD_GET(
-					HAL_TCL_EXIT_BASE_INFO9_UDP_OVER_IPV4_CHECKSUM_EN,
-					le32_to_cpu(tx_exception_desc->info9))) |
+					HAL_TCL_EXIT_BASE_INFO6_UDP_OVER_IPV4_CHECKSUM_EN,
+					le32_to_cpu(tx_exception_desc->info6))) |
 			 FIELD_PREP(HAL_TCL_DATA_CMD_INFO2_L4_CHECKSUM_EN,
-				    FIELD_GET(HAL_TCL_EXIT_BASE_INFO9_L4_CHECKSUM_EN,
-					      le32_to_cpu(tx_exception_desc->info9)));
+				    FIELD_GET(HAL_TCL_EXIT_BASE_INFO6_L4_CHECKSUM_EN,
+					      le32_to_cpu(tx_exception_desc->info6)));
 	tcl_desc.info3 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO3_FLOW_SELECT,
-				    FIELD_GET(HAL_TCL_EXIT_BASE_INFO5_FLOW_SELECT,
-					      le32_to_cpu(tx_exception_desc->info5))) |
+				    FIELD_GET(HAL_TCL_EXIT_BASE_INFO3_FLOW_SELECT,
+					      le32_to_cpu(tx_exception_desc->info3))) |
 			 FIELD_PREP(HAL_TCL_DATA_CMD_INFO3_LINK_ID,
-				    FIELD_GET(HAL_TCL_EXIT_BASE_INFO5_CMD_LINK_ID,
-					      le32_to_cpu(tx_exception_desc->info5)));
+				    FIELD_GET(HAL_TCL_EXIT_BASE_INFO3_CMD_LINK_ID,
+					      le32_to_cpu(tx_exception_desc->info3)));
 	tcl_desc.tcl_cmd_number = tx_exception_desc->tcl_status_number;
 
-	if (le32_get_bits(tx_exception_desc->info9,
-			  HAL_TCL_EXIT_BASE_INFO9_HLOS_TID_OVERWRITE))
+	if (le32_get_bits(tx_exception_desc->info6,
+			  HAL_TCL_EXIT_BASE_INFO6_HLOS_TID_OVERWRITE))
 		tcl_desc.info1 |=
 			FIELD_PREP(HAL_TCL_DATA_CMD_INFO1_HLOS_TID,
 				   FIELD_GET(HAL_TCL_EXIT_BASE_INFO0_TID,
 					     le32_to_cpu(tx_exception_desc->info0))) |
 			FIELD_PREP(HAL_TCL_DATA_CMD_INFO1_HLOS_TID_OVERWRITE,
 				   HLOS_TID_OVERWRITE_ENABLED);
-	if (le32_get_bits(tx_exception_desc->info5,
-			  HAL_TCL_EXIT_BASE_INFO5_FLOW_OVERRIDE_ENABLE))
+	if (le16_get_bits(tx_exception_desc->info3,
+			  HAL_TCL_EXIT_BASE_INFO3_FLOW_OVERRIDE_ENABLE))
 		tcl_desc.info2 |=
 		FIELD_PREP(HAL_TCL_DATA_CMD_INFO2_FLOW_OVERRIDE_ENABLE,
 			   FLOW_OVERRIDE_ENABLED) |
 		FIELD_PREP(HAL_TCL_DATA_CMD_INFO2_WHO_CLASSIFY_INFO_SEL,
-			   FIELD_GET(HAL_TCL_EXIT_BASE_INFO11_WHO_CLASSIFY_INFOSEL,
-				     le32_to_cpu(tx_exception_desc->info11)));
+			   FIELD_GET(HAL_TCL_EXIT_BASE_INFO7_WHO_CLASSIFY_INFOSEL,
+				     le32_to_cpu(tx_exception_desc->info7)));
 
 	tx_ring = &dp->tx_ring[ring_id];
 	hal_ring_id = tx_ring->tcl_data_ring.ring_id;
@@ -3928,8 +3928,8 @@ static int ath12k_wifi8_dp_tx_reinject(struct ath12k_dp *dp,
 
 	memcpy(hal_tcl_desc, &tcl_desc, sizeof(tcl_desc));
 
-	data_len = FIELD_GET(HAL_TCL_EXIT_BASE_INFO9_DATA_LENGTH,
-			     le32_to_cpu(tx_exception_desc->info9));
+	data_len = FIELD_GET(HAL_TCL_EXIT_BASE_INFO6_DATA_LENGTH,
+			     le32_to_cpu(tx_exception_desc->info6));
 	ath12k_hal_srng_access_end_no_lock(dp->ab, tcl_ring);
 	return DP_TX_ENQ_SUCCESS;
 }
@@ -3956,15 +3956,15 @@ static int ath12k_wifi8_dp_tx_null_flowq_handler(
 	tidno = le32_get_bits(tx_exception_desc->info0,
 			      HAL_TCL_EXIT_BASE_INFO0_TID);
 
-	if (le32_get_bits(tx_exception_desc->info6,
-			  HAL_TCL_EXIT_BASE_INFO6_ADDRX_IDX_INVALID)) {
+	if (le16_get_bits(tx_exception_desc->info4,
+			  HAL_TCL_EXIT_BASE_INFO4_ADDRX_IDX_INVALID)) {
 		ath12k_err(dp->ab, "Addr X index is invalid for desc_id %d",
 			   desc_id);
 		return -EINVAL;
 	}
 	peer_id = le16_to_cpu(tx_exception_desc->meta_data_ase);
-	hw_link_id = le32_get_bits(tx_exception_desc->info5,
-				   HAL_TCL_EXIT_BASE_INFO12_FW_LINK_ID);
+	hw_link_id = le32_get_bits(tx_exception_desc->info8,
+				   HAL_TCL_EXIT_BASE_INFO8_FW_LINK_ID);
 
 	rcu_read_lock();
 	dp_pdev = ath12k_dp_hw_grp_to_dp_pdev(dp->dp_hw_grp, hw_link_id);
@@ -4021,12 +4021,12 @@ static int ath12k_wifi8_dp_tx_null_flowq_handler(
 		goto end;
 	}
 
-	mcast = le32_get_bits(tx_exception_desc->info5,
-			      HAL_TCL_EXIT_BASE_INFO5_DA_IS_BCAST_MCAST);
-	is_udp = le32_get_bits(tx_exception_desc->info3,
-			       HAL_TCL_EXIT_BASE_INFO3_UDP_PROTO);
-	is_tcp = le32_get_bits(tx_exception_desc->info3,
-			       HAL_TCL_EXIT_BASE_INFO3_TCP_PROTO);
+	mcast = le16_get_bits(tx_exception_desc->info3,
+			      HAL_TCL_EXIT_BASE_INFO3_DA_IS_BCAST_MCAST);
+	is_udp = le32_get_bits(tx_exception_desc->info2,
+			       HAL_TCL_EXIT_BASE_INFO2_UDP_PROTO);
+	is_tcp = le32_get_bits(tx_exception_desc->info2,
+			       HAL_TCL_EXIT_BASE_INFO2_TCP_PROTO);
 	non_qos = le32_get_bits(tx_exception_desc->info1,
 				HAL_TCL_EXIT_BASE_INFO1_NON_QOS);
 
@@ -4038,29 +4038,29 @@ static int ath12k_wifi8_dp_tx_null_flowq_handler(
 		return -EINVAL;
 	}
 
-	if (le32_get_bits(tx_exception_desc->info11,
-			  HAL_TCL_EXIT_BASE_INFO11_BANK_ID_EXCEEDED)) {
+	if (le32_get_bits(tx_exception_desc->info7,
+			  HAL_TCL_EXIT_BASE_INFO7_BANK_ID_EXCEEDED)) {
 		ath12k_err(dp->ab, "Bank ID exceeded for desc_id %d",
 			   desc_id);
 		rcu_read_unlock();
 		return -EINVAL;
 	}
-	if (le32_get_bits(tx_exception_desc->info7,
-			  HAL_TCL_EXIT_BASE_INFO7_BANK_NOT_CONFIGURED)) {
+	if (le32_get_bits(tx_exception_desc->info5,
+			  HAL_TCL_EXIT_BASE_INFO5_BANK_NOT_CONFIGURED)) {
 		ath12k_err(dp->ab, "Bank registers not configured for desc_id %d",
 			   desc_id);
 		rcu_read_unlock();
 		return -EINVAL;
 	}
-	if (le32_get_bits(tx_exception_desc->info11,
-			  HAL_TCL_EXIT_BASE_INFO11_WHO_CLASSIFY_INFO_SEL_EXCEEDED)) {
+	if (le32_get_bits(tx_exception_desc->info7,
+			  HAL_TCL_EXIT_BASE_INFO7_WHO_CLASSIFY_INFO_SEL_EXCEEDED)) {
 		ath12k_err(dp->ab, "Number of who_classify_info exceeded for desc_id %d",
 			   desc_id);
 		rcu_read_unlock();
 		return -EINVAL;
 	}
-	bank_id = le32_get_bits(tx_exception_desc->info11,
-				HAL_TCL_EXIT_BASE_INFO11_WHO_CLASSIFY_INFOSEL);
+	bank_id = le32_get_bits(tx_exception_desc->info7,
+				HAL_TCL_EXIT_BASE_INFO7_WHO_CLASSIFY_INFOSEL);
 
 	flow_type = bank_id * ATH12K_NUM_MSDU_Q_PER_TID + is_udp;
 	tx_q_params.encap_type = encap_type;
@@ -4088,20 +4088,20 @@ ath12k_wifi8_dp_validate_tx_exception_error(struct ath12k_dp_wifi8 *dp_wifi8,
 {
 	struct ath12k_wifi8_tx_exc_stats *stats = &dp_wifi8->stats.tx_exc_stats;
 
-	if (le32_get_bits(tx_exception_desc->info11,
-			  HAL_TCL_EXIT_BASE_INFO11_VDEV_ID_CHECK_EN) &&
-	    le32_get_bits(tx_exception_desc->info11,
-			  HAL_TCL_EXIT_BASE_INFO11_VDEV_ID_CHECK_FAILURE)) {
+	if (le32_get_bits(tx_exception_desc->info7,
+			  HAL_TCL_EXIT_BASE_INFO7_VDEV_ID_CHECK_EN) &&
+	    le32_get_bits(tx_exception_desc->info7,
+			  HAL_TCL_EXIT_BASE_INFO7_VDEV_ID_CHECK_FAILURE)) {
 		stats->vdev_id_check_fail++;
 		return true;
 	}
-	if (le32_get_bits(tx_exception_desc->info6,
-			  HAL_TCL_EXIT_BASE_INFO6_ADDRX_IDX_INVALID)) {
+	if (le16_get_bits(tx_exception_desc->info4,
+			  HAL_TCL_EXIT_BASE_INFO4_ADDRX_IDX_INVALID)) {
 		stats->addrx_invalid++;
 		return true;
 	}
-	if (le32_get_bits(tx_exception_desc->info6,
-			  HAL_TCL_EXIT_BASE_INFO6_ADDRX_IDX_TIMEOUT)) {
+	if (le16_get_bits(tx_exception_desc->info4,
+			  HAL_TCL_EXIT_BASE_INFO4_ADDRX_IDX_TIMEOUT)) {
 		stats->addrx_timeout++;
 		return true;
 	}
@@ -4121,44 +4121,44 @@ ath12k_wifi8_dp_validate_tx_exception_error(struct ath12k_dp_wifi8 *dp_wifi8,
 		stats->illegal_pkt_hdr++;
 		return true;
 	}
-	if (le32_get_bits(tx_exception_desc->info7,
-			  HAL_TCL_EXIT_BASE_INFO7_PEER_POINTER_NULL_EXCEPTION)) {
+	if (le32_get_bits(tx_exception_desc->info5,
+			  HAL_TCL_EXIT_BASE_INFO5_PEER_POINTER_NULL_EXCEPTION)) {
 		stats->peer_ptr_null++;
 		return true;
 	}
-	if (le32_get_bits(tx_exception_desc->info7,
-			  HAL_TCL_EXIT_BASE_INFO7_BANK_NOT_CONFIGURED)) {
+	if (le32_get_bits(tx_exception_desc->info5,
+			  HAL_TCL_EXIT_BASE_INFO5_BANK_NOT_CONFIGURED)) {
 		stats->bank_not_configured++;
 		return true;
 	}
-	if (le32_get_bits(tx_exception_desc->info9,
-			  HAL_TCL_EXIT_BASE_INFO9_MSDU_LENGTH_ERROR)) {
+	if (le32_get_bits(tx_exception_desc->info6,
+			  HAL_TCL_EXIT_BASE_INFO6_MSDU_LENGTH_ERROR)) {
 		stats->msdu_len_err++;
 		return true;
 	}
 	/* In case tcl cmd to SW */
-	if ((le32_get_bits(tx_exception_desc->info11,
-			   HAL_TCL_EXIT_BASE_INFO11_TO_FW_SW)) == 2) {
+	if ((le32_get_bits(tx_exception_desc->info7,
+			   HAL_TCL_EXIT_BASE_INFO7_TO_FW_SW)) == 2) {
 		stats->to_sw_pkts++;
 		return true;
 	}
-	if (le32_get_bits(tx_exception_desc->info11,
-			  HAL_TCL_EXIT_BASE_INFO11_PARSER_OP_TLV_SEQUENCE_ERR)) {
+	if (le32_get_bits(tx_exception_desc->info7,
+			  HAL_TCL_EXIT_BASE_INFO7_PARSER_OP_TLV_SEQUENCE_ERR)) {
 		stats->parse_err++;
 		return true;
 	}
-	if (le32_get_bits(tx_exception_desc->info11,
-			  HAL_TCL_EXIT_BASE_INFO11_WHO_CLASSIFY_INFO_SEL_EXCEEDED)) {
+	if (le32_get_bits(tx_exception_desc->info7,
+			  HAL_TCL_EXIT_BASE_INFO7_WHO_CLASSIFY_INFO_SEL_EXCEEDED)) {
 		stats->classify_info_sel_exceed++;
 		return true;
 	}
-	if (le32_get_bits(tx_exception_desc->info11,
-			  HAL_TCL_EXIT_BASE_INFO11_BANK_ID_EXCEEDED)) {
+	if (le32_get_bits(tx_exception_desc->info7,
+			  HAL_TCL_EXIT_BASE_INFO7_BANK_ID_EXCEEDED)) {
 		stats->bank_id_exceed++;
 		return true;
 	}
-	if (le32_get_bits(tx_exception_desc->info11,
-			  HAL_TCL_EXIT_BASE_INFO11_BUFFER_LENGTH_ERROR)) {
+	if (le32_get_bits(tx_exception_desc->info7,
+			  HAL_TCL_EXIT_BASE_INFO7_BUFFER_LENGTH_ERROR)) {
 		stats->buf_len_err++;
 		return true;
 	}
@@ -4232,8 +4232,8 @@ int ath12k_wifi8_dp_tx_exception_handler(struct ath12k_dp *dp, int budget)
 		if (tx_exception_error)
 			goto tx_buf_release;
 
-		if (le32_get_bits(tx_exception_desc->info11,
-				  HAL_TCL_EXIT_BASE_INFO11_FLOW_POINTER_NULL)) {
+		if (le32_get_bits(tx_exception_desc->info7,
+				  HAL_TCL_EXIT_BASE_INFO7_FLOW_POINTER_NULL)) {
 			stats->null_flowq_pkts++;
 			ret = ath12k_wifi8_dp_tx_null_flowq_handler(dp,
 								    tx_exception_desc,

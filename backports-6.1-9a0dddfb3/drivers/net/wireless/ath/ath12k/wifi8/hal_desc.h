@@ -678,7 +678,7 @@ struct hal_rx_msdu_desc {
 #define HAL_RX_MSDU_EXT_DESC_INFO_INFO0_REO_DESTINATION_INDICATION	GENMASK(4, 0)
 struct hal_rx_msdu_ext_desc_info {
 	__le32 info0;
-	__le32 info1;
+	__le32 rsvd0;
 } __packed;
 
 enum hal_reo_dest_rel_src_module {
@@ -689,7 +689,7 @@ enum hal_reo_dest_rel_src_module {
 };
 
 struct hal_rx_msdu_stream_desc_info {
-	__le16 info0;
+	__le16 rsvd0;
 } __packed;
 
 #define HAL_RX_MPDU_EXT_DESC_INFO_INFO0_MGMT_PKT			BIT(0)
@@ -718,21 +718,21 @@ struct hal_reo_dest_ring {
 	};
 	__le32 info0; /* %HAL_REO_DEST_RING_INFO0_ */
 	struct hal_rx_msdu_stream_desc_info rx_msdu_stream_info;
-	__le16 info1; /* %HAL_REO_DEST_RING_INFO1_ */
+	__le16 rsvd0;
 } __packed;
 
 struct hal_reo_to_ppe_ring {
 	__le32 buffer_addr_lo;
-	__le32 info0;
+	__le32 rsvd0;
 	__le32 opaque_lo;
 	__le32 opaque_hi;
 	__le16 src_info;
 	__le16 dst_info;
 	__le16 data_length;
-	__le16 info1;
-	__le16 info2;
+	__le16 rsvd1;
+	__le16 rsvd2;
 	__le16 mss_hash_value_ptp_tag;
-	__le32 info3;
+	__le32 rsvd3;
 } __packed;
 
 enum hal_reo_entr_rxdma_push_reason {
@@ -764,10 +764,10 @@ struct hal_rx_reo_mpdu_desc_info {
 	__le32 info1;
 	__le32 pn_31_0;
 	__le16 pn_47_32;
-	__le16 info2;
+	__le16 rsvd0;
 	__le32 rx_preamble_timestamp;
 	__le16 phy_lmac_latency;
-	__le16 info3;
+	__le16 rsvd1;
 } __packed;
 
 #define HAL_REO_ENTRANCE_RING_INFO0_RX_REO_QUEUE_DESC_ADDR_39_32	GENMASK(7, 0)
@@ -782,18 +782,17 @@ struct hal_reo_entrance_ring {
 	__le32 info0;
 	__le32 info1;
 	__le16 phy_ppdu_id;
-	__le16 info2;
+	__le16 rsvd0;
 	__le16 receive_queue_number;
-	__le16 info3;
-	__le32 rsvd0;
-	__le32 info4;
+	__le16 rsvd1;
+	__le32 rsvd2[2];
 } __packed;
 
-#define HAL_REO_CMD_HDR_INFO0_CMD_NUMBER	GENMASK(15, 0)
-#define HAL_REO_CMD_HDR_INFO0_STATUS_REQUIRED	BIT(16)
+#define HAL_REO_CMD_HDR_INFO0_STATUS_REQUIRED	BIT(0)
 
 struct hal_reo_cmd_hdr {
-	__le32 info0;
+	__le16 reo_cmd_number;
+	__le16 info0;
 } __packed;
 
 #define HAL_REO_GET_QUEUE_STATS_INFO0_QUEUE_ADDR_HI	GENMASK(7, 0)
@@ -802,9 +801,9 @@ struct hal_reo_cmd_hdr {
 struct hal_reo_get_queue_stats {
 	struct hal_reo_cmd_hdr cmd;
 	__le32 queue_addr_lo;
-	__le32 info0;
-	__le32 rsvd0[6];
-	__le32 tlv64_pad;
+	__le16 info0;
+	__le16 rsvd0;
+	__le32 rsvd1[7];
 } __packed;
 
 /* hal_reo_get_queue_stats
@@ -843,8 +842,9 @@ struct hal_reo_get_queue_stats {
 struct hal_reo_flush_queue {
 	struct hal_reo_cmd_hdr cmd;
 	__le32 desc_addr_lo;
-	__le32 info0;
-	__le32 rsvd0[6];
+	__le16 info0;
+	__le16 rsvd0;
+	__le32 rsvd1[7];
 } __packed;
 
 #define HAL_REO_FLUSH_CACHE_INFO0_CACHE_ADDR_HI		GENMASK(7, 0)
@@ -858,8 +858,9 @@ struct hal_reo_flush_queue {
 struct hal_reo_flush_cache {
 	struct hal_reo_cmd_hdr cmd;
 	__le32 cache_addr_lo;
-	__le32 info0;
-	__le32 rsvd0[6];
+	__le16 info0;
+	__le16 rsvd0;
+	__le32 rsvd1[7];
 } __packed;
 
 #define HAL_TCL_DATA_CMD_INFO0_BUF_OR_EXT_DESC_TYPE		BIT(1)
@@ -936,34 +937,33 @@ struct hal_tx_rate_tid_info {
 #define HAL_TCL_DESC_LEN sizeof(struct hal_tcl_data_cmd)
 struct hal_tx_msdu_details {
 	struct ath12k_buffer_addr buf_addr_info;
-	__le32 info0;
-	__le32 info1;
+	__le32 rsvd0[2];
 } __packed;
 
 
 struct hal_tx_msdu_ts_desc_info {
-	__le32 info0;
+	__le32 rsvd0;
 } __packed;
 
 
 struct hal_tx_msdu_ext_desc_info {
-	__le16 info0;
+	__le16 rsvd0;
 } __packed;
 
 
 struct hal_tcl_entrance_from_ppe_ring {
 	__le32 buffer_addr_lo;
-	__le32 info0;
+	__le32 rsvd0;
 	__le32 opaque_lo;
 	__le16 flow_cookie_ext_1;
 	__le16 vlan_tci;
 	__le16 src_info;
 	__le16 dst_info;
-	__le32 info1;
-	__le16 info2;
+	__le32 rsvd1;
+	__le16 rsvd2;
 	__le16 hash_value;
-	__le32 info3;
-};
+	__le32 rsvd3;
+} __packed;
 
 
 struct hal_tqm_entrance_ring {
@@ -972,21 +972,19 @@ struct hal_tqm_entrance_ring {
 	struct hal_tx_msdu_ts_desc_info tx_msdu_ts_desc_info;
 	struct hal_tx_msdu_ext_desc_info tx_msdu_ext_desc_info;
 	__le16 tqm_add_cmd_number;
-	__le32 info0;
+	__le32 rsvd0;
 } __packed;
 
-#define HAL_TX_MSDU_EXT_INFO0_BUF_PTR_LO	GENMASK(31, 0)
-
-#define HAL_TX_MSDU_EXT_INFO1_BUF_PTR_HI	GENMASK(7, 0)
-#define HAL_TX_MSDU_EXT_INFO1_EXTN_OVERRIDE	BIT(8)
-#define HAL_TX_MSDU_EXT_INFO1_ENCAP_TYPE	GENMASK(10, 9)
-#define HAL_TX_MSDU_EXT_INFO1_ENCRYPT_TYPE	GENMASK(14, 11)
-#define HAL_TX_MSDU_EXT_INFO1_BUF_LEN		GENMASK(31, 16)
+#define HAL_TX_MSDU_EXT_INFO0_BUF_PTR_HI	GENMASK(7, 0)
+#define HAL_TX_MSDU_EXT_INFO0_EXTN_OVERRIDE	BIT(8)
+#define HAL_TX_MSDU_EXT_INFO0_ENCAP_TYPE	GENMASK(10, 9)
+#define HAL_TX_MSDU_EXT_INFO0_ENCRYPT_TYPE	GENMASK(14, 11)
 
 struct hal_tx_msdu_extension {
 	__le32 rsvd0[6];
-	__le32 info0;
-	__le32 info1;
+	__le32 buf0_ptr_31_0;
+	__le16 info0;
+	__le16 buf0_len;
 	__le32 rsvd1[10];
 } __packed;
 
@@ -998,11 +996,11 @@ struct hal_tx_msdu_extension {
 struct hal_tcl_gse_cmd {
 	__le32 control_buffer_addr_31_0;
 	__le32 info0;
-	__le32 info1;
+	__le16 info1;
+	__le16 rsvd0;
 	__le32 cmd_meta_data_31_0;
 	__le32 cmd_meta_data_63_32;
-	__le32 rsvd0[2];
-	__le32 info2;
+	__le32 rsvd1[3];
 } __packed;
 
 enum hal_ase_cache_op {
@@ -1024,10 +1022,10 @@ struct hal_tcl_status_ring {
 	__le32 msdu_timestamp;
 	__le32 cmd_meta_data_31_0;
 	__le32 cmd_meta_data_63_32;
-	__le32 info1;
+	__le32 rsvd0;
 	__le16 status_debug_data;
-	__le16 reserved_6a;
-	__le32 info2;
+	__le16 rsvd1;
+	__le32 rsvd2;
 } __packed;
 
 #define HAL_ASE_CMD_RING_INFO0_CMD_TO_CHIP_0	BIT(0)
@@ -1035,26 +1033,24 @@ struct hal_tcl_status_ring {
 #define HAL_ASE_CMD_RING_INFO0_CMD_TO_CHIP_2	BIT(2)
 #define HAL_ASE_CMD_RING_INFO0_CMD_TO_CHIP_3	BIT(3)
 #define HAL_ASE_CMD_RING_INFO0_CMD_TO_CHIP_4	BIT(4)
-
-#define HAL_ASE_CMD_RING_INFO1_MAC_ADDR_31_0	GENMASK(31, 0)
-#define HAL_ASE_CMD_RING_INFO2_MAC_ADDR_47_32	GENMASK(15, 0)
-#define HAL_ASE_CMD_RING_INFO2_IS_MCAST		BIT(16)
-#define HAL_ASE_CMD_RING_INFO2_IS_MEC		BIT(17)
-#define HAL_ASE_CMD_RING_INFO2_AD1_MATCH	BIT(18)
-#define HAL_ASE_CMD_RING_INFO2_LINK_ID		GENMASK(21, 19)
-#define HAL_ASE_CMD_RING_INFO2_GSE_CTRL		GENMASK(25, 22)
-#define HAL_ASE_CMD_RING_INFO2_SEARCH_INDEX_EN	BIT(26)
-#define HAL_ASE_CMD_RING_INFO2_CACHE_SET_NUM	GENMASK(31, 27)
-#define HAL_ASE_CMD_RING_CMD_METADATA_31_0	GENMASK(31, 0)
-#define HAL_ASE_CMD_RING_INFO3_SEARCH_INDEX	GENMASK(19, 0)
+#define HAL_ASE_CMD_RING_INFO1_IS_MCAST		BIT(0)
+#define HAL_ASE_CMD_RING_INFO1_IS_MEC		BIT(1)
+#define HAL_ASE_CMD_RING_INFO1_AD1_MATCH	BIT(2)
+#define HAL_ASE_CMD_RING_INFO1_LINK_ID		GENMASK(5, 3)
+#define HAL_ASE_CMD_RING_INFO1_GSE_CTRL		GENMASK(9, 6)
+#define HAL_ASE_CMD_RING_INFO1_SEARCH_INDEX_EN	BIT(10)
+#define HAL_ASE_CMD_RING_INFO1_CACHE_SET_NUM	GENMASK(15, 11)
+#define HAL_ASE_CMD_RING_INFO2_SEARCH_INDEX	GENMASK(19, 0)
 
 struct hal_ase_cmd {
-	__le32 info0;
-	__le32 info1;
-	__le32 info2;
+	__le16 info0;
+	__le16 rsvd0;
+	__le32 mac_addr_31_0;
+	__le16 mac_addr_47_32;
+	__le16 info1;
 	__le32 cmd_meta_data_31_0;
-	__le32 rsvd[3];
-	__le32 info3;
+	__le32 rsvd1[3];
+	__le32 info2;
 } __packed;
 
 #define HAL_ASE_STATUS_RING_INFO0_GSE_CTRL		GENMASK(3, 0)
@@ -1064,9 +1060,9 @@ struct hal_ase_cmd {
 #define HAL_ASE_STATUS_RING_INFO0_MSDU_CNT_N		GENMASK(31, 8)
 
 #define HAL_ASE_STATUS_RING_INFO1_HASH_INDX_VAL		GENMASK(19, 0)
-#define HAL_ASE_STATUS_RING_INFO1_CACHE_SET_NUM		GENMASK(23, 20)
-#define HAL_ASE_STATUS_RING_INFO2_RING_ID		GENMASK(27, 20)
-#define HAL_ASE_STATUS_RING_INFO2_LOOPING_COUNT		GENMASK(31, 28)
+#define HAL_ASE_STATUS_RING_INFO1_CACHE_SET_NUM		GENMASK(24, 20)
+#define HAL_ASE_STATUS_RING_INFO2_RING_ID		GENMASK(11, 4)
+#define HAL_ASE_STATUS_RING_INFO2_LOOPING_COUNT		GENMASK(15, 12)
 
 struct hal_ase_status {
 	__le32 info0;
@@ -1075,22 +1071,22 @@ struct hal_ase_status {
 	__le32 cmd_meta_data_31_0;
 	__le32 cmd_meta_data_63_32;
 	__le32 info1;
-	__le32 reserved_7a;
-	__le32 info2;
+	__le32 rsvd0;
+	__le16 rsvd1;
+	__le16 info2;
 } __packed;
 
-#define HAL_CE_SRC_DESC_ADDR_INFO_ADDR_HI	GENMASK(7, 0)
-#define HAL_CE_SRC_DESC_ADDR_INFO_BYTE_SWAP	BIT(9)
-#define HAL_CE_SRC_DESC_ADDR_INFO_GATHER	BIT(11)
-#define HAL_CE_SRC_DESC_ADDR_INFO_LEN		GENMASK(31, 16)
-
-#define HAL_CE_SRC_DESC_META_INFO_DATA		GENMASK(15, 0)
+#define HAL_CE_SRC_DESC_INFO0_ADDR_HI		GENMASK(7, 0)
+#define HAL_CE_SRC_DESC_INFO0_BYTE_SWAP		BIT(9)
+#define HAL_CE_SRC_DESC_INFO0_GATHER		BIT(11)
 
 struct hal_ce_srng_src_desc {
 	__le32 buffer_addr_low;
-	__le32 buffer_addr_info; /* %HAL_CE_SRC_DESC_ADDR_INFO_ */
-	__le32 meta_info; /* %HAL_CE_SRC_DESC_META_INFO_ */
-	__le32 flags; /* %HAL_CE_SRC_DESC_FLAGS_ */
+	__le16 info0;
+	__le16 length;
+	__le16 fw_metadata;
+	__le16 rsvd0;
+	__le32 rsvd1;
 } __packed;
 
 /* hal_ce_srng_src_desc
@@ -1170,11 +1166,12 @@ struct hal_ce_srng_src_desc {
  *		LSB bit of this count value.
  */
 
-#define HAL_CE_DEST_DESC_ADDR_INFO_ADDR_HI		GENMASK(7, 0)
+#define HAL_CE_DEST_DESC_INFO0_ADDR_HI		GENMASK(7, 0)
 
 struct hal_ce_srng_dest_desc {
 	__le32 buffer_addr_low;
-	__le32 buffer_addr_info; /* %HAL_CE_DEST_DESC_ADDR_INFO_ */
+	__le16 info0;
+	__le16 rsvd0;
 } __packed;
 
 /* hal_ce_srng_dest_desc
@@ -1217,14 +1214,13 @@ struct hal_ce_srng_dest_desc {
  *		LSB bit of this count value.
  */
 
-#define HAL_CE_DST_STATUS_DESC_FLAGS_LEN		GENMASK(31, 16)
-
-
 struct hal_ce_srng_dst_status_desc {
-	__le32 flags; /* %HAL_CE_DST_STATUS_DESC_FLAGS_ */
+	__le16 rsvd0;
+	__le16 length;
 	__le32 toeplitz_hash0;
 	__le32 toeplitz_hash1;
-	__le32 meta_info; /* HAL_CE_DST_STATUS_DESC_META_INFO_ */
+	__le16 fw_metadata;
+	__le16 rsvd1;
 } __packed;
 
 /* hal_ce_srng_dst_status_desc
@@ -1293,10 +1289,8 @@ struct hal_ce_srng_dst_status_desc {
  */
 
 struct hal_tx_rate_stats_info {
-	__le32 info0;
-	__le32 info1;
-	__le32 info2;
-};
+	__le32 rsvd0[3];
+} __packed;
 
 enum hal_tqm_rel_src_module {
 	HAL_TQM_REL_SRC_MODULE_TQM = 0,
@@ -1367,16 +1361,16 @@ enum hal_wbm_rel_desc_type {
 
 struct hal_wbm_buffer_ring {
 	struct ath12k_buffer_addr buf_addr_info;
-};
+} __packed;
 
 struct hal_sw_monitor_ring {
+	struct ath12k_buffer_addr msdu_link_desc_addr_info;
 	struct hal_rx_reo_mpdu_desc_info reo_level_mpdu_frame_info;
 	struct ath12k_buffer_addr status_buff_addr_info;
-	__le32 info0;
+	__le32 rsvd0;
 	__le16 phy_ppdu_id;
 	__le16 receive_queue_number;
-	__le32 rsvd0[2];
-	__le32 info1;
+	__le32 rsvd1[3];
 } __packed;
 
 enum hal_desc_owner {
@@ -1484,39 +1478,38 @@ enum hal_rx_reo_queue_pn_size {
 	HAL_RX_REO_QUEUE_PN_SIZE_128,
 };
 
-#define HAL_RX_REO_QUEUE_RECEIVE_QUEUE_NUMBER                GENMASK(15, 0)
+#define HAL_RX_REO_QUEUE_INFO0_VLD					BIT(0)
+#define HAL_RX_REO_QUEUE_INFO0_ASSOCIATED_LINK_DESCRIPTOR_COUNTER	GENMASK(2, 1)
+#define HAL_RX_REO_QUEUE_INFO0_LINK_LIST_TIMER_IDX			GENMASK(8, 5)
+#define HAL_RX_REO_QUEUE_INFO0_RTY					BIT(10)
+#define HAL_RX_REO_QUEUE_INFO0_BA_WINDOW_SIZE				GENMASK(22, 13)
+#define HAL_RX_REO_QUEUE_INFO0_PN_CHECK_NEEDED				BIT(23)
+#define HAL_RX_REO_QUEUE_INFO0_PN_SIZE					GENMASK(28, 27)
+#define HAL_RX_REO_QUEUE_INFO0_IGNORE_AMPDU_FLAG			BIT(29)
 
-#define HAL_RX_REO_QUEUE_INFO1_VLD					BIT(0)
-#define HAL_RX_REO_QUEUE_INFO1_ASSOCIATED_LINK_DESCRIPTOR_COUNTER	GENMASK(2, 1)
-#define HAL_RX_REO_QUEUE_INFO1_LINK_LIST_TIMER_IDX			GENMASK(8, 5)
-#define HAL_RX_REO_QUEUE_INFO1_RTY					BIT(10)
-#define HAL_RX_REO_QUEUE_INFO1_BA_WINDOW_SIZE				GENMASK(22, 13)
-#define HAL_RX_REO_QUEUE_INFO1_PN_CHECK_NEEDED				BIT(23)
-#define HAL_RX_REO_QUEUE_INFO1_PN_SIZE					GENMASK(28, 27)
-#define HAL_RX_REO_QUEUE_INFO1_IGNORE_AMPDU_FLAG			BIT(29)
+#define HAL_RX_REO_QUEUE_INFO1_SVLD					BIT(0)
+#define HAL_RX_REO_QUEUE_INFO1_SSN					GENMASK(12, 1)
 
-#define HAL_RX_REO_QUEUE_INFO2_SVLD					BIT(0)
-#define HAL_RX_REO_QUEUE_INFO2_SSN					GENMASK(12, 1)
-
-#define HAL_RX_REO_QUEUE_INFO6_STATS_ID					GENMASK(26, 16)
+#define HAL_RX_REO_QUEUE_INFO2_STATS_ID				GENMASK(10, 0)
 
 struct hal_rx_reo_queue {
 	struct hal_desc_header desc_hdr;
 	__le16 receive_queue_number;
-	__le16 info0;
-	__le32 info1;
-	__le32 info2;
+	__le16 rsvd0;
+	__le32 info0;
+	__le16 info1;
+	__le16 rsvd1;
 	__le32 pn_31_0;
 	__le16 pn_47_32;
-	__le16 info3;
-	__le32 info4;
-	__le32 rsvd0;
+	__le16 rsvd2;
+	__le32 rsvd3[2];
 	__le32 last_rx_enqueue_timestamp;
 	__le32 last_rx_dequeue_timestamp;
 	__le32 ptr_to_next_aging_queue_31_0;
-	__le32 info5;
+	__le32 rsvd4;
 	__le32 ptr_to_previous_aging_queue_31_0;
-	__le32 info6;
+	__le16 rsvd5;
+	__le16 info2;
 	__le32 rx_bitmap_31_0;
 	__le32 rx_bitmap_63_32;
 	__le32 rx_bitmap_95_64;
@@ -1526,17 +1519,17 @@ struct hal_rx_reo_queue {
 	__le32 rx_bitmap_223_192;
 	__le32 rx_bitmap_255_224;
 	__le32 rx_bitmap_287_256;
-	__le32 info7;
-	__le16 info8;
+	__le32 rsvd6;
+	__le16 rsvd7;
 	__le16 duplicate_count;
-	__le32 info9;
+	__le32 rsvd8;
 	__le32 mpdu_frames_processed_count;
 	__le32 msdu_frames_processed_count;
 	__le32 total_processed_byte_count;
-	__le16 info10;
+	__le16 rsvd9;
 	__le16 hole_count;
 	__le16 aging_drop_mpdu_count;
-	__le16 info11;
+	__le16 rsvd10;
 	__le32 sawf_dropped_msdu_frames_processed_cnt;
 	__le32 rx_bitmap_319_288;
 	__le32 rx_bitmap_351_320;
@@ -1561,7 +1554,7 @@ struct hal_rx_reo_queue {
 	__le32 rx_bitmap_959_928;
 	__le32 rx_bitmap_991_960;
 	__le32 rx_bitmap_1023_992;
-	__le32 rsvd1[9];
+	__le32 rsvd11[9];
 	struct hal_rx_reo_queue_ext ext_desc[];
 };
 
@@ -1591,44 +1584,43 @@ struct hal_rx_reo_queue {
 #define HAL_REO_UPD_RX_QUEUE_INFO0_UPD_PN			BIT(30)
 #define HAL_REO_UPD_RX_QUEUE_INFO0_CLR_STATS_COUNTERS		BIT(31)
 
-#define HAL_REO_UPD_RX_QUEUE_INFO1_RX_QUEUE_NUMBER		GENMASK(15, 0)
-#define HAL_REO_UPD_RX_QUEUE_INFO1_VLD				BIT(16)
-#define HAL_REO_UPD_RX_QUEUE_INFO1_ASSOC_LNK_DESC_COUNTER	GENMASK(18, 17)
-#define HAL_REO_UPD_RX_QUEUE_INFO1_DIS_DUP_DETECTION		BIT(19)
-#define HAL_REO_UPD_RX_QUEUE_INFO1_SOFT_REORDER_EN		BIT(20)
-#define HAL_REO_UPD_RX_QUEUE_INFO1_LINK_LIST_TIMER_ID		GENMASK(24, 21)
-#define HAL_REO_UPD_RX_QUEUE_INFO1_BAR				BIT(25)
-#define HAL_REO_UPD_RX_QUEUE_INFO1_RETRY			BIT(26)
-#define HAL_REO_UPD_RX_QUEUE_INFO1_CHECK_2K_MODE		BIT(27)
-#define HAL_REO_UPD_RX_QUEUE_INFO1_OOR_MODE			BIT(28)
-#define HAL_REO_UPD_RX_QUEUE_INFO1_PN_CHECK			BIT(29)
-#define HAL_REO_UPD_RX_QUEUE_INFO1_EVEN_PN			BIT(30)
-#define HAL_REO_UPD_RX_QUEUE_INFO1_UNEVEN_PN			BIT(31)
+#define HAL_REO_UPD_RX_QUEUE_INFO1_VLD				BIT(0)
+#define HAL_REO_UPD_RX_QUEUE_INFO1_ASSOC_LNK_DESC_COUNTER	GENMASK(2, 1)
+#define HAL_REO_UPD_RX_QUEUE_INFO1_DIS_DUP_DETECTION		BIT(3)
+#define HAL_REO_UPD_RX_QUEUE_INFO1_SOFT_REORDER_EN		BIT(4)
+#define HAL_REO_UPD_RX_QUEUE_INFO1_LINK_LIST_TIMER_ID		GENMASK(8, 5)
+#define HAL_REO_UPD_RX_QUEUE_INFO1_BAR				BIT(9)
+#define HAL_REO_UPD_RX_QUEUE_INFO1_RETRY			BIT(10)
+#define HAL_REO_UPD_RX_QUEUE_INFO1_CHECK_2K_MODE		BIT(11)
+#define HAL_REO_UPD_RX_QUEUE_INFO1_OOR_MODE			BIT(12)
+#define HAL_REO_UPD_RX_QUEUE_INFO1_PN_CHECK			BIT(13)
+#define HAL_REO_UPD_RX_QUEUE_INFO1_EVEN_PN			BIT(14)
+#define HAL_REO_UPD_RX_QUEUE_INFO1_UNEVEN_PN			BIT(15)
 
 #define HAL_REO_UPD_RX_QUEUE_INFO2_PN_HANDLE_ENABLE		BIT(0)
 #define HAL_REO_UPD_RX_QUEUE_INFO2_IGNORE_AMPDU_FLG		BIT(1)
 #define HAL_REO_UPD_RX_QUEUE_INFO2_BA_WINDOW_SIZE		GENMASK(11, 2)
 #define HAL_REO_UPD_RX_QUEUE_INFO2_PN_SIZE			GENMASK(13, 12)
-#define HAL_REO_UPD_RX_QUEUE_INFO2_SVLD				BIT(14)
+#define HAL_REO_UPD_RX_QUEUE_INFO2_SVLD			BIT(14)
 #define HAL_REO_UPD_RX_QUEUE_INFO2_SSN				GENMASK(26, 15)
 #define HAL_REO_UPD_RX_QUEUE_INFO2_SEQ_2K_ERR			BIT(27)
 #define HAL_REO_UPD_RX_QUEUE_INFO2_PN_ERR			BIT(28)
 #define HAL_REO_UPD_RX_QUEUE_INFO2_PN_VALID			BIT(29)
 #define HAL_REO_UPD_RX_QUEUE_INFO2_FLUSH_FROM_CACHE		BIT(30)
 
+#define HAL_REO_UPD_RX_QUEUE_INFO3_PN_127_48_INFO		GENMASK(1, 0)
 
 struct hal_reo_update_rx_queue {
 	struct hal_reo_cmd_hdr cmd;
 	__le32 queue_addr_lo;
 	__le32 info0;
-	__le32 info1;
+	__le16 receive_queue_number;
+	__le16 info1;
 	__le32 info2;
 	__le32 pn_31_0;
 	__le16 pn_47_32;
-	__le16 pn_127_48_info;
-	__le32 rsvd0;
-	__le32 rsvd1;
-	__le32 tlv64_pad;
+	__le16 info3;
+	__le32 rsvd0[3];
 } __packed;
 
 struct hal_rx_reo_queue_1k {
@@ -1640,8 +1632,9 @@ struct hal_rx_reo_queue_1k {
 
 struct hal_reo_unblock_cache {
 	struct hal_reo_cmd_hdr cmd;
-	__le32 info0;
-	__le32 rsvd[7];
+	__le16 info0;
+	__le16 rsvd0;
+	__le32 rsvd1[8];
 } __packed;
 
 enum hal_reo_exec_status {
@@ -1651,11 +1644,11 @@ enum hal_reo_exec_status {
 	HAL_REO_EXEC_STATUS_RESOURCE_BLOCKED,
 };
 
-#define HAL_REO_STATUS_HDR_INFO0_STATUS_NUM	GENMASK(15, 0)
-#define HAL_REO_STATUS_HDR_INFO0_EXEC_STATUS	GENMASK(27, 26)
+#define HAL_REO_STATUS_HDR_INFO0_EXEC_STATUS	GENMASK(11, 10)
 
 struct hal_reo_status_hdr {
-	__le32 info0;
+	__le16 reo_status_number;
+	__le16 info0;
 	__le32 timestamp;
 } __packed;
 
@@ -1683,17 +1676,17 @@ struct hal_reo_status_hdr {
 
 #define HAL_REO_GET_Q_STATS_STATUS_INFO1_PN_127_48_INFO		GENMASK(1, 0)
 
-#define HAL_REO_GET_Q_STATS_STATUS_INFO3_CURRENT_MPDU_COUNT	GENMASK(6, 0)
-#define HAL_REO_GET_Q_STATS_STATUS_INFO3_CURRENT_MSDU_COUNT	GENMASK(31, 7)
-#define HAL_REO_GET_Q_STATS_STATUS_INFO4_WINDOW_JUMP_2K		GENMASK(3, 0)
-#define HAL_REO_GET_Q_STATS_STATUS_INFO4_TIMEOUT_COUNT		GENMASK(9, 4)
-#define HAL_REO_GET_Q_STATS_STATUS_INFO4_FWD_DUE_TO_BAR_COUNT	GENMASK(15, 10)
-#define HAL_REO_GET_Q_STATS_STATUS_INFO5_FRAMES_IN_ORDER_COUNT	GENMASK(23, 0)
-#define HAL_REO_GET_Q_STATS_STATUS_INFO5_BAR_RECEIVED_COUNT	GENMASK(31, 24)
-#define HAL_REO_GET_Q_STATS_STATUS_INFO6_LATE_RCV_MPDU_COUNT	GENMASK(11, 0)
-#define HAL_REO_GET_Q_STATS_STATUS_INFO6_HOLE_COUNT		GENMASK(27, 12)
-#define HAL_REO_GET_Q_STATS_STATUS_INFO6_GET_Q_1K_SSTAT_FOLLOW	BIT(28)
-#define HAL_REO_GET_Q_STATS_STATUS_INFO7_LOOPING_COUNT		GENMASK(15, 12)
+#define HAL_REO_GET_Q_STATS_STATUS_INFO2_CURRENT_MPDU_COUNT	GENMASK(6, 0)
+#define HAL_REO_GET_Q_STATS_STATUS_INFO2_CURRENT_MSDU_COUNT	GENMASK(31, 7)
+#define HAL_REO_GET_Q_STATS_STATUS_INFO3_WINDOW_JUMP_2K		GENMASK(3, 0)
+#define HAL_REO_GET_Q_STATS_STATUS_INFO3_TIMEOUT_COUNT		GENMASK(9, 4)
+#define HAL_REO_GET_Q_STATS_STATUS_INFO3_FWD_DUE_TO_BAR_COUNT	GENMASK(15, 10)
+#define HAL_REO_GET_Q_STATS_STATUS_INFO4_FRAMES_IN_ORDER_COUNT	GENMASK(23, 0)
+#define HAL_REO_GET_Q_STATS_STATUS_INFO4_BAR_RECEIVED_COUNT	GENMASK(31, 24)
+#define HAL_REO_GET_Q_STATS_STATUS_INFO5_LATE_RCV_MPDU_COUNT	GENMASK(11, 0)
+#define HAL_REO_GET_Q_STATS_STATUS_INFO5_HOLE_COUNT		GENMASK(27, 12)
+#define HAL_REO_GET_Q_STATS_STATUS_INFO5_GET_Q_1K_SSTAT_FOLLOW	BIT(28)
+#define HAL_REO_GET_Q_STATS_STATUS_INFO6_LOOPING_COUNT		GENMASK(15, 12)
 
 struct hal_reo_get_queue_stats_status {
 	struct hal_reo_status_hdr hdr;
@@ -1701,8 +1694,7 @@ struct hal_reo_get_queue_stats_status {
 	__le32 pn_31_0;
 	__le16 pn_47_32;
 	__le16 info1;
-	__le32 info2;
-	__le32 rsvd0;
+	__le32 rsvd0[2];
 	__le32 last_rx_enqueue_timestamp;
 	__le32 last_rx_dequeue_timestamp;
 	__le32 rx_bitmap_31_0;
@@ -1714,19 +1706,19 @@ struct hal_reo_get_queue_stats_status {
 	__le32 rx_bitmap_223_192;
 	__le32 rx_bitmap_255_224;
 	__le32 rx_bitmap_287_256;
-	__le32 info3;
-	__le16 info4;
+	__le32 info2;
+	__le16 info3;
 	__le16 duplicate_count;
-	__le32 info5;
+	__le32 info4;
 	__le32 mpdu_frames_processed_count;
 	__le32 msdu_frames_processed_count;
 	__le32 total_processed_byte_count;
-	__le32 info6;
+	__le32 info5;
 	__le16 aging_drop_mpdu_count;
-	__le16 info7;
+	__le16 info6;
 } __packed;
 
-#define HAL_REO_GET_Q_1K_STATS_STATUS_INFO0_LOOPING_COUNT	GENMASK(31, 28)
+#define HAL_REO_GET_Q_1K_STATS_STATUS_INFO0_LOOPING_COUNT	GENMASK(15, 12)
 
 /* REO status TLV carrying the extension bitmap bits 288..1023 for the
  * preceding HAL_REO_GET_QUEUE_STATS_STATUS response (when requested).
@@ -1734,16 +1726,17 @@ struct hal_reo_get_queue_stats_status {
 struct hal_reo_get_queue_1k_stats_status {
 	struct hal_reo_status_hdr hdr;
 	__le32 rx_bitmap1023_288[23];
-	__le32 info0;
+	__le16 rsvd0;
+	__le16 info0;
 } __packed;
 
 #define HAL_REO_FLUSH_QUEUE_INFO0_ERR_DETECTED	BIT(0)
 
 struct hal_reo_flush_queue_status {
 	struct hal_reo_status_hdr hdr;
-	__le32 info0;
-	__le32 rsvd0[21];
-	__le32 info1;
+	__le16 info0;
+	__le16 rsvd0;
+	__le32 rsvd1[23];
 } __packed;
 
 /* hal_reo_flush_queue_status
@@ -1777,8 +1770,7 @@ struct hal_reo_flush_queue_status {
 struct hal_reo_flush_cache_status {
 	struct hal_reo_status_hdr hdr;
 	__le32 info0;
-	__le32 rsvd0[21];
-	__le32 info1;
+	__le32 rsvd0[23];
 } __packed;
 
 /* hal_reo_flush_cache_status
@@ -1838,9 +1830,9 @@ struct hal_reo_flush_cache_status {
 
 struct hal_reo_unblock_cache_status {
 	struct hal_reo_status_hdr hdr;
-	__le32 info0;
-	__le32 rsvd0[21];
-	__le32 info1;
+	__le16 info0;
+	__le16 rsvd0;
+	__le32 rsvd1[23];
 } __packed;
 
 /* hal_reo_unblock_cache_status
@@ -1869,15 +1861,13 @@ struct hal_reo_unblock_cache_status {
 #define HAL_REO_FLUSH_TIMEOUT_STATUS_INFO0_IS_ERR		BIT(0)
 #define HAL_REO_FLUSH_TIMEOUT_STATUS_INFO0_LIST_EMPTY		BIT(1)
 
-#define HAL_REO_FLUSH_TIMEOUT_STATUS_INFO1_REL_DESC_COUNT	GENMASK(15, 0)
-#define HAL_REO_FLUSH_TIMEOUT_STATUS_INFO1_FWD_BUF_COUNT	GENMASK(31, 16)
-
 struct hal_reo_flush_timeout_list_status {
 	struct hal_reo_status_hdr hdr;
-	__le32 info0;
-	__le32 info1;
-	__le32 rsvd0[20];
-	__le32 info2;
+	__le16 info0;
+	__le16 rsvd0;
+	__le16 release_desc_count;
+	__le16 forward_buf_count;
+	__le32 rsvd1[22];
 } __packed;
 
 /* hal_reo_flush_timeout_list_status
@@ -1917,13 +1907,13 @@ struct hal_reo_flush_timeout_list_status {
 
 struct hal_reo_desc_thresh_reached_status {
 	struct hal_reo_status_hdr hdr;
-	__le32 info0;
+	__le16 info0;
+	__le16 rsvd0;
 	__le32 info1;
 	__le32 info2;
 	__le32 info3;
 	__le32 info4;
-	__le32 rsvd0[17];
-	__le32 info5;
+	__le32 rsvd1[19];
 } __packed;
 
 /* hal_reo_desc_thresh_reached_status
@@ -1952,7 +1942,7 @@ struct hal_mon_buf_ring {
 	__le32 paddr_lo;
 	__le32 paddr_hi;
 	__le64 cookie;
-};
+} __packed;
 
 /* hal_mon_buf_ring
  *	Producer : SW
@@ -1976,7 +1966,7 @@ struct hal_mon_dest_desc {
 	__le64 stat_buf_va;
 	__le32 ppdu_id;
 	__le32 info0;
-};
+} __packed;
 
 /* hal_mon_dest_ring
  *	Producer : TxMon/RxMon
@@ -2039,36 +2029,36 @@ struct hal_tx_msdu_metadata {
 #define HAL_TCL_EXIT_BASE_INFO1_NON_QOS				BIT(7)
 #define HAL_TCL_EXIT_BASE_INFO1_ILLEGAL_FRAME			BIT(30)
 #define HAL_TCL_EXIT_BASE_INFO1_ILLEGAL_ETH_HEADER		BIT(31)
-#define HAL_TCL_EXIT_BASE_INFO3_TCP_PROTO			BIT(1)
-#define HAL_TCL_EXIT_BASE_INFO3_UDP_PROTO			BIT(2)
-#define HAL_TCL_EXIT_BASE_INFO5_DA_IS_BCAST_MCAST		BIT(8)
-#define HAL_TCL_EXIT_BASE_INFO5_FLOW_OVERRIDE_ENABLE		BIT(10)
-#define HAL_TCL_EXIT_BASE_INFO5_FLOW_SELECT			BIT(11)
-#define HAL_TCL_EXIT_BASE_INFO5_INDEX_LOOKUP_OVERRIDE		BIT(12)
-#define HAL_TCL_EXIT_BASE_INFO5_CMD_LINK_ID			GENMASK(15, 13)
-#define HAL_TCL_EXIT_BASE_INFO6_ADDRX_IDX_TIMEOUT		BIT(0)
-#define HAL_TCL_EXIT_BASE_INFO6_ADDRX_IDX_INVALID		BIT(1)
-#define HAL_TCL_EXIT_BASE_INFO7_PEER_POINTER_NULL_EXCEPTION	BIT(30)
-#define HAL_TCL_EXIT_BASE_INFO7_BANK_NOT_CONFIGURED		BIT(31)
-#define HAL_TCL_EXIT_BASE_INFO9_DATA_LENGTH			GENMASK(24, 9)
-#define HAL_TCL_EXIT_BASE_INFO9_IPV4_CHECKSUM_EN		BIT(25)
-#define HAL_TCL_EXIT_BASE_INFO9_UDP_OVER_IPV4_CHECKSUM_EN	BIT(26)
-#define HAL_TCL_EXIT_BASE_INFO9_L4_CHECKSUM_EN			BIT(27)
-#define HAL_TCL_EXIT_BASE_INFO9_HLOS_TID_OVERWRITE		BIT(30)
-#define HAL_TCL_EXIT_BASE_INFO9_MSDU_LENGTH_ERROR		BIT(31)
-#define HAL_TCL_EXIT_BASE_INFO11_CACHE_SET_NUM			GENMASK(3, 0)
-#define HAL_TCL_EXIT_BASE_INFO11_TO_FW_SW			GENMASK(5, 4)
-#define HAL_TCL_EXIT_BASE_INFO11_PARSER_OP_TLV_SEQUENCE_ERR	BIT(6)
-#define HAL_TCL_EXIT_BASE_INFO11_WHO_CLASSIFY_INFOSEL		GENMASK(9, 8)
-#define HAL_TCL_EXIT_BASE_INFO11_VDEV_ID			GENMASK(17, 10)
-#define HAL_TCL_EXIT_BASE_INFO11_VDEV_ID_CHECK_EN		BIT(19)
-#define HAL_TCL_EXIT_BASE_INFO11_VDEV_ID_CHECK_FAILURE		BIT(20)
-#define HAL_TCL_EXIT_BASE_INFO11_FLOW_POINTER_NULL		BIT(25)
-#define HAL_TCL_EXIT_BASE_INFO11_WHO_CLASSIFY_INFO_SEL_EXCEEDED	BIT(28)
-#define HAL_TCL_EXIT_BASE_INFO11_BANK_ID_EXCEEDED		BIT(29)
-#define HAL_TCL_EXIT_BASE_INFO11_BUFFER_LENGTH_ERROR		BIT(30)
-#define HAL_TCL_EXIT_BASE_INFO12_BANK_ID			GENMASK(25, 18)
-#define HAL_TCL_EXIT_BASE_INFO12_FW_LINK_ID			GENMASK(31, 29)
+#define HAL_TCL_EXIT_BASE_INFO2_TCP_PROTO			BIT(1)
+#define HAL_TCL_EXIT_BASE_INFO2_UDP_PROTO			BIT(2)
+#define HAL_TCL_EXIT_BASE_INFO3_DA_IS_BCAST_MCAST		BIT(8)
+#define HAL_TCL_EXIT_BASE_INFO3_FLOW_OVERRIDE_ENABLE		BIT(10)
+#define HAL_TCL_EXIT_BASE_INFO3_FLOW_SELECT			BIT(11)
+#define HAL_TCL_EXIT_BASE_INFO3_INDEX_LOOKUP_OVERRIDE		BIT(12)
+#define HAL_TCL_EXIT_BASE_INFO3_CMD_LINK_ID			GENMASK(15, 13)
+#define HAL_TCL_EXIT_BASE_INFO4_ADDRX_IDX_TIMEOUT		BIT(0)
+#define HAL_TCL_EXIT_BASE_INFO4_ADDRX_IDX_INVALID		BIT(1)
+#define HAL_TCL_EXIT_BASE_INFO5_PEER_POINTER_NULL_EXCEPTION	BIT(30)
+#define HAL_TCL_EXIT_BASE_INFO5_BANK_NOT_CONFIGURED		BIT(31)
+#define HAL_TCL_EXIT_BASE_INFO6_DATA_LENGTH			GENMASK(24, 9)
+#define HAL_TCL_EXIT_BASE_INFO6_IPV4_CHECKSUM_EN		BIT(25)
+#define HAL_TCL_EXIT_BASE_INFO6_UDP_OVER_IPV4_CHECKSUM_EN	BIT(26)
+#define HAL_TCL_EXIT_BASE_INFO6_L4_CHECKSUM_EN			BIT(27)
+#define HAL_TCL_EXIT_BASE_INFO6_HLOS_TID_OVERWRITE		BIT(30)
+#define HAL_TCL_EXIT_BASE_INFO6_MSDU_LENGTH_ERROR		BIT(31)
+#define HAL_TCL_EXIT_BASE_INFO7_CACHE_SET_NUM			GENMASK(3, 0)
+#define HAL_TCL_EXIT_BASE_INFO7_TO_FW_SW			GENMASK(5, 4)
+#define HAL_TCL_EXIT_BASE_INFO7_PARSER_OP_TLV_SEQUENCE_ERR	BIT(6)
+#define HAL_TCL_EXIT_BASE_INFO7_WHO_CLASSIFY_INFOSEL		GENMASK(9, 8)
+#define HAL_TCL_EXIT_BASE_INFO7_VDEV_ID				GENMASK(17, 10)
+#define HAL_TCL_EXIT_BASE_INFO7_VDEV_ID_CHECK_EN		BIT(19)
+#define HAL_TCL_EXIT_BASE_INFO7_VDEV_ID_CHECK_FAILURE		BIT(20)
+#define HAL_TCL_EXIT_BASE_INFO7_FLOW_POINTER_NULL		BIT(25)
+#define HAL_TCL_EXIT_BASE_INFO7_WHO_CLASSIFY_INFO_SEL_EXCEEDED	BIT(28)
+#define HAL_TCL_EXIT_BASE_INFO7_BANK_ID_EXCEEDED		BIT(29)
+#define HAL_TCL_EXIT_BASE_INFO7_BUFFER_LENGTH_ERROR		BIT(30)
+#define HAL_TCL_EXIT_BASE_INFO8_BANK_ID				GENMASK(25, 18)
+#define HAL_TCL_EXIT_BASE_INFO8_FW_LINK_ID			GENMASK(31, 29)
 
 struct hal_tcl_exit_base {
 	struct ath12k_buffer_addr buf_addr_info;
@@ -2076,38 +2066,38 @@ struct hal_tcl_exit_base {
 	__le16 info0;
 	__le32 info1;
 	__le16 l3_type;
+	__le16 rsvd0;
 	__le16 info2;
-	__le16 info3;
 	__le16 l4_offset;
 	__le32 ipv6_options_crc;
 	__le16 l4_sport;
 	__le16 l4_dport;
 	__le16 sw_peer_id;
-	__le16 rsvd0;
-	__le32 rsvd1;
+	__le16 rsvd1;
+	__le32 rsvd2;
 	__le16 window_size;
-	__le16 info4;
+	__le16 rsvd3;
 	__le32 toeplitz_hash_2;
 	__le32 toeplitz_hash_4;
 	__le32 flowid_toeplitz_hash_5;
-	__le16 info5;
+	__le16 info3;
 	__le16 addrx_ast_hash_idx;
 	u8 addr_x[ETH_ALEN];
 	u8 addr_y[ETH_ALEN];
 	__le16 addry_ast_hash_idx;
-	__le16 info6;
+	__le16 info4;
 	__le32 flow_pntr_39_8;
-	__le32 info7;
-	__le32 info8;
+	__le32 info5;
+	__le32 rsvd4;
 	__le16 meta_data_ase;
 	__le16 meta_data_cce;
 	__le32 cce_rule_ind_31_0;
 	__le32 cce_rule_ind_63_32;
-	__le32 info9;
-	__le32 info10;
-	__le32 info11;
-	__le32 info12;
-	__le32 info13;
+	__le32 info6;
+	__le32 rsvd5;
+	__le32 info7;
+	__le32 info8;
+	__le32 rsvd6;
 	__le32 host_meta_info_0;
 	__le32 host_meta_info_1;
 	__le32 host_meta_info_2;
@@ -2129,8 +2119,7 @@ struct hal_tcl_exit_base {
 struct hal_tcl_regular_exit_ring {
 	struct hal_tcl_exit_base tcl_exit_base_info;
 	__le32 header_data[32];
-	__le32 rsvd;
-	__le32 info0;
+	__le32 rsvd0[2];
 } __packed;
 
 #define HAL_WBM_RELEASE_INFO0_REL_SRC_MODULE		GENMASK(2, 0)
@@ -2138,9 +2127,9 @@ struct hal_tcl_regular_exit_ring {
 
 struct hal_wbm_release_ring {
 	struct ath12k_buffer_addr buf_addr_info;
-	__le32 info0;
-	__le32 rsvd[4];
-	__le32 info1;
+	__le16 info0;
+	__le16 rsvd0;
+	__le32 rsvd1[5];
 } __packed;
 
 enum hal_tlv_tag_be {
@@ -2197,391 +2186,240 @@ enum hal_tqm_service_category {
 	HAL_TQM_SERVICE_CATEGORY_MAX,
 };
 
-//info0
-#define HAL_TQM_CMD_NUMBER				GENMASK(31, 0)
-
-//info1
-#define HAL_TQM_REQUIRED_FOR_CHIP0			BIT(0)
-#define HAL_TQM_REQUIRED_FOR_CHIP1			BIT(1)
-#define HAL_TQM_REQUIRED_FOR_CHIP2			BIT(2)
-#define HAL_TQM_REQUIRED_FOR_CHIP3			BIT(3)
-#define HAL_TQM_REQUIRED_FOR_CHIP4			BIT(4)
-#define HAL_TQM_SESSION_ID				GENMASK(11, 5)
-#define HAL_TQM_CMD_STATUS_RING				GENMASK(13, 12)
-#define HAL_TQM_PASS_ONTO_TQM				BIT(14)
-#define HAL_TQM_SCH_SIFS_BURST_CMD_DROP			BIT(15)
-#define HAL_TQM_SCH_BACKOFF_CMD_DROP			BIT(16)
-#define HAL_TQM_SCH_TRIG_CMD_DROP			BIT(17)
-#define HAL_TQM_STATUS_REQUIRED_FOR_HOST		BIT(18)
-#define HAL_TQM_HOST_STATUS_RING			BIT(19)
-#define HAL_TQM_SW_PEER_ID_FOR_COMPARISON		GENMASK(31, 20)
+#define HAL_TQM_INFO0_REQUIRED_FOR_CHIP0		BIT(0)
+#define HAL_TQM_INFO0_REQUIRED_FOR_CHIP1		BIT(1)
+#define HAL_TQM_INFO0_REQUIRED_FOR_CHIP2		BIT(2)
+#define HAL_TQM_INFO0_REQUIRED_FOR_CHIP3		BIT(3)
+#define HAL_TQM_INFO0_REQUIRED_FOR_CHIP4		BIT(4)
+#define HAL_TQM_INFO0_SESSION_ID			GENMASK(11, 5)
+#define HAL_TQM_INFO0_CMD_STATUS_RING			GENMASK(13, 12)
+#define HAL_TQM_INFO0_PASS_ONTO_TQM			BIT(14)
+#define HAL_TQM_INFO0_SCH_SIFS_BURST_CMD_DROP		BIT(15)
+#define HAL_TQM_INFO0_SCH_BACKOFF_CMD_DROP		BIT(16)
+#define HAL_TQM_INFO0_SCH_TRIG_CMD_DROP			BIT(17)
+#define HAL_TQM_INFO0_STATUS_REQUIRED_FOR_HOST		BIT(18)
+#define HAL_TQM_INFO0_HOST_STATUS_RING			BIT(19)
+#define HAL_TQM_INFO0_SW_PEER_ID_FOR_COMPARISON		GENMASK(31, 20)
 
 struct hal_uniform_tqm_cmd_hdr {
+	__le32 tqm_cmd_number;
 	__le32 info0;
-	__le32 info1;
 } __packed;
 
-//info0
-#define HAL_TQM_MSDU_FLOW_DESC_ADDR_31_0		GENMASK(31, 0)
+#define HAL_TQM_MSDU_INFO0_FLOW_DESC_ADDR_39_32		GENMASK(7, 0)
+#define HAL_TQM_MSDU_INFO0_SMD_ROAMING_REMOVAL_CMD	BIT(8)
+#define HAL_TQM_MSDU_INFO0_SMD_ROAMING_REMOVE_MSDU_COUNT	GENMASK(24, 9)
+#define HAL_TQM_MSDU_INFO0_SMD_ROAMING_FORWARDING_RING	BIT(25)
 
-//info1
-#define HAL_TQM_MSDU_FLOW_DESC_ADDR_39_32		GENMASK(7, 0)
-#define HAL_TQM_MSDU_SMD_ROAMING_REMOVAL_CMD		BIT(8)
-#define HAL_TQM_MSDU_SMD_ROAMING_REMOVE_MSDU_COUNT	GENMASK(24, 9)
-#define HAL_TQM_MSDU_SMD_ROAMING_FORWARDING_RING	BIT(25)
-#define HAL_TQM_MSDU_RESERVED_2A			GENMASK(31, 26)
+#define HAL_TQM_MSDU_INFO1_REMOVE_MSDU_CMD_TYPE	GENMASK(3, 0)
+#define HAL_TQM_MSDU_INFO1_REMOVE_COUNT		GENMASK(19, 4)
+#define HAL_TQM_MSDU_INFO1_BLOCK_TX_NOTIFY_FRAME_REMOVAL	BIT(20)
+#define HAL_TQM_MSDU_INFO1_RELEASE_REASON_OVERWRITE	GENMASK(22, 21)
+#define HAL_TQM_MSDU_INFO1_ALLOW_EARLY_TERMINATION	BIT(23)
+#define HAL_TQM_MSDU_INFO1_MIN_ALLOWED_EXECUTION_TIME	GENMASK(29, 24)
 
-//info 2
-#define HAL_TQM_MSDU_REMOVE_MSDU_CMD_TYPE		GENMASK(3, 0)
-#define HAL_TQM_MSDU_REMOVE_COUNT			GENMASK(19, 4)
-#define HAL_TQM_MSDU_BLOCK_TX_NOTIFY_FRAME_REMOVAL	BIT(20)
-#define HAL_TQM_MSDU_RELEASE_REASON_OVERWRITE		GENMASK(22, 21)
-#define HAL_TQM_MSDU_ALLOW_EARLY_TERMINATION		BIT(23)
-#define HAL_TQM_MSDU_MIN_ALLOWED_EXECUTION_TIME		GENMASK(29, 24)
-#define HAL_TQM_MSDU_RESERVED_3A			GENMASK(31, 30)
+#define HAL_TQM_MSDU_INFO2_AGED_REFERENCE_TIMESTAMP	GENMASK(18, 0)
+#define HAL_TQM_MSDU_INFO2_RBM_OVERRIDE_VALID		BIT(19)
+#define HAL_TQM_MSDU_INFO2_RBM_OVERRIDE		GENMASK(23, 20)
 
-//info3
-#define HAL_TQM_MSDU_AGED_REFERENCE_TIMESTAMP		GENMASK(18, 0)
-#define HAL_TQM_MSDU_RBM_OVERRIDE_VALID			BIT(19)
-#define HAL_TQM_MSDU_RBM_OVERRIDE			GENMASK(23, 20)
-#define HAL_TQM_MSDU_RESERVED_4				GENMASK(31, 24)
-
-//info4
-#define HAL_TQM_MSDU_SMD_ROAMING_REO2PPE_INT_PRI	GENMASK(3, 0)
-#define HAL_TQM_MSDU_SMD_ROAMING_REO2PPE_POOL_ID	GENMASK(9, 4)
-#define HAL_TQM_MSDU_SMD_ROAMING_REO2PPE_PRI_VALID	BIT(10)
-#define HAL_TQM_MSDU_SMD_ROAMING_REO2PPE_SERVICE_CODE	GENMASK(19, 11)
-#define HAL_TQM_MSDU_PPE_CLASSIFY_READ_HINT		GENMASK(21, 20)
-#define HAL_TQM_MSDU_RESERVED_5				GENMASK(31, 22)
-
-//info5
-#define HAL_TQM_MSDU_SMD_ROAMING_REO2PPE_SRC_INFO	GENMASK(15, 0)
-#define HAL_TQM_MSDU_SMD_ROAMING_REO2PPE_DST_INFO	GENMASK(31, 16)
+#define HAL_TQM_MSDU_INFO3_SMD_ROAMING_REO2PPE_INT_PRI	GENMASK(3, 0)
+#define HAL_TQM_MSDU_INFO3_SMD_ROAMING_REO2PPE_POOL_ID	GENMASK(9, 4)
+#define HAL_TQM_MSDU_INFO3_SMD_ROAMING_REO2PPE_PRI_VALID	BIT(10)
+#define HAL_TQM_MSDU_INFO3_SMD_ROAMING_REO2PPE_SERVICE_CODE	GENMASK(19, 11)
 
 struct hal_tqm_remove_msdu {
 	struct hal_uniform_tqm_cmd_hdr cmd_hdr;
+	__le32 msdu_flow_desc_addr_31_0;
 	__le32 info0;
 	__le32 info1;
 	__le32 info2;
 	__le32 info3;
-	__le32 info4;
-	__le32 info5;
+	__le16 smd_roaming_reo2ppe_src_info;
+	__le16 smd_roaming_reo2ppe_dst_info;
 } __packed;
 
-//info0
-#define HAL_TQM_MPDU_QUEUE_DESC_ADDR_31_0		GENMASK(31, 0)
+#define HAL_TQM_MPDU_INFO0_QUEUE_DESC_ADDR_39_32	GENMASK(7, 0)
+#define HAL_TQM_MPDU_INFO0_BLOCK_TX_NOTIFY_FRAME_REMOVAL	BIT(8)
+#define HAL_TQM_MPDU_INFO0_AGED_REFERENCE_TIMESTAMP	GENMASK(27, 9)
 
-//info1
-#define HAL_TQM_MPDU_QUEUE_DESC_ADDR_39_32		GENMASK(7, 0)
-#define HAL_TQM_MPDU_BLOCK_TX_NOTIFY_FRAME_REMOVAL	BIT(8)
-#define HAL_TQM_MPDU_AGED_REFERENCE_TIMESTAMP		GENMASK(27, 9)
-#define HAL_TQM_MPDU_RESERVED_3A			GENMASK(31, 28)
+#define HAL_TQM_MPDU_INFO1_REMOVE_MPDU_CMD_TYPE	GENMASK(2, 0)
+#define HAL_TQM_MPDU_INFO1_REMOVE_COUNT		GENMASK(19, 4)
+#define HAL_TQM_MPDU_INFO1_MAX_TRANSMIT_COUNT		GENMASK(26, 20)
+#define HAL_TQM_MPDU_INFO1_RELEASE_REASON_OVERWRITE	GENMASK(28, 27)
 
-//info2
-#define HAL_TQM_MPDU_REMOVE_MPDU_CMD_TYPE		GENMASK(2, 0)
-#define HAL_TQM_MPDU_RESERVED_1A			BIT(3)
-#define HAL_TQM_MPDU_REMOVE_COUNT			GENMASK(19, 4)
-#define HAL_TQM_MPDU_MAX_TRANSMIT_COUNT			GENMASK(26, 20)
-#define HAL_TQM_MPDU_RELEASE_REASON_OVERWRITE		GENMASK(28, 27)
-#define HAL_TQM_MPDU_RESERVED_1B			GENMASK(31, 29)
+#define HAL_TQM_MPDU_INFO2_REMOVE_MPDU_SIZE		GENMASK(13, 0)
+#define HAL_TQM_MPDU_INFO2_RBM_OVERRIDE_VALID		BIT(14)
+#define HAL_TQM_MPDU_INFO2_RBM_OVERRIDE		GENMASK(18, 15)
+#define HAL_TQM_MPDU_INFO2_SMD_ROAMING_REMOVAL_CMD	BIT(19)
+#define HAL_TQM_MPDU_INFO2_DONOT_FWD_TXD_MDPUS_DURING_SMD	BIT(20)
+#define HAL_TQM_MPDU_INFO2_SMD_ROAMING_FORWARDING_RING	BIT(21)
+#define HAL_TQM_MPDU_INFO2_SMD_ROAMING_REO2PPE_SERVICE_CODE	GENMASK(30, 22)
+#define HAL_TQM_MPDU_INFO2_SMD_ROAMING_REO2PPE_PRI_VALID	BIT(31)
 
-//info3
-#define HAL_TQM_MPDU_REMOVE_MPDU_SIZE			GENMASK(13, 0)
-#define HAL_TQM_MPDU_RBM_OVERRIDE_VALID			BIT(14)
-#define HAL_TQM_MPDU_RBM_OVERRIDE			GENMASK(18, 15)
-#define HAL_TQM_MPDU_SMD_ROAMING_REMOVAL_CMD		BIT(19)
-#define HAL_TQM_MPDU_DONOT_FWD_TXD_MDPUS_DURING_SMD	BIT(20)
-#define HAL_TQM_MPDU_SMD_ROAMING_FORWARDING_RING	BIT(21)
-#define HAL_TQM_MPDU_SMD_ROAMING_REO2PPE_SERVICE_CODE	GENMASK(30, 22)
-#define HAL_TQM_MPDU_SMD_ROAMING_REO2PPE_PRI_VALID	BIT(31)
-
-//info4
-#define HAL_TQM_MPDU_SMD_ROAMING_REMOVE_MPDU_COUNT	GENMASK(15, 0)
-#define HAL_TQM_MPDU_SMD_ROAMING_REO2PPE_DST_INFO	GENMASK(31, 16)
-
-//info5
-#define HAL_TQM_MPDU_SMD_ROAMING_REO2PPE_SRC_INFO	GENMASK(15, 0)
-#define HAL_TQM_MPDU_SMD_ROAMING_REO2PPE_POOL_ID	GENMASK(21, 16)
-#define HAL_TQM_MPDU_SMD_ROAMING_REO2PPE_INT_PRI	GENMASK(25, 22)
-#define HAL_TQM_MPDU_RESERVED_7A			GENMASK(31, 26)
+#define HAL_TQM_MPDU_INFO3_SMD_ROAMING_REO2PPE_POOL_ID	GENMASK(5, 0)
+#define HAL_TQM_MPDU_INFO3_SMD_ROAMING_REO2PPE_INT_PRI	GENMASK(9, 6)
 
 struct hal_tqm_remove_mpdu {
 	struct hal_uniform_tqm_cmd_hdr cmd_hdr;
+	__le32 mpdu_queue_desc_addr_31_0;
 	__le32 info0;
 	__le32 info1;
 	__le32 info2;
-	__le32 info3;
-	__le32 info4;
-	__le32 info5;
+	__le16 smd_roaming_remove_mpdu_count;
+	__le16 smd_roaming_reo2ppe_dst_info;
+	__le16 smd_roaming_reo2ppe_src_info;
+	__le16 info3;
 } __packed;
 
-#define HAL_TQM_SYNC_SW_METADATA_31_0			GENMASK(31, 0)
-#define HAL_TQM_SYNC_SW_METADATA_63_32			GENMASK(31, 0)
-#define HAL_TQM_SYNC_SW_METADATA_95_64			GENMASK(31, 0)
-#define HAL_TQM_SYNC_SW_METADATA_127_96			GENMASK(31, 0)
-#define HAL_TQM_SYNC_SW_METADATA_159_128		GENMASK(31, 0)
-#define HAL_TQM_SYNC_SW_METADATA_191_160		GENMASK(31, 0)
-#define HAL_TQM_SYNC_SW_METADATA_223_192		GENMASK(31, 0)
-#define HAL_TQM_SYNC_SW_METADATA_255_224		GENMASK(31, 0)
-#define HAL_TQM_SYNC_SW_METADATA_287_256		GENMASK(31, 0)
-#define HAL_TQM_SYNC_SW_METADATA_319_288		GENMASK(31, 0)
-#define HAL_TQM_SYNC_SW_METADATA_351_320		GENMASK(31, 0)
-#define HAL_TQM_SYNC_SW_METADATA_383_352		GENMASK(31, 0)
-#define HAL_TQM_SYNC_SW_METADATA_415_384		GENMASK(31, 0)
-#define HAL_TQM_SYNC_SW_METADATA_447_416		GENMASK(31, 0)
-#define HAL_TQM_SYNC_SW_METADATA_479_448		GENMASK(31, 0)
-#define HAL_TQM_SYNC_SW_METADATA_511_480		GENMASK(31, 0)
-#define HAL_TQM_SYNC_SW_METADATA_543_512		GENMASK(31, 0)
-#define HAL_TQM_SYNC_SW_METADATA_575_544		GENMASK(31, 0)
-#define HAL_TQM_SYNC_SW_METADATA_607_576		GENMASK(31, 0)
-#define HAL_TQM_SYNC_SW_METADATA_639_608		GENMASK(31, 0)
-//info20
-#define HAL_TQM_SYNC_SW_METADATA_667_640		GENMASK(27, 0)
-#define HAL_TQM_RESERVED_23A				GENMASK(31, 28)
-//info21
-#define HAL_TQM_TLV64_PADDING				GENMASK(31, 0)
+#define HAL_TQM_SYNC_INFO0_SW_METADATA_667_640		GENMASK(27, 0)
+#define HAL_TQM_SYNC_INFO0_TLV64_PADDING		GENMASK(31, 0)
 
 struct hal_tqm_sync_cmd {
 	struct hal_uniform_tqm_cmd_hdr cmd_hdr;
+	__le32 sync_cmd_sw_metadata_31_0;
+	__le32 sync_cmd_sw_metadata_63_32;
+	__le32 sync_cmd_sw_metadata_95_64;
+	__le32 sync_cmd_sw_metadata_127_96;
+	__le32 sync_cmd_sw_metadata_159_128;
+	__le32 sync_cmd_sw_metadata_191_160;
+	__le32 sync_cmd_sw_metadata_223_192;
+	__le32 sync_cmd_sw_metadata_255_224;
+	__le32 sync_cmd_sw_metadata_287_256;
+	__le32 sync_cmd_sw_metadata_319_288;
+	__le32 sync_cmd_sw_metadata_351_320;
+	__le32 sync_cmd_sw_metadata_383_352;
+	__le32 sync_cmd_sw_metadata_415_384;
+	__le32 sync_cmd_sw_metadata_447_416;
+	__le32 sync_cmd_sw_metadata_479_448;
+	__le32 sync_cmd_sw_metadata_511_480;
+	__le32 sync_cmd_sw_metadata_543_512;
+	__le32 sync_cmd_sw_metadata_575_544;
+	__le32 sync_cmd_sw_metadata_607_576;
+	__le32 sync_cmd_sw_metadata_639_608;
 	__le32 info0;
-	__le32 info1;
-	__le32 info2;
-	__le32 info3;
-	__le32 info4;
-	__le32 info5;
-	__le32 info6;
-	__le32 info7;
-	__le32 info8;
-	__le32 info9;
-	__le32 info10;
-	__le32 info11;
-	__le32 info12;
-	__le32 info13;
-	__le32 info14;
-	__le32 info15;
-	__le32 info16;
-	__le32 info17;
-	__le32 info18;
-	__le32 info19;
-	__le32 info20;
-	__le32 info21;
+	__le32 rsvd0;
 } __packed;
 
-//info0
-#define HAL_TQM_STATUS_NUMBER				GENMASK(31, 0)
-//info1
-#define HAL_TQM_STATUS_TIMESTAMP			GENMASK(31, 0)
-//info2
-#define HAL_TQM_STATUS_CMD_EXECUTION_TIME		GENMASK(6, 0)
-#define HAL_TQM_STATUS_CMD_EXECUTION_TIME_UNIT		BIT(7)
-#define HAL_TQM_STATUS_CMD_EXECUTION_STATUS		GENMASK(9, 8)
-#define HAL_TQM_STATUS_CMD_EXECUTION_WAS_PAUSED		BIT(10)
-#define HAL_TQM_STATUS_CMD_EXECUTION_CODE		GENMASK(18, 11)
-#define HAL_TQM_STATUS_SESSION_ID			GENMASK(26, 19)
-#define HAL_TQM_STATUS_RING				GENMASK(28, 27)
-#define HAL_TQM_STATUS_RESERVED_2A			GENMASK(31, 29)
+#define HAL_TQM_STATUS_INFO0_CMD_EXECUTION_TIME		GENMASK(6, 0)
+#define HAL_TQM_STATUS_INFO0_CMD_EXECUTION_TIME_UNIT	BIT(7)
+#define HAL_TQM_STATUS_INFO0_CMD_EXECUTION_STATUS	GENMASK(9, 8)
+#define HAL_TQM_STATUS_INFO0_CMD_EXECUTION_WAS_PAUSED	BIT(10)
+#define HAL_TQM_STATUS_INFO0_CMD_EXECUTION_CODE		GENMASK(18, 11)
+#define HAL_TQM_STATUS_INFO0_SESSION_ID			GENMASK(26, 19)
+#define HAL_TQM_STATUS_INFO0_RING			GENMASK(28, 27)
 
 struct hal_uniform_tqm_status_hdr {
+	__le32 tqm_status_number;
+	__le32 timestamp;
 	__le32 info0;
-	__le32 info1;
-	__le32 info2;
-};
+} __packed;
 
-//info0
-#define HAL_TQM_MSDU_REMOVE_MSDU_CMD_TYPE		GENMASK(3, 0)
-#define HAL_TQM_MSDU_REMOVED_MSDU_COUNT			GENMASK(19, 4)
-#define HAL_TQM_MSDU_HEAD_TX_NOTIFY_FRAME_TYPE		GENMASK(22, 20)
-#define HAL_TQM_MSDU_STATUS_RESERVED_2A			GENMASK(31, 23)
-//info1
-#define HAL_TQM_MSDU_REMOVED_MSDU_BYTE_COUNT		GENMASK(31, 0)
-//info2
-#define HAL_TQM_MSDU_REMAINING_FLOW_BYTE_COUNT		GENMASK(31, 0)
-//info3
-#define HAL_TQM_MSDU_REMAINING_MSDU_COUNT		GENMASK(15, 0)
-#define HAL_TQM_MSDU_RESERVED_7A			GENMASK(31, 16)
-//info4
-#define HAL_TQM_MSDU_TX_FLOW_NUMBER			GENMASK(23, 0)
-#define HAL_TQM_MSDU_RESERVED_8A			GENMASK(28, 24)
-#define HAL_TQM_MSDU_FLOW_STATUS			GENMASK(30, 29)
-#define HAL_TQM_MSDU_FLOW_EMPTY_STATUS			BIT(31)
-//info5
-#define HAL_TQM_MSDU_ACTIVE_COUNT			GENMASK(31, 0)
+#define HAL_TQM_MSDU_RMSTAT_INFO0_REMOVE_MSDU_CMD_TYPE		GENMASK(3, 0)
+#define HAL_TQM_MSDU_RMSTAT_INFO0_REMOVED_MSDU_COUNT		GENMASK(19, 4)
+#define HAL_TQM_MSDU_RMSTAT_INFO0_HEAD_TX_NOTIFY_FRAME_TYPE	GENMASK(22, 20)
+#define HAL_TQM_MSDU_RMSTAT_INFO1_TX_FLOW_NUMBER		GENMASK(23, 0)
+#define HAL_TQM_MSDU_RMSTAT_INFO1_FLOW_STATUS			GENMASK(30, 29)
+#define HAL_TQM_MSDU_RMSTAT_INFO1_FLOW_EMPTY_STATUS		BIT(31)
 
 struct hal_tqm_remove_msdu_status {
 	struct hal_uniform_tqm_status_hdr status_hdr;
 	__le32 info0;
-	__le32 info1;
+	__le32 removed_msdu_byte_count;
 	struct ath12k_buffer_addr tx_notify_frame;
-	__le32 info2;
-	__le32 info3;
-	__le32 info4;
-	__le32 info5;
-	__le32 info6;
-	__le32 info7;
-	__le32 info8;
-	__le32 info9;
-	__le32 info10;
-	__le32 info11;
-	__le32 info12;
-	__le32 info13;
-	__le32 info14;
-	__le32 info15;
-	__le32 info16;
-	__le32 info17;
-	__le32 info18;
-};
+	__le32 remaining_flow_byte_count;
+	__le16 remaining_msdu_count;
+	__le16 rsvd0;
+	__le32 info1;
+	__le32 msdu_active_count;
+	__le32 rsvd1[13];
+} __packed;
 
-//info0
-#define HAL_TQM_MPDU_REMOVE_MPDU_CMD_TYPE		GENMASK(2, 0)
-#define HAL_TQM_MPDU_RESERVED_2A			BIT(3)
-#define HAL_TQM_MPDU_REMOVED_MPDU_COUNT			GENMASK(19, 4)
-#define HAL_TQM_MPDU_RESERVED_2B			GENMASK(28, 20)
-#define HAL_TQM_MPDU_HEAD_NOTIFY_FRAME_TYPE		GENMASK(31, 29)
-//info1
-#define HAL_TQM_MPDU_STATUS_RESERVED_3A			GENMASK(1, 0)
-#define HAL_TQM_MPDU_STATUS_REMOVE_MPDU_SIZE		GENMASK(15, 2)
-#define HAL_TQM_MPDU_REMOVED_MSDU_COUNT			GENMASK(31, 16)
-//info2
-#define HAL_TQM_MPDU_REMOVED_MPDU_BYTE_COUNT		GENMASK(31, 0)
-//info3
-#define HAL_TQM_MPDU_REMAINING_MPDU_QUEUE_BYTE_COUNT	GENMASK(31, 0)
-//info4
-#define HAL_TQM_MPDU_REMAINING_MPDU_COUNT		GENMASK(15, 0)
-#define HAL_TQM_MPDU_PREV_MPDU_START_SEQ_NUM		GENMASK(27, 16)
-#define HAL_TQM_MPDU_RESERVED_8A			GENMASK(31, 28)
-//info5
-#define HAL_TQM_MPDU_HEAD_NOTIFY_FRAME_METADATA		GENMASK(14, 0)
-#define HAL_TQM_MPDU_RESERVED_9A			GENMASK(19, 15)
-#define HAL_TQM_MPDU_NEW_MPDU_START_SEQ_NUM		GENMASK(31, 20)
-//info6
-#define HAL_TQM_MPDU_HEAD_LENGTH			GENMASK(13, 0)
-#define HAL_TQM_MPDU_QUEUE_EMPTY_STATUS			BIT(14)
-#define HAL_TQM_MPDU_L4S_DROPPING_CREDIT		GENMASK(30, 15)
-#define HAL_TQM_MPDU_RESERVED_10A			BIT(31)
-//info7
-#define HAL_TQM_MPDU_MSDU_ACTIVE_COUNT			GENMASK(31, 0)
-//info8
-#define HAL_TQM_MPDU_TX_MPDU_QUEUE_NUMBER		GENMASK(23, 0)
-#define HAL_TQM_MPDU_RESERVED_12A			GENMASK(31, 24)
+#define HAL_TQM_MPDU_RMSTAT_INFO0_REMOVE_MPDU_CMD_TYPE		GENMASK(2, 0)
+#define HAL_TQM_MPDU_RMSTAT_INFO0_REMOVED_MPDU_COUNT		GENMASK(19, 4)
+#define HAL_TQM_MPDU_RMSTAT_INFO0_HEAD_NOTIFY_FRAME_TYPE	GENMASK(31, 29)
+#define HAL_TQM_MPDU_RMSTAT_INFO1_REMOVE_MPDU_SIZE		GENMASK(15, 2)
+#define HAL_TQM_MPDU_RMSTAT_INFO2_PREV_MPDU_START_SEQ_NUM	GENMASK(11, 0)
+#define HAL_TQM_MPDU_RMSTAT_INFO3_HEAD_NOTIFY_FRAME_METADATA	GENMASK(14, 0)
+#define HAL_TQM_MPDU_RMSTAT_INFO3_NEW_MPDU_START_SEQ_NUM	GENMASK(31, 20)
+#define HAL_TQM_MPDU_RMSTAT_INFO4_HEAD_LENGTH			GENMASK(13, 0)
+#define HAL_TQM_MPDU_RMSTAT_INFO4_QUEUE_EMPTY_STATUS		BIT(14)
+#define HAL_TQM_MPDU_RMSTAT_INFO4_L4S_DROPPING_CREDIT		GENMASK(30, 15)
+#define HAL_TQM_MPDU_RMSTAT_INFO5_TX_MPDU_QUEUE_NUMBER		GENMASK(23, 0)
 
 struct hal_tqm_remove_mpdu_status {
 	struct hal_uniform_tqm_status_hdr status_hdr;
 	__le32 info0;
-	__le32 info1;
-	__le32 info2;
+	__le16 info1;
+	__le16 removed_msdu_count;
+	__le32 removed_mpdu_byte_count;
 	struct ath12k_buffer_addr tx_notify_frame;
+	__le32 remaining_mpdu_queue_byte_count;
+	__le16 remaining_mpdu_count;
+	__le16 info2;
 	__le32 info3;
 	__le32 info4;
+	__le32 msdu_active_count;
 	__le32 info5;
-	__le32 info6;
-	__le32 info7;
-	__le32 info8;
-	__le32 info9;
-	__le32 info10;
-	__le32 info11;
-	__le32 info12;
-	__le32 info13;
-	__le32 info14;
-	__le32 info15;
-	__le32 info16;
-	__le32 info17;
-	__le32 info18;
-};
+	__le32 rsvd0[10];
+} __packed;
 
-#define HAL_TQM_SYNC_STATUS_SW_METADATA_31_0            GENMASK(31, 0)
-#define HAL_TQM_SYNC_STATUS_SW_METADATA_63_32		GENMASK(31, 0)
-#define HAL_TQM_SYNC_STATUS_SW_METADATA_95_64		GENMASK(31, 0)
-#define HAL_TQM_SYNC_STATUS_SW_METADATA_127_96		GENMASK(31, 0)
-#define HAL_TQM_SYNC_STATUS_SW_METADATA_159_128		GENMASK(31, 0)
-#define HAL_TQM_SYNC_STATUS_SW_METADATA_191_160		GENMASK(31, 0)
-#define HAL_TQM_SYNC_STATUS_SW_METADATA_223_192		GENMASK(31, 0)
-#define HAL_TQM_SYNC_STATUS_SW_METADATA_255_224		GENMASK(31, 0)
-#define HAL_TQM_SYNC_STATUS_SW_METADATA_287_256		GENMASK(31, 0)
-#define HAL_TQM_SYNC_STATUS_SW_METADATA_319_288		GENMASK(31, 0)
-#define HAL_TQM_SYNC_STATUS_SW_METADATA_351_320		GENMASK(31, 0)
-#define HAL_TQM_SYNC_STATUS_SW_METADATA_383_352		GENMASK(31, 0)
-#define HAL_TQM_SYNC_STATUS_SW_METADATA_415_384		GENMASK(31, 0)
-#define HAL_TQM_SYNC_STATUS_SW_METADATA_447_416		GENMASK(31, 0)
-#define HAL_TQM_SYNC_STATUS_SW_METADATA_479_448		GENMASK(31, 0)
-#define HAL_TQM_SYNC_STATUS_SW_METADATA_511_480		GENMASK(31, 0)
-#define HAL_TQM_SYNC_STATUS_SW_METADATA_543_512		GENMASK(31, 0)
-#define HAL_TQM_SYNC_STATUS_SW_METADATA_575_544		GENMASK(31, 0)
-#define HAL_TQM_SYNC_STATUS_SW_METADATA_607_576		GENMASK(31, 0)
-#define HAL_TQM_SYNC_STATUS_SW_METADATA_639_608		GENMASK(31, 0)
-//info20
-#define HAL_TQM_SYNC_STATUS_SW_METADATA_667_640		GENMASK(27, 0)
-#define HAL_TQM_STATUS_LOOPING_COUNT			GENMASK(31, 28)
+#define HAL_TQM_SYNC_STATUS_INFO0_SW_METADATA_667_640		GENMASK(27, 0)
+#define HAL_TQM_SYNC_STATUS_INFO0_LOOPING_COUNT			GENMASK(31, 28)
 
 struct hal_tqm_sync_cmd_status {
 	struct hal_uniform_tqm_status_hdr status_hdr;
+	__le32 sync_cmd_sw_metadata_31_0;
+	__le32 sync_cmd_sw_metadata_63_32;
+	__le32 sync_cmd_sw_metadata_95_64;
+	__le32 sync_cmd_sw_metadata_127_96;
+	__le32 sync_cmd_sw_metadata_159_128;
+	__le32 sync_cmd_sw_metadata_191_160;
+	__le32 sync_cmd_sw_metadata_223_192;
+	__le32 sync_cmd_sw_metadata_255_224;
+	__le32 sync_cmd_sw_metadata_287_256;
+	__le32 sync_cmd_sw_metadata_319_288;
+	__le32 sync_cmd_sw_metadata_351_320;
+	__le32 sync_cmd_sw_metadata_383_352;
+	__le32 sync_cmd_sw_metadata_415_384;
+	__le32 sync_cmd_sw_metadata_447_416;
+	__le32 sync_cmd_sw_metadata_479_448;
+	__le32 sync_cmd_sw_metadata_511_480;
+	__le32 sync_cmd_sw_metadata_543_512;
+	__le32 sync_cmd_sw_metadata_575_544;
+	__le32 sync_cmd_sw_metadata_607_576;
+	__le32 sync_cmd_sw_metadata_639_608;
 	__le32 info0;
-	__le32 info1;
-	__le32 info2;
-	__le32 info3;
-	__le32 info4;
-	__le32 info5;
-	__le32 info6;
-	__le32 info7;
-	__le32 info8;
-	__le32 info9;
-	__le32 info10;
-	__le32 info11;
-	__le32 info12;
-	__le32 info13;
-	__le32 info14;
-	__le32 info15;
-	__le32 info16;
-	__le32 info17;
-	__le32 info18;
-	__le32 info19;
-	__le32 info20;
-};
+} __packed;
 
-#define HAL_TQM_GET_MPDUQ_STATS_INFO0_MPDUQ_ADDR_LO     GENMASK(31, 0)
-#define HAL_TQM_GET_MPDUQ_STATS_INFO1_MPDUQ_ADDR_HI     GENMASK(7, 0)
-#define HAL_TQM_GET_MPDUQ_STATS_INFO1_CLEAR_STATS       BIT(8)
+#define HAL_TQM_GET_MPDUQ_STATS_INFO0_MPDUQ_ADDR_HI	GENMASK(7, 0)
+#define HAL_TQM_GET_MPDUQ_STATS_INFO0_CLEAR_STATS	BIT(8)
 
 struct hal_tqm_get_mpduq_stats {
 	struct hal_uniform_tqm_cmd_hdr cmd_hdr;
-	__le32 info0;
-	__le32 info1;
-};
+	__le32 mpdu_queue_desc_addr_31_0;
+	__le16 info0;
+	__le16 rsvd0;
+} __packed;
 
-#define HAL_TQM_GET_MPDUQ_STATS_STATUS_INFO0_MPDU_COUNT		GENMASK(31, 16)
-#define HAL_TQM_GET_MPDUQ_STATS_STATUS_INFO2_START_SEQ_NUM	GENMASK(11, 0)
-#define HAL_TQM_GET_MPDUQ_STATS_STATUS_INFO2_TID		GENMASK(26, 23)
-#define HAL_TQM_GET_MPDUQ_STATS_STATUS_INFO3_PN_31_0		GENMASK(31, 0)
-#define HAL_TQM_GET_MPDUQ_STATS_STATUS_INFO4_PN_47_32		GENMASK(15, 0)
-#define HAL_TQM_GET_MPDUQ_STATS_STATUS_INFO4_SW_PEER_ID		GENMASK(31, 16)
-
-#define HAL_TQM_GET_MPDUQ_STATS_STATUS_INFO15_LAST_SEQ_NUM	GENMASK(11, 0)
-#define HAL_TQM_GET_MPDUQ_STATS_STATUS_INFO15_MAX_LSN		GENMASK(23, 12)
-#define HAL_TQM_GET_MPDUQ_STATS_STATUS_INFO15_MAX_LSN_VALID	BIT(24)
+#define HAL_TQM_GET_MPDUQ_STATS_STATUS_INFO0_START_SEQ_NUM	GENMASK(11, 0)
+#define HAL_TQM_GET_MPDUQ_STATS_STATUS_INFO0_TID		GENMASK(26, 23)
+#define HAL_TQM_GET_MPDUQ_STATS_STATUS_INFO1_LAST_SEQ_NUM	GENMASK(11, 0)
+#define HAL_TQM_GET_MPDUQ_STATS_STATUS_INFO1_MAX_LSN		GENMASK(23, 12)
+#define HAL_TQM_GET_MPDUQ_STATS_STATUS_INFO1_MAX_LSN_VALID	BIT(24)
 
 struct hal_tqm_get_mpduq_stats_cmd_status {
 	struct hal_uniform_tqm_status_hdr status_hdr;
+	__le16 rsvd0;
+	__le16 mpdu_count;
+	__le32 rsvd1;
 	__le32 info0;
+	__le32 pn_31_0;
+	__le16 pn_47_32;
+	__le16 sw_peer_id;
+	__le32 rsvd2[10];
 	__le32 info1;
-	__le32 info2;
-	__le32 info3;
-	__le32 info4;
-	__le32 info5;
-	__le32 info6;
-	__le32 info7;
-	__le32 info8;
-	__le32 info9;
-	__le32 info10;
-	__le32 info11;
-	__le32 info12;
-	__le32 info13;
-	__le32 info14;
-	__le32 info15;
-	__le32 info16;
-	__le32 info17;
-	__le32 info18;
-	__le32 info19;
-	__le32 info20;
-};
+	__le32 rsvd3[5];
+} __packed;
 
 /* Chip ID bitmap masks — shared by hal_queue.c and hal_tx.c */
 #define ATH12K_CHIP0_BITMAP_MASK                        BIT(0)
@@ -2590,47 +2428,43 @@ struct hal_tqm_get_mpduq_stats_cmd_status {
 #define ATH12K_CHIP3_BITMAP_MASK                        BIT(3)
 #define ATH12K_CHIP4_BITMAP_MASK                        BIT(4)
 
-#define HAL_TQM_UPDATE_MPDUQ_INFO0_MPDUQ_ADDR_LO		GENMASK(31, 0)
-#define HAL_TQM_UPDATE_MPDUQ_INFO1_MPDUQ_ADDR_HI		GENMASK(7, 0)
-#define HAL_TQM_UPDATE_MPDU_UPDATE_TX_QUEUE_NUMBER		BIT(8)
-#define HAL_TQM_UPDATE_MPDUQ_INFO1_SEQ_NUM_UPDATE_VALID		BIT(9)
-#define HAL_TQM_UPDATE_MPDU_UPDATE_QUEUE_VALID			BIT(10)
-#define HAL_TQM_UPDATE_MPDU_UPDATE_SW_PEER_ID			BIT(15)
-#define HAL_TQM_UPDATE_MPDU_UPDATE_TID				BIT(16)
-#define HAL_TQM_UPDATE_MPDU_UPDATE_MPDU_TYPE			BIT(18)
-#define HAL_TQM_UPDATE_MPDU_TID_VALUE				GENMASK(28, 25)
-#define HAL_TQM_UPDATE_MPDU_SW_PEER_ID_VALUE			GENMASK(31, 16)
-#define HAL_TQM_UPDATE_MPDU_QUEUE_NUMBER_VALUE			GENMASK(23, 0)
-#define HAL_TQM_UPDATE_MPDUQ_INFO2_START_SEQ_NUM		GENMASK(11, 0)
-#define HAL_TQM_UPDATE_MPDUQ_INFO2_LAST_SEQ_NUM			GENMASK(27, 16)
-#define HAL_TQM_UPDATE_MPDUQ_INFO14_MAX_LSN			GENMASK(29, 18)
-#define HAL_TQM_UPDATE_MPDUQ_INFO14_MAX_LSN_VALID		BIT(30)
-#define HAL_TQM_UPDATE_MPDUQ_INFO16_UPDATE_MAX_LSN		BIT(24)
-#define HAL_TQM_UPDATE_MPDUQ_INFO16_UPDATE_MAX_LSN_VALID	BIT(25)
+#define HAL_TQM_UPDATE_MPDUQ_INFO0_MPDUQ_ADDR_HI		GENMASK(7, 0)
+#define HAL_TQM_UPDATE_MPDUQ_INFO0_UPDATE_TX_QUEUE_NUMBER	BIT(8)
+#define HAL_TQM_UPDATE_MPDUQ_INFO0_SEQ_NUM_UPDATE_VALID		BIT(9)
+#define HAL_TQM_UPDATE_MPDUQ_INFO0_UPDATE_QUEUE_VALID		BIT(10)
+#define HAL_TQM_UPDATE_MPDUQ_INFO0_UPDATE_SW_PEER_ID		BIT(15)
+#define HAL_TQM_UPDATE_MPDUQ_INFO0_UPDATE_TID			BIT(16)
+#define HAL_TQM_UPDATE_MPDUQ_INFO0_UPDATE_MPDU_TYPE		BIT(18)
+
+#define HAL_TQM_UPDATE_MPDUQ_INFO1_START_SEQ_NUM		GENMASK(11, 0)
+#define HAL_TQM_UPDATE_MPDUQ_INFO1_LAST_SEQ_NUM			GENMASK(27, 16)
+
+#define HAL_TQM_UPDATE_MPDUQ_INFO2_TID_VALUE			GENMASK(12, 9)
+
+#define HAL_TQM_UPDATE_MPDUQ_INFO3_MAX_LSN			GENMASK(13, 2)
+#define HAL_TQM_UPDATE_MPDUQ_INFO3_MAX_LSN_VALID		BIT(14)
+
+#define HAL_TQM_UPDATE_MPDUQ_INFO4_QUEUE_NUMBER_VALUE		GENMASK(23, 0)
+#define HAL_TQM_UPDATE_MPDUQ_INFO4_UPDATE_MAX_LSN		BIT(24)
+#define HAL_TQM_UPDATE_MPDUQ_INFO4_UPDATE_MAX_LSN_VALID		BIT(25)
 
 struct hal_tqm_update_mpduq {
 	struct hal_uniform_tqm_cmd_hdr cmd_hdr;
+	__le32 mpdu_queue_desc_addr_31_0;
 	__le32 info0;
 	__le32 info1;
-	__le32 info2;
-	__le32 info3;
+	__le32 rsvd0;
+	__le16 rsvd1;
+	__le16 info2;
+	__le16 rsvd2;
+	__le16 sw_peer_id;
+	__le32 rsvd3[8];
+	__le16 rsvd4;
+	__le16 info3;
+	__le32 rsvd5;
 	__le32 info4;
-	__le32 info5;
-	__le32 info6;
-	__le32 info7;
-	__le32 info8;
-	__le32 info9;
-	__le32 info10;
-	__le32 info11;
-	__le32 info12;
-	__le32 info13;
-	__le32 info14;
-	__le32 info15;
-	__le32 info16;
-	__le32 info17;
-	__le32 info18;
-	__le32 info19;
-};
+	__le32 rsvd6[3];
+} __packed;
 
 #define HAL_TQM_UPDATE_MPDUQ_CMD_STATUS_INFO0_UPDATE_REQ_MET	BIT(0)
 #define HAL_TQM_UPDATE_MPDUQ_CMD_STATUS_INFO0_TX_MPDU_QUEUE_NUM	GENMASK(31, 8)
@@ -2639,31 +2473,16 @@ struct hal_tqm_update_mpduq {
 #define HAL_TQM_UPDATE_MPDUQ_CMD_STATUS_INFO1_TID			GENMASK(19, 16)
 #define HAL_TQM_UPDATE_MPDUQ_CMD_STATUS_INFO1_ALLOC_SEQ_NUM		GENMASK(31, 20)
 /* info2 carries lower 32 bits of allocated PN; info3[15:0] carries upper 16 bits */
-#define HAL_TQM_UPDATE_MPDUQ_CMD_STATUS_INFO3_ALLOC_PN_UPPER		GENMASK(15, 0)
+
 struct hal_tqm_update_mpduq_cmd_status {
 	struct hal_uniform_tqm_status_hdr status_hdr;
 	__le32 info0;
 	__le32 info1;
-	__le32 info2;
-	__le32 info3;
-	__le32 info4;
-	__le32 info5;
-	__le32 info6;
-	__le32 info7;
-	__le32 info8;
-	__le32 info9;
-	__le32 info10;
-	__le32 info11;
-	__le32 info12;
-	__le32 info13;
-	__le32 info14;
-	__le32 info15;
-	__le32 info16;
-	__le32 info17;
-	__le32 info18;
-	__le32 info19;
-	__le32 info20;
-};
+	__le32 allocated_pn_31_0;
+	__le16 allocated_pn_47_32;
+	__le16 rsvd0;
+	__le32 rsvd1[17];
+} __packed;
 
 struct hal_tqm_update_tx_mpdu_queue_head_status {
 	struct hal_uniform_tqm_status_hdr status_hdr;
@@ -2839,274 +2658,155 @@ struct hal_tqm_status {
 	};
 };
 
-// info0
-#define HAL_TQM_FLOW_QUEUE_ADDR_31_0				GENMASK(31, 0)
+#define HAL_TQM_FLOW_INFO0_QUEUE_ADDR_39_32			GENMASK(7, 0)
+#define HAL_TQM_FLOW_INFO0_UPDATE_TX_FLOW_NUMBER		BIT(8)
+#define HAL_TQM_FLOW_INFO0_UPDATE_FLOW_VALID			BIT(9)
+#define HAL_TQM_FLOW_INFO0_UPDATE_EMPTY_TO_NOT_EMPTY_NOTIFICATION	BIT(10)
+#define HAL_TQM_FLOW_INFO0_UPDATE_NOT_EMPTY_TO_EMPTY_NOTIFICATION	BIT(11)
+#define HAL_TQM_FLOW_INFO0_UPDATE_THRESHOLD_BASED_NOTIFICATION	BIT(12)
+#define HAL_TQM_FLOW_INFO0_UPDATE_THRESHOLD_BASED_NOTIFICATION_2	BIT(13)
+#define HAL_TQM_FLOW_INFO0_UPDATE_SW_NOTIFICATION_THRESHOLD		BIT(14)
+#define HAL_TQM_FLOW_INFO0_UPDATE_SW_NOTIFICATION_THRESHOLD_2	BIT(15)
+#define HAL_TQM_FLOW_INFO0_UPDATE_SW_PEER_ID			BIT(16)
+#define HAL_TQM_FLOW_INFO0_UPDATE_DROP_RULE			BIT(17)
+#define HAL_TQM_FLOW_INFO0_UPDATE_GEN_SLOW_DROP_NOTIFICATION	BIT(18)
+#define HAL_TQM_FLOW_INFO0_UPDATE_SLOW_DROP_NOTIFICATION_DONE	BIT(19)
+#define HAL_TQM_FLOW_INFO0_UPDATE_GEN_MEDIUM_DROP_NOTIFICATION	BIT(20)
+#define HAL_TQM_FLOW_INFO0_UPDATE_MEDIUM_DROP_NOTIFICATION_DONE	BIT(21)
+#define HAL_TQM_FLOW_INFO0_UPDATE_GEN_HARD_DROP_NOTIFICATION	BIT(22)
+#define HAL_TQM_FLOW_INFO0_UPDATE_HARD_DROP_NOTIFICATION_DONE	BIT(23)
+#define HAL_TQM_FLOW_INFO0_UPDATE_SLOW_DROP_THRESHOLD		BIT(24)
+#define HAL_TQM_FLOW_INFO0_UPDATE_MEDIUM_DROP_THRESHOLD		BIT(25)
+#define HAL_TQM_FLOW_INFO0_UPDATE_HARD_DROP_THRESHOLD		BIT(26)
+#define HAL_TQM_FLOW_INFO0_UPDATE_TID				BIT(27)
+#define HAL_TQM_FLOW_INFO0_UPDATE_LINK_DESC_COUNTER		BIT(28)
+#define HAL_TQM_FLOW_INFO0_UPDATE_CLEAR_STAT_COUNTER		BIT(29)
+#define HAL_TQM_FLOW_INFO0_UPDATE_FLUSH_FROM_CACHE		BIT(30)
+#define HAL_TQM_FLOW_INFO0_UPDATE_INVALIDATED_BY_TQM_CMD	BIT(31)
 
-// info1
-#define HAL_TQM_FLOW_QUEUE_ADDR_39_32				GENMASK(7, 0)
-#define HAL_TQM_FLOW_UPDATE_TX_FLOW_NUMBER			BIT(8)
-#define HAL_TQM_FLOW_UPDATE_FLOW_VALID				BIT(9)
-#define HAL_TQM_FLOW_UPDATE_EMPTY_TO_NOT_EMPTY_NOTIFICATION	BIT(10)
-#define HAL_TQM_FLOW_UPDATE_NOT_EMPTY_TO_EMPTY_NOTIFICATION	BIT(11)
-#define HAL_TQM_FLOW_UPDATE_THRESHOLD_BASED_NOTIFICATION	BIT(12)
-#define HAL_TQM_FLOW_UPDATE_THRESHOLD_BASED_NOTIFICATION_2	BIT(13)
-#define HAL_TQM_FLOW_UPDATE_SW_NOTIFICATION_THRESHOLD		BIT(14)
-#define HAL_TQM_FLOW_UPDATE_SW_NOTIFICATION_THRESHOLD_2		BIT(15)
-#define HAL_TQM_FLOW_UPDATE_SW_PEER_ID				BIT(16)
-#define HAL_TQM_FLOW_UPDATE_DROP_RULE				BIT(17)
-#define HAL_TQM_FLOW_UPDATE_GEN_SLOW_DROP_NOTIFICATION		BIT(18)
-#define HAL_TQM_FLOW_UPDATE_SLOW_DROP_NOTIFICATION_DONE		BIT(19)
-#define HAL_TQM_FLOW_UPDATE_GEN_MEDIUM_DROP_NOTIFICATION	BIT(20)
-#define HAL_TQM_FLOW_UPDATE_MEDIUM_DROP_NOTIFICATION_DONE	BIT(21)
-#define HAL_TQM_FLOW_UPDATE_GEN_HARD_DROP_NOTIFICATION		BIT(22)
-#define HAL_TQM_FLOW_UPDATE_HARD_DROP_NOTIFICATION_DONE		BIT(23)
-#define HAL_TQM_FLOW_UPDATE_SLOW_DROP_THRESHOLD			BIT(24)
-#define HAL_TQM_FLOW_UPDATE_MEDIUM_DROP_THRESHOLD		BIT(25)
-#define HAL_TQM_FLOW_UPDATE_HARD_DROP_THRESHOLD			BIT(26)
-#define HAL_TQM_FLOW_UPDATE_TID					BIT(27)
-#define HAL_TQM_FLOW_UPDATE_LINK_DESC_COUNTER			BIT(28)
-#define HAL_TQM_FLOW_UPDATE_CLEAR_STAT_COUNTER			BIT(29)
-#define HAL_TQM_FLOW_UPDATE_FLUSH_FROM_CACHE			BIT(30)
-#define HAL_TQM_FLOW_UPDATE_INVALIDATED_BY_TQM_CMD		BIT(31)
+#define HAL_TQM_FLOW_INFO1_UPDATE_MLO_VALID			BIT(0)
+#define HAL_TQM_FLOW_INFO1_UPDATE_GREEN_MSDU_DROP_THRESHOLD	BIT(1)
+#define HAL_TQM_FLOW_INFO1_UPDATE_YELLOW_MSDU_DROP_THRESHOLD	BIT(2)
+#define HAL_TQM_FLOW_INFO1_UPDATE_RED_MSDU_DROP_THRESHOLD	BIT(3)
+#define HAL_TQM_FLOW_INFO1_UPDATE_GEN_GREEN_MSDU_DROP_NOTIFICATION	BIT(4)
+#define HAL_TQM_FLOW_INFO1_UPDATE_GEN_YELLOW_MSDU_DROP_NOTIFICATION	BIT(5)
+#define HAL_TQM_FLOW_INFO1_UPDATE_GEN_RED_MSDU_DROP_NOTIFICATION	BIT(6)
+#define HAL_TQM_FLOW_INFO1_UPDATE_GREEN_MSDU_DROP_NOTIFICATION_DONE	BIT(7)
+#define HAL_TQM_FLOW_INFO1_UPDATE_YELLOW_MSDU_DROP_NOTIFICATION_DONE	BIT(8)
+#define HAL_TQM_FLOW_INFO1_UPDATE_RED_MSDU_DROP_NOTIFICATION_DONE	BIT(9)
+#define HAL_TQM_FLOW_INFO1_UPDATE_STATUS_REQUIRED_FOR_CHIP0	BIT(10)
+#define HAL_TQM_FLOW_INFO1_UPDATE_STATUS_REQUIRED_FOR_CHIP1	BIT(11)
+#define HAL_TQM_FLOW_INFO1_UPDATE_STATUS_REQUIRED_FOR_CHIP2	BIT(12)
+#define HAL_TQM_FLOW_INFO1_UPDATE_STATUS_REQUIRED_FOR_CHIP3	BIT(13)
+#define HAL_TQM_FLOW_INFO1_UPDATE_STATUS_REQUIRED_FOR_CHIP4	BIT(14)
+#define HAL_TQM_FLOW_INFO1_UPDATE_SMD_ROAMING_IN_PROGRESS	BIT(15)
+#define HAL_TQM_FLOW_INFO1_VALID				BIT(16)
+#define HAL_TQM_FLOW_INFO1_EMPTY_TO_NOT_EMPTY_NOTIFICATION	BIT(17)
+#define HAL_TQM_FLOW_INFO1_NOT_EMPTY_TO_EMPTY_NOTIFICATION	BIT(18)
+#define HAL_TQM_FLOW_INFO1_THRESHOLD_BASED_NOTIFICATION	BIT(19)
+#define HAL_TQM_FLOW_INFO1_THRESHOLD_BASED_NOTIFICATION_2	BIT(20)
+#define HAL_TQM_FLOW_INFO1_DROP_RULE				BIT(21)
+#define HAL_TQM_FLOW_INFO1_GEN_SLOW_DROP_NOTIFICATION		BIT(22)
+#define HAL_TQM_FLOW_INFO1_SLOW_DROP_NOTIFICATION_DONE		BIT(23)
+#define HAL_TQM_FLOW_INFO1_GEN_MEDIUM_DROP_NOTIFICATION	BIT(24)
+#define HAL_TQM_FLOW_INFO1_MEDIUM_DROP_NOTIFICATION_DONE	BIT(25)
+#define HAL_TQM_FLOW_INFO1_GEN_HARD_DROP_NOTIFICATION		BIT(26)
+#define HAL_TQM_FLOW_INFO1_HARD_DROP_NOTIFICATION_DONE		BIT(27)
+#define HAL_TQM_FLOW_INFO1_TID					GENMASK(31, 28)
 
-// info2
-#define HAL_TQM_FLOW_UPDATE_MLO_VALID				BIT(0)
-#define HAL_TQM_FLOW_UPDATE_GREEN_MSDU_DROP_THRESHOLD		BIT(1)
-#define HAL_TQM_FLOW_UPDATE_YELLOW_MSDU_DROP_THRESHOLD		BIT(2)
-#define HAL_TQM_FLOW_UPDATE_RED_MSDU_DROP_THRESHOLD		BIT(3)
-#define HAL_TQM_FLOW_UPDATE_GEN_GREEN_MSDU_DROP_NOTIFICATION	BIT(4)
-#define HAL_TQM_FLOW_UPDATE_GEN_YELLOW_MSDU_DROP_NOTIFICATION	BIT(5)
-#define HAL_TQM_FLOW_UPDATE_GEN_RED_MSDU_DROP_NOTIFICATION	BIT(6)
-#define HAL_TQM_FLOW_UPDATE_GREEN_MSDU_DROP_NOTIFICATION_DONE	BIT(7)
-#define HAL_TQM_FLOW_UPDATE_YELLOW_MSDU_DROP_NOTIFICATION_DONE	BIT(8)
-#define HAL_TQM_FLOW_UPDATE_RED_MSDU_DROP_NOTIFICATION_DONE	BIT(9)
-#define HAL_TQM_FLOW_UPDATE_STATUS_REQUIRED_FOR_CHIP0		BIT(10)
-#define HAL_TQM_FLOW_UPDATE_STATUS_REQUIRED_FOR_CHIP1		BIT(11)
-#define HAL_TQM_FLOW_UPDATE_STATUS_REQUIRED_FOR_CHIP2		BIT(12)
-#define HAL_TQM_FLOW_UPDATE_STATUS_REQUIRED_FOR_CHIP3		BIT(13)
-#define HAL_TQM_FLOW_UPDATE_STATUS_REQUIRED_FOR_CHIP4		BIT(14)
-#define HAL_TQM_FLOW_UPDATE_SMD_ROAMING_IN_PROGRESS		BIT(15)
-#define HAL_TQM_FLOW_VALID					BIT(16)
-#define HAL_TQM_FLOW_EMPTY_TO_NOT_EMPTY_NOTIFICATION		BIT(17)
-#define HAL_TQM_FLOW_NOT_EMPTY_TO_EMPTY_NOTIFICATION		BIT(18)
-#define HAL_TQM_FLOW_THRESHOLD_BASED_NOTIFICATION		BIT(19)
-#define HAL_TQM_FLOW_THRESHOLD_BASED_NOTIFICATION_2		BIT(20)
-#define HAL_TQM_FLOW_DROP_RULE					BIT(21)
-#define HAL_TQM_FLOW_GEN_SLOW_DROP_NOTIFICATION			BIT(22)
-#define HAL_TQM_FLOW_SLOW_DROP_NOTIFICATION_DONE		BIT(23)
-#define HAL_TQM_FLOW_GEN_MEDIUM_DROP_NOTIFICATION		BIT(24)
-#define HAL_TQM_FLOW_MEDIUM_DROP_NOTIFICATION_DONE		BIT(25)
-#define HAL_TQM_FLOW_GEN_HARD_DROP_NOTIFICATION			BIT(26)
-#define HAL_TQM_FLOW_HARD_DROP_NOTIFICATION_DONE		BIT(27)
-#define HAL_TQM_FLOW_TID					GENMASK(31, 28)
+#define HAL_TQM_FLOW_INFO2_LINK_DESC_COUNTER			GENMASK(1, 0)
+#define HAL_TQM_FLOW_INFO2_INVALIDATED_BY_TQM_CMD		BIT(2)
+#define HAL_TQM_FLOW_INFO2_MLO_VALID				BIT(3)
+#define HAL_TQM_FLOW_INFO2_SERVICE_CATEGORY_VALID		BIT(4)
+#define HAL_TQM_FLOW_INFO2_QUEUE_SAM_ID			GENMASK(17, 5)
+#define HAL_TQM_FLOW_INFO2_PEER_MLO_STATS_ID			GENMASK(28, 18)
 
-// info3
-#define HAL_TQM_FLOW_SLOW_DROP_THRESHOLD			GENMASK(15, 0)
-#define HAL_TQM_FLOW_MEDIUM_DROP_THRESHOLD			GENMASK(31, 16)
+#define HAL_TQM_FLOW_INFO3_UPDATE_TX_MSDU_FLOW_NUMBER		GENMASK(23, 0)
+#define HAL_TQM_FLOW_INFO3_UPDATE_MSDU_QUEUE_SAM_ID		BIT(24)
+#define HAL_TQM_FLOW_INFO3_UPDATE_SERVICE_CATEGORY_VALID	BIT(25)
+#define HAL_TQM_FLOW_INFO3_UPDATE_PEER_MLO_STATS_ID		BIT(26)
+#define HAL_TQM_FLOW_INFO3_SMD_ROAMING_IN_PROGRESS		BIT(27)
 
-// info4
-#define HAL_TQM_FLOW_HARD_DROP_THRESHOLD			GENMASK(15, 0)
-#define HAL_TQM_FLOW_SW_NOTIFICATION_THRESHOLD			GENMASK(31, 16)
+#define HAL_TQM_FLOW_INFO4_GEN_GREEN_MSDU_DROP_NOTIFICATION	BIT(0)
+#define HAL_TQM_FLOW_INFO4_GEN_YELLOW_MSDU_DROP_NOTIFICATION	BIT(1)
+#define HAL_TQM_FLOW_INFO4_GEN_RED_MSDU_DROP_NOTIFICATION	BIT(2)
+#define HAL_TQM_FLOW_INFO4_GREEN_MSDU_DROP_NOTIFICATION_DONE	BIT(3)
+#define HAL_TQM_FLOW_INFO4_YELLOW_MSDU_DROP_NOTIFICATION_DONE	BIT(4)
+#define HAL_TQM_FLOW_INFO4_RED_MSDU_DROP_NOTIFICATION_DONE	BIT(5)
+#define HAL_TQM_FLOW_INFO4_STATUS_REQUIRED_FOR_CHIP0		BIT(6)
+#define HAL_TQM_FLOW_INFO4_STATUS_REQUIRED_FOR_CHIP1		BIT(7)
+#define HAL_TQM_FLOW_INFO4_STATUS_REQUIRED_FOR_CHIP2		BIT(8)
+#define HAL_TQM_FLOW_INFO4_STATUS_REQUIRED_FOR_CHIP3		BIT(9)
+#define HAL_TQM_FLOW_INFO4_STATUS_REQUIRED_FOR_CHIP4		BIT(10)
 
-// info5
-#define HAL_TQM_FLOW_SW_NOTIFICATION_THRESHOLD_2		GENMASK(15, 0)
-#define HAL_TQM_FLOW_SW_PEER_ID					GENMASK(31, 16)
+#define HAL_TQM_FLOW_INFO5_UPDATE_SERVICE_CATEGORY		BIT(0)
+#define HAL_TQM_FLOW_INFO5_UPDATE_QDEPTH_INDEX_VALID		BIT(1)
+#define HAL_TQM_FLOW_INFO5_UPDATE_QDEPTH_INDEX			BIT(2)
+#define HAL_TQM_FLOW_INFO5_SERVICE_CATEGORY			GENMASK(4, 3)
+#define HAL_TQM_FLOW_INFO5_QDEPTH_INDEX_VALID			BIT(5)
+#define HAL_TQM_FLOW_INFO5_QDEPTH_INDEX			GENMASK(17, 6)
+#define HAL_TQM_FLOW_INFO5_UPDATE_PER_PEER_FLOW_NUMBER		BIT(18)
+#define HAL_TQM_FLOW_INFO5_PER_PEER_FLOW_NUMBER		GENMASK(25, 19)
+#define HAL_TQM_FLOW_INFO5_UPDATE_L4_MARKING_PROB_NUMERATOR	BIT(26)
+#define HAL_TQM_FLOW_INFO5_UPDATE_L4_DROPPING_CREDIT		BIT(27)
+#define HAL_TQM_FLOW_INFO5_UPDATE_L4_DROPPING_PROB_NUMERATOR	BIT(28)
+#define HAL_TQM_FLOW_INFO5_UPDATE_L4_DROPPING_PROB_DENOMINATOR	BIT(29)
 
-// info6
-#define HAL_TQM_FLOW_LINK_DESC_COUNTER				GENMASK(1, 0)
-#define HAL_TQM_FLOW_INVALIDATED_BY_TQM_CMD			BIT(2)
-#define HAL_TQM_FLOW_MLO_VALID					BIT(3)
-#define HAL_TQM_FLOW_SERVICE_CATEGORY_VALID			BIT(4)
-#define HAL_TQM_FLOW_QUEUE_SAM_ID				GENMASK(17, 5)
-#define HAL_TQM_FLOW_PEER_MLO_STATS_ID				GENMASK(28, 18)
-#define HAL_TQM_FLOW_RESERVED_7A				GENMASK(31, 29)
-
-// info7
-#define HAL_TQM_FLOW_UPDATE_TX_MSDU_FLOW_NUMBER			GENMASK(23, 0)
-#define HAL_TQM_FLOW_UPDATE_MSDU_QUEUE_SAM_ID			BIT(24)
-#define HAL_TQM_FLOW_UPDATE_SERVICE_CATEGORY_VALID		BIT(25)
-#define HAL_TQM_FLOW_UPDATE_PEER_MLO_STATS_ID			BIT(26)
-#define HAL_TQM_FLOW_SMD_ROAMING_IN_PROGRESS			BIT(27)
-#define HAL_TQM_FLOW_RESERVED_8A				GENMASK(31, 28)
-
-// info8
-#define HAL_TQM_FLOW_GREEN_MSDU_DROP_THRESHOLD			GENMASK(15, 0)
-#define HAL_TQM_FLOW_YELLOW_MSDU_DROP_THRESHOLD			GENMASK(31, 16)
-
-// info9
-#define HAL_TQM_FLOW_RED_MSDU_DROP_THRESHOLD			GENMASK(15, 0)
-#define HAL_TQM_FLOW_GEN_GREEN_MSDU_DROP_NOTIFICATION		BIT(16)
-#define HAL_TQM_FLOW_GEN_YELLOW_MSDU_DROP_NOTIFICATION		BIT(17)
-#define HAL_TQM_FLOW_GEN_RED_MSDU_DROP_NOTIFICATION		BIT(18)
-#define HAL_TQM_FLOW_GREEN_MSDU_DROP_NOTIFICATION_DONE		BIT(19)
-#define HAL_TQM_FLOW_YELLOW_MSDU_DROP_NOTIFICATION_DONE		BIT(20)
-#define HAL_TQM_FLOW_RED_MSDU_DROP_NOTIFICATION_DONE		BIT(21)
-#define HAL_TQM_FLOW_STATUS_REQUIRED_FOR_CHIP0			BIT(22)
-#define HAL_TQM_FLOW_STATUS_REQUIRED_FOR_CHIP1			BIT(23)
-#define HAL_TQM_FLOW_STATUS_REQUIRED_FOR_CHIP2			BIT(24)
-#define HAL_TQM_FLOW_STATUS_REQUIRED_FOR_CHIP3			BIT(25)
-#define HAL_TQM_FLOW_STATUS_REQUIRED_FOR_CHIP4			BIT(26)
-#define HAL_TQM_FLOW_RESERVED_11A				GENMASK(31, 27)
-
-// info10
-#define HAL_TQM_FLOW_UPDATE_SERVICE_CATEGORY			BIT(0)
-#define HAL_TQM_FLOW_UPDATE_QDEPTH_INDEX_VALID			BIT(1)
-#define HAL_TQM_FLOW_UPDATE_QDEPTH_INDEX			BIT(2)
-#define HAL_TQM_FLOW_SERVICE_CATEGORY				GENMASK(4, 3)
-#define HAL_TQM_FLOW_QDEPTH_INDEX_VALID				BIT(5)
-#define HAL_TQM_FLOW_QDEPTH_INDEX				GENMASK(17, 6)
-#define HAL_TQM_FLOW_UPDATE_PER_PEER_FLOW_NUMBER		BIT(18)
-#define HAL_TQM_FLOW_PER_PEER_FLOW_NUMBER			GENMASK(25, 19)
-#define HAL_TQM_FLOW_UPDATE_L4_MARKING_PROB_NUMERATOR		BIT(26)
-#define HAL_TQM_FLOW_UPDATE_L4_DROPPING_CREDIT			BIT(27)
-#define HAL_TQM_FLOW_UPDATE_L4_DROPPING_PROB_NUMERATOR		BIT(28)
-#define HAL_TQM_FLOW_UPDATE_L4_DROPPING_PROB_DENOMINATOR	BIT(29)
-#define HAL_TQM_FLOW_RESERVED_12A				GENMASK(31, 30)
-
-// info11
-#define HAL_TQM_FLOW_L4_MARKING_PROB_NUMERATOR			GENMASK(9, 0)
-#define HAL_TQM_FLOW_RESERVED_13A				GENMASK(15, 10)
-#define HAL_TQM_FLOW_L4_DROPPING_CREDIT				GENMASK(31, 16)
-
-// info12
-#define HAL_TQM_FLOW_L4_DROPPING_PROB_NUMERATOR			GENMASK(15, 0)
-#define HAL_TQM_FLOW_L4_DROPPING_PROB_DENOMINATOR		GENMASK(31, 16)
-
-// info13
-#define HAL_TQM_FLOW_SMD_ROAMING_REO2PPE_INT_PRI		GENMASK(3, 0)
-#define HAL_TQM_FLOW_SMD_ROAMING_REO2PPE_POOL_ID		GENMASK(9, 4)
-#define HAL_TQM_FLOW_SMD_ROAMING_REO2PPE_PRI_VALID		BIT(10)
-#define HAL_TQM_FLOW_SMD_ROAMING_REO2PPE_SERVICE_CODE		GENMASK(19, 11)
-#define HAL_TQM_FLOW_PPE_CLASSIFY_READ_HINT			GENMASK(21, 20)
-#define HAL_TQM_FLOW_RESERVED_15A				GENMASK(30, 22)
-#define HAL_TQM_FLOW_UPDATE_SMD_ROAMING_REO2PPE_FIELDS		BIT(31)
+#define HAL_TQM_FLOW_INFO6_L4_MARKING_PROB_NUMERATOR		GENMASK(9, 0)
 
 struct hal_tqm_update_tx_msdu_flow {
 	struct hal_uniform_tqm_cmd_hdr cmd_hdr;
+	__le32 flow_queue_addr_31_0;
 	__le32 info0;
 	__le32 info1;
+	__le16 slow_drop_threshold;
+	__le16 medium_drop_threshold;
+	__le16 hard_drop_threshold;
+	__le16 sw_notification_threshold;
+	__le16 sw_notification_threshold_2;
+	__le16 sw_peer_id;
 	__le32 info2;
 	__le32 info3;
-	__le32 info4;
+	__le16 green_msdu_drop_threshold;
+	__le16 yellow_msdu_drop_threshold;
+	__le16 red_msdu_drop_threshold;
+	__le16 info4;
 	__le32 info5;
-	__le32 info6;
-	__le32 info7;
-	__le32 info8;
-	__le32 info9;
-	__le32 info10;
-	__le32 info11;
-	__le32 info12;
-	__le32 info13;
+	__le16 info6;
+	__le16 l4s_dropping_credit;
+	__le16 l4s_dropping_probability_numerator;
+	__le16 l4s_dropping_probability_denominator;
+	__le32 rsvd0[5];
 } __packed;
 
-// info0
-#define HAL_TQM_FLOW_UPDATE_STATUS_REQUIREMENTS_NOT_MET	BIT(0)
-#define HAL_TQM_FLOW_UPDATE_STATUS_RESERVED_2		GENMASK(7, 1)
-#define HAL_TQM_FLOW_UPDATE_STATUS_TX_FLOW_NUMBER	GENMASK(31, 8)
+#define HAL_TQM_FLOW_UPDSTAT_INFO0_REQUIREMENTS_NOT_MET	BIT(0)
+#define HAL_TQM_FLOW_UPDSTAT_INFO0_TX_FLOW_NUMBER	GENMASK(31, 8)
 
-// info1
-#define HAL_TQM_FLOW_UPDATE_STATUS_SW_PEER_ID		GENMASK(15, 0)
-#define HAL_TQM_FLOW_UPDATE_STATUS_TID			GENMASK(19, 16)
-#define HAL_TQM_FLOW_UPDATE_STATUS_RESERVED_3		GENMASK(31, 20)
+#define HAL_TQM_FLOW_UPDSTAT_INFO1_TID			GENMASK(3, 0)
 
-// info2
-#define HAL_TQM_FLOW_UPDATE_STATUS_RESERVED_4		GENMASK(31, 0)
-
-// info3
-#define HAL_TQM_FLOW_UPDATE_STATUS_RESERVED_5		GENMASK(31, 0)
-
-// info4
-#define HAL_TQM_FLOW_UPDATE_STATUS_FLOW_ADDRESS_31_0	GENMASK(31, 0)
-
-// info5
-#define HAL_TQM_FLOW_UPDATE_STATUS_FLOW_ADDRESS_39_32	GENMASK(7, 0)
-#define HAL_TQM_FLOW_UPDATE_STATUS_RESERVED_7		GENMASK(31, 8)
-
-// info6
-#define HAL_TQM_FLOW_UPDATE_STATUS_RESERVED_8		GENMASK(31, 0)
-
-// info7
-#define HAL_TQM_FLOW_UPDATE_STATUS_RESERVED_9		GENMASK(31, 0)
-
-// info8
-#define HAL_TQM_FLOW_UPDATE_STATUS_RESERVED_10A		GENMASK(31, 0)
-
-// info9
-#define HAL_TQM_FLOW_UPDATE_STATUS_RESERVED_11A		GENMASK(31, 0)
-
-// info10
-#define HAL_TQM_FLOW_UPDATE_STATUS_RESERVED_12A		GENMASK(31, 0)
-
-// info11
-#define HAL_TQM_FLOW_UPDATE_STATUS_RESERVED_13A		GENMASK(31, 0)
-
-// info12
-#define HAL_TQM_FLOW_UPDATE_STATUS_RESERVED_14A		GENMASK(31, 0)
-
-// info13
-#define HAL_TQM_FLOW_UPDATE_STATUS_RESERVED_15A		GENMASK(31, 0)
-
-// info14
-#define HAL_TQM_FLOW_UPDATE_STATUS_RESERVED_17A		GENMASK(31, 0)
-
-// info15
-#define HAL_TQM_FLOW_UPDATE_STATUS_RESERVED_18A		GENMASK(31, 0)
-
-// info16
-#define HAL_TQM_FLOW_UPDATE_STATUS_RESERVED_19A		GENMASK(31, 0)
-
-// info17
-#define HAL_TQM_FLOW_UPDATE_STATUS_RESERVED_20A		GENMASK(31, 0)
-
-// info18
-#define HAL_TQM_FLOW_UPDATE_STATUS_RESERVED_21A		GENMASK(31, 0)
-
-// info19
-#define HAL_TQM_FLOW_UPDATE_STATUS_RESERVED_22A		GENMASK(31, 0)
-
-// info20
-#define HAL_TQM_FLOW_UPDATE_STATUS_RESERVED_23A		GENMASK(27, 0)
-#define HAL_TQM_FLOW_UPDATE_STATUS_LOOPING_COUNT	GENMASK(31, 28)
+/* info2 (W23) */
+#define HAL_TQM_FLOW_UPDSTAT_INFO2_W23_LOOPING_COUNT	GENMASK(31, 28)
 
 struct hal_tqm_update_tx_msdu_flow_status {
 	struct hal_uniform_tqm_status_hdr status_hdr;
 	__le32 info0;
-	__le32 info1;
+	__le16 sw_peer_id;
+	__le16 info1;
+	__le32 rsvd0[18];
 	__le32 info2;
-	__le32 info3;
-	__le32 info4;
-	__le32 info5;
-	__le32 info6;
-	__le32 info7;
-	__le32 info8;
-	__le32 info9;
-	__le32 info10;
-	__le32 info11;
-	__le32 info12;
-	__le32 info13;
-	__le32 info14;
-	__le32 info15;
-	__le32 info16;
-	__le32 info17;
-	__le32 info18;
-	__le32 info19;
-	__le32 info20;
 } __packed;
 
 #define HAL_FSE_CMD_HDR_INFO0_SEND_TO_CHIP_N \
 	{BIT(0), BIT(1), BIT(2), BIT(3), BIT(4)}
 
-#define HAL_FSE_CMD_INFO0_SRC_PORT			GENMASK(15, 0)
-#define HAL_FSE_CMD_INFO0_DEST_PORT			GENMASK(31, 16)
+#define HAL_FSE_CMD_INFO0_L4_PROTOCOL		GENMASK(7, 0)
+#define HAL_FSE_CMD_INFO0_GSE_CTRL		GENMASK(11, 8)
+#define HAL_FSE_CMD_INFO0_INDEX_SEARCH_EN	BIT(12)
+#define HAL_FSE_CMD_INFO0_CACHE_SET_NUM		GENMASK(17, 13)
 
-#define HAL_FSE_CMD_INFO1_L4_PROTOCOL			GENMASK(7, 0)
-#define HAL_FSE_CMD_INFO1_GSE_CTRL			GENMASK(11, 8)
-#define HAL_FSE_CMD_INFO1_INDEX_SEARCH_EN		BIT(12)
-#define HAL_FSE_CMD_INFO1_CACHE_SET_NUM			GENMASK(17, 13)
-
-#define HAL_FSE_CMD_INFO2_SEARCH_INDEX			GENMASK(19, 0)
-#define HAL_FSE_CMD_INFO2_RING_ID			GENMASK(27, 20)
-#define HAL_FSE_CMD_INFO2_LOOPING_COUNT			GENMASK(31, 28)
+#define HAL_FSE_CMD_INFO1_SEARCH_INDEX		GENMASK(19, 0)
+#define HAL_FSE_CMD_INFO1_RING_ID		GENMASK(27, 20)
+#define HAL_FSE_CMD_INFO1_LOOPING_COUNT		GENMASK(31, 28)
 
 /* GSE Control operations */
 enum hal_fse_gse_ctrl {
@@ -3123,7 +2823,8 @@ enum hal_fse_gse_ctrl {
 
 /* FSE Command structures */
 struct hal_fse_cmd_hdr {
-	__le32 info0;
+	__le16 info0;
+	__le16 rsvd0;
 } __packed;
 
 
@@ -3131,70 +2832,60 @@ struct hal_fse_cmd {
 	struct hal_fse_cmd_hdr cmd;
 	__le32 src_ip[4];
 	__le32 dest_ip[4];
+	__le16 src_port;
+	__le16 dest_port;
 	__le32 info0;
-	__le32 info1;
 	__le32 meta_data[2];
 	__le32 rsvd[2];
-	__le32 info2;
+	__le32 info1;
 } __packed;
 
-// info 0
-#define HAL_SAM_CMD_NUMBER			GENMASK(15, 0)
-#define HAL_SAM_CMD_STATUS_REQUIRED_TO_SW	BIT(16)
-#define HAL_SAM_CMD_STATUS_REQUIRED_TO_LINK_FW	BIT(17)
-#define HAL_SAM_TO_SAM_COMMUNICATION		BIT(18)
-#define HAL_SAM_RESERVED_0A			GENMASK(31, 19)
+#define HAL_SAM_CMD_HDR_INFO0_STATUS_REQUIRED_TO_SW	BIT(0)
+#define HAL_SAM_CMD_HDR_INFO0_STATUS_REQUIRED_TO_LINK_FW	BIT(1)
+#define HAL_SAM_CMD_HDR_INFO0_TO_SAM_COMMUNICATION	BIT(2)
 
 struct hal_uniform_sam_cmd_hdr {
-	__le32 info0;
-};
+	__le16 sam_cmd_number;
+	__le16 info0;
+} __packed;
 
-// info 0
-#define HAL_SAM_MPDU_START_MPDU_QUEUE_SAM_ID	GENMASK(10, 0)
-#define HAL_SAM_MPDU_RESERVED_0A		GENMASK(12, 11)
-#define HAL_SAM_MPDU_END_MPDU_QUEUE_SAM_ID	GENMASK(23, 13)
-#define HAL_SAM_MPDU_RESERVED_1A		GENMASK(31, 24)
+#define HAL_SAM_MPDU_INFO0_START_MPDU_QUEUE_SAM_ID	GENMASK(10, 0)
+#define HAL_SAM_MPDU_INFO0_END_MPDU_QUEUE_SAM_ID	GENMASK(23, 13)
 
 struct hal_sam_mpdu_queue_clear_programming {
 	struct hal_uniform_sam_cmd_hdr cmd_hdr;
 	__le32 info0;
 } __packed;
 
-// info 0
-#define HAL_SAM_MSDU_START_MSDU_QUEUE_SAM_ID	GENMASK(12, 0)
-#define HAL_SAM_MSDU_END_MSDU_QUEUE_SAM_ID	GENMASK(25, 13)
-#define HAL_SAM_MSDU_RESERVED_1A		GENMASK(31, 26)
+#define HAL_SAM_MSDU_INFO0_START_MSDU_QUEUE_SAM_ID	GENMASK(12, 0)
+#define HAL_SAM_MSDU_INFO0_END_MSDU_QUEUE_SAM_ID	GENMASK(25, 13)
 
 struct hal_sam_msdu_queue_clear_programming {
 	struct hal_uniform_sam_cmd_hdr cmd_hdr;
 	__le32 info0;
 } __packed;
 
-// info 0
-#define HAL_SAM_PEER_START_PEER_ID		GENMASK(12, 0)
-#define HAL_SAM_PEER_END_PEER_ID		GENMASK(25, 13)
-#define HAL_SAM_PEER_RESERVED_1A		GENMASK(31, 26)
+#define HAL_SAM_PEER_INFO0_START_PEER_ID		GENMASK(12, 0)
+#define HAL_SAM_PEER_INFO0_END_PEER_ID			GENMASK(25, 13)
 
 struct hal_sam_peer_clear_programming {
 	struct hal_uniform_sam_cmd_hdr cmd_hdr;
 	__le32 info0;
 } __packed;
 
-// info0
-#define HAL_SAM_STATUS_CMD_NUMBER		GENMASK(15, 0)
-#define HAL_SAM_STATUS_REQUIRED_TO_SW		BIT(16)
-#define HAL_SAM_STATUS_REQUIRED_TO_LINK_FW	BIT(17)
-#define HAL_SAM_STATUS_TO_SAM_COMMUNICATION	BIT(18)
-#define HAL_SAM_STATUS_RESERVED_0A		GENMASK(31, 19)
+#define HAL_SAM_STATUS_HDR_INFO0_STATUS_REQUIRED_TO_SW		BIT(0)
+#define HAL_SAM_STATUS_HDR_INFO0_STATUS_REQUIRED_TO_LINK_FW	BIT(1)
+#define HAL_SAM_STATUS_HDR_INFO0_TO_SAM_COMMUNICATION		BIT(2)
 
 struct hal_uniform_sam_status_hdr {
-	__le32 info0;
-};
+	__le16 sam_cmd_number;
+	__le16 info0;
+} __packed;
 
 struct hal_sam_cmd_status {
 	struct hal_uniform_sam_status_hdr status_hdr;
-	__le32 reserved_1a;
-};
+	__le32 rsvd0;
+} __packed;
 
 #define MAX_TX_PEER_BAND	5
 #define MAX_RX_PEER_BAND	5
@@ -3232,16 +2923,14 @@ struct tx_peer_band_telemetry {
 #define TX_PEER_TELEMETRY_DESC_INFO0_STATS_ID		GENMASK(10, 0)
 #define TX_PEER_TELEMETRY_DESC_INFO0_NUM_WINDOWS		GENMASK(13, 11)
 #define TX_PEER_TELEMETRY_DESC_INFO0_PEER_STATS_SIGNATURE	GENMASK(31, 16)
-#define TX_PEER_TELEMETRY_DESC_LOWER_FAIL_BYTES			GENMASK(31, 0)
 #define TX_PEER_TELEMETRY_DESC_INFO1_UPPER_FAIL_BYTES		GENMASK(1, 0)
 #define TX_PEER_TELEMETRY_DESC_INFO1_UPPER_DROP_BYTES		GENMASK(31, 30)
-#define TX_PEER_TELEMETRY_DESC_LOWER_DROP_BYTES			GENMASK(31, 0)
-#define TX_PEER_TELEMETRY_DESC_NUM_FAIL_PACKETS			GENMASK(24, 0)
-#define TX_PEER_TELEMETRY_DESC_NUM_DROPPED1_PACKETS		GENMASK(24, 0)
-#define TX_PEER_TELEMETRY_DESC_NUM_DROPPED2_PACKETS		GENMASK(24, 0)
-#define TX_PEER_TELEMETRY_DESC_NUM_RETRIED_PACKETS		GENMASK(24, 0)
-#define TX_PEER_TELEMETRY_DESC_INFO2_RING_ID			GENMASK(27, 20)
-#define TX_PEER_TELEMETRY_DESC_INFO_LOOPING_COUNT		GENMASK(31, 28)
+#define TX_PEER_TELEMETRY_DESC_INFO2_NUM_FAIL_PACKETS		GENMASK(24, 0)
+#define TX_PEER_TELEMETRY_DESC_INFO3_NUM_DROPPED1_PACKETS	GENMASK(24, 0)
+#define TX_PEER_TELEMETRY_DESC_INFO4_NUM_DROPPED2_PACKETS	GENMASK(24, 0)
+#define TX_PEER_TELEMETRY_DESC_INFO5_NUM_RETRIED_PACKETS	GENMASK(24, 0)
+#define TX_PEER_TELEMETRY_DESC_INFO6_RING_ID			GENMASK(27, 20)
+#define TX_PEER_TELEMETRY_DESC_INFO6_LOOPING_COUNT		GENMASK(31, 28)
 
 /* tx_peer_telemetry_desc
  * stats_id: indicate TASC stats_id of the packet.
@@ -3267,11 +2956,11 @@ struct tx_peer_telemetry_desc {
 	__le32 lower_fail_bytes;
 	__le32 info1;
 	__le32 lower_drop_bytes;
-	__le32 num_fail_packets;
-	__le32 num_dropped1_packets;
-	__le32 num_dropped2_packets;
-	__le32 num_retried_packets;
 	__le32 info2;
+	__le32 info3;
+	__le32 info4;
+	__le32 info5;
+	__le32 info6;
 } __packed;
 
 #define RX_PEER_BAND_TELEMETRY_STATS_INFO0_LOWER_SUCCESS_BYTES		GENMASK(31, 0)
@@ -3331,10 +3020,10 @@ struct rx_peer_band_telemetry {
 #define RX_PEER_TELEMETRY_DESC_INFO0_PEER_STATS_SIGNATURE	GENMASK(31, 16)
 #define RX_PEER_TELEMETRY_DESC_INFO1_UPPER_DROP_UCAST_BYTES	GENMASK(2, 0)
 #define RX_PEER_TELEMETRY_DESC_INFO1_UPPER_DRP_GCAST_BYTES	GENMASK(31, 29)
-#define RX_PEER_TELEMETRY_DESC_NUM_UCAST_DROPPED2_PACKETS	GENMASK(25, 0)
-#define RX_PEER_TELEMETRY_DESC_NUM_GCAST_DROPPED_PACKETS	GENMASK(25, 0)
-#define RX_PEER_TELEMETRY_DESC_INFO2_RING_ID			GENMASK(27, 20)
-#define RX_PEER_TELEMETRY_DESC_INFO2_LOOPING_COUNT		GENMASK(31, 28)
+#define RX_PEER_TELEMETRY_DESC_INFO2_NUM_UCAST_DROPPED2_PACKETS	GENMASK(25, 0)
+#define RX_PEER_TELEMETRY_DESC_INFO3_NUM_GCAST_DROPPED_PACKETS	GENMASK(25, 0)
+#define RX_PEER_TELEMETRY_DESC_INFO4_RING_ID			GENMASK(27, 20)
+#define RX_PEER_TELEMETRY_DESC_INFO4_LOOPING_COUNT		GENMASK(31, 28)
 
 /* rx_peer_telemetry_desc
  * stats_id: indicate TASC stats_id of the packet.
@@ -3360,10 +3049,10 @@ struct rx_peer_telemetry_desc {
 	__le32 lower_drop_ucast_bytes;
 	__le32 info1;
 	__le32 lower_drop_gcast_bytes;
-	__le32 num_ucast_dropped2_packets;
-	__le32 num_gcast_dropped_packets;
-	__le32 reserved_info0;
 	__le32 info2;
+	__le32 info3;
+	__le32 rsvd0;
+	__le32 info4;
 } __packed;
 
 #endif /* ATH12K_HAL_DESC_H */

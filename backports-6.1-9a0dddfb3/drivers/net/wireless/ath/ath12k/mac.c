@@ -2898,13 +2898,16 @@ static int ath12k_vendor_send_tpc_eirp_event(struct ath12k_link_vif *arvif,
 	struct wireless_dev *wdev;
 	struct sk_buff *vendor_event;
 	int vendor_buffer_len = nla_total_size(sizeof(s32));
+	int link_id = -1;
 
 	wdev = ieee80211_vif_to_wdev(arvif->ahvif->vif);
 	if (!wdev)
 		return -EINVAL;
 
-	if (wdev->valid_links)
+	if (wdev->valid_links) {
+		link_id = arvif->link_id;
 		vendor_buffer_len += nla_total_size(sizeof(u8));
+	}
 
 	vendor_event =
 	cfg80211_vendor_event_alloc(arvif->ar->ah->hw->wiphy, wdev,
@@ -2917,7 +2920,7 @@ static int ath12k_vendor_send_tpc_eirp_event(struct ath12k_link_vif *arvif,
 	if (wdev->valid_links &&
 	    nla_put_u8(vendor_event,
 		       QCA_WLAN_VENDOR_ATTR_TPC_EIRP_EVENT_LINK_ID,
-		       arvif->link_id))
+		       link_id))
 		goto fail;
 
 	if (nla_put_s32(vendor_event,
@@ -2925,10 +2928,17 @@ static int ath12k_vendor_send_tpc_eirp_event(struct ath12k_link_vif *arvif,
 			tpc_eirp_dbm))
 		goto fail;
 
+	ath12k_dbg(arvif->ar->ab, ATH12K_DBG_MAC,
+		   "TPC: sending vendor NL event subcmd=%u vdev=%u link=%d eirp_dbm=%d\n",
+		   QCA_NL80211_VENDOR_SUBCMD_TPC_EIRP_EVENT,
+		   arvif->vdev_id, link_id, tpc_eirp_dbm);
 	cfg80211_vendor_event(vendor_event, GFP_KERNEL);
 	return 0;
 
 fail:
+	ath12k_warn(arvif->ar->ab,
+		    "TPC: failed to build vendor event vdev %u link %d eirp_dbm %d\n",
+		    arvif->vdev_id, link_id, tpc_eirp_dbm);
 	kfree_skb(vendor_event);
 	return -EINVAL;
 }
@@ -2937,7 +2947,7 @@ static void ath12k_update_tpc_ie_eirp_work(struct wiphy *wiphy,
 					   struct wiphy_work *work)
 {
 	struct ath12k_link_vif *arvif = container_of(work, struct ath12k_link_vif,
-						     tpc_ie_eirp_work);
+					     tpc_ie_eirp_work);
 
 	lockdep_assert_wiphy(wiphy);
 
@@ -2945,6 +2955,33 @@ static void ath12k_update_tpc_ie_eirp_work(struct wiphy *wiphy,
 		return;
 
 	ath12k_vendor_send_tpc_eirp_event(arvif, arvif->tpc_ie_eirp);
+}
+
+static void ath12k_query_tpc_ie_eirp_if_ready(struct ath12k_link_vif *arvif)
+{
+	int ret;
+	int prev_tpc_ie_eirp;
+
+	if (!arvif || !arvif->ar || !arvif->is_up || !arvif->ahvif ||
+	    !arvif->ahvif->vif ||
+	    arvif->ahvif->vif->type != NL80211_IFTYPE_AP)
+		return;
+
+	/*
+	 * Force the next FW response to be treated as an update even when
+	 * the EIRP value is unchanged (early cached event before vdev-up case).
+	 */
+	prev_tpc_ie_eirp = arvif->tpc_ie_eirp;
+	arvif->tpc_ie_eirp = INT_MIN;
+
+	ret = ath12k_wmi_send_vdev_get_tpc_ie_power(arvif->ar, arvif->vdev_id,
+					      ATH12K_TPC_MGMT_RATE_AUTO);
+	if (ret) {
+		arvif->tpc_ie_eirp = prev_tpc_ie_eirp;
+		ath12k_warn(arvif->ar->ab,
+			    "failed to query tpc eirp after vdev up for vdev %u: %d\n",
+			    arvif->vdev_id, ret);
+	}
 }
 
 static void ath12k_update_bcn_template_work(struct wiphy *wiphy,
@@ -3101,6 +3138,7 @@ static void ath12k_control_beaconing(struct ath12k_link_vif *arvif,
 		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "[radio_idx : %u] mac vdev %d up\n",
 			   ar->radio_idx, arvif->vdev_id);
 		ath12k_mac_bridge_vdevs_up(arvif);
+		ath12k_query_tpc_ie_eirp_if_ready(arvif);
 	} else {
 		arvif->is_up = false;
 		ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
@@ -7325,9 +7363,9 @@ int ath12k_mac_get_bridge_link_id_from_ahvif(struct ath12k_vif *ahvif,
 		ab = arvif->ar->ab;
 		ar = arvif->ar;
 		if (bridge_bitmap & BIT(ab->wsi_info.index)) {
-			ath12k_dbg(ab, ATH12K_DBG_PEER,
-				   "arvif found link_id %d for bridge_bitmap 0x%x\n",
-				   *link_id, bridge_bitmap);
+			ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+					 "arvif found link_id %d for bridge_bitmap 0x%x\n",
+					 *link_id, bridge_bitmap);
 			ret = 0;
 			break;
 		}
@@ -7885,6 +7923,7 @@ static void ath12k_mac_bridge_vdevs_up(struct ath12k_link_vif *arvif)
 				ath12k_dbg(arvif->ar->ab, ATH12K_DBG_MAC, "mac bridge vdev %d link_id %d up\n",
 					   arvif->vdev_id, link_id);
 				arvif->is_up = true;
+				ath12k_query_tpc_ie_eirp_if_ready(arvif);
 			}
 		}
 	}
@@ -7911,6 +7950,7 @@ void ath12k_mac_bridge_vdev_up(struct ath12k_link_vif *arvif)
 			   "mac bridge vdev %d link_id %d up\n",
 			   arvif->vdev_id, arvif->link_id);
 	arvif->is_up = true;
+	ath12k_query_tpc_ie_eirp_if_ready(arvif);
 }
 
 static void ath12k_mac_send_pwr_mode_update(struct ath12k *ar,
@@ -13108,9 +13148,9 @@ static int ath12k_mac_station_disassoc(struct ath12k *ar,
 	spin_lock_bh(&arvif->ar->data_lock);
 
 	if (!arvif->num_stations) {
-		ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
-			   "mac station disassoc for vdev %u which does not have any station connected\n",
-			   arvif->vdev_id);
+		ath12k_dbg_level(ar->ab, ATH12K_DBG_PEER, ATH12K_DBG_L0,
+				 "mac station disassoc for vdev %u which does not have any station connected\n",
+				 arvif->vdev_id);
 	} else {
 		arvif->num_stations--;
 		ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
@@ -13317,8 +13357,9 @@ static void ath12k_sta_rc_update_wk(struct wiphy *wiphy, struct wiphy_work *wk)
 	}
 
 	if (changed & IEEE80211_RC_NSS_CHANGED) {
-		ath12k_dbg(ar->ab, ATH12K_DBG_PEER, "mac update sta %pM nss %d\n",
-			   arsta->addr, nss);
+		ath12k_dbg_level(ar->ab, ATH12K_DBG_PEER, ATH12K_DBG_L0,
+				 "mac update sta %pM nss %d\n",
+				 arsta->addr, nss);
 
 		err = ath12k_wmi_set_peer_param(ar, arsta->addr, arvif->vdev_id,
 						WMI_PEER_NSS, nss);
@@ -13328,8 +13369,9 @@ static void ath12k_sta_rc_update_wk(struct wiphy *wiphy, struct wiphy_work *wk)
 	}
 
 	if (changed & IEEE80211_RC_SMPS_CHANGED) {
-		ath12k_dbg(ar->ab, ATH12K_DBG_PEER, "mac update sta %pM smps %d\n",
-			   arsta->addr, smps);
+		ath12k_dbg_level(ar->ab, ATH12K_DBG_PEER, ATH12K_DBG_L0,
+				 "mac update sta %pM smps %d\n",
+				 arsta->addr, smps);
 
 		err = ath12k_wmi_set_peer_param(ar, arsta->addr, arvif->vdev_id,
 						WMI_PEER_MIMO_PS_STATE, smps);
@@ -13415,8 +13457,8 @@ static void ath12k_sta_set_4addr_wk(struct wiphy *wiphy, struct wiphy_work *wk)
 		ar = arvif->ar;
 		dp_link_vif = &ahvif->dp_vif.dp_link_vif[link_id];
 
-		ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
-			   "setting USE_4ADDR for peer %pM\n", arsta->addr);
+		ath12k_dbg_level(ar->ab, ATH12K_DBG_PEER, ATH12K_DBG_L0,
+				 "setting USE_4ADDR for peer %pM\n", arsta->addr);
 
 		if (!arvif->set_wds_vdev_param) {
 			ath12k_wmi_set_peer_param(ar, arsta->addr,
@@ -13521,9 +13563,9 @@ static int ath12k_mac_station_unauthorize(struct ath12k *ar,
 	 */
 	ret = ath12k_clear_peer_keys(arvif, dp_peer, arsta);
 	if (ret) {
-		ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
-			   "failed to clear all peer keys for vdev %i: %d\n",
-			   arvif->vdev_id, ret);
+		ath12k_dbg_level(ar->ab, ATH12K_DBG_PEER, ATH12K_DBG_L0,
+				 "failed to clear all peer keys for vdev %i: %d\n",
+				 arvif->vdev_id, ret);
 		return ret;
 	}
 
@@ -13672,7 +13714,7 @@ static int ath12k_mac_station_remove(struct ath12k *ar,
 		ath12k_warn(ar->ab, "Failed to delete peer: %pM for VDEV: %d ar->num_peers: %d arvif->num_peers: %d\n",
 			    arsta->addr, arvif->vdev_id, ar->num_peers, arvif->num_peers);
 	else
-		ath12k_dbg_level(ar->ab, ATH12K_DBG_PEER | ATH12K_DBG_MLME, ATH12K_DBG_L1,
+		ath12k_dbg_level(ar->ab, ATH12K_DBG_PEER | ATH12K_DBG_MLME, ATH12K_DBG_L0,
 				 "Removed peer: %pM for VDEV: %d ar->num_peers: %d arvif->num_peers: %d\n",
 				 arsta->addr, arvif->vdev_id,
 				 ar->num_peers, arvif->num_peers);
@@ -13825,8 +13867,9 @@ static int ath12k_mac_station_add(struct ath12k *ar,
 	arsta->ahsta->ar_bitmap |= BIT(ar->radio_idx);
 
 	arvif->num_peers++;
-	ath12k_dbg(ab, ATH12K_DBG_PEER, "Added peer: %pM for VDEV: %d num_stations: %d num_peers %d\n",
-		   arsta->addr, arvif->vdev_id, ar->num_stations, arvif->num_peers);
+	ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L0,
+			 "Added peer: %pM for VDEV: %d num_stations: %d num_peers %d\n",
+			 arsta->addr, arvif->vdev_id, ar->num_stations, arvif->num_peers);
 
 	if (ieee80211_vif_is_mesh(vif)) {
 		ret = ath12k_wmi_set_peer_param(ar, arsta->addr,
@@ -14510,8 +14553,9 @@ static int ath12k_mac_handle_link_sta_state(struct ieee80211_hw *hw,
 	    ar->ab->ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE2)
 		return -ESHUTDOWN;
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_PEER, "mac handle link %u sta %pM state %d -> %d\n",
-		   arsta->link_id, arsta->addr, old_state, new_state);
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+			 "mac handle link %u sta %pM state %d -> %d\n",
+			 arsta->link_id, arsta->addr, old_state, new_state);
 
 	/* IEEE80211_STA_NONE -> IEEE80211_STA_NOTEXIST: Remove the station
 	 * from driver
@@ -18057,7 +18101,7 @@ static void ath12k_mac_handle_agile_cac_on_chainmask_change(struct ath12k *ar)
 }
 
 static int __ath12k_set_antenna(struct ath12k *ar, u32 tx_ant, u32 rx_ant,
-				bool is_dynamic)
+				bool is_dynamic, int ifindex)
 {
 	struct ath12k_hw *ah = ath12k_ar_to_ah(ar);
 	int ret;
@@ -18109,7 +18153,7 @@ static int __ath12k_set_antenna(struct ath12k *ar, u32 tx_ant, u32 rx_ant,
 
 	if (is_dynamic) {
 		ath12k_mac_handle_agile_cac_on_chainmask_change(ar);
-		ath12k_vendor_event_chain_mask_changed(ar);
+		ath12k_vendor_event_chain_mask_changed(ar, ifindex);
 	}
 
 	return 0;
@@ -19090,7 +19134,12 @@ int ath12k_mac_start(struct ath12k *ar)
 		}
 	}
 
-	__ath12k_set_antenna(ar, ar->cfg_tx_chainmask, ar->cfg_rx_chainmask, false);
+	/* Since the chain mask is not updated dynamically, pass ATH12K_IFINDEX_DEFAULT
+	 * as the ifindex. The ifindex is not used when dynamic chain mask update is
+	 * disabled.
+	 */
+	__ath12k_set_antenna(ar, ar->cfg_tx_chainmask, ar->cfg_rx_chainmask,
+			     false, ATH12K_IFINDEX_DEFAULT);
 
 	/* TODO: Do we need to enable ANI? */
 
@@ -21487,7 +21536,7 @@ int ath12k_mac_op_get_antenna(struct ieee80211_hw *hw, u32 *tx_ant, u32 *rx_ant,
 EXPORT_SYMBOL(ath12k_mac_op_get_antenna);
 
 int ath12k_mac_op_set_antenna(struct ieee80211_hw *hw, u32 tx_ant, u32 rx_ant,
-			      u8 radio_id, bool is_dynamic)
+			      u8 radio_id, bool is_dynamic, int ifindex)
 {
 	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
 	struct ath12k *ar;
@@ -21499,7 +21548,8 @@ int ath12k_mac_op_set_antenna(struct ieee80211_hw *hw, u32 tx_ant, u32 rx_ant,
 	for_each_ar(ah, ar, i) {
 		if ((radio_id != 255) && (radio_id != i))
 			continue;
-		ret = __ath12k_set_antenna(ar, tx_ant, rx_ant, is_dynamic);
+		ret = __ath12k_set_antenna(ar, tx_ant, rx_ant, is_dynamic,
+					   ifindex);
 		if (ret)
 			break;
 	}
@@ -21575,10 +21625,10 @@ static int ath12k_mac_ampdu_action(struct ieee80211_hw *hw,
 	}
 
 	if (ret)
-		ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
-			   "[vdev_id : %s radio_idx : %u] unable to perform ampdu action %d for vif %pM link %u ret %d\n",
-			   ATH12K_INVALID_VDEV_ID, ar->radio_idx,
-			   params->action, vif->addr, link_id, ret);
+		ath12k_dbg_level(ar->ab, ATH12K_DBG_PEER, ATH12K_DBG_L3,
+				 "[vdev_id : %s radio_idx : %u] unable to perform ampdu action %d for vif %pM link %u ret %d\n",
+				 ATH12K_INVALID_VDEV_ID, ar->radio_idx,
+				 params->action, vif->addr, link_id, ret);
 
 	return ret;
 }
@@ -23692,7 +23742,7 @@ void ath12k_mac_op_change_chanctx(struct ieee80211_hw *hw,
 	    changed & IEEE80211_CHANCTX_CHANGE_PUNCTURING) {
 		ath12k_mac_update_active_vif_chan(ar, ctx);
 #ifdef CPTCFG_QCN_EXTN
-		ath12k_smart_ant_api_channel_change(ar);
+		ath12k_smart_ant_api_channel_change(ar, true);
 #endif
 	}
 
@@ -25675,7 +25725,6 @@ ath12k_mac_reconfig_complete(struct ieee80211_hw *hw,
 		if (recovery_count == ab->num_radios) {
 			atomic_dec(&ab->reset_count);
 			complete(&ab->reset_complete);
-			ab->post_reconfig_done = false;
 			ab->is_reset = false;
 			atomic_set(&ab->fail_cont_count, 0);
 			clear_bit(ATH12K_FLAG_RECOVERY, &ar->ab->dev_flags);
@@ -31675,24 +31724,60 @@ ath12k_mac_fill_npca_arg(struct ath12k_link_vif *arvif,
 			 struct ieee80211_chanctx_conf *chanctx_conf,
 			 struct ath12k_wmi_vdev_uhr_cu_arg *arg)
 {
+	const struct cfg80211_chan_def *def = &chanctx_conf->def;
+	struct ieee80211_channel *chan = def->chan;
+	struct ath12k_wmi_channel_params chan_info = {};
+	enum wmi_phy_mode mode;
+	u32 cf_device = 0;
+	u32 width_device = 0;
+
 	arg->npca.vdev_id = arvif->vdev_id;
 
 	if (!enabled)
 		goto out;
 
 	arg->npca.mode_tuple_field = WMI_NPCA_MODE_ENABLE | WMI_NPCA_MODE_UPDATE;
+
+	mode = ath12k_mac_get_phymode(arvif->ar, chan->band, def->width);
+
+	if (test_bit(WMI_TLV_SERVICE_SW_PROG_DFS_SUPPORT,
+		     arvif->ar->ab->wmi_ab.svc_map) &&
+	    cfg80211_chandef_device_present(def)) {
+		cf_device = def->center_freq_device;
+		width_device = def->width_device;
+	}
+
+	ath12k_wmi_put_channel_info(&chan_info, chan->center_freq,
+				    def->center_freq1,
+				    def->center_freq2,
+				    mode, cf_device, width_device);
+
 	/* Derive NPCA primary channel frequency from the primary channel
 	 * offset field in the IE and the current BSS channel definition.
 	 * The offset is in units of 20 MHz subchannels counted from the
 	 * lowest subchannel of the BSS bandwidth.
 	 */
 	arg->npca.mhz =
-		chanctx_conf->def.center_freq1 -
-		cfg80211_chandef_get_width(&chanctx_conf->def) / 2 +
+		def->center_freq1 -
+		cfg80211_chandef_get_width(def) / 2 +
 		10 +
 		le32_get_bits(npca->params,
 			      IEEE80211_UHR_NPCA_PARAMS_PRIMARY_CHAN_OFFS) * 20;
-	arg->npca.band_center_freq1 = chanctx_conf->def.center_freq1;
+	arg->npca.band_center_freq1 = le32_to_cpu(chan_info.band_center_freq1);
+	arg->npca.band_center_freq2 = le32_to_cpu(chan_info.band_center_freq2);
+	arg->npca.info = le32_to_cpu(chan_info.info);
+
+	if (chan->flags & IEEE80211_CHAN_RADAR)
+		arg->npca.info |= WMI_CHAN_INFO_DFS;
+
+	arg->npca.reg_info_1 =
+		le32_encode_bits(chan->max_power, WMI_CHAN_REG_INFO1_MAX_PWR) |
+		le32_encode_bits(chan->max_reg_power,
+				 WMI_CHAN_REG_INFO1_MAX_REG_PWR);
+	arg->npca.reg_info_2 =
+		le32_encode_bits(chan->max_antenna_gain,
+				 WMI_CHAN_REG_INFO2_ANT_MAX) |
+		le32_encode_bits(chan->max_power, WMI_CHAN_REG_INFO2_MAX_TX_PWR);
 
 	arg->npca.npca_cap1 =
 		le32_get_bits(npca->params,
@@ -31716,11 +31801,13 @@ ath12k_mac_fill_npca_arg(struct ath12k_link_vif *arvif,
 
 out:
 	ath12k_dbg(arvif->ar->ab, ATH12K_DBG_MAC | ATH12K_DBG_CU,
-		   "UHR NPCA vdev %u mode_tuple 0x%x mhz %u bcf1 %u cap1 0x%x cap2 0x%x\n",
+		   "UHR NPCA vdev %u mode_tuple 0x%x mhz %u bcf1 %u bcf2 %u info 0x%x cap1 0x%x cap2 0x%x\n",
 		   arvif->vdev_id,
 		   arg->npca.mode_tuple_field,
 		   arg->npca.mhz,
 		   arg->npca.band_center_freq1,
+		   arg->npca.band_center_freq2,
+		   arg->npca.info,
 		   arg->npca.npca_cap1,
 		   arg->npca.npca_cap2);
 }

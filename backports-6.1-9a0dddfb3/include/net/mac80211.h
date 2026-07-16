@@ -5454,7 +5454,7 @@ struct ieee80211_ops {
 			       struct ieee80211_vif *vif,
 			       struct ieee80211_channel_switch *ch_switch);
 	int (*set_antenna)(struct ieee80211_hw *hw, u32 tx_ant, u32 rx_ant,
-			   u8 radio_id, bool is_dynamic);
+			   u8 radio_id, bool is_dynamic, int ifindex);
 	int (*get_antenna)(struct ieee80211_hw *hw, u32 *tx_ant, u32 *rx_ant,
 			   u8 radio_id);
 
@@ -6476,7 +6476,8 @@ struct ieee80211_ema_beacons {
  * This function follows the same rules as ieee80211_beacon_get_template()
  * but allocates and returns a pointer to list of all beacon templates required
  * to cover all profiles in the multiple BSSID set. Each template includes only
- * one multiple BSSID element.
+ * one multiple BSSID element. If no MBSSID elements are present, this function
+ * will return the default template.
  *
  * Driver must call ieee80211_beacon_free_ema_list() to free the memory.
  *

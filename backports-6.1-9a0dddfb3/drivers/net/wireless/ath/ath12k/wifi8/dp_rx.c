@@ -834,9 +834,9 @@ send_cmd:
 done:
 	spin_unlock_bh(&rx_tid->tid_lock);
 	spin_unlock_bh(&dp_hw->peer_hash_lock);
-	ath12k_dbg(ab, ATH12K_DBG_PEER,
-		   "SMD REO update done for peer %pM tid %d: SSN=0x%x\n",
-		   peer_addr, rx_tid_ctx->tid, rx_tid_ctx->ssn);
+	ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+			 "SMD REO update done for peer %pM tid %d: SSN=0x%x\n",
+			 peer_addr, rx_tid_ctx->tid, rx_tid_ctx->ssn);
 
 	return 0;
 }
@@ -876,9 +876,9 @@ int ath12k_wifi8_peer_rx_tid_svld_reset(struct ath12k_base *ab,
 		if (!rx_tid->active)
 			continue;
 
-		ath12k_dbg(ab, ATH12K_DBG_PEER,
-			   "SMD SVLD reset: peer %pM tid %u REO SVLD -> 0\n",
-			   peer_addr, tid);
+		ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+				 "SMD SVLD reset: peer %pM tid %u REO SVLD -> 0\n",
+				 peer_addr, tid);
 
 		memset(&cmd, 0, sizeof(cmd));
 		cmd.addr_lo = lower_32_bits(rx_tid->paddr);
@@ -900,9 +900,9 @@ int ath12k_wifi8_peer_rx_tid_svld_reset(struct ath12k_base *ab,
 	/* Management Rx TID (ATH12K_SMD_RX_MGMT_TID = 16) */
 	rx_tid = &dp_peer->rx_tid[ATH12K_SMD_RX_MGMT_TID];
 	if (rx_tid->active) {
-		ath12k_dbg(ab, ATH12K_DBG_PEER,
-			   "SMD SVLD reset: peer %pM tid %u (mgmt) REO SVLD -> 0\n",
-			   peer_addr, ATH12K_SMD_RX_MGMT_TID);
+		ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+				 "SMD SVLD reset: peer %pM tid %u (mgmt) REO SVLD -> 0\n",
+				 peer_addr, ATH12K_SMD_RX_MGMT_TID);
 
 		memset(&cmd, 0, sizeof(cmd));
 		cmd.addr_lo = lower_32_bits(rx_tid->paddr);
@@ -922,8 +922,8 @@ int ath12k_wifi8_peer_rx_tid_svld_reset(struct ath12k_base *ab,
 
 	spin_unlock_bh(&dp_hw->peer_hash_lock);
 
-	ath12k_dbg(ab, ATH12K_DBG_PEER,
-		   "SMD SVLD reset done for peer %pM\n", peer_addr);
+	ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+			 "SMD SVLD reset done for peer %pM\n", peer_addr);
 
 	return ret;
 }
@@ -1057,10 +1057,10 @@ int ath12k_wifi8_peer_rx_tid_reo_update(struct ath12k *ar,
 
 	rx_tid->ba_win_sz = ba_win_sz;
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
-		   "rx tid queue update: tid=%u peer_id=%d peer=%pM link=%u ba_win=%u\n",
-		   rx_tid->tid, peer->peer_id, peer->addr,
-		   peer->link_id, rx_tid->ba_win_sz);
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+			 "rx tid queue update: tid=%u peer_id=%d peer=%pM link=%u ba_win=%u\n",
+			 rx_tid->tid, peer->peer_id, peer->addr,
+			 peer->link_id, rx_tid->ba_win_sz);
 
 	return 0;
 }
@@ -3027,23 +3027,20 @@ int ath12k_wifi8_dp_rx_flow_fse_cache_operation(struct ath12k_base *ab,
 		fse_cmd.dest_ip[1] = htonl(tuple_info->dest_ip_95_64);
 		fse_cmd.dest_ip[2] = htonl(tuple_info->dest_ip_63_32);
 		fse_cmd.dest_ip[3] = htonl(tuple_info->dest_ip_31_0);
+		fse_cmd.src_port = cpu_to_le16(tuple_info->src_port);
+		fse_cmd.dest_port = cpu_to_le16(tuple_info->dest_port);
 		fse_cmd.info0 =
-			cpu_to_le32(FIELD_PREP(HAL_FSE_CMD_INFO0_SRC_PORT,
-					       tuple_info->src_port) |
-				    FIELD_PREP(HAL_FSE_CMD_INFO0_DEST_PORT,
-					       tuple_info->dest_port));
-		fse_cmd.info1 =
-			cpu_to_le32(FIELD_PREP(HAL_FSE_CMD_INFO1_L4_PROTOCOL,
+			cpu_to_le32(FIELD_PREP(HAL_FSE_CMD_INFO0_L4_PROTOCOL,
 					       tuple_info->l4_protocol) |
-				    FIELD_PREP(HAL_FSE_CMD_INFO1_GSE_CTRL,
+				    FIELD_PREP(HAL_FSE_CMD_INFO0_GSE_CTRL,
 					       HAL_FSE_GSE_CTRL_INVAL_SINGLE));
 	} else if (op_code == DP_FST_CACHE_INVALIDATE_FULL) {
-		fse_cmd.info1 =
-			cpu_to_le32(FIELD_PREP(HAL_FSE_CMD_INFO1_GSE_CTRL,
+		fse_cmd.info0 =
+			cpu_to_le32(FIELD_PREP(HAL_FSE_CMD_INFO0_GSE_CTRL,
 					       HAL_FSE_GSE_CTRL_INVAL_ALL));
 	} else if (op_code == DP_FST_DISABLE) {
-		fse_cmd.info1 =
-			cpu_to_le32(FIELD_PREP(HAL_FSE_CMD_INFO1_GSE_CTRL,
+		fse_cmd.info0 =
+			cpu_to_le32(FIELD_PREP(HAL_FSE_CMD_INFO0_GSE_CTRL,
 					       HAL_FSE_GSE_CTRL_SRCH_DIS));
 	} else if (op_code == DP_FST_ENABLE) {
 		ath12k_dbg(ab, ATH12K_DBG_DP_FST,
@@ -3607,23 +3604,26 @@ int ath12k_wifi8_dp_rx_process_reo_flush_err(struct ath12k_dp *dp, int budget)
 				    BUFFER_ADDR_INFO1_RET_BUF_MGR);
 		cookie = le32_get_bits(rx_desc->buf_addr_info.info1,
 				       BUFFER_ADDR_INFO1_SW_COOKIE);
-		desc_info = ath12k_dp_get_rx_desc(dp, cookie);
 
-		if (!desc_info)
-			continue;
+		if (rbm == dp->hal->hal_params->rx_buf_rbm || rbm == 0) {
+			desc_info = ath12k_dp_get_rx_desc(dp, cookie);
+			if (!desc_info)
+				continue;
 
-		if (desc_info->is_ppe_desc == DP_RX_PPE_POOL) {
-			desc_info->skb = NULL;
-			desc_info->paddr = 0;
-			list_add_tail(&desc_info->list, &ppe2wbm_used_list);
-			stats->rx_flush_pkts++;
-			continue;
-		}
+			if (desc_info->is_ppe_desc == DP_RX_PPE_POOL) {
+				desc_info->skb = NULL;
+				desc_info->paddr = 0;
+				list_add_tail(&desc_info->list, &ppe2wbm_used_list);
+			} else {
+				list_add_tail(&desc_info->list, &rx_desc_used_list);
+			}
 
-		if (rbm == dp->hal->hal_params->rx_buf_rbm) {
-			list_add_tail(&desc_info->list, &rx_desc_used_list);
 			stats->rx_flush_pkts++;
 		} else if (rbm == dp->hal->hal_params->rx_mgmt_buf_rbm) {
+			desc_info = ath12k_mgmt_get_rx_desc_from_cookie(mgmt, cookie);
+			if (!desc_info)
+				continue;
+
 			list_add_tail(&desc_info->list, &rx_mgmt_desc_used_list);
 			stats->rx_mgmt_flush_pkts++;
 		} else {
@@ -3956,9 +3956,9 @@ void ath12k_wifi8_dp_smd_clear_old_peer_rx_lut(struct ath12k_dp *dp,
 		return;
 	}
 
-	ath12k_dbg(ab, ATH12K_DBG_PEER,
-		   "smd phase-c: clearing REO LUT for old peer_id=%u tids=0x%x\n",
-		   dp_peer->peer_id, tids);
+	ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+			 "smd phase-c: clearing REO LUT for old peer_id=%u tids=0x%x\n",
+			 dp_peer->peer_id, tids);
 
 	for_each_set_bit(tid, (unsigned long *)&tids,
 			 ab->hal.hal_params->num_tids) {

@@ -126,7 +126,8 @@ void ath12k_hal_reo_hw_setup(struct ath12k_base *ab)
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 void ath12k_hal_reo_hw_setup_ipa(struct ath12k_base *ab)
 {
-	ab->hal.hal_ops->reo_hw_setup_ipa(ab);
+	if (ab->hal.hal_ops->reo_hw_setup_ipa)
+		ab->hal.hal_ops->reo_hw_setup_ipa(ab);
 }
 #endif
 
