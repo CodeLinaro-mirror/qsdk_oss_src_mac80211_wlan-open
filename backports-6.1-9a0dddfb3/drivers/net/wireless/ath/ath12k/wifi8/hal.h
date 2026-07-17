@@ -956,6 +956,8 @@ enum rdi_based_source_ring_selection {
 #define HAL_TCL1_RING_FIELD_DSCP_TID_MAP6		0x1c0000
 #define HAL_TCL1_RING_FIELD_DSCP_TID_MAP7		0xe00000
 
+#define HAL_TCL1_CMN_CONFIG_CLFY_INVALID_PPE_DESC	BIT(26)
+
 /* TODO: CORE DP TX needs any update from Host */
 #define HAL_TCL1_CMN_CONFIG	(HAL_SEQ_WCSS_UMAC_TCL_REG + 0x38)
 #define HAL_TCL1_CMN_CONFIG_PPE	(HAL_SEQ_WCSS_UMAC_TCL_REG + 0x44)
@@ -2112,6 +2114,7 @@ void ath12k_wifi8_hal_srng_hw_disable(struct ath12k_base *ab,
 				      struct hal_srng *srng);
 void ath12k_wifi8_hal_reset_rx_reo_tid_q(void *vaddr,
 					 u32 ba_window_size, u8 tid);
+void ath12k_wifi8_hal_tx_configure_cmn_reg(struct ath12k_base *ab);
 void ath12k_wifi8_hal_tx_configure_bank_register_default(struct ath12k_base *ab);
 bool ath12k_wifi8_hal_tx_ppe2tcl_ring_halt_get(struct ath12k_base *ab);
 void ath12k_wifi8_hal_tx_ppe2tcl_ring_halt_set(struct ath12k_base *ab);

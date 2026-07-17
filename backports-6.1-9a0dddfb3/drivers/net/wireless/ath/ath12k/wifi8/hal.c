@@ -661,6 +661,15 @@ void ath12k_wifi8_hal_ppeds_tx_configure_skip_hdr_fetch(struct ath12k_base *ab)
 	ath12k_hif_write32(ab, HAL_TCL1_CMN_CONFIG1_PPE, val);
 }
 
+void ath12k_wifi8_hal_tx_configure_cmn_reg(struct ath12k_base *ab)
+{
+	u32 reg_val;
+
+	reg_val = ath12k_hif_read32(ab, HAL_TCL1_CMN_CONFIG);
+	reg_val &= ~HAL_TCL1_CMN_CONFIG_CLFY_INVALID_PPE_DESC;
+	ath12k_hif_write32(ab, HAL_TCL1_CMN_CONFIG, reg_val);
+}
+
 void ath12k_wifi8_hal_tx_configure_bank_register(struct ath12k_base *ab,
 						 u32 bank_config,
 						 u8 bank_id)
