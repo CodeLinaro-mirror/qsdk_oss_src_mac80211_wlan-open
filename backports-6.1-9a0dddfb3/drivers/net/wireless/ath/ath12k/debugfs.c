@@ -7249,18 +7249,21 @@ static ssize_t ath12k_read_bcast_probe_rl_stats(struct file *file,
 			 stats->rx_bc_prb_req_drop);
 	len += scnprintf(buf + len, size - len,
 			 "  suppress_window_ms         = %u\n",
-			 ATH12K_BCAST_PROBE_RL_WINDOW_MS);
+			 ar->bcast_probe_rl_window_ms);
 	len += scnprintf(buf + len, size - len,
 			 "  table_entries_live         = %u\n",
 			 ar->bcast_probe_rl_entries);
 	len += scnprintf(buf + len, size - len,
 			 "  table_entries_max          = %u\n",
-			 ATH12K_BCAST_PROBE_RL_MAX_ENTRIES);
+			 ar->bcast_probe_rl_max_entries);
 
 	spin_unlock_bh(&ar->data_lock);
 
 	len += scnprintf(buf + len, size - len,
-			 "Commands: echo enable/disable/reset > bcast_probe_rl_stats\n");
+			 "Commands:\n"
+			 "  echo enable/disable/reset > bcast_probe_rl_stats\n"
+			 "  echo window_ms=<50-5000>  > bcast_probe_rl_stats\n"
+			 "  echo max_entries=<64-4096> > bcast_probe_rl_stats\n");
 
 	ret = simple_read_from_buffer(ubuf, count, ppos, buf, len);
 	return ret;
@@ -7271,7 +7274,8 @@ static ssize_t ath12k_write_bcast_probe_rl_stats(struct file *file,
 						 size_t count, loff_t *ppos)
 {
 	struct ath12k *ar = file->private_data;
-	char buf[20] = {0};
+	char buf[32] = {0};
+	u32 val;
 
 	if (count > sizeof(buf) - 1)
 		return -EINVAL;
@@ -7287,6 +7291,12 @@ static ssize_t ath12k_write_bcast_probe_rl_stats(struct file *file,
 		ar->bcast_probe_rl_enabled = false;
 	else if (strncmp(buf, "reset", 5) == 0)
 		ar->dp.stats.telemetry_stats.rx_bc_prb_req_drop = 0;
+	else if (sscanf(buf, "window_ms=%u", &val) == 1 &&
+		 val >= 50 && val <= 5000)
+		ar->bcast_probe_rl_window_ms = val;
+	else if (sscanf(buf, "max_entries=%u", &val) == 1 &&
+		 val >= 64 && val <= 4096)
+		ar->bcast_probe_rl_max_entries = val;
 
 	spin_unlock_bh(&ar->data_lock);
 

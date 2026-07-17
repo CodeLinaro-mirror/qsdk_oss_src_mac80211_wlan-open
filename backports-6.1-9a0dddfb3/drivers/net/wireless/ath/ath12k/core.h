@@ -2231,6 +2231,8 @@ struct ath12k {
 	DECLARE_HASHTABLE(bcast_probe_rl, ATH12K_BCAST_PROBE_RL_HASH_BITS);
 	bool bcast_probe_rl_enabled;
 	u32 bcast_probe_rl_entries;
+	u32 bcast_probe_rl_max_entries;
+	u32 bcast_probe_rl_window_ms;
 	struct ath12k_rf_path_ctx rf_path_ctx;
 
 	/* Cached IGMP/MLD TID override value (0=disabled, 1-7=TID) */
