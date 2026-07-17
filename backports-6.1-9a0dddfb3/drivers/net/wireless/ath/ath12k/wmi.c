@@ -12300,6 +12300,9 @@ static void ath12k_update_peer_tx_ba_params(struct ath12k *ar,
 	buf += 2;
 
 	tid = u16_get_bits(capab, IEEE80211_ADDBA_PARAM_TID_MASK);
+	if (tid >= IEEE80211_MAX_NUM_TIDS)
+		return;
+
 	buf_size = u16_get_bits(capab, IEEE80211_ADDBA_PARAM_BUF_SIZE_MASK);
 
 	spin_lock_bh(&ar->arsta_lock);
