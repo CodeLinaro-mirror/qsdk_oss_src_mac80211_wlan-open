@@ -509,6 +509,9 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 			.board_size = ATH12K_WIFI8_BOARD_SIZE,
 			.cal_offset = 128 * 1024,
 			.m3_loader = ath12k_m3_fw_loader_driver,
+#ifdef PLATFORM_SDX
+			.std_elf_img = true,
+#endif
 			.unified_fw_image = true,
 		},
 		.max_radios = 2,
@@ -656,6 +659,9 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 			.board_size = ATH12K_WIFI8_BOARD_SIZE,
 			.cal_offset = 128 * 1024,
 			.m3_loader = ath12k_m3_fw_loader_driver,
+#ifdef PLATFORM_SDX
+			.std_elf_img = true,
+#endif
 			.unified_fw_image = true,
 		},
 		.max_radios = 2,
@@ -791,6 +797,9 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 			.board_size = ATH12K_WIFI8_BOARD_SIZE,
 			.cal_offset = 128 * 1024,
 			.m3_loader = ath12k_m3_fw_loader_driver,
+#ifdef PLATFORM_SDX
+			.std_elf_img = true,
+#endif
 			.unified_fw_image = true,
 		},
 		.max_radios = 2,

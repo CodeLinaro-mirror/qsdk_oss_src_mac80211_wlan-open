@@ -302,6 +302,13 @@ int ath12k_mhi_register(struct ath12k_pci *ab_pci)
 	mhi_ctrl->regs = ab->mem;
 	mhi_ctrl->reg_len = ab->mem_len;
 	mhi_ctrl->rddm_size = ab->hw_params->rddm_size ?: ATH12K_PCI_FW_RDDM_SZ;
+#ifdef PLATFORM_SDX
+#if LINUX_VERSION_IS_GEQ(6, 10, 0)
+	mhi_ctrl->standard_elf_image = ab->hw_params->fw.std_elf_img;
+#else
+	mhi_ctrl->tme_supported_image = true;
+#endif
+#endif
 	if (ab->hw_params->otp_board_id_register) {
 		if (!of_property_read_u32(ab->dev->of_node, "qcom,board_id", &board_id) &&
 		    board_id != ATH12K_BOARD_ID_DEFAULT) {
