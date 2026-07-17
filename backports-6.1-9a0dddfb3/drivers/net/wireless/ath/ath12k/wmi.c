@@ -20337,7 +20337,7 @@ static void ath12k_wmi_recording_cleanup(struct ath12k_wmi_pdev *wmi_handle)
 	rcu_assign_pointer(wmi_handle->wmi_evt_log, NULL);
 	synchronize_rcu();
 
-	if (!test_bit(ATH12K_FLAG_UNREGISTERING, &ab->dev_flags)) {
+	if (!test_bit(ATH12K_GROUP_FLAG_UNREGISTER, &ab->ag->flags)) {
 		memset(cmd_log, 0,
 		       wmi_handle->wmi_cmd_log_size * sizeof(*cmd_log));
 		memset(tx_cmp_log, 0,
