@@ -909,7 +909,7 @@ ath12k_update_tx_ppdu_basic_stats(struct ath12k_pdev_dp *dp_pdev,
 
 	is_mcast = HTT_PPDU_STATS_USR_CMN_IS_MCAST(usr_stats->common.info);
 
-	DP_STATS_INCC(tx_ppdu_stats, tx_ucast_success.num, peer_stats->succ_pkts,
+	DP_STATS_INCC(tx_ppdu_stats, tx_ucast_success.packets, peer_stats->succ_pkts,
 		      !is_mcast);
 	DP_STATS_INCC(tx_ppdu_stats, tx_ucast_success.bytes, peer_stats->succ_bytes,
 		      !is_mcast);
