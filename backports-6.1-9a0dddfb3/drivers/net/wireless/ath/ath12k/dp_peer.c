@@ -2665,9 +2665,15 @@ static void ath12k_mac_dp_peer_cleanup_cb(struct ath12k_pdev_dp *dp_pdev,
 			    dp_peer->peer_id != ATH12K_MLO_PEER_ID_INVALID) {
 				sta = ath12k_dp_peer_get_sta(dp_peer);
 				ahsta = ath12k_sta_to_ahsta(sta);
+
 				clear_bit(dp_peer->peer_id, dp_hw->free_peer_id_map);
-				clear_bit(ahsta->ml_peer_id, ah->free_ml_peer_id_map);
-				ahsta->ml_peer_id = ATH12K_MLO_PEER_ID_INVALID;
+
+				if (ahsta->ml_peer_id != ATH12K_MLO_PEER_ID_INVALID) {
+					clear_bit(ahsta->ml_peer_id,
+						  ah->free_ml_peer_id_map);
+					ahsta->ml_peer_id = ATH12K_MLO_PEER_ID_INVALID;
+				}
+
 				ah->num_ml_peers--;
 			}
 
