@@ -36,6 +36,13 @@ struct athdbg_to_ath12k_ops {
 	u64 (*get_dbg_mask)(void);
 };
 
+struct athdbg_wmi_event_info {
+	u8          radio_idx;
+	u8          hw_link_id;
+	const void  *tlv_data;
+	size_t      tlv_len;
+};
+
 bool athdbg_if_check_dev_running(struct ath12k_base *drv_ab);
 void athdbg_if_setmask(u64 debug_mask);
 u64 athdbg_if_getmask(void);
@@ -54,5 +61,5 @@ extern const struct file_operations debugfs_qdss_enable_fops;
 extern const struct file_operations debugfs_qdss_collect_fops;
 extern const struct file_operations debugfs_snapshot_fops;
 void athdbg_if_send_tlv(struct ath12k_base *ab, u32 event_id,
-			const void *tlv_data, size_t tlv_len);
+			const struct athdbg_wmi_event_info *info);
 #endif

@@ -681,7 +681,7 @@ static int ath12k_wifi8_dp_rx_frag_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_dp_peer *peer;
 	struct ath12k_dp_rx_tid *rx_tid;
 	struct sk_buff *defrag_skb = NULL;
-	u32 peer_id = rx_desc_data->peer_id;
+	u32 peer_id;
 	u16 seqno, frag_no;
 	u8 tid = rx_desc_data->tid;
 	int ret = 0;
@@ -692,6 +692,8 @@ static int ath12k_wifi8_dp_rx_frag_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	more_frags = ath12k_wifi8_dp_rx_h_more_frags(ab, msdu);
 	seqno = rx_desc_data->seq_no;
 
+	peer_id = le32_get_bits(spd_desc_l->rx_mpdu_info.peer_meta_data,
+				RX_MPDU_DESC_META_DATA_V1_PEER_ID_WIFI8);
 	if (!rx_desc_data->seq_ctl_valid || !rx_desc_data->fc_valid ||
 	    tid >= ab->hal.hal_params->num_tids)
 		return -EINVAL;
@@ -1174,12 +1176,12 @@ static bool ath12k_wifi8_handle_reo_route(struct ath12k_pdev_dp *dp_pdev,
 	return false;
 }
 
-static bool ath12k_wifi8_handle_null_queue(struct ath12k_pdev_dp *dp_pdev,
-					   struct ath12k_dp_peer *peer,
-					   struct ieee80211_rx_status *rx_status,
-					   struct hal_rx_spd_data *spd_desc_l,
-					   struct napi_struct *napi,
-					   struct rx_tlv_info_1 *prev_tlv_info)
+bool ath12k_wifi8_handle_null_queue(struct ath12k_pdev_dp *dp_pdev,
+				    struct ath12k_dp_peer *peer,
+				    struct ieee80211_rx_status *rx_status,
+				    struct hal_rx_spd_data *spd_desc_l,
+				    struct napi_struct *napi,
+				    struct rx_tlv_info_1 *prev_tlv_info)
 
 {
 	struct rx_msdu_desc_info *rx_msdu_info = &spd_desc_l->rx_msdu_info;
@@ -1523,13 +1525,7 @@ ath12k_wifi8_dp_process_reo_rx_err_packets(struct ath12k_dp *dp,
 				break;
 			case HAL_REO_ENTR_RING_RXDMA_ECODE_DECRYPT_ERR:
 				dp_pdev->stats.telemetry_stats.rx_decrypt_err++;
-				drop = ath12k_wifi8_dp_tkip_mic_err(dp_pdev,
-								    peer,
-								    &rx_status,
-								    spd_desc_l,
-								    napi,
-								    &prev_tlv);
-
+				drop = true;
 				drop_reason = ATH_RX_TKIP_MIC_ERR;
 				break;
 			case HAL_REO_ENTR_RING_RXDMA_ECODE_TKIP_MIC_ERR:

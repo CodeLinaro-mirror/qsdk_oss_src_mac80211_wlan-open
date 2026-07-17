@@ -111,27 +111,41 @@ void ath12k_get_ingress_mlo_dev_info(struct net_device *ndev,
 	    ahvif->vdev_type != WMI_VDEV_TYPE_AP)
 		return;
 
+	rcu_read_lock();
+
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA) {
 		sta = ieee80211_find_sta(vif, vif->cfg.ap_addr);
 
 		if (!sta) {
-			pr_warn("ieee80211_sta is null");
+			rcu_read_unlock();
+			pr_warn_ratelimited("ieee80211_sta is null for addr %pM\n",
+					    vif->cfg.ap_addr);
 			return;
 		}
 	} else if (ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
 		sta = ieee80211_find_sta(vif, peer_mac);
 		if (!sta) {
 			sta = wdev_to_ieee80211_vlan_sta(wdev);
-			if (!sta)
+			if (!sta) {
+				rcu_read_unlock();
+				pr_warn_ratelimited("ath12k: ingress mlo: AP sta null for peer %pM\n",
+						    peer_mac);
 				return;
+			}
 		}
 	}
 
 	ahsta = ath12k_sta_to_ahsta(sta);
 
-	rcu_read_lock();
 	arvif  = (!sta->mlo) ? rcu_dereference(ahvif->link[ahsta->deflink.link_id]) :
 			       rcu_dereference(ahvif->link[ahsta->primary_link_id]);
+	if (!arvif) {
+		rcu_read_unlock();
+		pr_warn_ratelimited("ath12k: ingress mlo: arvif null link_id %d mlo %d\n",
+				    (!sta->mlo) ? ahsta->deflink.link_id :
+				    ahsta->primary_link_id, sta->mlo);
+		return;
+	}
 
 	*link_id = (!sta->mlo) ? ahsta->deflink.link_id : ahsta->primary_link_id;
 
@@ -239,9 +253,10 @@ u32 ath12k_get_metadata_info(struct ath_dp_metadata_param *md_param)
 	metadata = ath_encode_metadata(link_id, msduq_peer);
 
 	if (md_param->ast_param.valid) {
-		ath12k_dbg(NULL, ATH12K_DBG_PEER, "ast_info:%d hw_peer_id:%d\n",
-			   md_param->ast_param.ast_info,
-			   md_param->ast_param.hw_peer_id);
+		ath12k_dbg_level(NULL, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+				 "ast_info:%d hw_peer_id:%d\n",
+				 md_param->ast_param.ast_info,
+				 md_param->ast_param.hw_peer_id);
 	}
 
 	return metadata;
@@ -499,7 +514,8 @@ static bool ath12k_ds_get_node_id(struct ieee80211_vif *vif,
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA) {
 		sta = ieee80211_find_sta(vif, vif->cfg.ap_addr);
 		if (!sta) {
-			pr_err("ieee80211_sta is null");
+			pr_err_ratelimited("ieee80211_sta is null for addr %pM\n",
+					   vif->cfg.ap_addr);
 			goto unlock_n_fail;
 		}
 	} else if (ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
@@ -512,8 +528,8 @@ static bool ath12k_ds_get_node_id(struct ieee80211_vif *vif,
 	}
 
 	ahsta = ath12k_sta_to_ahsta(sta);
-	arvif = (!sta->mlo) ? ahvif->link[ahsta->deflink.link_id] :
-			ahvif->link[ahsta->assoc_link_id];
+	arvif = (!sta->mlo) ? rcu_dereference(ahvif->link[ahsta->deflink.link_id]) :
+			rcu_dereference(ahvif->link[ahsta->assoc_link_id]);
 
 	if (!arvif)
 		goto unlock_n_fail;

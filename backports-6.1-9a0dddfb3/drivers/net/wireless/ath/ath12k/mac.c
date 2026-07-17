@@ -2702,6 +2702,42 @@ static int ath12k_mac_vdev_ratemask(struct ath12k_link_vif *arvif,
 	return 0;
 }
 
+static void
+ath12k_mac_parse_beacon_eht_mcs_nss(struct sk_buff *bcn,
+				    struct ieee80211_eht_mcs_nss_supp *out)
+{
+	const struct ieee80211_eht_cap_elem_fixed *eht_cap;
+	const struct ieee80211_he_cap_elem *he_cap;
+	const u8 *he_ie, *eht_ie, *mcs;
+	u8 mcs_nss_len;
+	int ies_len;
+	u8 *ies;
+
+	memset(out, 0, sizeof(*out));
+
+	ies = ((struct ieee80211_mgmt *)bcn->data)->u.beacon.variable;
+	ies_len = bcn->len - (ies - (u8 *)bcn->data);
+
+	he_ie = cfg80211_find_ext_ie(WLAN_EID_EXT_HE_CAPABILITY, ies, ies_len);
+	if (!he_ie || he_ie[1] < 1 + sizeof(*he_cap))
+		return;
+
+	eht_ie = cfg80211_find_ext_ie(WLAN_EID_EXT_EHT_CAPABILITY, ies, ies_len);
+	if (!eht_ie || eht_ie[1] < 1 + sizeof(*eht_cap))
+		return;
+
+	he_cap  = (const struct ieee80211_he_cap_elem *)(he_ie  + 3);
+	eht_cap = (const struct ieee80211_eht_cap_elem_fixed *)(eht_ie + 3);
+
+	mcs_nss_len = ieee80211_eht_mcs_nss_size(he_cap, eht_cap, true);
+	if (eht_ie[1] < 1 + sizeof(*eht_cap) + mcs_nss_len)
+		return;
+
+	mcs = (const u8 *)(eht_cap + 1);
+
+	memcpy(out, mcs, min_t(u8, mcs_nss_len, sizeof(*out)));
+}
+
 static int ath12k_mac_setup_bcn_tmpl_ema(struct ath12k_link_vif *arvif,
 					 struct ath12k_link_vif *tx_arvif,
 					 u8 bssid_index)
@@ -2732,6 +2768,9 @@ static int ath12k_mac_setup_bcn_tmpl_ema(struct ath12k_link_vif *arvif,
 				    arvif->vdev_id, ret);
 			return ret;
 		}
+
+		ath12k_mac_parse_beacon_eht_mcs_nss(beacons->bcn[0].skb,
+						    &tx_arvif->bcn_eht_mcs_map);
 	}
 
 	for (i = 0; i < beacons->cnt; i++) {
@@ -2871,6 +2910,8 @@ static int ath12k_mac_setup_bcn_tmpl(struct ath12k_link_vif *arvif)
 		goto free_bcn_skb;
 	}
 
+	ath12k_mac_parse_beacon_eht_mcs_nss(bcn, &arvif->bcn_eht_mcs_map);
+
 	ret = ath12k_wmi_bcn_tmpl(tx_arvif, &offs, bcn, NULL);
 
 	if (ret)
@@ -2928,10 +2969,6 @@ static int ath12k_vendor_send_tpc_eirp_event(struct ath12k_link_vif *arvif,
 			tpc_eirp_dbm))
 		goto fail;
 
-	ath12k_info(arvif->ar->ab,
-			"TPC: sending vendor NL event subcmd=%u vdev=%u link=%d eirp_dbm=%d\n",
-			QCA_NL80211_VENDOR_SUBCMD_TPC_EIRP_EVENT,
-			arvif->vdev_id, link_id, tpc_eirp_dbm);
 	cfg80211_vendor_event(vendor_event, GFP_KERNEL);
 	return 0;
 
@@ -4859,18 +4896,6 @@ ath12k_peer_assoc_build_vendor_event(struct ath12k_sta *ahsta,
 }
 
 
-static bool
-ath12k_peer_assoc_h_eht_masked(const u16 eht_mcs_mask[NL80211_EHT_NSS_MAX])
-{
-	int nss;
-
-	for (nss = 0; nss < NL80211_EHT_NSS_MAX; nss++)
-		if (eht_mcs_mask[nss])
-			return false;
-
-	return true;
-}
-
 static void ath12k_peer_assoc_h_phymode(struct ath12k *ar,
 					struct ath12k_link_vif *arvif,
 					struct ath12k_link_sta *arsta,
@@ -4882,7 +4907,6 @@ static void ath12k_peer_assoc_h_phymode(struct ath12k *ar,
 	const u8 *ht_mcs_mask;
 	const u16 *vht_mcs_mask;
 	const u16 *he_mcs_mask;
-	const u16 *eht_mcs_mask;
 	enum wmi_phy_mode phymode = MODE_UNKNOWN;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
@@ -4902,7 +4926,6 @@ static void ath12k_peer_assoc_h_phymode(struct ath12k *ar,
 	ht_mcs_mask = arvif->bitrate_mask.control[band].ht_mcs;
 	vht_mcs_mask = arvif->bitrate_mask.control[band].vht_mcs;
 	he_mcs_mask = arvif->bitrate_mask.control[band].he_mcs;
-	eht_mcs_mask = arvif->bitrate_mask.control[band].eht_mcs;
 
 	if (!link_sta) {
 		ath12k_warn(ar->ab, "unable to access link sta in peer assoc he for sta %pM link %u\n",
@@ -4917,8 +4940,7 @@ static void ath12k_peer_assoc_h_phymode(struct ath12k *ar,
 				phymode = MODE_11BN_UHR40_2G;
 			else
 				phymode = MODE_11BN_UHR20_2G;
-		} else if (link_sta->eht_cap.has_eht &&
-		    !ath12k_peer_assoc_h_eht_masked(eht_mcs_mask)) {
+		} else if (link_sta->eht_cap.has_eht) {
 			if (link_sta->bandwidth == IEEE80211_STA_RX_BW_40)
 				phymode = MODE_11BE_EHT40_2G;
 			else
@@ -4986,46 +5008,43 @@ static void ath12k_peer_assoc_h_phymode(struct ath12k *ar,
 	WARN_ON(phymode == MODE_UNKNOWN);
 }
 
-static void ath12k_mac_set_eht_mcs(u8 rx_tx_mcs7, u8 rx_tx_mcs9,
-				   u8 rx_tx_mcs11, u8 rx_tx_mcs13,
-				   u32 *rx_mcs, u32 *tx_mcs,
-				   const u16 eht_mcs_limit[NL80211_EHT_NSS_MAX])
+static void
+ath12k_mac_set_eht_mcs(u8 own_mcs7, u8 own_mcs9, u8 own_mcs11, u8 own_mcs13,
+		       u8 peer_mcs7, u8 peer_mcs9, u8 peer_mcs11, u8 peer_mcs13,
+		       u32 *peer_rx_mcs, u32 *peer_tx_mcs)
 {
-	int nss;
-	u8 mcs_7 = 0, mcs_9 = 0, mcs_11 = 0, mcs_13 = 0;
-	u8 peer_mcs_7 = 0, peer_mcs_9 = 0, peer_mcs_11 = 0, peer_mcs_13 = 0;
+	u8 own_7, own_9, own_11, own_13;
+	u8 p_mcs_7, p_mcs_9, p_mcs_11, p_mcs_13;
 
-	for (nss = 0; nss < NL80211_EHT_NSS_MAX; nss++) {
-		if (eht_mcs_limit[nss] & 0x00FF)
-			mcs_7++;
-		if (eht_mcs_limit[nss] & 0x0300)
-			mcs_9++;
-		if (eht_mcs_limit[nss] & 0x0C00)
-			mcs_11++;
-		if (eht_mcs_limit[nss] & 0x3000)
-			mcs_13++;
-	}
+	/* TX: peer to us; limit = min(peer TX cap, our RX cap) */
+	own_7  = u8_get_bits(own_mcs7,  IEEE80211_EHT_MCS_NSS_RX);
+	own_9  = u8_get_bits(own_mcs9,  IEEE80211_EHT_MCS_NSS_RX);
+	own_11 = u8_get_bits(own_mcs11, IEEE80211_EHT_MCS_NSS_RX);
+	own_13 = u8_get_bits(own_mcs13, IEEE80211_EHT_MCS_NSS_RX);
+	p_mcs_7  = u8_get_bits(peer_mcs7,  IEEE80211_EHT_MCS_NSS_TX);
+	p_mcs_9  = u8_get_bits(peer_mcs9,  IEEE80211_EHT_MCS_NSS_TX);
+	p_mcs_11 = u8_get_bits(peer_mcs11, IEEE80211_EHT_MCS_NSS_TX);
+	p_mcs_13 = u8_get_bits(peer_mcs13, IEEE80211_EHT_MCS_NSS_TX);
 
-	peer_mcs_7 = u8_get_bits(rx_tx_mcs7, IEEE80211_EHT_MCS_NSS_RX);
-	peer_mcs_9 = u8_get_bits(rx_tx_mcs9, IEEE80211_EHT_MCS_NSS_RX);
-	peer_mcs_11 = u8_get_bits(rx_tx_mcs11, IEEE80211_EHT_MCS_NSS_RX);
-	peer_mcs_13 = u8_get_bits(rx_tx_mcs13, IEEE80211_EHT_MCS_NSS_RX);
+	*peer_tx_mcs = FIELD_PREP(WMI_EHT_MCS_NSS_0_7,   min(p_mcs_7,  own_7))  |
+		       FIELD_PREP(WMI_EHT_MCS_NSS_8_9,   min(p_mcs_9,  own_9))  |
+		       FIELD_PREP(WMI_EHT_MCS_NSS_10_11, min(p_mcs_11, own_11)) |
+		       FIELD_PREP(WMI_EHT_MCS_NSS_12_13, min(p_mcs_13, own_13));
 
-	*rx_mcs = FIELD_PREP(WMI_EHT_MCS_NSS_0_7, min(peer_mcs_7, mcs_7)) |
-		  FIELD_PREP(WMI_EHT_MCS_NSS_8_9, min(peer_mcs_9, mcs_9)) |
-		  FIELD_PREP(WMI_EHT_MCS_NSS_10_11, min(peer_mcs_11, mcs_11)) |
-		  FIELD_PREP(WMI_EHT_MCS_NSS_12_13, min(peer_mcs_13, mcs_13));
+	/* RX: us to peer; limit = min(peer RX cap, our TX cap) */
+	own_7  = u8_get_bits(own_mcs7,  IEEE80211_EHT_MCS_NSS_TX);
+	own_9  = u8_get_bits(own_mcs9,  IEEE80211_EHT_MCS_NSS_TX);
+	own_11 = u8_get_bits(own_mcs11, IEEE80211_EHT_MCS_NSS_TX);
+	own_13 = u8_get_bits(own_mcs13, IEEE80211_EHT_MCS_NSS_TX);
+	p_mcs_7  = u8_get_bits(peer_mcs7,  IEEE80211_EHT_MCS_NSS_RX);
+	p_mcs_9  = u8_get_bits(peer_mcs9,  IEEE80211_EHT_MCS_NSS_RX);
+	p_mcs_11 = u8_get_bits(peer_mcs11, IEEE80211_EHT_MCS_NSS_RX);
+	p_mcs_13 = u8_get_bits(peer_mcs13, IEEE80211_EHT_MCS_NSS_RX);
 
-	peer_mcs_7 = u8_get_bits(rx_tx_mcs7, IEEE80211_EHT_MCS_NSS_TX);
-	peer_mcs_9 = u8_get_bits(rx_tx_mcs9, IEEE80211_EHT_MCS_NSS_TX);
-	peer_mcs_11 = u8_get_bits(rx_tx_mcs11, IEEE80211_EHT_MCS_NSS_TX);
-	peer_mcs_13 = u8_get_bits(rx_tx_mcs13, IEEE80211_EHT_MCS_NSS_TX);
-
-	*tx_mcs = FIELD_PREP(WMI_EHT_MCS_NSS_0_7, min(peer_mcs_7, mcs_7)) |
-		  FIELD_PREP(WMI_EHT_MCS_NSS_8_9, min(peer_mcs_9, mcs_9)) |
-		  FIELD_PREP(WMI_EHT_MCS_NSS_10_11, min(peer_mcs_11, mcs_11)) |
-		  FIELD_PREP(WMI_EHT_MCS_NSS_12_13, min(peer_mcs_13, mcs_13));
-
+	*peer_rx_mcs = FIELD_PREP(WMI_EHT_MCS_NSS_0_7,   min(p_mcs_7,  own_7))  |
+		       FIELD_PREP(WMI_EHT_MCS_NSS_8_9,   min(p_mcs_9,  own_9))  |
+		       FIELD_PREP(WMI_EHT_MCS_NSS_10_11, min(p_mcs_11, own_11)) |
+		       FIELD_PREP(WMI_EHT_MCS_NSS_12_13, min(p_mcs_13, own_13));
 }
 
 static void ath12k_mac_set_eht_ppe_threshold(const u8 *ppe_thres,
@@ -5065,22 +5084,23 @@ static void ath12k_peer_assoc_h_eht(struct ath12k *ar,
 				    struct ieee80211_link_sta *link_sta)
 {
 	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(arsta->ahsta);
-	const struct ieee80211_eht_mcs_nss_supp *own_eht_mcs_nss_supp;
 	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(arvif->ahvif);
+	const struct ieee80211_eht_mcs_nss_supp_20mhz_only *own_bw_20;
 	const struct ieee80211_eht_mcs_nss_supp_20mhz_only *bw_20;
-	enum ieee80211_sta_rx_bandwidth radio_max_bw_caps;
-	const struct ieee80211_sta_eht_cap *own_eht_cap;
+	const struct ieee80211_eht_mcs_nss_supp_bw *own_bw;
 	const struct ieee80211_eht_mcs_nss_supp_bw *bw;
+	enum ieee80211_sta_rx_bandwidth radio_max_bw_caps;
+	struct ieee80211_eht_mcs_nss_supp own_mcs_nss;
+	struct ieee80211_bss_conf *link_conf = NULL;
 	const struct ieee80211_sta_eht_cap *eht_cap;
 	const struct ieee80211_sta_he_cap *he_cap;
-	struct ieee80211_bss_conf *link_conf = NULL;
-	bool user_rate_valid = true;
+	struct ath12k_link_vif *tx_arvif;
+	u32 *peer_rx_mcs, *peer_tx_mcs;
 	struct cfg80211_chan_def def;
 	enum nl80211_band band;
+	bool own_is_20mhz_only;
+	int eht_nss;
 	u8 max_nss;
-	u16 *eht_mcs_mask;
-	u32 *rx_mcs, *tx_mcs;
-	int eht_nss, nss_idx;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -5112,12 +5132,25 @@ static void ath12k_peer_assoc_h_eht(struct ath12k *ar,
 	else
 		band = def.chan->band;
 
-	eht_mcs_mask = arvif->bitrate_mask.control[band].eht_mcs;
-	own_eht_cap = &ar->mac.sbands[band].iftype_data->eht_cap;
-	own_eht_mcs_nss_supp = &own_eht_cap->eht_mcs_nss_supp;
+	own_is_20mhz_only =
+		!(ar->mac.sbands[band].iftype_data->he_cap.he_cap_elem.phy_cap_info[0] &
+		  IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_MASK_ALL);
 
-	if (ath12k_peer_assoc_h_eht_masked((const u16 *)eht_mcs_mask))
-		return;
+	if (vif->type == NL80211_IFTYPE_AP && !ath12k_mac_is_bridge_vdev(arvif)) {
+		tx_arvif = ath12k_mac_get_tx_arvif(arvif, link_conf);
+		if (!tx_arvif)
+			tx_arvif = arvif;
+
+		own_mcs_nss = tx_arvif->bcn_eht_mcs_map;
+	} else {
+		const struct ieee80211_sta_eht_cap *own_eht_cap =
+			&ar->mac.sbands[band].iftype_data->eht_cap;
+
+		own_mcs_nss = own_eht_cap->eht_mcs_nss_supp;
+	}
+
+	eht_nss = ath12k_mac_max_eht_mcs_nss((void *)&own_mcs_nss,
+					     sizeof(own_mcs_nss));
 
 	arg->eht_flag = true;
 
@@ -5144,31 +5177,8 @@ static void ath12k_peer_assoc_h_eht(struct ath12k *ar,
 	memcpy(arg->peer_eht_cap_phy, eht_cap->eht_cap_elem.phy_cap_info,
 	       sizeof(eht_cap->eht_cap_elem.phy_cap_info));
 
-	rx_mcs = arg->peer_eht_rx_mcs_set;
-	tx_mcs = arg->peer_eht_tx_mcs_set;
-
-	eht_nss = ath12k_mac_max_eht_mcs_nss((void *)own_eht_mcs_nss_supp,
-					     sizeof(*own_eht_mcs_nss_supp));
-
-	if (eht_nss > link_sta->rx_nss) {
-		user_rate_valid = false;
-		for (nss_idx = (link_sta->rx_nss - 1); nss_idx >= 0; nss_idx--) {
-			if (eht_mcs_mask[nss_idx]) {
-				user_rate_valid = true;
-				break;
-			}
-		}
-	}
-
-	if (!user_rate_valid) {
-		ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
-				 "Setting eht range MCS value to peer supported nss:%d for peer %pM\n",
-				 link_sta->rx_nss, arsta->addr);
-		eht_mcs_mask[link_sta->rx_nss - 1] = eht_mcs_mask[eht_nss - 1];
-	}
-
-	bw_20 = &eht_cap->eht_mcs_nss_supp.only_20mhz;
-	bw = &eht_cap->eht_mcs_nss_supp.bw._80;
+	peer_rx_mcs = arg->peer_eht_rx_mcs_set;
+	peer_tx_mcs = arg->peer_eht_tx_mcs_set;
 
 	radio_max_bw_caps = ath12k_get_radio_max_bw_caps(ar, band,
 							 link_sta->bandwidth,
@@ -5177,54 +5187,109 @@ static void ath12k_peer_assoc_h_eht(struct ath12k *ar,
 	switch (min(link_sta->sta_max_bandwidth, radio_max_bw_caps)) {
 	case IEEE80211_STA_RX_BW_320:
 		bw = &eht_cap->eht_mcs_nss_supp.bw._320;
-		ath12k_mac_set_eht_mcs(bw->rx_tx_mcs9_max_nss,
-				       bw->rx_tx_mcs9_max_nss,
-				       bw->rx_tx_mcs11_max_nss,
-				       bw->rx_tx_mcs13_max_nss,
-				       &rx_mcs[WMI_EHTCAP_TXRX_MCS_NSS_IDX_320],
-				       &tx_mcs[WMI_EHTCAP_TXRX_MCS_NSS_IDX_320],
-				       eht_mcs_mask);
+		/* There is no support for 320Mhz in 5G radio but 240Mhz
+		 * is realized using punctured 320Mhz channel.Pass peer's
+		 * caps through directly instead of intersecting with zero own caps
+		 */
+		if (band == NL80211_BAND_5GHZ) {
+			ath12k_mac_set_eht_mcs(
+					bw->rx_tx_mcs9_max_nss,
+					bw->rx_tx_mcs9_max_nss,
+					bw->rx_tx_mcs11_max_nss,
+					bw->rx_tx_mcs13_max_nss,
+					bw->rx_tx_mcs9_max_nss,
+					bw->rx_tx_mcs9_max_nss,
+					bw->rx_tx_mcs11_max_nss,
+					bw->rx_tx_mcs13_max_nss,
+					&peer_rx_mcs[WMI_EHTCAP_TXRX_MCS_NSS_IDX_320],
+					&peer_tx_mcs[WMI_EHTCAP_TXRX_MCS_NSS_IDX_320]);
+		} else {
+			own_bw = &own_mcs_nss.bw._320;
+			ath12k_mac_set_eht_mcs(
+					own_bw->rx_tx_mcs9_max_nss,
+					own_bw->rx_tx_mcs9_max_nss,
+					own_bw->rx_tx_mcs11_max_nss,
+					own_bw->rx_tx_mcs13_max_nss,
+					bw->rx_tx_mcs9_max_nss,
+					bw->rx_tx_mcs9_max_nss,
+					bw->rx_tx_mcs11_max_nss,
+					bw->rx_tx_mcs13_max_nss,
+					&peer_rx_mcs[WMI_EHTCAP_TXRX_MCS_NSS_IDX_320],
+					&peer_tx_mcs[WMI_EHTCAP_TXRX_MCS_NSS_IDX_320]);
+		}
 		arg->peer_eht_mcs_count++;
 		fallthrough;
 	case IEEE80211_STA_RX_BW_160:
+		own_bw = &own_mcs_nss.bw._160;
 		bw = &eht_cap->eht_mcs_nss_supp.bw._160;
-		ath12k_mac_set_eht_mcs(bw->rx_tx_mcs9_max_nss,
+		ath12k_mac_set_eht_mcs(own_bw->rx_tx_mcs9_max_nss,
+				       own_bw->rx_tx_mcs9_max_nss,
+				       own_bw->rx_tx_mcs11_max_nss,
+				       own_bw->rx_tx_mcs13_max_nss,
+				       bw->rx_tx_mcs9_max_nss,
 				       bw->rx_tx_mcs9_max_nss,
 				       bw->rx_tx_mcs11_max_nss,
 				       bw->rx_tx_mcs13_max_nss,
-				       &rx_mcs[WMI_EHTCAP_TXRX_MCS_NSS_IDX_160],
-				       &tx_mcs[WMI_EHTCAP_TXRX_MCS_NSS_IDX_160],
-				       eht_mcs_mask);
+				       &peer_rx_mcs[WMI_EHTCAP_TXRX_MCS_NSS_IDX_160],
+				       &peer_tx_mcs[WMI_EHTCAP_TXRX_MCS_NSS_IDX_160]);
 		arg->peer_eht_mcs_count++;
 		fallthrough;
 	default:
-		if (!(link_sta->he_cap.he_cap_elem.phy_cap_info[0] &
-			IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_MASK_ALL)) {
+		if ((vif->type == NL80211_IFTYPE_AP ||
+		     vif->type == NL80211_IFTYPE_MESH_POINT) &&
+		    !(link_sta->he_cap.he_cap_elem.phy_cap_info[0] &
+		      IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_MASK_ALL)) {
+			own_bw = &own_mcs_nss.bw._80;
 			bw_20 = &eht_cap->eht_mcs_nss_supp.only_20mhz;
-
-			ath12k_mac_set_eht_mcs(bw_20->rx_tx_mcs7_max_nss,
-					       bw_20->rx_tx_mcs9_max_nss,
-					       bw_20->rx_tx_mcs11_max_nss,
-					       bw_20->rx_tx_mcs13_max_nss,
-					       &rx_mcs[WMI_EHTCAP_TXRX_MCS_NSS_IDX_80],
-					       &tx_mcs[WMI_EHTCAP_TXRX_MCS_NSS_IDX_80],
-					       eht_mcs_mask);
-		} else {
+			ath12k_mac_set_eht_mcs(
+					own_bw->rx_tx_mcs9_max_nss,
+					own_bw->rx_tx_mcs9_max_nss,
+					own_bw->rx_tx_mcs11_max_nss,
+					own_bw->rx_tx_mcs13_max_nss,
+					bw_20->rx_tx_mcs7_max_nss,
+					bw_20->rx_tx_mcs9_max_nss,
+					bw_20->rx_tx_mcs11_max_nss,
+					bw_20->rx_tx_mcs13_max_nss,
+					&peer_rx_mcs[WMI_EHTCAP_TXRX_MCS_NSS_IDX_80],
+					&peer_tx_mcs[WMI_EHTCAP_TXRX_MCS_NSS_IDX_80]);
+		} else if (!(vif->type == NL80211_IFTYPE_AP ||
+			     vif->type == NL80211_IFTYPE_MESH_POINT) &&
+			   own_is_20mhz_only) {
+			own_bw_20 = &own_mcs_nss.only_20mhz;
 			bw = &eht_cap->eht_mcs_nss_supp.bw._80;
-			ath12k_mac_set_eht_mcs(bw->rx_tx_mcs9_max_nss,
-					       bw->rx_tx_mcs9_max_nss,
-					       bw->rx_tx_mcs11_max_nss,
-					       bw->rx_tx_mcs13_max_nss,
-					       &rx_mcs[WMI_EHTCAP_TXRX_MCS_NSS_IDX_80],
-					       &tx_mcs[WMI_EHTCAP_TXRX_MCS_NSS_IDX_80],
-					       eht_mcs_mask);
+			ath12k_mac_set_eht_mcs(
+					own_bw_20->rx_tx_mcs7_max_nss,
+					own_bw_20->rx_tx_mcs9_max_nss,
+					own_bw_20->rx_tx_mcs11_max_nss,
+					own_bw_20->rx_tx_mcs13_max_nss,
+					bw->rx_tx_mcs9_max_nss,
+					bw->rx_tx_mcs9_max_nss,
+					bw->rx_tx_mcs11_max_nss,
+					bw->rx_tx_mcs13_max_nss,
+					&peer_rx_mcs[WMI_EHTCAP_TXRX_MCS_NSS_IDX_80],
+					&peer_tx_mcs[WMI_EHTCAP_TXRX_MCS_NSS_IDX_80]);
+		} else {
+			own_bw = &own_mcs_nss.bw._80;
+			bw = &eht_cap->eht_mcs_nss_supp.bw._80;
+			ath12k_mac_set_eht_mcs(
+					own_bw->rx_tx_mcs9_max_nss,
+					own_bw->rx_tx_mcs9_max_nss,
+					own_bw->rx_tx_mcs11_max_nss,
+					own_bw->rx_tx_mcs13_max_nss,
+					bw->rx_tx_mcs9_max_nss,
+					bw->rx_tx_mcs9_max_nss,
+					bw->rx_tx_mcs11_max_nss,
+					bw->rx_tx_mcs13_max_nss,
+					&peer_rx_mcs[WMI_EHTCAP_TXRX_MCS_NSS_IDX_80],
+					&peer_tx_mcs[WMI_EHTCAP_TXRX_MCS_NSS_IDX_80]);
 		}
-
 		arg->peer_eht_mcs_count++;
 		break;
 	}
 
-	if (!(link_sta->he_cap.he_cap_elem.phy_cap_info[0] &
+	if ((vif->type == NL80211_IFTYPE_AP ||
+	     vif->type == NL80211_IFTYPE_MESH_POINT) &&
+	    !(link_sta->he_cap.he_cap_elem.phy_cap_info[0] &
 	      IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_MASK_ALL)) {
 		if (bw_20->rx_tx_mcs13_max_nss)
 			max_nss = bw_20->rx_tx_mcs13_max_nss;
@@ -10112,6 +10177,7 @@ static int ath12k_mac_set_mbssid_info(struct ieee80211_bss_conf *bss_conf,
 	struct ath12k_link_vif *tx_arvif;
 	struct ath12k *ar = arvif->ar;
 	struct ath12k_mbssid_info *mbssid_info;
+	struct ath12k_base *ab = ar->ab;
 
 	if (!bss_conf->mbssid_tx_vif)
 		return 0;
@@ -19043,7 +19109,7 @@ int ath12k_mac_start(struct ath12k *ar)
 	}
 
 	ret = ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_ARP_AC_OVERRIDE,
-					0, pdev->pdev_id);
+					WME_AC_VO, pdev->pdev_id);
 	if (ret) {
 		ath12k_err(ab, "[vdev_id : %s radio_idx : %u] failed to set ac override for ARP: %d\n",
 			   ATH12K_INVALID_VDEV_ID, ar->radio_idx,
@@ -20756,8 +20822,20 @@ ath12k_mac_assign_vif_to_vdev(struct ieee80211_hw *hw,
 		 * a certain radio.
 		 */
 		if (ar != arvif->ar) {
-			if (WARN_ON(arvif->is_started))
-				return NULL;
+			if (arvif->is_started) {
+				if (WARN_ON(!arvif->is_scan_vif))
+					return NULL;
+
+				ret = ath12k_mac_vdev_stop(arvif);
+				if (ret) {
+					ath12k_warn(arvif->ar->ab,
+						    "[radio_idx : %u] failed to stop scan vdev %d before radio switch: %d\n",
+						    arvif->ar->radio_idx,
+						    arvif->vdev_id, ret);
+					return NULL;
+				}
+				arvif->is_started = false;
+			}
 
 			ath12k_mac_remove_link_interface(hw, arvif);
 			ath12k_mac_unassign_link_vif(arvif);
@@ -21141,6 +21219,7 @@ EXPORT_SYMBOL(ath12k_mac_op_add_interface);
 
 void ath12k_mac_vif_unref(struct ath12k_dp *dp, struct ieee80211_vif *vif)
 {
+	struct ath12k_base *ab = dp->ab;
 	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
 	struct ath12k_tx_desc_info *tx_desc_info;
 	struct ath12k_skb_cb *skb_cb;
@@ -23823,7 +23902,7 @@ ath12k_mac_assign_vif_chanctx_handle(struct ieee80211_hw *hw,
 		return -ENOMEM;
 	}
 
-	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA)
+	if (!is_bridge_vdev && ahvif->vdev_type == WMI_VDEV_TYPE_STA)
 		memcpy(arvif->bssid, link_conf->addr, ETH_ALEN);
 
 	arvif = ath12k_mac_assign_vif_to_vdev(hw, arvif, ctx,
@@ -24240,6 +24319,7 @@ static int ath12k_mac_get_link_idx_for_bridge(struct ieee80211_hw *hw,
 	struct ath12k_hw *ah = hw->priv;
 	struct ath12k_hw_group *ag;
 	struct ath12k *ar1, *ar2;
+	struct ath12k_base *ab;
 	int ret = -ENODATA;
 	u32 adj_device1, adj_device2;
 	struct ath12k_wsi_info *wsi_info, *adj_wsi_info;
@@ -24250,7 +24330,8 @@ static int ath12k_mac_get_link_idx_for_bridge(struct ieee80211_hw *hw,
 		if (!ar1)
 			continue;
 
-		ret = ath12k_mac_target_supp_n_link_mlo(ar1->ab);
+		ab = ar1->ab;
+		ret = ath12k_mac_target_supp_n_link_mlo(ab);
 		if (ret)
 			goto err;
 
@@ -25678,7 +25759,8 @@ ath12k_mac_reconfig_complete(struct ieee80211_hw *hw,
 
 		ah->state = ATH12K_HW_STATE_ON;
 	} else {
-		WARN_ON(ah->state != ATH12K_HW_STATE_ON);
+		if (ah->state != ATH12K_HW_STATE_ON)
+			ath12k_err(NULL, "ah state %d during recovery\n", ah->state);
 	}
 
 	/* stop_queues() & wake_queues() will take care to stop/wake
@@ -26033,8 +26115,8 @@ void ath12k_mac_op_preserved_link_stats(struct ieee80211_hw *hw,
 	struct ath12k_dp_preserved_stats *del_stats = NULL;
 	struct ath12k_dp_peer *dp_peer;
 	int i;
-	u64 tx_bytes = 0, rx_bytes = 0;
-	u32 tx_packets = 0, rx_packets = 0;
+	u64 tx_bytes = 0;
+	u32 tx_packets = 0;
 
 	if (!vif || !sta || !sinfo)
 		return;
@@ -26057,18 +26139,11 @@ void ath12k_mac_op_preserved_link_stats(struct ieee80211_hw *hw,
 	}
 /* TODO - Fetch the tx failed and retries from htt stats */
 
-	for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
-		rx_bytes += del_stats->per_pkt_rx[i].sent_to_stack.bytes +
-			del_stats->per_pkt_rx[i].sent_to_stack_fast.bytes;
-		rx_packets += del_stats->per_pkt_rx[i].sent_to_stack.packets +
-			del_stats->per_pkt_rx[i].sent_to_stack_fast.packets;
-	}
-
 	/* Deleted link totals only; MLD aggregation adds active per-link stats on top */
 	sinfo->tx_bytes   = tx_bytes;
 	sinfo->tx_packets = tx_packets;
-	sinfo->rx_bytes   = rx_bytes;
-	sinfo->rx_packets = rx_packets;
+	sinfo->rx_bytes   = dp_peer->link_peer_delete_stats.rx_counters.bytes;
+	sinfo->rx_packets = dp_peer->link_peer_delete_stats.rx_counters.packets;
 
 out:
 	spin_unlock_bh(&ah->dp_hw.peer_hash_lock);
@@ -26083,18 +26158,17 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 	struct ath12k_sta *ahsta;
 	struct ath12k_dp_link_peer_rate_info rate_info = {0};
 	struct ath12k_fw_stats_req_params params = {};
-	s8 signal, rssi_signal, rssi_offset;
+	s8 signal;
 	struct ath12k_link_sta *arsta;
 	struct ath12k_base *ab;
 	struct ath12k_dp_peer *dp_peer;
 	struct ath12k_dp_peer_stats *peer_stats = NULL;
 	struct ath12k_dp_peer_rx_stats *rx_stats;
 	struct ath12k *ar;
-	bool db2dbm, stats_valid = false;
+	bool stats_valid = false;
 	struct ath12k_dp_link_peer *link_peer;
 	u32 pn_errors = 0, mic_errors = 0, decrypt_errors = 0;
 	int i;
-	bool is_ds_vif = false;
 
 	if (!link_sta->sta) {
 		ath12k_err(NULL, "Failed to proceed: link_sta->sta is NULL");
@@ -26152,34 +26226,17 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 		link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_PACKETS);
 		link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_BYTES);
 
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-		is_ds_vif = ath12k_vif_to_ahvif(vif)->dp_vif.ppe_vp_type ==
-				PPE_VP_USER_TYPE_DS;
-#endif
 		if (ath12k_dp_hw_peer_stats_enabled(&ar->dp)) {
-			/* When HW stats are enabled, recv_from_reo has all the
-			 * Rx traffic data stored in ATH12K_DP_HW_STATS_REO_IDX
-			 * for SFE or DS mode.
-			 */
+			/* HW stats mode: recv_from_reo holds all Rx (SFE and DS). */
 			rx_stats = &peer_stats->rx[ATH12K_DP_HW_STATS_REO_IDX];
 			link_sinfo->rx_bytes += rx_stats->recv_from_reo.bytes;
 			link_sinfo->rx_packets += rx_stats->recv_from_reo.packets;
 		} else {
-			for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
-				/* PPE sync credits DS VIF WDS peer traffic only
-				 * on DP_REO_PPEDS_RING_IDX; skip lower ring
-				 * indices to avoid double-counting.
-				 */
-				if (dp_peer->use_4addr && is_ds_vif &&
-				    i < DP_REO_PPEDS_RING_IDX)
-					continue;
-				link_sinfo->rx_bytes +=
-					peer_stats->rx[i].sent_to_stack.bytes +
-					peer_stats->rx[i].sent_to_stack_fast.bytes;
-				link_sinfo->rx_packets +=
-					peer_stats->rx[i].sent_to_stack.packets +
-					peer_stats->rx[i].sent_to_stack_fast.packets;
-			}
+			/* SW/monitor mode: use link_peer->rx_bytes/rx_packets
+			 * (DS and SFE unified).
+			 */
+			link_sinfo->rx_bytes += link_peer->rx_bytes;
+			link_sinfo->rx_packets += link_peer->rx_packets;
 		}
 
 		link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_RX_BYTES);
@@ -26206,48 +26263,26 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 		jiffies_to_msecs(jiffies - ath12k_link_peer_last_active(link_peer));
 	link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_INACTIVE_TIME);
 
-	if (link_peer->rxrate.legacy || link_peer->rxrate.nss) {
-		if (link_peer->rxrate.legacy) {
-			link_sinfo->rxrate.legacy = link_peer->rxrate.legacy;
+	memset(&link_sinfo->rxrate, 0, sizeof(link_sinfo->rxrate));
+	if (rate_info.rxrate.legacy || rate_info.rxrate.nss) {
+		if (rate_info.rxrate.legacy) {
+			link_sinfo->rxrate.legacy = rate_info.rxrate.legacy;
+			link_sinfo->rxrate.flags = 0;
 		} else {
-			link_sinfo->rxrate.mcs = link_peer->rxrate.mcs;
-			link_sinfo->rxrate.nss = link_peer->rxrate.nss;
-			link_sinfo->rxrate.bw = link_peer->rxrate.bw;
-			link_sinfo->rxrate.he_gi = link_peer->rxrate.he_gi;
-			link_sinfo->rxrate.he_dcm = link_peer->rxrate.he_dcm;
-			link_sinfo->rxrate.he_ru_alloc = link_peer->rxrate.he_ru_alloc;
-			link_sinfo->rxrate.eht_gi = link_peer->rxrate.eht_gi;
-			link_sinfo->rxrate.eht_ru_alloc = link_peer->rxrate.eht_ru_alloc;
+			link_sinfo->rxrate.mcs = rate_info.rxrate.mcs;
+			link_sinfo->rxrate.nss = rate_info.rxrate.nss;
+			link_sinfo->rxrate.bw = rate_info.rxrate.bw;
+			link_sinfo->rxrate.he_gi = rate_info.rxrate.he_gi;
+			link_sinfo->rxrate.he_dcm = rate_info.rxrate.he_dcm;
+			link_sinfo->rxrate.he_ru_alloc = rate_info.rxrate.he_ru_alloc;
+			link_sinfo->rxrate.eht_gi = rate_info.rxrate.eht_gi;
+			link_sinfo->rxrate.eht_ru_alloc = rate_info.rxrate.eht_ru_alloc;
+			link_sinfo->rxrate.flags = rate_info.rxrate.flags;
 		}
-		link_sinfo->rxrate.flags = link_peer->rxrate.flags;
 		link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_RX_BITRATE);
 	}
 
-	/* In non offload modes (e.g., SFE), mac80211 double counts RX
-	 * packets because they are accounted for in both the regular Rx path
-	 * and via the monitor path.
-	 *
-	 * To fix this, override mac80211 counters with the driver's internal
-	 * peer statistics (derived from firmware) when extended RX stats
-	 * are enabled.
-	 *
-	 * When HW stats are enabled, this copy is not needed.
-	 */
-	if (ath12k_extd_rx_stats_enabled(&ar->dp) &&
-	    !ath12k_dp_hw_peer_stats_enabled(&ar->dp)) {
-		if (link_peer && link_peer->peer_stats.rx_stats) {
-			link_sinfo->rx_packets =
-				link_peer->peer_stats.rx_stats->num_msdu;
-			link_sinfo->rx_bytes =
-				link_peer->peer_stats.rx_stats->num_msdu_bytes;
-			link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_RX_PACKETS) |
-					      BIT_ULL(NL80211_STA_INFO_RX_BYTES);
-		}
-	}
 	rcu_read_unlock();
-
-	db2dbm = test_bit(WMI_TLV_SERVICE_HW_DB2DBM_CONVERSION_SUPPORT,
-			  ar->ab->wmi_ab.svc_map);
 
 	link_sinfo->rx_duration = rate_info.rx_duration;
 	link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_RX_DURATION);
@@ -26255,6 +26290,7 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 	link_sinfo->tx_duration = rate_info.tx_duration;
 	link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_DURATION);
 
+	memset(&link_sinfo->txrate, 0, sizeof(link_sinfo->txrate));
 	if (rate_info.txrate.legacy || rate_info.txrate.nss) {
 		if (rate_info.txrate.legacy) {
 			link_sinfo->txrate.legacy = rate_info.txrate.legacy;
@@ -26273,11 +26309,6 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 		link_sinfo->txrate.flags = rate_info.txrate.flags;
 		link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_BITRATE);
 	}
-
-	rssi_offset = rate_info.rssi_comb + ar->rssi_offsets.avg_nf_dbm;
-	rssi_signal = rate_info.rssi_comb > ar->rssi_offsets.xlna_bypass_threshold ?
-		      rssi_offset + ar->rssi_offsets.xlna_bypass_offset :
-		      rssi_offset;
 
 	signal = rate_info.rssi_comb;
 	if (ahsta->ahvif->vdev_type == WMI_VDEV_TYPE_STA) {
@@ -26298,14 +26329,11 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 
 
 	if (signal) {
-		link_sinfo->signal =
-			db2dbm ? rate_info.rssi_comb : rssi_signal;
+		link_sinfo->signal = signal;
 		link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_SIGNAL);
 	}
 
-	link_sinfo->signal_avg =
-		rate_info.signal_avg + (!db2dbm ? ar->rssi_offsets.rssi_offset : 0);
-
+	link_sinfo->signal_avg = rate_info.signal_avg;
 	link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_SIGNAL_AVG);
 
 	link_sinfo->tx_retries = rate_info.tx_retry_count;
@@ -26350,8 +26378,8 @@ void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 	struct ath12k_link_sta *arsta;
 	struct ath12k *ar;
 	struct ath12k_base *ab;
-	s8 signal, rssi_signal, rssi_offset;
-	bool db2dbm, stats_valid = false;
+	s8 signal;
+	bool stats_valid = false;
 	struct ath12k_dp_link_peer_rate_info rate_info = {0};
 	struct ath12k_dp_link_peer *link_peer;
 	u32 pn_errors = 0, mic_errors = 0, decrypt_errors = 0;
@@ -26405,14 +26433,9 @@ void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 		sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_BYTES64);
 		sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_PACKETS);
 
-		for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
-			sinfo->rx_bytes +=
-				peer_stats->rx[i].sent_to_stack.bytes +
-				peer_stats->rx[i].sent_to_stack_fast.bytes;
-			sinfo->rx_packets +=
-				peer_stats->rx[i].sent_to_stack.packets +
-				peer_stats->rx[i].sent_to_stack_fast.packets;
-		}
+		sinfo->rx_bytes += link_peer->rx_bytes;
+		sinfo->rx_packets += link_peer->rx_packets;
+
 		sinfo->filled |= BIT_ULL(NL80211_STA_INFO_RX_BYTES64);
 		sinfo->filled |= BIT_ULL(NL80211_STA_INFO_RX_PACKETS);
 
@@ -26437,26 +26460,25 @@ void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 		jiffies_to_msecs(jiffies - ath12k_link_peer_last_active(link_peer));
 	sinfo->filled |= BIT_ULL(NL80211_STA_INFO_INACTIVE_TIME);
 
-	if (link_peer->rxrate.legacy || link_peer->rxrate.nss) {
-		if (link_peer->rxrate.legacy) {
-			sinfo->rxrate.legacy = link_peer->rxrate.legacy;
+	memset(&sinfo->rxrate, 0, sizeof(sinfo->rxrate));
+	if (rate_info.rxrate.legacy || rate_info.rxrate.nss) {
+		if (rate_info.rxrate.legacy) {
+			sinfo->rxrate.legacy = rate_info.rxrate.legacy;
+			sinfo->rxrate.flags = 0;
 		} else {
-			sinfo->rxrate.mcs = link_peer->rxrate.mcs;
-			sinfo->rxrate.nss = link_peer->rxrate.nss;
-			sinfo->rxrate.bw = link_peer->rxrate.bw;
-			sinfo->rxrate.he_gi = link_peer->rxrate.he_gi;
-			sinfo->rxrate.he_dcm = link_peer->rxrate.he_dcm;
-			sinfo->rxrate.he_ru_alloc = link_peer->rxrate.he_ru_alloc;
-			sinfo->rxrate.eht_gi = link_peer->rxrate.eht_gi;
-			sinfo->rxrate.eht_ru_alloc = link_peer->rxrate.eht_ru_alloc;
+			sinfo->rxrate.mcs = rate_info.rxrate.mcs;
+			sinfo->rxrate.nss = rate_info.rxrate.nss;
+			sinfo->rxrate.bw = rate_info.rxrate.bw;
+			sinfo->rxrate.he_gi = rate_info.rxrate.he_gi;
+			sinfo->rxrate.he_dcm = rate_info.rxrate.he_dcm;
+			sinfo->rxrate.he_ru_alloc = rate_info.rxrate.he_ru_alloc;
+			sinfo->rxrate.eht_gi = rate_info.rxrate.eht_gi;
+			sinfo->rxrate.eht_ru_alloc = rate_info.rxrate.eht_ru_alloc;
+			sinfo->rxrate.flags = rate_info.rxrate.flags;
 		}
-		sinfo->rxrate.flags = link_peer->rxrate.flags;
 		sinfo->filled |= BIT_ULL(NL80211_STA_INFO_RX_BITRATE);
 	}
 	rcu_read_unlock();
-
-	db2dbm = test_bit(WMI_TLV_SERVICE_HW_DB2DBM_CONVERSION_SUPPORT,
-			  ab->wmi_ab.svc_map);
 
 	sinfo->rx_duration = rate_info.rx_duration;
 	sinfo->filled |= BIT_ULL(NL80211_STA_INFO_RX_DURATION);
@@ -26465,6 +26487,7 @@ void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 	sinfo->tx_duration = rate_info.tx_duration;
 	sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_DURATION);
 
+	memset(&sinfo->txrate, 0, sizeof(sinfo->txrate));
 	if (rate_info.txrate.legacy || rate_info.txrate.nss) {
 		if (rate_info.txrate.legacy) {
 			sinfo->txrate.legacy = rate_info.txrate.legacy;
@@ -26508,10 +26531,6 @@ void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 	}
 
 	spin_unlock_bh(&ab->base_lock);
-	rssi_offset = rate_info.rssi_comb + ar->rssi_offsets.avg_nf_dbm;
-	rssi_signal = rate_info.rssi_comb > ar->rssi_offsets.xlna_bypass_threshold ?
-		      rssi_offset + ar->rssi_offsets.xlna_bypass_offset :
-		      rssi_offset;
 
 	signal = rate_info.rssi_comb;
 
@@ -26536,15 +26555,11 @@ void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 		ath12k_mac_put_chain_rssi(sinfo, arsta);
 
 	if (signal) {
-		sinfo->signal = db2dbm ? rate_info.rssi_comb : rssi_signal;
+		sinfo->signal = signal;
 		sinfo->filled |= BIT_ULL(NL80211_STA_INFO_SIGNAL);
 	}
 
 	sinfo->signal_avg = rate_info.signal_avg;
-
-	if (!db2dbm)
-		sinfo->signal_avg += ar->rssi_offsets.rssi_offset;
-
 	sinfo->filled |= BIT_ULL(NL80211_STA_INFO_SIGNAL_AVG);
 
 	sinfo->rx_retries = rate_info.rx_retries;
@@ -26700,8 +26715,32 @@ int ath12k_mac_op_remain_on_channel(struct ieee80211_hw *hw,
 
 	ahvif = arvif->ahvif;
 	if (!arvif->is_started && ahvif->vdev_type == WMI_VDEV_TYPE_STA) {
-		ctx.def.chan = chan;
-		ctx.def.center_freq1 = chan->center_freq;
+		struct ath12k_link_vif *ap_arvif;
+		struct ieee80211_channel *start_chan = chan;
+
+		/* In an Independent Repeater scenario, an AP vdev may already
+		 * be started on this radio with its own home channel. The FW
+		 * does not support two active home channels on the same radio,
+		 * so starting the STA vdev on the ROC off-channel would trigger
+		 * a target assert. Instead, start the STA vdev on the AP's home
+		 * channel so both vdevs share the same home channel. The ROC
+		 * scan engine will then handle off-channel tuning independently
+		 * via the WMI scan request, which carries the actual ROC
+		 * frequency as its target channel.
+		 */
+		ap_arvif = ath12k_mac_get_started_ap_arvif(ar);
+		if (ap_arvif && ap_arvif->chanctx.def.chan &&
+		    ap_arvif->chanctx.def.chan->center_freq != chan->center_freq) {
+			ath12k_info(ar->ab,
+				    "[vdev_id : %u radio_idx : %u] ROC STA vdev start: using AP home chan %u MHz instead of ROC chan %u MHz\n",
+				    arvif->vdev_id, ar->radio_idx,
+				    ap_arvif->chanctx.def.chan->center_freq,
+				    chan->center_freq);
+			start_chan = ap_arvif->chanctx.def.chan;
+		}
+
+		ctx.def.chan = start_chan;
+		ctx.def.center_freq1 = start_chan->center_freq;
 		ret = ath12k_mac_vdev_start(arvif, &ctx);
 		if (ret) {
 			ath12k_err(ar->ab,
@@ -28358,6 +28397,7 @@ static int ath12k_mac_setup_register(struct ath12k *ar,
 	int level;
 	int ret;
 	u8 total_vdevs;
+	struct ath12k_base *ab = ar->ab;
 
 	init_waitqueue_head(&ar->txmgmt_empty_waitq);
 	idr_init(&ar->txmgmt_idr);
@@ -28611,7 +28651,7 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 		 * disabled, or if radio is a scan radio
 		 */
 		if (!ar->ab->hw_params->supports_monitor ||
-		    !ath12k_dp_ring_cfg->monitor_support ||
+		    !ar->ab->mem_params.monitor_support ||
 		    ath12k_scan_radio_supported(ar->pdev))
 			is_monitor_disable = true;
 
@@ -31002,12 +31042,8 @@ static void ath12k_mac_add_preserved_stats(struct rtnl_link_stats64 *stats,
 	if (!del_stats)
 		return;
 
-	for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
-		stats->rx_packets += del_stats->per_pkt_rx[i].sent_to_stack.packets +
-			del_stats->per_pkt_rx[i].sent_to_stack_fast.packets;
-		stats->rx_bytes   += del_stats->per_pkt_rx[i].sent_to_stack.bytes +
-			del_stats->per_pkt_rx[i].sent_to_stack_fast.bytes;
-	}
+	stats->rx_packets += del_stats->rx_counters.packets;
+	stats->rx_bytes   += del_stats->rx_counters.bytes;
 	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++) {
 		stats->tx_packets += del_stats->per_pkt_tx[i].comp_pkt.packets;
 		stats->tx_bytes   += del_stats->per_pkt_tx[i].comp_pkt.bytes;
@@ -31044,7 +31080,6 @@ static int ath12k_netstats_peer_iter_cb(struct ath12k *ar,
 				       dp_peer_addr,
 				       ar->hw_link_id,
 				       ctx->peer_mac,
-				       ctx->is_ds_vif,
 				       ctx->stats);
 	return 0;
 }
@@ -31063,7 +31098,6 @@ void ath12k_mac_op_get_netstats(struct ieee80211_hw *hw,
 	const u8 *peer_mac = NULL;
 	struct ieee80211_sta *sta;
 	bool is_ap_vlan = false;
-	bool is_ds_vif = false;
 	struct ath12k_dp_preserved_stats *del_stats;
 	struct ath12k_dp_pkt_info vif_ppeds_rx;
 	struct ieee80211_vif *master_vif;
@@ -31096,14 +31130,9 @@ void ath12k_mac_op_get_netstats(struct ieee80211_hw *hw,
 		ath12k_mac_add_preserved_stats(stats, &dp_vif->link_vif_delete_stats);
 	}
 
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	is_ds_vif = (ahvif->dp_vif.ppe_vp_type == PPE_VP_USER_TYPE_DS);
-#endif
-
 	/* Set up iterator context (CP -> DP bridge) */
 	ctx.stats    = stats;
 	ctx.peer_mac = peer_mac;
-	ctx.is_ds_vif = is_ds_vif;
 
 	for_each_set_bit(link_id, &links_map, ATH12K_NUM_MAX_LINKS) {
 		if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS)

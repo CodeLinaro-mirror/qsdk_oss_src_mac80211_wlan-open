@@ -421,6 +421,16 @@ void ath12k_dp_mon_rx_prepare_filter(struct ath12k_dp *dp,
 					src_tlv_filter->rx_mon_md_mgmt_hdrlen;
 		dst_tlv_filter->rx_mon_enable_hdr_per_ppdu |=
 					src_tlv_filter->rx_mon_enable_hdr_per_ppdu;
+		dst_tlv_filter->fp_phy_err |= src_tlv_filter->fp_phy_err;
+		dst_tlv_filter->fp_phy_err_buf_src |=
+					src_tlv_filter->fp_phy_err_buf_src;
+		dst_tlv_filter->fp_phy_err_buf_dest |=
+					src_tlv_filter->fp_phy_err_buf_dest;
+		dst_tlv_filter->phy_err_mask |= src_tlv_filter->phy_err_mask;
+		dst_tlv_filter->phy_err_mask_cont |=
+					src_tlv_filter->phy_err_mask_cont;
+		dst_tlv_filter->phy_err_filter_valid |=
+					src_tlv_filter->phy_err_filter_valid;
 
 		ath12k_dbg(ab, ATH12K_DBG_DATA, "Updated Rx filters for mode: %d", mode);
 		ath12k_dp_mon_rx_display_filters(dp, mode, rx_mon_filter);

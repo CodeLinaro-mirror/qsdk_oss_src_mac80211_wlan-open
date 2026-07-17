@@ -1475,8 +1475,10 @@ ath12k_update_per_peer_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 	 * Stats update to txrate which will be exported to mac80211 to
 	 * display in iw station dump
 	 */
+	spin_lock_bh(&peer->ppdu_stats_lock);
 	ath12k_update_htt_stats_txrate(dp_pdev, peer, user, ppdu_info,
 				       &peer_stats);
+	spin_unlock_bh(&peer->ppdu_stats_lock);
 
 	if ((ath12k_extd_tx_stats_enabled(dp_pdev) ||
 	     ath12k_htt_tx_ppdu_stats_enabled(dp_pdev)) &&
@@ -2627,8 +2629,8 @@ void ath12k_dp_htt_htc_t2h_msg_handler(struct ath12k_base *ab,
 		ath12k_htt_pri_link_peer_migrate_indication(ab, skb);
 		break;
 	case HTT_T2H_MSG_TYPE_GLOBAL_PEER_ID_UNMAP:
-		ath12k_dbg(ab, ATH12K_DBG_PEER,
-			   "htt rx: HTT_T2H_MSG_TYPE_GLOBAL_PEER_ID_UNMAP received\n");
+		ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+				 "htt rx: HTT_T2H_MSG_TYPE_GLOBAL_PEER_ID_UNMAP received\n");
 		ath12k_dp_arch_peer_cleanup_indication(dp, skb);
 		break;
 	default:
@@ -3510,6 +3512,8 @@ int ath12k_dp_tx_htt_rx_filter_setup(struct ath12k_base *ab, u32 ring_id,
 	cmd->info2 |=
 		le32_encode_bits(tlv_filter->enable_log_data_type,
 				 HTT_RX_RING_SELECTION_CFG_CMD_INFO2_EN_LOG_DATA_TYPE);
+
+	ath12k_dp_mon_rx_phy_err_filter_cfg(dp, cmd, tlv_filter);
 
 	cmd->info3 =
 		le32_encode_bits(tlv_filter->enable_rx_tlv_offset,

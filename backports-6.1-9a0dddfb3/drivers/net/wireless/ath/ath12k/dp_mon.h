@@ -16,40 +16,26 @@
 #include "qcn_extns/ath12k_cmn_extn.h"
 #include "qcn_extns/dp_stats_extn.h"
 #include "dp_tx_mon.h"
+#include "qcn_extns/dp_mon_extn.h"
 #include "qcn_extns/ini.h"
+
+#define DP_RXDMA_MONITOR_BUF_RING_SIZE(ab) \
+	((ab)->mem_params.dp_params.rxdma_monitor_buf_ring_size)
+#define DP_RXDMA_MONITOR_DST_RING_SIZE(ab) \
+	((ab)->mem_params.dp_params.rxdma_monitor_dst_ring_size)
+#define DP_MON_NUM_PPDU_DESC(ab) \
+	((ab)->mem_params.dp_params.mon_num_ppdu_desc)
 
 #ifndef CPTCFG_QCN_EXTN
 
 #define DP_RXDMA_MON_STATUS_RING_SIZE	1024
 #define DP_RXDMA_MONITOR_DESC_RING_SIZE	4096
 
-#if defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
-#define DP_RXDMA_MONITOR_BUF_RING_SIZE  256
-#define DP_RXDMA_MONITOR_DST_RING_SIZE  512
-#define DP_MON_NUM_PPDU_DESC 8
-
-#elif defined(CONFIG_ATH12K_MEM_PROFILE_512M) || defined(CPTCFG_ATH12K_MEM_PROFILE_512M)
-#define DP_RXDMA_MONITOR_BUF_RING_SIZE  256
-#define DP_RXDMA_MONITOR_DST_RING_SIZE  512
-#define DP_MON_NUM_PPDU_DESC 128
-
-#else
-#define DP_RXDMA_MONITOR_BUF_RING_SIZE	(ath12k_dp_ring_cfg->rxdma_monitor_buf_ring_size)
-#define DP_RXDMA_MONITOR_DST_RING_SIZE	(ath12k_dp_ring_cfg->rxdma_monitor_dst_ring_size)
-#define DP_MON_NUM_PPDU_DESC	(ath12k_dp_ring_cfg->mon_num_ppdu_desc)
-#endif
-
 #else
 #define DP_RXDMA_MON_STATUS_RING_SIZE(ab)	ath12k_cfg_get(ab, \
-	ATH12K_CFG_DP_RXDMA_MON_STATUS_RING_SIZE)
+	ATH12K_INI_DP_RXDMA_MON_STATUS_RING_SIZE)
 #define DP_RXDMA_MONITOR_DESC_RING_SIZE(ab)	ath12k_cfg_get(ab, \
-	ATH12K_CFG_DP_RXDMA_MONITOR_DESC_RING_SIZE)
-#define DP_RXDMA_MONITOR_BUF_RING_SIZE(ab)	ath12k_cfg_get(ab, \
-	ATH12K_CFG_DP_RXDMA_MONITOR_BUF_RING_SIZE)
-#define DP_RXDMA_MONITOR_DST_RING_SIZE(ab)	ath12k_cfg_get(ab, \
-	ATH12K_CFG_DP_RXDMA_MONITOR_DST_RING_SIZE)
-#define DP_MON_NUM_PPDU_DESC(ab)		ath12k_cfg_get(ab, \
-	ATH12K_CFG_DP_MON_NUM_PPDU_DESC)
+	ATH12K_INI_DP_RXDMA_MONITOR_DESC_RING_SIZE)
 #endif
 
 #define ATH12K_DP_MON_TX_BUF_SIZE	2048
@@ -72,17 +58,9 @@
 #define ATH12K_DP_MON_ETH_TYPE_DOUBLE_VLAN_LEN	8
 #define DP_RXDMA_MONITOR_DEFAULT_RING_FILL_LVL 1024
 
-#if defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
-#define ATH12K_DP_SMART_MON_FILTER_DEFAULT	(DP_SMART_MON_PROFILE_256M | \
-						 (DP_SMART_MON_FILTER_MASK & \
-						  ~DP_SMART_MON_VALID))
-#elif defined(CONFIG_ATH12K_MEM_PROFILE_512M) || defined(CPTCFG_ATH12K_MEM_PROFILE_512M)
-#define ATH12K_DP_SMART_MON_FILTER_DEFAULT	(DP_SMART_MON_PROFILE_512M | \
-						 (DP_SMART_MON_FILTER_MASK & \
-						  ~DP_SMART_MON_VALID))
-#else
-#define ATH12K_DP_SMART_MON_FILTER_DEFAULT (ath12k_dp_ring_cfg->smart_mon_filter_default)
-#endif
+#define ATH12K_DP_SMART_MON_FILTER_DEFAULT \
+	((ab)->mem_params.dp_params.smart_mon_filter_default)
+
 #define DP_TX_MONITOR_BUF_RING_SIZE	8192
 #define DP_TX_MONITOR_DEST_RING_SIZE	8192
 
@@ -114,11 +92,7 @@
 
 #define DP_SMART_MON_VALID       BIT(0)
 
-#if defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
-#define ATH12K_DP_MON_STATUS_BUF   20
-#else
-#define ATH12K_DP_MON_STATUS_BUF   (ath12k_dp_ring_cfg->dp_mon_status_buf)
-#endif
+#define ATH12K_DP_MON_STATUS_BUF   (ab->mem_params.dp_params.dp_mon_status_buf)
 
 #define ATH12K_EXT_MON_MAX_PEERS	16
 #define ATH12K_EXT_MON_FILTER_ALL	0xFFFFU
@@ -237,6 +211,12 @@ struct ath12k_dp_arch_mon_ops {
 	int (*rx_filter_update)(struct ath12k_pdev_dp *dp_pdev);
 	void (*rx_monitor_mode_set)(struct ath12k_pdev_dp *dp_pdev);
 	void (*rx_monitor_mode_reset)(struct ath12k_pdev_dp *dp_pdev);
+	void (*rx_undecoded_metadata_config_filter)(struct ath12k_pdev_dp *dp_pdev);
+	void (*rx_undecoded_metadata_reset_filter)(struct ath12k_pdev_dp *dp_pdev);
+	int  (*rx_undecoded_metadata_capture_set)(struct ath12k_pdev_dp *dp_pdev,
+					      u32 value);
+	int  (*rx_undecoded_phy_err_mask_set)(struct ath12k_pdev_dp *dp_pdev,
+					      u32 mask, u32 mask_cont);
 	int (*setup_ppdu_desc)(struct ath12k_pdev_dp *pdev_dp);
 	void (*cleanup_ppdu_desc)(struct ath12k_pdev_dp *pdev_dp);
 	int (*mon_rx_wq_init)(struct ath12k_pdev_dp *pdev_dp);
@@ -253,6 +233,8 @@ struct ath12k_dp_arch_mon_ops {
 			      u32 filter, bool enable);
 	void (*htt_rx_filter_rxmon_cfg)(void *ptr,
 					struct htt_rx_ring_tlv_filter *tlv_filter);
+	void (*htt_rx_phy_err_filter_cfg)(void *ptr,
+					  struct htt_rx_ring_tlv_filter *tlv_filter);
 	int (*ext_mon_validate_request)(struct ath12k_pdev_dp *dp_pdev,
 					const struct ath12k_ext_mon_config *req);
 	int (*ext_mon_alloc)(struct ath12k_pdev_dp *dp_pdev);
@@ -1207,8 +1189,11 @@ int ath12k_dp_mon_rx_alloc(struct ath12k_dp *dp)
 	 */
 	if (mon_ops && mon_ops->rx_buf_setup) {
 		ret = mon_ops->rx_buf_setup(dp);
-		if (ret)
+		if (ret) {
+			if (mon_ops->rx_srng_cleanup)
+				mon_ops->rx_srng_cleanup(dp);
 			return ret;
+		}
 	}
 
 	return 0;
@@ -1301,6 +1286,9 @@ int ath12k_dp_mon_pdev_init(struct ath12k_pdev_dp *dp_pdev)
 	if (mon_ops && mon_ops->mon_pdev_alloc)
 		ret = mon_ops->mon_pdev_alloc(dp_pdev);
 
+	if (ath12k_dp_mon_pdev_tlv_logger_init(dp_pdev))
+		ath12k_warn(dp, "failed to init TLV logger for mon pdev\n");
+
 	return ret;
 }
 
@@ -1315,6 +1303,8 @@ void ath12k_dp_mon_pdev_deinit(struct ath12k_pdev_dp *dp_pdev)
 
 	dp = dp_pdev->dp;
 	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	ath12k_dp_mon_pdev_tlv_logger_deinit(dp_pdev);
 
 	if (mon_ops && mon_ops->mon_pdev_free)
 		mon_ops->mon_pdev_free(dp_pdev);
@@ -1629,6 +1619,21 @@ void ath12k_dp_mon_rx_enable(struct ath12k_dp *dp, void *cmd,
 }
 
 static inline
+void ath12k_dp_mon_rx_phy_err_filter_cfg(struct ath12k_dp *dp, void *cmd,
+					 struct htt_rx_ring_tlv_filter *tlv_filter)
+{
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+
+	if (unlikely(!dp || !dp->dp_mon))
+		return;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (mon_ops && mon_ops->htt_rx_phy_err_filter_cfg)
+		mon_ops->htt_rx_phy_err_filter_cfg(cmd, tlv_filter);
+}
+
+static inline
 void ath12k_dp_mon_rx_config_wmask(struct ath12k_dp *dp, void *ptr,
 				   struct htt_rx_ring_tlv_filter *tlv_filter)
 {
@@ -1729,6 +1734,7 @@ ath12k_dp_smart_mon_filter_type_set(struct ath12k *ar,
 				    u8 new_filter)
 {
 	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
+	struct ath12k_base *ab = ar->ab;
 	u8 old_filter, smart_mon_profile;
 
 	if (unlikely(!dp_pdev || !dp_pdev->dp_mon_pdev))

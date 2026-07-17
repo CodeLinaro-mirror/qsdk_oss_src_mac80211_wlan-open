@@ -16,19 +16,19 @@
 #include "dp_peer.h"
 #include "me_hmmc.h"
 
-#define ATH12K_ME_FLAGS_BIT_UNUSED1 BIT(0) /* Available for future use */
-#define ATH12K_ME_FLAGS_BIT_UNUSED2 BIT(1) /* Available for future use */
-#define ATH12K_ME_FLAGS_BIT_UNUSED3 BIT(2) /* Available for future use */
-#define ATH12K_ME_FLAGS_BIT_IGMP_EN BIT(3) /* ME offload for IGMP packets */
-#define ATH12K_ME_FLAGS_BIT_BYPASS BIT(4) /* Bypass ME conversion */
-#define ATH12K_ME_FLAGS_BIT_ME5 BIT(5) /* ME5 offload enable */
-#define ATH12K_ME_FLAGS_BIT_ME6 BIT(6) /* ME6 offload enable */
+#define ATH12K_ME_FLAGS_BIT_UNUSED1 BIT(0)	/* Available for future use */
+#define ATH12K_ME_FLAGS_BIT_UNUSED2 BIT(1)	/* Available for future use */
+#define ATH12K_ME_FLAGS_BIT_FORCE_ME BIT(2)	/* Force MCUC conversion */
+#define ATH12K_ME_FLAGS_BIT_IGMP_EN BIT(3)	/* ME offload for IGMP packets */
+#define ATH12K_ME_FLAGS_BIT_BYPASS_ME BIT(4)	/* Bypass ME conversion */
+#define ATH12K_ME_FLAGS_BIT_ME5 BIT(5)		/* ME5 offload enable */
+#define ATH12K_ME_FLAGS_BIT_ME6 BIT(6)		/* ME6 offload enable */
 
 #define ATH12K_ME_OFFLOAD_MASK (ATH12K_ME_FLAGS_BIT_ME5 | ATH12K_ME_FLAGS_BIT_ME6)
 
 /* Return values for lookup operations */
 #define ATH12K_ME_HMMC_ACTION (ATH12K_ME_FLAGS_BIT_ME6 | ATH12K_ME_FLAGS_BIT_ME5)
-#define ATH12K_ME_DENYLIST_ACTION ATH12K_ME_FLAGS_BIT_BYPASS
+#define ATH12K_ME_DENYLIST_ACTION ATH12K_ME_FLAGS_BIT_BYPASS_ME
 
 #define ATH12K_ME_MAX_GRP_LIMIT		256
 

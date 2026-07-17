@@ -114,6 +114,7 @@ struct ath12k_dp_link_peer {
 	u16 tx_retry_count;
 	struct ewma_avg_rssi avg_rssi;
 	struct ath12k_dp_link_peer_stats peer_stats;
+	spinlock_t ppdu_stats_lock;
 
 	u16 tcl_metadata;
 	bool assoc_success; /* information on peer assoc status from firmware */
@@ -144,6 +145,8 @@ struct ath12k_dp_link_peer {
 
 	u16 link_band_id;
 	u16 tid_band_id[ATH12K_DATA_TID_MAX];
+	u32 rx_packets;
+	u64 rx_bytes;
 };
 
 #define ATH12K_PEER_EVENT_RSSI_LOW      BIT(0)

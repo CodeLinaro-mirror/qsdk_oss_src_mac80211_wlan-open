@@ -26,6 +26,7 @@
 #define ATH12K_CFR_RADIO_IPQ5332 35
 #define ATH12K_CFR_RADIO_QCN6432 38
 #define ATH12K_CFR_RADIO_IPQ5424 42
+#define ATH12K_CFR_RADIO_QCN9625 43
 
 #define CFR_HDR_MAX_LEN_WORDS_QCN9274 90
 #define CFR_DATA_MAX_LEN_QCN9274 64512
@@ -42,8 +43,16 @@
 #define CFR_HDR_MAX_LEN_WORDS_IPQ5424 24
 #define CFR_DATA_MAX_LEN_IPQ5424 15744
 
+/* locsens_common_header_t (40B) + cc_upload_header_struct_t base fields (24B)
+ * + freeze_capture_tlv (32B) + user_cfr_11az_info[37] (296B)
+ * + aoa_cal_gdp_info_t (24B, includes reserved0 -- confirm with ucode team)
+ * = 416 bytes = 104 words
+ */
+#define CFR_HDR_MAX_LEN_WORDS_QCN9625 104
+/* 1024 tones * 4 bytes/tone * 5 chains * 4ss (or 512 tones * 8ss, same total) */
+#define CFR_DATA_MAX_LEN_QCN9625 81920
+
 #define VENDOR_QCA 0x8cfdf0
-#define PLATFORM_TYPE_ARM 2
 #define NUM_CHAINS_FW_TO_HOST(n) ((1 << ((n) + 1)) - 1)
 
 enum ath12k_cfr_meta_version {
@@ -58,23 +67,8 @@ enum ath12k_cfr_meta_version {
 	ATH12K_CFR_META_VERSION_8,
 	ATH12K_CFR_META_VERSION_9,
 	ATH12K_CFR_META_VERSION_10,
+	ATH12K_CFR_META_VERSION_11,
 	ATH12K_CFR_META_VERSION_MAX = 0xFF,
-};
-
-enum ath12k_cfr_data_version {
-	ATH12K_CFR_DATA_VERSION_NONE,
-	ATH12K_CFR_DATA_VERSION_1,
-	ATH12K_CFR_DATA_VERSION_MAX = 0xFF,
-};
-
-enum ath12k_cfr_capture_ack_mode {
-	ATH12K_CFR_CAPTURE_LEGACY_ACK,
-	ATH12K_CFR_CAPTURE_DUP_LEGACY_ACK,
-	ATH12K_CFR_CAPTURE_HT_ACK,
-	ATH12K_CFR_CPATURE_VHT_ACK,
-
-	/*Always keep this at last*/
-	ATH12K_CFR_CPATURE_INVALID_ACK
 };
 
 enum ath12k_cfr_correlate_status {
@@ -110,63 +104,58 @@ struct ath12k_cfr_peer_tx_param {
 };
 
 #define HOST_MAX_CHAINS 8
-#define MAX_CFR_MU_USERS 37
 
-struct cfr_dbr_metadata {
-	u8 peer_addr[ETH_ALEN];
-	u8 status;
-	u8 capture_bw;
-	u8 channel_bw;
-	u8 phy_mode;
-	u16 prim20_chan;
-	u16 center_freq1;
-	u16 center_freq2;
-	u8 capture_mode;
-	u8 capture_type;
-	u8 sts_count;
-	u8 num_rx_chain;
-	u32 timestamp;
-	u32 length;
-	u32 chain_rssi[HOST_MAX_CHAINS];
-	u16 chain_phase[HOST_MAX_CHAINS];
-	u32 rtt_cfo_measurement;
-	u8 agc_gain[HOST_MAX_CHAINS];
-	u32 rx_start_ts;
-	u16 mcs_rate;
-	u16 gi_type;
-	u8 agc_gain_tbl_index[HOST_MAX_CHAINS];
-} __packed;
-
-struct cfr_su_sig_info {
-	u8 coding;
-	u8 stbc;
-	u8 beamformed;
-	u8 dcm;
-	u8 ltf_size;
-	u8 sgi;
-	u16 reserved;
-} __packed;
-
+/*
+ * @status: capture status/histogram tracking
+ * @tx_pkt_bw: bandwidth of the transmitted packet that triggered this capture
+ * @phy_mode: PHY mode of the captured packet
+ * @center_freq1: primary center frequency of the capture
+ * @center_freq2: secondary center frequency of the capture (160/80+80 MHz)
+ *
+ * @num_mu_users: 0 for an SU capture. Non-zero indicates an MU (RCC)
+ * capture and gives the user count -- RCC is not yet implemented in UD,
+ * so this is currently always 0 and su_peer_addr is the only valid peer
+ * address. When RCC lands, see prop's target_if_cfr_rx_tlv_process() for
+ * how multiple peer MACs are carried for the MU case
+ *
+ * @su_peer_addr: peer MAC address for an SU capture
+ *
+ * @chain_rssi: per-chain RSSI. Not available from ucode's DMA header on
+ * either wifi7 or wifi8 -- sourced from the WMI TX capture event
+ * (ath12k_cfr_peer_tx_param.chain_rssi), so kept here rather than dropped
+ *
+ * @chain_phase: per-chain phase. Same as chain_rssi -- no ucode DMA-header
+ * equivalent, kept
+ *
+ * @cfo_measurement: pending FW/ucode alignment, kept for now
+ *
+ * @agc_gain: per-chain AGC gain. Same as chain_rssi -- no ucode DMA-header
+ * equivalent, kept
+ *
+ * @rx_start_ts: pending FW/ucode alignment, kept for now
+ *
+ * @mcs_rate: same as chain_rssi -- no ucode DMA-header equivalent, kept
+ *
+ * @gi_type: pending FW/ucode alignment, kept for now
+ *
+ * @beamformed: whether the captured packet was beamformed. RCC-only
+ * (prop sets this from cdp_rx_ppdu->beamformed in
+ * target_if_cfr_rx_tlv_process()); RCC is not yet implemented in UD, so
+ * this is currently always 0
+ *
+ * @agc_gain_tbl_index: per-chain AGC gain table index. Same as
+ * chain_rssi -- no ucode DMA-header equivalent, kept
+ *
+ * @puncture_bitmap: puncture pattern of the capture bandwidth
+ */
 struct cfr_enh_metadata {
 	u8 status;
-	u8 capture_bw;
-	u8 channel_bw;
+	u8 tx_pkt_bw;
 	u8 phy_mode;
-	u16 prim20_chan;
 	u16 center_freq1;
 	u16 center_freq2;
-	u8 capture_mode;
-	u8 capture_type;
-	u8 sts_count;
-	u8 num_rx_chain;
-	u64 timestamp;
-	u32 length;
-	u8 is_mu_ppdu;
 	u8 num_mu_users;
-	union {
-		u8 su_peer_addr[ETH_ALEN];
-		u8 mu_peer_addr[MAX_CFR_MU_USERS][ETH_ALEN];
-	} peer_addr;
+	u8 su_peer_addr[ETH_ALEN];
 	u32 chain_rssi[HOST_MAX_CHAINS];
 	u16 chain_phase[HOST_MAX_CHAINS];
 	u32 cfo_measurement;
@@ -174,7 +163,7 @@ struct cfr_enh_metadata {
 	u32 rx_start_ts;
 	u16 mcs_rate;
 	u16 gi_type;
-	struct cfr_su_sig_info sig_info;
+	u8 beamformed;
 	u8 agc_gain_tbl_index[HOST_MAX_CHAINS];
 	u16 puncture_bitmap;
 } __packed;
@@ -183,15 +172,10 @@ struct ath12k_csi_cfr_header {
 	u32 start_magic_num;
 	u32 vendorid;
 	u8 cfr_metadata_version;
-	u8 cfr_data_version;
 	u8 chip_type;
-	u8 pltform_type;
 	u32 cfr_metadata_len;
 	u64 host_real_ts;
-	union {
-		struct cfr_dbr_metadata meta_dbr;
-		struct cfr_enh_metadata meta_enh;
-	} u;
+	struct cfr_enh_metadata meta_enh;
 } __packed;
 
 enum ath12k_cfr_preamble_type {
@@ -380,7 +364,7 @@ struct ath12k_cfir_enh_dma_hdr {
 #define CFR_MAX_LUT_ENTRIES 136
 
 struct macrx_freeze_capture_channel_v5 {
-        u16 freeze                          :  1, //[0]
+	u16 freeze                          :  1, //[0]
             capture_reason                  :  3, //[3:1]
             packet_type                     :  2, //[5:4]
             packet_sub_type                 :  4, //[9:6]
@@ -429,6 +413,205 @@ struct uplink_user_setup_info_v2 {
             reserved_1d                     :  2; //[31-30]
 };
 
+/*
+ * wifi8 (QCN9625) CFR upload common header.
+ * Distinct layout from ath12k_cfir_enh_dma_hdr (wifi7) starting at byte 0 --
+ * not an extension of it, so it is parsed by a separate function
+ * rather than shared bitfields.
+ *
+ * @header_tag: ucode fills this with 0xC0DE00BA
+ *
+ * @chip_id: chip identifier, per locsens upload header (CHIP_ID_IN_LNS_UPLOAD_HEADER)
+ *
+ * @header_type: feature type this header describes, per ucode's
+ * locsens_upload_feature_header_type_e:
+ *
+ *			0 - HEADER_INVALID
+ *			1 - HEADER_CFR_CHANNEL_COEFF_CIR
+ *			2 - HEADER_11AZ_11BK_CIR
+ *			3 - HEADER_11AZ_11BK_DEMF_INTEGRITY
+ *			4 - HEADER_11AZ_11BK_ZGI_INTEGRITY
+ *			5 - HEADER_LOCATION_INFO
+ *			6 - HEADER_11BF
+ *			7 - HEADER_RTT_SELF_CAL
+ *			8 - HEADER_WIFI_RADAR
+ *
+ * host CFR processing only expects HEADER_CFR_CHANNEL_COEFF_CIR (1)
+ *
+ * @header_version: ucode header version for the feature header that
+ * follows this common header (4 for CFR/CIR per ucode's cc_upload table)
+ *
+ * @header_size: size of common header + feature header, in BYTES.
+ * Unlike ath12k_cfir_enh_dma_hdr.length, this is already byte-granular --
+ * do not multiply by 4
+ *
+ * @payload_size: CFR payload length in bytes (32-bit), unlike
+ * ath12k_cfir_enh_dma_hdr.total_bytes which is a 16-bit field
+ *
+ * @sw_peer_id_valid: Indicates whether sw_peer_id field is valid or not,
+ * sent from MAC to PHY via the MACRX_FREEZE_CAPTURE_CHANNEL TLV
+ *
+ * @sw_peer_id: Indicates peer id based on AST search, sent from MAC to PHY
+ * via the MACRX_FREEZE_CAPTURE_CHANNEL TLV
+ *
+ * @phy_ppdu_id: sent from PHY to MAC, copied to MACRX_FREEZE_CAPTURE_CHANNEL
+ * TLV
+ *
+ * @num_chains: absolute chain count (1 = 1-chain, 5 = 5-chain), unlike
+ * ath12k_cfir_enh_dma_hdr.num_chains which is 0-indexed and needs
+ * NUM_CHAINS_FW_TO_HOST() to convert
+ *
+ * @nss: number of spatial streams, ONE-INDEXED (1 = 1-stream), per ucode's
+ * locsens_common_header_t::reset() which explicitly sets nss = 1 as the
+ * default ("one indexed" per ucode's own comment). Unlike
+ * ath12k_cfir_enh_dma_hdr.nss which is 0-indexed (0 = 1-stream) -- do NOT
+ * add 1 when deriving sts_count from this field
+ *
+ * @channel_bw: operating channel bandwidth
+ * @packet_bw: bandwidth of the captured packet
+ *
+ * @preamble_type: preamble type of the captured packet
+ * @ltf_type: LTF type used for the capture
+ * @gi_type: guard interval type used for the capture
+ * @phy_mode: PHY mode of the captured packet
+ * @rf_chain_mask: RF chain mask active during capture
+ * @sounding_dialog_token: dialog token from the sounding exchange, if any
+ * @pri20_location: location of the primary 20 MHz within the capture bandwidth
+ * @xbar_config: crossbar configuration used to route chains for this capture
+ *
+ * @reserved_0: reserved, ignore
+ * @reserved_1: reserved, ignore
+ * @reserved_2: reserved, ignore
+ * @reserved_3: reserved, ignore
+ */
+struct ath12k_cfir_wifi8_common_hdr {
+	u32 header_tag;
+	u32 chip_id             :  8,
+	    header_type         :  8,
+	    header_version      :  8,
+	    header_size         :  8;
+	u32 payload_size;
+	u32 reserved_0          : 15,
+	    sw_peer_id_valid    :  1,
+	    sw_peer_id          : 16;
+	u16 phy_ppdu_id;
+	u32 num_chains          :  8,
+	    nss                 :  8,
+	    channel_bw          :  8,
+	    packet_bw           :  8;
+	u16 preamble_type       :  8,
+	    ltf_type            :  4,
+	    gi_type             :  4;
+	u16 phy_mode            :  2,
+	    rf_chain_mask       :  8,
+	    reserved_1          :  6;
+	u16 sounding_dialog_token : 8,
+	    pri20_location        : 8;
+	u32 xbar_config;
+	u32 reserved_2;
+	u32 reserved_3;
+} __packed;
+
+/*
+ * wifi8 CFR feature-specific header (cc_upload_header_struct_t, CFR/CIR
+ * portion only). freeze_capture_tlv, per-user info, and aoa_cal_gdp_info
+ * follow this struct at freeze_tlv_offset / per_user_info_offset /
+ * aoa_cal_gdp_offset.
+ *
+ * @capture_type: type of capture, per ucode's cc_upload_header_struct_t:
+ *
+ *			0 - none
+ *			1 - RTT-H
+ *			2 - Chan-H
+ *			3 - reserved
+ *			4 - CCK or CIR
+ *			5,6,7 - 11bf
+ *			8 - AoA cal
+ *
+ * @cc_format: 0 - raw (32-bit format), 1 - compressed (24-bit format)
+ * @cir_fmt: 0 - legacy (1ss), 1 - AoA
+ * @aoa_cal_gdp_incl: 1 if aoa_cal_gdp_info is present after this header
+ * @mu_rx_data_incl: 1 if UL-OFDMA per-user info is present after this header
+ * @freeze_data_incl: 1 if freeze_capture_tlv is present after this header
+ *
+ * @freeze_tlv_version: version of the freeze_capture_tlv that follows.
+ * Per ucode's cc_upload_header_struct_t comment, values above 5 are not
+ * currently defined -- 1->HSTP/Cypress, 2->MMS, 3->Pine, 4->HAM-1/2,
+ * 5->WKK. Nothing in the ucode data indicates a new version for wifi8; treat as
+ * macrx_freeze_capture_channel_v5 unless ucode says otherwise
+ *
+ * @mu_rx_num_users: number of UL-MU-PPDU users present in per-user info
+ * @decimation_factor: FFT bins decimation, in log2 format (0->1x, 1->2x, 2->4x)
+ * @reserved2: reserved, ignore
+ *
+ * @amplitude_gain_ratio_0_3: amplitude gain ratio for chains 0-3, one byte
+ * each ([0:7]-Chain-0, [8:15]-Chain-1, [16:23]-Chain-2, [24:31]-Chain-3)
+ *
+ * @amplitude_gain_ratio_4: amplitude gain ratio for chain 4
+ * @_11azbf_mode: 11az beamforming mode
+ * @_11azbf_node: 11az beamforming node role
+ *
+ * @rescale_amt_shift_pri80: rescale amount shift for the primary 80 MHz
+ * @rescale_amt_shift_sec80: rescale amount shift for the secondary 80 MHz
+ *
+ * @cgim_status: CGIM (coarse gain/interference mitigation) status
+ * @cgim_filter: CGIM filter setting
+ * @tx_or_rx_based_cfr: whether this capture is TX- or RX-based CFR
+ * @demf_turbo_mode: DEMF turbo mode enable
+ * @demf_pbs_en: DEMF PBS enable
+ * @leg_cfr_mode: legacy CFR mode
+ * @reserved7: reserved, ignore
+ *
+ * @puncture_pattern: puncture pattern applied to the capture bandwidth
+ * @total_num_ltfs: total number of LTFs used for the capture
+ *
+ * @freeze_tlv_offset: offset, in u16 units from the start of this struct,
+ * to the embedded freeze_capture_tlv. FW-provided -- use this rather than
+ * sizeof(struct ath12k_cfir_wifi8_cc_hdr) to locate the freeze TLV
+ *
+ * @per_user_info_offset: offset, in u16 units from the start of this
+ * struct, to the embedded per-user info array. FW-provided -- use this
+ * rather than a computed offset
+ *
+ * @aoa_cal_gdp_offset: offset, in u16 units from the start of this
+ * struct, to the embedded aoa_cal_gdp_info. FW-provided
+ *
+ * @reserved11: reserved, ignore
+ * @reserved12: reserved, ignore
+ */
+struct ath12k_cfir_wifi8_cc_hdr {
+	u16 capture_type        :  4,
+	    cc_format            :  2,
+	    cir_fmt              :  3,
+	    aoa_cal_gdp_incl     :  1,
+	    mu_rx_data_incl      :  1,
+	    freeze_data_incl     :  1,
+	    freeze_tlv_version   :  4;
+	u16 mu_rx_num_users      :  8,
+	    decimation_factor    :  4,
+	    reserved2            :  4;
+	u32 amplitude_gain_ratio_0_3;
+	u16 amplitude_gain_ratio_4 :  8,
+	    _11azbf_mode           :  4,
+	    _11azbf_node           :  4;
+	u16 rescale_amt_shift_pri80 : 8,
+	    rescale_amt_shift_sec80 : 8;
+	u16 cgim_status          :  1,
+	    cgim_filter          :  1,
+	    tx_or_rx_based_cfr   :  1,
+	    demf_turbo_mode      :  1,
+	    demf_pbs_en          :  2,
+	    leg_cfr_mode         :  2,
+	    reserved7            :  6;
+	u16 puncture_pattern;
+	u16 total_num_ltfs;
+	u16 freeze_tlv_offset    :  5,
+	    per_user_info_offset :  5,
+	    aoa_cal_gdp_offset   :  6;
+	u16 reserved11;
+	u16 reserved12;
+} __packed;
+
 struct ath12k_cfr_look_up_table {
 	bool dbr_recv;
 	bool tx_recv;
@@ -443,6 +626,7 @@ struct ath12k_cfr_look_up_table {
 	union {
 		struct ath12k_cfir_dma_hdr hdr;
 		struct ath12k_cfir_enh_dma_hdr enh_hdr;
+		struct ath12k_cfir_wifi8_common_hdr wifi8_hdr;
 	} dma_hdr;
 	u64 txrx_tstamp;
 	u64 dbr_tstamp;
@@ -553,6 +737,59 @@ struct cfr_unassoc_pool_entry {
 	bool is_valid;
 };
 
+#define MAX_TA_RA_ENTRIES 16
+struct ta_ra_cfr_cfg {
+	u8 filter_group_id;
+	u16 bw :5,
+	    nss :8,
+	    rsvd0 :3;
+	u16 valid_ta :1,
+	    valid_ta_mask :1,
+	    valid_ra :1,
+	    valid_ra_mask :1,
+	    valid_bw_mask :1,
+	    valid_nss_mask :1,
+	    valid_mgmt_subtype :1,
+	    valid_ctrl_subtype :1,
+	    valid_data_subtype :1,
+	    rsvd1 :7;
+	u16 mgmt_subtype_filter;
+	u16 ctrl_subtype_filter;
+	u16 data_subtype_filter;
+	u8 ta_addr[ETH_ALEN];
+	u8 ra_addr[ETH_ALEN];
+	u8 ta_addr_mask[ETH_ALEN];
+	u8 ra_addr_mask[ETH_ALEN];
+} __packed;
+
+struct cfr_rcc_param {
+	u8 pdev_id;
+	u8 vdev_id;
+	u8 srng_id;
+	u32 capture_duration;
+	u32 capture_interval;
+	u32 ul_mu_user_mask_lower;
+	u32 ul_mu_user_mask_upper;
+	u16 freeze_tlv_delay_cnt_en  :1,
+	    freeze_tlv_delay_cnt_thr :8,
+	    rsvd0 :7;
+	u16 filter_group_bitmap;
+	u8 m_directed_ftm :1,
+	   m_all_ftm_ack :1,
+	   m_ndpa_ndp_directed :1,
+	   m_ndpa_ndp_all :1,
+	   m_ta_ra_filter :1,
+	   m_all_packet :1,
+	   en_ta_ra_filter_in_as_fp :1,
+	   rsvd1 : 1;
+	u8 num_grp_tlvs;
+	struct ta_ra_cfr_cfg curr[MAX_TA_RA_ENTRIES];
+	unsigned long modified_in_curr_session;
+	u32 capture_count :16,
+	    capture_intval_mode_sel  :1,
+	    rsvd2 :15;
+};
+
 struct ath12k_cfr {
 	struct ath12k_dbring rx_ring;
 	/* Protects enabled for ath12k_cfr */
@@ -583,6 +820,8 @@ struct ath12k_cfr {
 	u64 flush_timeout_dbr_cnt;
 	struct cfr_unassoc_pool_entry unassoc_pool[ATH12K_MAX_CFR_ENABLED_CLIENTS];
 	bool cfr_enabled;
+	struct cfr_rcc_param rcc_param;
+	struct ta_ra_cfr_cfg global[MAX_TA_RA_ENTRIES];
 };
 
 #ifdef CPTCFG_ATH12K_CFR
@@ -591,10 +830,15 @@ void ath12k_cfr_deinit(struct ath12k_base *ab);
 struct ath12k_dbring *ath12k_cfr_get_dbring(struct ath12k *ar);
 int ath12k_process_cfr_capture_event(struct ath12k_base *ab,
 				     struct ath12k_cfr_peer_tx_param *params);
+u8 freeze_reason_to_capture_type(struct ath12k_base *ab, void *freeze_tlv);
+void extract_peer_mac_from_freeze_tlv(void *freeze_tlv, uint8_t *peermac);
 bool peer_is_in_cfr_unassoc_pool(struct ath12k *ar, u8 *peer_mac);
 void ath12k_cfr_lut_update_paddr(struct ath12k *ar, dma_addr_t paddr,
 				 u32 buf_id);
 void ath12k_cfr_decrement_peer_count(struct ath12k *ar, struct ath12k_link_sta *arsta);
+int ath12k_cfr_parse_enh_dma_hdr(struct ath12k *ar, u8 *data,
+				 struct ath12k_cfr_look_up_table *lut,
+				 u32 *length);
 
 #else
 static inline int ath12k_cfr_init(struct ath12k_base *ab)
@@ -619,6 +863,18 @@ int ath12k_process_cfr_capture_event(struct ath12k_base *ab,
 {
 	return 0;
 }
+
+static inline
+u8 freeze_reason_to_capture_type(struct ath12k_base *ab, void *freeze_tlv)
+{
+	return 0;
+}
+
+static inline
+void extract_peer_mac_from_freeze_tlv(void *freeze_tlv, uint8_t *peermac)
+{
+}
+
 static inline void ath12k_cfr_lut_update_paddr(struct ath12k *ar,
 					       dma_addr_t paddr, u32 buf_id)
 {
@@ -626,6 +882,14 @@ static inline void ath12k_cfr_lut_update_paddr(struct ath12k *ar,
 static inline void ath12k_cfr_decrement_peer_count(struct ath12k *ar,
 						struct ath12k_link_sta *arsta)
 {
+}
+
+static inline int
+ath12k_cfr_parse_enh_dma_hdr(struct ath12k *ar, u8 *data,
+			     struct ath12k_cfr_look_up_table *lut,
+			     u32 *length)
+{
+	return 0;
 }
 #endif /* CPTCFG_ATH12K_CFR */
 #endif /* ATH12K_CFR_H */

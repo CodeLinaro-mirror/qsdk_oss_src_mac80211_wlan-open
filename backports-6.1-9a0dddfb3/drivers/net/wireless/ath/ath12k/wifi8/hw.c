@@ -30,7 +30,9 @@
 #include "hal_qcn9625.h"
 #include "mgmt_rx.h"
 #include "dp_peer.h"
+#include "../dp_mon.h"
 #include "qcn_extns/wifi8_dp_extn.h"
+#include "../cfr.h"
 
 /*
  * The roaming RX ring uses the slot immediately after the regular REO
@@ -164,6 +166,115 @@ ath12k_dp_peer_migration_qcn9625(struct ath12k_link_vif *arvif,
 	rcu_read_unlock();
 }
 
+void ath12k_hw_qcn9625_fill_cfr_hdr_info(struct ath12k *ar,
+					 struct ath12k_csi_cfr_header *header,
+					 struct ath12k_cfr_peer_tx_param *params)
+{
+	header->start_magic_num = ATH12K_CFR_START_MAGIC;
+	header->vendorid = VENDOR_QCA;
+	header->cfr_metadata_len = sizeof(struct cfr_enh_metadata);
+	header->host_real_ts = ktime_to_ns(ktime_get_real());
+
+	header->cfr_metadata_version = ATH12K_CFR_META_VERSION_11;
+	header->chip_type = ATH12K_CFR_RADIO_QCN9625;
+
+	header->meta_enh.status = FIELD_GET(WMI_CFR_PEER_CAPTURE_STATUS,
+					    params->status);
+	header->meta_enh.tx_pkt_bw = params->bandwidth;
+	header->meta_enh.phy_mode = params->phy_mode;
+	header->meta_enh.center_freq1 = params->band_center_freq1;
+	header->meta_enh.center_freq2 = params->band_center_freq2;
+	header->meta_enh.num_mu_users = 0;
+	header->meta_enh.rx_start_ts = params->rx_start_ts;
+	header->meta_enh.cfo_measurement = params->cfo_measurement;
+	header->meta_enh.mcs_rate = params->mcs_rate;
+	header->meta_enh.gi_type = params->gi_type;
+	header->meta_enh.beamformed = 0;
+
+	memcpy(header->meta_enh.su_peer_addr,
+	       params->peer_mac_addr, ETH_ALEN);
+	memcpy(header->meta_enh.chain_rssi, params->chain_rssi,
+	       sizeof(params->chain_rssi));
+	memcpy(header->meta_enh.chain_phase, params->chain_phase,
+	       sizeof(params->chain_phase));
+	memcpy(header->meta_enh.agc_gain, params->agc_gain,
+	       sizeof(params->agc_gain));
+	memcpy(header->meta_enh.agc_gain_tbl_index, params->agc_gain_tbl_index,
+	       sizeof(params->agc_gain_tbl_index));
+}
+
+/*
+ * Parses the wifi8 (QCN9625) CFR upload header -- ucode's
+ * locsens_common_header_t + cc_upload_header_struct_t layout. This is a
+ * distinct byte layout from ath12k_cfir_enh_dma_hdr (wifi7), not an
+ * extension of it, so it is not shared with
+ * ath12k_hw_wifi7_parse_cfr_enh_dma_hdr().
+ *
+ * freeze_capture_tlv itself is assumed unchanged from wifi7
+ * (macrx_freeze_capture_channel_v5 / MACRX_FREEZE_TLV_VERSION_5) --
+ * ucode's cc_upload_header_struct_t comment lists no version beyond 5
+ * and documents the freeze TLV size only as HMT vs WKK(16 x u16), which
+ * matches _v5. freeze_reason_to_capture_type() only reads freeze->info0,
+ * which is common to all versions, so no version dispatch is done here.
+ *
+ */
+int ath12k_hw_qcn9625_parse_cfr_enh_dma_hdr(struct ath12k *ar, u8 *data,
+					    struct ath12k_cfr_look_up_table *lut,
+					    u32 *length)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_cfir_wifi8_common_hdr common_hdr;
+	struct ath12k_cfir_wifi8_cc_hdr cc_hdr;
+	struct cfr_enh_metadata *meta;
+	u8 *cc_hdr_wire;
+	void *freeze_tlv = NULL;
+	u8 *peer_macaddr;
+	u8 capture_type;
+
+	memcpy(&common_hdr, data, sizeof(struct ath12k_cfir_wifi8_common_hdr));
+
+	if (common_hdr.header_tag != 0xC0DE00BA) {
+		ath12k_warn(ab, "unexpected wifi8 CFR header tag 0x%x\n",
+			    common_hdr.header_tag);
+		return -EINVAL;
+	}
+
+	cc_hdr_wire = data + sizeof(struct ath12k_cfir_wifi8_common_hdr);
+	memcpy(&cc_hdr, cc_hdr_wire, sizeof(struct ath12k_cfir_wifi8_cc_hdr));
+
+	if (cc_hdr.freeze_data_incl) {
+		freeze_tlv = cc_hdr_wire + cc_hdr.freeze_tlv_offset * 2;
+		capture_type = freeze_reason_to_capture_type(ab, freeze_tlv);
+	} else {
+		capture_type = CFR_CAPTURE_METHOD_AUTO;
+	}
+
+	/* header_size is already in bytes for the wifi8 layout, unlike
+	 * ath12k_cfir_enh_dma_hdr.length (words) on wifi7.
+	 */
+	*length = common_hdr.header_size;
+	*length += common_hdr.payload_size;
+
+	lut->dbr_ppdu_id = common_hdr.phy_ppdu_id;
+	lut->header_length = common_hdr.header_size;
+	lut->payload_length = common_hdr.payload_size;
+	memcpy(&lut->dma_hdr.wifi8_hdr, &common_hdr,
+	       sizeof(struct ath12k_cfir_wifi8_common_hdr));
+
+	meta = &lut->header.meta_enh;
+
+	if (capture_type != CFR_CAPTURE_METHOD_ACK_RESP_TO_TM_FTM) {
+		if (!cc_hdr.mu_rx_data_incl) {
+			peer_macaddr = meta->su_peer_addr;
+			if (cc_hdr.freeze_data_incl)
+				extract_peer_mac_from_freeze_tlv(freeze_tlv,
+								 peer_macaddr);
+		}
+	}
+
+	return 0;
+}
+
 static const struct ath12k_hw_ops qcn9625_ops = {
 	.get_hw_mac_from_pdev_id = ath12k_wifi8_hw_qcn9625_mac_from_pdev_id,
 	.mac_id_to_pdev_id = ath12k_wifi8_hw_mac_id_to_pdev_id_qcn9625,
@@ -171,6 +282,8 @@ static const struct ath12k_hw_ops qcn9625_ops = {
 	.rxdma_ring_sel_config = ath12k_wifi8_dp_rxdma_ring_sel_config_qcn9625,
 	.get_ring_selector = ath12k_wifi8_hw_get_ring_selector_qcn9625,
 	.dp_srng_is_tx_comp_ring = ath12k_wifi8_dp_srng_is_comp_ring_qcn9625,
+	.fill_cfr_hdr_info = ath12k_hw_qcn9625_fill_cfr_hdr_info,
+	.parse_cfr_enh_dma_hdr = ath12k_hw_qcn9625_parse_cfr_enh_dma_hdr,
 	.hw_link_id_required_in_mgmt_send =
 		ath12k_wifi8_hw_link_id_required_in_mgmt_send_qcn9625,
 	.mgmt_rxdma_ring_sel_config = ath12k_wifi8_mgmt_wbm_ring_sel_config_qcn9625,
@@ -411,7 +524,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.max_clients_dbs_sbs = 170,
 		.supports_tx_monitor = true,
 		.idle_ps = false,
-		.cold_boot_calib = ATH12K_COLD_BOOT_CALIB_DEFAULT,
+		.cold_boot_calib = ATH12K_COLD_BOOT_CALIB,
 		.download_calib = true,
 		.supports_suspend = false,
 		.reoq_lut_support = true,
@@ -492,10 +605,15 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.ds_txrx_hw_auto_idx = true,
 		.ds_hw_buff_mgmt = true,
 #endif
+		.cfr_support = true,
+		.cfr_dma_hdr_size = sizeof(struct ath12k_cfir_wifi8_common_hdr),
+		.cfr_num_stream_bufs = 128,
+		.cfr_stream_buf_size = sizeof(struct ath12k_csi_cfr_header) +
+					(CFR_HDR_MAX_LEN_WORDS_QCN9625 * 4) +
+					CFR_DATA_MAX_LEN_QCN9625,
 		.mlo_3_link_tx_support = true,
 		.board_magic = "QCA-ATH12K-BOARD",
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
-		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES_DEFAULT,
 		.peer_del_all_support = true,
 	},
 	{
@@ -539,7 +657,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.max_clients_dbs_sbs = 170,
 		.supports_tx_monitor = true,
 		.idle_ps = false,
-		.cold_boot_calib = ATH12K_COLD_BOOT_CALIB_DEFAULT,
+		.cold_boot_calib = ATH12K_COLD_BOOT_CALIB,
 		.download_calib = true,
 		.supports_suspend = false,
 		.reoq_lut_support = true,
@@ -612,10 +730,15 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.ds_txrx_hw_auto_idx = true,
 		.ds_hw_buff_mgmt = true,
 #endif
+		.cfr_support = true,
+		.cfr_dma_hdr_size = sizeof(struct ath12k_cfir_wifi8_common_hdr),
+		.cfr_num_stream_bufs = 128,
+		.cfr_stream_buf_size = sizeof(struct ath12k_csi_cfr_header) +
+					(CFR_HDR_MAX_LEN_WORDS_QCN9625 * 4) +
+					CFR_DATA_MAX_LEN_QCN9625,
 		.mlo_3_link_tx_support = true,
 		.board_magic = "QCA-ATH12K-BOARD",
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
-		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES_DEFAULT,
 		.peer_del_all_support = true,
 	},
 	{
@@ -660,7 +783,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.max_clients_dbs_sbs = 170,
 		.supports_tx_monitor = true,
 		.idle_ps = false,
-		.cold_boot_calib = ATH12K_COLD_BOOT_CALIB_DEFAULT,
+		.cold_boot_calib = ATH12K_COLD_BOOT_CALIB,
 		.download_calib = true,
 		.supports_suspend = false,
 		.reoq_lut_support = true,
@@ -736,10 +859,15 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.ds_txrx_hw_auto_idx = true,
 		.ds_hw_buff_mgmt = true,
 #endif
+		.cfr_support = true,
+		.cfr_dma_hdr_size = sizeof(struct ath12k_cfir_wifi8_common_hdr),
+		.cfr_num_stream_bufs = 128,
+		.cfr_stream_buf_size = sizeof(struct ath12k_csi_cfr_header) +
+					(CFR_HDR_MAX_LEN_WORDS_QCN9625 * 4) +
+					CFR_DATA_MAX_LEN_QCN9625,
 		.mlo_3_link_tx_support = true,
 		.board_magic = "QCA-ATH12K-BOARD",
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
-		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES_DEFAULT,
 		.peer_del_all_support = true,
 	},
 };
@@ -1073,7 +1201,8 @@ static void ath12k_wifi8_mgmt_handler(struct ieee80211_hw *hw,
 	 */
 	if (sta) {
 		ahsta = ath12k_sta_to_ahsta(sta);
-		if (ahsta->state == IEEE80211_STA_AUTHORIZED)
+		if (ahsta->state == IEEE80211_STA_AUTHORIZED ||
+		    (sta->epp_peer && ahsta->state > IEEE80211_STA_AUTH))
 			skb_cb->flags |= ATH12K_SKB_MGMT_MLO_PARAMS;
 	}
 
@@ -1512,23 +1641,144 @@ static const struct ieee80211_ops ath12k_ops_wifi8 = {
 	.set_smd_ctx			= ath12k_wifi8_mac_op_set_smd_ctx,
 };
 
+/*
+ * ath12k_mem_profile_based_param_wifi8 - Per-profile runtime memory parameters
+ * for WiFi8.
+ */
+static const struct ath12k_mem_profile_based_param
+ath12k_mem_profile_based_param_wifi8[] = {
+	[ATH12K_MEM_PROFILE_DEFAULT] = {
+		.num_vdevs			= 16 + 1,
+		.num_bridge_vdevs		= 8,
+		.num_max_vdevs_nlink		= (16 + 1) + 8,
+		.target_mem_mode		= ATH12K_QMI_TARGET_MEM_MODE_DEFAULT,
+		.num_stations_single		= 0,
+		.num_stations_dbs		= 0,
+		.num_stations_dbs_sbs		= 0,
+		.monitor_support		= true,
+		.cfr_support			= true,
+		.spectral_support		= true,
+		.tx_monitor_support		= true,
+		.dp_params = {
+			.rxdma_buf_ring_size		= 8192,
+			.rx_release_ring_size		= 16384,
+			.reo2ppe_ring			= 4096,
+			.ppe2tcl_ring			= 8192,
+			.tqm2ppe_ring_size		= 8192,
+			.tx_comp_ppeds_ring_size	= 32768,
+			.num_pool_tx_desc		= 32768,
+			.ppe_wbm2sw_ring_size		= 32768,
+			.rxdma_monitor_buf_ring_size	= 8192,
+			.rxdma_monitor_dst_ring_size	= 8192,
+			.smart_mon_filter_default	= DP_SMART_MON_PROFILE_1G,
+			.mon_num_ppdu_desc		= 128,
+			.rx_desc_count			= 24576,
+			.dp_max_clients			= 512,
+			.num_pool_ppeds_tx_desc		= 0x8000,
+			.ppeds_hotlist_len_max		= 1024,
+			.dp_num_clients_max		= 64,
+			.dp_mon_status_buf		= 320,
+			.reo_dst_ring_size		= { 8192, 8192, 8192,
+							    8192, 8192 },
+			.tcl_data_ring_size		= { 2048, 2048, 2048,
+							    2048, 2048 },
+			.tx_compl_ring_size		= { 32768, 32768, 32768,
+							    32768, 32768 },
+		},
+	},
+	[ATH12K_MEM_PROFILE_BALANCED] = {
+		.num_vdevs			= 8 + 1,
+		.num_bridge_vdevs		= 0,
+		.num_max_vdevs_nlink		= 0,
+		.target_mem_mode		= ATH12K_QMI_TARGET_MEM_MODE_512M,
+		.num_stations_single		= 128,
+		.num_stations_dbs		= 64,
+		.num_stations_dbs_sbs		= 42,
+		.monitor_support		= true,
+		.cfr_support			= true,
+		.spectral_support		= true,
+		.tx_monitor_support		= false,
+		.dp_params = {
+			.rxdma_buf_ring_size		= 8192,
+			.rx_release_ring_size		= 8192,
+			.reo2ppe_ring			= 2048,
+			.ppe2tcl_ring			= 2048,
+			.tqm2ppe_ring_size		= 8192,
+			.tx_comp_ppeds_ring_size	= 16384,
+			.num_pool_tx_desc		= 16384,
+			.ppe_wbm2sw_ring_size		= 8192,
+			.rxdma_monitor_buf_ring_size	= 256,
+			.rxdma_monitor_dst_ring_size	= 512,
+			.smart_mon_filter_default	= DP_SMART_MON_PROFILE_512M |
+							  (DP_SMART_MON_FILTER_MASK &
+							   ~DP_SMART_MON_VALID),
+			.mon_num_ppdu_desc		= 128,
+			.rx_desc_count			= 16384,
+			.dp_max_clients			= 512,
+			.num_pool_ppeds_tx_desc		= 0x8000,
+			.ppeds_hotlist_len_max		= 1024,
+			.dp_num_clients_max		= 64,
+			.dp_mon_status_buf		= 320,
+			.reo_dst_ring_size		= { 8192, 8192, 8192,
+							    8192, 8192 },
+			.tcl_data_ring_size		= { 2048, 2048, 2048,
+							    2048, 2048 },
+			.tx_compl_ring_size		= { 16384, 16384, 16384,
+							    16384, 16384 },
+		},
+	},
+	[ATH12K_MEM_PROFILE_OPTIMIZED] = {
+		.num_vdevs			= 8 + 1,
+		.num_bridge_vdevs		= 0,
+		.num_max_vdevs_nlink		= 0,
+		.target_mem_mode		= ATH12K_QMI_TARGET_MEM_MODE_256M,
+		.num_stations_single		= 128,
+		.num_stations_dbs		= 64,
+		.num_stations_dbs_sbs		= 42,
+		.monitor_support		= true,
+		.cfr_support			= false,
+		.spectral_support		= false,
+		.tx_monitor_support		= false,
+		.dp_params = {
+			.rxdma_buf_ring_size		= 2048,
+			.rx_release_ring_size		= 4096,
+			.reo2ppe_ring			= 2048,
+			.ppe2tcl_ring			= 2048,
+			.tqm2ppe_ring_size		= 8192,
+			.tx_comp_ppeds_ring_size	= 8192,
+			.num_pool_tx_desc		= 8192,
+			.ppe_wbm2sw_ring_size		= 8192,
+			.rxdma_monitor_buf_ring_size	= 256,
+			.rxdma_monitor_dst_ring_size	= 512,
+			.smart_mon_filter_default	= DP_SMART_MON_PROFILE_256M |
+							  (DP_SMART_MON_FILTER_MASK &
+							   ~DP_SMART_MON_VALID),
+			.mon_num_ppdu_desc		= 8,
+			.rx_desc_count			= 8192,
+			.dp_max_clients			= 512,
+			.num_pool_ppeds_tx_desc		= 0x2000,
+			.ppeds_hotlist_len_max		= 256,
+			.dp_num_clients_max		= 56,
+			.dp_mon_status_buf		= 20,
+			.reo_dst_ring_size		= { 2048, 2048, 2048, 512, 512 },
+			.tcl_data_ring_size		= { 512, 512, 512, 128, 128 },
+			.tx_compl_ring_size		= { 8192, 8192, 8192,
+							    1024, 1024 },
+		},
+	},
+};
+
 int ath12k_wifi8_hw_init(struct ath12k_base *ab)
 {
 	struct ath12k_hw_params *hw_params = NULL;
 	int i;
 
-	/* Set num_rx_spt_pages for all wifi8 hw_params entries
+	/*
+	 * Set per-device for WiFi8 from the
+	 * wifi8-specific profile table.  Also update ath12k_max_clients
 	 */
-
-	for (i = 0; i < ARRAY_SIZE(ath12k_wifi8_hw_params); i++) {
-		hw_params = &ath12k_wifi8_hw_params[i];
-		if (hw_params->hw_rev == ab->hw_rev) {
-			hw_params->num_rx_spt_pages =
-			    ath12k_dp_ring_cfg->rx_desc_count_wifi8 /
-			    ATH12K_MAX_SPT_ENTRIES;
-			break;
-		}
-	}
+	ab->mem_params = ath12k_mem_profile_based_param_wifi8[ath12k_active_mem_profile];
+	ath12k_max_clients = ab->mem_params.dp_params.dp_max_clients;
 
 	for (i = 0; i < ARRAY_SIZE(ath12k_wifi8_hw_params); i++) {
 		hw_params = &ath12k_wifi8_hw_params[i];

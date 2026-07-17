@@ -33,19 +33,11 @@ int athdbg_qmi_alloc_qdss_mem(struct athdbg_qmi *dbg_qmi)
 	struct ath12k_base *ab = container_of(dbg_qmi, struct ath12k_base, dbg_qmi);
 #if defined(CONFIG_UPSTREAM_BUILD) || defined(ATH12K_CMA_SUPPORT)
 	struct target_mem_chunk *chunk;
-	struct device *dev = ab->qmi_mem_dev.rmem_inited ?
-			     &ab->qmi_mem_dev.dev : ab->dev;
-#else
+#endif
+#if !defined(CONFIG_UPSTREAM_BUILD)
 	struct reserved_mem *ddr_rmem = NULL;
 	const struct athdbg_to_ath12k_ops *dbg_to_ath_ops = athdbg_base->dbg_to_ath_ops;
-
-	if (dbg_to_ath_ops && dbg_to_ath_ops->get_reserved_mem_by_name)
-		ddr_rmem = dbg_to_ath_ops->get_reserved_mem_by_name(ab, "host-ddr-mem");
-
-	if (!ddr_rmem) {
-		pr_err("host-ddr-mem not available in dts\n");
-		return -ENODEV;
-	}
+	bool do_ioremap = false;
 #endif
 
 	if (ab->dbg_qmi.qdss_mem_seg_len > 1) {
@@ -54,9 +46,47 @@ int athdbg_qmi_alloc_qdss_mem(struct athdbg_qmi *dbg_qmi)
 		return -EINVAL;
 	}
 
+#if !defined(CONFIG_UPSTREAM_BUILD)
+	if (!ab->qmi_mem_dev.rmem_inited) {
+		if (dbg_to_ath_ops && dbg_to_ath_ops->get_reserved_mem_by_name)
+			ddr_rmem = dbg_to_ath_ops->get_reserved_mem_by_name(ab,
+									"host-ddr-mem");
+
+		if (!ddr_rmem) {
+			pr_err("host-ddr-mem not available in dts\n");
+			return -ENODEV;
+		}
+	}
+#endif
+
 	switch (ab->dbg_qmi.qdss_mem[0].type) {
 	case QDSS_ETR_MEM_REGION_TYPE:
-#if !defined(CONFIG_UPSTREAM_BUILD) && !defined(ATH12K_CMA_SUPPORT)
+#if defined(CONFIG_UPSTREAM_BUILD)
+		chunk = &ab->dbg_qmi.qdss_mem[0];
+		chunk->v.ioaddr = dma_alloc_coherent(ab->dev,
+						     chunk->size,
+						     &chunk->paddr,
+						     GFP_KERNEL | __GFP_NOWARN);
+		if (!chunk->v.ioaddr) {
+			pr_err("Unable to allocate QDSS memory\n");
+			return -ENOMEM;
+		}
+#elif defined(ATH12K_CMA_SUPPORT)
+		if (ab->qmi_mem_dev.rmem_inited) {
+			chunk = &ab->dbg_qmi.qdss_mem[0];
+			chunk->v.ioaddr = dma_alloc_coherent(&ab->qmi_mem_dev.dev,
+							     chunk->size,
+							     &chunk->paddr,
+							     GFP_KERNEL | __GFP_NOWARN);
+			if (!chunk->v.ioaddr) {
+				pr_err("Unable to allocate QDSS memory\n");
+				return -ENOMEM;
+			}
+		} else {
+			do_ioremap = true;
+		}
+#else
+#ifdef PLATFORM_SDX
 		if (ab->dbg_qmi.qdss_mem[0].size > QMI_Q6_QDSS_ETR_SIZE ||
 		    ab->dbg_qmi.qdss_mem[0].size >
 		    ddr_rmem->size - ab->host_ddr_fixed_mem_off) {
@@ -64,8 +94,6 @@ int athdbg_qmi_alloc_qdss_mem(struct athdbg_qmi *dbg_qmi)
 				    __func__, ab->dbg_qmi.qdss_mem[0].size);
 			return -ENOMEM;
 		}
-
-#ifdef PLATFORM_SDX
 		ab->dbg_qmi.qdss_mem[0].v.ioaddr =
 			dma_alloc_attrs(ab->dev,
 					ab->dbg_qmi.qdss_mem[0].size,
@@ -77,26 +105,28 @@ int athdbg_qmi_alloc_qdss_mem(struct athdbg_qmi *dbg_qmi)
 			return -ENOMEM;
 		}
 #else
-		ab->dbg_qmi.qdss_mem[0].paddr =
-			ddr_rmem->base + ab->host_ddr_fixed_mem_off;
-
-		ab->dbg_qmi.qdss_mem[0].v.ioaddr =
-			ioremap(ab->dbg_qmi.qdss_mem[0].paddr,
-				ab->dbg_qmi.qdss_mem[0].size);
-		if (!ab->dbg_qmi.qdss_mem[0].v.ioaddr) {
-			pr_err("WARNING etr-addr remap failed\n");
-			return -ENOMEM;
-		}
+		do_ioremap = true;
 #endif
-#else
-		chunk = &ab->dbg_qmi.qdss_mem[0];
-		chunk->v.ioaddr = dma_alloc_coherent(dev,
-						     chunk->size,
-						     &chunk->paddr,
-						     GFP_KERNEL | __GFP_NOWARN);
-		if (!chunk->v.ioaddr) {
-			pr_err("Unable to allocate QDSS memory\n");
-			return -ENOMEM;
+#endif
+
+#if !defined(CONFIG_UPSTREAM_BUILD)
+		if (do_ioremap) {
+			if (ab->dbg_qmi.qdss_mem[0].size > QMI_Q6_QDSS_ETR_SIZE ||
+			    ab->dbg_qmi.qdss_mem[0].size >
+			    ddr_rmem->size - ab->host_ddr_fixed_mem_off) {
+				pr_err("%s: FW requests more memory 0x%x\n",
+				       __func__, ab->dbg_qmi.qdss_mem[0].size);
+				return -ENOMEM;
+			}
+			ab->dbg_qmi.qdss_mem[0].paddr =
+				ddr_rmem->base + ab->host_ddr_fixed_mem_off;
+			ab->dbg_qmi.qdss_mem[0].v.ioaddr =
+				ioremap(ab->dbg_qmi.qdss_mem[0].paddr,
+					ab->dbg_qmi.qdss_mem[0].size);
+			if (!ab->dbg_qmi.qdss_mem[0].v.ioaddr) {
+				pr_err("WARNING etr-addr remap failed\n");
+				return -ENOMEM;
+			}
 		}
 #endif
 		break;

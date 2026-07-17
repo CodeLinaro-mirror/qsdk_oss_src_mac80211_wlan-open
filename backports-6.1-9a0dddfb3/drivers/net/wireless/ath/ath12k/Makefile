@@ -47,6 +47,8 @@ ath12k-y += core.o \
 	    me_hmmc.o \
 	    ath12k_notif.o
 
+ath12k-$(CONFIG_KPROBES) += qcn_extns/kprobe.o
+
 ath12k-$(CPTCFG_ATHDEBUG) += athdbg_if.o
 ath12k-$(CPTCFG_ATH12K_AHB) += ahb.o
 ath12k-$(CPTCFG_ATH12K_PPE_DS_SUPPORT) += ppe.o
@@ -73,10 +75,12 @@ ath12k-$(CPTCFG_QCN_EXTN) += \
 	qcn_extns/dcs_extn.o \
 	qcn_extns/sa_api.o \
 	qcn_extns/sa_core.o \
+	qcn_extns/me_extn.o \
 	qcn_extns/dp_stats_extn.o \
 	qcn_extns/ini.o \
 	qcn_extns/ini_parse.o \
 	qcn_extns/me_hmmc_extn.o \
+	qcn_extns/dp_mon_extn.o \
 	qcn_extns/mgmt_rx_extn.o \
 	qcn_extns/dp_tx_extn.o \
 	qcn_extns/scan_extn.o \

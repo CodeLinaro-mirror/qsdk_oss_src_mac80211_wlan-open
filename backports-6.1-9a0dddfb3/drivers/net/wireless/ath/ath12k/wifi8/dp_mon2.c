@@ -53,7 +53,11 @@ const struct ath12k_dp_arch_mon_ops ath12k_wifi8_dp_arch_mon_dual_ring_ops = {
 	.ext_mon_validate_request = ath12k_wifi8_dp_ext_mon_validate_request,
 	.ext_mon_alloc = ath12k_dp_ext_mon_alloc,
 	.ext_mon_free = ath12k_dp_ext_mon_free,
-
+	.htt_rx_phy_err_filter_cfg = NULL,
+	.rx_undecoded_metadata_config_filter = NULL,
+	.rx_undecoded_metadata_reset_filter = NULL,
+	.rx_undecoded_metadata_capture_set = NULL,
+	.rx_undecoded_phy_err_mask_set = NULL,
 	/* Below are TxMonitor Ops */
 	/* At Device Init/Exit */
 	.mon_tx_srng_alloc_setup = ath12k_dp_mon_tx_srng_alloc_setup,
@@ -1397,6 +1401,7 @@ static int ath12k_wifi8_dp_mon_rx_add_ppdu_desc(struct list_head *mon_desc_used_
 	}
 
 	list_for_each_entry(desc, mon_desc_used_list, list) {
+		struct ath12k_base *ab = dp_mon->dp->ab;
 		desc_cnt = ppdu_desc->status_desc_cnt;
 		if (unlikely(desc_cnt >= ATH12K_DP_MON_STATUS_BUF)) {
 			ath12k_warn(dp_mon->dp,
@@ -1868,6 +1873,7 @@ int ath12k_wifi8_dp_mon_rx_dual_ring_setup_ppdu_desc(struct ath12k_pdev_dp *dp_p
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
+	struct ath12k_base *ab = dp->ab;
 	u32 mon_status_buf = ATH12K_DP_MON_STATUS_BUF;
 	int i, ret;
 

@@ -546,8 +546,8 @@ struct ath12k_htt_tx_ppdu_stats {
 
 
 struct fw_mpdu_stats {
-	u64 success_cnt;
-	u64 failure_cnt;
+	u32 success_cnt;
+	u32 failure_cnt;
 };
 
 struct msduq_tx_stats {
@@ -590,7 +590,7 @@ enum hist_types {
 
 struct hist_bucket {
 	enum hist_types hist_type;
-	u64 freq[HIST_BUCKET_MAX];
+	u32 freq[HIST_BUCKET_MAX];
 };
 
 struct hist_stats {
@@ -770,12 +770,12 @@ struct ath12k_dp_link_peer_qos_stats {
 };
 
 struct ath12k_mld_qos_stats {
-	u64 tx_success_pkts;
-	u64 tx_failed_pkts;
-	u64 tx_invalid_delay_pkts;
-	u64 nwdelay_win_total;
-	u64 swdelay_win_total;
-	u64 hwdelay_win_total;
+	u32 tx_success_pkts;
+	u32 tx_failed_pkts;
+	u32 tx_invalid_delay_pkts;
+	u32 nwdelay_win_total;
+	u32 swdelay_win_total;
+	u32 hwdelay_win_total;
 	struct fw_mpdu_stats svc_intval_stats;
 	struct fw_mpdu_stats burst_size_stats;
 	u32 queue_depth;
@@ -893,9 +893,9 @@ struct ath12k_dp_peer_tid_jitter_stats {
 	u32 tx_prev_delay;
 	u32 tx_avg_jitter;
 	u32 tx_avg_delay;
-	u64 tx_avg_err;
-	u64 tx_total_success;
-	u64 tx_drop;
+	u32 tx_avg_err;
+	u32 tx_total_success;
+	u32 tx_drop;
 };
 
 DECLARE_EWMA(avg_sojourn, 10, 8)
@@ -982,9 +982,9 @@ struct ath12k_dp_peer_tx_stats {
 };
 
 struct ath12k_dp_proto_stats {
-	u64 l3[DP_PKT_TYPE_L3_MAX];
-	u64 l4[DP_PKT_TYPE_L4_MAX];
-	u64 l5[DP_PKT_TYPE_L5_MAX];
+	u32 l3[DP_PKT_TYPE_L3_MAX];
+	u32 l4[DP_PKT_TYPE_L4_MAX];
+	u32 l5[DP_PKT_TYPE_L5_MAX];
 };
 
 struct ath12k_dp_proto_stats_peer {
@@ -1021,6 +1021,14 @@ struct ath12k_dp_peer_stats {
 #endif
 };
 
+struct ath12k_me_stats {
+	u32 total_mc;
+	u32 me_mcuc;
+	u32 me5_hits;
+	u32 me6_hits;
+	u32 me_fail;
+};
+
 struct ath12k_dp_tx_ingress_stats {
 	/* Basic */
 	struct ath12k_dp_pkt_info recv_from_stack;
@@ -1036,6 +1044,7 @@ struct ath12k_dp_tx_ingress_stats {
 	u32 encrypt_type[HAL_ENCRYPT_TYPE_MAX];
 	u32 desc_type[DP_TCL_DESC_TYPE_MAX];
 	struct ath12k_dp_pkt_info mcast;
+	struct ath12k_me_stats me;
 
 	/* Drop */
 	u32 drop[DP_TX_ENQ_ERR_MAX];
@@ -1433,6 +1442,7 @@ struct ath12k_dp_preserved_stats {
 	struct ath12k_dp_peer_tx_stats per_pkt_tx[DP_TCL_NUM_RING_MAX];
 	struct ath12k_dp_peer_rx_stats per_pkt_rx[DP_REO_DST_RING_MAX];
 	struct ath12k_wbm_rx_stats wbm_err;
+	struct ath12k_dp_pkt_info rx_counters;
 };
 
 /* Stats aggregation functions */
@@ -1881,6 +1891,5 @@ void ath12k_dp_netstats_peer_update(struct ath12k_dp_hw *dp_hw,
 				    const u8 *dp_peer_addr,
 				    u8 hw_link_id,
 				    const u8 *peer_mac_filter,
-				    bool is_ds_vif,
 				    struct rtnl_link_stats64 *stats);
 #endif

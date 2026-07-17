@@ -37,22 +37,12 @@ struct ath12k_dp_hw_link {
 	u8 pdev_idx;
 };
 #if defined(CONFIG_ATH12K_MEM_PROFILE_512M) || defined(CPTCFG_ATH12K_MEM_PROFILE_512M)
-#define DP_TX_COMP_RING_SIZE           16384
-#define ATH12K_NUM_POOL_TX_DESC        16384
 /* TODO: revisit this count during testing */
 #define DP_RX_BUFFER_SIZE		1856
 #elif defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
-#define DP_TX_COMP_RING_SIZE           16384
-#define ATH12K_NUM_POOL_TX_DESC        8192
 /* TODO: revisit this count during testing */
 #define DP_RX_BUFFER_SIZE       1856
 #else
-#ifdef CPTCFG_EXT_IPA_OFFLOAD
-#define DP_TX_COMP_RING_SIZE           8192
-#else
-#define DP_TX_COMP_RING_SIZE		32768
-#endif
-#define ATH12K_NUM_POOL_TX_DESC		(ath12k_dp_ring_cfg->num_pool_tx_desc)
 /* TODO: revisit this count during testing */
 #if BITS_PER_LONG == 32
 #define DP_RX_BUFFER_SIZE		1856
@@ -62,6 +52,7 @@ struct ath12k_dp_hw_link {
 #endif
 #define ATH12K_PAGE_SIZE	PAGE_SIZE
 
+#define ATH12K_NUM_POOL_TX_DESC		(ab->mem_params.dp_params.num_pool_tx_desc)
 /* Total 1024 entries in PPT, i.e 4K/4 considering 4K aligned
  * SPT pages which makes lower 12bits 0
  */
@@ -83,7 +74,7 @@ struct ath12k_dp_hw_link {
 	(ATH12K_NUM_PPEDS_TX_SPT_PAGES + ATH12K_NUM_TX_SPT_PAGES)
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 #define ATH12K_NUM_PPEDS_TX_SPT_PAGES \
-	(ath12k_ppeds_desc_params.num_ppeds_desc / ATH12K_MAX_SPT_ENTRIES)
+	(ATH12K_NUM_POOL_PPEDS_TX_DESC_DEFAULT / ATH12K_MAX_SPT_ENTRIES)
 #else
 #define ATH12K_NUM_PPEDS_TX_SPT_PAGES 0
 #endif
@@ -261,9 +252,10 @@ struct ath12k_dp_peer_create_params {
 
 struct ath12k_dp_link_peer_rate_info {
 	struct rate_info txrate;
+	struct rate_info rxrate;
 	u64 rx_duration;
 	u64 tx_duration;
-	u8 rssi_comb;
+	s8 rssi_comb;
 	s8 signal_avg;
 	u16 tx_retry_count;
 	u16 tx_retry_failed;

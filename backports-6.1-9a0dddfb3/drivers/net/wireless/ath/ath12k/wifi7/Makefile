@@ -25,6 +25,7 @@ ath12k_wifi7-y += core.o \
 		  umac_reset.o
 
 ath12k_wifi7-$(CPTCFG_QCN_EXTN) += qcn_extns/wifi7_hw_extn.o \
+				   qcn_extns/dp_mon_extn.o \
 				   qcn_extns/dp_rx_extn.o
 ath12k_wifi7-$(CPTCFG_EXT_IPA_OFFLOAD) += \
 		  qcn_extns/ipa/dp_ipa.o

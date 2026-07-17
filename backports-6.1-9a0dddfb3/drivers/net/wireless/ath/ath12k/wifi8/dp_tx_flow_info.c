@@ -349,11 +349,11 @@ int ath12k_dp_tx_peer_msduq_mpduq_setup(struct ath12k_dp_hw_group *dp_hw_grp,
 	INIT_LIST_HEAD(&mpduq_pending_list_head);
 	INIT_LIST_HEAD(&msduq_pending_list_head);
 	spin_lock_bh(&tx_info->tx_q_lock);
-	ath12k_dbg(ab, ATH12K_DBG_PEER,
-		   "smd txq-setup: peer %pM peer_id=%u link_id=%u assoc_links=0x%lx txq_links=0x%lx\n",
-		   dp_peer->addr, dp_peer->peer_id, link_id,
-		   tx_info->assoc_hw_links_bitmap,
-		   tx_info->txq_hw_links_bitmap);
+	ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+			 "smd txq-setup: peer %pM peer_id=%u link_id=%u assoc_links=0x%lx txq_links=0x%lx\n",
+			 dp_peer->addr, dp_peer->peer_id, link_id,
+			 tx_info->assoc_hw_links_bitmap,
+			 tx_info->txq_hw_links_bitmap);
 	/* data tid queues */
 	for (i = 0; i < ATH12K_MAX_NUM_DATA_TIDS; i++) {
 		mpduq = tx_info->tid_info[i].mpduq;
@@ -378,10 +378,10 @@ int ath12k_dp_tx_peer_msduq_mpduq_setup(struct ath12k_dp_hw_group *dp_hw_grp,
 						      false);
 	spin_unlock_bh(&tx_info->tx_q_lock);
 
-	ath12k_dbg(ab, ATH12K_DBG_PEER,
-		   "smd txq-setup: HTT setup ret=%d assoc_links=0x%lx txq_links=0x%lx\n",
-		   ret, tx_info->assoc_hw_links_bitmap,
-		   tx_info->txq_hw_links_bitmap);
+	ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+			 "smd txq-setup: HTT setup ret=%d assoc_links=0x%lx txq_links=0x%lx\n",
+			 ret, tx_info->assoc_hw_links_bitmap,
+			 tx_info->txq_hw_links_bitmap);
 
 	return ret;
 }

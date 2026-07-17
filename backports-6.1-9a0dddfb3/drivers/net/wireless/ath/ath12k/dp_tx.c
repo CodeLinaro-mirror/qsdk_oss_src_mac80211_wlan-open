@@ -66,7 +66,8 @@ EXPORT_SYMBOL(ath12k_dp_tx_get_mcast_group_slot);
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 void
-ath12k_dp_ppeds_tx_release_desc_list_bulk(struct ath12k_dp_hw_group *dp_hw_grp,
+ath12k_dp_ppeds_tx_release_desc_list_bulk(struct ath12k_base *ab,
+					  struct ath12k_dp_hw_group *dp_hw_grp,
 					  struct list_head *local_list,
 					  int local_list_len,
 					  struct list_head *local_list_no_skb,
@@ -90,7 +91,7 @@ ath12k_dp_ppeds_tx_release_desc_list_bulk(struct ath12k_dp_hw_group *dp_hw_grp,
 		list_splice_tail(local_list_no_skb, &dp_hw_grp->ppeds_tx_desc_free_list);
 	}
 
-	hotlist_remaining_len = ath12k_ppeds_desc_params.ppeds_hotlist_len -
+	hotlist_remaining_len = ATH12K_PPEDS_HOTLIST_LEN_MAX_DEFAULT -
 						dp_hw_grp->ppeds_tx_desc_reuse_list_len;
 
 	if (likely(hotlist_remaining_len >= local_list_len)) {

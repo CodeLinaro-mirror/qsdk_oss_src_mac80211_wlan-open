@@ -164,9 +164,9 @@ u64 athdbg_if_getmask(void)
 }
 
 void athdbg_if_send_tlv(struct ath12k_base *ab, u32 event_id,
-			const void *tlv_data, size_t tlv_len)
+			const struct athdbg_wmi_event_info *info)
 {
 	if (!athdbg_base)
 		return;
-	athdbg_netlink_send(ab, event_id, tlv_data, tlv_len);
+	athdbg_netlink_send(ab, event_id, info);
 }

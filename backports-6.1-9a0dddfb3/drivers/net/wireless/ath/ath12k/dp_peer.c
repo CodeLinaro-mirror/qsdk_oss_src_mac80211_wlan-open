@@ -443,6 +443,7 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 
 	peer->max_rssi = S8_MIN;
 	peer->min_rssi = S8_MAX;
+	spin_lock_init(&peer->ppdu_stats_lock);
 
 	if (vif->type == NL80211_IFTYPE_STATION) {
 		dp_link_vif->ast_hash = peer->ast_hash;
@@ -639,6 +640,8 @@ static void ath12k_dp_aggr_link_peer_to_mld_peer(struct ath12k *ar,
 
 	ath12k_dp_capture_link_peer_stats(ar, &dp_peer->link_peer_delete_stats,
 					  peer, dp_peer, stats_link_id);
+	dp_peer->link_peer_delete_stats.rx_counters.packets += peer->rx_packets;
+	dp_peer->link_peer_delete_stats.rx_counters.bytes += peer->rx_bytes;
 }
 
 /**
@@ -1004,23 +1007,21 @@ void
 ath12k_link_peer_get_sta_rate_info_stats(struct ath12k_dp_link_peer *link_peer,
 					 struct ath12k_dp_link_peer_rate_info *rate_info)
 {
+	spin_lock_bh(&link_peer->ppdu_stats_lock);
 	rate_info->rx_duration = link_peer->rx_duration;
 	rate_info->tx_duration = link_peer->tx_duration;
-	rate_info->txrate.legacy = link_peer->txrate.legacy;
-	rate_info->txrate.mcs = link_peer->txrate.mcs;
-	rate_info->txrate.nss = link_peer->txrate.nss;
-	rate_info->txrate.bw = link_peer->txrate.bw;
-	rate_info->txrate.he_gi = link_peer->txrate.he_gi;
-	rate_info->txrate.he_dcm = link_peer->txrate.he_dcm;
-	rate_info->txrate.he_ru_alloc = link_peer->txrate.he_ru_alloc;
-	rate_info->txrate.eht_gi = link_peer->txrate.eht_gi;
-	rate_info->txrate.eht_ru_alloc = link_peer->txrate.eht_ru_alloc;
-	rate_info->txrate.flags = link_peer->txrate.flags;
-	rate_info->rssi_comb = link_peer->rssi_comb;
-	rate_info->signal_avg = ewma_avg_rssi_read(&link_peer->avg_rssi);
+	/* Copy txrate and rxrate atomically under the caller's ppdu stats lock
+	 * Field-by-field access races with dp_htt.c/dp_mon.c writers that
+	 * do memset + multi-store sequences under stats lock on another CPU.
+	 */
+	memcpy(&rate_info->txrate, &link_peer->txrate, sizeof(struct rate_info));
+	memcpy(&rate_info->rxrate, &link_peer->rxrate, sizeof(struct rate_info));
+	rate_info->rssi_comb = link_peer->signal_stats.rssi;
+	rate_info->signal_avg = (s8)link_peer->signal_stats.rssi_avg;
 	rate_info->tx_retry_count = link_peer->tx_retry_count;
 	rate_info->tx_retry_failed = link_peer->tx_retry_failed;
 	rate_info->rx_retries = link_peer->peer_stats.rx_retries;
+	spin_unlock_bh(&link_peer->ppdu_stats_lock);
 }
 
 struct ath12k_dp_peer_qos *
@@ -2049,7 +2050,7 @@ int ath12k_dp_peer_get_param_by_mac_addr(struct ath12k_dp_hw *dp_hw, const u8 *a
 
 	spin_lock_bh(&dp_hw->peer_hash_lock);
 	dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, addr);
-	if (!dp_peer || dp_peer->is_vdev_peer) {
+	if (!dp_peer) {
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		return -EINVAL;
 	}
@@ -2628,7 +2629,8 @@ static void ath12k_mac_dp_peer_cleanup_cb(struct ath12k_pdev_dp *dp_pdev,
 	ath12k_dp_ipa_peer_notify(ar, link_peer, NULL, link_peer->vdev_id, false);
 	/*Skip this for non primary_links and vdev peers*/
 	if (ath12k_dp_link_peer_get_sta(link_peer) && link_peer->dp_peer &&
-	    link_peer->primary_link) {
+	    ath12k_dp_arch_mlo_peer_tid_teardown_ready(dp, link_peer->dp_peer,
+						       link_peer)) {
 		for (i = 0; i < num_tids; i++) {
 			rx_tid = &link_peer->dp_peer->rx_tid[i];
 
@@ -2665,9 +2667,15 @@ static void ath12k_mac_dp_peer_cleanup_cb(struct ath12k_pdev_dp *dp_pdev,
 			    dp_peer->peer_id != ATH12K_MLO_PEER_ID_INVALID) {
 				sta = ath12k_dp_peer_get_sta(dp_peer);
 				ahsta = ath12k_sta_to_ahsta(sta);
+
 				clear_bit(dp_peer->peer_id, dp_hw->free_peer_id_map);
-				clear_bit(ahsta->ml_peer_id, ah->free_ml_peer_id_map);
-				ahsta->ml_peer_id = ATH12K_MLO_PEER_ID_INVALID;
+
+				if (ahsta->ml_peer_id != ATH12K_MLO_PEER_ID_INVALID) {
+					clear_bit(ahsta->ml_peer_id,
+						  ah->free_ml_peer_id_map);
+					ahsta->ml_peer_id = ATH12K_MLO_PEER_ID_INVALID;
+				}
+
 				ah->num_ml_peers--;
 			}
 
@@ -2724,7 +2732,8 @@ void ath12k_dp_peer_cleanup_all(struct ath12k *ar)
 	/*Link peer cleanup part*/
 	list_for_each_entry_safe(link_peer, tmp_link_peer, &ctx.link_peers, list) {
 		if (ath12k_dp_link_peer_get_sta(link_peer) && link_peer->dp_peer &&
-		    link_peer->primary_link) {
+		    ath12k_dp_arch_mlo_peer_tid_teardown_ready(dp, link_peer->dp_peer,
+							       link_peer)) {
 			for (i = 0; i < num_tids; i++) {
 				rx_tid = &link_peer->dp_peer->rx_tid[i];
 

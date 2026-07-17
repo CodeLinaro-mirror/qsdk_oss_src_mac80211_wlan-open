@@ -505,25 +505,9 @@ void ath12k_wifi8_dp_rx_peer_tid_delete(struct ath12k *ar,
 	if (!rx_tid->active)
 		return;
 
-	/* For MLO peers, rx_tid[] is shared at the MLD level across all links.
-	 * Skip the full delete (REO cmd + qref reset + paddr zero) when this is
-	 * a partial-link removal and other links remain.  Tearing down the HW
-	 * REO queue now would leave a dangling paddr in rx_tid[] that
-	 * smd_prep_rx_tid() still needs to park during BSS Transition.
-	 * The full cleanup runs when the last link is removed (peer_links_map==0).
-	 */
-	if (peer->mlo && hweight32(peer->dp_peer->peer_links_map) > 0) {
-		ath12k_dbg(ab, ATH12K_DBG_SMD,
-			   "dp_rx_peer_tid_delete: MLO skip %pM tid=%u paddr=%pad links=0x%x\n",
-			   peer->addr, tid, &rx_tid->paddr,
-			   peer->dp_peer->peer_links_map);
-		return;
-	}
-
-	ath12k_dbg(ab, ATH12K_DBG_SMD,
-		   "dp_rx_peer_tid_delete: peer %pM peer_id=%u tid=%u paddr=%pad active=%d\n",
-		   peer->addr, peer->dp_peer->peer_id, tid,
-		   &rx_tid->paddr, rx_tid->active);
+	ath12k_dbg_level(ab, ATH12K_DBG_PEER | ATH12K_DBG_SMD, ATH12K_DBG_L2,
+			 "dp_rx_peer_tid_delete: peer %pM peer_id=%u tid=%u\n",
+			 peer->addr, peer->dp_peer->peer_id, tid);
 
 	elem = kzalloc(sizeof(*elem), GFP_ATOMIC);
 	if (!elem)
@@ -568,6 +552,36 @@ void ath12k_wifi8_dp_rx_peer_tid_delete(struct ath12k *ar,
 	rx_tid->paddr = 0;
 	rx_tid->size = 0;
 	rx_tid->pending_desc_size = 0;
+}
+
+bool ath12k_wifi8_dp_mlo_peer_tid_teardown_ready(struct ath12k_dp_peer *dp_peer,
+						 struct ath12k_dp_link_peer *link_peer)
+{
+	/* AP-mode MLO peers: primary_link is stable for the peer lifetime,
+	 * same as wifi7.  Only the link that set up rx_tid[] tears it down.
+	 *
+	 * TODO: revisit if AP-side link reconfiguration or future AP UMAC
+	 * migration can also move primary_link at runtime; if so, drop the
+	 * is_sta_bss_peer restriction and use the peer_links_map check for
+	 * all wifi8 MLO peers.
+	 */
+	if (!dp_peer->is_sta_bss_peer)
+		return link_peer->primary_link;
+
+	/* STA-mode BSS peers: during SMD BSS Transition the STA must keep the
+	 * Serving AP's rx_tid[] active until all its links are torn down, so
+	 * that in-flight frames from the Serving AP continue to drain through
+	 * the existing REO queues.  Once the last Serving AP link is removed,
+	 * the Target AP MLD peer owns the rx_tid[] state, so this is the only
+	 * safe point to tear it down.
+	 *
+	 * (peer_links_map & ~BIT(link_id)) == 0 evaluates to true when this is
+	 * the only remaining link, regardless of whether the caller has already
+	 * decremented peer_links_map (ath12k_mac_dp_peer_cleanup_cb) or not
+	 * (ath12k_dp_peer_cleanup, which defers it to
+	 * ath12k_dp_cp_link_peer_unassign).
+	 */
+	return (dp_peer->peer_links_map & ~BIT(link_peer->link_id)) == 0;
 }
 
 void  ath12k_wifi8_dp_setup_pn_check_reo_cmd(struct ath12k_hal_reo_cmd *cmd,
@@ -834,9 +848,9 @@ send_cmd:
 done:
 	spin_unlock_bh(&rx_tid->tid_lock);
 	spin_unlock_bh(&dp_hw->peer_hash_lock);
-	ath12k_dbg(ab, ATH12K_DBG_PEER,
-		   "SMD REO update done for peer %pM tid %d: SSN=0x%x\n",
-		   peer_addr, rx_tid_ctx->tid, rx_tid_ctx->ssn);
+	ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+			 "SMD REO update done for peer %pM tid %d: SSN=0x%x\n",
+			 peer_addr, rx_tid_ctx->tid, rx_tid_ctx->ssn);
 
 	return 0;
 }
@@ -876,9 +890,9 @@ int ath12k_wifi8_peer_rx_tid_svld_reset(struct ath12k_base *ab,
 		if (!rx_tid->active)
 			continue;
 
-		ath12k_dbg(ab, ATH12K_DBG_PEER,
-			   "SMD SVLD reset: peer %pM tid %u REO SVLD -> 0\n",
-			   peer_addr, tid);
+		ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+				 "SMD SVLD reset: peer %pM tid %u REO SVLD -> 0\n",
+				 peer_addr, tid);
 
 		memset(&cmd, 0, sizeof(cmd));
 		cmd.addr_lo = lower_32_bits(rx_tid->paddr);
@@ -900,9 +914,9 @@ int ath12k_wifi8_peer_rx_tid_svld_reset(struct ath12k_base *ab,
 	/* Management Rx TID (ATH12K_SMD_RX_MGMT_TID = 16) */
 	rx_tid = &dp_peer->rx_tid[ATH12K_SMD_RX_MGMT_TID];
 	if (rx_tid->active) {
-		ath12k_dbg(ab, ATH12K_DBG_PEER,
-			   "SMD SVLD reset: peer %pM tid %u (mgmt) REO SVLD -> 0\n",
-			   peer_addr, ATH12K_SMD_RX_MGMT_TID);
+		ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+				 "SMD SVLD reset: peer %pM tid %u (mgmt) REO SVLD -> 0\n",
+				 peer_addr, ATH12K_SMD_RX_MGMT_TID);
 
 		memset(&cmd, 0, sizeof(cmd));
 		cmd.addr_lo = lower_32_bits(rx_tid->paddr);
@@ -922,8 +936,8 @@ int ath12k_wifi8_peer_rx_tid_svld_reset(struct ath12k_base *ab,
 
 	spin_unlock_bh(&dp_hw->peer_hash_lock);
 
-	ath12k_dbg(ab, ATH12K_DBG_PEER,
-		   "SMD SVLD reset done for peer %pM\n", peer_addr);
+	ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+			 "SMD SVLD reset done for peer %pM\n", peer_addr);
 
 	return ret;
 }
@@ -1572,11 +1586,15 @@ ath12k_wifi8_deliver_ethernet_frame(struct ath12k_pdev_dp *dp_pdev,
 
 	msdu->priority = rx_mpdu_info->tid;
 
-	/* convert 802.3 frame to 802.11 frame so MAC80211 can create APVLAN
-	 * interface
+	/* Convert 802.3 frame to 802.11 so mac80211 can handle it correctly.
+	 * For 4addr frames, this is needed to support APVLAN interface creation.
+	 * For TKIP peers, fast-rx is not set in mac80211, so RX_FLAG_8023 must
+	 * be cleared and the frame converted to route through normal RX handlers.
 	 */
-	if (!peer->use_4addr && (rx_spd->rx_msdu_info.fr_ds && rx_spd->rx_msdu_info.to_ds)) {
-		ath12k_dp_convert_eth_2_80211_frame(rx_spd);
+	if ((!peer->use_4addr &&
+	     (rx_spd->rx_msdu_info.fr_ds && rx_spd->rx_msdu_info.to_ds)) ||
+	      peer->sec_type == HAL_ENCRYPT_TYPE_TKIP_MIC) {
+		ath12k_wifi8_convert_eth_2_80211_frame(dp, rx_spd);
 		status->flag &= ~RX_FLAG_8023;
 	}
 
@@ -3027,23 +3045,20 @@ int ath12k_wifi8_dp_rx_flow_fse_cache_operation(struct ath12k_base *ab,
 		fse_cmd.dest_ip[1] = htonl(tuple_info->dest_ip_95_64);
 		fse_cmd.dest_ip[2] = htonl(tuple_info->dest_ip_63_32);
 		fse_cmd.dest_ip[3] = htonl(tuple_info->dest_ip_31_0);
+		fse_cmd.src_port = cpu_to_le16(tuple_info->src_port);
+		fse_cmd.dest_port = cpu_to_le16(tuple_info->dest_port);
 		fse_cmd.info0 =
-			cpu_to_le32(FIELD_PREP(HAL_FSE_CMD_INFO0_SRC_PORT,
-					       tuple_info->src_port) |
-				    FIELD_PREP(HAL_FSE_CMD_INFO0_DEST_PORT,
-					       tuple_info->dest_port));
-		fse_cmd.info1 =
-			cpu_to_le32(FIELD_PREP(HAL_FSE_CMD_INFO1_L4_PROTOCOL,
+			cpu_to_le32(FIELD_PREP(HAL_FSE_CMD_INFO0_L4_PROTOCOL,
 					       tuple_info->l4_protocol) |
-				    FIELD_PREP(HAL_FSE_CMD_INFO1_GSE_CTRL,
+				    FIELD_PREP(HAL_FSE_CMD_INFO0_GSE_CTRL,
 					       HAL_FSE_GSE_CTRL_INVAL_SINGLE));
 	} else if (op_code == DP_FST_CACHE_INVALIDATE_FULL) {
-		fse_cmd.info1 =
-			cpu_to_le32(FIELD_PREP(HAL_FSE_CMD_INFO1_GSE_CTRL,
+		fse_cmd.info0 =
+			cpu_to_le32(FIELD_PREP(HAL_FSE_CMD_INFO0_GSE_CTRL,
 					       HAL_FSE_GSE_CTRL_INVAL_ALL));
 	} else if (op_code == DP_FST_DISABLE) {
-		fse_cmd.info1 =
-			cpu_to_le32(FIELD_PREP(HAL_FSE_CMD_INFO1_GSE_CTRL,
+		fse_cmd.info0 =
+			cpu_to_le32(FIELD_PREP(HAL_FSE_CMD_INFO0_GSE_CTRL,
 					       HAL_FSE_GSE_CTRL_SRCH_DIS));
 	} else if (op_code == DP_FST_ENABLE) {
 		ath12k_dbg(ab, ATH12K_DBG_DP_FST,
@@ -3570,7 +3585,78 @@ int ath12k_wifi8_dp_rx_ring_init(struct ath12k_base *ab)
 	return 0;
 }
 
-int ath12k_wifi8_dp_rx_process_reo_flush_err(struct ath12k_dp *dp, int budget)
+static bool
+ath12k_wifi8_flush_handle_null_queue(struct ath12k_dp *dp,
+				     struct ath12k_rx_desc_info *desc_info,
+				     struct hal_reo_dest_ring *rx_desc,
+				     struct napi_struct *napi)
+{
+	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
+	struct ieee80211_rx_status rx_status = {0};
+	struct rx_tlv_info_1 prev_tlv = {0};
+	struct hal_rx_spd_data rx_spd = {0};
+	struct ath12k_dp_peer *peer;
+	struct ath12k_pdev_dp *dp_pdev;
+	struct hal_rx_desc *hal_rx_desc;
+	u32 hal_rx_desc_sz;
+	u32 peer_metadata;
+	u16 peer_id;
+	u8 hw_link_id;
+	int msdu_idx = 0;
+	bool drop;
+
+	if (!desc_info->skb)
+		return false;
+
+	ath12k_core_dmac_inv_range(desc_info->vaddr,
+				   desc_info->vaddr + DP_RX_BUFFER_SIZE);
+
+	hal_rx_desc = (struct hal_rx_desc *)desc_info->vaddr;
+
+	ath12k_wifi8_cpy_hw_rx_desc_to_spad_desc(rx_desc, &rx_spd);
+	ath12k_wifi8_dp_extract_rx_spd_data(dp->hal, &rx_spd, hal_rx_desc);
+
+	if (rx_spd.rx_mpdu_info.reo_dest_buffer_type ==
+	    HAL_REO_DEST_RING_BUFFER_TYPE_LINK_DESC)
+		return false;
+
+	rx_spd.msdu = desc_info->skb;
+	rx_spd.vaddr = desc_info->vaddr;
+
+	hw_link_id = ath12k_dp_validate_hw_link_id(rx_spd.rx_mpdu_info.src_link_id);
+	dp_pdev = ath12k_dp_hw_grp_to_dp_pdev(dp_hw_grp, hw_link_id);
+	if (unlikely(!dp_pdev))
+		return false;
+
+	if (!rcu_dereference(dp_pdev->dp->ab->pdevs_active[dp_pdev->ar->pdev_idx]))
+		return false;
+
+	peer_metadata = rx_spd.rx_mpdu_info.peer_meta_data;
+	peer_id = ath12k_wifi8_dp_rx_get_peer_id(dp->ab, dp->peer_metadata_ver,
+						 peer_metadata);
+
+	peer = ath12k_dp_peer_find_by_peerid_index(dp_pdev->dp, dp_pdev, peer_id);
+	if (!peer)
+		return false;
+
+	hw_link_id = ath12k_dp_validate_hw_link_id(hw_link_id);
+	rx_spd.rx_mpdu_info.src_link_id = hw_link_id;
+
+	hal_rx_desc_sz = dp->hal->hal_desc_sz;
+	ath12k_wifi8_dp_adjust_skb(&rx_spd, NULL, &msdu_idx, hal_rx_desc_sz);
+
+	drop = ath12k_wifi8_handle_null_queue(dp_pdev, peer, &rx_status,
+					      &rx_spd, napi, &prev_tlv);
+	if (drop)
+		dev_kfree_skb_any(rx_spd.msdu);
+
+	desc_info->skb = NULL;
+	return true;
+}
+
+int ath12k_wifi8_dp_rx_process_reo_flush_err(struct ath12k_dp *dp,
+					     struct napi_struct *napi,
+					     int budget)
 {
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
 	struct ath12k_wifi8_rx_stats *stats = &dp_wifi8->stats.rx_stats;
@@ -3618,14 +3704,46 @@ int ath12k_wifi8_dp_rx_process_reo_flush_err(struct ath12k_dp *dp, int budget)
 				desc_info->paddr = 0;
 				list_add_tail(&desc_info->list, &ppe2wbm_used_list);
 			} else {
+				struct hal_rx_reo_dest_rel_info err_info = {0};
+				int ret;
+
+				ret = ath12k_wifi8_hal_reo_rel_parse_err(dp, rx_desc,
+									 &err_info);
+				if (!ret) {
+					if (err_info.err_rel_src !=
+					    HAL_REO_REL_SRC_MODULE_REO ||
+					    err_info.push_reason !=
+					    HAL_REO_DEST_RING_PUSH_REASON_ERR_DETECTED ||
+					    err_info.err_code !=
+					    HAL_REO_DEST_RING_ERROR_CODE_DESC_ADDR_ZERO) {
+						ret = -EINVAL;
+					}
+				}
+
+				if (!ret) {
+					rcu_read_lock();
+
+					ath12k_wifi8_flush_handle_null_queue(dp,
+									     desc_info,
+									     rx_desc,
+									     napi);
+					rcu_read_unlock();
+				} else {
+					stats->rx_flush_pkts++;
+				}
+
+				if (desc_info->skb)
+					dev_kfree_skb_any(desc_info->skb);
+
 				list_add_tail(&desc_info->list, &rx_desc_used_list);
 			}
-
-			stats->rx_flush_pkts++;
 		} else if (rbm == dp->hal->hal_params->rx_mgmt_buf_rbm) {
 			desc_info = ath12k_mgmt_get_rx_desc_from_cookie(mgmt, cookie);
 			if (!desc_info)
 				continue;
+
+			if (desc_info->skb)
+				dev_kfree_skb_any(desc_info->skb);
 
 			list_add_tail(&desc_info->list, &rx_mgmt_desc_used_list);
 			stats->rx_mgmt_flush_pkts++;
@@ -3959,9 +4077,9 @@ void ath12k_wifi8_dp_smd_clear_old_peer_rx_lut(struct ath12k_dp *dp,
 		return;
 	}
 
-	ath12k_dbg(ab, ATH12K_DBG_PEER,
-		   "smd phase-c: clearing REO LUT for old peer_id=%u tids=0x%x\n",
-		   dp_peer->peer_id, tids);
+	ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+			 "smd phase-c: clearing REO LUT for old peer_id=%u tids=0x%x\n",
+			 dp_peer->peer_id, tids);
 
 	for_each_set_bit(tid, (unsigned long *)&tids,
 			 ab->hal.hal_params->num_tids) {

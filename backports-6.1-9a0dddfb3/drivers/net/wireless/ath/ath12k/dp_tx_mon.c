@@ -498,7 +498,7 @@ ath12k_dp_mon_tx_free_pkt_buf(struct ath12k_pdev_dp *dp_pdev,
 			ath12k_core_dma_unmap_page(dp->dev, pkt_desc->paddr,
 						   ATH12K_DP_MON_TX_BUF_SIZE,
 						   DMA_FROM_DEVICE);
-			ATH12K_TX_MON_STAT_INC(dp_pdev, pkt_tlv_free);
+			ATH12K_TX_MON_STAT_INC(dp_pdev, pkt_buf_free);
 
 			page_frag_free(pkt_desc->mon_buf);
 			pkt_desc->mon_buf = NULL;
@@ -761,8 +761,8 @@ ath12k_dp_mon_tx_deep_free_ppdu_info(struct ath12k_pdev_dp *dp_pdev,
 	memset(&mon_data->prot_ppdu_info, 0, sizeof(mon_data->prot_ppdu_info));
 	memset(&mon_data->data_ppdu_info, 0, sizeof(mon_data->data_ppdu_info));
 
-	mon_data->prot_ppdu_info.tx_info.ba_user_id = -1;
-	mon_data->data_ppdu_info.tx_info.ba_user_id = -1;
+	mon_data->prot_ppdu_info.tx_info.ba_user_id = ATH12K_BA_USER_ID_INVAL;
+	mon_data->data_ppdu_info.tx_info.ba_user_id = ATH12K_BA_USER_ID_INVAL;
 }
 
 /**
@@ -1440,6 +1440,7 @@ ath12k_dp_tx_mon_extract_buffer_info(struct ath12k_pdev_dp *dp_pdev,
 	tx_ppdu_info->msdu_continuation = packet_info->msdu_continuation;
 	tx_ppdu_info->truncated = packet_info->truncated;
 	tx_ppdu_info->has_buffer_data = true;
+	ATH12K_TX_MON_STAT_INC(dp_pdev, pkt_buf_processed);
 
 return_mon_desc:
 
@@ -1519,7 +1520,7 @@ ath12k_dp_tx_mon_check_ba_tlv_missing(struct dp_mon_tx_ppdu_info *ppdu_info)
 	if (!tx_info)
 		return true;
 
-	if (unlikely(tx_info->ba_user_id == -1))
+	if (unlikely(tx_info->ba_user_id == ATH12K_BA_USER_ID_INVAL))
 		return true;
 
 	return false;
@@ -3386,6 +3387,7 @@ void ath12k_dp_tx_mon_process_ppdu(struct work_struct *work)
 	struct ath12k_mon_data *mon_data;
 	int desc_idx, ppdu_prep_failed = 0;
 	int ppdu_processed_cnt = 0, total_status_desc_cnt = 0;
+	struct ath12k_base *ab;
 
 	if (unlikely(!dp_pdev_tx_mon)) {
 		ath12k_err(NULL, "TX Mon: NULL dp_pdev_tx_mon in work queue\n");
@@ -3414,6 +3416,8 @@ void ath12k_dp_tx_mon_process_ppdu(struct work_struct *work)
 	list_splice_init(&dp_pdev_tx_mon->tx_mon_ppdu_desc_used_list,
 			 &dp_pdev_tx_mon->tx_mon_ppdu_desc_proc_list);
 	spin_unlock_bh(&dp_pdev_tx_mon->tx_mon_ppdu_desc_lock);
+
+	ab = dp_pdev->dp->ab;
 
 	list_for_each_entry(ppdu_desc,
 			    &dp_pdev_tx_mon->tx_mon_ppdu_desc_proc_list,
@@ -3558,6 +3562,7 @@ static int ath12k_dp_tx_mon_prep_wq(struct list_head *mon_desc_used_list,
 	struct ath12k_pdev_tx_mon *dp_pdev_tx_mon = dp_mon_pdev->dp_pdev_tx_mon;
 	struct ath12k_dp_mon_ppdu_desc *ppdu_desc;
 	struct ath12k_dp_mon_desc *desc;
+	struct ath12k_base *ab = dp_mon_pdev->dp_pdev->dp->ab;
 	int desc_cnt;
 	struct ath12k_pdev_dp *dp_pdev = dp_mon_pdev->dp_pdev;
 

@@ -336,7 +336,13 @@ void ath12k_wifi8_hal_set_umac_srng_ptr_addr(struct ath12k_base *ab,
 			srng->u.dst_ring.tp_addr =
 				(u32 *)((unsigned long)ab->mem + reg_base +
 				(HAL_REO1_RING_TP - HAL_REO1_RING_HP));
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+			if (type  == HAL_TX_COMPLETION ||
+				    type == HAL_TQM2PPE ||
+				    type == HAL_REO_DST) {
+#else
 			if (type  == HAL_TX_COMPLETION) {
+#endif
 				if (ab->hif.bus == ATH12K_BUS_PCI ||
 				    ab->hif.bus == ATH12K_BUS_HYBRID){
 					srng->u.dst_ring.tp_addr_direct =
@@ -361,7 +367,13 @@ void ath12k_wifi8_hal_set_umac_srng_ptr_addr(struct ath12k_base *ab,
 		if (!ab->hw_params->supports_shadow_regs) {
 			srng->u.src_ring.hp_addr =
 				(u32 *)((unsigned long)ab->mem + reg_base);
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+			if (type  == HAL_TCL_DATA ||
+				    type == HAL_PPE2TCL ||
+				    type == HAL_PPE2WBM_BUF) {
+#else
 			if (type  == HAL_TCL_DATA) {
+#endif
 				if (ab->hif.bus == ATH12K_BUS_PCI ||
 				    ab->hif.bus == ATH12K_BUS_HYBRID){
 					srng->u.src_ring.hp_addr_direct =
@@ -489,23 +501,21 @@ void ath12k_wifi8_hal_ce_src_set_desc(struct hal_ce_srng_src_desc *desc,
 				      u32 len, u32 id, u8 byte_swap_data)
 {
 	desc->buffer_addr_low = cpu_to_le32(paddr & HAL_ADDR_LSB_REG_MASK);
-	desc->buffer_addr_info =
-		le32_encode_bits(((u64)paddr >> HAL_ADDR_MSB_REG_SHIFT),
-				 HAL_CE_SRC_DESC_ADDR_INFO_ADDR_HI) |
-		le32_encode_bits(byte_swap_data,
-				 HAL_CE_SRC_DESC_ADDR_INFO_BYTE_SWAP) |
-		le32_encode_bits(0, HAL_CE_SRC_DESC_ADDR_INFO_GATHER) |
-		le32_encode_bits(len, HAL_CE_SRC_DESC_ADDR_INFO_LEN);
-	desc->meta_info = le32_encode_bits(id, HAL_CE_SRC_DESC_META_INFO_DATA);
+	desc->info0 = le16_encode_bits(((u64)paddr >> HAL_ADDR_MSB_REG_SHIFT),
+				       HAL_CE_SRC_DESC_INFO0_ADDR_HI) |
+		      le16_encode_bits(byte_swap_data,
+				       HAL_CE_SRC_DESC_INFO0_BYTE_SWAP) |
+		      le16_encode_bits(0, HAL_CE_SRC_DESC_INFO0_GATHER);
+	desc->length = cpu_to_le16(len);
+	desc->fw_metadata = cpu_to_le16(id);
 }
 
 void ath12k_wifi8_hal_ce_dst_set_desc(struct hal_ce_srng_dest_desc *desc,
 				      dma_addr_t paddr)
 {
 	desc->buffer_addr_low = cpu_to_le32(paddr & HAL_ADDR_LSB_REG_MASK);
-	desc->buffer_addr_info =
-		le32_encode_bits(((u64)paddr >> HAL_ADDR_MSB_REG_SHIFT),
-				 HAL_CE_DEST_DESC_ADDR_INFO_ADDR_HI);
+	desc->info0 = le16_encode_bits(((u64)paddr >> HAL_ADDR_MSB_REG_SHIFT),
+				       HAL_CE_DEST_DESC_INFO0_ADDR_HI);
 }
 
 void ath12k_wifi8_hal_set_link_desc_addr(struct hal_wbm_link_desc *desc,
@@ -525,8 +535,7 @@ u32 ath12k_wifi8_hal_ce_dst_status_get_length(struct hal_ce_srng_dst_status_desc
 {
 	u32 len;
 
-	len = le32_get_bits(desc->flags, HAL_CE_DST_STATUS_DESC_FLAGS_LEN);
-	desc->flags &= ~cpu_to_le32(HAL_CE_DST_STATUS_DESC_FLAGS_LEN);
+	len = le16_to_cpu(desc->length);
 
 	return len;
 }
@@ -1135,7 +1144,7 @@ u32 ath12k_hal_srng_src_get_words_available(u32 hp, u32 tp,
 		return (tp - hp - 1);
 }
 
-u32 ath12k_hal_srng_get_cmd_size(enum hal_tlv_tag_be type)
+u32 ath12k_hal_srng_get_cmd_size(struct ath12k_base *ab, enum hal_tlv_tag_be type)
 {
 	if (type == HAL_TQM_REMOVE_MSDU_BO)
 		return ((sizeof(struct hal_tlv_64_hdr) +
@@ -1151,7 +1160,9 @@ u32 ath12k_hal_srng_get_cmd_size(enum hal_tlv_tag_be type)
 			sizeof(struct hal_tqm_get_mpduq_stats)) >> 2);
 	else if (type == HAL_TQM_UPDATE_MSDUQ_BO)
 		return ((sizeof(struct hal_tlv_64_hdr) +
-			 sizeof(struct hal_tqm_update_tx_msdu_flow)) >> 2);
+			 (ab->hw_rev == ATH12K_HW_QCN9625_HW10
+			  ? sizeof(struct hal_tqm_update_tx_msdu_flow_hw10)
+			  : sizeof(struct hal_tqm_update_tx_msdu_flow))) >> 2);
 	else if (type == HAL_TQM_UPDATE_MPDUQ_BO)
 		return ((sizeof(struct hal_tlv_64_hdr) +
 			sizeof(struct hal_tqm_update_mpduq)) >> 2);
@@ -1177,7 +1188,7 @@ void *ath12k_hal_srng_src_get_next_entry_by_cmd_size(struct ath12k_base *ab,
 
 	lockdep_assert_held(&srng->lock);
 
-	entry_size = ath12k_hal_srng_get_cmd_size(type);
+	entry_size = ath12k_hal_srng_get_cmd_size(ab, type);
 	ring_size = srng->ring_size;
 	hp = srng->u.src_ring.hp;
 	tp = READ_ONCE(srng->u.src_ring.cached_tp);

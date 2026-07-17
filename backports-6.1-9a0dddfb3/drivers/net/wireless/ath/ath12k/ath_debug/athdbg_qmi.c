@@ -13,7 +13,7 @@
 #ifdef CONFIG_UPSTREAM_BUILD
 #define NUM_GENERIC_QMI_HANDLER	3
 #else
-#define NUM_GENERIC_QMI_HANDLER	5
+#define NUM_GENERIC_QMI_HANDLER	6
 #endif
 
 extern struct ath_debug_base *athdbg_base;
@@ -342,7 +342,7 @@ struct qmi_elem_info qmi_wlanfw_ddr_dump_upload_done_resp_msg_v01_ei[] = {
 #ifdef CONFIG_UPSTREAM_BUILD
 #define NUM_HANDLER 5
 #else
-#define NUM_HANDLER 9
+#define NUM_HANDLER 10
 #endif
 
 struct qmi_msg_handler *athdbg_append_dbg_handler(const struct qmi_msg_handler *handlers)
@@ -816,15 +816,36 @@ out:
 void athdbg_qmi_qdss_mem_free(struct ath12k_base *ab)
 {
 	int i;
-
+	bool do_iounmap = false;
 #if defined(CONFIG_UPSTREAM_BUILD) || defined(ATH12K_CMA_SUPPORT)
 	struct target_mem_chunk *mem_chunk;
-	struct device *dev = ab->qmi_mem_dev.rmem_inited ?
-			     &ab->qmi_mem_dev.dev : ab->dev;
 #endif
 
-#if !defined(CONFIG_UPSTREAM_BUILD) && !defined(ATH12K_CMA_SUPPORT)
-
+#if defined(CONFIG_UPSTREAM_BUILD)
+	for (i = 0; i < ab->dbg_qmi.qdss_mem_seg_len; i++) {
+		mem_chunk = &ab->dbg_qmi.qdss_mem[i];
+		if (mem_chunk->v.ioaddr) {
+			dma_free_coherent(ab->dev, mem_chunk->size,
+					  mem_chunk->v.ioaddr,
+					  mem_chunk->paddr);
+			mem_chunk->v.ioaddr = NULL;
+		}
+	}
+#elif defined(ATH12K_CMA_SUPPORT)
+	if (ab->qmi_mem_dev.rmem_inited) {
+		for (i = 0; i < ab->dbg_qmi.qdss_mem_seg_len; i++) {
+			mem_chunk = &ab->dbg_qmi.qdss_mem[i];
+			if (mem_chunk->v.ioaddr) {
+				dma_free_coherent(&ab->qmi_mem_dev.dev, mem_chunk->size,
+						  mem_chunk->v.ioaddr,
+						  mem_chunk->paddr);
+				mem_chunk->v.ioaddr = NULL;
+			}
+		}
+	} else {
+		do_iounmap = true;
+	}
+#else
 #ifdef PLATFORM_SDX
 	if (ab->dbg_qmi.qdss_mem_seg_len && ab->dbg_qmi.qdss_mem[0].v.ioaddr) {
 		dma_free_attrs(ab->dev,
@@ -838,27 +859,20 @@ void athdbg_qmi_qdss_mem_free(struct ath12k_base *ab)
 		ab->dbg_qmi.qdss_mem[0].paddr = 0;
 	}
 #else
-	for (i = 0; i < ab->dbg_qmi.qdss_mem_seg_len; i++) {
-		if (ab->dbg_qmi.qdss_mem[i].v.ioaddr) {
-			iounmap(ab->dbg_qmi.qdss_mem[i].v.ioaddr);
-			ab->dbg_qmi.qdss_mem[i].v.ioaddr = NULL;
-			ab->dbg_qmi.qdss_mem[i].size = 0;
-			ab->dbg_qmi.qdss_mem[i].paddr = 0;
-		}
-	}
+	do_iounmap = true;
+#endif
 #endif
 
-#else
-	for (i = 0; i < ab->dbg_qmi.qdss_mem_seg_len; i++) {
-		mem_chunk = &ab->dbg_qmi.qdss_mem[i];
-		if (mem_chunk->v.ioaddr) {
-			dma_free_coherent(dev, mem_chunk->size,
-					  mem_chunk->v.ioaddr,
-					  mem_chunk->paddr);
-			mem_chunk->v.ioaddr = NULL;
+	if (do_iounmap) {
+		for (i = 0; i < ab->dbg_qmi.qdss_mem_seg_len; i++) {
+			if (ab->dbg_qmi.qdss_mem[i].v.ioaddr) {
+				iounmap(ab->dbg_qmi.qdss_mem[i].v.ioaddr);
+				ab->dbg_qmi.qdss_mem[i].v.ioaddr = NULL;
+				ab->dbg_qmi.qdss_mem[i].size = 0;
+				ab->dbg_qmi.qdss_mem[i].paddr = 0;
+			}
 		}
 	}
-#endif
 
 	ab->dbg_qmi.qdss_mem_seg_len = 0;
 	ab->is_qdss_tracing = false;

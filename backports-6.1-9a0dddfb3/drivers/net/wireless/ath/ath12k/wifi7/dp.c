@@ -259,6 +259,9 @@ static int ath12k_wifi7_dp_op_device_init(struct ath12k_dp *dp)
 	if (ret)
 		return ret;
 
+	if (ath12k_cfg_get(ab, ATH12K_INI_DP_UCAST_ENABLE_AST_OVERRIDE))
+		set_bit(ATH12K_FLAG_UCAST_ENABLE_AST_OVERRIDE, &ab->dev_flags);
+
 	dp->reo_cmd_cache_flush_count = 0;
 	dp->idle_link_rbm =
 			ath12k_hal_get_idle_link_rbm(&ab->hal, ab->device_id);
@@ -575,6 +578,7 @@ static struct ath12k_dp_arch_ops ath12k_wifi7_dp_arch_ops = {
 	.dp_reo_cmd_send = ath12k_wifi7_dp_reo_cmd_send,
 	.setup_pn_check_reo_cmd = ath12k_wifi7_dp_setup_pn_check_reo_cmd,
 	.rx_peer_tid_delete = ath12k_wifi7_dp_rx_peer_tid_delete,
+	.dp_mlo_peer_tid_teardown_ready = ath12k_wifi7_dp_mlo_peer_tid_teardown_ready,
 	.reo_cache_flush = ath12k_wifi7_dp_reo_cache_flush,
 	.rx_link_desc_return = ath12k_wifi7_dp_rx_link_desc_return,
 	.peer_rx_tid_reo_update = ath12k_wifi7_peer_rx_tid_reo_update,

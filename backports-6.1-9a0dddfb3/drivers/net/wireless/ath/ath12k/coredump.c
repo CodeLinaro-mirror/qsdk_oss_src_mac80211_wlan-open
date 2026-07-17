@@ -553,9 +553,17 @@ void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 	struct ath12k_hw_group *ag = ab->ag;
 	bool state = false;
 	bool no_recovery, collect_dump;
+	bool ath12k_skip_partner_chip_dump =
+		ath12k_cfg_get(ab, ATH12K_CFG_SKIP_PARTNER_CHIP_DUMP);
 
 	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 		return;
+
+	if (ath12k_skip_partner_chip_dump &&
+	    ab->recovery_skip_dump) {
+		ab->recovery_skip_dump = false;
+		return;
+	}
 
 	if (ab->in_panic)
 		state = true;
@@ -575,8 +583,7 @@ void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 	for (i = 0; i < ab->qmi.mem_seg_count; i++) {
 		if (ab->qmi.target_mem[i].type == HOST_DDR_REGION_TYPE ||
 		    (ab->qmi.target_mem[i].type == CALDB_MEM_REGION_TYPE &&
-		    ath12k_cold_boot_cal && ab->hw_params->cold_boot_calib &&
-		    (ath12k_dp_ring_cfg->cold_boot_calib)) ||
+		    ath12k_cold_boot_cal && ab->hw_params->cold_boot_calib) ||
 		    ab->qmi.target_mem[i].type == M3_DUMP_REGION_TYPE ||
 		    ab->qmi.target_mem[i].type == PAGEABLE_MEM_REGION_TYPE ||
 		    ab->qmi.target_mem[i].type == MLO_GLOBAL_MEM_REGION_TYPE ||
@@ -638,8 +645,7 @@ void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 		}
 
 		if (mem_type == FW_CRASH_DUMP_CALDB_DATA &&
-		    !(ath12k_cold_boot_cal && ab->hw_params->cold_boot_calib &&
-		      (ath12k_dp_ring_cfg->cold_boot_calib)))
+		    !(ath12k_cold_boot_cal && ab->hw_params->cold_boot_calib))
 			continue;
 
 		if (!ab->qmi.target_mem[i].paddr) {

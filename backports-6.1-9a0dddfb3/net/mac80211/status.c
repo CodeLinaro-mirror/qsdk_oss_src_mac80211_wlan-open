@@ -17,6 +17,7 @@
 #include "mesh.h"
 #include "led.h"
 #include "wme.h"
+#include "qcn_extns/cmn_extn.h"
 
 
 void ieee80211_tx_status_irqsafe(struct ieee80211_hw *hw,
@@ -1166,11 +1167,13 @@ void ieee80211_tx_monitor(struct ieee80211_local *local, struct sk_buff *skb,
 {
 	struct sk_buff *skb2;
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
+	struct ieee80211_sub_if_data *prev_sdata = NULL;
 	struct ieee80211_sub_if_data *sdata;
 	struct net_device *prev_dev = NULL;
 	struct cfg80211_chan_def *chandef;
 	int rtap_len;
 	bool tlv_check_ok;
+	int ret;
 
 	/* check valid TLV_AT_END */
 	tlv_check_ok = ieee80211_tx_monitor_check_end_tlvs(local, status);
@@ -1220,16 +1223,26 @@ void ieee80211_tx_monitor(struct ieee80211_local *local, struct sk_buff *skb,
 				skb2 = skb_clone(skb, GFP_ATOMIC);
 				if (skb2) {
 					skb2->dev = prev_dev;
-					netif_rx(skb2);
+					ret = ieee80211_ext_mon_tx_notify(&local->hw,
+									  prev_sdata,
+									  skb2);
+					if (ret == NOTIFY_OK || ret == NOTIFY_STOP)
+						dev_kfree_skb(skb2);
+					else
+						netif_rx(skb2);
 				}
 			}
-
+			prev_sdata = sdata;
 			prev_dev = sdata->dev;
 		}
 	}
 	if (prev_dev) {
 		skb->dev = prev_dev;
-		netif_rx(skb);
+		ret = ieee80211_ext_mon_tx_notify(&local->hw, prev_sdata, skb);
+		if (ret == NOTIFY_OK || ret == NOTIFY_STOP)
+			dev_kfree_skb(skb);
+		else
+			netif_rx(skb);
 		skb = NULL;
 	}
 	rcu_read_unlock();

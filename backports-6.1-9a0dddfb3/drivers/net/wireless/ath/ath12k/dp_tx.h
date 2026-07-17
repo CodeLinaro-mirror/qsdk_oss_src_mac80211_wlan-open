@@ -31,12 +31,6 @@ struct ath12k_tx_desc_info;
 struct ath12k_dp_skb_ctrl;
 struct ath12k_dp_ext_desc;
 struct ath12k_dp_tx_msdu_info;
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-struct ath12k_ppeds_desc_params {
-	unsigned int num_ppeds_desc;
-	unsigned int ppeds_hotlist_len;
-};
-#endif
 
 struct ath12k_dp_htt_wbm_tx_status {
 	bool acked;

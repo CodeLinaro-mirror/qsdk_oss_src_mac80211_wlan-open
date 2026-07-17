@@ -318,19 +318,20 @@ init_tx_queues:
 			if (!is_mcast_queues) {
 				/* only after assoc done we are allowed send the htt */
 				if (!link_peer->assoc_success) {
-					ath12k_dbg(dp->ab, ATH12K_DBG_PEER,
-						   "smd htt-setup: skip link %u for %pM peer_id=%u — assoc_success=false\n",
-						   hw_link_id, dp_peer->addr,
-						   dp_peer->peer_id);
+					ath12k_dbg_level(dp->ab, ATH12K_DBG_PEER,
+							 ATH12K_DBG_L2,
+							 "smd htt-setup: skip link %u for %pM peer_id=%u — assoc_success=false\n",
+							 hw_link_id, dp_peer->addr,
+							 dp_peer->peer_id);
 					continue;
 				}
 			}
 			set_bit(hw_link_id, &tx_info->txq_hw_links_bitmap);
-			ath12k_dbg(dp->ab, ATH12K_DBG_PEER,
-				   "smd htt-setup: sending HTT for %pM peer_id=%u hw_link=%u num_mpduq=%u num_msduq=%u txq_links=0x%lx\n",
-				   dp_peer->addr, dp_peer->peer_id, hw_link_id,
-				   num_mpduq, num_msduq,
-				   tx_info->txq_hw_links_bitmap);
+			ath12k_dbg_level(dp->ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+					 "smd htt-setup: sending HTT for %pM peer_id=%u hw_link=%u num_mpduq=%u num_msduq=%u txq_links=0x%lx\n",
+					 dp_peer->addr, dp_peer->peer_id, hw_link_id,
+					 num_mpduq, num_msduq,
+					 tx_info->txq_hw_links_bitmap);
 			ret = ath12k_dp_tx_htt_msduq_mpduq_setup(dp->ab,
 								 &mpduq_list_head,
 								 &msduq_list_head,
@@ -373,19 +374,20 @@ init_tx_queues:
 			if (!is_mcast_queues) {
 				/* only after assoc done we are allowed send the htt */
 				if (!link_peer->assoc_success) {
-					ath12k_dbg(dp->ab, ATH12K_DBG_PEER,
-						   "smd htt-setup: skip link %u for %pM peer_id=%u — assoc_success=false\n",
-						   hw_link_id,
-						   dp_peer->addr,
-						   dp_peer->peer_id);
+					ath12k_dbg_level(dp->ab, ATH12K_DBG_PEER,
+							 ATH12K_DBG_L2,
+							 "smd htt-setup: skip link %u for %pM peer_id=%u — assoc_success=false\n",
+							 hw_link_id,
+							 dp_peer->addr,
+							 dp_peer->peer_id);
 					continue;
 				}
 			}
-			ath12k_dbg(dp->ab, ATH12K_DBG_PEER,
-				   "smd htt-setup: sending HTT for %pM peer_id=%u hw_link=%u num_mpduq=%u num_msduq=%u txq_links=0x%lx\n",
-				   dp_peer->addr, dp_peer->peer_id, hw_link_id,
-				   num_mpduq, num_msduq,
-				   tx_info->txq_hw_links_bitmap);
+			ath12k_dbg_level(dp->ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+					 "smd htt-setup: sending HTT for %pM peer_id=%u hw_link=%u num_mpduq=%u num_msduq=%u txq_links=0x%lx\n",
+					 dp_peer->addr, dp_peer->peer_id, hw_link_id,
+					 num_mpduq, num_msduq,
+					 tx_info->txq_hw_links_bitmap);
 			ret = ath12k_dp_tx_htt_msduq_mpduq_setup(dp->ab,
 								 &mpduq_list_head,
 								 &msduq_list_head,

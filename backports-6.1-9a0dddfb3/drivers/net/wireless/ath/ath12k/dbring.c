@@ -240,18 +240,24 @@ int ath12k_dbring_srng_setup(struct ath12k *ar, struct ath12k_dbring *ring,
 {
 	int ret;
 
-	ret = ath12k_dp_srng_setup(ar->ab, &ring->refill_srng, HAL_RXDMA_DIR_BUF,
+	ret = ath12k_dp_srng_alloc(ar->ab, &ring->refill_srng, HAL_RXDMA_DIR_BUF,
 				   ring_num, ar->pdev_idx, num_entries);
-	if (ret < 0) {
-		ath12k_warn(ar->ab, "failed to setup srng: %d ring_id %d\n",
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to alloc srng: %d ring_id %d\n",
 			    ret, ring_num);
-		goto err;
+		return ret;
+	}
+
+	ret = ath12k_dp_srng_init(ar->ab, &ring->refill_srng, HAL_RXDMA_DIR_BUF, ring_num,
+				  ar->pdev_idx);
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to init srng: %d ring_id %d\n",
+			    ret, ring_num);
+		ath12k_dp_srng_cleanup(ar->ab, &ring->refill_srng);
+		return ret;
 	}
 
 	return 0;
-err:
-	ath12k_dp_srng_cleanup(ar->ab, &ring->refill_srng);
-	return ret;
 }
 
 int ath12k_dbring_get_cap(struct ath12k_base *ab,
