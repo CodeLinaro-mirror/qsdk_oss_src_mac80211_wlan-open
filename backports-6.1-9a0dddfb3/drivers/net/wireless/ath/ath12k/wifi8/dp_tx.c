@@ -3617,6 +3617,7 @@ int ath12k_wifi8_dp_tx_ring_init(struct ath12k_base *ab)
 	/* Send clear command to reset SAM related structures.*/
 	ath12k_wifi8_hal_tx_sam_program_clear(ab);
 
+	ath12k_wifi8_hal_tx_configure_cmn_reg(ab);
 	return 0;
 }
 
