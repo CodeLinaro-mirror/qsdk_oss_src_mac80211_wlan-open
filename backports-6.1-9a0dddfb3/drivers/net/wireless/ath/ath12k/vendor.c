@@ -209,6 +209,12 @@ ath12k_vendor_me_config_policy[QCA_WLAN_VENDOR_ATTR_ME_CONFIG_MAX + 1] = {
 };
 
 static const struct nla_policy
+ath12k_vendor_igmp_tid_override_policy[QCA_WLAN_VENDOR_ATTR_IGMP_TID_OVERRIDE_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_IGMP_TID_OVERRIDE_RADIO_ID] = { .type = NLA_U8  },
+	[QCA_WLAN_VENDOR_ATTR_IGMP_TID_OVERRIDE_VALUE]    = { .type = NLA_U32 },
+};
+
+static const struct nla_policy
 ath12k_vendor_ext_mon_pkt_config_filter_policy[
 QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER_MAX + 1] = {
 	[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER_MGMT] = {.type = NLA_U32},
@@ -13986,6 +13992,90 @@ static int ath12k_vendor_me_dump(struct wiphy *wiphy,
 	return ret;
 }
 
+static int ath12k_vendor_igmp_tid_override_handler(struct wiphy *wiphy,
+						   struct wireless_dev *wdev,
+						   const void *data,
+						   int data_len)
+{
+	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
+	struct ath12k_hw *ah = hw->priv;
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_IGMP_TID_OVERRIDE_MAX + 1];
+	struct ath12k *ar;
+	u8 radio_id = 0;
+	u32 value;
+	int ret;
+
+	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_IGMP_TID_OVERRIDE_MAX,
+			data, data_len,
+			ath12k_vendor_igmp_tid_override_policy, NULL);
+	if (ret) {
+		ath12k_err(NULL, "Failed to parse IGMP TID override attrs: %d\n", ret);
+		return ret;
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_IGMP_TID_OVERRIDE_RADIO_ID])
+		radio_id =
+		    nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_IGMP_TID_OVERRIDE_RADIO_ID]);
+
+	if (radio_id >= ah->num_radio) {
+		ath12k_err(NULL, "Invalid radio_id %u for IGMP TID (num_radio=%u)\n",
+			   radio_id, ah->num_radio);
+		return -EINVAL;
+	}
+
+	ar = ath12k_ah_to_ar(ah, radio_id);
+	if (!ar) {
+		ath12k_err(NULL, "Failed to get ar for radio_id %u\n", radio_id);
+		return -EINVAL;
+	}
+
+	/* GET operation: VALUE attr absent — return cached value */
+	if (!tb[QCA_WLAN_VENDOR_ATTR_IGMP_TID_OVERRIDE_VALUE]) {
+		struct sk_buff *skb;
+
+		skb = cfg80211_vendor_cmd_alloc_reply_skb(wiphy,
+							  nla_total_size(sizeof(u32)));
+		if (!skb)
+			return -ENOMEM;
+
+		if (nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_IGMP_TID_OVERRIDE_VALUE,
+				ar->igmp_tid_override)) {
+			kfree_skb(skb);
+			return -ENOBUFS;
+		}
+
+		ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+			   "IGMP/MLD TID override get: radio=%u value=%u\n",
+			   radio_id, ar->igmp_tid_override);
+
+		return cfg80211_vendor_cmd_reply(skb);
+	}
+
+	/* SET operation: VALUE attr present */
+	value = nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_IGMP_TID_OVERRIDE_VALUE]);
+
+	if (value > 7) {
+		ath12k_err(NULL, "Invalid IGMP TID override value: %u (must be 0-7)\n",
+			   value);
+		return -EINVAL;
+	}
+
+	ret = ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_IGMPMLD_AC_OVERRIDE,
+					value, ar->pdev->pdev_id);
+	if (ret) {
+		ath12k_err(ar->ab,
+			   "Failed to set IGMP/MLD TID override (radio=%u value=%u): %d\n",
+			   radio_id, value, ret);
+	} else {
+		ar->igmp_tid_override = value;
+		ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+			   "IGMP/MLD TID override set: radio=%u value=%u (%s)\n",
+			   radio_id, value, value ? "enabled" : "disabled");
+	}
+
+	return ret;
+}
+
 static const struct nla_policy
 ath12k_vendor_me_list_policy[QCA_WLAN_VENDOR_ATTR_ME_LIST_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_ME_LIST_OPERATION] = { .type = NLA_U8 },
@@ -17055,6 +17145,14 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.policy = ath12k_vendor_me_config_policy,
 		.maxattr = QCA_WLAN_VENDOR_ATTR_ME_CONFIG_MAX,
 		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd    = QCA_NL80211_VENDOR_SUBCMD_IGMP_TID_OVERRIDE,
+		.doit           = ath12k_vendor_igmp_tid_override_handler,
+		.policy         = ath12k_vendor_igmp_tid_override_policy,
+		.maxattr        = QCA_WLAN_VENDOR_ATTR_IGMP_TID_OVERRIDE_MAX,
+		.flags          = WIPHY_VENDOR_CMD_NEED_NETDEV,
 	},
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,

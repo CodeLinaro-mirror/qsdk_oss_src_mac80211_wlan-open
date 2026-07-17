@@ -202,6 +202,7 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_GREEN_AP = 280,
 	QCA_NL80211_VENDOR_SUBCMD_ME_LIST = 374,
 	QCA_NL80211_VENDOR_SUBCMD_ME_CONFIG = 375,
+	QCA_NL80211_VENDOR_SUBCMD_IGMP_TID_OVERRIDE = 376,
 
 	/* Yet to upstream */
 	QCA_NL80211_VENDOR_SUBCMD_SET_6GHZ_POWER_MODE = 500,
@@ -8053,6 +8054,40 @@ enum qca_wlan_vendor_attr_fse_cce_stats {
 	QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_MAX =
 		QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_wlan_vendor_attr_igmp_tid_override - Attributes for
+ * %QCA_NL80211_VENDOR_SUBCMD_IGMP_TID_OVERRIDE
+ *
+ * This vendor subcommand configures the firmware-level IGMP/MLD TID override
+ * on a per-radio (pdev) basis. When a non-zero value is set, the firmware
+ * overrides the TID of all IGMP/MLD packets to that value, regardless of the
+ * original TID mapping method (DSCP, PCP, or HLOS). Setting value=0 disables
+ * the override.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_IGMP_TID_OVERRIDE_INVALID: Invalid attribute.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_IGMP_TID_OVERRIDE_RADIO_ID: u8 attribute.
+ *   Radio index (0-based) within the wiphy on which to apply the config.
+ *   Required for MLO mode where one wiphy contains multiple radios
+ *   (e.g., 0=2.4GHz, 1=5GHz, 2=6GHz). Defaults to 0 if not specified.
+ *   Not needed for Non-MLO mode (each wiphy has exactly one radio).
+ *
+ * @QCA_WLAN_VENDOR_ATTR_IGMP_TID_OVERRIDE_VALUE: u32 attribute.
+ *   Combined enable/TID value. Maps to WMI_PDEV_PARAM_IGMPMLD_AC_OVERRIDE.
+ *   0     = disable override (use normal DSCP/PCP/HLOS TID mapping)
+ *   1..7  = enable override with this TID value
+ */
+enum qca_wlan_vendor_attr_igmp_tid_override {
+	QCA_WLAN_VENDOR_ATTR_IGMP_TID_OVERRIDE_INVALID  = 0,
+	QCA_WLAN_VENDOR_ATTR_IGMP_TID_OVERRIDE_RADIO_ID = 1,
+	QCA_WLAN_VENDOR_ATTR_IGMP_TID_OVERRIDE_VALUE    = 2,
+
+	/* Keep last */
+	QCA_WLAN_VENDOR_ATTR_IGMP_TID_OVERRIDE_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_IGMP_TID_OVERRIDE_MAX =
+		QCA_WLAN_VENDOR_ATTR_IGMP_TID_OVERRIDE_AFTER_LAST - 1,
 };
 
 #endif
