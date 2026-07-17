@@ -1147,7 +1147,8 @@ int ath12k_dp_rx_peer_pn_replay_config(struct ath12k_link_vif *arvif,
 				       const u8 *peer_addr,
 				       enum set_key_cmd key_cmd,
 				       struct ieee80211_key_conf *key,
-				       struct ieee80211_sta *sta)
+				       struct ieee80211_sta *sta,
+				       enum ath12k_rxtid_pn_check cfg)
 {
 	struct ath12k_hal_reo_cmd cmd = {0};
 	struct ath12k *ar = arvif->ar;
@@ -1159,6 +1160,7 @@ int ath12k_dp_rx_peer_pn_replay_config(struct ath12k_link_vif *arvif,
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_dp_hw *dp_hw = ar->dp.dp_hw;
 	struct ath12k_dp_peer *dp_peer;
+	bool is_mgmt;
 
 	/* NOTE: Enable PN/TSC replay check offload only for unicast frames.
 	 * We use mac80211 PN/TSC replay check functionality for bcast/mcast
@@ -1191,10 +1193,17 @@ int ath12k_dp_rx_peer_pn_replay_config(struct ath12k_link_vif *arvif,
 	}
 
 	for (tid = 0; tid < ab->hal.hal_params->num_tids; tid++) {
+		is_mgmt = ath12k_hw_is_mgmt_reoq_tid(ab->hw_params, tid);
+
+		if (ath12k_dp_rx_peer_tid_skip_pn_replay(dp, tid) ||
+		    (cfg == ATH12K_RXTID_PN_CHECK_DATA_TIDS && is_mgmt) ||
+		    (cfg == ATH12K_RXTID_PN_CHECK_MGMT_TIDS && !is_mgmt))
+			continue;
+
 		rx_tid = &dp_peer->rx_tid[tid];
 
 		spin_lock_bh(&rx_tid->tid_lock);
-		if (!rx_tid->active || ath12k_dp_rx_peer_tid_skip_pn_replay(dp, tid)) {
+		if (!rx_tid->active) {
 			spin_unlock_bh(&rx_tid->tid_lock);
 			continue;
 		}

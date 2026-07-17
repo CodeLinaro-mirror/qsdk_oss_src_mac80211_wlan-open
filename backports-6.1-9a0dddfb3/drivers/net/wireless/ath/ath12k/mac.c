@@ -11729,10 +11729,15 @@ int ath12k_mac_set_key(struct ath12k *ar, enum set_key_cmd cmd,
 		return ret;
 	}
 
-	ret = ath12k_dp_rx_peer_pn_replay_config(arvif, peer_addr, cmd, key, sta);
-	if (ret) {
-		ath12k_warn(ab, "failed to offload PN replay detection %d\n", ret);
-		return ret;
+	/* EPP peer key install after first negotiation happens before TID setup */
+	if (!(sta && sta->epp_peer && arsta->ahsta->state < IEEE80211_STA_ASSOC)) {
+		ret = ath12k_dp_rx_peer_pn_replay_config(arvif, peer_addr, cmd, key, sta,
+							 ATH12K_RXTID_PN_CHECK_ALL_TIDS);
+		if (ret) {
+			ath12k_warn(ab, "failed to offload PN replay detection %d\n",
+				    ret);
+			return ret;
+		}
 	}
 
 	ret = ath12k_dp_peer_set_key_config(&ar->dp, peer_addr, cmd, key, sta,
@@ -14646,6 +14651,19 @@ static int ath12k_mac_handle_link_sta_state(struct ieee80211_hw *hw,
 		arsta->ahsta->low_ack_sent = false;
 		arsta->ahsta->peer_delete_send_mlo_hw_bitmap = false;
 
+	/* IEEE80211_STA_NONE -> IEEE80211_STA_AUTH: Set up EPP-peer mgmt REO queues */
+	} else if (old_state == IEEE80211_STA_NONE &&
+		   new_state == IEEE80211_STA_AUTH) {
+		void *dp_peer = ath12k_sta_get_dp_peer_wiphy_locked(hw->wiphy,
+							    arsta->ahsta);
+
+		ret = ath12k_dp_peer_epp_setup_mgmt_tids(ar, dp_peer, arvif, arsta);
+		if (ret) {
+			ath12k_warn(ar->ab, "failed to setup mgmt tids for EPP link peer %pM on vdev %i (%d)",
+				    arsta->addr, arvif->vdev_id, ret);
+			goto exit;
+		}
+
 	/* IEEE80211_STA_AUTH -> IEEE80211_STA_ASSOC: Send station assoc command for
 	 * peer associated to AP/Mesh/ADHOC vif type.
 	 */
@@ -14963,6 +14981,8 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 			goto exit;
 
 		dp_params.hw_link_id = arvif->ar->hw_link_id;
+
+		dp_params.is_epp_peer = sta->epp_peer;
 
 		/* Register ahsta in the group-level hashtable.*/
 		if (!ahsta->links_map) {

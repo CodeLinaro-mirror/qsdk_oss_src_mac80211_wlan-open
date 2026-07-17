@@ -290,6 +290,7 @@ static const struct ath12k_hw_ops qcn9625_ops = {
 	.rx_peer_ba_config = ath12k_wifi8_hw_rx_peer_ba_config_qcn9625,
 	.rx_peer_tid_skip_pn_replay = ath12k_wifi8_rx_peer_tid_skip_pn_replay_qcn9625,
 	.dp_peer_migration = ath12k_dp_peer_migration_qcn9625,
+	.is_mgmt_reoq_tid = ath12k_wifi8_hal_is_reo_nonqos_mgmt_tid,
 };
 
 /* Interrupt Grouping is as follows

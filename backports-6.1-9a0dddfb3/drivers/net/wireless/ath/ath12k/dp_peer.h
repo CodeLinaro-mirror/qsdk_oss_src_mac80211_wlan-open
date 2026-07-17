@@ -165,6 +165,7 @@ struct ath12k_dp_peer {
 	bool is_mlo;
 	bool is_vdev_peer;
 	bool is_sta_bss_peer;
+	bool is_epp_peer;
 	/* hw_link_id of the radio, valid only for self bss peer */
 	u8 hw_link_id;
 

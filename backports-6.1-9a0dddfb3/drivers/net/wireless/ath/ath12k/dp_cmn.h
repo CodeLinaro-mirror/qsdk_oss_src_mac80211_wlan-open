@@ -248,6 +248,7 @@ struct ath12k_dp_peer_create_params {
 	bool is_sta_bss_peer;
 	u16 peer_id;
 	u16 sta_id;
+	bool is_epp_peer;
 };
 
 struct ath12k_dp_link_peer_rate_info {
