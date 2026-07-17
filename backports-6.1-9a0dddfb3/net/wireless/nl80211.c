@@ -7980,6 +7980,16 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 		if (residual_cac_ms > U32_MAX)
 			residual_cac_ms = 0;
 
+		/*
+		 * Align to the jiffy granularity that cfg80211_cac_event() uses
+		 * for its deadline check (cac_start_time + msecs_to_jiffies()).
+		 * Without this, a residual_cac_ms not landing on a jiffy boundary
+		 * makes the enforced deadline effectively round up past cac_time_ms,
+		 * so jiffies can still be short of it when CAC_FINISHED is posted,
+		 * tripping the WARN_ON(!time_after_eq(jiffies, timeout)).
+		 */
+		residual_cac_ms = jiffies_to_msecs(msecs_to_jiffies(residual_cac_ms));
+
 		params->residual_cac_ms = (u32)residual_cac_ms;
 	}
 
@@ -13005,6 +13015,16 @@ static int nl80211_start_radar_detection(struct sk_buff *skb,
 
 		if (residual_cac_ms > U32_MAX)
 			residual_cac_ms = 0;
+
+		/*
+		 * Align to the jiffy granularity that cfg80211_cac_event() uses
+		 * for its deadline check (cac_start_time + msecs_to_jiffies()).
+		 * Without this, a residual_cac_ms not landing on a jiffy boundary
+		 * makes the enforced deadline effectively round up past cac_time_ms,
+		 * so jiffies can still be short of it when CAC_FINISHED is posted,
+		 * tripping the WARN_ON(!time_after_eq(jiffies, timeout)).
+		 */
+		residual_cac_ms = jiffies_to_msecs(msecs_to_jiffies(residual_cac_ms));
 
 		if (residual_cac_ms && (residual_cac_ms < cac_time_ms))
 			cac_time_ms = (u32)residual_cac_ms;
