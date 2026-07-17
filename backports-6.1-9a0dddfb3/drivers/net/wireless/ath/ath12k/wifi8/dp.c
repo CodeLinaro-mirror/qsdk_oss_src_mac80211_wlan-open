@@ -913,7 +913,7 @@ static void ath12k_wifi8_dp_op_device_deinit(struct ath12k_dp *dp)
 	struct ath12k_base *ab = dp->ab;
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
 
-	if (!ab)
+	if (!ab || ab->is_bypassed)
 		return;
 
 	ath12k_dp_srng_cleanup(ab, &dp_wifi8->rx_ase_status_ring);
@@ -925,7 +925,11 @@ static int ath12k_wifi8_dp_op_mlo_init(struct ath12k_dp *dp)
 {
 	int ret;
 
+	if (dp->ab->is_bypassed)
+		return 0;
+
 	ret = ath12k_wifi8_dp_umac_setup(dp);
+
 	if (ret) {
 		ath12k_warn(dp, "dp umac setup failed %d\n", ret);
 		return ret;

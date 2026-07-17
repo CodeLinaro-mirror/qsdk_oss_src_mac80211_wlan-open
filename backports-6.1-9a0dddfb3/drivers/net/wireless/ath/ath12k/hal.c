@@ -1168,6 +1168,7 @@ err_free_cont_rdp:
 err_hal:
 	return ret;
 }
+EXPORT_SYMBOL(ath12k_hal_srng_init);
 
 void ath12k_hal_srng_deinit(struct ath12k_base *ab)
 {
