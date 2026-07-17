@@ -114,6 +114,7 @@ struct ath12k_dp_link_peer {
 	u16 tx_retry_count;
 	struct ewma_avg_rssi avg_rssi;
 	struct ath12k_dp_link_peer_stats peer_stats;
+	spinlock_t ppdu_stats_lock;
 
 	u16 tcl_metadata;
 	bool assoc_success; /* information on peer assoc status from firmware */

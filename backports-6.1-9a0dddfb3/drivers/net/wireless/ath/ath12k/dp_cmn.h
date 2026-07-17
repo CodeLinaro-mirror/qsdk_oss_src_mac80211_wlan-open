@@ -261,6 +261,7 @@ struct ath12k_dp_peer_create_params {
 
 struct ath12k_dp_link_peer_rate_info {
 	struct rate_info txrate;
+	struct rate_info rxrate;
 	u64 rx_duration;
 	u64 tx_duration;
 	u8 rssi_comb;

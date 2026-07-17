@@ -26206,20 +26206,22 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 		jiffies_to_msecs(jiffies - ath12k_link_peer_last_active(link_peer));
 	link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_INACTIVE_TIME);
 
-	if (link_peer->rxrate.legacy || link_peer->rxrate.nss) {
-		if (link_peer->rxrate.legacy) {
-			link_sinfo->rxrate.legacy = link_peer->rxrate.legacy;
+	memset(&link_sinfo->rxrate, 0, sizeof(link_sinfo->rxrate));
+	if (rate_info.rxrate.legacy || rate_info.rxrate.nss) {
+		if (rate_info.rxrate.legacy) {
+			link_sinfo->rxrate.legacy = rate_info.rxrate.legacy;
+			link_sinfo->rxrate.flags = 0;
 		} else {
-			link_sinfo->rxrate.mcs = link_peer->rxrate.mcs;
-			link_sinfo->rxrate.nss = link_peer->rxrate.nss;
-			link_sinfo->rxrate.bw = link_peer->rxrate.bw;
-			link_sinfo->rxrate.he_gi = link_peer->rxrate.he_gi;
-			link_sinfo->rxrate.he_dcm = link_peer->rxrate.he_dcm;
-			link_sinfo->rxrate.he_ru_alloc = link_peer->rxrate.he_ru_alloc;
-			link_sinfo->rxrate.eht_gi = link_peer->rxrate.eht_gi;
-			link_sinfo->rxrate.eht_ru_alloc = link_peer->rxrate.eht_ru_alloc;
+			link_sinfo->rxrate.mcs = rate_info.rxrate.mcs;
+			link_sinfo->rxrate.nss = rate_info.rxrate.nss;
+			link_sinfo->rxrate.bw = rate_info.rxrate.bw;
+			link_sinfo->rxrate.he_gi = rate_info.rxrate.he_gi;
+			link_sinfo->rxrate.he_dcm = rate_info.rxrate.he_dcm;
+			link_sinfo->rxrate.he_ru_alloc = rate_info.rxrate.he_ru_alloc;
+			link_sinfo->rxrate.eht_gi = rate_info.rxrate.eht_gi;
+			link_sinfo->rxrate.eht_ru_alloc = rate_info.rxrate.eht_ru_alloc;
+			link_sinfo->rxrate.flags = rate_info.rxrate.flags;
 		}
-		link_sinfo->rxrate.flags = link_peer->rxrate.flags;
 		link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_RX_BITRATE);
 	}
 
@@ -26255,6 +26257,7 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 	link_sinfo->tx_duration = rate_info.tx_duration;
 	link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_DURATION);
 
+	memset(&link_sinfo->txrate, 0, sizeof(link_sinfo->txrate));
 	if (rate_info.txrate.legacy || rate_info.txrate.nss) {
 		if (rate_info.txrate.legacy) {
 			link_sinfo->txrate.legacy = rate_info.txrate.legacy;
@@ -26437,20 +26440,22 @@ void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 		jiffies_to_msecs(jiffies - ath12k_link_peer_last_active(link_peer));
 	sinfo->filled |= BIT_ULL(NL80211_STA_INFO_INACTIVE_TIME);
 
-	if (link_peer->rxrate.legacy || link_peer->rxrate.nss) {
-		if (link_peer->rxrate.legacy) {
-			sinfo->rxrate.legacy = link_peer->rxrate.legacy;
+	memset(&sinfo->rxrate, 0, sizeof(sinfo->rxrate));
+	if (rate_info.rxrate.legacy || rate_info.rxrate.nss) {
+		if (rate_info.rxrate.legacy) {
+			sinfo->rxrate.legacy = rate_info.rxrate.legacy;
+			sinfo->rxrate.flags = 0;
 		} else {
-			sinfo->rxrate.mcs = link_peer->rxrate.mcs;
-			sinfo->rxrate.nss = link_peer->rxrate.nss;
-			sinfo->rxrate.bw = link_peer->rxrate.bw;
-			sinfo->rxrate.he_gi = link_peer->rxrate.he_gi;
-			sinfo->rxrate.he_dcm = link_peer->rxrate.he_dcm;
-			sinfo->rxrate.he_ru_alloc = link_peer->rxrate.he_ru_alloc;
-			sinfo->rxrate.eht_gi = link_peer->rxrate.eht_gi;
-			sinfo->rxrate.eht_ru_alloc = link_peer->rxrate.eht_ru_alloc;
+			sinfo->rxrate.mcs = rate_info.rxrate.mcs;
+			sinfo->rxrate.nss = rate_info.rxrate.nss;
+			sinfo->rxrate.bw = rate_info.rxrate.bw;
+			sinfo->rxrate.he_gi = rate_info.rxrate.he_gi;
+			sinfo->rxrate.he_dcm = rate_info.rxrate.he_dcm;
+			sinfo->rxrate.he_ru_alloc = rate_info.rxrate.he_ru_alloc;
+			sinfo->rxrate.eht_gi = rate_info.rxrate.eht_gi;
+			sinfo->rxrate.eht_ru_alloc = rate_info.rxrate.eht_ru_alloc;
+			sinfo->rxrate.flags = rate_info.rxrate.flags;
 		}
-		sinfo->rxrate.flags = link_peer->rxrate.flags;
 		sinfo->filled |= BIT_ULL(NL80211_STA_INFO_RX_BITRATE);
 	}
 	rcu_read_unlock();
@@ -26465,6 +26470,7 @@ void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 	sinfo->tx_duration = rate_info.tx_duration;
 	sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_DURATION);
 
+	memset(&sinfo->txrate, 0, sizeof(sinfo->txrate));
 	if (rate_info.txrate.legacy || rate_info.txrate.nss) {
 		if (rate_info.txrate.legacy) {
 			sinfo->txrate.legacy = rate_info.txrate.legacy;

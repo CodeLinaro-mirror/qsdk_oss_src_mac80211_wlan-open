@@ -1475,8 +1475,10 @@ ath12k_update_per_peer_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 	 * Stats update to txrate which will be exported to mac80211 to
 	 * display in iw station dump
 	 */
+	spin_lock_bh(&peer->ppdu_stats_lock);
 	ath12k_update_htt_stats_txrate(dp_pdev, peer, user, ppdu_info,
 				       &peer_stats);
+	spin_unlock_bh(&peer->ppdu_stats_lock);
 
 	if ((ath12k_extd_tx_stats_enabled(dp_pdev) ||
 	     ath12k_htt_tx_ppdu_stats_enabled(dp_pdev)) &&
