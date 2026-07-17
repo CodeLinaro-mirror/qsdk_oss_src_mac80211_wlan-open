@@ -444,6 +444,11 @@ int ath12k_dp_rx_peer_pn_replay_config(struct ath12k_link_vif *arvif,
 				       struct ieee80211_key_conf *key,
 				       struct ieee80211_sta *sta,
 				       enum ath12k_rxtid_pn_check cfg);
+int ath12k_dp_rx_peer_epp_pn_replay_config(struct ath12k_dp_peer *dp_peer,
+					   struct ath12k_link_vif *arvif,
+					   const u8 *peer_addr,
+					   enum set_key_cmd key_cmd,
+					   enum ath12k_rxtid_pn_check cfg);
 void ath12k_dp_rx_peer_tid_cleanup(struct ath12k *ar,
 				   struct ath12k_dp_link_peer *peer);
 int ath12k_dp_rx_reo_alloc(struct ath12k_base *ab);
