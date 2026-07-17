@@ -666,16 +666,21 @@ static int __ath12k_peer_delete(struct ath12k *ar, u32 vdev_id, u8 *addr,
 	int link_id = -1;
 	int ret;
 	bool was_mlo = false;
+	bool is_self_peer = false;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
 	spin_lock_bh(&ar->arsta_lock);
 	arsta = ath12k_link_sta_find_by_addr(ar, addr);
-	if (arsta && arsta->ahsta) {
-		ahsta = arsta->ahsta;
-		link_id = arsta->link_id;
-		if (arsta->ahsta->is_mlo && !arsta->is_bridge_peer)
-			was_mlo = true;
+	if (arsta) {
+		if (arsta->ahsta) {
+			ahsta = arsta->ahsta;
+			link_id = arsta->link_id;
+			if (arsta->ahsta->is_mlo && !arsta->is_bridge_peer)
+				was_mlo = true;
+		}
+		if (arsta->is_self_peer)
+			is_self_peer = true;
 	}
 	spin_unlock_bh(&ar->arsta_lock);
 
@@ -708,13 +713,18 @@ static int __ath12k_peer_delete(struct ath12k *ar, u32 vdev_id, u8 *addr,
 #endif
 	}
 
+	/* Self-peer (AP BSS peer) is never counted in arvif->num_peers
+	 * (only client peers are via station_add), so skip the decrement
+	 * to avoid underflow.
+	 */
+	if (arvif && !skip_peer_del && !is_self_peer)
+		arvif->num_peers--;
+
 	rcu_read_unlock();
+
 	/* Decrement ML peer count for this radio if it was an MLO station */
 	if (was_mlo)
 		ar->num_ml_peers--;
-
-	if (arvif && !skip_peer_del)
-		arvif->num_peers--;
 
 	return 0;
 }
