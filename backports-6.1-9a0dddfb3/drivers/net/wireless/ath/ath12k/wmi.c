@@ -4887,11 +4887,21 @@ int ath12k_wmi_send_smd_roam_config(struct ath12k *ar,
 				ath12k_wmi_tlv_cmd_hdr(WMI_TAG_SMD_ROAM_PEER_TID_INFO,
 						       sizeof(*tid_info));
 			tid_info->tid_num = i;
-			tid_info->mlsn_offset_word = 0;
+			tid_info->mlsn_offset_word |=
+				le32_encode_bits(arg->peer_tid_info[i].mlsn,
+						 WMI_SMD_ROAM_CONFIG_PEER_TID_INFO_MLSN);
+			tid_info->mlsn_offset_word |=
+				le32_encode_bits(arg->peer_tid_info[i].offset,
+						 WMI_SMD_ROAM_CONFIG_PEER_TID_INFO_OFFS);
 			tid_info->tx_ba_window_size =
 				arg->peer_tid_info[i].tx_buf_size;
 			tid_info->rx_ba_window_size =
 				arg->peer_tid_info[i].rx_buf_size;
+			ath12k_dbg(ar->ab, ATH12K_DBG_SMD,
+				   "tid: %u mlsn_offset_word: 0x%04x tx_ba: %u rx_ba=%u",
+				   tid_info->tid_num, tid_info->mlsn_offset_word,
+				   tid_info->tx_ba_window_size,
+				   tid_info->rx_ba_window_size);
 			ptr += sizeof(*tid_info);
 		}
 	}

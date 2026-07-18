@@ -1373,6 +1373,12 @@ struct ath12k_smd_info {
 	struct work_struct ctx_wk;
 
 	struct ath12k_smd_ctx_req *current_req;
+
+	/* for WMI smd roam config cmd */
+	u16 sn[IEEE80211_MAX_NUM_TIDS];
+	u16 lsn_offset[IEEE80211_MAX_NUM_TIDS];
+	u32 tx_ba_buf_size[IEEE80211_MAX_NUM_TIDS];
+	u32 rx_ba_buf_size[IEEE80211_MAX_NUM_TIDS];
 };
 
 struct ath12k_sta {

@@ -936,8 +936,13 @@ static int update_smd_forall_links_locked(struct ieee80211_hw *hw,
 				continue;
 			ether_addr_copy(arg.peer_mac, arsta->addr);
 			for (i = 0; i < IEEE80211_MAX_NUM_TIDS; i++) {
-				arg.peer_tid_info[i].tx_buf_size = 0;
-				arg.peer_tid_info[i].rx_buf_size = 0;
+				arg.peer_tid_info[i].tx_buf_size =
+					ahsta->smd_info.tx_ba_buf_size[i];
+				arg.peer_tid_info[i].rx_buf_size =
+					ahsta->smd_info.rx_ba_buf_size[i];
+				arg.peer_tid_info[i].mlsn = ahsta->smd_info.sn[i];
+				arg.peer_tid_info[i].offset =
+					ahsta->smd_info.lsn_offset[i];
 			}
 		}
 
@@ -2215,6 +2220,18 @@ static void ath12k_smd_ctx_hw_tx_tid_cb(struct ath12k_dp *dp, void *cb_ctx,
 				 req->ctx.dl.ba[tid].ba_policy,
 				 ba_buf_size,
 				 req->ctx.dl.ba[tid].timeout);
+
+		if (ahsta) {
+			u16 tap_lsn_offset = cb_data->lsn_offset;
+
+			ahsta->smd_info.sn[tid] = req->ctx.dl.sn[tid];
+
+			/* store Current AP's offset */
+			if (ba_setup && ba_buf_size &&
+			    tap_lsn_offset != ATH12K_SMD_INVALID_MLSN_OFFSET)
+				ahsta->smd_info.lsn_offset[tid] =
+					ba_buf_size - tap_lsn_offset;
+		}
 
 		spin_unlock_bh(&req->lock);
 		return;
