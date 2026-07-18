@@ -238,6 +238,7 @@ ath12k_vendor_ext_mon_filter_config_policy[
 	[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_TARGET_PEER] = {.type = NLA_NESTED},
 	[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_TARGET_NEIGHBOR] = {.type = NLA_NESTED},
 	[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_META_DATA] = {.type = NLA_U8},
+	[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_MON_FLAG] = {.type = NLA_U8},
 };
 
 static const struct nla_policy
@@ -14637,6 +14638,17 @@ ath12k_ext_mon_extract_filter_config(struct nlattr *filter_attr,
 		filter->meta_data = meta_data;
 	}
 
+	if (tb[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_MON_FLAG]) {
+		u8 mon_flag =
+			nla_get_u8(tb[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_MON_FLAG]);
+
+		if (mon_flag >= ATH12K_EXT_MON_MAX) {
+			ath12k_err(NULL, "invalid monitor flag %u\n", mon_flag);
+			return -EINVAL;
+		}
+		filter->monitor_flags = mon_flag;
+	}
+
 	return 0;
 }
 
@@ -14856,6 +14868,8 @@ ath12k_ext_mon_get_filter_config_attr_len(void)
 
 	len += nla_total_size(sizeof(u8));
 
+	len += nla_total_size(sizeof(u8));
+
 	return len;
 }
 
@@ -15054,6 +15068,10 @@ ath12k_ext_mon_put_filter_config(struct sk_buff *skb,
 
 	if (nla_put_u8(skb, QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_META_DATA,
 		       filter->meta_data))
+		goto err;
+
+	if (nla_put_u8(skb, QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_MON_FLAG,
+		       filter->monitor_flags))
 		goto err;
 
 	nla_nest_end(skb, attr);

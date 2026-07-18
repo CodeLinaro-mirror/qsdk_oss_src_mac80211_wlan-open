@@ -11,6 +11,7 @@
 #include "peer.h"
 #include "debugfs.h"
 #include "dp_mon_filter.h"
+#include "dp_tx_mon.h"
 #include "telemetry_agent_if.h"
 #include "vendor.h"
 #include "wmi.h"
@@ -3406,6 +3407,9 @@ ath12k_dp_ext_mon_get_filter(struct ath12k_pdev_dp *dp_pdev,
 	switch (req->direction) {
 	case QCA_VENDOR_EXT_MON_DIRECTION_RX:
 		ret = ath12k_dp_ext_mon_get_rx_filter(dp_pdev, resp);
+		break;
+	case QCA_VENDOR_EXT_MON_DIRECTION_TX:
+		ret = ath12k_dp_ext_mon_get_tx_filter(dp_pdev, resp);
 		break;
 	default:
 		ath12k_warn(dp_pdev->dp, "invalid direction\n");

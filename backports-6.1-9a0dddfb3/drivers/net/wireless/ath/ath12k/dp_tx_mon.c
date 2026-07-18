@@ -5201,3 +5201,53 @@ void ath12k_dp_mon_tx_process_low_thres(struct ath12k_dp *dp)
 		ath12k_dp_mon_tx_buf_replenish(dp, tx_buff_ring, &list, free_list_count);
 }
 EXPORT_SYMBOL(ath12k_dp_mon_tx_process_low_thres);
+
+int
+ath12k_dp_ext_mon_get_tx_filter(struct ath12k_pdev_dp *dp_pdev,
+				struct ath12k_ext_mon_config *resp)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct ath12k_dp_tx_ext_mon *tx_ext_mon;
+	struct ath12k_dp_tx_ext_mon_config *tx_ext_mon_config;
+	int ret = 0;
+	bool tx_mon_started;
+
+	if (unlikely(!dp_mon_pdev)) {
+		ath12k_warn(dp_pdev->dp, "monitor pdev is null\n");
+		return -EINVAL;
+	}
+
+	if (unlikely(!dp_mon_pdev->dp_pdev_tx_mon)) {
+		ath12k_warn(dp_pdev->dp, "tx monitor pdev is null\n");
+		return -EINVAL;
+	}
+
+	tx_mon_started = dp_mon_pdev->dp_pdev_tx_mon->tx_monitor_started;
+	if (!tx_mon_started)
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
+			   "Enable TX monitor for this feature.\n");
+
+	tx_ext_mon = &dp_mon_pdev->dp_pdev_tx_mon->tx_ext_mon;
+
+	spin_lock(&tx_ext_mon->tx_ext_mon_lock);
+	tx_ext_mon_config = tx_ext_mon->tx_ext_mon_config;
+	if (unlikely(!tx_ext_mon_config)) {
+		ath12k_warn(dp_pdev->dp, "ext_mon in tx direction is null\n");
+		ret = -EINVAL;
+		goto unlock;
+	}
+
+	resp->filter.disable = !tx_ext_mon_config->enable;
+	if (!tx_ext_mon_config->enable)
+		goto unlock;
+
+	resp->filter.level = tx_ext_mon_config->level;
+	resp->filter.all_peer = tx_ext_mon_config->fp;
+	resp->filter.target_peer = tx_ext_mon_config->fpmo;
+	resp->filter.meta_data = tx_ext_mon_config->metadata;
+	resp->filter.monitor_flags = tx_ext_mon_config->monitor_flags;
+
+unlock:
+	spin_unlock(&tx_ext_mon->tx_ext_mon_lock);
+	return ret;
+}
