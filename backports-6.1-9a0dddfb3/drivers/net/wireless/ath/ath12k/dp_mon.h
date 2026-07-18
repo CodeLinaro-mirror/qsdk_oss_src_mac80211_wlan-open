@@ -183,9 +183,6 @@ struct ath12k_dp_arch_mon_ops {
 	void (*rx_srng_cleanup)(struct ath12k_dp *dp);
 	int (*rx_ring_init)(struct ath12k_dp *dp);
 	void (*rx_ring_deinit)(struct ath12k_dp *dp);
-	int (*rx_buf_setup)(struct ath12k_dp *dp);
-	void (*rx_buf_free)(struct ath12k_dp *dp);
-
 	int (*rx_htt_srng_setup)(struct ath12k_dp *dp);
 	int (*mon_pdev_alloc)(struct ath12k_pdev_dp *dp_pdev);
 	void (*mon_pdev_free)(struct ath12k_pdev_dp *dp_pdev);
@@ -1186,18 +1183,6 @@ int ath12k_dp_mon_rx_alloc(struct ath12k_dp *dp)
 			return ret;
 	}
 
-	/* This is required only for wifi6, remove this after wifi6
-	 * memory optimization
-	 */
-	if (mon_ops && mon_ops->rx_buf_setup) {
-		ret = mon_ops->rx_buf_setup(dp);
-		if (ret) {
-			if (mon_ops->rx_srng_cleanup)
-				mon_ops->rx_srng_cleanup(dp);
-			return ret;
-		}
-	}
-
 	return 0;
 }
 
@@ -1214,11 +1199,6 @@ void ath12k_dp_mon_rx_free(struct ath12k_dp *dp)
 	if (mon_ops && mon_ops->rx_srng_cleanup)
 		mon_ops->rx_srng_cleanup(dp);
 
-	/* This is required only for wifi6, remove this after wifi6
-	 * memory optimization
-	 */
-	if (mon_ops && mon_ops->rx_buf_free)
-		mon_ops->rx_buf_free(dp);
 }
 
 static inline
