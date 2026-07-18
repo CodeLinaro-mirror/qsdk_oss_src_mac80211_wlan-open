@@ -705,6 +705,8 @@ u32 ath12k_ppeds_wifi8_get_batched_tx_desc(int ds_node_id,
 	}
 
 	if (!num_buff_req) {
+		this_cpu_add(dp_hw_grp->pcpu_tx->ppeds_cnt, allocated);
+
 		spin_unlock_bh(&dp_hw_grp->ppeds_tx_desc_lock);
 		goto update_stats_and_ret;
 	}
@@ -755,6 +757,8 @@ u32 ath12k_ppeds_wifi8_get_batched_tx_desc(int ds_node_id,
 		allocated++;
 		i++;
 	}
+
+	this_cpu_add(dp_hw_grp->pcpu_tx->ppeds_cnt, allocated);
 
 	spin_unlock_bh(&dp_hw_grp->ppeds_tx_desc_lock);
 
@@ -855,6 +859,22 @@ void ath12k_ppeds_wifi8_notify_napi_done(int ds_node_id)
 uint8_t ath12k_ppeds_wifi8_get_wlan_arch_mode(void)
 {
 	return PPEDS_ARCH_MODE_WIFI8;
+}
+
+void ath12k_ppeds_get_rxfill_ring_info_v2(int ds_node_id,
+					  struct ppe_ds_wlan_rxfill_ring_info *info)
+{
+	struct ath12k_base *ab = ds_node_map[ds_node_id];
+
+	if (!ab->dp->ppe.nss_plugin_ops ||
+	    !ab->dp->ppe.nss_plugin_ops->get_rxfill_ring_info) {
+		ath12k_err(ab, "PPEDS get_rxfill_ring_info not available\n");
+		return;
+	}
+
+	info->arch_mode = PPE_DS_WIFI_ARCH_MODE_WIFI8;
+
+	ab->dp->ppe.nss_plugin_ops->get_rxfill_ring_info(ds_node_id, info);
 }
 
 struct ppe_ds_wlan_ops_v2 ppeds_wlan_ops_v2_wifi8 = {

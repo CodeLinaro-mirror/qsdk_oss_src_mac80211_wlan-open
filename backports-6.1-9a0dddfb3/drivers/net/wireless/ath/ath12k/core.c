@@ -5023,8 +5023,8 @@ static struct ath12k_hw_group *ath12k_core_hw_group_alloc(struct ath12k_base *ab
 		return NULL;
 	}
 
-	ag->dp_hw_grp->tx_desc_used_cnt = alloc_percpu(u32);
-	if (!ag->dp_hw_grp->tx_desc_used_cnt) {
+	ag->dp_hw_grp->pcpu_tx = alloc_percpu(typeof(*ag->dp_hw_grp->pcpu_tx));
+	if (!ag->dp_hw_grp->pcpu_tx) {
 		kfree(ag->dp_hw_grp);
 		kfree(ag);
 		return NULL;
@@ -5096,7 +5096,7 @@ static void ath12k_core_hw_group_free(struct ath12k_hw_group *ag)
 	ath12k_sta_hlist_destroy(ag);
 	ath12k_sta_hlist_head_destroy(ag);
 	spin_unlock_bh(&ag->ahsta_lock);
-	free_percpu(ag->dp_hw_grp->tx_desc_used_cnt);
+	free_percpu(ag->dp_hw_grp->pcpu_tx);
 	kfree(ag->dp_hw_grp);
 	kfree(ag);
 

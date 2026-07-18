@@ -999,6 +999,8 @@ u32 ath12k_ppeds_get_batched_tx_desc_v2(int ds_node_id,
 	}
 
 	if (!num_buff_req) {
+		this_cpu_add(dp_hw_grp->pcpu_tx->ppeds_cnt, allocated);
+
 		spin_unlock_bh(&dp_hw_grp->ppeds_tx_desc_lock);
 		goto update_stats_and_ret;
 	}
@@ -1050,6 +1052,8 @@ u32 ath12k_ppeds_get_batched_tx_desc_v2(int ds_node_id,
 		allocated++;
 		i++;
 	}
+
+	this_cpu_add(dp_hw_grp->pcpu_tx->ppeds_cnt, allocated);
 
 	spin_unlock_bh(&dp_hw_grp->ppeds_tx_desc_lock);
 
