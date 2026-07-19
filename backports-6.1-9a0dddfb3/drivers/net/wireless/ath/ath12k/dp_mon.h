@@ -268,6 +268,10 @@ struct ath12k_dp_arch_mon_ops {
 	void (*ext_mon_tx_free)(struct ath12k_pdev_dp *dp_pdev);
 	int (*ext_mon_filter)(struct sk_buff *mpdu,
 				struct ath12k_dp_tx_ext_mon_config *tx_ext_mon);
+	int (*ext_mon_add_wmi_tx_peers)(struct ath12k_pdev_dp *dp_pdev,
+				struct ath12k_dp_ext_mon_tx_peer_params *peer_param);
+	int (*ext_mon_remove_wmi_tx_peers)(struct ath12k_pdev_dp *dp_pdev,
+				struct ath12k_dp_ext_mon_tx_peer_params *peer_param);
 };
 
 /**

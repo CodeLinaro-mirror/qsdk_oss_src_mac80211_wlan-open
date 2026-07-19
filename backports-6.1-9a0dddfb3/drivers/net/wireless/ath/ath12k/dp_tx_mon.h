@@ -132,6 +132,7 @@ enum dp_mon_tx_filter_mode;
 struct dp_mon_tx_filter;
 struct ath12k_ext_mon_config;
 struct ath12k_ext_mon_filter_config;
+struct ath12k_ext_mon_peer_config;
 
 /**
  * struct ath12k_pdev_tx_mon_stats - per-pdev TX monitor ring stats counters
@@ -270,6 +271,16 @@ enum ath12k_dp_mon_tx_dma_length {
 	ATH12K_DP_MON_TX_DMA_LENGTH_MAX = GENMASK(2, 0),
 };
 
+struct ath12k_dp_ext_mon_tx_peer_params {
+	int vdev_id;
+	struct list_head *peers_to_wmi;
+	struct list_head *peer_list;
+	u8 staged_count;
+	u8 *ext_mon_peer_count;
+	const struct ath12k_ext_mon_peer_config *peer_config;
+	bool toggle_hw_state;
+};
+
 int ath12k_dp_mon_tx_process_ring(struct ath12k_pdev_dp *dp_pdev, int mac_id,
 				  struct napi_struct *napi, int *budget);
 
@@ -344,4 +355,8 @@ int ath12k_dp_ext_mon_set_tx_filter(struct ath12k_pdev_dp *dp_pdev,
 				    *new_config);
 enum ath12k_dp_mon_tx_dma_length
 ath12k_dp_mon_tx_get_ext_mon_filter_len(u8 filter_len);
+int ath12k_dp_ext_mon_handle_tx_peer(struct ath12k_pdev_dp *dp_pdev,
+				      const struct ath12k_ext_mon_peer_config
+				      *peer_config);
+
 #endif /* ATH12K_DP_TX_MON_H */

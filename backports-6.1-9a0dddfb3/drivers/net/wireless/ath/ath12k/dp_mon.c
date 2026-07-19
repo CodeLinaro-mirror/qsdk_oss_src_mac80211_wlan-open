@@ -3332,6 +3332,9 @@ int ath12k_dp_ext_mon_set_peer(struct ath12k_pdev_dp *dp_pdev,
 	case QCA_VENDOR_EXT_MON_DIRECTION_RX:
 		ret = ath12k_dp_ext_mon_set_rx_peer(dp_pdev, &req->peer);
 		break;
+	case QCA_VENDOR_EXT_MON_DIRECTION_TX:
+		ret = ath12k_dp_ext_mon_handle_tx_peer(dp_pdev, &req->peer);
+		break;
 	default:
 		ath12k_warn(dp_pdev->dp, "invalid direction\n");
 		ret = -EINVAL;
