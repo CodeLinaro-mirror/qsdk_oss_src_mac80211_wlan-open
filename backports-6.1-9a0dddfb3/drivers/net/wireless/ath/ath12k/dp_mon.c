@@ -3425,8 +3425,6 @@ ath12k_dp_ext_mon_get_rx_peer(struct ath12k_pdev_dp *dp_pdev,
 {
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
 	struct ath12k_dp_rx_ext_mon *rx_ext_mon;
-	struct ath12k_dp_ext_mon_peer *peer;
-	u8 count = 0;
 
 	if (unlikely(!dp_mon_pdev)) {
 		ath12k_warn(dp_pdev->dp, "monitor pdev is null\n");
@@ -3441,14 +3439,8 @@ ath12k_dp_ext_mon_get_rx_peer(struct ath12k_pdev_dp *dp_pdev,
 		return -EINVAL;
 	}
 
-	list_for_each_entry(peer, &rx_ext_mon->peer_list, list) {
-		if (count >= ATH12K_EXT_MON_MAX_PEERS)
-			break;
-
-		resp->peer.peer_info[count] = peer->peer_info;
-		count++;
-	}
-	resp->peer.count = count;
+	ath12k_dp_get_ext_mon_peers(&rx_ext_mon->peer_list, resp,
+				    &dp_mon_pdev->rx_ext_mon_lock);
 	spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
 
 	return 0;
@@ -3470,6 +3462,9 @@ ath12k_dp_ext_mon_get_peer(struct ath12k_pdev_dp *dp_pdev,
 	switch (req->direction) {
 	case QCA_VENDOR_EXT_MON_DIRECTION_RX:
 		ret = ath12k_dp_ext_mon_get_rx_peer(dp_pdev, resp);
+		break;
+	case QCA_VENDOR_EXT_MON_DIRECTION_TX:
+		ret = ath12k_dp_ext_mon_get_tx_peer(dp_pdev, resp);
 		break;
 	default:
 		ath12k_warn(dp_pdev->dp, "invalid direction\n");
