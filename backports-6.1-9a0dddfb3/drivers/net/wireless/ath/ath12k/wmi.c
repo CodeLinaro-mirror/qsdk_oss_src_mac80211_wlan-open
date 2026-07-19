@@ -23171,17 +23171,19 @@ int ath12k_wmi_send_peer_uhr_omp_cmd(struct ath12k *ar, u32 sw_peer_id,
 			le32_encode_bits(links[i].hw_link_id,
 					 WMI_PEER_UHR_OMP_NPCA_CAPS_HW_LINK_ID) |
 			(links[i].npca_enable ?
-			 le32_encode_bits(1, WMI_PEER_UHR_OMP_NPCA_CAPS_ENABLE) : 0);
+			 le32_encode_bits(1, WMI_PEER_UHR_OMP_NPCA_CAPS_ENABLE) : 0) |
+			(links[i].npca_mode_update ?
+			 le32_encode_bits(1, WMI_PEER_UHR_OMP_NPCA_CAPS_MODE_UPDATE) : 0);
 		npca->omp_npca_param =
 			le32_encode_bits(links[i].npca_switch_delay,
 					 WMI_PEER_UHR_OMP_NPCA_PARAM_SWITCH_DELAY) |
 			le32_encode_bits(links[i].npca_switch_back_delay,
 					 WMI_PEER_UHR_OMP_NPCA_PARAM_SWITCH_BACK_DELAY);
 		ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
-			   "WMI UHR OMP cmd sw_peer_id %u pdev_id %u hw_link_id %u npca_enable %d switch_delay %u switch_back_delay %u\n",
+			   "WMI UHR OMP cmd sw_peer_id %u pdev_id %u hw_link_id %u npca_enable %d switch_delay %u switch_back_delay %u mode_update %d\n",
 			   sw_peer_id, pdev_id, links[i].hw_link_id,
 			   links[i].npca_enable, links[i].npca_switch_delay,
-			   links[i].npca_switch_back_delay);
+			   links[i].npca_switch_back_delay, links[i].npca_mode_update);
 		ptr += sizeof(*npca);
 	}
 
