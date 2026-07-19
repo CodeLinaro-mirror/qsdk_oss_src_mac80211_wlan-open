@@ -159,6 +159,8 @@ struct target_mem_chunk {
 		void __iomem *ioaddr;
 		void *addr;
 	} v;
+	/* Chunk survives recovery/cold-boot resets; freed only at deinit. */
+	bool persist;
 };
 
 struct target_info {
@@ -193,6 +195,8 @@ struct dev_mem_info {
 	u64 size;
 };
 
+#define ATH12K_QMI_MAX_PERSIST_MEM_CHUNKS	ATH12K_QMI_MAX_MEM_CHUNKS
+
 struct ath12k_qmi {
 	struct ath12k_base *ab;
 	struct qmi_handle handle;
@@ -210,6 +214,13 @@ struct ath12k_qmi {
 	u8 cal_timeout;
 	/* protected with struct ath12k_qmi::event_lock */
 	bool block_event;
+
+	/* Chunks marked persist=true are parked here across recovery and
+	 * cold-boot power cycles instead of being freed. Consumed by
+	 * ath12k_qmi_alloc_target_mem_chunk(); freed only at deinit.
+	 */
+	struct target_mem_chunk persist_mem[ATH12K_QMI_MAX_PERSIST_MEM_CHUNKS];
+	u32 persist_mem_count;
 
 	u8 num_radios;
 	struct target_info target;

@@ -4448,6 +4448,31 @@ void ath12k_qmi_free_target_mem_chunk(struct ath12k_base *ab)
 			} else {
 				if (!ab->qmi.target_mem[i].v.addr)
 					continue;
+				/* Park persistent chunks into the pool so they
+				 * survive recovery and cold-boot power cycles.
+				 * ath12k_qmi_alloc_target_mem_chunk() will reuse
+				 * them on the next FW mem request, matched by type
+				 * and size regardless of request order.
+				 */
+				if (ab->qmi.target_mem[i].persist) {
+					if (ab->qmi.persist_mem_count >=
+					    ATH12K_QMI_MAX_PERSIST_MEM_CHUNKS) {
+						ath12k_warn(ab, "qmi persist pool full, freeing chunk type %u size %u\n",
+							    ab->qmi.target_mem[i].type,
+							    ab->qmi.target_mem[i].size);
+						dma_free_coherent(dev,
+							ab->qmi.target_mem[i].prev_size,
+							ab->qmi.target_mem[i].v.addr,
+							ab->qmi.target_mem[i].paddr);
+						ab->qmi.target_mem[i].v.addr = NULL;
+						continue;
+					}
+
+					ab->qmi.persist_mem[ab->qmi.persist_mem_count++] =
+						ab->qmi.target_mem[i];
+					ab->qmi.target_mem[i].v.addr = NULL;
+					continue;
+				}
 				dma_free_coherent(dev,
 						  ab->qmi.target_mem[i].prev_size,
 						  ab->qmi.target_mem[i].v.addr,
@@ -4602,10 +4627,11 @@ static int ath12k_qmi_alloc_target_mem_chunk(struct ath12k_base *ab,
 {
 	struct target_mem_chunk *chunk, *mlo_chunk;
 	struct ath12k_hw_group *ag = ab->ag;
-	int i, mlo_idx, ret;
+	int i, j, mlo_idx, ret;
 	int mlo_size = 0;
 	int old_seg_cnt = ab->qmi.mem_seg_count;
 	int seg_cnt = old_seg_cnt;
+	bool from_pool;
 	struct device *dev;
 
 	mutex_lock(&ag->mutex);
@@ -4645,11 +4671,46 @@ static int ath12k_qmi_alloc_target_mem_chunk(struct ath12k_base *ab,
 				chunk->v.addr = NULL;
 				break;
 			}
-			dev = ab->qmi_mem_dev.rmem_inited ?
-			      &ab->qmi_mem_dev.dev : ab->dev;
-			ret = ath12k_qmi_alloc_chunk(ab, chunk, dev);
-			if (ret)
-				goto err;
+			/* Search the persistent pool before allocating. Pool
+			 * entries are parked across recovery and cold-boot power
+			 * cycles. Match on type and size — request order may
+			 * differ between boots so slot position is unreliable.
+			 */
+			from_pool = false;
+			for (j = 0; j < ab->qmi.persist_mem_count; j++) {
+				struct target_mem_chunk *c =
+					&ab->qmi.persist_mem[j];
+
+				if (c->type != chunk->type ||
+				    c->size != chunk->size)
+					continue;
+				/* Transplant into the active table */
+				*chunk = *c;
+				/* Compact the pool */
+				if (j + 1 < ab->qmi.persist_mem_count)
+					ab->qmi.persist_mem[j] =
+						ab->qmi.persist_mem[
+							ab->qmi.persist_mem_count - 1];
+				memset(&ab->qmi.persist_mem[
+						ab->qmi.persist_mem_count - 1],
+				       0, sizeof(*c));
+				ab->qmi.persist_mem_count--;
+				ath12k_dbg(ab, ATH12K_DBG_QMI,
+					   "qmi reusing persist pool entry type %u size %u paddr %pad\n",
+					   chunk->type, chunk->size,
+					   &chunk->paddr);
+				from_pool = true;
+				break;
+			}
+			if (!from_pool) {
+				dev = ab->qmi_mem_dev.rmem_inited ?
+				      &ab->qmi_mem_dev.dev : ab->dev;
+				ret = ath12k_qmi_alloc_chunk(ab, chunk, dev);
+				if (ret)
+					goto err;
+				if (chunk->type == CALDB_MEM_REGION_TYPE)
+					chunk->persist = true;
+			}
 			seg_cnt++;
 			break;
 		case MLO_GLOBAL_MEM_REGION_TYPE:
@@ -7296,6 +7357,9 @@ int ath12k_qmi_init_service(struct ath12k_base *ab)
 
 void ath12k_qmi_deinit_service(struct ath12k_base *ab)
 {
+	struct device *dev;
+	int i;
+
 	if (!ab->qmi.ab)
 		return;
 
@@ -7307,6 +7371,22 @@ void ath12k_qmi_deinit_service(struct ath12k_base *ab)
 	destroy_workqueue(ab->qmi.event_wq);
 	ath12k_qmi_m3_free(ab);
 	ath12k_qmi_ext_fw_bin_clear(ab);
+
+	/* Free all persistent chunks that were parked across recovery and
+	 * cold-boot power cycles instead of being freed immediately.
+	 */
+	dev = ab->qmi_mem_dev.rmem_inited ? &ab->qmi_mem_dev.dev : ab->dev;
+	for (i = 0; i < ab->qmi.persist_mem_count; i++) {
+		if (!ab->qmi.persist_mem[i].v.addr)
+			continue;
+		dma_free_coherent(dev,
+				  ab->qmi.persist_mem[i].prev_size,
+				  ab->qmi.persist_mem[i].v.addr,
+				  ab->qmi.persist_mem[i].paddr);
+		ab->qmi.persist_mem[i].v.addr = NULL;
+	}
+	ab->qmi.persist_mem_count = 0;
+
 	ath12k_qmi_free_resource(ab);
 	ab->qmi.ab = NULL;
 }
