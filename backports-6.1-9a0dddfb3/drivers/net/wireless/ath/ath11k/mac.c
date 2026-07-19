@@ -169,8 +169,9 @@ static const struct ieee80211_channel ath11k_6ghz_channels[] = {
 	CHAN6G(229, 7095, 0),
 	CHAN6G(233, 7115, 0),
 
-	/* new addition in IEEE Std 802.11ax-2021 */
-	CHAN6G(2, 5935, 0),
+	/* Operating Class 136 -- 20 MHz only per IEEE 802.11ax */
+	CHAN6G(2, 5935, IEEE80211_CHAN_NO_HT40 | IEEE80211_CHAN_NO_80MHZ |
+		       IEEE80211_CHAN_NO_160MHZ | IEEE80211_CHAN_NO_320MHZ),
 };
 
 static struct ieee80211_rate ath11k_legacy_rates[] = {
