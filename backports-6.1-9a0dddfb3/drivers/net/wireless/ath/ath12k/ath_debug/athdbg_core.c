@@ -246,7 +246,7 @@ static int __init athdbg_driver_init(void)
 
 #ifdef CPTCFG_ATHDEBUG_UIO_LOGGING
 	if (athdbg_uio_register()) {
-		pr_err("athdbg_core: UIO register failed: %d\n", ret);
+		pr_err("athdbg_core: UIO register failed\n");
 		return -EINVAL;
 	}
 #endif
