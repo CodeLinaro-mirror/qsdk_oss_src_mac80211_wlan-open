@@ -7333,8 +7333,20 @@ static int ieee80211_uhr_mode_update(struct wiphy *wiphy,
 					lockdep_is_held(&local->hw.wiphy->mtx));
 			if (!link_sta)
 				continue;
-			if (params->npca_update[link_id])
-				link_sta->pub->npca = params->npca[link_id];
+			if (params->npca_update[link_id]) {
+				struct cfg80211_uhr_npca_params *old_npca =
+					&link_sta->pub->npca;
+				struct cfg80211_uhr_npca_params *new_npca =
+					&params->npca[link_id];
+
+				new_npca->mode_update =
+					old_npca->enable && new_npca->enable &&
+					(old_npca->switch_delay !=
+					 new_npca->switch_delay ||
+					 old_npca->switch_back_delay !=
+					 new_npca->switch_back_delay);
+				link_sta->pub->npca = *new_npca;
+			}
 		}
 		break;
 	}
