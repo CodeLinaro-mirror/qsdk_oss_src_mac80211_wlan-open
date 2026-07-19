@@ -79,9 +79,8 @@ struct ath12k_me_db *ath12k_me_db_get(struct ath12k_dp_vif *dp_vif)
 
 	rcu_read_lock();
 	db = rcu_dereference(dp_vif->me_db);
-	if (db)
-		kref_get(&db->ref);
-
+	if (db && !kref_get_unless_zero(&db->ref))
+		db = NULL;
 	rcu_read_unlock();
 
 	return db;
