@@ -4125,7 +4125,7 @@ static int _nl80211_parse_chandef(struct cfg80211_registered_device *rdev,
 
 	memset(chandef, 0, sizeof(*chandef));
 
-	if (control_freq >= MHZ_TO_KHZ(5945) && control_freq <= MHZ_TO_KHZ(7125)) {
+	if (control_freq >= MHZ_TO_KHZ(5925) && control_freq <= MHZ_TO_KHZ(7125)) {
 		if (info->attrs[NL80211_ATTR_6G_REG_POWER_MODE])
 			mode = nla_get_u8(info->attrs[NL80211_ATTR_6G_REG_POWER_MODE]);
 
@@ -4219,7 +4219,8 @@ static int _nl80211_parse_chandef(struct cfg80211_registered_device *rdev,
 			}
 		}
 
-		if (control_freq >= MHZ_TO_KHZ(5945) && control_freq <= MHZ_TO_KHZ(7125)) {
+		if (control_freq >= MHZ_TO_KHZ(5925) &&
+		    control_freq <= MHZ_TO_KHZ(7125)) {
 			u32 prohibited_flags = IEEE80211_CHAN_DISABLED | IEEE80211_CHAN_NO_IR;
 			err = cfg80211_validate_freq_width_for_pwr_mode(&rdev->wiphy,
 									chandef,
