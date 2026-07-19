@@ -74,10 +74,14 @@ static int ath12k_dp_tx_me5(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vif,
 				      skb_get(skb), NULL, NULL);
 
 	if (unlikely(err != DP_TX_ENQ_SUCCESS))
-		goto fail;
+		goto fail_tx;
 
 	atomic_inc(&dp_pdev->num_tx_pending);
 	return 0;
+
+fail_tx:
+	/* drop reference to SKB taken in mcast_send */
+	dev_kfree_skb_any(skb);
 fail:
 	DP_STATS_INC(dp_vif, tx_i.drop[err], 1, ring_id);
 	return -ENOMEM;
@@ -129,12 +133,15 @@ static int ath12k_dp_tx_me6(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vif,
 				      skb_get(skb), NULL, NULL);
 
 	if (unlikely(err != DP_TX_ENQ_SUCCESS))
-		goto fail;
+		goto fail_tx;
 
 	atomic_inc(&dp_pdev->num_tx_pending);
 	/* TODO: Update MCUC statistics and return*/
 	return 0;
 
+fail_tx:
+	/* drop reference to SKB taken in mcast_send */
+	dev_kfree_skb_any(skb);
 fail:
 	DP_STATS_INC(dp_vif, tx_i.drop[err], 1, ring_id);
 	return -ENOMEM;
