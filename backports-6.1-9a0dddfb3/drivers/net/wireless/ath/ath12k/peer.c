@@ -802,6 +802,7 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		       struct ath12k_wmi_peer_create_arg *arg)
 {
 	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(arvif->ahvif);
+	struct ath12k_hw_group *ag = ar->ab->ag;
 	u8 link_id = arvif->link_id;
 	struct ath12k_sta *ahsta = NULL;
 	int ret;
@@ -828,6 +829,12 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 			    "[vdev_id : %u radio_idx : %u] failed to create peer due to insufficient peer entry resource in firmware\n",
 			     arg->vdev_id, ar->radio_idx);
 		return -ENOBUFS;
+	}
+
+	/* Block peer create Till the HW restart is done in case of Mode-2*/
+	if (sta && sta->mlo && ag->block_peer_create) {
+		ath12k_err(ar->ab, "Avoiding MLO peer create between qmi restart of partner\n");
+		return -EHOSTDOWN;
 	}
 
 	reinit_completion(&ar->peer_create_done);
