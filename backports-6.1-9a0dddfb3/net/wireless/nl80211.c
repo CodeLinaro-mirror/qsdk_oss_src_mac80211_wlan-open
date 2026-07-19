@@ -8526,6 +8526,16 @@ static int nl80211_update_ap(struct sk_buff *skb, struct genl_info *info)
 		haveinfo = true;
 	}
 
+	if (info->attrs[NL80211_ATTR_DTIM_PERIOD]) {
+		params->dtim_period =
+			nla_get_u32(info->attrs[NL80211_ATTR_DTIM_PERIOD]);
+		if (params->dtim_period < 1 || params->dtim_period > 255) {
+			err = -EINVAL;
+			goto out;
+		}
+		haveinfo = true;
+	}
+
 	if (info->attrs[NL80211_ATTR_SSID]) {
 		params->ssid_len =
 		    nla_len(info->attrs[NL80211_ATTR_SSID]);
