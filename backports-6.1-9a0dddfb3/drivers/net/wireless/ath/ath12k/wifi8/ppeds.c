@@ -866,6 +866,9 @@ void ath12k_ppeds_get_rxfill_ring_info_v2(int ds_node_id,
 {
 	struct ath12k_base *ab = ds_node_map[ds_node_id];
 
+	if (unlikely(!ab))
+		return;
+
 	if (!ab->dp->ppe.nss_plugin_ops ||
 	    !ab->dp->ppe.nss_plugin_ops->get_rxfill_ring_info) {
 		ath12k_err(ab, "PPEDS get_rxfill_ring_info not available\n");
