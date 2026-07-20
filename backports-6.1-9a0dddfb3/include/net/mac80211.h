@@ -3014,6 +3014,7 @@ struct ieee80211_link_sta {
  * @tdls: indicates whether the STA is a TDLS peer
  * @tdls_initiator: indicates the STA is an initiator of the TDLS link. Only
  *	valid if the STA is a TDLS peer in the first place.
+ * @mapc: indicates whether the STA is a MAPC peer
  * @mfp: indicates whether the STA uses management frame protection or not.
  * @cfp: indicated whether the STA used control frame protection or not.
  * @mlo: indicates whether the STA is MLO station.
@@ -3060,6 +3061,7 @@ struct ieee80211_sta {
 	struct ieee80211_sta_rates __rcu *rates;
 	bool tdls;
 	bool tdls_initiator;
+	bool mapc;
 	bool mfp;
 	bool cfp;
 	bool mlo;
@@ -5134,6 +5136,9 @@ struct ieee80211_ppe_vp_ds_params {
  *	This callback may sleep.
  * @sta_set_4addr: Called to notify the driver when a station starts/stops using
  *	4-address mode
+ * @sta_set_mapc_params: Notify the driver of MAPC coordination parameters
+ *	for a peer station. Only called for stations with @ieee80211_sta.mapc
+ *	set. Drivers that do not implement MAPC may leave this NULL.
  * @set_dscp_tid: Notify the driver when receive qos_map_set events from mac80211.
  * @set_sar_specs: Update the SAR (TX power) settings.
  * @sta_set_decap_offload: Called to notify the driver when a station is allowed
@@ -5612,6 +5617,10 @@ struct ieee80211_ops {
 				   struct ieee80211_vif *vif);
 	void (*sta_set_4addr)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 			      struct ieee80211_sta *sta, bool enabled);
+	int (*sta_set_mapc_params)(struct ieee80211_hw *hw,
+				   struct ieee80211_vif *vif,
+				   struct ieee80211_sta *sta,
+				   const struct cfg80211_sta_mapc_params *params);
 	void (*set_dscp_tid)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 			     struct cfg80211_qos_map *qos_map, unsigned int link_id);
 	int (*set_sar_specs)(struct ieee80211_hw *hw,

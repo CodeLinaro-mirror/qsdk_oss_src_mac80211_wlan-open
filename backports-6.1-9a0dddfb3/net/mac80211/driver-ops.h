@@ -1738,6 +1738,29 @@ static inline void drv_sta_set_4addr(struct ieee80211_local *local,
 	trace_drv_return_void(local);
 }
 
+static inline int drv_sta_set_mapc_params(struct ieee80211_local *local,
+					  struct ieee80211_sub_if_data *sdata,
+					  struct ieee80211_sta *sta,
+					  const struct cfg80211_sta_mapc_params *params)
+{
+	int ret;
+
+	might_sleep();
+	lockdep_assert_wiphy(local->hw.wiphy);
+
+	if (!check_sdata_in_driver(sdata))
+		return -EINVAL;
+
+	if (!local->ops->sta_set_mapc_params)
+		return 0;
+
+	trace_drv_sta_set_mapc_params(local, sdata, sta);
+	ret = local->ops->sta_set_mapc_params(&local->hw, &sdata->vif, sta, params);
+	trace_drv_return_int(local, ret);
+
+	return ret;
+}
+
 static inline void drv_set_dscp_tid(struct ieee80211_local *local,
 				    struct ieee80211_sub_if_data *sdata,
 				    struct cfg80211_qos_map *qos_map,
