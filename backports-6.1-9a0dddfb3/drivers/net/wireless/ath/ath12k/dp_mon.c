@@ -989,7 +989,7 @@ void ath12k_dp_mon_rx_update_basic_stats(struct ath12k_dp_link_peer *peer,
 					 u32 num_msdu, u32 uid)
 {
 	struct hal_rx_user_status *user_stats = NULL;
-	u32 ru_width_factor, byte_count;
+	u32 ru_width_factor;
 	u64 rx_duration_scaled;
 	u16 rx_time_us, num_msdu_retry_count;
 	u8 preamble_type, mcs, nss;
@@ -1003,13 +1003,11 @@ void ath12k_dp_mon_rx_update_basic_stats(struct ath12k_dp_link_peer *peer,
 	preamble_type = user_stats ? user_stats->preamble_type : ppdu_info->preamble_type;
 	mcs = user_stats ? user_stats->mcs : ppdu_info->mcs;
 	nss = user_stats ? user_stats->nss : ppdu_info->nss;
-	byte_count = user_stats ? user_stats->mpdu_ok_byte_count : ppdu_info->mpdu_len;
 	num_msdu_retry_count = user_stats ? user_stats->retried_msdu_count :
 			       ppdu_info->retried_msdu_count;
 
 	rx_stats->num_ppdus += 1;
 	rx_stats->num_mpdu_retry_count += ppdu_info->mpdu_retry_cnt;
-	rx_stats->num_msdu_bytes += byte_count;
 	rx_stats->num_msdu_retry_count += num_msdu_retry_count;
 	rx_stats->bw_info = ppdu_info->bw;
 	rx_stats->gi_info = ppdu_info->gi;
@@ -1167,13 +1165,15 @@ void ath12k_dp_mon_rx_update_peer_su_stats(struct ath12k_pdev_dp *pdev_dp,
 			ppdu_info->ctrl_frm_info[ppdu_info->userid].bar;
 	}
 
+	num_msdu = ppdu_info->tcp_msdu_count + ppdu_info->tcp_ack_msdu_count +
+		   ppdu_info->udp_msdu_count + ppdu_info->other_msdu_count;
+	peer->rx_packets += num_msdu;
+	peer->rx_bytes += ppdu_info->mpdu_len;
+
 	if (!ath12k_extd_rx_stats_enabled(pdev_dp) || !rx_stats)
 		return;
 
 	peer->peer_stats.rx_retries += ppdu_info->mpdu_retry;
-	num_msdu = ppdu_info->tcp_msdu_count + ppdu_info->tcp_ack_msdu_count +
-		   ppdu_info->udp_msdu_count + ppdu_info->other_msdu_count;
-
 	rx_stats->num_msdu += num_msdu;
 	rx_stats->tcp_msdu_count += ppdu_info->tcp_msdu_count +
 				    ppdu_info->tcp_ack_msdu_count;
@@ -1363,6 +1363,11 @@ ath12k_dp_mon_rx_update_user_stats(struct ath12k_pdev_dp *pdev_dp,
 	peer->peer_stats.rx_retries = user_stats->mpdu_retry;
 	peer->rx_duration += ppdu_info->rx_duration;
 
+	num_msdu = user_stats->tcp_msdu_count + user_stats->tcp_ack_msdu_count +
+		   user_stats->udp_msdu_count + user_stats->other_msdu_count;
+	peer->rx_packets += num_msdu;
+	peer->rx_bytes += ppdu_info->mpdu_len;
+
 	if (!ath12k_extd_rx_stats_enabled(pdev_dp))
 		return;
 
@@ -1375,9 +1380,6 @@ ath12k_dp_mon_rx_update_user_stats(struct ath12k_pdev_dp *pdev_dp,
 
 	peer->rssi_comb = ppdu_info->rssi_comb;
 	ewma_avg_rssi_add(&peer->avg_rssi, ppdu_info->rssi_comb);
-
-	num_msdu = user_stats->tcp_msdu_count + user_stats->tcp_ack_msdu_count +
-		   user_stats->udp_msdu_count + user_stats->other_msdu_count;
 
 	rx_stats->num_msdu += num_msdu;
 	rx_stats->tcp_msdu_count += user_stats->tcp_msdu_count +

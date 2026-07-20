@@ -931,7 +931,6 @@ enum wmi_phy_mode ath12k_mac_get_phymode(struct ath12k *ar,
 struct ath12k_netstats_iter_ctx {
 	struct rtnl_link_stats64 *stats;
 	const u8 *peer_mac;
-	bool is_ds_vif;
 };
 
 bool ath12k_mac_mgmt_need_smd_sta_session_ctx(struct sk_buff *skb);

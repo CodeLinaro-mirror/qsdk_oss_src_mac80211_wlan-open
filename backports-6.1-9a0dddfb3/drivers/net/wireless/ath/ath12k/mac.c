@@ -26045,8 +26045,8 @@ void ath12k_mac_op_preserved_link_stats(struct ieee80211_hw *hw,
 	struct ath12k_dp_preserved_stats *del_stats = NULL;
 	struct ath12k_dp_peer *dp_peer;
 	int i;
-	u64 tx_bytes = 0, rx_bytes = 0;
-	u32 tx_packets = 0, rx_packets = 0;
+	u64 tx_bytes = 0;
+	u32 tx_packets = 0;
 
 	if (!vif || !sta || !sinfo)
 		return;
@@ -26069,18 +26069,11 @@ void ath12k_mac_op_preserved_link_stats(struct ieee80211_hw *hw,
 	}
 /* TODO - Fetch the tx failed and retries from htt stats */
 
-	for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
-		rx_bytes += del_stats->per_pkt_rx[i].sent_to_stack.bytes +
-			del_stats->per_pkt_rx[i].sent_to_stack_fast.bytes;
-		rx_packets += del_stats->per_pkt_rx[i].sent_to_stack.packets +
-			del_stats->per_pkt_rx[i].sent_to_stack_fast.packets;
-	}
-
 	/* Deleted link totals only; MLD aggregation adds active per-link stats on top */
 	sinfo->tx_bytes   = tx_bytes;
 	sinfo->tx_packets = tx_packets;
-	sinfo->rx_bytes   = rx_bytes;
-	sinfo->rx_packets = rx_packets;
+	sinfo->rx_bytes   = dp_peer->link_peer_delete_stats.rx_counters.bytes;
+	sinfo->rx_packets = dp_peer->link_peer_delete_stats.rx_counters.packets;
 
 out:
 	spin_unlock_bh(&ah->dp_hw.peer_hash_lock);
@@ -26106,7 +26099,6 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 	struct ath12k_dp_link_peer *link_peer;
 	u32 pn_errors = 0, mic_errors = 0, decrypt_errors = 0;
 	int i;
-	bool is_ds_vif = false;
 
 	if (!link_sta->sta) {
 		ath12k_err(NULL, "Failed to proceed: link_sta->sta is NULL");
@@ -26164,34 +26156,17 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 		link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_PACKETS);
 		link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_BYTES);
 
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-		is_ds_vif = ath12k_vif_to_ahvif(vif)->dp_vif.ppe_vp_type ==
-				PPE_VP_USER_TYPE_DS;
-#endif
 		if (ath12k_dp_hw_peer_stats_enabled(&ar->dp)) {
-			/* When HW stats are enabled, recv_from_reo has all the
-			 * Rx traffic data stored in ATH12K_DP_HW_STATS_REO_IDX
-			 * for SFE or DS mode.
-			 */
+			/* HW stats mode: recv_from_reo holds all Rx (SFE and DS). */
 			rx_stats = &peer_stats->rx[ATH12K_DP_HW_STATS_REO_IDX];
 			link_sinfo->rx_bytes += rx_stats->recv_from_reo.bytes;
 			link_sinfo->rx_packets += rx_stats->recv_from_reo.packets;
 		} else {
-			for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
-				/* PPE sync credits DS VIF WDS peer traffic only
-				 * on DP_REO_PPEDS_RING_IDX; skip lower ring
-				 * indices to avoid double-counting.
-				 */
-				if (dp_peer->use_4addr && is_ds_vif &&
-				    i < DP_REO_PPEDS_RING_IDX)
-					continue;
-				link_sinfo->rx_bytes +=
-					peer_stats->rx[i].sent_to_stack.bytes +
-					peer_stats->rx[i].sent_to_stack_fast.bytes;
-				link_sinfo->rx_packets +=
-					peer_stats->rx[i].sent_to_stack.packets +
-					peer_stats->rx[i].sent_to_stack_fast.packets;
-			}
+			/* SW/monitor mode: use link_peer->rx_bytes/rx_packets
+			 * (DS and SFE unified).
+			 */
+			link_sinfo->rx_bytes += link_peer->rx_bytes;
+			link_sinfo->rx_packets += link_peer->rx_packets;
 		}
 
 		link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_RX_BYTES);
@@ -26237,27 +26212,6 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 		link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_RX_BITRATE);
 	}
 
-	/* In non offload modes (e.g., SFE), mac80211 double counts RX
-	 * packets because they are accounted for in both the regular Rx path
-	 * and via the monitor path.
-	 *
-	 * To fix this, override mac80211 counters with the driver's internal
-	 * peer statistics (derived from firmware) when extended RX stats
-	 * are enabled.
-	 *
-	 * When HW stats are enabled, this copy is not needed.
-	 */
-	if (ath12k_extd_rx_stats_enabled(&ar->dp) &&
-	    !ath12k_dp_hw_peer_stats_enabled(&ar->dp)) {
-		if (link_peer && link_peer->peer_stats.rx_stats) {
-			link_sinfo->rx_packets =
-				link_peer->peer_stats.rx_stats->num_msdu;
-			link_sinfo->rx_bytes =
-				link_peer->peer_stats.rx_stats->num_msdu_bytes;
-			link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_RX_PACKETS) |
-					      BIT_ULL(NL80211_STA_INFO_RX_BYTES);
-		}
-	}
 	rcu_read_unlock();
 
 	db2dbm = test_bit(WMI_TLV_SERVICE_HW_DB2DBM_CONVERSION_SUPPORT,
@@ -26420,14 +26374,9 @@ void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 		sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_BYTES64);
 		sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_PACKETS);
 
-		for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
-			sinfo->rx_bytes +=
-				peer_stats->rx[i].sent_to_stack.bytes +
-				peer_stats->rx[i].sent_to_stack_fast.bytes;
-			sinfo->rx_packets +=
-				peer_stats->rx[i].sent_to_stack.packets +
-				peer_stats->rx[i].sent_to_stack_fast.packets;
-		}
+		sinfo->rx_bytes += link_peer->rx_bytes;
+		sinfo->rx_packets += link_peer->rx_packets;
+
 		sinfo->filled |= BIT_ULL(NL80211_STA_INFO_RX_BYTES64);
 		sinfo->filled |= BIT_ULL(NL80211_STA_INFO_RX_PACKETS);
 
@@ -31044,12 +30993,8 @@ static void ath12k_mac_add_preserved_stats(struct rtnl_link_stats64 *stats,
 	if (!del_stats)
 		return;
 
-	for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
-		stats->rx_packets += del_stats->per_pkt_rx[i].sent_to_stack.packets +
-			del_stats->per_pkt_rx[i].sent_to_stack_fast.packets;
-		stats->rx_bytes   += del_stats->per_pkt_rx[i].sent_to_stack.bytes +
-			del_stats->per_pkt_rx[i].sent_to_stack_fast.bytes;
-	}
+	stats->rx_packets += del_stats->rx_counters.packets;
+	stats->rx_bytes   += del_stats->rx_counters.bytes;
 	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++) {
 		stats->tx_packets += del_stats->per_pkt_tx[i].comp_pkt.packets;
 		stats->tx_bytes   += del_stats->per_pkt_tx[i].comp_pkt.bytes;
@@ -31086,7 +31031,6 @@ static int ath12k_netstats_peer_iter_cb(struct ath12k *ar,
 				       dp_peer_addr,
 				       ar->hw_link_id,
 				       ctx->peer_mac,
-				       ctx->is_ds_vif,
 				       ctx->stats);
 	return 0;
 }
@@ -31105,7 +31049,6 @@ void ath12k_mac_op_get_netstats(struct ieee80211_hw *hw,
 	const u8 *peer_mac = NULL;
 	struct ieee80211_sta *sta;
 	bool is_ap_vlan = false;
-	bool is_ds_vif = false;
 	struct ath12k_dp_preserved_stats *del_stats;
 	struct ath12k_dp_pkt_info vif_ppeds_rx;
 	struct ieee80211_vif *master_vif;
@@ -31138,14 +31081,9 @@ void ath12k_mac_op_get_netstats(struct ieee80211_hw *hw,
 		ath12k_mac_add_preserved_stats(stats, &dp_vif->link_vif_delete_stats);
 	}
 
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	is_ds_vif = (ahvif->dp_vif.ppe_vp_type == PPE_VP_USER_TYPE_DS);
-#endif
-
 	/* Set up iterator context (CP -> DP bridge) */
 	ctx.stats    = stats;
 	ctx.peer_mac = peer_mac;
-	ctx.is_ds_vif = is_ds_vif;
 
 	for_each_set_bit(link_id, &links_map, ATH12K_NUM_MAX_LINKS) {
 		if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
