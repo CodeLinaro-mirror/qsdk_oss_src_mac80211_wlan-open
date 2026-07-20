@@ -15,6 +15,7 @@
 
 struct ath12k_csi_cfr_header;
 struct ath12k_cfr_peer_tx_param;
+struct ath12k_cfr_look_up_table;
 struct ath12k_mac_pri_link_migr_peer_node;
 struct ath12k_hw_group;
 struct ath12k_base;
@@ -417,6 +418,9 @@ struct ath12k_hw_ops {
 	void (*fill_cfr_hdr_info)(struct ath12k *ar,
 				  struct ath12k_csi_cfr_header *header,
 				  struct ath12k_cfr_peer_tx_param *params);
+	int (*parse_cfr_enh_dma_hdr)(struct ath12k *ar, u8 *data,
+				     struct ath12k_cfr_look_up_table *lut,
+				     u32 *length);
 	bool (*hw_link_id_required_in_mgmt_send)(struct ath12k_base *ab);
 	int (*mgmt_rxdma_ring_sel_config)(struct ath12k_base *ab);
 	void (*rx_peer_ba_config)(struct ath12k_base *ab, u8 tid, u32 *ba_win_size,
