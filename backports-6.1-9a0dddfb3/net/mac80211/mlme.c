@@ -29,7 +29,9 @@
 #include "driver-ops.h"
 #include "rate.h"
 #include "led.h"
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/cmn_extn.h"
+#endif /* CPTCFG_QCN_EXTN */
 #include "fils_aead.h"
 #include "sta_info.h"
 #include "key.h"
@@ -387,8 +389,10 @@ ieee80211_determine_ap_chan(struct ieee80211_sub_if_data *sdata,
 		*chandef = eht_chandef;
 	}
 
+#ifdef CPTCFG_QCN_EXTN
 	if (ieee802_11_determine_ap_chan_extn(elems, chandef, sdata))
 		return IEEE80211_CONN_MODE_HE;
+#endif /* CPTCFG_QCN_EXTN */
 
 check_uhr:
 	if (conn->mode < IEEE80211_CONN_MODE_UHR || !uhr_oper)
@@ -2194,8 +2198,10 @@ ieee80211_add_link_elems(struct ieee80211_sub_if_data *sdata,
 
 	struct ieee80211_bss *bss = (void *)cbss->priv;
 
+#ifdef CPTCFG_QCN_EXTN
 	ieee80211_add_qcn_vendor_ie_extn(skb, &bss->bss_extn,
 					 assoc_data->link[link_id].conn.mode);
+#endif /* CPTCFG_QCN_EXTN */
 
 	if (iftd && iftd->vendor_elems.data && iftd->vendor_elems.len)
 		skb_put_data(skb, iftd->vendor_elems.data, iftd->vendor_elems.len);
@@ -6162,9 +6168,11 @@ static bool ieee80211_assoc_config_link(struct ieee80211_link_data *link,
 							    elems->eht_cap_len,
 							    link_sta);
 
+#ifdef CPTCFG_QCN_EXTN
 			ieee80211_bss_240mhz_to_sta_eht_cap_extn(sdata, link_sta,
 								 sband,
 								 cbss);
+#endif /* CPTCFG_QCN_EXTN */
 
 			bss_conf->eht_support = link_sta->pub->eht_cap.has_eht;
 			bss_conf->epcs_support = bss_conf->eht_support &&
