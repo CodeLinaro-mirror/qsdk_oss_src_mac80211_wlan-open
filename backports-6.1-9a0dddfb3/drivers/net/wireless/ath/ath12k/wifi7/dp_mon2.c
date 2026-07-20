@@ -18,8 +18,8 @@
 const struct ath12k_dp_arch_mon_ops ath12k_wifi7_dp_arch_mon_dual_ring_ops = {
 	.rx_srng_setup = ath12k_dp_mon_rx_srng_setup,
 	.rx_srng_cleanup = ath12k_dp_mon_rx_srng_cleanup,
-	.rx_buf_setup = ath12k_dp_mon_rx_buf_setup,
-	.rx_buf_free = ath12k_dp_mon_rx_buf_free,
+	.rx_ring_init = ath12k_dp_mon_rx_ring_init,
+	.rx_ring_deinit = ath12k_dp_mon_rx_ring_deinit,
 	.rx_htt_srng_setup = ath12k_dp_mon_rx_htt_srng_setup,
 	.mon_pdev_alloc = ath12k_dp_mon_pdev_alloc,
 	.mon_pdev_free = ath12k_dp_mon_pdev_free,
@@ -1752,39 +1752,75 @@ move_next:
 int ath12k_dp_mon_rx_dual_ring_setup_ppdu_desc(struct ath12k_pdev_dp *dp_pdev)
 {
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
-	struct ath12k_dp_mon_ppdu_desc *ppdu_desc_pool = dp_mon_pdev->ppdu_desc_pool;
-	int i;
+	int i, ret;
 
+	spin_lock_init(&dp_mon_pdev->ppdu_desc_lock);
+
+	/* Allocate an array of pointers instead of one large contiguous
+	 * block. Each ~12KB descriptor (embeds status_desc[512]) is then
+	 * allocated individually below, so a single ~1.5MB (order-9)
+	 * GFP_ATOMIC allocation is never attempted. That large contiguous
+	 * allocation was failing under DMA-zone fragmentation after
+	 * repeated SSR cycles.
+	 */
 	dp_mon_pdev->ppdu_desc_pool = kcalloc(ATH12K_DP_MON_NUM_PPDU_DESC,
-					      sizeof(*ppdu_desc_pool), GFP_ATOMIC);
+					      sizeof(*dp_mon_pdev->ppdu_desc_pool),
+					      GFP_ATOMIC);
 	if (unlikely(!dp_mon_pdev->ppdu_desc_pool)) {
 		ath12k_warn(dp_pdev->dp, "Failed to allocate monitor PPDU desc pool\n");
 		return -ENOMEM;
 	}
 
-	spin_lock_init(&dp_mon_pdev->ppdu_desc_lock);
+	for (i = 0; i < ATH12K_DP_MON_NUM_PPDU_DESC; i++) {
+		dp_mon_pdev->ppdu_desc_pool[i] =
+				kzalloc(sizeof(*dp_mon_pdev->ppdu_desc_pool[i]),
+					GFP_ATOMIC);
+		if (!dp_mon_pdev->ppdu_desc_pool[i]) {
+			ath12k_warn(dp_pdev->dp,
+				    "Failed to allocate monitor PPDU desc %d\n", i);
+			ret = -ENOMEM;
+			goto fail;
+		}
+	}
+
 	INIT_LIST_HEAD(&dp_mon_pdev->ppdu_desc_free_list);
 	INIT_LIST_HEAD(&dp_mon_pdev->ppdu_desc_used_list);
 	INIT_LIST_HEAD(&dp_mon_pdev->ppdu_desc_proc_list);
 
 	spin_lock_bh(&dp_mon_pdev->ppdu_desc_lock);
 	for (i = 0; i < ATH12K_DP_MON_NUM_PPDU_DESC; i++) {
-		INIT_LIST_HEAD(&dp_mon_pdev->ppdu_desc_pool[i].list);
-		list_add_tail(&dp_mon_pdev->ppdu_desc_pool[i].list,
+		INIT_LIST_HEAD(&dp_mon_pdev->ppdu_desc_pool[i]->list);
+		list_add_tail(&dp_mon_pdev->ppdu_desc_pool[i]->list,
 			      &dp_mon_pdev->ppdu_desc_free_list);
 		dp_mon_pdev->mon_stats.ppdu_desc_free++;
 	}
 	spin_unlock_bh(&dp_mon_pdev->ppdu_desc_lock);
 
 	return 0;
+fail:
+	ath12k_dp_mon_rx_dual_ring_cleanup_ppdu_desc(dp_pdev);
+	return ret;
 }
 
 void ath12k_dp_mon_rx_dual_ring_cleanup_ppdu_desc(struct ath12k_pdev_dp *dp_pdev)
 {
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	int i;
+
+	spin_lock_bh(&dp_mon_pdev->ppdu_desc_lock);
+	if (!dp_mon_pdev->ppdu_desc_pool) {
+		spin_unlock_bh(&dp_mon_pdev->ppdu_desc_lock);
+		return;
+	}
+
+	for (i = 0; i < ATH12K_DP_MON_NUM_PPDU_DESC; i++) {
+		kfree(dp_mon_pdev->ppdu_desc_pool[i]);
+		dp_mon_pdev->ppdu_desc_pool[i] = NULL;
+	}
 
 	kfree(dp_mon_pdev->ppdu_desc_pool);
 	dp_mon_pdev->ppdu_desc_pool = NULL;
+	spin_unlock_bh(&dp_mon_pdev->ppdu_desc_lock);
 }
 
 int ath12k_dp_mon_rx_wq_init(struct ath12k_pdev_dp *dp_pdev)
