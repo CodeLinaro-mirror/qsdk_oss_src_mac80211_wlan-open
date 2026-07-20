@@ -1126,18 +1126,13 @@ struct ieee80211_hw *ieee80211_alloc_hw_nm(size_t priv_data_len,
 
 	return &local->hw;
  err_free:
-	if (this_cpu_ptr(local->tx_pending_tasklet))
-		free_percpu(local->tx_pending_tasklet);
-	if (this_cpu_ptr(local->queue_stop_reason_lock))
-		free_percpu(local->queue_stop_reason_lock);
+	free_percpu(local->tx_pending_tasklet);
+	free_percpu(local->queue_stop_reason_lock);
 	for (i = 0; i < IEEE80211_MAX_QUEUES; i++) {
-		if (this_cpu_ptr(local->pending[i]))
-			free_percpu(local->pending[i]);
-		if (this_cpu_ptr(local->queue_stop_reasons[i]))
-			free_percpu(local->queue_stop_reasons[i]);
+		free_percpu(local->pending[i]);
+		free_percpu(local->queue_stop_reasons[i]);
 		for (j = 0; j < IEEE80211_QUEUE_STOP_REASONS; j++)
-			if (this_cpu_ptr(local->q_stop_reasons[i][j]))
-				free_percpu(local->q_stop_reasons[i][j]);
+			free_percpu(local->q_stop_reasons[i][j]);
 	}
 
 	wiphy_free(wiphy);
