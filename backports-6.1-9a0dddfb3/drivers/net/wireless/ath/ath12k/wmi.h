@@ -2652,6 +2652,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_PEER_UHR_OMP_NPCA_PARAMS,
 	WMI_TAG_ANOMALY_REPORT_HDR = 0x588,
 	WMI_TAG_ANOMALY_ENTRY = 0x589,
+	WMI_TAG_PEER_UHR_OMP_STA_DPS_PARAMS = 0x58A,
 	WMI_TAG_PDEV_DOWNLOAD_RTT_BLOB_CMD = 0x5B8,
 	WMI_TAG_SOC_TX_PACKET_CUSTOM_CLASSIFY_CMD = 0x4DA,
 	WMI_TAG_PEER_SET_MAPC_PARAMS_CMD_FIXED_PARAM = 0x0594,
@@ -2662,6 +2663,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_MAPC_CORTWT_PARAMS = 0x0599,
 	WMI_TAG_MAPC_CTDMA_PROFILE = 0x05AD,
 	WMI_TAG_MAPC_PEER_SETUP_STATUS_EVENT_FIXED_PARAM = 0x05AF,
+	WMI_TAG_PEER_UHR_OMP_DSO_PARAMS = 0x5B1,
 	WMI_TAG_MAX
 };
 
@@ -4191,19 +4193,51 @@ struct wmi_peer_uhr_omp_npca_params {
 	__le32 omp_npca_param;
 } __packed;
 
+/* omp_dso_caps field bit definitions:
+ *   Bit 0:3  - DSO hw_link_id
+ *   Bit 4    - Enable (1) / Disable (0) DSO
+ *   Bit 5    - Mode Update: 1 if DSO was already enabled on this link
+ *              and this is a parameter update, 0 for a fresh enable or
+ *              for disable (reserved/meaningless when Enable is 0)
+ *   Bit 6:31 - Reserved
+ *
+ * omp_dso_param layout:
+ *   Bit 0:5   - DSO Padding Delay (units of 4 μs)
+ *   Bit 6:11  - DSO Switching Back Delay (units of 4 μs)
+ *   Bit 12:13 - Preferred 80 MHz DSO Subband index (0-3)
+ *   Bit 14:31 - Reserved
+ */
+#define WMI_PEER_UHR_OMP_DSO_CAPS_HW_LINK_ID       GENMASK(3, 0)
+#define WMI_PEER_UHR_OMP_DSO_CAPS_ENABLE            BIT(4)
+#define WMI_PEER_UHR_OMP_DSO_CAPS_MODE_UPDATE       BIT(5)
+#define WMI_PEER_UHR_OMP_DSO_PARAM_PADDING_DELAY    GENMASK(5, 0)
+#define WMI_PEER_UHR_OMP_DSO_PARAM_SWITCH_BACK_DELAY GENMASK(11, 6)
+#define WMI_PEER_UHR_OMP_DSO_PARAM_SUBBAND          GENMASK(13, 12)
+
+struct wmi_peer_uhr_omp_dso_params {
+	__le32 tlv_header;
+	__le32 omp_dso_caps;
+	__le32 omp_dso_param;
+} __packed;
+
 struct wmi_peer_uhr_omp_cmd {
 	__le32 tlv_header;
 	__le32 sw_peer_id;
 	__le32 pdev_id;
 } __packed;
 
-/* Per-link NPCA info passed to ath12k_wmi_send_peer_uhr_omp_cmd() */
+/* Per-link NPCA/DSO info passed to ath12k_wmi_send_peer_uhr_omp_cmd() */
 struct ath12k_wmi_uhr_omp_link_params {
 	u8 hw_link_id;
 	bool npca_enable;
 	u8 npca_switch_delay;
 	u8 npca_switch_back_delay;
 	bool npca_mode_update;
+	bool dso_enable;
+	bool dso_mode_update;
+	u8 dso_subband;
+	u8 dso_padding_delay;
+	u8 dso_switch_back_delay;
 };
 
 #define MGMT_TX_DL_FRM_LEN		     64

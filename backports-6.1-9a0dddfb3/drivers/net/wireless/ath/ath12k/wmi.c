@@ -24578,17 +24578,43 @@ int ath12k_wmi_send_peer_uhr_omp_cmd(struct ath12k *ar, u32 sw_peer_id,
 				     u8 num_links)
 {
 	struct wmi_peer_uhr_omp_npca_params *npca;
+	struct wmi_peer_uhr_omp_dso_params *dso;
 	struct ath12k_wmi_pdev *wmi = ar->wmi;
 	struct wmi_peer_uhr_omp_cmd *cmd;
 	struct wmi_tlv *tlv;
 	struct sk_buff *skb;
+	bool has_dso_update;
+	bool has_npca_update;
 	void *ptr;
 	int ret, len, i;
 
 	if (!num_links)
 		return -EINVAL;
 
-	len = sizeof(*cmd) + TLV_HDR_SIZE + num_links * sizeof(*npca);
+	for (i = 0, has_npca_update = false; i < num_links; i++) {
+		if (links[i].npca_mode_update) {
+			has_npca_update = true;
+			break;
+		}
+	}
+
+	for (i = 0, has_dso_update = false; i < num_links; i++) {
+		if (links[i].dso_mode_update) {
+			has_dso_update = true;
+			break;
+		}
+	}
+
+	len = sizeof(*cmd) +
+	      TLV_HDR_SIZE; /* NPCA: dummy or real */
+	if (has_npca_update)
+		len += num_links * sizeof(*npca);
+	len += TLV_HDR_SIZE; /* dummy DPS */
+	if (has_dso_update)
+		len += TLV_HDR_SIZE + num_links * sizeof(*dso);
+	else
+		len += TLV_HDR_SIZE; /* dummy DSO */
+
 	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
 	if (!skb)
 		return -ENOMEM;
@@ -24603,33 +24629,92 @@ int ath12k_wmi_send_peer_uhr_omp_cmd(struct ath12k *ar, u32 sw_peer_id,
 	ptr += sizeof(*cmd);
 
 	tlv = ptr;
-	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT,
-					  num_links * sizeof(*npca));
+	if (has_npca_update) {
+		tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT,
+						 num_links * sizeof(*npca));
+		ptr += TLV_HDR_SIZE;
+
+		for (i = 0; i < num_links; i++) {
+			npca = ptr;
+			npca->tlv_header =
+				ath12k_wmi_tlv_cmd_hdr(WMI_TAG_PEER_UHR_OMP_NPCA_PARAMS,
+						       sizeof(*npca));
+			npca->omp_npca_caps =
+				le32_encode_bits(links[i].hw_link_id,
+						 WMI_PEER_UHR_OMP_NPCA_CAPS_HW_LINK_ID) |
+				(links[i].npca_enable ?
+				 le32_encode_bits(1,
+						  WMI_PEER_UHR_OMP_NPCA_CAPS_ENABLE) :
+				 0) |
+				(links[i].npca_mode_update ?
+				 le32_encode_bits(1,
+						  WMI_PEER_UHR_OMP_NPCA_CAPS_MODE_UPDATE
+						 ) : 0);
+			npca->omp_npca_param =
+				le32_encode_bits(links[i].npca_switch_delay,
+					WMI_PEER_UHR_OMP_NPCA_PARAM_SWITCH_DELAY) |
+				le32_encode_bits(links[i].npca_switch_back_delay,
+					WMI_PEER_UHR_OMP_NPCA_PARAM_SWITCH_BACK_DELAY);
+			ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+				   "WMI UHR OMP cmd sw_peer_id %u pdev_id %u hw_link_id %u npca_enable %d switch_delay %u switch_back_delay %u mode_update %d\n",
+				   sw_peer_id, pdev_id, links[i].hw_link_id,
+				   links[i].npca_enable, links[i].npca_switch_delay,
+				   links[i].npca_switch_back_delay,
+				   links[i].npca_mode_update);
+			ptr += sizeof(*npca);
+		}
+	} else {
+		/* dummy NPCA TLV - required by TLV ordering even when not used */
+		tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, 0);
+		ptr += TLV_HDR_SIZE;
+	}
+
+	/* dummy DPS TLV - required by TLV ordering even when not used */
+	tlv = ptr;
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, 0);
 	ptr += TLV_HDR_SIZE;
 
-	for (i = 0; i < num_links; i++) {
-		npca = ptr;
-		npca->tlv_header =
-			ath12k_wmi_tlv_cmd_hdr(WMI_TAG_PEER_UHR_OMP_NPCA_PARAMS,
-					       sizeof(*npca));
-		npca->omp_npca_caps =
-			le32_encode_bits(links[i].hw_link_id,
-					 WMI_PEER_UHR_OMP_NPCA_CAPS_HW_LINK_ID) |
-			(links[i].npca_enable ?
-			 le32_encode_bits(1, WMI_PEER_UHR_OMP_NPCA_CAPS_ENABLE) : 0) |
-			(links[i].npca_mode_update ?
-			 le32_encode_bits(1, WMI_PEER_UHR_OMP_NPCA_CAPS_MODE_UPDATE) : 0);
-		npca->omp_npca_param =
-			le32_encode_bits(links[i].npca_switch_delay,
-					 WMI_PEER_UHR_OMP_NPCA_PARAM_SWITCH_DELAY) |
-			le32_encode_bits(links[i].npca_switch_back_delay,
-					 WMI_PEER_UHR_OMP_NPCA_PARAM_SWITCH_BACK_DELAY);
-		ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
-			   "WMI UHR OMP cmd sw_peer_id %u pdev_id %u hw_link_id %u npca_enable %d switch_delay %u switch_back_delay %u mode_update %d\n",
-			   sw_peer_id, pdev_id, links[i].hw_link_id,
-			   links[i].npca_enable, links[i].npca_switch_delay,
-			   links[i].npca_switch_back_delay, links[i].npca_mode_update);
-		ptr += sizeof(*npca);
+	if (has_dso_update) {
+		tlv = ptr;
+		tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT,
+						 num_links * sizeof(*dso));
+		ptr += TLV_HDR_SIZE;
+
+		for (i = 0; i < num_links; i++) {
+			dso = ptr;
+			dso->tlv_header =
+				ath12k_wmi_tlv_cmd_hdr(WMI_TAG_PEER_UHR_OMP_DSO_PARAMS,
+						       sizeof(*dso));
+			dso->omp_dso_caps =
+				le32_encode_bits(links[i].hw_link_id,
+						 WMI_PEER_UHR_OMP_DSO_CAPS_HW_LINK_ID) |
+				(links[i].dso_enable ?
+				 le32_encode_bits(1,
+						  WMI_PEER_UHR_OMP_DSO_CAPS_ENABLE) : 0) |
+				(links[i].dso_mode_update ?
+				 le32_encode_bits(1,
+						  WMI_PEER_UHR_OMP_DSO_CAPS_MODE_UPDATE
+						 ) : 0);
+			dso->omp_dso_param =
+				le32_encode_bits(links[i].dso_padding_delay,
+					WMI_PEER_UHR_OMP_DSO_PARAM_PADDING_DELAY) |
+				le32_encode_bits(links[i].dso_switch_back_delay,
+					WMI_PEER_UHR_OMP_DSO_PARAM_SWITCH_BACK_DELAY) |
+				le32_encode_bits(links[i].dso_subband,
+						 WMI_PEER_UHR_OMP_DSO_PARAM_SUBBAND);
+			ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+				   "WMI UHR OMP cmd sw_peer_id %u pdev_id %u hw_link_id %u dso_enable %d mode_update %d subband %u padding_delay %u switch_back_delay %u\n",
+				   sw_peer_id, pdev_id, links[i].hw_link_id,
+				   links[i].dso_enable, links[i].dso_mode_update,
+				   links[i].dso_subband, links[i].dso_padding_delay,
+				   links[i].dso_switch_back_delay);
+			ptr += sizeof(*dso);
+		}
+	} else {
+		/* dummy DSO TLV - required by TLV ordering even when not used */
+		tlv = ptr;
+		tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, 0);
+		ptr += TLV_HDR_SIZE;
 	}
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_PEER_UHR_OMP_CMDID);
