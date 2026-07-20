@@ -1292,7 +1292,7 @@ struct ieee80211_tx_rate {
 
 static inline bool ieee80211_rate_valid(struct ieee80211_tx_rate *rate)
 {
-	return rate->idx >= 0 && rate->count > 0;
+	return rate->idx >= 0 && rate->count >= 0;
 }
 
 static inline void ieee80211_rate_set_vht(struct ieee80211_tx_rate *rate,
