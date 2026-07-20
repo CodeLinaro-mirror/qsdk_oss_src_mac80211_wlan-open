@@ -363,7 +363,7 @@ int ath12k_dp_peer_setup(struct ath12k *ar, void *ptr, struct ath12k_link_vif *a
 	struct ath12k_dp_link_peer *link_peer;
 	u32 reo_dest, vdev_id = arvif->vdev_id;
 	struct ieee80211_vif *vif = arvif->ahvif->vif;
-	int ret = 0, tid;
+	int ret = 0, tid, tid_start = 0;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ieee80211_sta *sta;
 	struct ath12k_sta *ahsta;
@@ -417,6 +417,13 @@ int ath12k_dp_peer_setup(struct ath12k *ar, void *ptr, struct ath12k_link_vif *a
 
 	sta = ath12k_dp_link_peer_get_sta(link_peer);
 	ahsta = ath12k_sta_to_ahsta(sta);
+
+	/* MAPC peers are management-only: skip data TIDs 0..N-2, set up
+	 * only the management TID (num_tids - 1 = TID 16).
+	 */
+	if (sta->mapc)
+		tid_start = ab->hal.hal_params->num_tids - 1;
+
 	if (link_peer->mlo && link_peer->link_id != ahsta->primary_link_id) {
 		link_peer->primary_link = false;
 		arvif->primary_sta_link = false;
@@ -441,7 +448,7 @@ int ath12k_dp_peer_setup(struct ath12k *ar, void *ptr, struct ath12k_link_vif *a
 		ath12k_dp_tx_ppeds_cfg_astidx_cache_mapping(ar->ab, arvif, true);
 #endif
 
-	for (tid = 0; tid < ab->hal.hal_params->num_tids; tid++) {
+	for (tid = tid_start; tid < ab->hal.hal_params->num_tids; tid++) {
 		is_mgmt = ath12k_hw_is_mgmt_reoq_tid(ab->hw_params, tid);
 		if (is_mgmt && dp_peer->is_epp_peer)
 			continue;
@@ -473,7 +480,7 @@ int ath12k_dp_peer_setup(struct ath12k *ar, void *ptr, struct ath12k_link_vif *a
 	return 0;
 
 tid_clean:
-	for (tid--; tid >= 0; tid--) {
+	for (tid--; tid >= tid_start; tid--) {
 		is_mgmt = ath12k_hw_is_mgmt_reoq_tid(ab->hw_params, tid);
 		if (is_mgmt && dp_peer->is_epp_peer)
 			continue;

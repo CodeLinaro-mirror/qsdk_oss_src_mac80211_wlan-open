@@ -1617,6 +1617,7 @@ static const struct ieee80211_ops ath12k_ops_wifi8 = {
 	.set_key                        = ath12k_mac_op_set_key,
 	.set_rekey_data	                = ath12k_mac_op_set_rekey_data,
 	.sta_state                      = ath12k_mac_op_sta_state,
+	.sta_set_mapc_params            = ath12k_mac_op_sta_set_mapc_params,
 	.sta_set_txpwr			= ath12k_mac_op_sta_set_txpwr,
 	.link_sta_rc_update		= ath12k_mac_op_link_sta_rc_update,
 	.conf_tx                        = ath12k_mac_op_conf_tx,
