@@ -19007,6 +19007,44 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.maxattr = QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_MAX,
 		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
 	},
+#ifdef CPTCFG_QCN_EXTN
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_MAPC_PEER_PARAMS,
+		.doit = ath12k_vendor_mapc_peer_params_extn,
+		.policy = ath12k_mapc_peer_params_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_CONFIG_MAX,
+		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV |
+			 WIPHY_VENDOR_CMD_NEED_RUNNING,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_MAPC_COTDMA_TXOP_POLICY,
+		.doit = ath12k_vendor_mapc_cotdma_txop_policy_extn,
+		.policy = ath12k_mapc_cotdma_txop_policy_attr_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_CONFIG_MAX,
+		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV |
+			 WIPHY_VENDOR_CMD_NEED_RUNNING,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_MAPC_PEER_GET_PARAMS,
+		.doit = ath12k_vendor_mapc_peer_get_params_extn,
+		.policy = ath12k_mapc_get_peer_params_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_CONFIG_MAX,
+		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV |
+			 WIPHY_VENDOR_CMD_NEED_RUNNING,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd   = QCA_NL80211_VENDOR_SUBCMD_MAPC_COTDMA_E2E_CONFIG,
+		.doit = ath12k_vendor_cotdma_e2e_config_extn,
+		.policy = ath12k_cotdma_e2e_config_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_CONFIG_MAX,
+		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV |
+			 WIPHY_VENDOR_CMD_NEED_RUNNING,
+	},
+#endif /* CPTCFG_QCN_EXTN */
 };
 
 /**
