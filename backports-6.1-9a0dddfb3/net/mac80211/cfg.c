@@ -7479,35 +7479,51 @@ static int ieee80211_uhr_mode_update(struct wiphy *wiphy,
 			    !(link_sta->pub->uhr_cap.mac.mac_cap[0] &
 			      IEEE80211_UHR_MAC_CAP0_NPCA_SUPP))
 				return -EOPNOTSUPP;
+			if (params->dso_update[link_id] &&
+			    !(link_sta->pub->uhr_cap.mac.mac_cap[1] &
+			      IEEE80211_UHR_MAC_CAP1_DSO_SUPP))
+				return -EOPNOTSUPP;
 		}
 	}
 
-	/* Store NPCA params into the BSS link conf for each requested link */
+	/* Store NPCA and DSO params into the BSS link conf for each requested link */
 	for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS; link_id++) {
-		const struct cfg80211_uhr_npca_params *new_npca;
-		struct ieee80211_bss_npca_params *npca;
 		struct ieee80211_link_data *link;
 
-		if (!params->npca_update[link_id])
+		if (!params->npca_update[link_id] && !params->dso_update[link_id])
 			continue;
 
 		link = sdata_dereference(sdata->link[link_id], sdata);
 		if (!link)
 			continue;
 
-		new_npca = &params->npca[link_id];
-		npca = &link->conf->npca;
+		if (params->npca_update[link_id]) {
+			const struct cfg80211_uhr_npca_params *new_npca;
+			struct ieee80211_bss_npca_params *npca;
 
-		link->conf->npca_mode_update =
-			npca->enabled && new_npca->enable &&
-			(npca->switch_delay != new_npca->switch_delay ||
-			 npca->switch_back_delay != new_npca->switch_back_delay);
-		npca->enabled = new_npca->enable;
-		npca->switch_delay = new_npca->switch_delay;
-		npca->switch_back_delay = new_npca->switch_back_delay;
+			new_npca = &params->npca[link_id];
+			npca = &link->conf->npca;
+
+			link->conf->npca_mode_update =
+				npca->enabled && new_npca->enable &&
+				(npca->switch_delay != new_npca->switch_delay ||
+				 npca->switch_back_delay != new_npca->switch_back_delay);
+			npca->enabled = new_npca->enable;
+			npca->switch_delay = new_npca->switch_delay;
+			npca->switch_back_delay = new_npca->switch_back_delay;
+		}
+
+		if (params->dso_update[link_id]) {
+			const struct cfg80211_uhr_dso_params *new_dso;
+
+			new_dso = &params->dso[link_id];
+			params->dso[link_id].mode_update =
+				link->conf->dso.enable && new_dso->enable;
+			link->conf->dso = params->dso[link_id];
+		}
 	}
 
-	/* Call the driver once after bss_conf npca fields are updated */
+	/* Call the driver once after bss_conf npca/dso fields are updated */
 	ret = drv_uhr_mode_update(local, sdata, found_sta);
 	return ret;
 }
