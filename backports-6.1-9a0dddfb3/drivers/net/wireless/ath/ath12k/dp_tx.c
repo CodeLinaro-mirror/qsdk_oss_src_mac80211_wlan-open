@@ -78,6 +78,7 @@ ath12k_dp_ppeds_tx_release_desc_list_bulk(struct ath12k_dp_hw_group *dp_hw_grp,
 	struct sk_buff *skb;
 	int count = 0;
 	struct list_head local_list_for_reuse;
+	u32 *used_cnt;
 
 	spin_lock_bh(&dp_hw_grp->ppeds_tx_desc_lock);
 
@@ -88,7 +89,8 @@ ath12k_dp_ppeds_tx_release_desc_list_bulk(struct ath12k_dp_hw_group *dp_hw_grp,
 		}
 
 		list_splice_tail(local_list_no_skb, &dp_hw_grp->ppeds_tx_desc_free_list);
-		this_cpu_sub(dp_hw_grp->pcpu_tx->ppeds_cnt, list_no_skb_count);
+		used_cnt = this_cpu_ptr(dp_hw_grp->ppeds_tx_desc_used_cnt);
+		(*used_cnt) -= list_no_skb_count;
 	}
 
 	hotlist_remaining_len = ath12k_ppeds_desc_params.ppeds_hotlist_len -
@@ -97,7 +99,9 @@ ath12k_dp_ppeds_tx_release_desc_list_bulk(struct ath12k_dp_hw_group *dp_hw_grp,
 	if (likely(hotlist_remaining_len >= local_list_len)) {
 		list_splice_tail(local_list, &dp_hw_grp->ppeds_tx_desc_reuse_list);
 
-		this_cpu_sub(dp_hw_grp->pcpu_tx->ppeds_cnt, local_list_len);
+		used_cnt = this_cpu_ptr(dp_hw_grp->ppeds_tx_desc_used_cnt);
+		(*used_cnt) -= local_list_len;
+
 		dp_hw_grp->ppeds_tx_desc_reuse_list_len += local_list_len;
 		spin_unlock_bh(&dp_hw_grp->ppeds_tx_desc_lock);
 		return;
@@ -131,7 +135,10 @@ ath12k_dp_ppeds_tx_release_desc_list_bulk(struct ath12k_dp_hw_group *dp_hw_grp,
 		list_splice_tail(&local_list_for_reuse,
 				 &dp_hw_grp->ppeds_tx_desc_reuse_list);
 		dp_hw_grp->ppeds_tx_desc_reuse_list_len += count + 1;
-		this_cpu_sub(dp_hw_grp->pcpu_tx->ppeds_cnt, count + 1);
+
+		used_cnt = this_cpu_ptr(dp_hw_grp->ppeds_tx_desc_used_cnt);
+		(*used_cnt) -= (count + 1);
+
 	}
 
 skip_reuse_list:
@@ -159,7 +166,8 @@ skip_reuse_list:
 	/* Add the remaining descriptors to the free list */
 	list_splice_tail(local_list, &dp_hw_grp->ppeds_tx_desc_free_list);
 
-	this_cpu_sub(dp_hw_grp->pcpu_tx->ppeds_cnt, count);
+	used_cnt = this_cpu_ptr(dp_hw_grp->ppeds_tx_desc_used_cnt);
+	(*used_cnt) -= count;
 
 	spin_unlock_bh(&dp_hw_grp->ppeds_tx_desc_lock);
 
@@ -364,6 +372,7 @@ void ath12k_dp_tx_release_txbuf_nolock(struct ath12k_dp *dp,
 				       u8 pool_id)
 {
 	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
+	u32 *tx_desc_used_cnt;
 
 	if (WARN_ON(!tx_desc->in_use))
 		return;
@@ -383,8 +392,8 @@ void ath12k_dp_tx_release_txbuf_nolock(struct ath12k_dp *dp,
 	else
 		list_add_tail(&tx_desc->list, &dp_hw_grp->tx_spl_desc_free_list[pool_id]);
 
-	if (this_cpu_read(dp_hw_grp->pcpu_tx->cnt) > 0)
-		this_cpu_dec(dp_hw_grp->pcpu_tx->cnt);
+	tx_desc_used_cnt = this_cpu_ptr(dp_hw_grp->tx_desc_used_cnt);
+	(*tx_desc_used_cnt) ? (*tx_desc_used_cnt)-- : 0;
 }
 EXPORT_SYMBOL(ath12k_dp_tx_release_txbuf_nolock);
 
@@ -406,6 +415,7 @@ ath12k_tx_desc_info *ath12k_dp_tx_assign_buffer(struct ath12k_dp_hw_group *dp_hw
 						u8 pool_id)
 {
 	struct ath12k_tx_desc_info *desc, *next_desc;
+	u32 *tx_desc_used_cnt;
 
 	spin_lock_bh(&dp_hw_grp->tx_desc_lock[pool_id]);
 	desc = list_first_entry_or_null(&desc_free_list[pool_id],
@@ -423,7 +433,8 @@ ath12k_tx_desc_info *ath12k_dp_tx_assign_buffer(struct ath12k_dp_hw_group *dp_hw
 	if (next_desc)
 		prefetch(next_desc);
 
-	this_cpu_inc(dp_hw_grp->pcpu_tx->cnt);
+	tx_desc_used_cnt = this_cpu_ptr(dp_hw_grp->tx_desc_used_cnt);
+	(*tx_desc_used_cnt)++;
 
 	spin_unlock_bh(&dp_hw_grp->tx_desc_lock[pool_id]);
 

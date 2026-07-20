@@ -3042,7 +3042,7 @@ int ath12k_wifi8_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 	u32 tqm_rel_reason[MAX_TQM_RELEASE_REASON] = {0};
 	u32 fw_tx_status[MAX_FW_TX_STATUS] = {0};
 	u32 htt_status = 0, tx_completed = 0;
-	u32 tx_desc_free_cnt = 0;
+	u32 tx_desc_free_cnt = 0, *used_cnt;
 	u8 tid = 0;
 
 	ath12k_hal_srng_access_dst_ring_begin_nolock(ab, status_ring);
@@ -3161,7 +3161,8 @@ int ath12k_wifi8_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 
 	list_splice(&desc_free_list, &dp->dp_hw_grp->tx_desc_free_list[ring_id]);
 
-	this_cpu_sub(dp_hw_grp->pcpu_tx->cnt, tx_desc_free_cnt);
+	used_cnt = this_cpu_ptr(dp_hw_grp->tx_desc_used_cnt);
+	(*used_cnt) -= tx_desc_free_cnt;
 
 	spin_unlock_bh(&dp->dp_hw_grp->tx_desc_lock[ring_id]);
 
@@ -4178,6 +4179,7 @@ int ath12k_wifi8_dp_tx_exception_handler(struct ath12k_dp *dp, int budget)
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	struct ath12k_ppeds_tx_desc_info *ppeds_tx_desc = NULL;
 	struct sk_buff *skb = NULL;
+	u32 *used_cnt;
 #endif
 	u32 desc_id;
 	struct hal_srng *srng;
@@ -4266,7 +4268,9 @@ tx_buf_release:
 			list_add_tail(&ppeds_tx_desc->list,
 				      &dp->dp_hw_grp->ppeds_tx_desc_free_list);
 
-			this_cpu_dec(dp->dp_hw_grp->pcpu_tx->ppeds_cnt);
+			used_cnt = this_cpu_ptr(dp->dp_hw_grp->ppeds_tx_desc_used_cnt);
+			(*used_cnt)--;
+
 			skb = ppeds_tx_desc->skb;
 			ppeds_tx_desc->skb = NULL;
 			spin_unlock_bh(&dp->dp_hw_grp->ppeds_tx_desc_lock);
@@ -4908,15 +4912,22 @@ static void ath12k_wifi8_dp_tx_get_desc_used_cnt(struct ath12k_dp_hw_group *dp_h
 						 u32 *count,
 						 u32 *ppeds_count)
 {
-	struct ath12k_dp_desc_used_stats_pcpu *pcpu_tx;
 	u32 used_cnt = 0, ppeds_used_cnt = 0;
+	u32 *tx_desc_used_cnt;
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	u32 *ppeds_tx_desc_used_cnt;
+#endif
 	int cpu;
 
 	for_each_possible_cpu(cpu) {
-		pcpu_tx = per_cpu_ptr(dp_hw_grp->pcpu_tx, cpu);
+		tx_desc_used_cnt = per_cpu_ptr(dp_hw_grp->tx_desc_used_cnt, cpu);
+		used_cnt += *tx_desc_used_cnt;
 
-		used_cnt += pcpu_tx->cnt;
-		ppeds_used_cnt += pcpu_tx->ppeds_cnt;
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+		ppeds_tx_desc_used_cnt = per_cpu_ptr(dp_hw_grp->ppeds_tx_desc_used_cnt,
+						     cpu);
+		ppeds_used_cnt += *ppeds_tx_desc_used_cnt;
+#endif
 	}
 
 	*count = used_cnt;
