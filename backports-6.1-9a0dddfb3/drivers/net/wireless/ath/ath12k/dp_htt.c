@@ -1150,6 +1150,9 @@ ath12k_htt_update_tx_rate_stats(struct ath12k_dp_link_peer *peer,
 {
 	struct ath12k_htt_tx_ppdu_stats *tx_ppdu_stats;
 	u32 ratekbps;
+	u16 peer_id;
+	u8 pdev_id;
+	u8 soc_id;
 
 	tx_ppdu_stats = peer->peer_stats.tx_ppdu_stats;
 	if (!tx_ppdu_stats)
@@ -1164,10 +1167,13 @@ ath12k_htt_update_tx_rate_stats(struct ath12k_dp_link_peer *peer,
 
 	if (IS_VALID_RSSI(tx_ppdu_stats->last_ack_rssi) &&
 	    IS_VALID_RATE(tx_ppdu_stats->tx_rate)) {
-		u8 soc_id = ath12k_get_ab_device_id(dp_pdev->ar->ab);
+		soc_id = ath12k_get_ab_device_id(dp_pdev->ar->ab);
+		pdev_id = ath12k_get_pdev_id(dp_pdev->ar->pdev);
+		peer_id = ath12k_dp_link_peer_get_peer_id(dp_pdev->ar->ab, peer);
 
 		ath12k_telemetry_update_rssi_rate_breach(soc_id,
-							 peer->peer_id,
+							 pdev_id,
+							 peer_id,
 							 peer->addr,
 							 PATH_TYPE_TX,
 							 tx_ppdu_stats->last_ack_rssi,

@@ -38,6 +38,22 @@ u16 ath12k_dp_get_peer_based_tcl_metadata(struct ath12k_dp *dp, u16 peer_id,
 	return metadata;
 }
 
+u16 ath12k_dp_link_peer_get_peer_id(struct ath12k_base *ab,
+				    struct ath12k_dp_link_peer *link_peer)
+{
+	if (!ab || !ab->dp || !link_peer)
+		return ATH12K_PEER_ID_INVALID;
+
+	if (ab->dp->global_peer_id_supported) {
+		if (!link_peer->dp_peer)
+			return ATH12K_PEER_ID_INVALID;
+		return link_peer->dp_peer->peer_id;
+	}
+
+	return link_peer->peer_id;
+}
+EXPORT_SYMBOL(ath12k_dp_link_peer_get_peer_id);
+
 static void __ath12k_link_peer_free(struct ath12k_dp_link_peer *peer)
 {
 	kfree(peer->peer_stats.rx_stats);
