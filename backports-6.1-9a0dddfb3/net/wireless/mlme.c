@@ -1422,6 +1422,11 @@ static void cfg80211_clear_cac_started(struct cfg80211_registered_device *rdev,
 			if (tmp_chandef->chan != chandef->chan)
 				continue;
 
+#ifdef CPTCFG_CFG80211_WEXT
+			if (tmp_wdev->iftype == NL80211_IFTYPE_MESH_POINT)
+				continue;
+#endif
+
 			tmp_wdev->links[tmp_link_id].cac_started = false;
 		}
 	}

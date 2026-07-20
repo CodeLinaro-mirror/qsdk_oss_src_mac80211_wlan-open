@@ -13,6 +13,9 @@
 #include "mesh.h"
 #include "wme.h"
 #include "driver-ops.h"
+#ifdef CPTCFG_QCN_EXTN
+#include "qcn_extns/cmn_extn.h"
+#endif /* CPTCFG_QCN_EXTN */
 
 #define IS_HW_CSUM_NOT_ENABLED(dev)             (!((dev)->features & NETIF_F_HW_CSUM))
 
@@ -1296,6 +1299,16 @@ int ieee80211_start_mesh(struct ieee80211_sub_if_data *sdata)
 
 	ieee80211_recalc_dtim(local, sdata);
 	ieee80211_link_info_change_notify(sdata, &sdata->deflink, changed);
+
+#ifdef CPTCFG_QCN_EXTN
+	if (cfg80211_bootup_cac_is_5g_dfs_chan_extn(local->hw.wiphy,
+						    &sdata->deflink.conf->chanreq.oper)) {
+		sdata_info(sdata,
+			   "boot-up CAC in progress: deferring netif_carrier_on for mesh %s\n",
+			   sdata->name);
+		return 0;
+	}
+#endif /* CPTCFG_QCN_EXTN */
 
 	netif_carrier_on(sdata->dev);
 	return 0;
