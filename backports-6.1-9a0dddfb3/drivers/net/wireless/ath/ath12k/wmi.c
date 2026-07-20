@@ -12524,6 +12524,8 @@ static void ath12k_mgmt_rx_event(struct ath12k_base *ab, struct sk_buff *skb)
 	mgmt_stats = &ahvif->mgmt_stats;
 	mgmt_stats->rx_cnt[frm_stype]++;
 	mgmt_stats->aggr_rx_mgmt++;
+	if (ieee80211_is_probe_req(fc) && is_broadcast_ether_addr(hdr->addr3))
+		ar->dp.stats.telemetry_stats.rx_probe_req_bc++;
 
 	rcu_read_lock();
 	arvif = ath12k_mac_get_arvif(ar, vdev_id);

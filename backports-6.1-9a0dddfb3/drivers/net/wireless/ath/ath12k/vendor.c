@@ -7621,13 +7621,35 @@ static int ath12k_send_cp_event(struct ath12k_telemetry_command *cmd,
 		return ret;
 	}
 
-	/* Extract tx_bcn_succ_cnt and tx_bcn_outage_cnt from ar->fw_stats.bcn list */
+	/* Extract tx_bcn_succ_cnt and tx_bcn_outage_cnt from ar->fw_stats.bcn list.
+	 * Also sync beacon counts into mgmt_stats so that aggr_tx_mgmt_cnt and
+	 * the per-type arrays are up-to-date before we emit CP stats below.
+	 */
 	spin_lock_bh(&ar->data_lock);
 	list_for_each_entry(bcn_stats, &ar->fw_stats.bcn, list) {
 		if (bcn_stats->vdev_id == arvif->vdev_id) {
+			u32 old_succ, old_fail;
+
 			vdev_id = bcn_stats->vdev_id;
 			tx_success_count = bcn_stats->tx_bcn_succ_cnt;
 			tx_failure_count = bcn_stats->tx_bcn_outage_cnt;
+
+			old_succ = mgmt_stats->tx_succ_cnt[QCA_VENDOR_MGMT_STATS_BEACON];
+			old_fail  = mgmt_stats->tx_fail_cnt[QCA_VENDOR_MGMT_STATS_BEACON];
+			mgmt_stats->tx_succ_cnt[QCA_VENDOR_MGMT_STATS_BEACON] =
+				bcn_stats->tx_bcn_succ_cnt;
+			mgmt_stats->tx_fail_cnt[QCA_VENDOR_MGMT_STATS_BEACON] =
+				bcn_stats->tx_bcn_outage_cnt;
+			if (bcn_stats->tx_bcn_succ_cnt >= old_succ)
+				mgmt_stats->aggr_tx_mgmt_success_cnt +=
+					bcn_stats->tx_bcn_succ_cnt - old_succ;
+			if (bcn_stats->tx_bcn_outage_cnt >= old_fail)
+				mgmt_stats->aggr_tx_mgmt_fail_cnt +=
+					bcn_stats->tx_bcn_outage_cnt - old_fail;
+			mgmt_stats->aggr_tx_mgmt_cnt =
+				mgmt_stats->aggr_tx_mgmt_success_cnt +
+				mgmt_stats->aggr_tx_mgmt_fail_cnt;
+
 			found = true;
 			break;
 		}
@@ -7787,7 +7809,8 @@ static int ath12k_send_cp_event(struct ath12k_telemetry_command *cmd,
 	    nla_put_u64_64bit
 		(vendor_event,
 		QCA_VENDOR_ATTR_TELEMETRY_CP_RX_MGMT_FRAMES,
-		mgmt_stats->aggr_rx_mgmt,
+		mgmt_stats->aggr_rx_mgmt +
+			ar->dp.stats.telemetry_stats.rx_probe_req_bc,
 		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID)) {
 		ath12k_err(ar->ab, "nla put failure: cp stats\n");
 		nla_nest_cancel(vendor_event, attr);
