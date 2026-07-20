@@ -670,6 +670,7 @@ u32 ath12k_ppeds_wifi8_get_batched_tx_desc(int ds_node_id,
 {
 	struct ath12k_base *ab = ds_node_map[ds_node_id];
 	struct ath12k_dp_hw_group *dp_hw_grp = ab->dp->dp_hw_grp;
+	u32 *used_cnt;
 	int i = 0;
 	int allocated = 0;
 	struct sk_buff *skb = NULL;
@@ -705,7 +706,8 @@ u32 ath12k_ppeds_wifi8_get_batched_tx_desc(int ds_node_id,
 	}
 
 	if (!num_buff_req) {
-		this_cpu_add(dp_hw_grp->pcpu_tx->ppeds_cnt, allocated);
+		used_cnt = this_cpu_ptr(dp_hw_grp->ppeds_tx_desc_used_cnt);
+		(*used_cnt) += allocated;
 
 		spin_unlock_bh(&dp_hw_grp->ppeds_tx_desc_lock);
 		goto update_stats_and_ret;
@@ -758,7 +760,8 @@ u32 ath12k_ppeds_wifi8_get_batched_tx_desc(int ds_node_id,
 		i++;
 	}
 
-	this_cpu_add(dp_hw_grp->pcpu_tx->ppeds_cnt, allocated);
+	used_cnt = this_cpu_ptr(dp_hw_grp->ppeds_tx_desc_used_cnt);
+	(*used_cnt) += allocated;
 
 	spin_unlock_bh(&dp_hw_grp->ppeds_tx_desc_lock);
 
