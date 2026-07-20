@@ -43,9 +43,14 @@ enum athdbg_request_type{
 };
 
 enum athdbg_qdss_dump_type {
-	ATHDBG_QDSS_DUMP  = 1,
-	ATHDBG_PHYA0_DUMP = 64,
-	ATHDBG_PHYA1_DUMP = 128,
+	ATHDBG_QDSS_DUMP = 0x1,
+	ATHDBG_QDSS_ETB_SOC = 0x4,
+	ATHDBG_QDSS_ETB_WCSS = 0x8,
+	ATHDBG_QDSS_PHYA0 = 0x40,
+	ATHDBG_QDSS_PHYA1 = 0x80,
+	ATHDBG_QDSS_AUX = 0x400,
+	ATHDBG_QDSS_MCSS = 0x800,
+	ATHDBG_QDSS_ETB2_WCSS = 0x1000,
 };
 
 struct athdbg_request{
