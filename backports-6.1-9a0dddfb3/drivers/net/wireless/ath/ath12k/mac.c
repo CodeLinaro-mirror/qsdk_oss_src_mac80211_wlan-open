@@ -29126,9 +29126,17 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 		}
 	}
 
-	if (test_bit(WMI_SERVICE_11BI_EPPKE_SUPPORT, ab->wmi_ab.svc_map))
+	if (test_bit(WMI_SERVICE_11BI_EPPKE_SUPPORT, ab->wmi_ab.svc_map)) {
 		wiphy_ext_feature_set(hw->wiphy,
 				      NL80211_EXT_FEATURE_ASSOC_FRAME_ENCRYPTION);
+		/*
+		 * Advertise EPPKE support to userspace SME so that
+		 * NL80211_CMD_AUTHENTICATE/NL80211_CMD_CONNECT with
+		 * NL80211_AUTHTYPE_EPPKE are accepted for non-AP STA
+		 * (WDS-STA / SW-SME) mode.
+		 */
+		wiphy_ext_feature_set(hw->wiphy, NL80211_EXT_FEATURE_EPPKE);
+	}
 
 	ath12k_reg_init(hw);
 
