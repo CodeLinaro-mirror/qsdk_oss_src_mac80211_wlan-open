@@ -2969,6 +2969,7 @@ static bool ieee80211_frame_allowed(struct ieee80211_rx_data *rx, __le16 fc)
 static bool inline ieee80211_netif_rx_ppe(struct ieee80211_rx_data *rx,
 					 struct sk_buff *skb)
 {
+	struct netdev_hw_offload_ops __rcu *offload_ops;
 	struct net_device *dev;
 
 	skb->next = NULL;
@@ -2984,7 +2985,9 @@ static bool inline ieee80211_netif_rx_ppe(struct ieee80211_rx_data *rx,
 		return false;
 
 	dev = skb->dev;
-	if (dev->offload_ops->recv(dev, skb))
+	offload_ops = rcu_dereference(dev->offload_ops);
+	if (offload_ops && offload_ops->recv &&
+	    offload_ops->recv(dev, skb))
 		return true;
 
 	return false;
