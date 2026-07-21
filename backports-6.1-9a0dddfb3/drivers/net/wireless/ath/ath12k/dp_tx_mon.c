@@ -42,7 +42,7 @@ ath12k_dp_mon_tx_setup_ppdu_desc(struct ath12k_pdev_dp *dp_pdev)
 	size_t alloc_size = sizeof(struct ath12k_dp_mon_ppdu_desc);
 	size_t status_desc_size;
 	int i, ret;
-	u32 mon_status_buf = ATH12K_DP_MON_STATUS_BUF;
+	u32 mon_status_buf = DP_TX_MON_NUM_STATUS_BUF(ab);
 
 	if (unlikely(!dp_mon_pdev || !dp_mon_pdev->dp_pdev_tx_mon))
 		return -EINVAL;
@@ -3425,11 +3425,14 @@ void ath12k_dp_tx_mon_process_ppdu(struct work_struct *work)
 			continue;
 		}
 
-		if (unlikely(ppdu_desc->status_desc_cnt > ATH12K_DP_MON_STATUS_BUF)) {
+		if (unlikely(ppdu_desc->status_desc_cnt >
+		    DP_TX_MON_NUM_STATUS_BUF(dp_pdev->dp->ab))) {
 			ath12k_warn(dp_pdev->dp->ab,
 				    "TX Mon: PPDU desc overflow count=%u max=%u\n",
-				    ppdu_desc->status_desc_cnt, ATH12K_DP_MON_STATUS_BUF);
-			ppdu_desc->status_desc_cnt = ATH12K_DP_MON_STATUS_BUF;
+				    ppdu_desc->status_desc_cnt,
+				    DP_TX_MON_NUM_STATUS_BUF(dp_pdev->dp->ab));
+			ppdu_desc->status_desc_cnt =
+					DP_TX_MON_NUM_STATUS_BUF(dp_pdev->dp->ab);
 			ATH12K_TX_MON_STAT_INC(dp_pdev, ppdu_desc_overflow);
 		}
 
@@ -3572,7 +3575,7 @@ static int ath12k_dp_tx_mon_prep_wq(struct list_head *mon_desc_used_list,
 	/* Copy monitor descriptors to PPDU descriptor */
 	list_for_each_entry(desc, mon_desc_used_list, list) {
 		desc_cnt = ppdu_desc->status_desc_cnt;
-		if (unlikely(desc_cnt >= ATH12K_DP_MON_STATUS_BUF)) {
+		if (unlikely(desc_cnt >= DP_TX_MON_NUM_STATUS_BUF(ab))) {
 			/* On overflow, reset and add to used list, return error */
 			ath12k_dp_mon_reset_ppdu_desc(ppdu_desc);
 			spin_lock_bh(&dp_pdev_tx_mon->tx_mon_ppdu_desc_lock);
@@ -4385,7 +4388,7 @@ bool ath12k_dp_tx_mon_feature_eval(struct ath12k_dp *dp)
 	}
 
 	if (!DP_TX_MON_BUF_RING_SIZE(ab) || !DP_TX_MON_DST_RING_SIZE(ab) ||
-	    !DP_TX_MON_NUM_PPDU_DESC(ab))
+	    !DP_TX_MON_NUM_PPDU_DESC(ab) || !DP_TX_MON_NUM_STATUS_BUF(ab))
 		return false;
 
 	return true;

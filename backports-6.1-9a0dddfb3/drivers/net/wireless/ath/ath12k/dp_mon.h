@@ -31,6 +31,8 @@
 	((ab)->mem_params.dp_params.tx_monitor_dst_ring_size)
 #define DP_TX_MON_NUM_PPDU_DESC(ab) \
 	((ab)->mem_params.dp_params.tx_monitor_num_ppdu_desc)
+#define DP_TX_MON_NUM_STATUS_BUF(ab) \
+	((ab)->mem_params.dp_params.tx_monitor_num_status_buf)
 
 #ifndef CPTCFG_QCN_EXTN
 
