@@ -258,6 +258,8 @@ struct ath12k_cp_arch_ops {
 	int (*wsi_bypass_add)(struct ath12k_base *ab, struct ath12k *ar);
 	void (*en_ssr)(struct ath12k_base *ab, unsigned int value);
 	bool (*bridge_link_allowed)(void);
+	void (*notify_partner_chip_power_state)(struct ath12k_base *asserted_ab,
+					      u8 power_state);
 };
 
 
