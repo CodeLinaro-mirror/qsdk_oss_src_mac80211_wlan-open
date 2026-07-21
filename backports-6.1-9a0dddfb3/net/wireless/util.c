@@ -28,8 +28,13 @@ const struct ieee80211_rate *
 ieee80211_get_response_rate(struct ieee80211_supported_band *sband,
 			    u32 basic_rates, int bitrate)
 {
-	struct ieee80211_rate *result = &sband->bitrates[0];
+	struct ieee80211_rate *result;
 	int i;
+
+	if (WARN_ON(!sband || !sband->bitrates || sband->n_bitrates <= 0))
+		return NULL;
+
+	result = &sband->bitrates[0];
 
 	for (i = 0; i < sband->n_bitrates; i++) {
 		if (!(basic_rates & BIT(i)))
@@ -805,11 +810,12 @@ __ieee80211_amsdu_copy_frag(struct sk_buff *skb, struct sk_buff *frame,
 			    int offset, int len)
 {
 	struct skb_shared_info *sh = skb_shinfo(skb);
-	const skb_frag_t *frag = &sh->frags[0];
+	const skb_frag_t *frag;
 	struct page *frag_page;
 	void *frag_ptr;
 	int frag_len, frag_size;
 	int head_size = skb->len - skb->data_len;
+	int frag_idx = 0;
 	int cur_len;
 
 	frag_page = virt_to_head_page(skb->head);
@@ -818,10 +824,12 @@ __ieee80211_amsdu_copy_frag(struct sk_buff *skb, struct sk_buff *frame,
 
 	while (offset >= frag_size) {
 		offset -= frag_size;
+		if (frag_idx >= sh->nr_frags)
+			return;
+		frag = &sh->frags[frag_idx++];
 		frag_page = skb_frag_page(frag);
 		frag_ptr = skb_frag_address(frag);
 		frag_size = skb_frag_size(frag);
-		frag++;
 	}
 
 	frag_ptr += offset;
@@ -833,12 +841,14 @@ __ieee80211_amsdu_copy_frag(struct sk_buff *skb, struct sk_buff *frame,
 	len -= cur_len;
 
 	while (len > 0) {
+		if (frag_idx >= sh->nr_frags)
+			return;
+		frag = &sh->frags[frag_idx++];
 		frag_len = skb_frag_size(frag);
 		cur_len = min(len, frag_len);
 		__frame_add_frag(frame, skb_frag_page(frag),
 				 skb_frag_address(frag), cur_len, frag_len);
 		len -= cur_len;
-		frag++;
 	}
 }
 
@@ -2105,6 +2115,9 @@ static bool ieee80211_id_in_list(const u8 *ids, int n_ids, u8 id, bool id_ext)
 {
 	int i;
 
+	if (n_ids <= 0)
+		return false;
+
 	/* Make sure array values are legal */
 	if (WARN_ON(ids[n_ids - 1] == WLAN_EID_EXTENSION))
 		return false;
@@ -2112,6 +2125,9 @@ static bool ieee80211_id_in_list(const u8 *ids, int n_ids, u8 id, bool id_ext)
 	i = 0;
 	while (i < n_ids) {
 		if (ids[i] == WLAN_EID_EXTENSION) {
+			if (i + 1 >= n_ids)
+				return false;
+
 			if (id_ext && (ids[i + 1] == id))
 				return true;
 
@@ -2129,8 +2145,13 @@ static bool ieee80211_id_in_list(const u8 *ids, int n_ids, u8 id, bool id_ext)
 
 static size_t skip_ie(const u8 *ies, size_t ielen, size_t pos)
 {
+	u8 len;
+
 	/* we assume a validly formed IEs buffer */
-	u8 len = ies[pos + 1];
+	if (pos + 1 >= ielen)
+		return ielen;
+
+	len = ies[pos + 1];
 
 	pos += 2 + len;
 
@@ -2138,7 +2159,7 @@ static size_t skip_ie(const u8 *ies, size_t ielen, size_t pos)
 	if (len < 255)
 		return pos;
 
-	while (pos < ielen && ies[pos] == WLAN_EID_FRAGMENT) {
+	while (pos + 1 < ielen && ies[pos] == WLAN_EID_FRAGMENT) {
 		len = ies[pos + 1];
 		pos += 2 + len;
 	}
@@ -2156,6 +2177,9 @@ size_t ieee80211_ie_split_ric(const u8 *ies, size_t ielen,
 	while (pos < ielen) {
 		u8 ext = 0;
 
+		if (pos + 1 >= ielen)
+			break;
+
 		if (ies[pos] == WLAN_EID_EXTENSION)
 			ext = 2;
 		if ((pos + ext) >= ielen)
@@ -2166,9 +2190,14 @@ size_t ieee80211_ie_split_ric(const u8 *ies, size_t ielen,
 			break;
 
 		if (ies[pos] == WLAN_EID_RIC_DATA && n_after_ric) {
+			if (pos + 1 >= ielen)
+				break;
 			pos = skip_ie(ies, ielen, pos);
 
 			while (pos < ielen) {
+				if (pos + 1 >= ielen)
+					break;
+
 				if (ies[pos] == WLAN_EID_EXTENSION)
 					ext = 2;
 				else
@@ -2186,6 +2215,8 @@ size_t ieee80211_ie_split_ric(const u8 *ies, size_t ielen,
 					break;
 			}
 		} else {
+			if (pos + 1 >= ielen)
+				break;
 			pos = skip_ie(ies, ielen, pos);
 		}
 	}
