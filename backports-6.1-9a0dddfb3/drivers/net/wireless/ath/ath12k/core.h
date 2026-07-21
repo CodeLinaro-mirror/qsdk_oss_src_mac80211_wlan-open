@@ -881,6 +881,12 @@ struct ath12k_link_vif {
 	bool nawds_support;
 	bool spectral_enabled;
 	u32 vht_cap;
+	/* EHT Duplicate in 6 GHz (MCS14) per-VAP enable. Default: false.
+	 * Set via bss_eht_mcs14_dup_in_6ghz in hostapd.conf or
+	 * hostapd_cli set_eht_mcs14_dup_in_6ghz. Requires eht_dup_6ghz_supp
+	 * on the pdev (FW hardware support).
+	 */
+	bool eht_mcs14_dup_in_6ghz;
 	bool mvr_processing;
 	enum wmi_vdev_subtype vdev_subtype;
 #ifdef CPTCFG_ATH12K_DEBUGFS
@@ -2209,6 +2215,10 @@ struct ath12k_pdev_cap {
 	u32 ampdu_density;
 	u32 vht_cap;
 	u32 vht_mcs;
+	/* EHT Duplicate in 6 GHz (MCS14): set when FW reports support in
+	 * service_ready_ext eht_cap_phy_info[1] bit 23.
+	 */
+	bool eht_dup_6ghz_supp;
 	u32 he_mcs;
 	u32 tx_chain_mask;
 	u32 rx_chain_mask;
