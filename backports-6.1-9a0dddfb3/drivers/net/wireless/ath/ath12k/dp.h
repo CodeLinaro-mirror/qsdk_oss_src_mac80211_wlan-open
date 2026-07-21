@@ -665,7 +665,8 @@ struct ath12k_dp_arch_ops {
 			      struct ath12k_dp_peer_create_params *params,
 			      struct ieee80211_vif *vif);
 	void (*dp_peer_delete)(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 *addr,
-			       struct ieee80211_sta *sta, u8 hw_link_id);
+			       struct ieee80211_sta *sta, u8 hw_link_id,
+			       struct ieee80211_vif *vif);
 	int (*dp_peer_assoc)(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 			     struct ath12k_dp_vif *dp_vif, u8 *addr);
 	void (*dp_link_peer_assign_id)(struct ath12k_dp *dp, struct ath12k *ar,
@@ -675,10 +676,11 @@ struct ath12k_dp_arch_ops {
 	void (*peer_cleanup_indication)(struct ath12k_dp *dp, struct sk_buff *skb);
 	int (*dp_ppeds_tx_completion_handler)(struct ath12k_base *ab, int budget);
 	void (*dp_link_peer_assoc)(struct ath12k_dp_hw *dp_hw, struct ath12k_dp *dp,
-				   u8 *addr, u32 hw_link_id);
+				   u8 *addr, u32 hw_link_id, struct ieee80211_vif *vif);
 	int (*dp_get_peer_mgmt_flowq)(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 				      u8 *addr,
-				      struct peer_assoc_flowq_params *flowq_params);
+				      struct peer_assoc_flowq_params *flowq_params,
+				      struct ieee80211_vif *vif);
 	int (*dp_smd_prep_transfer_ext_ctx)(struct ath12k_dp *dp,
 					    struct ath12k_dp_peer *current_dp_peer,
 					    const u8 *target_mld_addr,
@@ -699,7 +701,8 @@ struct ath12k_dp_arch_ops {
 					     struct ath12k_dp_peer *dp_peer);
 	int (*dp_get_peer_holq)(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 				u8 *addr,
-				struct peer_assoc_holq_params *holq_params);
+				struct peer_assoc_holq_params *holq_params,
+				struct ieee80211_vif *vif);
 	void (*dp_vif_configure)(struct ath12k_dp *dp, struct ath12k_vif *ahvif,
 				 enum ath12k_dp_op_type optype);
 	void (*dp_link_vif_configure)(struct ath12k_dp *dp, struct ath12k_vif *ahvif,
@@ -743,10 +746,11 @@ struct ath12k_dp_arch_ops {
 	ssize_t (*dump_device_dp_stats)(struct ath12k_dp *dp, char *buf, int size);
 	void (*reset_device_dp_stats)(struct ath12k_dp *dp);
 	void (*dp_assoc_link_update)(struct ath12k_dp *dp, struct ath12k_hw *ah,
-				     struct ieee80211_sta *sta);
+				     struct ieee80211_sta *sta,
+				     struct ieee80211_vif *vif);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	bool (*dp_ast_param_get)(struct ath12k_hw *ah, uint16_t *ast_info,
-				 u16 *hw_peer_id, u8 *addr);
+	bool (*dp_ast_param_get)(struct ath12k_hw *ah, struct ieee80211_vif *vif,
+				 u16 *ast_info, u16 *hw_peer_id, u8 *addr);
 #endif
 	int (*peer_rx_tid_reo_update_for_smd)(struct ath12k_base *ab,
 					      struct ath12k_dp_hw *dp_hw,
@@ -1370,12 +1374,13 @@ static inline void ath12k_dp_arch_pdev_free(struct ath12k_dp *dp)
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 static inline bool
 ath12k_dp_arch_ast_param_get(struct ath12k_dp *dp,
-			     struct ath12k_hw *ah,
+			     struct ath12k_hw *ah, struct ieee80211_vif *vif,
 			     u16 *ast_info, u16 *hw_peer_id,
 			     u8 *addr)
 {
 	if (dp->arch_ops->dp_ast_param_get)
-		return dp->arch_ops->dp_ast_param_get(ah, ast_info, hw_peer_id, addr);
+		return dp->arch_ops->dp_ast_param_get(ah, vif, ast_info, hw_peer_id,
+						      addr);
 	return false;
 }
 #endif
@@ -1396,19 +1401,21 @@ static inline void
 ath12k_dp_arch_peer_delete(struct ath12k_dp *dp,
 			   struct ath12k_hw *ah,
 			   u8 *addr,
-			   struct ieee80211_sta *sta, u8 hw_link_id)
+			   struct ieee80211_sta *sta, u8 hw_link_id,
+			   struct ieee80211_vif *vif)
 {
 	if (dp->arch_ops->dp_peer_delete)
-		dp->arch_ops->dp_peer_delete(dp, ah, addr, sta, hw_link_id);
+		dp->arch_ops->dp_peer_delete(dp, ah, addr, sta, hw_link_id, vif);
 }
 
 static inline void
 ath12k_dp_arch_assoc_link_update(struct ath12k_dp *dp,
 				 struct ath12k_hw *ah,
-				 struct ieee80211_sta *sta)
+				 struct ieee80211_sta *sta,
+				 struct ieee80211_vif *vif)
 {
 	if (dp->arch_ops->dp_assoc_link_update)
-		dp->arch_ops->dp_assoc_link_update(dp, ah, sta);
+		dp->arch_ops->dp_assoc_link_update(dp, ah, sta, vif);
 }
 
 static inline int ath12k_dp_arch_peer_assoc(struct ath12k_dp *dp,
@@ -1446,22 +1453,24 @@ static inline void ath12k_dp_arch_peer_cleanup_indication(struct ath12k_dp *dp,
 
 static inline void ath12k_dp_arch_link_peer_assoc(struct ath12k_dp *dp,
 						  struct ath12k_dp_hw *dp_hw,
-						  u8 *addr, u32 hw_link_id)
+						  u8 *addr, u32 hw_link_id,
+						  struct ieee80211_vif *vif)
 {
 	if (dp->arch_ops->dp_link_peer_assoc)
 		return dp->arch_ops->dp_link_peer_assoc(dp_hw, dp, addr,
-							hw_link_id);
+							hw_link_id, vif);
 }
 
 static inline int
 ath12k_arch_dp_get_peer_mgmt_flowq(struct ath12k_dp *dp,
 				   struct ath12k_dp_hw *dp_hw,
 				   u8 *addr,
-				   struct peer_assoc_flowq_params *flowq_params)
+				   struct peer_assoc_flowq_params *flowq_params,
+				   struct ieee80211_vif *vif)
 {
 	if (dp->arch_ops->dp_get_peer_mgmt_flowq)
 		return dp->arch_ops->dp_get_peer_mgmt_flowq(dp, dp_hw, addr,
-							    flowq_params);
+							    flowq_params, vif);
 	return -EINVAL;
 }
 
@@ -1469,11 +1478,12 @@ static inline int
 ath12k_arch_dp_get_peer_holq(struct ath12k_dp *dp,
 			     struct ath12k_dp_hw *dp_hw,
 			     u8 *addr,
-			     struct peer_assoc_holq_params *holq_params)
+			     struct peer_assoc_holq_params *holq_params,
+			     struct ieee80211_vif *vif)
 {
 	if (dp->arch_ops->dp_get_peer_holq)
 		return dp->arch_ops->dp_get_peer_holq(dp, dp_hw, addr,
-						      holq_params);
+						      holq_params, vif);
 	return -EINVAL;
 }
 
