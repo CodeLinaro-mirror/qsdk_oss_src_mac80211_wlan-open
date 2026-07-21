@@ -8,7 +8,7 @@
 
 #include <linux/types.h>
 #include <linux/if_ether.h>
-#include <linux/rhashtable.h>
+#include <linux/hashtable.h>
 
 #define TOEPLITZ_KEYLEN 9
 #define INPUT_HASH_KEY_LEN 7
@@ -38,12 +38,13 @@ struct ath12k_dp_hw_group_wifi8;
 struct ath12k_base;
 
 enum ATH12K_AST_ENTRY_FLAGS {
-	ATH12K_AST_ENTRY_EMPTY_FLAGS	= 0x0,
-	ATH12K_AST_ENTRY_IS_VALID	= 0x1,
-	ATH12K_AST_ENTRY_IS_MCAST	= 0x2,
-	ATH12K_AST_ENTRY_IS_MEC		= 0x4,
-	ATH12K_AST_ENTRY_IS_USE_ADDRX	= 0x8,
-	ATH12K_AST_ENTRY_IS_ACTIVE_MEC	= 0x10,
+	ATH12K_AST_ENTRY_EMPTY_FLAGS		= 0x0,
+	ATH12K_AST_ENTRY_IS_VALID		= 0x1,
+	ATH12K_AST_ENTRY_IS_MCAST		= 0x2,
+	ATH12K_AST_ENTRY_IS_MEC			= 0x4,
+	ATH12K_AST_ENTRY_IS_USE_ADDRX		= 0x8,
+	ATH12K_AST_ENTRY_IS_ACTIVE_MEC		= 0x10,
+	ATH12K_AST_ENTRY_IS_AP_BSS_ENTRY	= 0x20,
 };
 
 enum ATH12K_AST_ENTRY_INVALIDATE_STATUS_FLAGS {
@@ -73,8 +74,8 @@ struct ath12k_ast_entry {
 	u8 mld_id;
 	u8 ast_entry_flags;
 	/* peer addr based rhashtable list pointer */
-	struct rhash_head rhash_addr;
-	bool rhash_done;
+	struct hlist_node hash_node;
+	bool hash_added;
 	unsigned long ast_create_invalidate_status;
 	unsigned long ast_delete_invalidate_status;
 	u16 tx_cmd_seq_num;
@@ -96,11 +97,14 @@ struct ath12k_dp_global_ast_stats {
 	u16 delete_in_progress;
 	u16 no_free_slot;
 	u16 alloc_fail;
-	u16 hash_tbl_add_fail;
+	u16 dup_entry_found;
 	u16 hw_sync_fail;
 	u16 sw_ast_not_found;
 	u16 hw_ast_not_found;
 };
+
+/* Hash table size: 2^11 = 2048 buckets for up to 2048 max AST entries */
+#define ATH12K_AST_HASH_BITS 11
 
 struct ath12k_dp_global_ast_table {
 	/* Memory allocation for AST entries.
@@ -121,8 +125,8 @@ struct ath12k_dp_global_ast_table {
 	   reserved:6;
 
 	struct ath12k_ast_entry **ast_entries;
-	struct rhashtable *rhead_ast_entry;
-	struct rhashtable_params rhash_ast_entry_param;
+	spinlock_t ast_hash_lock;
+	DECLARE_HASHTABLE(ast_hash, ATH12K_AST_HASH_BITS);
 	struct ath12k_dp_global_ast_stats ast_stats;
 };
 

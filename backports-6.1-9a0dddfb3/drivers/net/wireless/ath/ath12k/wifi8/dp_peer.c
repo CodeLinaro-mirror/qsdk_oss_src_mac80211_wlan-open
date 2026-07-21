@@ -1232,6 +1232,8 @@ int ath12k_wifi8_dp_peer_assoc(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 	ast_param.peer_id = dp_peer->peer_id;
 	ast_param.tx_classify_info_paddr = tx_classify_paddr;
 	ast_param.ast_entry_flags |= ATH12K_AST_ENTRY_IS_USE_ADDRX;
+	if (dp_peer->is_vdev_peer)
+		ast_param.ast_entry_flags |= ATH12K_AST_ENTRY_IS_AP_BSS_ENTRY;
 	ret = ath12k_dp_ast_entry_create(dp->dp_hw_grp, &ast_param);
 	if (ret)
 		goto free_queues_info;
