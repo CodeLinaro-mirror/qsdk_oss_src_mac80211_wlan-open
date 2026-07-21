@@ -1678,6 +1678,10 @@ static void ath12k_core_dump_mem_profile_info(struct ath12k_base *ab)
 		    cfg->dp_params.rx_desc_count);
 
 	ath12k_info(ab,
+		    "mem_params: tx_mon_buf=%u\n",
+		    cfg->dp_params.tx_monitor_buf_ring_size);
+
+	ath12k_info(ab,
 		    "mem_params: sta_single=%u sta_dbs=%u sta_dbs_sbs=%u\n",
 		    cfg->num_stations_single,
 		    cfg->num_stations_dbs,

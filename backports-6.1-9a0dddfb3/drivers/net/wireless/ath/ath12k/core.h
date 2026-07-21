@@ -211,6 +211,7 @@ struct ath12k_dp_params {
 	unsigned int ppeds_hotlist_len_max;
 	unsigned int dp_num_clients_max;
 	unsigned int dp_mon_status_buf;
+	unsigned int tx_monitor_buf_ring_size;
 	unsigned int reo_dst_ring_size[5];
 	unsigned int tcl_data_ring_size[5];
 	unsigned int tx_compl_ring_size[5];
