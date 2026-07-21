@@ -4388,7 +4388,7 @@ bool ath12k_dp_tx_mon_feature_eval(struct ath12k_dp *dp)
 		return false;
 	}
 
-	if (!DP_TX_MON_BUF_RING_SIZE(ab))
+	if (!DP_TX_MON_BUF_RING_SIZE(ab) || !DP_TX_MON_DST_RING_SIZE(ab))
 		return false;
 
 	return true;
@@ -4948,7 +4948,7 @@ int ath12k_dp_mon_tx_dst_ring_alloc_setup(struct ath12k_pdev_dp *dp_pdev,
 	ret = ath12k_dp_srng_alloc(dp->ab,
 				   &dp_pdev->dp_mon_pdev->dp_pdev_tx_mon->tx_mon_dst_ring,
 				   HAL_TX_MONITOR_DST, 0, mac_id,
-				   DP_TX_MONITOR_DEST_RING_SIZE);
+				   DP_TX_MON_DST_RING_SIZE(dp->ab));
 	if (ret) {
 		ath12k_warn(dp->ab, "Tx Mon: failed dest. ring allocation\n");
 		return ret;
