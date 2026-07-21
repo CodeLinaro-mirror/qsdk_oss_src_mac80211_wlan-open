@@ -3384,7 +3384,7 @@ ath12k_dp_aggr_proto_peer_rx_stats(struct ath12k_dp_peer_stats *dst_peer_stats,
 static void ath12k_dp_aggr_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 					      struct ath12k_dp_peer_stats *dst_peer_stats,
 					      struct ath12k_dp_peer_stats *src_peer_stats,
-					      bool is_vdev_peer, bool is_ds_wds_peer)
+					      bool is_vdev_peer)
 {
 	int i, j;
 
@@ -3511,15 +3511,6 @@ static void ath12k_dp_aggr_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 				ath12k_dp_aggr_proto_peer_rx_stats(dst_peer_stats,
 								   src_peer_stats, i);
 		}
-		/*
-		 * For DS VIFs, the RX packets are accounted at peer level by the
-		 * ppe sync stats callback on DP_REO_PPEDS_RING_IDX for wds peers only.
-		 * Skip other rings aggregation and present only the stats accounted
-		 * on DP_REO_PPEDS_RING_IDX for WDS peers.
-		 */
-		if (is_ds_wds_peer && i < DP_REO_PPEDS_RING_IDX)
-			continue;
-
 		dst_peer_stats->rx[i].sent_to_stack.packets +=
 			src_peer_stats->rx[i].sent_to_stack.packets;
 		dst_peer_stats->rx[i].sent_to_stack.bytes +=
@@ -3592,7 +3583,7 @@ ath12k_dp_update_tx_ppdu_stats(struct ath12k_htt_tx_ppdu_stats *dst_tx_ppdu_stat
 static void ath12k_dp_update_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 						struct ath12k_dp_peer_stats *dst_peer_stats,
 						struct ath12k_dp_peer_stats *src_peer_stats,
-						bool is_vdev_peer, bool is_ds_wds_peer)
+						bool is_vdev_peer)
 {
 	int i, j;
 
@@ -3720,20 +3711,10 @@ static void ath12k_dp_update_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 				ath12k_dp_update_proto_peer_rx_stats(dst_peer_stats,
 								     src_peer_stats, i);
 		}
-		/*
-		 * For DS VIFs, the RX packets are accounted at peer level by the
-		 * ppe sync stats callback on DP_REO_PPEDS_RING_IDX for wds peers only.
-		 * Skip other rings aggregation and present only the stats accounted
-		 * on DP_REO_PPEDS_RING_IDX for WDS peers.
-		 */
-		if (is_ds_wds_peer && i < DP_REO_PPEDS_RING_IDX)
-			continue;
-
 		dst_peer_stats->rx[i].sent_to_stack.packets =
 			src_peer_stats->rx[i].sent_to_stack.packets;
 		dst_peer_stats->rx[i].sent_to_stack.bytes =
 			src_peer_stats->rx[i].sent_to_stack.bytes;
-
 	}
 
 	/*rx error stats*/
@@ -4027,8 +4008,7 @@ ath12k_dp_update_hw_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 
 static void ath12k_dp_aggr_peer_stats(struct ath12k_link_vif *arvif,
 				      struct ath12k_dp_link_peer *link_peer,
-				      struct ath12k_dp_aggr_vif_stats *aggr_vif_stats,
-				      bool is_ds_vif)
+				      struct ath12k_dp_aggr_vif_stats *aggr_vif_stats)
 {
 	struct ath12k_dp_peer *peer;
 	struct ath12k_pdev_dp *dp_pdev = &arvif->ar->dp;
@@ -4043,7 +4023,6 @@ static void ath12k_dp_aggr_peer_stats(struct ath12k_link_vif *arvif,
 	struct ath12k_dp_link_peer_hw_rx_stats *src_hw_link_rx = NULL;
 	struct ath12k_dp_link_peer_hw_tx_stats *dst_hw_link_tx = NULL;
 	struct ath12k_dp_link_peer_hw_rx_stats *dst_hw_link_rx = NULL;
-	bool is_ds_wds_peer = false;
 
 	if (!link_peer->dp_peer)
 		return;
@@ -4051,12 +4030,10 @@ static void ath12k_dp_aggr_peer_stats(struct ath12k_link_vif *arvif,
 	peer = link_peer->dp_peer;
 	stats_link_id = ar->hw_link_id;
 	link_peer_stats = &aggr_vif_stats->link_peer_stats;
-	is_ds_wds_peer = is_ds_vif && peer->use_4addr;
 	if (stats_link_id < ATH12K_DP_PEER_MAX_MLO_LINKS) {
 		ath12k_dp_aggr_per_pkt_peer_stats(dp_pdev, &aggr_vif_stats->peer_stats,
 						  &peer->stats[stats_link_id],
-						  peer->is_vdev_peer,
-						  is_ds_wds_peer);
+						  peer->is_vdev_peer);
 		dst_tx_ppdu_stats = link_peer_stats->tx_ppdu_stats;
 		src_tx_ppdu_stats = link_peer->peer_stats.tx_ppdu_stats;
 		rx_peer_stats =  link_peer->peer_stats.rx_ppdu_stats;
@@ -4121,7 +4098,6 @@ ath12k_dp_aggr_link_vif_del_stats(struct ath12k_link_vif *arvif,
  * @hw_link_id:   hardware link ID of the radio
  * @arvif:        link VIF (bridge: needed by ath12k_dp_aggr_peer_stats)
  * @aggr_vif_stats: destination stats buffer
- * @is_ds_vif:    true if this is a DS VIF
  *
  * Called with ar->arsta_lock held (BH-disabled).
  * Acquires dp_hw->peer_hash_lock internally (arsta_lock -> peer_hash_lock ordering).
@@ -4132,8 +4108,7 @@ ath12k_dp_vif_peer_stats_update(struct ath12k_dp_hw *dp_hw,
 				const u8 *dp_peer_addr,
 				u8 hw_link_id,
 				struct ath12k_link_vif *arvif,
-				struct ath12k_dp_aggr_vif_stats *aggr_vif_stats,
-				bool is_ds_vif)
+				struct ath12k_dp_aggr_vif_stats *aggr_vif_stats)
 {
 	struct ath12k_dp_peer      *dp_peer;
 	struct ath12k_dp_link_peer *dp_link_peer;
@@ -4156,7 +4131,7 @@ ath12k_dp_vif_peer_stats_update(struct ath12k_dp_hw *dp_hw,
 	}
 
 	/* DP: aggregate per-link peer stats */
-	ath12k_dp_aggr_peer_stats(arvif, dp_link_peer, aggr_vif_stats, is_ds_vif);
+	ath12k_dp_aggr_peer_stats(arvif, dp_link_peer, aggr_vif_stats);
 
 	/* DP: aggregate MLD-level HW stats exactly once via the primary link peer */
 	if (dp_link_peer->primary_link) {
@@ -4251,7 +4226,6 @@ void ath12k_dp_get_pdev_stats(struct ath12k_pdev_dp *pdev,
 	struct ath12k_link_vif *arvif;
 	struct ath12k_dp_aggr_pdev_stats *aggr_pdev_stats =
 					&telemetry_radio->aggr_pdev_stats;
-	bool is_ds_vif = false;
 
 	if (ath12k_dp_stats_enabled(&ar->dp) &&
 	    ath12k_dp_debug_stats_enabled(&ar->dp))
@@ -4266,11 +4240,7 @@ void ath12k_dp_get_pdev_stats(struct ath12k_pdev_dp *pdev,
 		aggr_vif_stats->link_peer_stats.rx_stats =
 					aggr_pdev_stats->link_peer_stats.rx_stats;
 		list_for_each_entry(arvif, &ar->arvifs, list) {
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-			is_ds_vif = (arvif->ahvif->dp_vif.ppe_vp_type ==
-					  PPE_VP_USER_TYPE_DS);
-#endif
-			ath12k_vif_iterate_peer(arvif, aggr_vif_stats, is_ds_vif);
+			ath12k_vif_iterate_peer(arvif, aggr_vif_stats);
 			/* Include deleted link peer stats stored at link VIF */
 			ath12k_dp_aggr_link_vif_del_stats(arvif, aggr_vif_stats);
 		}
@@ -4291,11 +4261,6 @@ void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 	unsigned long links_map = ahvif->links_map;
 	struct ath12k_dp_aggr_vif_stats *aggr_vif_stats =
 						&telemetry_vif->aggr_vif_stats;
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	bool is_ds_vif = (ahvif->dp_vif.ppe_vp_type == PPE_VP_USER_TYPE_DS);
-#else
-	bool is_ds_vif = false;
-#endif
 
 	if (ath12k_dp_stats_enabled(&ar->dp) &&
 	    ath12k_dp_debug_stats_enabled(&ar->dp))
@@ -4312,7 +4277,7 @@ void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 		arvif = rcu_dereference(ahvif->link[link_id]);
 
 		if (arvif && arvif->is_started) {
-			ath12k_vif_iterate_peer(arvif, aggr_vif_stats, is_ds_vif);
+			ath12k_vif_iterate_peer(arvif, aggr_vif_stats);
 			/* Include deleted link peer stats for specific link VIF */
 			ath12k_dp_aggr_link_vif_del_stats(arvif, aggr_vif_stats);
 		}
@@ -4326,7 +4291,7 @@ void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 			arvif =  &ahvif->deflink;
 
 			if (arvif && arvif->is_started) {
-				ath12k_vif_iterate_peer(arvif, aggr_vif_stats, is_ds_vif);
+				ath12k_vif_iterate_peer(arvif, aggr_vif_stats);
 				/* Include deleted link peer stats for legacy VIF */
 				ath12k_dp_aggr_link_vif_del_stats(arvif, aggr_vif_stats);
 			}
@@ -4339,7 +4304,7 @@ void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 					rcu_read_unlock();
 					continue;
 				}
-				ath12k_vif_iterate_peer(arvif, aggr_vif_stats, is_ds_vif);
+				ath12k_vif_iterate_peer(arvif, aggr_vif_stats);
 				/* Include deleted link peer stats of each link VIF
 				 * in MLD VIF
 				 */
@@ -4505,7 +4470,6 @@ unlock:
  * @dp_peer: DP peer structure
  * @hw_link_id: hardware link ID
  * @telemetry_peer: output telemetry peer stats structure
- * @is_ds_vif: flag to check if the vif is configured in DS mode
  *
  * Core stats collection logic operating only on DP objects.
  * Called by ath12k_get_link_peer_stats() after non-DP lookups.
@@ -4515,8 +4479,7 @@ int
 ath12k_dp_get_link_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 			      struct ath12k_dp_peer *dp_peer,
 			      int hw_link_id,
-			      struct ath12k_telemetry_dp_peer *telemetry_peer,
-			      bool is_ds_vif)
+			      struct ath12k_telemetry_dp_peer *telemetry_peer)
 {
 	struct ath12k_dp_peer_stats *peer_stats = &telemetry_peer->peer_stats;
 	struct ath12k_dp_link_peer_stats *link_peer_stats =
@@ -4527,7 +4490,6 @@ ath12k_dp_get_link_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_htt_tx_ppdu_stats *src_tx_ppdu_stats = NULL;
 	struct ath12k_rx_ppdu_stats *dst_stats = link_peer_stats->rx_ppdu_stats;
 	int ret = 0;
-	bool is_ds_wds_peer = is_ds_vif && dp_peer->use_4addr;
 
 	link_peer = ath12k_dp_link_peer_find_by_hw_link_id(dp_peer, hw_link_id);
 	if (!link_peer) {
@@ -4541,8 +4503,7 @@ ath12k_dp_get_link_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 		/* Per packet Counters */
 		ath12k_dp_update_per_pkt_peer_stats(dp_pdev, peer_stats,
 						    &dp_peer->stats[hw_link_id],
-						    dp_peer->is_vdev_peer,
-						    is_ds_wds_peer);
+						    dp_peer->is_vdev_peer);
 		/* HW link stats */
 		ath12k_dp_update_hw_link_stats(dp_pdev, dp_peer, hw_link_id,
 					       link_peer_stats);
@@ -4883,8 +4844,7 @@ ath12k_dp_update_legacy_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 				   struct ath12k_dp_peer *peer,
 				   struct ath12k_telemetry_dp_peer *telemetry_peer,
 				   struct ath12k_dp_peer_stats *peer_stats,
-				   struct ath12k_dp_link_peer_stats *link_stats,
-				   bool is_ds_wds_peer)
+				   struct ath12k_dp_link_peer_stats *link_stats)
 {
 	u8 link_id;
 
@@ -4896,8 +4856,7 @@ ath12k_dp_update_legacy_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 		ath12k_dp_aggr_per_pkt_peer_stats(dp_pdev,
 						  peer_stats,
 						  &peer->stats[link_id],
-						  peer->is_vdev_peer,
-						  is_ds_wds_peer);
+						  peer->is_vdev_peer);
 		ath12k_dp_update_hw_link_stats(dp_pdev, peer, link_id,
 					       link_stats);
 		ath12k_update_ext_stats(dp_pdev, peer, link_id, link_stats);
@@ -4921,7 +4880,6 @@ ath12k_dp_update_legacy_peer_stats(struct ath12k_pdev_dp *dp_pdev,
  * @links_map: bitmap of active links
  * @stats_link_id: hw_link_id for the specific link (derived from arvif->ar->hw_link_id
  *                 in the wrapper); meaningful only when valid_link is true
- * @is_ds_vif: flag to check if the vif is configured in DS mode
  *
  * Core stats collection logic for the MLD/legacy peer path, operating only
  * on DP objects. Called by ath12k_get_peer_stats() after non-DP lookups.
@@ -4933,13 +4891,12 @@ ath12k_dp_get_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 			 u8 link_id,
 			 bool valid_link,
 			 unsigned long links_map,
-			 int stats_link_id, bool is_ds_vif)
+			 int stats_link_id)
 {
 	struct ath12k_dp_peer_stats *peer_stats = &telemetry_peer->peer_stats;
 	struct ath12k_dp_link_peer_stats *link_stats = &telemetry_peer->link_peer_stats;
 	struct ath12k_dp_mld_peer_stats *mld_stats = &telemetry_peer->mld_stats;
 	int i, ret = 0;
-	bool ds_wds_peer = false;
 
 	/* Error case handling for legacy peer */
 	if (!dp_peer->is_mlo && valid_link) {
@@ -4953,8 +4910,6 @@ ath12k_dp_get_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 		return -EINVAL;
 	}
 
-	ds_wds_peer = is_ds_vif && dp_peer->use_4addr;
-
 	/* Peer stats for requested link id */
 	if (valid_link) {
 		telemetry_peer->peer_type = ATH12K_LINK_PEER;
@@ -4962,8 +4917,7 @@ ath12k_dp_get_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 			ath12k_dp_update_per_pkt_peer_stats(dp_pdev,
 							    peer_stats,
 							    &dp_peer->stats[stats_link_id],
-							    dp_peer->is_vdev_peer,
-							    ds_wds_peer);
+							    dp_peer->is_vdev_peer);
 			ath12k_update_ext_stats(dp_pdev, dp_peer, stats_link_id,
 						link_stats);
 			ath12k_dp_update_hw_link_stats(dp_pdev,
@@ -4987,8 +4941,7 @@ ath12k_dp_get_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 			ath12k_dp_update_legacy_peer_stats(dp_pdev, dp_peer,
 							   telemetry_peer,
 							   peer_stats,
-							   link_stats,
-							   ds_wds_peer);
+							   link_stats);
 		} else {
 			telemetry_peer->peer_type = ATH12K_MLD_PEER;
 			/* Aggregated peer stats of all links in MLD peer */
@@ -4996,8 +4949,7 @@ ath12k_dp_get_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 				ath12k_dp_aggr_per_pkt_peer_stats(dp_pdev,
 								  peer_stats,
 								  &dp_peer->stats[i],
-								  dp_peer->is_vdev_peer,
-								  ds_wds_peer);
+								  dp_peer->is_vdev_peer);
 			}
 			/* Include preserved stats of deleted link peers
 			 * when reporting MLD peer stats

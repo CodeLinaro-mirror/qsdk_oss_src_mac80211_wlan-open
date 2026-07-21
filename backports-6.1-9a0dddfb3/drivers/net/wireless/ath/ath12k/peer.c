@@ -1969,7 +1969,6 @@ EXPORT_SYMBOL(ath12k_link_sta_find_by_vdev_id);
  * @addr: link MAC address
  * @link_id: link ID
  * @valid_link: whether the link ID is valid
- * @is_ds_vif: flag to check if the vif is configured in DS mode
  *
  * Resolves non-DP objects (arvif -> arsta -> ahsta -> peer)
  * and delegates to ath12k_dp_get_link_peer_stats().
@@ -1977,8 +1976,7 @@ EXPORT_SYMBOL(ath12k_link_sta_find_by_vdev_id);
 static int
 ath12k_get_link_peer_stats(struct ath12k_link_vif *arvif,
 			   struct ath12k_telemetry_dp_peer *telemetry_peer,
-			   u8 *addr, u8 link_id, bool valid_link,
-			   bool is_ds_vif)
+			   u8 *addr, u8 link_id, bool valid_link)
 {
 	struct ath12k *ar = arvif->ar;
 	struct ath12k_pdev_dp *dp_pdev = &arvif->ar->dp;
@@ -2013,8 +2011,7 @@ ath12k_get_link_peer_stats(struct ath12k_link_vif *arvif,
 	}
 
 	return ath12k_dp_get_link_peer_stats(dp_pdev, dp_peer,
-					     hw_link_id, telemetry_peer,
-					     is_ds_vif);
+					     hw_link_id, telemetry_peer);
 }
 
 /**
@@ -2041,11 +2038,6 @@ int ath12k_get_peer_telemetry_stats(struct ath12k_vif *ahvif,
 	int stats_link_id = 0, ret = 0;
 	unsigned long links_map = ahvif->links_map;
 	bool valid_link = ahvif->links_map & BIT(link_id);
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	bool is_ds_vif = (ahvif->dp_vif.ppe_vp_type == PPE_VP_USER_TYPE_DS);
-#else
-	bool is_ds_vif = false;
-#endif
 
 	if (ath12k_dp_stats_enabled(&ar->dp) &&
 	    ath12k_dp_debug_stats_enabled(&ar->dp))
@@ -2079,7 +2071,7 @@ int ath12k_get_peer_telemetry_stats(struct ath12k_vif *ahvif,
 		/* Delegate to DP-only function */
 		ret = ath12k_dp_get_peer_stats(dp_pdev, dp_peer, telemetry_peer,
 					       link_id, valid_link, links_map,
-					       stats_link_id, is_ds_vif);
+					       stats_link_id);
 	} else {
 		/* Link peer path (sta not found via MLD MAC) */
 		telemetry_peer->peer_type = ATH12K_LINK_PEER;
@@ -2090,8 +2082,7 @@ int ath12k_get_peer_telemetry_stats(struct ath12k_vif *ahvif,
 				ret = ath12k_get_link_peer_stats(arvif,
 								 telemetry_peer,
 								 addr, link_id,
-								 valid_link,
-								 is_ds_vif);
+								 valid_link);
 			rcu_read_unlock();
 		} else {
 			rcu_read_lock();
@@ -2102,8 +2093,7 @@ int ath12k_get_peer_telemetry_stats(struct ath12k_vif *ahvif,
 				ret = ath12k_get_link_peer_stats(arvif,
 								 telemetry_peer,
 								 addr, link_id,
-								 valid_link,
-								 is_ds_vif);
+								 valid_link);
 			}
 			rcu_read_unlock();
 		}
@@ -2163,20 +2153,17 @@ static int ath12k_vif_peer_iter_cb(struct ath12k *ar,
 					dp_peer_addr,
 					ar->hw_link_id,
 					ctx->arvif,
-					ctx->aggr_vif_stats,
-					ctx->is_ds_vif);
+					ctx->aggr_vif_stats);
 	return 0;
 }
 
 void ath12k_vif_iterate_peer(struct ath12k_link_vif *arvif,
-			     struct ath12k_dp_aggr_vif_stats *aggr_vif_stats,
-			     bool is_ds_vif)
+			     struct ath12k_dp_aggr_vif_stats *aggr_vif_stats)
 {
 	struct ath12k *ar = arvif->ar;
 	struct ath12k_vif_peer_iter_ctx ctx = {
 		.arvif          = arvif,
 		.aggr_vif_stats = aggr_vif_stats,
-		.is_ds_vif      = is_ds_vif,
 	};
 
 	/* Acquire arsta_lock; ath12k_arsta_itr_on_ar_by_vdev_id requires it held.

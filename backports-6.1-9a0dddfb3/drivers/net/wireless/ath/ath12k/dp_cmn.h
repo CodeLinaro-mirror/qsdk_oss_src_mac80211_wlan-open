@@ -545,6 +545,5 @@ void ath12k_dp_vif_peer_stats_update(struct ath12k_dp_hw *dp_hw,
 				     const u8 *dp_peer_addr,
 				     u8 hw_link_id,
 				     struct ath12k_link_vif *arvif,
-				     struct ath12k_dp_aggr_vif_stats *aggr_vif_stats,
-				     bool is_ds_vif);
+				     struct ath12k_dp_aggr_vif_stats *aggr_vif_stats);
 #endif

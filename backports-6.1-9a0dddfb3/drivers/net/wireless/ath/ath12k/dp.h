@@ -1883,14 +1883,12 @@ void ath12k_dp_get_device_stats(struct ath12k_dp *dp,
 int ath12k_dp_get_link_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 				  struct ath12k_dp_peer *peer,
 				  int hw_link_id,
-				  struct ath12k_telemetry_dp_peer *telemetry_peer,
-				  bool is_ds_vif);
+				  struct ath12k_telemetry_dp_peer *telemetry_peer);
 int ath12k_dp_get_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 			     struct ath12k_dp_peer *peer,
 			     struct ath12k_telemetry_dp_peer *telemetry_peer,
 			     u8 link_id, bool valid_link,
-			     unsigned long links_map, int stats_link_id,
-			     bool is_ds_vif);
+			     unsigned long links_map, int stats_link_id);
 void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 			     struct ath12k_telemetry_dp_vif *telemetry_vif,
 			     u8 link_id);
@@ -1899,7 +1897,6 @@ void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 struct ath12k_vif_peer_iter_ctx {
 	struct ath12k_link_vif          *arvif;
 	struct ath12k_dp_aggr_vif_stats *aggr_vif_stats;
-	bool                             is_ds_vif;
 };
 void ath12k_dp_get_pdev_stats(struct ath12k_pdev_dp *pdev,
 			      struct ath12k_telemetry_dp_radio *telemetry_radio);
