@@ -2666,6 +2666,10 @@ static int ath12k_get_feat_rx_peer_attr_size(void)
 	/* HW RX stats Attr Size */
 	attr_size += ath12k_get_hw_rx_stats_attr_size();
 
+	/* RX packets/bytes derived from PPDU */
+	attr_size += nla_total_size(sizeof(u32));
+	attr_size += nla_total_size_64bit(sizeof(u64));
+
 	/* Parent RX Stats Attr Size */
 	total_size = nla_total_size_nested(attr_size);
 
@@ -3178,9 +3182,7 @@ static int ath12k_vendor_get_rx_mon_stats_size(void)
 	int payload_size_ppdu_nss, payload_size_ppdu_mcs;
 	int attr_size_ppdu_nss, attr_size_ppdu_mcs, attr_signal_size;
 
-	/* Basic counters: num_msdu is u32; num_msdu_bytes and rx_duration are u64 */
-	total_size += nla_total_size(sizeof(stats.num_msdu));
-	total_size += nla_total_size_64bit(sizeof(stats.num_msdu_bytes));
+	/* Basic counters: rx_duration is u64 */
 	total_size += nla_total_size_64bit(sizeof(stats.rx_duration));
 
 	/* Basic and advanced counters (u32) */
@@ -6099,9 +6101,7 @@ static int ath12k_vendor_fill_rx_mon_stats(struct sk_buff *skb,
 	u32 val;
 
 	/* Basic counters */
-	if (nla_put_u32(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_NUM_MSDU,
-			rx_stats->num_msdu) ||
-	    nla_put_u32(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_NUM_MPDU_FCS_OK,
+	if (nla_put_u32(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_NUM_MPDU_FCS_OK,
 			rx_stats->num_mpdu_fcs_ok) ||
 	    nla_put_u32(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_NUM_MPDU_FCS_ERR,
 			rx_stats->num_mpdu_fcs_err) ||
@@ -6183,9 +6183,7 @@ static int ath12k_vendor_fill_rx_mon_stats(struct sk_buff *skb,
 	}
 	nla_nest_end(skb, bw_count_attr);
 
-	if (nla_put_u64_64bit(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_NUM_MSDU_BYTES,
-			      rx_stats->num_msdu_bytes, NL80211_ATTR_PAD) ||
-	    nla_put_u32(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_NUM_MPDU,
+	if (nla_put_u32(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_NUM_MPDU,
 			rx_stats->num_mpdus) ||
 	    nla_put_u32(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_NUM_PPDU,
 			rx_stats->num_ppdus)) {
@@ -6515,6 +6513,7 @@ static int ath12k_fill_peer_rx_stats(struct ath12k *ar,
 				     struct ath12k_dp_peer_stats *peer_stats,
 				     struct ath12k_dp_link_peer_stats *link_peer_stats,
 				     struct ath12k_dp_mld_peer_stats *mld_stats,
+				     struct ath12k_dp_rx_pkt_ppdu_stats *rx_pkt_stats,
 				     bool is_extended,
 				     int peer_type)
 {
@@ -6574,6 +6573,23 @@ static int ath12k_fill_peer_rx_stats(struct ath12k *ar,
 		nla_nest_end(vendor_event, attr1);
 	}
 	nla_nest_end(vendor_event, attr);
+
+	/* RX packets/bytes derived from PPDU, independent of extended RX
+	 * stats knob (DP_ENABLE_EXT_RX_STATS)
+	 */
+	if (rx_pkt_stats) {
+		if (nla_put_u32(vendor_event,
+				QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_MSDU_COUNT,
+				rx_pkt_stats->rx_packets) ||
+		    nla_put_u64_64bit(vendor_event,
+				      QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_MSDU_BYTES,
+				      rx_pkt_stats->rx_bytes,
+				      NL80211_ATTR_PAD)) {
+			ath12k_err(NULL,
+				   "nla put failure: RX packet/byte counters");
+			return -EMSGSIZE;
+		}
+	}
 
 	/*Rx WBM Err Stats*/
 	if (ath12k_fill_peer_rx_wbm_err_attrs(vendor_event, peer_stats)) {
@@ -7144,6 +7160,7 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 						      &telemetry_peer->peer_stats,
 						      &telemetry_peer->link_peer_stats,
 						      &telemetry_peer->mld_stats,
+						      &telemetry_peer->rx_pkt_ppdu_stats,
 						      telemetry_peer->is_extended,
 						      telemetry_peer->peer_type)) {
 				ath12k_err(NULL, "nla put failure: Sta rx stats");
@@ -7899,6 +7916,7 @@ static int ath12k_fill_vap_rx_stats(struct ath12k *ar,
 					&telemetry_vif->aggr_vif_stats.peer_stats,
 					&telemetry_vif->aggr_vif_stats.link_peer_stats,
 					&telemetry_vif->aggr_vif_stats.mld_stats,
+					&telemetry_vif->aggr_vif_stats.rx_pkt_ppdu_stats,
 					telemetry_vif->is_extended,
 					ATH12K_PEER_INVAL);
 
@@ -8431,14 +8449,18 @@ static int ath12k_fill_radio_rx_stats(struct ath12k *ar,
 				      struct sk_buff *vendor_event,
 				      struct ath12k_telemetry_dp_radio *telemetry_radio)
 {
+	struct ath12k_dp_aggr_pdev_stats *aggr_pdev_stats;
 	int ret;
+
+	aggr_pdev_stats = &telemetry_radio->aggr_pdev_stats;
 
 	/* Aggregated peer rx stats */
 	ret = ath12k_fill_peer_rx_stats(ar,
 					vendor_event,
-					&telemetry_radio->aggr_pdev_stats.peer_stats,
-					&telemetry_radio->aggr_pdev_stats.link_peer_stats,
-					&telemetry_radio->aggr_pdev_stats.mld_stats,
+					&aggr_pdev_stats->peer_stats,
+					&aggr_pdev_stats->link_peer_stats,
+					&aggr_pdev_stats->mld_stats,
+					&aggr_pdev_stats->rx_pkt_ppdu_stats,
 					telemetry_radio->is_extended,
 					ATH12K_PEER_INVAL);
 

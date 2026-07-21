@@ -617,9 +617,9 @@ err_dp_peer:
  * @stats_link_id: Link ID for stats array indexing
  *
  * Captures HTT TX stats, per-packet TX stats (all TCL rings), RX peer stats,
- * and per-packet RX stats (all REO rings) from a link peer into the provided
- * aggregation structure. This is used to preserve statistics before link peer
- * deletion.
+ * per-packet RX stats (all REO rings), and the always-maintained RX MSDU
+ * totals from a link peer into the provided aggregation structure. This is
+ * used to preserve statistics before link peer deletion.
  *
  */
 
@@ -640,6 +640,8 @@ ath12k_dp_capture_link_peer_stats(struct ath12k *ar,
 						&dp_peer->stats[stats_link_id].rx[i]);
 	ath12k_dp_aggr_wbm_rx_stats(&aggr_stats->wbm_err,
 				    &dp_peer->stats[stats_link_id].wbm_err);
+	aggr_stats->rx_counters.packets += peer->rx_packets;
+	aggr_stats->rx_counters.bytes += peer->rx_bytes;
 }
 
 /**
@@ -662,8 +664,6 @@ static void ath12k_dp_aggr_link_peer_to_mld_peer(struct ath12k *ar,
 
 	ath12k_dp_capture_link_peer_stats(ar, &dp_peer->link_peer_delete_stats,
 					  peer, dp_peer, stats_link_id);
-	dp_peer->link_peer_delete_stats.rx_counters.packets += peer->rx_packets;
-	dp_peer->link_peer_delete_stats.rx_counters.bytes += peer->rx_bytes;
 }
 
 /**
