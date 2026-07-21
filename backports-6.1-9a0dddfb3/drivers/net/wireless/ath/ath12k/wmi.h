@@ -1649,6 +1649,7 @@ enum wmi_tlv_vdev_param {
 	WMI_VDEV_PARAM_HWCTS2SELF_OFDMA = 0xC5,
 	WMI_VDEV_PARAM_2XLDPC = 0xCA,
 	WMI_VDEV_PARAM_UHR_ELR = 0xD1,
+	WMI_VDEV_PARAM_EXTRA_EHT_LTF = 0x8011,
 };
 
 enum wmi_tlv_peer_flags {
