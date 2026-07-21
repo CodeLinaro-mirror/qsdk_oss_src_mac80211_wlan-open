@@ -484,7 +484,6 @@ static void ath12k_wifi7_dp_link_vif_configure(struct ath12k_dp *dp,
 		dp_link_vif->vdev_id = arvif->vdev_id;
 		dp_link_vif->lmac_id = ar->lmac_id;
 		dp_link_vif->pdev_idx = ar->pdev_idx;
-		dp_link_vif->map_id = arvif->map_id;
 
 		dp_link_vif->tcl_metadata = u32_encode_bits(1, HTT_TCL_META_DATA_TYPE) |
 			u32_encode_bits(arvif->vdev_id,
