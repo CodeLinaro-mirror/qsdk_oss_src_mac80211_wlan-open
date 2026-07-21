@@ -1398,6 +1398,9 @@ int ath12k_wmi_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 	u16 mcs;
 	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(frame);
 
+	if (!arvif)
+		return -EINVAL;
+
 	buf_len = min_t(int, frame->len, WMI_MGMT_SEND_DOWNLD_LEN);
 
 	len = sizeof(*cmd) + sizeof(*frame_tlv) + roundup(buf_len, sizeof(u32));
