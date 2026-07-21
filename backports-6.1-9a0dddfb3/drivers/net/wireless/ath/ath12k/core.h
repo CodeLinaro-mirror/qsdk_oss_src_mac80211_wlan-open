@@ -213,6 +213,7 @@ struct ath12k_dp_params {
 	unsigned int dp_mon_status_buf;
 	unsigned int tx_monitor_buf_ring_size;
 	unsigned int tx_monitor_dst_ring_size;
+	unsigned int tx_monitor_num_ppdu_desc;
 	unsigned int reo_dst_ring_size[5];
 	unsigned int tcl_data_ring_size[5];
 	unsigned int tx_compl_ring_size[5];
