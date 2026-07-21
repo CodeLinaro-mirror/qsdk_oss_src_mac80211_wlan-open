@@ -12,6 +12,7 @@
 #include <linux/of.h>
 #include <linux/module.h>
 #include <net/if_inet6.h>
+#include <crypto/hash.h>
 
 #include "mac.h"
 #include "core.h"
@@ -1708,6 +1709,8 @@ void ath12k_mac_dp_peer_cleanup(struct ath12k_hw *ah,
 			ath12k_telemetry_peer_ctx_free(dp_peer->qos->telemetry_peer_ctx);
 
 		if (!dp_peer->peer_links_map) {
+			if (dp_peer->tfm_mmic)
+				crypto_free_shash(dp_peer->tfm_mmic);
 			kfree(dp_peer->qos);
 			kfree(dp_peer);
 		} else
