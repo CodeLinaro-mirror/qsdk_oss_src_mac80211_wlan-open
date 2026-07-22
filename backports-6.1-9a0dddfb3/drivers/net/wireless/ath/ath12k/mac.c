@@ -22034,39 +22034,6 @@ static struct ieee80211_channel *ath12k_mac_get_a_valid_channel(struct ath12k *a
 	return NULL;
 }
 
-static void ath12k_mac_dump_started_vdevs(struct ath12k_base *ab,
-					  struct ath12k *ar)
-{
-	struct ath12k_link_vif *arvif;
-
-	ath12k_err(ab, "[radio_idx : %u] All started vdevs on this radio:\n",
-		   ar->radio_idx);
-
-	list_for_each_entry(arvif, &ar->arvifs, list) {
-		struct ieee80211_bss_conf *link_conf;
-
-		if (!arvif->is_started || arvif->ar != ar)
-			continue;
-
-		link_conf = ath12k_mac_get_link_bss_conf(arvif);
-		ath12k_err(ab,
-			   "  vdev_id=%u type=%u subtype=%u link_id=%u is_up=%d scan=%d vif_type=%d mac=%pM freq=%u width=%d cf1=%u csa_active=%d\n",
-			   arvif->vdev_id,
-			   arvif->ahvif->vdev_type,
-			   arvif->vdev_subtype,
-			   arvif->link_id,
-			   arvif->is_up,
-			   arvif->is_scan_vif,
-			   arvif->ahvif->vif->type,
-			   link_conf ? link_conf->addr : arvif->ahvif->vif->addr,
-			   arvif->chanctx.def.chan ?
-				arvif->chanctx.def.chan->center_freq : 0,
-			   arvif->chanctx.def.width,
-			   arvif->chanctx.def.center_freq1,
-			   link_conf ? link_conf->csa_active : -1);
-	}
-}
-
 static int
 ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 			      struct ieee80211_chanctx_conf *ctx,
@@ -22252,84 +22219,6 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 		   ar->radio_idx,
 		   arg.vdev_id, arg.freq,
 		   ath12k_mac_phymode_str(arg.mode), arg.punct_bitmap, arg.is_stadfs_en);
-
-	/*
-	 * Dual home channel check: the FW does not support two active home
-	 * channels on the same radio simultaneously — it will assert.
-	 * Before sending vdev_start/restart, verify every other already-started
-	 * non-scan, non-bridge vdev on this radio is on the same channel.
-	 * Bridge vdevs and scan vdevs do not carry an independent home channel,
-	 * so they are excluded.  Scan radios have no such constraint.
-	 * This fires as WARN_ON so the crash is attributed to the right place in
-	 * the host rather than appearing as a mysterious target assert.
-	 */
-	if (!is_bridge_vdev && !arvif->is_scan_vif &&
-	    !ath12k_scan_radio_supported(ar->pdev) && arg.freq) {
-		struct ath12k_link_vif *itr_arvif;
-
-		list_for_each_entry(itr_arvif, &ar->arvifs, list) {
-			u32 itr_freq;
-
-			/* Skip self */
-			if (itr_arvif == arvif)
-				continue;
-
-			/* Skip vdevs that have not yet started in FW */
-			if (!itr_arvif->is_started)
-				continue;
-
-			/* Skip scan vdevs and bridge vdevs — they do not own
-			 * an independent home channel from the FW's perspective
-			 */
-			if (itr_arvif->is_scan_vif)
-				continue;
-
-			if (ath12k_mac_is_bridge_vdev(itr_arvif))
-				continue;
-
-			/* Skip vdevs on a different radio */
-			if (itr_arvif->ar != ar)
-				continue;
-
-			itr_freq = itr_arvif->chanctx.def.chan ?
-				itr_arvif->chanctx.def.chan->center_freq : 0;
-
-			{
-				struct ieee80211_bss_conf *_itr_conf =
-					ath12k_mac_get_link_bss_conf(itr_arvif);
-				bool itr_csa_active = _itr_conf && _itr_conf->csa_active;
-
-				if (!itr_freq || itr_freq == arg.freq)
-					continue;
-
-				ath12k_err(ab,
-					   "[radio_idx : %u] DUAL HOME CHANNEL CONFLICT%s: vdev_id=%u (type=%u subtype=%u link_id=%u is_up=%d scan=%d vif_type=%d mac=%pM) requesting freq=%u MHz, but vdev_id=%u (type=%u subtype=%u link_id=%u is_up=%d scan=%d vif_type=%d mac=%pM csa_active=%d) is already started at freq=%u MHz\n",
-					   ar->radio_idx,
-					   itr_csa_active ? " (CSA in progress)" : "",
-					   arvif->vdev_id,
-					   ahvif->vdev_type, arvif->vdev_subtype,
-					   arvif->link_id, arvif->is_up,
-					   arvif->is_scan_vif,
-					   ahvif->vif->type,
-					   ahvif->vif->addr,
-					   arg.freq,
-					   itr_arvif->vdev_id,
-					   itr_arvif->ahvif->vdev_type,
-					   itr_arvif->vdev_subtype,
-					   itr_arvif->link_id, itr_arvif->is_up,
-					   itr_arvif->is_scan_vif,
-					   itr_arvif->ahvif->vif->type,
-					   _itr_conf ? _itr_conf->addr :
-					   itr_arvif->ahvif->vif->addr,
-					   itr_csa_active,
-					   itr_freq);
-
-				ath12k_mac_dump_started_vdevs(ab, ar);
-				WARN_ON_ONCE(1);
-				break;
-			}
-		}
-	}
 
 	arvif->peer_del_all_enable = false;
 
