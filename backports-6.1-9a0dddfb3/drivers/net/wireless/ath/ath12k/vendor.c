@@ -16291,6 +16291,13 @@ static int ath12k_vendor_spectral_scan_start(struct wiphy *wiphy,
 			   "spectral config: freq=%u freq2=%u bw=%u timeout_us=%u\n",
 			   p->frequency, p->frequency2, p->bandwidth,
 			   p->completion_timeout_us);
+
+		/* Discard any sample still queued in the relay buffer from
+		 * before this config change, so a stale sample captured
+		 * under the old params isn't served as the first result of
+		 * the next get_samples call.
+		 */
+		ath12k_spectral_reset_buffer(ar);
 	}
 
 	/* Step 2: configure firmware and trigger scan if request includes SCAN. */

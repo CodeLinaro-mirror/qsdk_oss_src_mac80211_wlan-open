@@ -261,6 +261,7 @@ static int ath12k_spectral_get_adjusted_timestamp(struct ath12k *ar,
 
 static size_t ath12k_spectral_get_bin_count_after_len_adj(struct ath12k *ar,
 							  size_t fft_bin_len,
+							  u32 rpt_mode,
 							  size_t *fft_bin_size)
 {
 	struct ath12k_base *ab = ar->ab;
@@ -272,11 +273,20 @@ static size_t ath12k_spectral_get_bin_count_after_len_adj(struct ath12k *ar,
 		return 0;
 	}
 
+	if (rpt_mode == ATH12K_SPECTRAL_RPT_MODE_1) {
+		/* Header + summary report only, no FFT bins expected */
+		*fft_bin_size = 0;
+		return 0;
+	}
+
 	bin_count = fft_bin_len / bin_sz;
 	*fft_bin_size = bin_sz;
 
-	/* Only in-band bins are forwarded to userspace */
-	bin_count >>= 1;
+	/* Mode 2 forwards only the in-band half of the FFT; mode 3
+	 * forwards all bins and needs no halving.
+	 */
+	if (rpt_mode == ATH12K_SPECTRAL_RPT_MODE_2)
+		bin_count >>= 1;
 
 	return bin_count;
 }
@@ -936,8 +946,9 @@ int ath12k_spectral_process_fft(struct ath12k *ar,
 	}
 
 	total_bins = bin_len / ab->hw_params->spectral.fft_bin_sz;
-	num_bins = ath12k_spectral_get_bin_count_after_len_adj(ar, bin_len,
-							       &fft_bin_size);
+	num_bins = ath12k_spectral_get_bin_count_after_len_adj(
+			ar, bin_len, ar->spectral.params.scan_rpt_mode,
+			&fft_bin_size);
 
 	ath12k_dbg(ab, ATH12K_DBG_SPECTRAL,
 		   "spectral fft hdr: fft_timestamp=0x%x hdr_len=%d(dwords) tag=0x%x sig=0x%x payload_len=%d total_len=%zu bin_len=%d bin_sz=%zu num_bins=%d\n",
@@ -948,9 +959,10 @@ int ath12k_spectral_process_fft(struct ath12k *ar,
 		   tlv_len, tlv_len + sizeof(*tlv),
 		   bin_len, fft_bin_size, num_bins);
 
-	if (num_bins < ATH12K_SPECTRAL_ATH12K_MIN_IB_BINS ||
-	    num_bins > ATH12K_SPECTRAL_ATH12K_MAX_IB_BINS(ab) ||
-	    !is_power_of_2(num_bins)) {
+	if (ar->spectral.params.scan_rpt_mode != ATH12K_SPECTRAL_RPT_MODE_1 &&
+	    (num_bins < ATH12K_SPECTRAL_ATH12K_MIN_IB_BINS ||
+	     num_bins > ATH12K_SPECTRAL_ATH12K_MAX_IB_BINS(ab) ||
+	     !is_power_of_2(num_bins))) {
 		ath12k_warn(ab, "Invalid num of bins %d\n", num_bins);
 		return -EINVAL;
 	}
