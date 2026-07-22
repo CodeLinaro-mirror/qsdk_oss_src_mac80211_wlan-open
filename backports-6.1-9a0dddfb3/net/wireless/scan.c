@@ -1722,7 +1722,7 @@ static bool rb_insert_bss(struct cfg80211_registered_device *rdev,
 
 		if (WARN_ON(!cmp)) {
 			bss->in_rbtree = false;
-			/* will sort of leak this BSS */
+			bss_ref_put(rdev, bss);
 			return false;
 		}
 
@@ -2158,7 +2158,8 @@ static bool cfg80211_is_6ghz_dup_beacon(struct ieee80211_channel *chan,
 	if (!tmp)
 		return false;
 
-	if (tmp->datalen < sizeof(*he_oper) ||
+	if (tmp->datalen < 1 ||
+	    tmp->datalen < sizeof(*he_oper) ||
 	    tmp->datalen < ieee80211_he_oper_size(&tmp->data[1]))
 		return false;
 
@@ -2184,7 +2185,8 @@ int cfg80211_get_ies_channel_number(const u8 *ie, size_t ielen,
 
 		tmp = cfg80211_find_ext_elem(WLAN_EID_EXT_HE_OPERATION, ie,
 					     ielen);
-		if (tmp && tmp->datalen >= sizeof(*he_oper) &&
+		if (tmp && tmp->datalen >= 1 &&
+		    tmp->datalen >= sizeof(*he_oper) &&
 		    tmp->datalen >= ieee80211_he_oper_size(&tmp->data[1])) {
 			const struct ieee80211_he_6ghz_oper *he_6ghz_oper;
 
@@ -2566,6 +2568,9 @@ size_t cfg80211_merge_profile(const u8 *ie, size_t ielen,
 								sub_elem))) {
 		const struct element *next_sub = (void *)&next_mbssid->data[1];
 
+		mbssid_elem = next_mbssid;
+		sub_elem = next_sub;
+
 		if (copied_len + next_sub->datalen > max_copy_len)
 			break;
 		memcpy(merged_ie + copied_len, next_sub->data,
@@ -2629,7 +2634,7 @@ cfg80211_parse_mbssid_data(struct wiphy *wiphy,
 		if (elem->data[0] < 1 || (int)elem->data[0] > 8)
 			continue;
 		for_each_element(sub, elem->data + 1, elem->datalen - 1) {
-			u8 profile_len;
+			size_t profile_len;
 
 			if (sub->id != 0 || sub->datalen < 4) {
 				/* not a valid BSS profile */
@@ -3070,6 +3075,9 @@ cfg80211_parse_ml_elem_sta_data(struct wiphy *wiphy,
 	if (!ieee80211_mle_type_ok(elem->data + 1,
 				   IEEE80211_ML_CONTROL_TYPE_BASIC,
 				   elem->datalen - 1))
+		return;
+
+	if (elem->datalen < 1 + sizeof(*ml_elem))
 		return;
 
 	ml_elem = (void *)(elem->data + 1);
@@ -3715,8 +3723,10 @@ int cfg80211_wext_siwscan(struct net_device *dev,
 	/* translate "Scan for SSID" request */
 	if (wreq) {
 		if (wrqu->data.flags & IW_SCAN_THIS_ESSID) {
-			if (wreq->essid_len > IEEE80211_MAX_SSID_LEN)
-				return -EINVAL;
+			if (wreq->essid_len > IEEE80211_MAX_SSID_LEN) {
+				err = -EINVAL;
+				goto out;
+			}
 			memcpy(creq->ssids[0].ssid, wreq->essid, wreq->essid_len);
 			creq->ssids[0].ssid_len = wreq->essid_len;
 		}
@@ -3769,9 +3779,20 @@ static char *ieee80211_scan_add_ies(struct iw_request_info *info,
 	end = pos + ies->len;
 
 	while (end - pos > IW_GENERIC_IE_MAX) {
+		if (end - pos < 2)
+			return ERR_PTR(-EINVAL);
 		next = pos + 2 + pos[1];
-		while (next + 2 + next[1] - pos < IW_GENERIC_IE_MAX)
+		if (next > end)
+			return ERR_PTR(-EINVAL);
+		while (next < end) {
+			if (end - next < 2)
+				return ERR_PTR(-EINVAL);
+			if (next + 2 + next[1] > end)
+				return ERR_PTR(-EINVAL);
+			if (next + 2 + next[1] - pos >= IW_GENERIC_IE_MAX)
+				break;
 			next = next + 2 + next[1];
+		}
 
 		memset(&iwe, 0, sizeof(iwe));
 		iwe.cmd = IWEVGENIE;

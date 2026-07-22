@@ -603,6 +603,7 @@ static inline int call_crda(const char *alpha2)
 
 /* code to directly load a firmware database through request_firmware */
 static const struct fwdb_header *regdb;
+static size_t regdb_size;
 
 struct fwdb_country {
 	u8 alpha2[2];
@@ -992,7 +993,8 @@ static int query_regdb(const char *alpha2)
 		return PTR_ERR(regdb);
 
 	country = &hdr->country[0];
-	while (country->coll_ptr) {
+	while ((u8 *)(country + 1) <= (u8 *)regdb + regdb_size &&
+	       country->coll_ptr) {
 		if (alpha2_equal(alpha2, country->alpha2))
 			return regdb_query_country(regdb, country);
 		country++;
@@ -1029,6 +1031,7 @@ static void regdb_fw_cb(const struct firmware *fw, void *context)
 		db = kmemdup(fw->data, fw->size, GFP_KERNEL);
 		if (db) {
 			regdb = db;
+			regdb_size = fw->size;
 			restore = context && query_regdb(context);
 		} else {
 			restore = true;
@@ -1096,6 +1099,7 @@ int reg_reload_regdb(void)
 	if (!IS_ERR_OR_NULL(regdb))
 		kfree(regdb);
 	regdb = db;
+	regdb_size = fw->size;
 
 	/* reset regulatory domain */
 	current_regdomain = get_cfg80211_regdom();
@@ -1672,7 +1676,10 @@ __freq_reg_info(struct wiphy *wiphy, u32 center_freq, u32 min_bw)
 	int i = ARRAY_SIZE(bws) - 1;
 	u32 bw;
 
-	for (bw = MHZ_TO_KHZ(bws[i]); bw >= min_bw; bw = MHZ_TO_KHZ(bws[i--])) {
+	for (; i >= 0; i--) {
+		bw = MHZ_TO_KHZ(bws[i]);
+		if (bw < min_bw)
+			continue;
 		reg_rule = freq_reg_info_regd(center_freq, regd, bw, 0);
 		if (!IS_ERR(reg_rule))
 			return reg_rule;
@@ -3321,7 +3328,7 @@ __reg_process_hint_country_ie(struct wiphy *wiphy,
 	}
 
 	if (unlikely(!is_an_alpha2(country_ie_request->alpha2)))
-		return -EINVAL;
+		return REG_REQ_IGNORE;
 
 	if (lr->initiator != NL80211_REGDOM_SET_BY_COUNTRY_IE)
 		return REG_REQ_OK;
@@ -4195,6 +4202,10 @@ static void restore_regulatory_settings(bool reset_user, bool cached)
 			struct regulatory_request *ureq;
 
 			spin_lock(&reg_requests_lock);
+			if (list_empty(&reg_requests_list)) {
+				spin_unlock(&reg_requests_lock);
+				goto skip_ureq;
+			}
 			ureq = list_last_entry(&reg_requests_list,
 					       struct regulatory_request,
 					       list);
@@ -4206,6 +4217,8 @@ static void restore_regulatory_settings(bool reset_user, bool cached)
 			set_regdom(reg_copy_regd(cfg80211_user_regdom),
 				   REGD_SOURCE_CACHED);
 		}
+skip_ureq:
+		;
 	} else {
 		regulatory_hint_core(world_alpha2);
 
@@ -4837,7 +4850,7 @@ bool regulatory_pre_cac_allowed(struct wiphy *wiphy)
 	regd = rcu_dereference(cfg80211_regdomain);
 	wiphy_regd = rcu_dereference(wiphy->regd);
 	if (!wiphy_regd) {
-		if (regd->dfs_region == NL80211_DFS_ETSI)
+		if (regd && regd->dfs_region == NL80211_DFS_ETSI)
 			pre_cac_allowed = true;
 
 		rcu_read_unlock();
@@ -4845,8 +4858,9 @@ bool regulatory_pre_cac_allowed(struct wiphy *wiphy)
 		return pre_cac_allowed;
 	}
 
-	if ((regd->dfs_region == wiphy_regd->dfs_region ||
-	    wiphy->regulatory_flags & REGULATORY_WIPHY_SELF_MANAGED) &&
+	if (regd &&
+	    (regd->dfs_region == wiphy_regd->dfs_region ||
+	     wiphy->regulatory_flags & REGULATORY_WIPHY_SELF_MANAGED) &&
 	    wiphy_regd->dfs_region == NL80211_DFS_ETSI)
 		pre_cac_allowed = true;
 

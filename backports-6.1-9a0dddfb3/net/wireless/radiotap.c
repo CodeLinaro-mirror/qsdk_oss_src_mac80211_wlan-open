@@ -345,6 +345,10 @@ int ieee80211_radiotap_iterator_next(
 			 * bit 31 was set, there is more
 			 * -- move to next u32 bitmap
 			 */
+			if ((unsigned long)iterator->_next_bitmap + sizeof(uint32_t) -
+			    (unsigned long)iterator->_rtheader >
+			    (unsigned long)iterator->_max_length)
+				return -EINVAL;
 			iterator->_bitmap_shifter =
 				get_unaligned_le32(iterator->_next_bitmap);
 			iterator->_next_bitmap++;

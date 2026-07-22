@@ -52,9 +52,10 @@ void cfg80211_rx_assoc_resp(struct net_device *dev,
 		.req_ie = data->req_ies,
 		.req_ie_len = data->req_ies_len,
 		.resp_ie = mgmt->u.assoc_resp.variable,
-		.resp_ie_len = data->len -
-			       offsetof(struct ieee80211_mgmt,
-					u.assoc_resp.variable),
+		.resp_ie_len = (data->len >= offsetof(struct ieee80211_mgmt,
+						   u.assoc_resp.variable)) ?
+			       data->len - offsetof(struct ieee80211_mgmt,
+						   u.assoc_resp.variable) : 0,
 		.status = le16_to_cpu(mgmt->u.assoc_resp.status_code),
 		.ap_mld_addr = data->ap_mld_addr,
 	};
@@ -80,9 +81,12 @@ void cfg80211_rx_assoc_resp(struct net_device *dev,
 		if (cr.links[link_id].bss->channel->band == NL80211_BAND_S1GHZ) {
 			WARN_ON(link_id);
 			cr.resp_ie = (u8 *)&mgmt->u.s1g_assoc_resp.variable;
-			cr.resp_ie_len = data->len -
+			cr.resp_ie_len = (data->len >=
+					  offsetof(struct ieee80211_mgmt,
+						   u.s1g_assoc_resp.variable)) ?
+					 data->len -
 					 offsetof(struct ieee80211_mgmt,
-						  u.s1g_assoc_resp.variable);
+						  u.s1g_assoc_resp.variable) : 0;
 		}
 
 		if (cr.ap_mld_addr)
@@ -131,9 +135,17 @@ static void cfg80211_process_deauth(struct wireless_dev *wdev,
 {
 	struct cfg80211_registered_device *rdev = wiphy_to_rdev(wdev->wiphy);
 	struct ieee80211_mgmt *mgmt = (struct ieee80211_mgmt *)buf;
-	const u8 *bssid = mgmt->bssid;
-	u16 reason_code = le16_to_cpu(mgmt->u.deauth.reason_code);
-	bool from_ap = !ether_addr_equal(mgmt->sa, wdev->netdev->dev_addr);
+	const u8 *bssid;
+	u16 reason_code;
+	bool from_ap;
+
+	if (len < offsetof(struct ieee80211_mgmt, u.deauth.reason_code) +
+		  sizeof(mgmt->u.deauth.reason_code))
+		return;
+
+	bssid = mgmt->bssid;
+	reason_code = le16_to_cpu(mgmt->u.deauth.reason_code);
+	from_ap = !ether_addr_equal(mgmt->sa, wdev->netdev->dev_addr);
 
 	nl80211_send_deauth(rdev, wdev->netdev, buf, len, reconnect, GFP_KERNEL);
 
@@ -150,9 +162,17 @@ static void cfg80211_process_disassoc(struct wireless_dev *wdev,
 {
 	struct cfg80211_registered_device *rdev = wiphy_to_rdev(wdev->wiphy);
 	struct ieee80211_mgmt *mgmt = (struct ieee80211_mgmt *)buf;
-	const u8 *bssid = mgmt->bssid;
-	u16 reason_code = le16_to_cpu(mgmt->u.disassoc.reason_code);
-	bool from_ap = !ether_addr_equal(mgmt->sa, wdev->netdev->dev_addr);
+	const u8 *bssid;
+	u16 reason_code;
+	bool from_ap;
+
+	if (len < offsetof(struct ieee80211_mgmt, u.disassoc.reason_code) +
+		  sizeof(mgmt->u.disassoc.reason_code))
+		return;
+
+	bssid = mgmt->bssid;
+	reason_code = le16_to_cpu(mgmt->u.disassoc.reason_code);
+	from_ap = !ether_addr_equal(mgmt->sa, wdev->netdev->dev_addr);
 
 	nl80211_send_disassoc(rdev, wdev->netdev, buf, len, reconnect,
 			      GFP_KERNEL);
@@ -391,6 +411,11 @@ static int cfg80211_mlme_check_mlo(struct net_device *dev,
 	if (req->link_id < 0)
 		return 0;
 
+	if (req->link_id >= ARRAY_SIZE(req->links)) {
+		NL_SET_ERR_MSG(extack, "invalid assoc link ID");
+		return -EINVAL;
+	}
+
 	if (!req->links[req->link_id].bss) {
 		NL_SET_ERR_MSG(extack, "no BSS for assoc link");
 		return -EINVAL;
@@ -411,6 +436,11 @@ static int cfg80211_mlme_check_mlo(struct net_device *dev,
 		}
 
 		ies = rcu_dereference(req->links[i].bss->ies);
+		if (!ies) {
+			NL_SET_ERR_MSG(extack, "BSS missing IEs");
+			req->links[i].error = -EINVAL;
+			goto error;
+		}
 		ml = cfg80211_find_ext_elem(WLAN_EID_EXT_EHT_MULTI_LINK,
 					    ies->data, ies->len);
 		if (!ml) {
@@ -684,6 +714,9 @@ int cfg80211_mlme_register_mgmt(struct wireless_dev *wdev, u32 snd_portid,
 	}
 
 	mgmt_type = (frame_type & IEEE80211_FCTL_STYPE) >> 4;
+	if (wdev->iftype >= NUM_NL80211_IFTYPES)
+		return -EINVAL;
+
 	if (!(wdev->wiphy->mgmt_stypes[wdev->iftype].rx & BIT(mgmt_type))) {
 		NL_SET_ERR_MSG(extack,
 			       "Registration to specific type not supported");
@@ -705,6 +738,9 @@ int cfg80211_mlme_register_mgmt(struct wireless_dev *wdev, u32 snd_portid,
 			       "Authentication algorithm number required");
 		return -EINVAL;
 	}
+
+	if (match_len < 0)
+		return -EINVAL;
 
 	nreg = kzalloc(sizeof(*reg) + match_len, GFP_KERNEL);
 	if (!nreg)
@@ -873,6 +909,9 @@ int cfg80211_mlme_mgmt_tx(struct cfg80211_registered_device *rdev,
 		return -EINVAL;
 
 	stype = le16_to_cpu(mgmt->frame_control) & IEEE80211_FCTL_STYPE;
+	if (wdev->iftype >= NUM_NL80211_IFTYPES)
+		return -EINVAL;
+
 	if (!(wdev->wiphy->mgmt_stypes[wdev->iftype].tx & BIT(stype >> 4)))
 		return -EINVAL;
 
@@ -920,6 +959,7 @@ int cfg80211_mlme_mgmt_tx(struct cfg80211_registered_device *rdev,
 		case NL80211_IFTYPE_AP_VLAN:
 			if (!ether_addr_equal(mgmt->bssid, wdev_address(wdev)) &&
 			    (params->link_id < 0 ||
+			     params->link_id >= ARRAY_SIZE(wdev->links) ||
 			     !ether_addr_equal(mgmt->bssid,
 					       wdev->links[params->link_id].addr)))
 				err = -EINVAL;
@@ -963,17 +1003,29 @@ bool cfg80211_rx_mgmt_ext(struct wireless_dev *wdev,
 	struct wiphy *wiphy = wdev->wiphy;
 	struct cfg80211_registered_device *rdev = wiphy_to_rdev(wiphy);
 	struct cfg80211_mgmt_registration *reg;
-	const struct ieee80211_txrx_stypes *stypes =
-		&wiphy->mgmt_stypes[wdev->iftype];
+	const struct ieee80211_txrx_stypes *stypes;
 	struct ieee80211_mgmt *mgmt = (void *)info->buf;
 	const u8 *data;
 	int data_len;
 	bool result = false;
-	__le16 ftype = mgmt->frame_control &
-		cpu_to_le16(IEEE80211_FCTL_FTYPE | IEEE80211_FCTL_STYPE);
+	__le16 ftype;
 	u16 stype;
 
+	if (info->len < sizeof(mgmt->frame_control))
+		return false;
+
+	if (wdev->iftype >= NUM_NL80211_IFTYPES)
+		return false;
+
+	stypes = &wiphy->mgmt_stypes[wdev->iftype];
+
 	trace_cfg80211_rx_mgmt(wdev, info);
+
+	if (info->len < ieee80211_hdrlen(mgmt->frame_control))
+		return false;
+
+	ftype = mgmt->frame_control &
+		cpu_to_le16(IEEE80211_FCTL_FTYPE | IEEE80211_FCTL_STYPE);
 	stype = (le16_to_cpu(mgmt->frame_control) & IEEE80211_FCTL_STYPE) >> 4;
 
 	if (!(stypes->rx & BIT(stype))) {
@@ -1305,6 +1357,9 @@ bool cfg80211_radar_event_device(struct wiphy *wiphy, struct cfg80211_chan_def *
 		    (freq >= MHZ_TO_KHZ(5740) && freq <= MHZ_TO_KHZ(5800)))
 			continue;
 
+		if (i >= BITS_PER_TYPE(chandef->radar_bitmap))
+			break;
+
 		if (c->dfs_state == NL80211_DFS_UNAVAILABLE) {
 			chandef->radar_bitmap &= ~BIT(i);
 			nop_in_progress = true;
@@ -1322,6 +1377,9 @@ bool cfg80211_radar_event_device(struct wiphy *wiphy, struct cfg80211_chan_def *
 			continue;
 
 		if (!chandef->radar_bitmap)
+			break;
+
+		if (i >= BITS_PER_TYPE(chandef->radar_bitmap))
 			break;
 
 		if (cfg80211_is_freq_device_non_oper(chandef, freq)) {

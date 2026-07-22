@@ -8834,9 +8834,17 @@ void ieee80211_process_neg_ttlm_req(struct ieee80211_sub_if_data *sdata,
 	if (!ieee80211_vif_is_mld(&sdata->vif))
 		return;
 
-	dialog_token = mgmt->u.action.u.ttlm_req.dialog_token;
-	ies_len  = len - offsetof(struct ieee80211_mgmt,
-				  u.action.u.ttlm_req.variable);
+	{
+		size_t hdr = offsetof(struct ieee80211_mgmt,
+				      u.action.u.ttlm_req.variable);
+
+		if (len < hdr) {
+			ttlm_res = NEG_TTLM_RES_REJECT;
+			goto out;
+		}
+		dialog_token = mgmt->u.action.u.ttlm_req.dialog_token;
+		ies_len = len - hdr;
+	}
 	elems = ieee802_11_parse_elems(mgmt->u.action.u.ttlm_req.variable,
 				       ies_len,
 				       IEEE80211_FTYPE_MGMT |
@@ -9891,11 +9899,16 @@ static int ieee80211_prep_connection(struct ieee80211_sub_if_data *sdata,
 		} else if (!ieee80211_hw_check(&sdata->local->hw,
 					       TIMING_BEACON_ONLY)) {
 			ies = rcu_dereference(cbss->proberesp_ies);
-			/* must be non-NULL since beacon IEs were NULL */
-			link->conf->sync_tsf = ies->tsf;
-			link->conf->sync_device_ts =
-				bss->device_ts_presp;
-			link->conf->sync_dtim_count = 0;
+			if (!ies) {
+				link->conf->sync_tsf = 0;
+				link->conf->sync_device_ts = 0;
+				link->conf->sync_dtim_count = 0;
+			} else {
+				link->conf->sync_tsf = ies->tsf;
+				link->conf->sync_device_ts =
+					bss->device_ts_presp;
+				link->conf->sync_dtim_count = 0;
+			}
 		} else {
 			link->conf->sync_tsf = 0;
 			link->conf->sync_device_ts = 0;
@@ -10036,8 +10049,10 @@ static void ieee80211_parse_cfg_selectors(unsigned long *userspace_selectors,
 {
 	if (supported_selectors) {
 		for (int i = 0; i < supported_selectors_len; i++) {
-			set_bit(supported_selectors[i],
-				userspace_selectors);
+			if (supported_selectors[i] >=
+			    BITS_TO_LONGS(128) * BITS_PER_LONG)
+				continue;
+			set_bit(supported_selectors[i], userspace_selectors);
 		}
 	} else {
 		/* Assume SAE_H2E support for backward compatibility. */
@@ -11152,6 +11167,9 @@ void ieee80211_process_ml_reconf_resp(struct ieee80211_sub_if_data *sdata,
 		goto disconnect;
 
 	valid_links = sdata->vif.valid_links;
+	if (!add_links_data)
+		goto disconnect;
+
 	for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS; link_id++) {
 		if (!add_links_data->link[link_id].bss ||
 		    !(sdata->u.mgd.reconf.added_links & BIT(link_id)))
@@ -11894,6 +11912,10 @@ void ieee80211_process_epcs_ena_resp(struct ieee80211_sub_if_data *sdata,
 	if (!ieee80211_mgd_epcs_supp(sdata))
 		return;
 
+	if (len < offsetof(struct ieee80211_mgmt, u.action.u.epcs.variable) +
+		  IEEE80211_EPCS_ENA_RESP_BODY_LEN)
+		return;
+
 	/* Handle dialog token and status code */
 	pos = mgmt->u.action.u.epcs.variable;
 	dialog_token = *pos;
@@ -11982,6 +12004,12 @@ void ieee80211_process_epcs_ena_req(struct ieee80211_sub_if_data *sdata,
 	size_t ies_len;
 	u8 *pos;
 	u16 status_code = WLAN_STATUS_SUCCESS;
+
+	if (len < offsetof(struct ieee80211_mgmt, u.action.u.epcs.variable) +
+		  IEEE80211_EPCS_ENA_REQ_BODY_LEN) {
+		status_code = WLAN_STATUS_EPCS_DENIED;
+		goto send_frame;
+	}
 
 	pos = mgmt->u.action.u.epcs.variable;
 	sdata->u.mgd.epcs.dialog_token = *pos;

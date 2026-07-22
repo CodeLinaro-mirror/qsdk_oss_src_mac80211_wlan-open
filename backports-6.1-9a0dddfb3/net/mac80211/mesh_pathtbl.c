@@ -765,8 +765,8 @@ struct mesh_path *__mesh_path_add(struct ieee80211_sub_if_data *sdata,
 	tbl = &sdata->u.mesh.mesh_paths;
 	spin_lock_bh(&tbl->walk_lock);
 	mpath = rhashtable_lookup_get_insert_fast(&tbl->rhead,
-						  &new_mpath->rhash,
-						  mesh_rht_params);
+					  &new_mpath->rhash,
+					  mesh_rht_params);
 	if (!mpath)
 		hlist_add_head(&new_mpath->walk_list, &tbl->walk_head);
 	spin_unlock_bh(&tbl->walk_lock);
@@ -961,6 +961,7 @@ static void __mesh_path_del(struct mesh_table *tbl, struct mesh_path *mpath,
 		mesh_fast_tx_flush_addr(mpath->sdata, mpath->dst);
 	else
 		mesh_fast_tx_flush_mpath(mpath);
+
 	mesh_path_free_rcu(tbl, mpath);
 
 	drv_config_mesh_offload_path(sdata->local, sdata,

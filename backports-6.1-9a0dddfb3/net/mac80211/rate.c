@@ -327,7 +327,7 @@ static void rc_send_low_basicrate(struct ieee80211_tx_rate *rate,
 	if (basic_rates & (1 << rate->idx))
 		return; /* selected rate is a basic rate */
 
-	for (i = rate->idx + 1; i <= sband->n_bitrates; i++) {
+	for (i = rate->idx + 1; i < sband->n_bitrates; i++) {
 		if (basic_rates & (1 << i)) {
 			rate->idx = i;
 			return;
@@ -622,6 +622,8 @@ static void rate_fixup_ratelist(struct ieee80211_vif *vif,
 		u32 basic_rates = vif->bss_conf.basic_rates;
 		s8 baserate = basic_rates ? ffs(basic_rates) - 1 : 0;
 
+		if (rates[0].idx < 0 || rates[0].idx >= sband->n_bitrates)
+			return;
 		rate = &sband->bitrates[rates[0].idx];
 
 		for (i = 0; i < sband->n_bitrates; i++) {

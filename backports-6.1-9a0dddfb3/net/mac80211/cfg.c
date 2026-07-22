@@ -209,6 +209,8 @@ static int ieee80211_set_ap_mbssid_options(struct ieee80211_sub_if_data *sdata,
 		tx_bss_conf =
 			sdata_dereference(tx_sdata->vif.link_conf[params->tx_link_id],
 					  sdata);
+		if (!tx_bss_conf)
+			return -ENOLINK;
 		if (rcu_access_pointer(tx_bss_conf->tx_bss_conf) != tx_bss_conf)
 			return -EINVAL;
 
@@ -797,6 +799,10 @@ ieee80211_lookup_key(struct ieee80211_sub_if_data *sdata, int link_id,
 	if (pairwise && key_idx < NUM_DEFAULT_KEYS)
 		return wiphy_dereference(local->hw.wiphy, sdata->keys[key_idx]);
 
+	if (key_idx >= NUM_DEFAULT_KEYS + NUM_DEFAULT_MGMT_KEYS +
+		       NUM_DEFAULT_BEACON_KEYS + NUM_DEFAULT_CONTROL_KEYS)
+		return NULL;
+
 	key = wiphy_dereference(local->hw.wiphy, link->gtk[key_idx]);
 	if (key)
 		return key;
@@ -1012,8 +1018,11 @@ void sta_set_rate_info_tx(struct sta_info *sta,
 
 		sband = ieee80211_get_link_sband(&sta->sdata->deflink);
 		WARN_ON_ONCE(sband && !sband->bitrates);
-		if (sband && sband->bitrates)
+		if (sband && sband->bitrates) {
+			if (rate->idx < 0 || rate->idx >= sband->n_bitrates)
+				return;
 			rinfo->legacy = sband->bitrates[rate->idx].bitrate;
+		}
 	}
 	if (rate->flags & IEEE80211_TX_RC_40_MHZ_WIDTH)
 		rinfo->bw = RATE_INFO_BW_40;
@@ -1217,12 +1226,18 @@ ieee80211_set_probe_resp(struct ieee80211_sub_if_data *sdata,
 	new->len = resp_len;
 	memcpy(new->data, resp, resp_len);
 
-	if (csa)
+	if (csa) {
+		if (csa->n_counter_offsets_presp >
+		    ARRAY_SIZE(new->cntdwn_counter_offsets)) {
+			kfree(new);
+			return -EINVAL;
+		}
 		memcpy(new->cntdwn_counter_offsets, csa->counter_offsets_presp,
 		       csa->n_counter_offsets_presp *
 		       sizeof(new->cntdwn_counter_offsets[0]));
-	else if (cca)
+	} else if (cca) {
 		new->cntdwn_counter_offsets[0] = cca->counter_offset_presp;
+	}
 
 	rcu_assign_pointer(link->u.ap.probe_resp, new);
 	if (old)
@@ -1548,6 +1563,11 @@ ieee80211_assign_beacon(struct ieee80211_sub_if_data *sdata,
 
 	if (csa) {
 		new->cntdwn_current_counter = csa->count;
+		if (csa->n_counter_offsets_beacon >
+		    ARRAY_SIZE(new->cntdwn_counter_offsets)) {
+			kfree(new);
+			return -EINVAL;
+		}
 		memcpy(new->cntdwn_counter_offsets, csa->counter_offsets_beacon,
 		       csa->n_counter_offsets_beacon *
 		       sizeof(new->cntdwn_counter_offsets[0]));
@@ -2632,6 +2652,8 @@ static int sta_link_apply_parameters(struct ieee80211_local *local,
 
 	if (params->supported_rates &&
 	    params->supported_rates_len) {
+		if (!link->conf)
+			return -EINVAL;
 		ieee80211_parse_bitrates(link->conf->chanreq.oper.width,
 					 sband, params->supported_rates,
 					 params->supported_rates_len,
@@ -3350,6 +3372,8 @@ static int copy_mesh_setup(struct ieee80211_if_mesh *ifmsh,
 	ifmsh->ie = new_ie;
 
 	/* now copy the rest of the setup parameters */
+	if (setup->mesh_id_len > IEEE80211_MAX_MESH_ID_LEN)
+		return -EINVAL;
 	ifmsh->mesh_id_len = setup->mesh_id_len;
 	memcpy(ifmsh->mesh_id, setup->mesh_id, ifmsh->mesh_id_len);
 	ifmsh->mesh_sp_id = setup->sync_method;
@@ -3708,6 +3732,9 @@ static int ieee80211_set_txq_params(struct wiphy *wiphy,
 	 * called in master mode.
 	 */
 	p.uapsd = false;
+
+	if (params->ac < 0 || params->ac >= IEEE80211_NUM_ACS)
+		return -EINVAL;
 
 	ieee80211_regulatory_limit_wmm_params(sdata, &p, params->ac);
 
@@ -4126,12 +4153,16 @@ static int ieee80211_get_tx_power(struct wiphy *wiphy,
 	if (local->emulate_chanctx) {
 		*dbm = local->hw.conf.power_level;
 	} else {
+		if (link_id >= ARRAY_SIZE(sdata->link))
+			return -EINVAL;
+
 		link_data = wiphy_dereference(wiphy, sdata->link[link_id]);
 
-		if (link_data)
-			*dbm = link_data->conf->txpower;
-		else
+		if (!link_data)
 			return -ENOLINK;
+		if (!link_data->conf)
+			return -EINVAL;
+		*dbm = link_data->conf->txpower;
 	}
 
 	/* INT_MIN indicates no power level was set yet */
@@ -4372,8 +4403,12 @@ static int ieee80211_set_cqm_rssi_config(struct wiphy *wiphy,
 						    0, 0);
 		}
 	} else {
-		struct ieee80211_link_data *link =
-			sdata_dereference(sdata->link[link_id], sdata);
+		struct ieee80211_link_data *link;
+
+		if (link_id >= ARRAY_SIZE(sdata->link))
+			return -EINVAL;
+
+		link = sdata_dereference(sdata->link[link_id], sdata);
 
 		ieee80211_set_cqm_rssi_link(sdata, link, rssi_thold, rssi_hyst,
 					    0, 0);
@@ -4553,6 +4588,9 @@ static int ieee80211_start_radar_detection(struct wiphy *wiphy,
 
 	if (__ieee80211_is_scan_ongoing(wiphy, local, chandef))
 		return -EBUSY;
+
+	if (link_id < 0 || link_id >= ARRAY_SIZE(sdata->link))
+		return -EINVAL;
 
 	link_data = sdata_dereference(sdata->link[link_id], sdata);
 	if (!link_data)
@@ -4850,8 +4888,8 @@ void ieee80211_link_removal_count_update(struct ieee80211_vif *vif,
 {
 	struct wireless_dev *wdev = ieee80211_vif_to_wdev(vif);
 
-	if (!wdev->valid_links ||
-		WARN_ON(link_id >= IEEE80211_MLD_MAX_NUM_LINKS))
+	if (!wdev || !wdev->valid_links ||
+	    WARN_ON(link_id >= IEEE80211_MLD_MAX_NUM_LINKS))
 		return;
 
 	wdev->links[link_id].link_removal_tbtt_count = count;
@@ -5910,7 +5948,12 @@ static int ieee80211_add_tx_ts(struct wiphy *wiphy, struct net_device *dev,
 {
 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 	struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
-	int ac = ieee802_1d_to_ac[up];
+	int ac;
+
+	if (up >= 8)
+		return -EINVAL;
+
+	ac = ieee802_1d_to_ac[up];
 
 	if (sdata->vif.type != NL80211_IFTYPE_STATION)
 		return -EOPNOTSUPP;

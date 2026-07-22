@@ -40,7 +40,8 @@ void ieee80211_aes_cmac(struct crypto_shash *tfm, const u8 *aad,
 
 		/* mask Timestamp field to zero */
 		crypto_shash_update(desc, zero, 8);
-		crypto_shash_update(desc, data + 8, data_len - 8 - CMAC_TLEN);
+		if (data_len >= 8 + CMAC_TLEN)
+			crypto_shash_update(desc, data + 8, data_len - 8 - CMAC_TLEN);
 	} else {
 		if (data_len < CMAC_TLEN)
 			return;
