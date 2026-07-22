@@ -608,7 +608,6 @@ ath12k_wifi7_dp_mon_rx_parse_dest(struct ath12k_pdev_dp *dp_pdev,
 		status_desc->mon_buf = NULL;
 		mon_stats->status_buf_free++;
 	}
-
 	return hal_status;
 }
 

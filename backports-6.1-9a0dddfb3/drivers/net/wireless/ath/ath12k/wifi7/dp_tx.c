@@ -1112,7 +1112,9 @@ ath12k_wifi7_dp_ext_desc_populate(struct ath12k_dp *dp,
 		&msdu_info->ext_desc;
 	struct hal_tx_msdu_metadata *htt_desc_ext = NULL;
 	u8 *mac_addr;
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 	int ret;
+#endif /* CPTCFG_QCN_EXTN_MESH_SUPPORT */
 	u8 htt_desc_size;
 
 	/* Allocate extended descriptor */

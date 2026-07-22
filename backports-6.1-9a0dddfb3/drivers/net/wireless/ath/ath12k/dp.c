@@ -249,7 +249,9 @@ void ath12k_dp_peer_cleanup(struct ath12k *ar, void *ptr, int vdev_id, const u8 
 		return;
 	}
 
+#ifdef CPTCFG_QCN_EXTN
 	ath12k_dp_ipa_peer_notify(ar, peer, NULL, vdev_id, false);
+#endif /* CPTCFG_QCN_EXTN */
 	ath12k_dp_arch_smd_clear_old_peer_rx_lut(dp, peer->dp_peer);
 
 	ath12k_dp_rx_peer_tid_cleanup(ar, peer);
@@ -291,7 +293,9 @@ int ath12k_dp_peer_setup(struct ath12k *ar, void *ptr, struct ath12k_link_vif *a
 	if (ar->radio_cfg.pdev_to_reo_dest)
 		reo_dest = ar->radio_cfg.pdev_to_reo_dest;
 
+#ifdef CPTCFG_QCN_EXTN
 	reo_dest = ath12k_dp_ipa_arch_op_rx_default_routing(ab, reo_dest);
+#endif /* CPTCFG_QCN_EXTN */
 
 	ret = ath12k_wmi_set_peer_param(ar, addr, vdev_id,
 					WMI_PEER_SET_DEFAULT_ROUTING,
@@ -363,7 +367,9 @@ int ath12k_dp_peer_setup(struct ath12k *ar, void *ptr, struct ath12k_link_vif *a
 		goto tid_clean;
 	}
 
+#ifdef CPTCFG_QCN_EXTN
 	ath12k_dp_ipa_peer_notify(ar, link_peer, arvif, vdev_id, true);
+#endif /* CPTCFG_QCN_EXTN */
 	spin_unlock_bh(&dp->dp_lock);
 
 	/* TODO: Setup other peer specific resource used in data path */
@@ -2811,7 +2817,9 @@ void ath12k_dp_cmn_hw_group_unassign(struct ath12k_dp *dp,
 		dp_hw_grp->fst = NULL;
 	}
 
+#ifdef CPTCFG_QCN_EXTN
 	ath12k_dp_ipa_hw_group_deinit(dp_hw_grp);
+#endif /* CPTCFG_QCN_EXTN */
 
 	if (dp_hw_grp->tx_desc_initialized && dp->dev == dp_hw_grp->tx_spt_dev)
 		ath12k_dp_tx_spt_free_and_deinit(dp_hw_grp);
@@ -2884,10 +2892,12 @@ void ath12k_dp_cmn_hw_group_assign(struct ath12k_dp *dp,
 	if (ret)
 		ath12k_warn(ab, "failed to alloc and init PPEDS SPT pages %d\n", ret);
 #endif
+#ifdef CPTCFG_QCN_EXTN
 	ret = ath12k_dp_ipa_hw_group_init(ab, dp_hw_grp);
 	if (ret) {
 		ath12k_err(ab, "Failed to allocate IPA global context: %d\n", ret);
 	}
+#endif /* CPTCFG_QCN_EXTN */
 }
 
 int ath12k_dp_srng_alloc_aligned(struct ath12k_base *ab,

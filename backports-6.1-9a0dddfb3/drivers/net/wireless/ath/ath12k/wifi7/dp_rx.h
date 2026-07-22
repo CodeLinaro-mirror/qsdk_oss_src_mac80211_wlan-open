@@ -171,6 +171,7 @@ void ath12k_wifi7_dp_rx_h_undecap_eth(struct ath12k_pdev_dp *dp_pdev,
 void ath12k_wifi7_dp_adjust_skb(struct hal_rx_spd_data *spd_desc_l,
 				struct link_peer_rx_tid_stats *stats,
 				int *msdu_idx, u32 hal_rx_desc_sz);
+static inline void ath12k_wifi7_convert_eth_2_80211_frame(struct hal_rx_spd_data *rx_spd);
 static inline u8 ath12k_wifi7_dp_rx_get_msdu_src_link(struct ath12k_dp *dp,
 						      struct hal_rx_desc *desc)
 {

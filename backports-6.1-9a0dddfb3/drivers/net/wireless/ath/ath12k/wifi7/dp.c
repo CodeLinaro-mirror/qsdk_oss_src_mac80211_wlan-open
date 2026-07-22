@@ -261,8 +261,10 @@ static int ath12k_wifi7_dp_op_device_init(struct ath12k_dp *dp)
 	if (ret)
 		return ret;
 
+#ifdef CPTCFG_QCN_EXTN
 	if (ath12k_cfg_get(ab, ATH12K_CFG_DP_UCAST_ENABLE_AST_OVERRIDE))
 		set_bit(ATH12K_FLAG_UCAST_ENABLE_AST_OVERRIDE, &ab->dev_flags);
+#endif /* CPTCFG_QCN_EXTN */
 
 	dp->reo_cmd_cache_flush_count = 0;
 	dp->idle_link_rbm =

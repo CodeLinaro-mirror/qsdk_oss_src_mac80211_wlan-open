@@ -27,6 +27,7 @@
 #include "dp_rx.h"
 #include "debug.h"
 #include "debugfs.h"
+#include "erp.h"
 #include "fw.h"
 #include "hif.h"
 #include "pci.h"
@@ -4900,8 +4901,10 @@ static void ath12k_core_reset(struct work_struct *work)
 				ag->recovery_mode - 1);
 
 	/* Send vendor event to notify userspace about assert has occurred */
+#ifdef CPTCFG_QCN_EXTN
 	ath12k_vendor_send_event(ab,
 				 QCA_NL80211_VENDOR_FW_RECOVERY_EVENT_FW_ASSERT);
+#endif /* CPTCFG_QCN_EXTN */
 
 	/* Sometimes the recovery will fail and then the next all recovery fail,
 	 * this is to avoid infinite recovery since it can not recovery success

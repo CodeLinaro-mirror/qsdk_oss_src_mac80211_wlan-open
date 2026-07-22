@@ -23,8 +23,8 @@
 
 #ifndef CPTCFG_QCN_EXTN
 
-#define DP_RXDMA_MON_STATUS_RING_SIZE	1024
-#define DP_RXDMA_MONITOR_DESC_RING_SIZE	4096
+#define DP_RXDMA_MON_STATUS_RING_SIZE(ab)	({ (void)(ab); 1024; })
+#define DP_RXDMA_MONITOR_DESC_RING_SIZE(ab)	({ (void)(ab); 4096; })
 
 #if defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
 #define DP_RXDMA_MONITOR_BUF_RING_SIZE  256
@@ -1305,7 +1305,6 @@ int ath12k_dp_mon_pdev_init(struct ath12k_pdev_dp *dp_pdev)
 
 	if (mon_ops && mon_ops->mon_pdev_alloc)
 		ret = mon_ops->mon_pdev_alloc(dp_pdev);
-
 	return ret;
 }
 

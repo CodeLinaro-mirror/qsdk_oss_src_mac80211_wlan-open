@@ -4718,6 +4718,9 @@ ath12k_dp_mon_tx_htt_update_filters(struct ath12k_dp *dp,
 
 	int ring_buf_size, mac_id, ring_id;
 
+	if (!ab)
+		return ret;
+
 	if (!dp_mon_pdev || !dp->ab) {
 		ath12k_err(NULL, "Tx Mon: mon pdev/base invalid - skip filter config\n");
 		return ret;
