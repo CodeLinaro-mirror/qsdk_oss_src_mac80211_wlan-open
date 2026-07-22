@@ -2378,9 +2378,9 @@ static int ath12k_select_cumac_chip(struct ath12k_hw_group *ag)
 	int i, j;
 	u8 best_chip_prio;
 	enum ath12k_cumac_band preferred_cumac_band = ATH12K_CUMAC_BAND_NONE;
-	enum ath12k_cumac_band default_prio_band[] = {ATH12K_CUMAC_BAND_2GHZ,
+	enum ath12k_cumac_band default_prio_band[] = {ATH12K_CUMAC_BAND_6GHZ,
 						      ATH12K_CUMAC_BAND_5GHZ,
-						      ATH12K_CUMAC_BAND_6GHZ};
+						      ATH12K_CUMAC_BAND_2GHZ};
 	enum ath12k_cumac_band override_prio_band[ATH12K_CUMAC_BAND_PRIO_MAX];
 	enum ath12k_cumac_band *prio_band;
 	u32 max_prio_order;
