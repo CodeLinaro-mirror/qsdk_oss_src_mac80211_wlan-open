@@ -11,6 +11,7 @@
 #include <net/cfg80211.h>
 #include "wmi.h"
 #include "smd.h"
+#include "ranging.h"
 
 #ifdef CPTCFG_QCN_EXTN
 #include "../../net/mac80211/qcn_extns/cmn_extn.h"
