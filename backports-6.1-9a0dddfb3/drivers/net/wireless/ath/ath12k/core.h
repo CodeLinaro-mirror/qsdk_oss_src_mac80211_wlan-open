@@ -970,6 +970,7 @@ struct ath12k_link_vif {
 
 	struct ath12k_smd_params smd_params;
 	bool self_peer_authorized;
+	struct ath12k_link_vif_extn arvif_extn;
 };
 
 struct ath12k_dp_link_vif {

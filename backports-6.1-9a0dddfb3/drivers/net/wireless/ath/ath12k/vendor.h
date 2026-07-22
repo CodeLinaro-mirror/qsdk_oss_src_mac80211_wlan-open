@@ -5104,6 +5104,11 @@ enum qca_wlan_vendor_attr_scs_rule_config {
  * @QCA_VENDOR_WLAN_HOME_OFFCHAN_TX_RX_FUNC_CANCEL: Cancel ongoing off-channel
  *	operation
  * @QCA_VENDOR_WLAN_HOME_OFFCHAN_TX_RX_FUNC_RX: Start receive operation
+ *	on home or off-channel
+ * @QCA_VENDOR_WLAN_HOME_OFFCHAN_TX_RX_FUNC_GPR: Gratuitous Probe Response
+ *	(GPR) function. Stores a probe-response frame in the driver for
+ *	periodic transmission on the home channel at the interval specified
+ *	by %QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_SCAN_DUR (in ms).
  */
 enum qca_vendor_wlan_home_offchan_tx_rx_func_type {
 	QCA_VENDOR_WLAN_HOME_OFFCHAN_TX_RX_FUNC_INVALID = 0,
@@ -5111,6 +5116,7 @@ enum qca_vendor_wlan_home_offchan_tx_rx_func_type {
 	QCA_VENDOR_WLAN_HOME_OFFCHAN_TX_RX_FUNC_TX_DATA = 2,
 	QCA_VENDOR_WLAN_HOME_OFFCHAN_TX_RX_FUNC_CANCEL = 3,
 	QCA_VENDOR_WLAN_HOME_OFFCHAN_TX_RX_FUNC_RX = 4,
+	QCA_VENDOR_WLAN_HOME_OFFCHAN_TX_RX_FUNC_GPR = 5,
 };
 
 /**
