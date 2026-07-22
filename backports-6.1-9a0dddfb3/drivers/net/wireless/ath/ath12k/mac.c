@@ -6636,13 +6636,25 @@ static void ath12k_uhr_cu_notify_work(struct wiphy *wiphy,
 {
 	struct ath12k_link_vif *arvif = container_of(work, struct ath12k_link_vif,
 						uhr_cu_notify_work);
+	struct ath12k_uhr_cu_info *ecu = &arvif->uhr_ecu;
 
 	if (!arvif->ar)
 		return;
 
-	if (arvif->is_created)
+	if (arvif->is_created) {
+		if ((ecu->mode_present & BIT(IEEE80211_UHR_MODE_ID_NPCA)) &&
+		    (ecu->cu_state ==  NL80211_CU_STATE_ADV_NOTIFICATION_END))
+			ieee80211_update_npca_configs(arvif->ahvif->vif,
+						      arvif->link_id,
+						      ecu->npca_freq,
+						      ecu->npca_puncture_bitmap);
+
 		ieee80211_cu_notify(arvif->ar->ah->hw, arvif->ahvif->vif,
-				    arvif->link_id, arvif->pending_cu_state);
+				    arvif->link_id, arvif->uhr_ecu.cu_state);
+
+		if (ecu->cu_state == NL80211_CU_STATE_ADV_NOTIFICATION_END)
+			memset(&arvif->uhr_ecu, 0, sizeof(arvif->uhr_ecu));
+	}
 }
 
 static void ath12k_mac_init_arvif_rssi(struct ath12k_link_vif *arvif)
@@ -32304,10 +32316,16 @@ ath12k_mac_parse_uhr_params_update_element(struct ath12k_vif *ahvif,
 	}
 
 	ret = ath12k_wmi_vdev_uhr_cu_cmd(arvif->ar, &arg);
-	if (ret)
+	if (ret) {
 		ath12k_warn(arvif->ar->ab,
 			    "failed to send UHR CU cmd for vdev %u link %u: %d\n",
 			    arvif->vdev_id, link_id, ret);
+	} else {
+		arvif->uhr_ecu.mode_present = arg.mode_present_bitmap;
+		arvif->uhr_ecu.npca_freq = arg.npca.mhz;
+		arvif->uhr_ecu.npca_puncture_bitmap = arg.npca.puncture_20mhz_bitmap;
+	}
+
 	return ret;
 }
 
@@ -32405,7 +32423,7 @@ void ath12k_mac_handle_pdev_uhr_cu_event(struct ath12k_base *ab,
 			   "pdev %u uhr cu vdev %u state %u -> nl80211 cu_state %u\n",
 			   pdev_id, vdev_id, state, cu_state);
 
-		arvif->pending_cu_state = cu_state;
+		arvif->uhr_ecu.cu_state = cu_state;
 		wiphy_work_queue(arvif->ar->ah->hw->wiphy,
 				 &arvif->uhr_cu_notify_work);
 	}
