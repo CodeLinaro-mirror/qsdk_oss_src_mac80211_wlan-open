@@ -7565,3 +7565,38 @@ void ieee80211_cu_notify(struct ieee80211_hw *hw,
 	cfg80211_cu_notify(wdev, link_id, cu_state);
 }
 EXPORT_SYMBOL(ieee80211_cu_notify);
+
+void ieee80211_update_npca_configs(struct ieee80211_vif *vif,
+				   unsigned int link_id,
+				   u32 npca_freq,
+				   u16 npca_punct_bitmap)
+{
+	struct ieee80211_sub_if_data *sdata = vif_to_sdata(vif);
+	struct ieee80211_link_data *link;
+	struct ieee80211_chanctx_conf *chanctx_conf;
+
+	lockdep_assert_wiphy(sdata->local->hw.wiphy);
+
+	if (WARN_ON(link_id >= IEEE80211_MLD_MAX_NUM_LINKS))
+		return;
+
+	link = sdata_dereference(sdata->link[link_id], sdata);
+	if (!link)
+		return;
+
+	chanctx_conf = wiphy_dereference(sdata->local->hw.wiphy,
+					 link->conf->chanctx_conf);
+
+	if (link->conf->chanreq.oper.npca_freq == npca_freq &&
+	    link->conf->chanreq.oper.npca_puncture_bitmap == npca_punct_bitmap)
+		return;
+
+	link->conf->chanreq.oper.npca_freq = npca_freq;
+	link->conf->chanreq.oper.npca_puncture_bitmap = npca_punct_bitmap;
+
+	if (chanctx_conf) {
+		chanctx_conf->def.npca_freq = npca_freq;
+		chanctx_conf->def.npca_puncture_bitmap = npca_punct_bitmap;
+	}
+}
+EXPORT_SYMBOL(ieee80211_update_npca_configs);
