@@ -2054,7 +2054,8 @@ int ath12k_get_peer_telemetry_stats(struct ath12k_vif *ahvif,
 	struct ath12k_sta *ahsta = NULL;
 	int stats_link_id = 0, ret = 0;
 	unsigned long links_map = ahvif->links_map;
-	bool valid_link = ahvif->links_map & BIT(link_id);
+	bool valid_link = link_id < ATH12K_NUM_MAX_LINKS &&
+			  (ahvif->links_map & BIT(link_id));
 
 	if (ath12k_dp_stats_enabled(&ar->dp) &&
 	    ath12k_dp_debug_stats_enabled(&ar->dp))

@@ -4296,7 +4296,7 @@ void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 	}
 
 	/*Vif stats for requested link*/
-	if (links_map & BIT(link_id)) {
+	if (link_id < ATH12K_NUM_MAX_LINKS && (links_map & BIT(link_id))) {
 		rcu_read_lock();
 		arvif = rcu_dereference(ahvif->link[link_id]);
 

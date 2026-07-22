@@ -1431,6 +1431,9 @@ struct ath12k *ath12k_get_ar_by_vif(struct ieee80211_hw *hw,
 	if (ah->num_radio == 1)
 		return ah->radio;
 
+	if (link_id >= ATH12K_NUM_MAX_LINKS)
+		return NULL;
+
 	if (!(ahvif->links_map & BIT(link_id)))
 		return NULL;
 
