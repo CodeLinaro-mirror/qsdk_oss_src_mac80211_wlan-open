@@ -1909,7 +1909,7 @@ void ath12k_dp_ppeds_tx_desc_cleanup(struct ath12k_base *ab)
 {
 	struct ath12k_ppeds_tx_desc_info *ppeds_tx_descs;
 	struct ath12k_dp_hw_group *dp_hw_grp = ath12k_ab_to_dp(ab)->dp_hw_grp;
-	u32 tx_desc_free_cnt = 0;
+	u32 tx_desc_free_cnt = 0, *used_cnt;
 	struct sk_buff *skb;
 	int i, j;
 
@@ -1944,7 +1944,9 @@ void ath12k_dp_ppeds_tx_desc_cleanup(struct ath12k_base *ab)
 		}
 	}
 
-	this_cpu_sub(dp_hw_grp->pcpu_tx->ppeds_cnt, tx_desc_free_cnt);
+	used_cnt = this_cpu_ptr(dp_hw_grp->ppeds_tx_desc_used_cnt);
+	(*used_cnt) -= tx_desc_free_cnt;
+
 	dp_hw_grp->ppeds_tx_desc_reuse_list_len = 0;
 
 	spin_unlock_bh(&dp_hw_grp->ppeds_tx_desc_lock);
@@ -2060,6 +2062,8 @@ free_spt:
 		dp_hw_grp->ppeds_spt_info = NULL;
 	}
 
+	free_percpu(dp_hw_grp->ppeds_tx_desc_used_cnt);
+
 	dp_hw_grp->ppeds_tx_spt_dev = NULL;
 	dp_hw_grp->ppeds_tx_desc_initialized = false;
 }
@@ -2082,12 +2086,17 @@ int ath12k_dp_ppeds_spt_alloc_and_init(struct ath12k_base *ab)
 	spin_lock_init(&dp_hw_grp->ppeds_tx_desc_lock);
 	dp_hw_grp->ppeds_tx_desc_reuse_list_len = 0;
 
+	dp_hw_grp->ppeds_tx_desc_used_cnt = alloc_percpu(u32);
+	if (!dp_hw_grp->ppeds_tx_desc_used_cnt)
+		goto unlock;
+
 	dp_hw_grp->ppeds_num_spt_pages = ATH12K_NUM_PPEDS_TX_SPT_PAGES;
 
 	dp_hw_grp->ppeds_spt_info = kcalloc(dp_hw_grp->ppeds_num_spt_pages,
 					    sizeof(struct ath12k_spt_info),
 					    GFP_KERNEL);
 	if (!dp_hw_grp->ppeds_spt_info) {
+		free_percpu(dp_hw_grp->ppeds_tx_desc_used_cnt);
 		ret = -ENOMEM;
 		goto unlock;
 	}
@@ -3024,6 +3033,7 @@ void ath12k_dp_umac_tx_desc_cleanup(struct ath12k_base *ab)
 	u32 tx_spt_page;
 	dp = ath12k_ab_to_dp(ab);
 	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
+	u32 *tx_desc_used_cnt;
 	int cpu;
 
 	/* TX Descriptor cleanup */
@@ -3089,8 +3099,10 @@ void ath12k_dp_umac_tx_desc_cleanup(struct ath12k_base *ab)
 
 	rcu_read_unlock();
 
-	for_each_possible_cpu(cpu)
-		per_cpu(dp_hw_grp->pcpu_tx->cnt, cpu) = 0;
+	for_each_possible_cpu(cpu) {
+		tx_desc_used_cnt = per_cpu_ptr(dp_hw_grp->tx_desc_used_cnt, cpu);
+		*tx_desc_used_cnt = 0;
+	}
 
 }
 EXPORT_SYMBOL(ath12k_dp_umac_tx_desc_cleanup);
