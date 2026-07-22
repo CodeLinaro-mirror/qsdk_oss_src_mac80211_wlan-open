@@ -13080,9 +13080,16 @@ static int ath12k_mac_set_peer_ch_switch_data(struct ath12k_link_vif *arvif,
 		return -EOPNOTSUPP;
 
 	is_bridge_vdev = ath12k_mac_is_bridge_vdev(arvif);
-	if (!is_bridge_vdev &&
-	     WARN_ON(ath12k_mac_vif_link_chan(vif, arvif->link_id, &def)))
-		return -EINVAL;
+	if (!is_bridge_vdev) {
+		spin_lock_bh(&ar->data_lock);
+		if (arvif->chanctx.def.chan)
+			def = arvif->chanctx.def;
+		spin_unlock_bh(&ar->data_lock);
+
+		if (!def.chan &&
+		    WARN_ON(ath12k_mac_vif_link_chan(vif, arvif->link_id, &def)))
+			return -EINVAL;
+	}
 
 	spin_lock_bh(&ar->data_lock);
 
