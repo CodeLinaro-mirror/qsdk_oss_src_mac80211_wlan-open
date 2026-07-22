@@ -2860,6 +2860,10 @@ enum wmi_tlv_service {
 	WMI_TLV_SERVICE_AFC_SUPPORT = 295,
 
 	WMI_TLV_SERVICE_SDWF_LEVEL0 = 311,
+	/* Info corresponding to each Spectral scan session will be sent by
+	 * the FW before the reports corresponding to that session are sent.
+	 */
+	WMI_TLV_SERVICE_SPECTRAL_SESSION_INFO_SUPPORT = 316,
 	WMI_TLV_SERVICE_PKTLOG_DECODE_INFO_SUPPORT = 320,
 	WMI_TLV_SERVICE_BANG_RADAR_320_SUPPORT = 346,
 	WMI_TLV_SERVICE_EIRP_PREFERRED_SUPPORT = 352,
