@@ -212,9 +212,9 @@ static ssize_t ieee80211_if_write_link_handler(struct wiphy *wiphy,
 					       size_t count,
 					       void *data)
 {
-	struct ieee80211_if_write_sdata_data *d = data;
+	struct ieee80211_if_write_link_data *d = data;
 
-	return d->write(d->sdata, buf, count);
+	return d->write(d->link, buf, count);
 }
 
 static ssize_t ieee80211_if_write_link(
