@@ -15934,16 +15934,19 @@ static int ath12k_open_htt_stats(struct inode *inode,
 {
 	struct ath12k *ar = inode->i_private;
 	struct debug_htt_stats_req *stats_req;
-	enum ath12k_dbg_htt_ext_stats_type type = ar->debug.htt_stats.type;
+	enum ath12k_dbg_htt_ext_stats_type type;
 	struct ath12k_hw *ah = ath12k_ar_to_ah(ar);
 	int ret;
 
+	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+
+	type = ar->debug.htt_stats.type;
 	if (type == ATH12K_DBG_HTT_EXT_STATS_RESET ||
 	    type == ATH12K_DBG_HTT_EXT_STATS_PEER_INFO ||
-	    type == ATH12K_DBG_HTT_EXT_PEER_CTRL_PATH_TXRX_STATS)
-		return -EPERM;
-
-	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+	    type == ATH12K_DBG_HTT_EXT_PEER_CTRL_PATH_TXRX_STATS) {
+		ret = -EPERM;
+		goto err_unlock;
+	}
 
 	if (ah->state != ATH12K_HW_STATE_ON &&
 	    ar->ab->fw_mode != ATH12K_FIRMWARE_MODE_FTM) {
