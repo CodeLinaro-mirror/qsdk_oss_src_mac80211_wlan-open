@@ -3150,6 +3150,23 @@ ath12k_dp_mon_tx_fill_rate_status(struct ath12k_pdev_dp *dp_pdev,
 	}
 }
 
+int ath12k_dp_mon_tx_ext_mon_deliver(struct ath12k_pdev_dp *dp_pdev,
+				     struct sk_buff *mpdu)
+{
+	struct ieee80211_ext_mon_tx_event_extn event;
+	int ret;
+	/*ToDo: Add checks for ext mon feature*/
+	if (!ieee80211_ext_mon_tx_notifier_has_listeners_extn())
+		return NOTIFY_DONE;
+	event.hw = ath12k_dp_pdev_to_hw(dp_pdev);
+	event.mpdu = mpdu;
+	event.sdata = NULL;
+	/* check PRD and update IEEE80211_EXT_MON_PRE_RTAP as per supported values */
+	ret =
+	ieee80211_ext_mon_tx_notifier_call_extn_nc(IEEE80211_EXT_MON_PRE_RTAP,
+						   &event);
+	return ret;
+}
 /**
  * ath12k_dp_mon_tx_deliver_frame() - Helper to deliver single frame to monitor stack
  * @dp_pdev: ath12k pdev dp context
@@ -3182,6 +3199,7 @@ ath12k_dp_mon_tx_deliver_frame(struct ath12k_pdev_dp *dp_pdev,
 		.info = IEEE80211_SKB_CB(skb),
 		.rates = &rate_status,
 	};
+	int ext_mon_ret;
 
 	if (!is_response_frame)
 		ath12k_dp_tx_mon_frame_trim_mic(skb, ppdu_info, user_idx);
@@ -3190,6 +3208,15 @@ ath12k_dp_mon_tx_deliver_frame(struct ath12k_pdev_dp *dp_pdev,
 					 ppdu_info, status_info,
 					 contains_host_frames,
 					 is_response_frame, user_idx);
+	/* If the extended-monitor consumer accepted the frame
+	 * (NOTIFY_OK/NOTIFY_STOP), free it instead of passing it up
+	 * the monitor netdev, to avoid delivering it twice. see --metadata
+	 */
+	ext_mon_ret = ath12k_dp_mon_tx_ext_mon_deliver(dp_pdev, skb);
+	if (ext_mon_ret == NOTIFY_OK || ext_mon_ret == NOTIFY_STOP) {
+		dev_kfree_skb(skb);
+		return;
+	}
 
 	if (!ieee80211_is_data_qos(cpu_to_le16(ppdu_info->rx_status.frame_control))) {
 		status.n_rates = ATH12K_RATE_STATUS_N_RATES;
