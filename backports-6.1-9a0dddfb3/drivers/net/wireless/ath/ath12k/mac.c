@@ -30038,6 +30038,7 @@ static void ath12k_mac_hw_unregister(struct ath12k_hw *ah)
 		cancel_delayed_work_sync(&ar->scan.timeout);
 		cancel_delayed_work_sync(&ar->scan.roc_done);
 		wiphy_delayed_work_cancel(ath12k_ar_to_hw(ar)->wiphy, &ar->ap_ps_timer);
+		ath12k_ppdu_notify_ctx_deinit(hw->wiphy, &ar->dp.notify_ctx);
 		ath12k_debugfs_unregister(ar);
 #ifdef CPTCFG_QCN_EXTN
 		ath12k_sysfs_cleanup_extn(ar);
@@ -30955,6 +30956,8 @@ static int ath12k_mac_setup(struct ath12k *ar)
 
 	wiphy_work_init(&ar->wmi_mgmt_tx_work, ath12k_mgmt_over_wmi_tx_work);
 	skb_queue_head_init(&ar->wmi_mgmt_tx_queue);
+
+	ath12k_ppdu_notify_ctx_init(&ar->dp.notify_ctx);
 
 	ar->monitor_vdev_id = -1;
 	ar->monitor_vdev_created = false;

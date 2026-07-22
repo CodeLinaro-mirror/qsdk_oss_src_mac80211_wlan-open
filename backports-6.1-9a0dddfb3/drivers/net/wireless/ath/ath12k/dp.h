@@ -11,6 +11,7 @@
 #include "hw.h"
 #include "hal.h"
 #include "dp_htt.h"
+#include "ath12k_notif.h"
 #include "dp_cmn.h"
 #include "ppe.h"
 #include <linux/errno.h>
@@ -432,6 +433,9 @@ struct ath12k_pdev_dp {
 
 	/* FSE/CCE statistics */
 	struct ath12k_fse_cce_stats fse_cce_stats;
+
+	/* PPDU TX notifier WQ context */
+	struct ath12k_ppdu_notify_ctx notify_ctx;
 };
 
 #define EAPOL_WPA_KEY_INFO_KEY_TYPE		BIT(3)
@@ -472,6 +476,8 @@ enum ath12k_dp_eapol_key_type {
 
 #define DP_BA_WIN_SZ_MAX	1024
 #define DP_IDLE_SCATTER_BUFS_MAX 16
+#define ATH12K_PPDU_NOTIFY_MAX_DEPTH	64
+
 #define ATH12K_NUM_EAPOL_RESERVE       1024
 #define DP_RX_ASE_CMD_RING_SIZE		32
 #define DP_RX_ASE_STATUS_RING_SIZE		256
