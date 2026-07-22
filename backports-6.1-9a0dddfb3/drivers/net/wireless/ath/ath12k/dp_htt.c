@@ -1645,21 +1645,6 @@ void ath12k_htt_update_peer_telemetry_stats(struct ath12k_pdev_dp *dp_pdev,
 	}
 }
 
-void ath12k_htt_free_ppdu_info(struct ath12k_pdev_dp *dp_pdev,
-			       struct htt_ppdu_stats_info *ppdu_info)
-{
-	/*
-	 * Free only when BAR/ACK BA accounting is complete and descriptor
-	 * is no longer referenced by any pending PPDU processing.
-	 */
-	if ((ppdu_info->ack_ba_done > 0 && ppdu_info->bar_num_users > 0) &&
-	    (ppdu_info->ack_ba_done == ppdu_info->bar_num_users)) {
-		list_del(&ppdu_info->list);
-		dp_pdev->stats.ppdu_list_stats.ppdu_stat_list_depth--;
-		kfree(ppdu_info);
-	}
-}
-
 static void
 ath12k_dp_htt_fill_user_stats_peer_mac(struct htt_ppdu_user_stats *user_stats,
 				       struct ath12k_dp_link_peer *peer)
@@ -1888,48 +1873,50 @@ bool ath12k_dp_htt_is_ppdu_completed(struct htt_ppdu_stats_info *ppdu_info)
 	return false;
 }
 
-static void ath12k_dp_htt_ppdu_notify(struct ath12k_pdev_dp *dp_pdev,
-				      struct htt_ppdu_stats_info *ppdu_info)
+static void ath12k_dp_htt_ppdu_enqueue_notify(struct ath12k_pdev_dp *dp_pdev,
+					      struct htt_ppdu_stats_info *ppdu_info)
 {
-	struct ath12k_ppdu_event event;
-	struct sk_buff *skb;
-	struct ath12k_ppdu_tx_info *ppdu_evt_data;
-	unsigned int len;
+	struct ath12k_ppdu_notify_ctx *ctx = &dp_pdev->notify_ctx;
+	struct ath12k_ppdu_notify_item *item, *evict;
+	struct wiphy *wiphy = ath12k_ar_to_hw(dp_pdev->ar)->wiphy;
 
-	/* Early exit if no one is listening for TX events - avoid unnecessary work */
-	if (!ath12k_ppdu_notifier_has_listeners(ATH12K_EVENT_PPDU_TX_COMPLETE))
+	/* Early exit if no one is listening for TX events. */
+	if (!ath12k_ppdu_notifier_has_listeners(ATH12K_EVENT_PPDU_TX_COMPLETE)) {
+		kfree(ppdu_info);
 		return;
+	}
 
-	len = sizeof(*ppdu_evt_data);
-
-	skb = alloc_skb(len, GFP_ATOMIC);
-	if (!skb)
+	item = kmalloc(sizeof(*item), GFP_ATOMIC);
+	if (!item) {
+		kfree(ppdu_info);
 		return;
+	}
 
-	ppdu_evt_data = skb_put_zero(skb, len);
-	memcpy(&ppdu_evt_data->ppdu_info, ppdu_info, sizeof(*ppdu_info));
-	if (dp_pdev->dp)
-		ppdu_evt_data->device_id = ath12k_get_ab_device_id(dp_pdev->dp->ab);
+	item->ppdu_info = ppdu_info;
+	item->device_id = dp_pdev->dp ?
+			ath12k_get_ab_device_id(dp_pdev->dp->ab) : 0;
+	evict = NULL;
 
-	memset(&event, 0, sizeof(event));
-	event.skb = skb;
+	spin_lock_bh(&ctx->lock);
+	if (ctx->queue_depth >= ATH12K_PPDU_NOTIFY_MAX_DEPTH) {
+		/* Queue full: evict the oldest entry to make room for the new one. */
+		evict = list_first_entry_or_null(&ctx->queue,
+						 struct ath12k_ppdu_notify_item, node);
+		if (evict) {
+			list_del(&evict->node);
+			ctx->queue_depth--;
+		}
+	}
+	list_add_tail(&item->node, &ctx->queue);
+	ctx->queue_depth++;
+	spin_unlock_bh(&ctx->lock);
 
-	ath12k_ppdu_notifier_call_chain(ATH12K_EVENT_PPDU_TX_COMPLETE, &event);
+	if (evict) {
+		kfree(evict->ppdu_info);
+		kfree(evict);
+	}
 
-	if (refcount_read(&skb->users) > 1)
-		ath12k_dbg(NULL, ATH12K_DBG_TELEMETRY,
-			   "Current SKB ref cnt held by TX PPDU evt listeners = %d\n",
-			   refcount_read(&skb->users));
-	kfree_skb(skb);
-}
-
-void ath12k_dp_htt_deliver_ppdu(struct ath12k_pdev_dp *dp_pdev,
-				struct htt_ppdu_stats_info *ppdu_info)
-{
-	/* Update tx completion stats */
-	ath12k_dp_htt_ppdu_stats_update_tx_comp_stats(dp_pdev, ppdu_info);
-	/* Send PPDU notification to registered listeners */
-	ath12k_dp_htt_ppdu_notify(dp_pdev, ppdu_info);
+	wiphy_work_queue(wiphy, &ctx->work);
 }
 
 struct htt_ppdu_stats_info *
@@ -2051,8 +2038,14 @@ static int ath12k_htt_pull_ppdu_stats(struct ath12k_base *ab,
 	ppdu_info = ath12k_dp_htt_process_ppdu(dp_pdev, msg, len, pdev_id);
 
 	if (ppdu_info && ath12k_dp_htt_is_ppdu_completed(ppdu_info)) {
-		ath12k_dp_htt_deliver_ppdu(dp_pdev, ppdu_info);
-		ath12k_htt_free_ppdu_info(dp_pdev, ppdu_info);
+		ath12k_dp_htt_ppdu_stats_update_tx_comp_stats(dp_pdev, ppdu_info);
+
+		if ((ppdu_info->ack_ba_done > 0 && ppdu_info->bar_num_users > 0) &&
+		    ppdu_info->ack_ba_done == ppdu_info->bar_num_users) {
+			list_del(&ppdu_info->list);
+			dp_pdev->stats.ppdu_list_stats.ppdu_stat_list_depth--;
+			ath12k_dp_htt_ppdu_enqueue_notify(dp_pdev, ppdu_info);
+		}
 	}
 
 	spin_unlock_bh(&dp_pdev->ppdu_list_lock);

@@ -10,7 +10,6 @@
 #include <linux/notifier.h>
 #include "hal_mon_cmn.h"
 #include "dp_htt.h"
-#include "debug.h"
 
 /**
  * enum ath12k_event_type - WDI event types
@@ -25,6 +24,9 @@ enum ath12k_event_type {
 	ATH12K_EVENT_PPDU_TX_COMPLETE,
 	ATH12K_EVENT_FSE_UPDATE,
 };
+
+struct htt_ppdu_stats_info;
+struct ath12k_pdev_dp;
 
 /**
  * struct ath12k_ppdu_rx_info - RX PPDU event payload
@@ -61,6 +63,31 @@ struct ath12k_ppdu_tx_info {
  */
 struct ath12k_ppdu_event {
 	struct sk_buff *skb;      /* SKB containing PPDU info */
+};
+
+/**
+ * struct ath12k_ppdu_notify_item - node in per-pdev notify WQ queue
+ * @node:      list linkage (protected by dp_pdev->notify_lock)
+ * @ppdu_info: sole-owner pointer; caller did list_del before enqueue.
+ *             freed by WQ after memcpy into skb, or by deinit drain.
+ * @device_id: chip ID for MLO multi-chip setups
+ */
+struct ath12k_ppdu_notify_item {
+	struct list_head             node;
+	struct htt_ppdu_stats_info  *ppdu_info; /* sole owner after list_del */
+	u8                           device_id;
+};
+
+/**
+ * struct ath12k_ppdu_notify_ctx - self-contained PPDU notify context
+ *
+ * Embedded in struct ath12k_pdev_dp.  Uses the per-wiphy workqueue
+ */
+struct ath12k_ppdu_notify_ctx {
+	spinlock_t               lock;	      /* tx notifier lock */
+	struct list_head         queue;       /* ingress: producer appends here */
+	u32                      queue_depth; /* ingress + in-flight combined depth */
+	struct wiphy_work        work;
 };
 
 /**
@@ -102,6 +129,9 @@ struct ath12k_fse_update_event {
 	u8  op;
 };
 
+void ath12k_ppdu_notify_ctx_init(struct ath12k_ppdu_notify_ctx *ctx);
+void ath12k_ppdu_notify_ctx_deinit(struct wiphy *wiphy,
+				   struct ath12k_ppdu_notify_ctx *ctx);
 int ath12k_register_ppdu_notifier(struct notifier_block *nb, unsigned long event_mask);
 int ath12k_unregister_ppdu_notifier(struct notifier_block *nb, unsigned long event_mask);
 bool ath12k_ppdu_notifier_has_listeners(enum ath12k_event_type event_type);
