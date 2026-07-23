@@ -4605,15 +4605,13 @@ skip_ml_params:
 		ptr += sizeof(*eht_mcs);
 	}
 
-	/* Set EHT OPS present bit for peer assoc only based on enable_mcs15 flag
-	 * and EHT phy capability MCS15 bits. In struct ath12k_wmi_peer_assoc_arg,
-	 * peer_eht_cap_phy is an array of 3 32-bit unsigned integers. From 19 to
-	 * 22 bits in eht_cap_phy[1] are for MCS15 in 80Mhz, 160MHz and 320Mhz.
+	/* To align with FW expectation set EHT OPS present bit for peer assoc only
+	 * based on enable_mcs15 flag. FW expects bit-0 to be set when MCS15 is enabled.
+	 * Remove this EHT OPS present bit once FW change is ready to check only bit-6.
 	 */
 	if (!arg->enable_mcs15)
 		cmd->peer_eht_ops |= cpu_to_le32(IEEE80211_EHT_OPER_MCS15_DISABLE);
-	else if (arg->peer_eht_cap_phy[1] &
-		 (IEEE80211_EHT_PHY_CAP6_MCS15_SUPP_MASK << 16))
+	else
 		cmd->peer_eht_ops |= cpu_to_le32(BIT(0));
 
 	tlv = ptr;
@@ -9028,6 +9026,19 @@ ath12k_wmi_tlv_mac_phy_caps_ext_parse(struct ath12k_base *ab,
 	pdev->cap.eml_cap = le32_to_cpu(caps->eml_capability);
 	pdev->cap.mld_cap = le32_to_cpu(caps->mld_capability);
 	pdev->cap.ext_mld_cap = le32_to_cpu(caps->ext_mld_capability);
+
+	/* EHT Duplicate in 6 GHz (MCS14) support: bit 23 of eht_cap_phy_info[1]
+	 * corresponds to IEEE 802.11be EHT PHY cap byte 6 bit 7
+	 * (IEEE80211_EHT_PHY_CAP6_EHT_DUP_6GHZ_SUPP = 0x80).
+	 */
+	if (bands & WMI_HOST_WLAN_5GHZ_CAP)
+		pdev->cap.eht_dup_6ghz_supp =
+			!!(le32_to_cpu(caps->eht_cap_phy_info_5ghz[1]) & BIT(23));
+	ath12k_dbg(ab, ATH12K_DBG_WMI,
+		   "EHT MCS14 dup 6GHz pdev %d: %s (eht_cap_phy_5ghz[1]=0x%08x)\n",
+		   pdev->pdev_id,
+		   pdev->cap.eht_dup_6ghz_supp ? "supported" : "not supported",
+		   le32_to_cpu(caps->eht_cap_phy_info_5ghz[1]));
 
 	return 0;
 }
