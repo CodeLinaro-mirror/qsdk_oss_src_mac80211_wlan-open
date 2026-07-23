@@ -6570,6 +6570,11 @@ struct cfg80211_ops {
 	int	(*get_smd_ctx)(struct wiphy *wiphy, struct wireless_dev *wdev,
 			       const u8 *addr,
 			       struct cfg80211_smd_transition_info *st_info);
+#ifdef CPTCFG_QCN_EXTN
+	void    (*nol_regdom_update_locked)(struct wiphy *wiphy,
+					    struct ieee80211_channel *channel);
+#endif /* CPTCFG_QCN_EXTN */
+
 };
 
 /*

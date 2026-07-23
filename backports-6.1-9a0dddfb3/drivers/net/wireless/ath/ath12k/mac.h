@@ -458,6 +458,8 @@ void ath12k_mac_op_set_rekey_data(struct ieee80211_hw *hw,
 int ath12k_mac_set_muedca_mode(struct ieee80211_hw *hw, int radio_idx,
 			       u8 muedca_mode);
 #endif /* CPTCFG_QCN_EXTN */
+struct ath12k *ath12k_mac_get_ar_by_center_freq(struct ieee80211_hw *hw,
+						u16 center_freq);
 int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 			    struct ieee80211_vif *vif,
 			    struct ieee80211_sta *sta,

@@ -2613,16 +2613,6 @@ static int ath12k_core_hw_group_start(struct ath12k_hw_group *ag)
 
 	spin_lock_init(&ag->qos.profile_lock);
 
-	for (i = 0; i < ag->num_devices; i++) {
-		ab = ag->ab[i];
-		if (!ab || ab->is_bypassed)
-			continue;
-
-#ifdef CPTCFG_QCN_EXTN
-		ath12k_core_nol_extn_auto_restore_all_radios(ab);
-#endif /* CPTCFG_QCN_EXTN */
-	}
-
 core_pdev_create:
 	for (i = 0; i < ag->num_devices; i++) {
 		ab = ag->ab[i];
