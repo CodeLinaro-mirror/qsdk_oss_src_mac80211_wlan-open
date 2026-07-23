@@ -623,6 +623,7 @@ void ath12k_wifi8_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 
 	struct ath12k_dp *umac_dp;
 	struct ath12k_sta *ahsta;
 	int i, ret;
+	bool pre_rcu_remove_done = false;
 
 	dp_hw_grp_wifi8 = ath12k_get_dp_hw_group_wifi8(dp->dp_hw_grp);
 
@@ -726,16 +727,60 @@ void ath12k_wifi8_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 
 					   dp_peer->peer_ext_ctx->ast_index);
 	}
 
+	pre_rcu_remove_done = dp_peer->pre_rcu_remove_done;
+
 	dp_peer->dp_peer_state = ATH12K_DP_PEER_LOGICALLY_DELETED;
 
 	spin_unlock_bh(&dp_hw->peer_hash_lock);
 
-	synchronize_net();
+	if (!pre_rcu_remove_done)
+		synchronize_net();
 
 	ath12k_dbg_level(NULL, ATH12K_DBG_PEER, ATH12K_DBG_L1,
 			 "dp-peer-delete: peer_id=%u\n", dp_peer->peer_id);
 
 	kref_put(&dp_peer->refcount, ath12k_wifi8_dp_peer_release);
+}
+
+void ath12k_wifi8_dp_peer_pre_rcu_remove(struct ieee80211_hw *hw,
+					 struct ath12k_sta *ahsta)
+{
+	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
+	struct ath12k_dp_hw *dp_hw = &ah->dp_hw;
+	struct ath12k_dp_peer *dp_peer;
+	int i;
+
+	lockdep_assert_wiphy(hw->wiphy);
+
+	dp_peer = ath12k_sta_get_dp_peer_wiphy_locked(hw->wiphy, ahsta);
+	if (!dp_peer)
+		return;
+
+	if (dp_peer->peer_id < MAX_DP_PEER_LIST_SIZE) {
+		rcu_assign_pointer(dp_hw->dp_peer_list[dp_peer->peer_id], NULL);
+		ath12k_dbg_level(NULL, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+				 "%s: sta=%pM cleared dp_peer_list[%u] mlo_peer_id\n",
+				 __func__, dp_peer->addr, dp_peer->peer_id);
+	}
+
+	for (i = 0; i < ATH12K_DP_PEER_MAX_MLO_LINKS; i++) {
+		struct ath12k_dp_link_peer *link_peer;
+
+		link_peer = wiphy_dereference(hw->wiphy, dp_peer->link_peers[i]);
+		if (!link_peer)
+			continue;
+
+		dp_peer->teardown_link_peers[i] = link_peer;
+		rcu_assign_pointer(dp_peer->link_peers[i], NULL);
+	}
+
+	rcu_assign_pointer(ahsta->dp_peer, NULL);
+
+	dp_peer->pre_rcu_remove_done = true;
+
+	ath12k_dbg_level(NULL, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+			 "%s: dp_peer=%pM done mlo=%d\n",
+			 __func__, dp_peer->addr, dp_peer->is_mlo);
 }
 
 void ath12k_wifi8_dp_smd_reset_tx_queue_states(struct ath12k_base *ab,

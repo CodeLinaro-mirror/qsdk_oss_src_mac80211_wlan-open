@@ -1832,6 +1832,20 @@ static int ath12k_wifi8_mac_op_get_smd_ctx(struct ieee80211_hw *hw,
 	return -EINPROGRESS;
 }
 
+static void
+ath12k_wifi8_mac_op_sta_pre_rcu_remove(struct ieee80211_hw *hw,
+				       struct ieee80211_vif *vif,
+				       struct ieee80211_sta *sta)
+{
+	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
+
+	lockdep_assert_wiphy(hw->wiphy);
+
+	ath12k_mac_op_sta_pre_rcu_remove(hw, vif, sta);
+
+	ath12k_wifi8_dp_peer_pre_rcu_remove(hw, ahsta);
+}
+
 static const struct ieee80211_ops ath12k_ops_wifi8 = {
 	.tx				= ath12k_wifi8_mac_op_tx,
 	.wake_tx_queue			= ieee80211_handle_wake_tx_queue,
@@ -1853,6 +1867,7 @@ static const struct ieee80211_ops ath12k_ops_wifi8 = {
 	.cancel_hw_scan                 = ath12k_mac_op_cancel_hw_scan,
 	.set_key                        = ath12k_mac_op_set_key,
 	.set_rekey_data	                = ath12k_mac_op_set_rekey_data,
+	.sta_pre_rcu_remove             = ath12k_wifi8_mac_op_sta_pre_rcu_remove,
 	.sta_state                      = ath12k_mac_op_sta_state,
 	.sta_set_mapc_params            = ath12k_mac_op_sta_set_mapc_params,
 	.sta_set_txpwr			= ath12k_mac_op_sta_set_txpwr,

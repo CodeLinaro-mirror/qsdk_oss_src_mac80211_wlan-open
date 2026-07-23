@@ -16125,8 +16125,6 @@ void ath12k_mac_op_sta_pre_rcu_remove(struct ieee80211_hw *hw,
 	 */
 
 	ahsta->pre_rcu_remove_done = true;
-
-	ath12k_dp_peer_pre_rcu_remove(hw, ahsta);
 }
 EXPORT_SYMBOL(ath12k_mac_op_sta_pre_rcu_remove);
 
