@@ -27,19 +27,19 @@
 #define DP_RXDMA_MONITOR_DESC_RING_SIZE(ab)	({ (void)(ab); 4096; })
 
 #if defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
-#define DP_RXDMA_MONITOR_BUF_RING_SIZE  256
-#define DP_RXDMA_MONITOR_DST_RING_SIZE  512
-#define DP_MON_NUM_PPDU_DESC 8
+#define DP_RXDMA_MONITOR_BUF_RING_SIZE(ab)	({ (void)(ab); 256; })
+#define DP_RXDMA_MONITOR_DST_RING_SIZE(ab)	({ (void)(ab); 512; })
+#define DP_MON_NUM_PPDU_DESC(ab)		({ (void)(ab); 8; })
 
 #elif defined(CONFIG_ATH12K_MEM_PROFILE_512M) || defined(CPTCFG_ATH12K_MEM_PROFILE_512M)
-#define DP_RXDMA_MONITOR_BUF_RING_SIZE  256
-#define DP_RXDMA_MONITOR_DST_RING_SIZE  512
-#define DP_MON_NUM_PPDU_DESC 128
+#define DP_RXDMA_MONITOR_BUF_RING_SIZE(ab)	({ (void)(ab); 256; })
+#define DP_RXDMA_MONITOR_DST_RING_SIZE(ab)	({ (void)(ab); 512; })
+#define DP_MON_NUM_PPDU_DESC(ab)		({ (void)(ab); 128; })
 
 #else
-#define DP_RXDMA_MONITOR_BUF_RING_SIZE	(ath12k_dp_ring_cfg->rxdma_monitor_buf_ring_size)
-#define DP_RXDMA_MONITOR_DST_RING_SIZE	(ath12k_dp_ring_cfg->rxdma_monitor_dst_ring_size)
-#define DP_MON_NUM_PPDU_DESC	(ath12k_dp_ring_cfg->mon_num_ppdu_desc)
+#define DP_RXDMA_MONITOR_BUF_RING_SIZE(ab)	({ (void)(ab); ath12k_dp_ring_cfg->rxdma_monitor_buf_ring_size; })
+#define DP_RXDMA_MONITOR_DST_RING_SIZE(ab)	({ (void)(ab); ath12k_dp_ring_cfg->rxdma_monitor_dst_ring_size; })
+#define DP_MON_NUM_PPDU_DESC(ab)		({ (void)(ab); ath12k_dp_ring_cfg->mon_num_ppdu_desc; })
 #endif
 
 #else
