@@ -55,14 +55,6 @@
 #include "dp_stats.h"
 
 #ifdef CPTCFG_ATHDEBUG
-#if !defined(CONFIG_DEBUG_MEM_USAGE)
-#if !defined(CPTCFG_MAC80211_ATHMEMDEBUG) && defined(CONFIG_QCA_MINIDUMP)
-#include "athdbg_cmn_if.h"
-#endif
-#endif
-#endif
-
-#ifdef CPTCFG_ATHDEBUG
 #include "ath_debug/athdbg_qmi.h"
 #endif
 

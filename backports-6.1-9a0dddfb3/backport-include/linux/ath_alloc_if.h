@@ -2,7 +2,12 @@
 /* Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.*/
 #include <linux/types.h>
 #include <linux/module.h>
-#include "ath_debug/athdbg_mem.h"
+
+void *athdbg_kmalloc(size_t size, gfp_t flags, const char *struct_name,
+		     const char *module_name);
+void *athdbg_kzalloc(size_t size, gfp_t flags, const char *struct_name,
+		     const char *module_name);
+void athdbg_kfree(const void *ptr);
 
 #define kzalloc(__XX__, __YY__, ...) ({ \
 	char *sname = #__VA_ARGS__;\
@@ -18,6 +23,7 @@
 
 #define kfree(__XX__)	athdbg_kfree(__XX__)
 
+/*MINIDUMP_LOG(start_addr, size, struct_name)*/
 #define MINIDUMP_LOG(__XX__, __YY__, __ZZ__) \
 	athmem_add_entry_to_minidump(__XX__, __YY__, __ZZ__, THIS_MODULE->name)
 
