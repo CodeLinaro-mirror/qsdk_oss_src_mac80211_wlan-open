@@ -338,6 +338,11 @@ enum rdi_based_source_ring_selection {
 #define HAL_SAM_QUEUE_SLICE_START_IDX		256
 #define HAL_SAM_QUEUE_SLICE_END_IDX		511
 
+#define HAL_SAM_R0_CONFIG			0
+#define HAL_SAM_ENABLE				BIT(0)
+#define HAL_SAM_IDLE_MASK			BIT(5)
+#define HAL_SAM_IDLE_VALUE			1
+
 #define HAL_TCL_PPE_INDEX_MAPPING_OFFSET 0x670
 #define HAL_TCL_PPE_INDEX_MAPPING_SLOT_SIZE 0x4
 #define HAL_TCL_PPE_INDEX_MAPPING_TABLE_n_ADDR(base, n) ((base) + \
@@ -1263,6 +1268,7 @@ enum rdi_based_source_ring_selection {
 
 #define HAL_UMAC_UMCMN_GLOBAL_CFG		0x1a0
 #define HAL_UMAC_UMCMN_GLOBAL_CFG_HOLD		BIT(0)
+#define HAL_UMCMN_R0_IDLE_SIGNAL		0xD8
 
 #define HAL_PMAC_HWSCH_R0_MTU_FOR_HMAC_CONTROLS_IX_0 0x718
 #define HAL_PMAC_PMCMN_MAC_PCU_DIAG_SW			0x1220

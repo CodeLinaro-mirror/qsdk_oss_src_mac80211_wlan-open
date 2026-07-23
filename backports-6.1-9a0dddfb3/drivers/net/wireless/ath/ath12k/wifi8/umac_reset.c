@@ -1083,9 +1083,41 @@ static int ath12k_halt_tcl(struct ath12k_base *ab, u32 is_halt)
 	return 0;
 }
 
-static int ath12k_enable_sam(struct ath12k_base *ab, u32 arg)
+static int ath12k_sam_idle_check(struct ath12k_base *ab)
 {
-	/* TODO: Implement SAM disable and enable */
+	int ret;
+
+	ret = ath12k_hif_poll32(ab, HAL_SEQ_WCSS_UMAC_UMCMN_REG +
+				HAL_UMCMN_R0_IDLE_SIGNAL,
+				HAL_SAM_IDLE_VALUE, HAL_SAM_IDLE_MASK,
+				HAL_MAC_IDLE_CHECK_DELAY_USEC,
+				HAL_MAC_IDLE_CHECK_TIMEOUT_USEC);
+	if (ret) {
+		ath12k_err(ab, "SAM idle check failed at address 0x%x value 0x%x",
+			   HAL_SEQ_WCSS_UMAC_UMCMN_REG + HAL_UMCMN_R0_IDLE_SIGNAL,
+			   ath12k_hif_read32(ab, HAL_SEQ_WCSS_UMAC_UMCMN_REG +
+					     HAL_UMCMN_R0_IDLE_SIGNAL));
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int ath12k_enable_sam(struct ath12k_base *ab, u32 enable)
+{
+	int ret;
+
+	ath12k_hif_rmw32(ab, HAL_SEQ_WCSS_UMAC_SAM_REG + HAL_SAM_R0_CONFIG,
+			 HAL_SAM_ENABLE, enable);
+
+	if (!enable) {
+		ret = ath12k_sam_idle_check(ab);
+		if (ret) {
+			ath12k_err(ab, "SAM idle check failed");
+			return ret;
+		}
+	}
+
 	return 0;
 }
 
@@ -1864,6 +1896,11 @@ static const struct cumac_hw_reset_step post_reset_steps[] = {
 		0,
 		"CUMAC HW Clear pending interrupts"
 	},
+	[CUMAC_HW_POST_RESET_ENABLE_SAM] = {
+		ath12k_enable_sam,
+		1,
+		"CUMAC HW Enable SAM"
+	},
 	[CUMAC_HW_POST_RESET_ENABLE_WBM] = {
 		ath12k_enable_wbm,
 		1,
@@ -1898,11 +1935,6 @@ static const struct cumac_hw_reset_step post_reset_steps[] = {
 		ath12k_enable_tqm,
 		1,
 		"CUMAC HW Enable TQM"
-	},
-	[CUMAC_HW_POST_RESET_ENABLE_SAM] = {
-		ath12k_enable_sam,
-		1,
-		"CUMAC HW Enable SAM"
 	},
 	[CUMAC_HW_POST_RESET_END] = {
 		ath12k_dummy_step,
