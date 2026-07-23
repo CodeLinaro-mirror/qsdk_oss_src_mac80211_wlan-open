@@ -522,7 +522,7 @@ struct ath12k_dp_arch_ops {
 	int (*sdwf_reinject_handler)(struct ath12k_pdev_dp *dp_pdev,
 				     struct ath12k_link_vif *arvif,
 				     struct sk_buff *skb, struct ath12k_link_sta *arsta);
-	int (*dp_tx_ring_setup)(struct ath12k_base *ab);
+	int (*dp_tx_ring_init)(struct ath12k_base *ab);
 	void (*dp_tx_status_parse)(struct ath12k_base *ab,
 				   struct hal_wbm_completion_ring_tx *desc,
 				   struct hal_tx_status *ts);
@@ -665,6 +665,7 @@ struct ath12k_dp {
 	struct dp_tx_ring tx_ring[DP_TCL_NUM_RING_MAX];
 	struct ath12k_device_dp_stats device_stats;
 	struct wbm_idle_scatter_list scatter_list[DP_IDLE_SCATTER_BUFS_MAX];
+	u8 num_scatter_buf;
 	struct list_head reo_cmd_list;
 	struct list_head reo_cmd_cache_flush_list;
 	u32 reo_cmd_cache_flush_count;
@@ -1065,12 +1066,25 @@ int ath12k_dp_tx_htt_srng_setup(struct ath12k_base *ab, u32 ring_id,
 int ath12k_dp_peer_setup(struct ath12k *ar, struct ath12k_link_vif *arvif, const u8 *addr);
 void ath12k_dp_peer_cleanup(struct ath12k *ar, int vdev_id, const u8 *addr);
 void ath12k_dp_srng_cleanup(struct ath12k_base *ab, struct dp_srng *ring);
+int ath12k_dp_srng_alloc(struct ath12k_base *ab, struct dp_srng *ring,
+			 enum hal_ring_type type, int ring_num,
+			 int mac_id, int num_entries);
+int ath12k_dp_srng_init(struct ath12k_base *ab, struct dp_srng *ring,
+			enum hal_ring_type type, int ring_num, int mac_id);
 int ath12k_dp_srng_setup(struct ath12k_base *ab, struct dp_srng *ring,
 			 enum hal_ring_type type, int ring_num,
 			 int mac_id, int num_entries);
 void ath12k_dp_link_desc_cleanup(struct ath12k_base *ab,
 				 struct dp_link_desc_bank *desc_bank,
 				 u32 ring_type, struct dp_srng *ring);
+int ath12k_dp_link_desc_alloc(struct ath12k_base *ab,
+			      struct dp_link_desc_bank *link_desc_banks,
+			      u32 ring_type, struct hal_srng *srng,
+			      u32 n_link_desc);
+int ath12k_dp_link_desc_init(struct ath12k_base *ab,
+			     struct dp_link_desc_bank *link_desc_banks,
+			     u32 ring_type, struct hal_srng *srng,
+			     u32 n_link_desc);
 int ath12k_dp_link_desc_setup(struct ath12k_base *ab,
 			      struct dp_link_desc_bank *link_desc_banks,
 			      u32 ring_type, struct hal_srng *srng,
@@ -1097,11 +1111,18 @@ size_t ath12k_dp_get_req_entries_from_buf_ring(struct ath12k_base *ab,
 					       struct list_head *list);
 int ath12k_dp_init_bank_profiles(struct ath12k_base *ab);
 void ath12k_dp_deinit_bank_profiles(struct ath12k_base *ab);
-int ath12k_dp_reoq_lut_setup(struct ath12k_base *ab);
+int ath12k_dp_reoq_lut_alloc(struct ath12k_base *ab);
+int ath12k_dp_reoq_lut_init(struct ath12k_base *ab);
 void ath12k_dp_reoq_lut_cleanup(struct ath12k_base *ab);
 int ath12k_dp_cc_init(struct ath12k_base *ab);
 void ath12k_dp_cc_cleanup(struct ath12k_base *ab);
+int ath12k_wbm_idle_ring_alloc(struct ath12k_base *ab, u32 *n_link_desc);
+int ath12k_wbm_idle_ring_init(struct ath12k_base *ab);
+void ath12k_wbm_idle_ring_cleanup(struct ath12k_base *ab);
 int ath12k_wbm_idle_ring_setup(struct ath12k_base *ab, u32 *n_link_desc);
+int ath12k_dp_srng_common_alloc(struct ath12k_base *ab);
+int ath12k_dp_srng_common_init(struct ath12k_base *ab);
+void ath12k_dp_srng_common_deinit(struct ath12k_base *ab);
 int ath12k_dp_srng_common_setup(struct ath12k_base *ab);
 void ath12k_dp_srng_common_cleanup(struct ath12k_base *ab);
 enum ath12k_dp_eapol_key_type ath12k_dp_get_eapol_subtype(u8 *data);
