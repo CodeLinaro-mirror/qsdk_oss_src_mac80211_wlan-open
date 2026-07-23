@@ -13292,6 +13292,38 @@ skip_addba_ext:
 	spin_unlock_bh(&ar->arsta_lock);
 }
 
+/**
+ * ath12k_gas_rl_check() - Link-level GAS/ANQP global rate-limit gate.
+ *
+ * Called with ar->data_lock held (BH disabled).
+ *
+ * Counts GAS Initial/Comeback Requests across all STAs within
+ * gas_rl_window_ms. Returns true (drop) when gas_rl_limit is
+ * exceeded in the current window. Window resets automatically.
+ *
+ * @ar: radio instance
+ * Returns: true if the frame should be dropped, false if forwarded.
+ */
+static bool ath12k_gas_rl_check(struct ath12k *ar)
+{
+	unsigned long window = msecs_to_jiffies(ar->gas_rl_window_ms);
+
+	lockdep_assert_held(&ar->data_lock);
+
+	/* Window expired: start a new window */
+	if (time_after(jiffies, ar->gas_rl_epoch + window)) {
+		ar->gas_rl_epoch = jiffies;
+		ar->gas_rl_count = 0;
+	}
+
+	/* Limit exceeded: drop */
+	if (ar->gas_rl_count >= ar->gas_rl_limit)
+		return true;
+
+	ar->gas_rl_count++;
+	return false;
+}
+
 static struct ath12k_link_vif *
 ath12k_mgmt_rx_get_ap_arvif_by_bssid(struct ath12k *ar, const u8 *bssid,
 				     const u8 *peer_addr)
@@ -13706,6 +13738,33 @@ skip_mgmt_stats:
 		/* frame will be delivered from SMD context collector */
 		rcu_read_unlock();
 		return;
+	}
+
+	/* GAS/ANQP link-level rate-limit gate.
+	 * Detect Public Action frames carrying GAS Initial/Comeback
+	 * Requests and apply the global rate limit before forwarding.
+	 */
+	if (ieee80211_is_action(hdr->frame_control) &&
+	    skb->len >= IEEE80211_MIN_ACTION_SIZE + 1) {
+		struct ieee80211_mgmt *mgmt = (struct ieee80211_mgmt *)hdr;
+		const u8 *action_body = (const u8 *)&mgmt->u.action;
+		u8 cat    = action_body[0];
+		u8 action = action_body[1];
+
+		if (cat == WLAN_CATEGORY_PUBLIC &&
+		    (action == WLAN_PUB_ACTION_GAS_INITIAL_REQ ||
+		     action == WLAN_PUB_ACTION_GAS_COMEBACK_REQ)) {
+			spin_lock_bh(&ar->data_lock);
+			ar->dp.stats.telemetry_stats.rx_gas_req_total++;
+			if (ar->gas_rl_enabled && ar->gas_rl_limit > 0 &&
+			    ath12k_gas_rl_check(ar)) {
+				ar->dp.stats.telemetry_stats.rx_gas_req_drop++;
+				spin_unlock_bh(&ar->data_lock);
+				dev_kfree_skb(skb);
+				goto exit;
+			}
+			spin_unlock_bh(&ar->data_lock);
+		}
 	}
 
 	ieee80211_rx_ni(ath12k_ar_to_hw(ar), skb);

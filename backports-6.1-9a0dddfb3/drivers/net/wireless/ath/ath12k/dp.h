@@ -349,6 +349,11 @@ struct ath12k_pdev_telemetry_stats {
 	 * on every broadcast probe in high-density (16+ VAP) environments.
 	 */
 	u32 rx_probe_req_bc;
+	/* GAS/ANQP AP-level rate-limiter counters. */
+	/* All GAS Initial/Comeback Requests received. */
+	u32 rx_gas_req_total;
+	/* Dropped by global rate limiter. */
+	u32 rx_gas_req_drop;
 	/* Broadcast probe requests suppressed by the per-STA rate-limit gate */
 	u32 rx_bc_prb_req_drop;
 	u32 rx_decrypt_err;

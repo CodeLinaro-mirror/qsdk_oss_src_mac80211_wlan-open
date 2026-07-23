@@ -31723,7 +31723,13 @@ static int ath12k_mac_setup(struct ath12k *ar)
 		   "arvifs list for radio hw_link_id %d initialized\n",
 		   ar->hw_link_id);
 	INIT_LIST_HEAD(&ar->arvifs);
+	/* GAS/ANQP AP-level rate-limiter initialisation */
 	spin_lock_bh(&ar->data_lock);
+	ar->gas_rl_limit     = ATH12K_GAS_RL_LIMIT_DEFAULT;
+	ar->gas_rl_window_ms = ATH12K_GAS_RL_WINDOW_MS_DEFAULT;
+	ar->gas_rl_count     = 0;
+	ar->gas_rl_epoch     = jiffies;
+	ar->gas_rl_enabled   = false;
 	ath12k_bcast_probe_rl_init(ar);
 	ar->bcast_probe_rl_enabled = false;
 	spin_unlock_bh(&ar->data_lock);
