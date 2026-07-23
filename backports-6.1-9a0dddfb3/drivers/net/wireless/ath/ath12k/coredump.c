@@ -555,6 +555,9 @@ void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 	bool no_recovery, collect_dump;
 	bool ath12k_skip_partner_chip_dump =
 		ath12k_cfg_get(ab, ATH12K_CFG_SKIP_PARTNER_CHIP_DUMP);
+	struct ath12k_dump_segment *dp_segs = NULL;
+	int dp_seg_cnt = 0;
+	int dp_segs_needed = 0;
 
 	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 		return;
@@ -591,6 +594,22 @@ void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 			rem_seg_cnt++;
 	}
 
+	/* Arch-specific coredump segments (e.g. host AST/MSDU/MPDU tables
+	 * on wifi8). The segment count is arch-dependent and can be in the
+	 * hundreds, so the array is sized from a query call and allocated
+	 * on the heap.
+	 */
+	if (ab->dp)
+		dp_segs_needed = ath12k_dp_arch_get_coredump_seg_count(ab->dp);
+	if (dp_segs_needed) {
+		dp_segs = kcalloc(dp_segs_needed, sizeof(*dp_segs), GFP_KERNEL);
+		if (dp_segs)
+			dp_seg_cnt = ath12k_dp_arch_get_coredump_segs(ab->dp, dp_segs,
+								      dp_segs_needed);
+	}
+	ath12k_info(ab, "coredump: dp segs needed=%d collected=%d\n",
+		    dp_segs_needed, dp_seg_cnt);
+
 	num_seg = fw_img->entries + rddm_img->entries + rem_seg_cnt;
 
 #ifdef CPTCFG_ATHDEBUG
@@ -598,11 +617,14 @@ void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 		num_seg += qdss_seg_cnt;
 #endif
 
+	num_seg += dp_seg_cnt;
+
 	len = num_seg * sizeof(*segment);
 
 	segment = kzalloc(len, GFP_NOWAIT);
 	if (!segment) {
 		ath12k_err(ab, " Failed to allocate memory for segment for rddm download\n");
+		kfree(dp_segs);
 		return;
 	}
 
@@ -672,6 +694,16 @@ void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 		seg_info++;
 	}
 #endif
+
+	for (i = 0; i < dp_seg_cnt; i++) {
+		*seg_info = dp_segs[i];
+		seg_info++;
+	}
+	/* Only the descriptor array is freed here; vaddr/addr in each
+	 * entry point to memory owned by the arch layer.
+	 */
+	kfree(dp_segs);
+	dp_segs = NULL;
 
 	num_seg = num_seg - skip_count;
 
