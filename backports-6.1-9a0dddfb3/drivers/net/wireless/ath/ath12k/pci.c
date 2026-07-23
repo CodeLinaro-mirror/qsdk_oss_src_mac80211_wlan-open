@@ -254,6 +254,7 @@ static void ath12k_pci_sw_reset(struct ath12k_base *ab, bool power_on)
 			ath12k_umcmn_irq_disable(ab);
 			ath12k_umcmn_timer_free(ab);
 			ath12k_pci_q6_only_reset(ab);
+			ab->skip_cumac_hw_reset = true;
 		} else {
 			ath12k_pci_soc_global_reset(ab);
 		}
