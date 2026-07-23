@@ -1658,7 +1658,14 @@ void ath12k_wifi8_dp_tx_tqm_cmd_list_cleanup(struct ath12k_base *ab)
 	spin_lock_bh(&dp->tqm_cmd_lock);
 	list_for_each_entry_safe(cmd, tmp, &dp->tqm_cmd_list, list) {
 		list_del(&cmd->list);
+		spin_unlock_bh(&dp->tqm_cmd_lock);
+		/* Drive forced cleanup so peer_ext_ctx is freed even when
+		 * the TQM status response never arrived (e.g. wifi down).
+		 */
+		if (cmd->handler)
+			cmd->handler(dp, (void *)&cmd->data, NULL);
 		kfree(cmd);
+		spin_lock_bh(&dp->tqm_cmd_lock);
 	}
 	spin_unlock_bh(&dp->tqm_cmd_lock);
 }
