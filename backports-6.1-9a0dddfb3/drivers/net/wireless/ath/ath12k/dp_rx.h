@@ -276,6 +276,7 @@ struct ath12k_dp_rx_rfc1042_hdr {
 } __packed;
 
 struct dp_rx_fst {
+	struct ath12k_base *ab;
 	u8 *base;
 	struct hal_rx_fst *hal_rx_fst;
 	u16 num_entries;
@@ -286,6 +287,7 @@ struct dp_rx_fst {
 	u32 flow_del_fail;
 	/* spinlock to prevent concurrent table access */
 	spinlock_t fst_lock;
+	struct delayed_work cache_inval_full_work;
 };
 
 static inline u32 ath12k_he_gi_to_nl80211_he_gi(u8 sgi)
