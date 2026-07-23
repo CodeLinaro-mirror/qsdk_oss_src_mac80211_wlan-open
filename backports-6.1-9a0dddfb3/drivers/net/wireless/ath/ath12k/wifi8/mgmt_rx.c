@@ -1687,7 +1687,7 @@ ath12k_wifi8_mgmt_dump_ring_stats(struct ath12k_mgmt *mgmt, char *buf, int size)
 						  buf + len, size - len);
 
 #ifdef CPTCFG_QCN_EXTN
-	len = ath12k_wifi8_mgmt_dump_ring_stats_extn(mgmt, buf, len, size);
+	len = ath12k_wifi8_mgmt_dump_ring_stats_extn(mgmt, buf, size, len);
 #endif
 
 	return len;

@@ -7428,33 +7428,61 @@ void ath12k_debugfs_register(struct ath12k *ar)
 #endif
 }
 
+struct ath12k_srng_stats_priv {
+	char *buf;
+	int len;
+};
+
+static int ath12k_debugfs_hal_dump_srng_stats_open(struct inode *inode, struct file *file)
+{
+	struct ath12k_base *ab = inode->i_private;
+	struct ath12k_srng_stats_priv *priv;
+	const int size = 4096 * 6;
+
+	priv = kzalloc(sizeof(*priv), GFP_KERNEL);
+	if (!priv)
+		return -ENOMEM;
+
+	priv->buf = vmalloc(size);
+	if (!priv->buf) {
+		kfree(priv);
+		return -ENOMEM;
+	}
+
+	priv->len = ath12k_debugfs_hal_dump_srng_stats(ab, priv->buf, size);
+	priv->len = min_t(int, priv->len, size);
+
+	file->private_data = priv;
+
+	return 0;
+}
+
 static ssize_t ath12k_debugfs_hal_dump_srng_stats_read(struct file *file,
                                                char __user *user_buf,
                                                size_t count, loff_t *ppos)
 {
-       struct ath12k_base *ab = file->private_data;
-       int len = 0, retval;
-       const int size = 4096 * 6;
-       char *buf;
+	struct ath12k_srng_stats_priv *priv = file->private_data;
 
-       buf = vmalloc(size);
-       if (!buf)
-               return -ENOMEM;
+	return simple_read_from_buffer(user_buf, count, ppos, priv->buf, priv->len);
+}
 
-       len = ath12k_debugfs_hal_dump_srng_stats(ab, buf + len, size - len);
-       if (len > size)
-               len = size;
-       retval = simple_read_from_buffer(user_buf, count, ppos, buf, len);
-       vfree(buf);
+static int ath12k_debugfs_hal_dump_srng_stats_release(struct inode *inode,
+						      struct file *file)
+{
+	struct ath12k_srng_stats_priv *priv = file->private_data;
 
-       return retval;
+	vfree(priv->buf);
+	kfree(priv);
+
+	return 0;
 }
 
 static const struct file_operations fops_dump_hal_stats = {
-       .read = ath12k_debugfs_hal_dump_srng_stats_read,
-       .open = simple_open,
-       .owner = THIS_MODULE,
-       .llseek = default_llseek,
+	.read = ath12k_debugfs_hal_dump_srng_stats_read,
+	.open = ath12k_debugfs_hal_dump_srng_stats_open,
+	.release = ath12k_debugfs_hal_dump_srng_stats_release,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
 };
 
 static ssize_t ath12k_read_umac_reset_stats(struct file *file,
