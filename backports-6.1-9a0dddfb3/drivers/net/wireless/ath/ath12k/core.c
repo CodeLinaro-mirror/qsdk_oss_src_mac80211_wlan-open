@@ -3388,7 +3388,7 @@ void ath12k_core_radio_cleanup(struct ath12k *ar)
 	complete(&ar->vdev_setup_done);
 	complete(&ar->vdev_delete_done);
 	complete(&ar->bss_survey_done);
-	complete(&ar->thermal.wmi_sync);
+	complete_all(&ar->thermal.wmi_sync);
 	complete(&ar->scan.on_channel);
 
 	wake_up(&ar->dp.tx_empty_waitq);
