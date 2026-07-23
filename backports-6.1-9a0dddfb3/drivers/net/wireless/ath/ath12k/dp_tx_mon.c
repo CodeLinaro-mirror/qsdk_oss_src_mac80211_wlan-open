@@ -2890,9 +2890,15 @@ ath12k_dp_tx_mon_frame_trim_mic(struct sk_buff *skb,
 		return;
 
 	frag_count = ath12k_dp_mon_get_num_frags_in_fraglist(skb);
-	if (frag_count)
+	if (frag_count) {
+		if (!skb_shinfo(skb)->nr_frags) {
+			ath12k_dbg(NULL, ATH12K_DBG_DP_MON_TX,
+				   "ext mon: mpdu fraglist reports %d frag(s) but skb nr_frags is 0\n",
+				   frag_count);
+			return;
+		}
 		hdr = (struct ieee80211_hdr *)ath12k_dp_mon_skb_get_frag_addr(skb, 0);
-	else
+	} else
 		hdr = (struct ieee80211_hdr *)skb->data;
 
 	if (!ieee80211_has_protected(hdr->frame_control))
@@ -3229,6 +3235,60 @@ ath12k_dp_mon_tx_deliver_frame(struct ath12k_pdev_dp *dp_pdev,
 	ieee80211_tx_monitor_offload(hw, &status);
 }
 
+static
+int ath12k_dp_ext_mon_tx_filter_frame(struct ath12k_pdev_dp *dp_pdev,
+					 struct sk_buff *mpdu, u32 mpdu_count)
+{
+	struct ath12k_pdev_tx_mon *tx_mon;
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	struct ath12k_dp_tx_ext_mon_config *tx_ext_mon;
+	int ret;
+
+	tx_mon = dp_pdev->dp_mon_pdev->dp_pdev_tx_mon;
+	tx_ext_mon = tx_mon->tx_ext_mon.tx_ext_mon_config;
+	if (unlikely(!tx_ext_mon)) {
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
+				"ext_mon in tx direction is null\n");
+		return 0;
+	}
+
+	if (!tx_ext_mon->enable)
+		return 0;
+
+	if (tx_ext_mon->monitor_flags == ATH12K_EXT_MON_PKT_CAP)
+		return 0;
+
+	// TODO: Optimise this to trim this before processing
+	if (tx_ext_mon->level == ATH12K_EXT_MON_FILTER_LEVEL_PPDU &&
+		mpdu_count > 1)
+		return -EINVAL;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp_pdev->dp);
+	if (mon_ops && mon_ops->ext_mon_filter) {
+		ret = mon_ops->ext_mon_filter(mpdu, tx_ext_mon);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+
+static int
+ath12k_dp_ext_mon_tx_frame_is_filtered(struct ath12k_pdev_dp *dp_pdev,
+					 struct sk_buff *mpdu, u32 mpdu_count)
+{
+	struct ath12k_pdev_tx_mon *tx_mon;
+	int ret;
+
+	tx_mon = dp_pdev->dp_mon_pdev->dp_pdev_tx_mon;
+	spin_lock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+	ret = ath12k_dp_ext_mon_tx_filter_frame(dp_pdev, mpdu,
+						  mpdu_count);
+	spin_unlock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+
+	return ret;
+}
+
 /**
  * ath12k_dp_mon_tx_deliver_single_ppdu() - Process and deliver MPDUs for single user
  * @dp_pdev: ath12k pdev dp context
@@ -3258,6 +3318,7 @@ ath12k_dp_mon_tx_deliver_single_ppdu(struct ath12k_pdev_dp *dp_pdev,
 	struct hal_tx_mon_ppdu_info *rx_ppdu_info = NULL;
 	int delivered = 0;
 	bool contains_host_frames;
+	u32 mpdu_count = 0;
 
 	if (!ppdu_info || !mpdu_q || !ppdu_context)
 		return;
@@ -3307,6 +3368,12 @@ ath12k_dp_mon_tx_deliver_single_ppdu(struct ath12k_pdev_dp *dp_pdev,
 	contains_host_frames = ppdu_context->contains_host_frames;
 
 	while ((mpdu = skb_dequeue(mpdu_q))) {
+		if (ath12k_dp_ext_mon_tx_frame_is_filtered(dp_pdev, mpdu,
+							   ++mpdu_count)) {
+			dev_kfree_skb_any(mpdu);
+			continue;
+		}
+
 		ath12k_dp_mon_tx_deliver_frame(dp_pdev, hw, mpdu,
 					       ppdu_info, status_info,
 					       contains_host_frames,

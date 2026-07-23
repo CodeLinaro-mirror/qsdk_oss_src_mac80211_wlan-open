@@ -119,6 +119,7 @@ struct ath12k_mon_data;
 struct dp_mon_rx_filter;
 struct dp_mon_tx_filter;
 struct ath12k_ext_mon_config;
+struct ath12k_dp_tx_ext_mon_config;
 
 struct ath12k_dp_mon_pad_params {
 	u32 frag_size;
@@ -265,6 +266,8 @@ struct ath12k_dp_arch_mon_ops {
 
 	int (*ext_mon_tx_alloc)(struct ath12k_pdev_dp *dp_pdev);
 	void (*ext_mon_tx_free)(struct ath12k_pdev_dp *dp_pdev);
+	int (*ext_mon_filter)(struct sk_buff *mpdu,
+				struct ath12k_dp_tx_ext_mon_config *tx_ext_mon);
 };
 
 /**
