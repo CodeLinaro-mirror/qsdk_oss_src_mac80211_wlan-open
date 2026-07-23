@@ -151,6 +151,13 @@ struct ath12k_dp_hw {
 	spinlock_t peer_hash_lock;
 	/* Generic hash table for fast MAC address lookup */
 	DECLARE_HASHTABLE(peer_hash, ATH12K_DP_PEER_HASH_BITS);
+
+	/*
+	 * TQM cleanup list — peers awaiting TQM queue drain.
+	 * peer_id is unique: at most one entry per peer_id at any time.
+	 * Lifetime: peer create →  peer delete/TQM cleanup
+	 */
+	struct list_head tqm_cleanup_list;
 };
 
 struct ath12k_dp_hw_group {
