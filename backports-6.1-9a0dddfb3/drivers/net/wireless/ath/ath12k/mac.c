@@ -20918,12 +20918,11 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 		ahvif->mode0_recover_bridge_vdevs =
 			(ahvif->links_map & ATH12K_BRIDGE_LINKS_MASK) ?
 			true : false;
-		/* In Mode1/2 SSR remove_interface is skipped so map IDs are never
+		/* In SSR remove_interface is skipped so map IDs are never
 		 * returned via the normal path. Reset the bitmap here so
 		 * re-added interfaces can allocate fresh IDs.
 		 */
-		if (ar->ab->ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE0)
-			ah->free_map_id = ATH12K_FREE_MAP_ID_MASK;
+		ah->free_map_id = ATH12K_FREE_MAP_ID_MASK;
 	} else {
 		memset(ahvif, 0, sizeof(*ahvif));
 	}
