@@ -12359,7 +12359,7 @@ static void ath12k_mgmt_rx_event(struct ath12k_base *ab, struct sk_buff *skb)
 	struct ath12k *ar;
 	struct ieee80211_rx_status *status = IEEE80211_SKB_RXCB(skb);
 	struct ieee80211_sta *pubsta = NULL;
-	struct ath12k_link_sta *arsta;
+	struct ath12k_link_sta *arsta = NULL;
 	bool is_4addr_null_pkt = false;
 	struct ieee80211_hdr *hdr;
 	u16 fc;
@@ -12375,6 +12375,7 @@ static void ath12k_mgmt_rx_event(struct ath12k_base *ab, struct sk_buff *skb)
 	u32 vdev_id;
 	u8 link_id;
 	struct ath12k_link_vif *arvif_iter;
+	bool locked = false;
 
 	rx_ev.num_link_removal_info = 0;
 	if (ath12k_pull_mgmt_rx_params_tlv(ab, skb, &rx_ev) != 0) {
@@ -12453,12 +12454,26 @@ static void ath12k_mgmt_rx_event(struct ath12k_base *ab, struct sk_buff *skb)
 	    skb->len >= offsetof(struct ieee80211_mgmt, u.assoc_req.variable))
 		ath12k_update_assoc_fail_stats(ar, hdr, skb);
 
-	spin_lock_bh(&ar->arsta_lock);
-	arsta = ath12k_link_sta_find_by_addr(ar, hdr->addr1);
-	if (!arsta)
+	/* Optimise the arsta hash lookup based on addr1 (DA) and addr3 (BSSID).
+	 * Broadcast addresses are never inserted into the arsta hash table
+	 * (mac80211 rejects them via is_valid_ether_addr() at sta_info_insert()),
+	 * so any lookup against a broadcast address is guaranteed to return NULL.
+	 */
+	if (!is_broadcast_ether_addr(hdr->addr1)) {
+		spin_lock_bh(&ar->arsta_lock);
+		arsta = ath12k_link_sta_find_by_addr(ar, hdr->addr1);
+		if (!arsta)
+			arsta = ath12k_link_sta_find_by_addr(ar, hdr->addr3);
+		locked = true;
+	} else if (!is_broadcast_ether_addr(hdr->addr3)) {
+		spin_lock_bh(&ar->arsta_lock);
 		arsta = ath12k_link_sta_find_by_addr(ar, hdr->addr3);
+		locked = true;
+	}
+
 	if (!arsta || !arsta->arvif->ahvif) {
-		spin_unlock_bh(&ar->arsta_lock);
+		if (locked)
+			spin_unlock_bh(&ar->arsta_lock);
 		/* 802.11 Probe Request address fields (ToDS=0, FromDS=0):
 		 * addr1 = DA (Destination Address) - ff:ff:ff:ff:ff:ff for broadcast
 		 * addr2 = SA/TA (Source/Transmitter - STA MAC address)
