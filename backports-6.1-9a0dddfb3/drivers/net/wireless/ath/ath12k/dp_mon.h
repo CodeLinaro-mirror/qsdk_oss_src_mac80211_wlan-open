@@ -37,9 +37,9 @@
 #define DP_MON_NUM_PPDU_DESC(ab)		({ (void)(ab); 128; })
 
 #else
-#define DP_RXDMA_MONITOR_BUF_RING_SIZE(ab)	({ (void)(ab); ath12k_dp_ring_cfg->rxdma_monitor_buf_ring_size; })
-#define DP_RXDMA_MONITOR_DST_RING_SIZE(ab)	({ (void)(ab); ath12k_dp_ring_cfg->rxdma_monitor_dst_ring_size; })
-#define DP_MON_NUM_PPDU_DESC(ab)		({ (void)(ab); ath12k_dp_ring_cfg->mon_num_ppdu_desc; })
+#define DP_RXDMA_MONITOR_BUF_RING_SIZE(ab)	({ (void)(ab); (ath12k_dp_ring_cfg->rxdma_monitor_buf_ring_size); })
+#define DP_RXDMA_MONITOR_DST_RING_SIZE(ab)	({ (void)(ab); (ath12k_dp_ring_cfg->rxdma_monitor_dst_ring_size); })
+#define DP_MON_NUM_PPDU_DESC(ab)		({ (void)(ab); (ath12k_dp_ring_cfg->mon_num_ppdu_desc); })
 #endif
 
 #else

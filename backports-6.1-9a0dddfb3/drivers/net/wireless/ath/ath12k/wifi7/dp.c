@@ -19,7 +19,7 @@
 #include "dp_peer.h"
 #include "../wmi.h"
 #include "umac_reset.h"
-#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#if defined(CPTCFG_EXT_IPA_OFFLOAD) && defined(CPTCFG_QCN_EXTN)
 #include "qcn_extns/ipa/dp_ipa.h"
 #endif
 #if defined(CPTCFG_EXT_IPA_OFFLOAD) && defined(CPTCFG_QCN_EXTN)

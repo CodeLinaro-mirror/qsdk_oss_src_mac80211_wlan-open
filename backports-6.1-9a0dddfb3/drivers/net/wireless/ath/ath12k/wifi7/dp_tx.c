@@ -23,7 +23,7 @@
 #include "dp_peer.h"
 #ifdef CPTCFG_QCN_EXTN
 #include "../qcn_extns/ini.h"
-#endif
+#endif /* CPTCFG_QCN_EXTN */
 
 #ifndef CPTCFG_EXT_IPA_OFFLOAD
 #define ATH12K_DMA_UNMAP_WITH_FREE_SKB(...) ((void)0)
