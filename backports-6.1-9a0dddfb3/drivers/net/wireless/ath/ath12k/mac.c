@@ -16327,7 +16327,7 @@ static void ath12k_mac_update_qos_map(struct ath12k *ar, struct ath12k_link_vif 
 	int max_entries;
 
 	qos_map = arvif->qos_map;
-	map_id = arvif->map_id;
+	map_id = arvif->ahvif->map_id;
 	dp_link_vif = &ahvif->dp_vif.dp_link_vif[arvif->link_id];
 	bank_id = dp_link_vif->bank_id;
 	max_entries = ab->hal.hal_params->dscp_tid_map_tbl_max_entries;
@@ -20026,7 +20026,6 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	u8 *vdev_create_mac;
 	u8 mask[ETH_ALEN] = {0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00};
 	int txpower = NL80211_TX_POWER_AUTOMATIC;
-	u8 map_id;
 	u32 rep_ul_resp;
 	struct ath12k_dp_peer_create_params params = {};
 	enum ath12k_debug_mask_level dbg_lvl;
@@ -20176,15 +20175,6 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 
 	arvif->vdev_subtype = is_bridge_vdev ? WMI_VDEV_SUBTYPE_BRIDGE : WMI_VDEV_SUBTYPE_NONE;
 
-	if (!ar->free_map_id) {
-		ath12k_err(ar->ab, "[vdev_id : %s radio_idx : %u] No free map_id available\n",
-			   ATH12K_INVALID_VDEV_ID, ar->radio_idx);
-		ret = -EINVAL;
-		goto err;
-	}
-	map_id =  __ffs(ar->free_map_id);
-	ar->free_map_id &= ~(1 << map_id);
-	arvif->map_id = map_id;
 
 	dp_link_vif = &ahvif->dp_vif.dp_link_vif[arvif->link_id];
 
@@ -20581,7 +20571,6 @@ err_free_vdev_id:
 	spin_lock_bh(&ar->ab->base_lock);
 	ab->free_vdev_map |= 1LL << arvif->vdev_id;
 	spin_unlock_bh(&ar->ab->base_lock);
-	ar->free_map_id |= 1 << arvif->map_id;
 err:
 	arvif->ar = NULL;
 	return ret;
@@ -20897,6 +20886,7 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 	unsigned long links_map = 0;
 	int ret;
 	int i = 0;
+	u8 map_id;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
@@ -20924,12 +20914,19 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 		links_map = ahvif->links_map;
 	}
 
-	if (test_bit(ATH12K_FLAG_RECOVERY, &ar->ab->ag->flags))
+	if (test_bit(ATH12K_FLAG_RECOVERY, &ar->ab->ag->flags)) {
 		ahvif->mode0_recover_bridge_vdevs =
 			(ahvif->links_map & ATH12K_BRIDGE_LINKS_MASK) ?
 			true : false;
-	else
+		/* In Mode1/2 SSR remove_interface is skipped so map IDs are never
+		 * returned via the normal path. Reset the bitmap here so
+		 * re-added interfaces can allocate fresh IDs.
+		 */
+		if (ar->ab->ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE0)
+			ah->free_map_id = ATH12K_FREE_MAP_ID_MASK;
+	} else {
 		memset(ahvif, 0, sizeof(*ahvif));
+	}
 
 	ahvif->ah = ah;
 	ahvif->vif = vif;
@@ -21008,6 +21005,14 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 		if (ret)
 			ath12k_info(NULL, "failed to allocate ahvif id %d", ret);
 	}
+
+	if (!ah->free_map_id) {
+		ath12k_err(NULL, "no free map_id available");
+		return -EINVAL;
+	}
+	map_id = __ffs(ah->free_map_id);
+	ah->free_map_id &= ~(1 << map_id);
+	ahvif->map_id = map_id;
 
 	/*
 	 * Will be removed later. Added for debug purpose during development.
@@ -21281,7 +21286,6 @@ static int ath12k_mac_vdev_delete(struct ath12k *ar, struct ath12k_link_vif *arv
 	spin_unlock_bh(&ar->ab->base_lock);
 
 	ar->allocated_vdev_map &= ~(1LL << arvif->vdev_id);
-	ar->free_map_id |= 1 << arvif->map_id;
 	if (!ath12k_mac_is_bridge_vdev(arvif)) {
 		WARN_ON(!ar->num_created_vdevs);
 		ar->num_created_vdevs--;
@@ -21474,6 +21478,8 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 		ah->free_ahvif_id_map |= 1ULL << ahvif->dp_vif.ahvif_id;
 		ahvif->dp_vif.ahvif_id = ATH12K_INVALID_AHVIF_ID;
 	}
+
+	ah->free_map_id |= 1 << ahvif->map_id;
 
 	ath12k_dp_arch_dp_vif_configure(ah->ag->dp_hw_grp, ahvif,
 					ATH12K_DP_OP_DEINIT);
@@ -28496,7 +28502,6 @@ static int ath12k_mac_setup_register(struct ath12k *ar,
 	ar->max_num_stations = ath12k_core_get_max_station_per_radio(ar->ab);
 	ar->max_num_peers = ath12k_core_get_max_peers_per_radio(ar->ab);
 	ar->rssi_offsets.rssi_offset = ATH12K_DEFAULT_NOISE_FLOOR;
-	ar->free_map_id = ATH12K_FREE_MAP_ID_MASK;
 
 	total_vdevs = ath12k_core_get_total_num_vdevs(ar->ab);
 	if (total_vdevs == ATH12K_MAX_NUM_VDEVS_NLINK)
@@ -29481,6 +29486,7 @@ static struct ath12k_hw *ath12k_mac_hw_allocate(struct ath12k_hw_group *ag,
 	ah->dp_hw.last_peer_id = 0;
 	ah->dp_hw.last_sta_id = 0;
 	ah->free_ahvif_id_map = ~1ULL; /* All bits set except bit 0 */
+	ah->free_map_id = ATH12K_FREE_MAP_ID_MASK;
 
 	for (i = 0; i < num_pdev_map; i++) {
 		ab = pdev_map[i].ab;
