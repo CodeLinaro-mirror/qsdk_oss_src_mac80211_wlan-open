@@ -74,30 +74,6 @@ struct link_peer_rx_tid_stats {
 	u8 bcast_cnt;
 } __aligned(64);
 
-/* different supported pkt types for routing */
-enum ath12k_routing_pkt_type {
-	ATH12K_PKT_TYPE_ARP_IPV4,
-	ATH12K_PKT_TYPE_NS_IPV6,
-	ATH12K_PKT_TYPE_IGMP_IPV4,
-	ATH12K_PKT_TYPE_MLD_IPV6,
-	ATH12K_PKT_TYPE_DHCP_IPV4,
-	ATH12K_PKT_TYPE_DHCP_IPV6,
-	ATH12K_PKT_TYPE_DNS_TCP_IPV4,
-	ATH12K_PKT_TYPE_DNS_TCP_IPV6,
-	ATH12K_PKT_TYPE_DNS_UDP_IPV4,
-	ATH12K_PKT_TYPE_DNS_UDP_IPV6,
-	ATH12K_PKT_TYPE_ICMP_IPV4,
-	ATH12K_PKT_TYPE_ICMP_IPV6,
-	ATH12K_PKT_TYPE_TCP_IPV4,
-	ATH12K_PKT_TYPE_TCP_IPV6,
-	ATH12K_PKT_TYPE_UDP_IPV4,
-	ATH12K_PKT_TYPE_UDP_IPV6,
-	ATH12K_PKT_TYPE_IPV4,
-	ATH12K_PKT_TYPE_IPV6,
-	ATH12K_PKT_TYPE_EAP,
-	ATH12K_PKT_TYPE_MAX
-};
-
 enum filter_mgmt {
 	FILTER_MGMT_ASSOC_REQ                   = BIT(0),
 	FILTER_MGMT_ASSOC_RESP                  = BIT(1),
@@ -155,6 +131,12 @@ enum dp_rx_desc_pool {
 #define ATH12K_ROUTE_WBM_RELEASE(ab) \
 	((ab)->hw_params->route_wbm_release)
 #define ATH12K_ROUTE_EAP_METADATA       (ATH12K_RX_PROTOCOL_TAG_START_OFFSET + ATH12K_PKT_TYPE_EAP)
+
+/* cce_metadata value that signals the MSDU must be dropped */
+#define CCE_DROP          0xDEAD
+
+/* bit in fse_metadata that signals the flow must be dropped */
+#define FSE_FLOW_DROP_BIT BIT(31)
 
 struct ath12k_dp_rx_tid {
 	u8 tid;

@@ -302,6 +302,24 @@ struct ath12k_htt_ppdu_stats {
 	u64 ppdu_wrap_drop;
 };
 
+/* CCE protocol tag map — one entry per ath12k_routing_pkt_type (see dp_rx.h) */
+struct ath12k_rx_protocol_tag_map {
+	u16  tag;
+	bool enabled;
+};
+
+/* FSE/CCE per-pdev statistics */
+struct ath12k_fse_cce_stats {
+	u64 cce_tagged_pkts[ATH12K_PKT_TYPE_MAX]; /* indexed by ath12k_routing_pkt_type */
+	u64 cce_drop_pkts;
+	u64 fse_tagged_pkts;
+	u64 fse_drop_pkts;
+	u64 fse_new_flow_pkts;
+	u64 reo_err_cce_drop;
+	u64 wbm_reo_cce_drop;
+	u64 wbm_rxdma_fse_drop;
+};
+
 struct ath12k_pdev_dp_stats {
 	struct ath12k_pdev_telemetry_stats telemetry_stats;
 	struct ath12k_atf_pdev_airtime atf_airtime;
@@ -341,6 +359,12 @@ struct ath12k_pdev_dp {
 	/*Neighbors Peer count per pdev*/
 	int num_nrps;
 	u32 prev_tx_enq_tstamp;
+
+	/* CCE protocol tag map: indexed by ath12k_routing_pkt_type */
+	struct ath12k_rx_protocol_tag_map protocol_tag_map[ATH12K_PKT_TYPE_MAX];
+
+	/* FSE/CCE statistics */
+	struct ath12k_fse_cce_stats fse_cce_stats;
 };
 
 #define EAPOL_WPA_KEY_INFO_KEY_TYPE		BIT(3)
