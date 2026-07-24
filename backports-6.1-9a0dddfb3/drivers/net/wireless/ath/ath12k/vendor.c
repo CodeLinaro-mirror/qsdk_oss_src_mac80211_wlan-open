@@ -10671,6 +10671,12 @@ ath12k_vendor_send_power_update_complete(struct ath12k *ar,
 	vendor_buffer_len =
 		ath12k_afc_power_event_update_or_get_len(ar, NULL,
 							 afc_reg_info);
+	if (vendor_buffer_len < 0) {
+		ath12k_warn(ar->ab,
+			    "failed to get AFC power update event length: %d\n",
+			    vendor_buffer_len);
+		return vendor_buffer_len;
+	}
 
 	vendor_event =
 	cfg80211_vendor_event_alloc(ar->ah->hw->wiphy, NULL, vendor_buffer_len,
@@ -10899,6 +10905,13 @@ ath12k_prepare_and_send_afc_response(struct ath12k *ar,
 	int skb_buf_len;
 
 	skb_buf_len = ath12k_afc_power_event_update_or_get_len(ar, NULL, afc_reg_info);
+	if (skb_buf_len < 0) {
+		ath12k_warn(ar->ab,
+			    "failed to get AFC response length: %d\n",
+			    skb_buf_len);
+		return skb_buf_len;
+	}
+
 	skb = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, skb_buf_len);
 	if (!skb) {
 		ath12k_err(ar->ab, "skb alloc failed");
