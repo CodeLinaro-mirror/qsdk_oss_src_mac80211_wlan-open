@@ -1006,6 +1006,9 @@ void ath12k_mvr_ch_switch_notify_work(struct work_struct *work)
 		cfg80211_ch_switch_notify(wdev->netdev,
 					  &arvif->chanctx.def,
 					  arvif->link_id);
+		spin_lock_bh(&ar->data_lock);
+		ar->chanctx_switch_stats.nl_notify_count++;
+		spin_unlock_bh(&ar->data_lock);
 
 		/*
 		 * For scan radio, SET_TPC WMI command is deferred until after

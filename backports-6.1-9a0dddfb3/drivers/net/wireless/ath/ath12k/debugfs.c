@@ -848,6 +848,9 @@ static ssize_t ath12k_dump_chanctx_switch_stats(struct file *file,
 			 "  total_switches          = %llu\n",
 			 stats->total_switches);
 	len += scnprintf(buf + len, size - len,
+			 "  nl_notify_count         = %llu\n",
+			 stats->nl_notify_count);
+	len += scnprintf(buf + len, size - len,
 			 "  last_switch_time_us     = %llu\n",
 			 stats->last_switch_time_us);
 	len += scnprintf(buf + len, size - len,
