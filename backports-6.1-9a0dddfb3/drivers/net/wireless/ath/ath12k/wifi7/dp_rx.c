@@ -1924,6 +1924,33 @@ out_unlock:
 	return ret;
 }
 
+/*
+ * ath12k_wifi7_dp_rx_err_cce_drop() - drop MSDU if CCE metadata == CCE_DROP
+ *
+ * Called in the REO exception path with rcu_read_lock() held.
+ * Returns true and frees the MSDU when the CCE hardware has flagged the
+ * packet for discard; the caller must then skip to the unlock/exit path.
+ */
+static bool
+ath12k_wifi7_dp_rx_err_cce_drop(struct ath12k_base *ab,
+				 struct ath12k_pdev_dp *dp_pdev,
+				 struct sk_buff *msdu,
+				 struct hal_rx_desc *rx_desc)
+{
+	const struct hal_ops *hal_ops = ab->hw_params->hal_ops;
+
+	if (!hal_ops->rx_get_cce_metadata)
+		return false;
+
+	if (hal_ops->rx_get_cce_metadata(rx_desc) != CCE_DROP)
+		return false;
+
+	dp_pdev->fse_cce_stats.reo_err_cce_drop++;
+	dp_pdev->fse_cce_stats.cce_drop_pkts++;
+	dev_kfree_skb_any(msdu);
+	return true;
+}
+
 static int
 ath12k_wifi7_dp_process_rx_err_buf(struct ath12k_pdev_dp *dp_pdev,
 				   struct hal_reo_dest_ring *desc,
@@ -2009,6 +2036,8 @@ ath12k_wifi7_dp_process_rx_err_buf(struct ath12k_pdev_dp *dp_pdev,
 	ath12k_wifi7_dp_extract_rx_desc_data(dp, &rx_desc_data, rx_desc, rx_desc);
 
 	dp_rx_update_protocol_tag(ab, dp_pdev, msdu, rx_desc);
+	if (ath12k_wifi7_dp_rx_err_cce_drop(ab, dp_pdev, msdu, rx_desc))
+		goto exit;
 
 	if (ath12k_dp_stats_enabled(dp_pdev) &&
 	    ath12k_tid_stats_enabled(dp_pdev)) {
