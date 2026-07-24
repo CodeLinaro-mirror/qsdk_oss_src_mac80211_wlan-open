@@ -4211,7 +4211,7 @@ static int ath12k_mlo_core_recovery_reconfig_link_bss(struct ath12k *ar,
 exit:
 	if (ret && dp_peer_created)
 		ath12k_dp_arch_peer_delete(ab->dp, ah, arvif->bssid,
-					   NULL, ar->hw_link_id, ahvif->vif);
+					   NULL, ar->hw_link_id);
 
 	if (ret && arvif->self_arsta) {
 		spin_lock_bh(&ar->arsta_lock);
