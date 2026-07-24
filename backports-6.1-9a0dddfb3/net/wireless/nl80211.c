@@ -32,6 +32,7 @@
 #include "rdev-ops.h"
 #ifdef CPTCFG_QCN_EXTN
 #include "cfg80211_dfs_extn.h"
+#include "cfg80211_scan_radio_extn.h"
 #endif /* CPTCFG_QCN_EXTN */
 
 #define VLAN_N_VID	4096
@@ -4274,7 +4275,10 @@ static int _nl80211_parse_chandef(struct cfg80211_registered_device *rdev,
 		    control_freq <= MHZ_TO_KHZ(7125)) {
 			u32 prohibited_flags = IEEE80211_CHAN_DISABLED |
 					IEEE80211_CHAN_NO_IR;
-
+#ifdef CPTCFG_QCN_EXTN
+			if (wdev && wdev_is_scan_radio(wdev))
+				prohibited_flags &= ~IEEE80211_CHAN_NO_IR;
+#endif
 			err = cfg80211_validate_freq_width_for_pwr_mode(&rdev->wiphy,
 									chandef,
 									mode,
@@ -7992,6 +7996,9 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 	struct net_device *dev = info->user_ptr[1];
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
 	struct cfg80211_ap_settings *params;
+#ifdef CPTCFG_QCN_EXTN
+	struct cfg80211_scan_radio_pwr_nla scan_radio_pwr_nla = {};
+#endif
 	int err;
 
 	if (dev->ieee80211_ptr->iftype != NL80211_IFTYPE_AP &&
@@ -8176,14 +8183,18 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	if (info->attrs[NL80211_ATTR_WIPHY_FREQ]) {
+#ifdef CPTCFG_QCN_EXTN
+		if (wdev_is_scan_radio(wdev)) {
+			cfg80211_scan_radio_inject_power_mode(rdev, wdev, info,
+							      &scan_radio_pwr_nla);
+		}
+#endif
 		err = nl80211_parse_chandef(rdev, info, &params->chandef, wdev);
 		if (err)
 			goto out;
 
 		/* 6 GHz Frequency requires 6 GHz power mode */
-		/* Skip for scan radio as it does not require power mode */
-		if (params->chandef.chan->band == NL80211_BAND_6GHZ &&
-		    !wdev_is_scan_radio(wdev)) {
+		if (params->chandef.chan->band == NL80211_BAND_6GHZ) {
 			if (info->attrs[NL80211_ATTR_6G_REG_POWER_MODE]) {
 				params->he_6ghz_power_type =
 				    nla_get_u8(info->attrs[NL80211_ATTR_6G_REG_POWER_MODE]);
@@ -8234,7 +8245,8 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 	if (!cfg80211_bootup_cac_is_5g_dfs_chan_extn(&rdev->wiphy,
 						      &params->chandef)) {
 #endif /* CPTCFG_QCN_EXTN */
-		if (!cfg80211_reg_check_beaconing(&rdev->wiphy, &params->chandef,
+		if (!wdev_is_scan_radio(wdev) &&
+		    !cfg80211_reg_check_beaconing(&rdev->wiphy, &params->chandef,
 						  &beacon_check)) {
 			err = -EINVAL;
 			goto out;
@@ -8407,6 +8419,10 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 		nl80211_send_ap_started(wdev, link_id);
 	}
 out:
+#ifdef CPTCFG_QCN_EXTN
+	if (info->attrs[NL80211_ATTR_6G_REG_POWER_MODE] == &scan_radio_pwr_nla.hdr)
+		info->attrs[NL80211_ATTR_6G_REG_POWER_MODE] = NULL;
+#endif
 	kfree(params->acl);
 	kfree(params->beacon.mbssid_ies);
 	if (params->mbssid_config.tx_wdev &&
@@ -13344,6 +13360,9 @@ static int nl80211_channel_switch(struct sk_buff *skb, struct genl_info *info)
 	bool need_handle_dfs_flag = true;
 	u32 cs_count;
 	bool is_skip_cac_enabled;
+#ifdef CPTCFG_QCN_EXTN
+	struct cfg80211_scan_radio_pwr_nla scan_radio_pwr_nla = {};
+#endif
 
 	if (!rdev->ops->channel_switch ||
 	    !(rdev->wiphy.flags & WIPHY_FLAG_HAS_CHANNEL_SWITCH))
@@ -13449,26 +13468,29 @@ static int nl80211_channel_switch(struct sk_buff *skb, struct genl_info *info)
 		goto free;
 
 skip_beacons:
+#ifdef CPTCFG_QCN_EXTN
+	if (wdev_is_scan_radio(wdev)) {
+		cfg80211_scan_radio_inject_power_mode(rdev, wdev, info,
+						      &scan_radio_pwr_nla);
+	}
+#endif
 	err = nl80211_parse_chandef(rdev, info, &params.chandef, wdev);
 	if (err)
 		goto free;
 
-	if (!wdev_is_scan_radio(wdev)) {
-		/* 6 GHz Frequency requires 6 GHz power mode */
-		if (params.chandef.chan->band == NL80211_BAND_6GHZ) {
-			if (info->attrs[NL80211_ATTR_6G_REG_POWER_MODE]) {
-				params.he_6ghz_power_type =
+	/* 6 GHz Frequency requires 6 GHz power mode */
+	if (params.chandef.chan->band == NL80211_BAND_6GHZ) {
+		if (info->attrs[NL80211_ATTR_6G_REG_POWER_MODE]) {
+			params.he_6ghz_power_type =
 				nla_get_u8(info->attrs[NL80211_ATTR_6G_REG_POWER_MODE]);
-			} else {
-				err = -EINVAL;
-				goto free;
-			}
+		} else {
+			err = -EINVAL;
+			goto free;
 		}
 	}
 
 	is_skip_cac_enabled = (info->attrs[NL80211_ATTR_SKIP_CAC] &&
 			nla_get_flag(info->attrs[NL80211_ATTR_SKIP_CAC]));
-
 	if (is_skip_cac_enabled) {
 		cfg80211_set_dfs_state(&rdev->wiphy, &params.chandef,
 				       NL80211_DFS_AVAILABLE);
@@ -13505,7 +13527,8 @@ skip_beacons:
 		 * DFS channel or if feature is disabled.
 		 */
 	} else {
-		if (!cfg80211_reg_can_beacon_relax(&rdev->wiphy, &params.chandef,
+		if (!wdev_is_scan_radio(wdev) &&
+		    !cfg80211_reg_can_beacon_relax(&rdev->wiphy, &params.chandef,
 						   wdev->iftype)) {
 			err = -EINVAL;
 			goto free;
@@ -13532,6 +13555,10 @@ skip_beacons:
 		       sizeof(struct cfg80211_chan_def));
 
 free:
+#ifdef CPTCFG_QCN_EXTN
+	if (info->attrs[NL80211_ATTR_6G_REG_POWER_MODE] == &scan_radio_pwr_nla.hdr)
+		info->attrs[NL80211_ATTR_6G_REG_POWER_MODE] = NULL;
+#endif
 	kfree(params.beacon_after.mbssid_ies);
 	kfree(params.beacon_csa.mbssid_ies);
 	kfree(params.beacon_after.rnr_ies);
