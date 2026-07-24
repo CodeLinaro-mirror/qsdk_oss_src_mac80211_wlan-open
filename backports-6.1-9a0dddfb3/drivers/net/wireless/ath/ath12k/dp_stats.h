@@ -245,11 +245,6 @@ enum ath12k_stats_type {
 	ATH12K_STATS_TYPE_MAX,
 };
 
-struct dp_pkt_info {
-	u64 num;
-	u64 bytes;
-};
-
 struct pkt_type {
 	u32 mcs_count[MAX_MCS];
 };
@@ -449,15 +444,6 @@ struct ath12k_htt_tx_stats {
 	u8 rate_idx;
 };
 
-/**
- * struct ath12k_htt_tx_ppdu_stats - Extended HTT TX statistics
- *
- * Holds all HTT TX fields removed from struct ath12k_htt_tx_stats.
- * Independently controlled by DP_ENABLE_TX_PPDU_STATS knob.
- * Allocated per link peer in ath12k_dp_link_peer_assign().
- * Freed in __ath12k_link_peer_free().
- * Reset in debugfs stats clear path.
- */
 /* Different Packet Types */
 enum packet_std {
 	DOT11_A = 0,
@@ -473,9 +459,18 @@ enum packet_std {
 	DOT11_MAX,
 };
 
+/**
+ * struct ath12k_htt_tx_ppdu_stats - Extended HTT TX statistics
+ *
+ * Holds all HTT TX fields removed from struct ath12k_htt_tx_stats.
+ * Independently controlled by DP_ENABLE_TX_PPDU_STATS knob.
+ * Allocated per link peer in ath12k_dp_link_peer_assign().
+ * Freed in __ath12k_link_peer_free().
+ * Reset in debugfs stats clear path.
+ */
 struct ath12k_htt_tx_ppdu_stats {
 	/* MSDU Basic */
-	struct dp_pkt_info tx_ucast_success;
+	struct ath12k_dp_pkt_info tx_ucast_success;
 
 	/* PPDU Basic */
 	u32 tx_ppdus;
@@ -504,33 +499,33 @@ struct ath12k_htt_tx_ppdu_stats {
 
 	/* Advanced stats */
 	u32 stbc;
+	u64 wme_ac_type_bytes[WME_AC_MAX];
+	u64 avg_tx_rate;
+	u64 tx_ppdu_duration;
 	u32 ldpc;
 	u32 wme_ac_type[WME_AC_MAX];
-	u64 wme_ac_type_bytes[WME_AC_MAX];
 	u32 excess_retries_per_ac[WME_AC_MAX];
 	u32 ampdu_cnt;
 	u32 non_ampdu_cnt;
 	u32 num_ppdu_cookie_valid;
-	u64 avg_tx_rate;
-	u16 tx_ratecode;
 	u32 last_tx_rate_mcs;
 	u32 mcast_last_tx_rate;
 	u32 mcast_last_tx_rate_mcs;
 	u32 pream_punct_cnt;
+	u32 punc_bw[MAX_PUNCTURED_MODE];
+	u32 rts_success;
+	u32 rts_failure;
+	u32 bar_cnt;
+	u32 ndpa_cnt;
+	u32 tx_msdu_flush_rsn[HTT_FLUSH_MAX];
 	struct ath12k_tx_pkt_info ru_loc_mpdu_succ_tried[MAX_RU_LOCATIONS];
 	struct ath12k_tx_pkt_info transmit_type_mpdu_succ_tried[MAX_TRANSMIT_TYPES];
 	struct pkt_type su_be_ppdu_cnt;
 	struct pkt_type mu_be_ppdu_cnt[TXRX_TYPE_MU_MAX];
 	struct pkt_type su_bn_ppdu_cnt;
 	struct pkt_type mu_bn_ppdu_cnt[TXRX_TYPE_MU_MAX];
-	u32 punc_bw[MAX_PUNCTURED_MODE];
-	u32 rts_success;
-	u32 rts_failure;
-	u32 bar_cnt;
-	u32 ndpa_cnt;
-	u64 tx_ppdu_duration;
+	u16 tx_ratecode;
 	u8 tx_pwr;
-	u32 tx_msdu_flush_rsn[HTT_FLUSH_MAX];
 };
 
 #define MAX_PUNCTURED_MODE 5
@@ -715,11 +710,11 @@ struct ath12k_dp_aggr_pdev_tid_stats {
 };
 
 struct ath12k_dp_qos_tx_stats {
-	struct dp_pkt_info tx_success;
-	struct dp_pkt_info tx_failed;
-	struct dp_pkt_info tx_ingress;
+	struct ath12k_dp_pkt_info tx_success;
+	struct ath12k_dp_pkt_info tx_failed;
+	struct ath12k_dp_pkt_info tx_ingress;
 	struct {
-		struct dp_pkt_info fw_rem;
+		struct ath12k_dp_pkt_info fw_rem;
 		u32 fw_rem_notx;
 		u32 fw_rem_tx;
 		u32 age_out;

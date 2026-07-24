@@ -233,8 +233,8 @@ ath12k_dp_update_tx_ppdu_stats_aggr(struct ath12k_pdev_dp *dp_pdev,
 		return;
 
 	/* TX Unicast Success */
-	dst_tx_ppdu_stats->tx_ucast_success.num +=
-		src_tx_ppdu_stats->tx_ucast_success.num;
+	dst_tx_ppdu_stats->tx_ucast_success.packets +=
+		src_tx_ppdu_stats->tx_ucast_success.packets;
 	dst_tx_ppdu_stats->tx_ucast_success.bytes +=
 		src_tx_ppdu_stats->tx_ucast_success.bytes;
 
@@ -871,7 +871,7 @@ void ath12k_qos_tx_enqueue_peer_stats(struct ath12k_dp_peer *mld_peer,
 		mld_qos->queue_depth++;
 	}
 
-	qos_tx->tx_ingress.num++;
+	qos_tx->tx_ingress.packets++;
 	qos_tx->tx_ingress.bytes += len;
 	spin_unlock_bh(&mld_peer->qos->lock);
 }
@@ -1014,7 +1014,7 @@ void ath12k_qos_stats_update(struct ath12k_dp_peer *mld_peer,
 	switch (ts->status) {
 	case HAL_WBM_TQM_REL_REASON_FRAME_ACKED:
 		mld_qos->tx_success_pkts++;
-		qos_tx->tx_success.num++;
+		qos_tx->tx_success.packets++;
 		qos_tx->tx_success.bytes += len;
 		if (ts->transmit_cnt > 1) {
 			qos_tx->total_retries_count += (ts->transmit_cnt - 1);
@@ -1025,7 +1025,7 @@ void ath12k_qos_stats_update(struct ath12k_dp_peer *mld_peer,
 		ath12k_sdwf_update_peer_mcs_stats(qos_tx, ts);
 		break;
 	case HAL_WBM_TQM_REL_REASON_CMD_REMOVE_MPDU:
-		qos_tx->dropped.fw_rem.num++;
+		qos_tx->dropped.fw_rem.packets++;
 		qos_tx->dropped.fw_rem.bytes += len;
 		break;
 	case HAL_WBM_TQM_REL_REASON_CMD_REMOVE_TX:
@@ -1070,7 +1070,7 @@ void ath12k_qos_stats_update(struct ath12k_dp_peer *mld_peer,
 	}
 
 	if (ts->status != HAL_WBM_TQM_REL_REASON_FRAME_ACKED) {
-		qos_tx->tx_failed.num++;
+		qos_tx->tx_failed.packets++;
 		qos_tx->tx_failed.bytes += len;
 		mld_qos->tx_failed_pkts++;
 		if (ts->transmit_cnt > DP_RETRY_COUNT)

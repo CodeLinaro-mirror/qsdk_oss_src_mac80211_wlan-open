@@ -2637,17 +2637,12 @@ static int ath12k_get_htt_tx_stats_basic_attr_size(void)
 	int attr_size;
 	int pkt_type_payload;
 
-	/* TX Unicast Success (struct dp_pkt_info: num + bytes) */
-	payload_size = nla_total_size(sizeof(u64)) +  /* num */
+	/* TX Unicast Success (struct ath12k_dp_pkt_info: packets + bytes) */
+	payload_size = nla_total_size(sizeof(u32)) +  /* packets */
 		       nla_total_size(sizeof(u64));    /* bytes */
 	attr_size = nla_total_size_nested(payload_size);
 	total_size += attr_size;
 
-	/* TX mcast Success (struct dp_pkt_info: num + bytes) */
-	payload_size = nla_total_size(sizeof(u64)) +  /* num */
-		       nla_total_size(sizeof(u64));    /* bytes */
-	attr_size = nla_total_size_nested(payload_size);
-	total_size += attr_size;
 	/* TX PPDUs */
 	total_size += nla_total_size(sizeof(u32));
 
@@ -2970,19 +2965,19 @@ static int get_feat_sdwftx_attr_size_per_msduq(void)
 	struct ath12k_dp_link_peer_qos_stats link_qos_stats;
 	struct ath12k_dp_qos_tx_stats tx;
 
-	attr_size = nla_total_size(sizeof(tx.tx_success.num));
+	attr_size = nla_total_size(sizeof(tx.tx_success.packets));
 	attr_size += nla_total_size(sizeof(tx.tx_success.bytes));
 	nested2_size = nla_total_size_nested(attr_size);
 
-	attr_size = nla_total_size(sizeof(tx.tx_failed.num));
+	attr_size = nla_total_size(sizeof(tx.tx_failed.packets));
 	attr_size += nla_total_size(sizeof(tx.tx_failed.bytes));
 	nested2_size += nla_total_size_nested(attr_size);
 
-	attr_size = nla_total_size(sizeof(tx.tx_ingress.num));
+	attr_size = nla_total_size(sizeof(tx.tx_ingress.packets));
 	attr_size += nla_total_size(sizeof(tx.tx_ingress.bytes));
 	nested2_size += nla_total_size_nested(attr_size);
 
-	attr_size = nla_total_size(sizeof(tx.dropped.fw_rem.num));
+	attr_size = nla_total_size(sizeof(tx.dropped.fw_rem.packets));
 	attr_size += nla_total_size(sizeof(tx.dropped.fw_rem.bytes));
 	nested3_size = nla_total_size_nested(attr_size);
 
@@ -4000,10 +3995,9 @@ ath12k_fill_peer_tx_ppdu_stats_attr(struct ath12k *ar,
 		ath12k_err(NULL, "nla nest failure: tx ucast success");
 		return -EINVAL;
 	}
-	if (nla_put_u64_64bit(vendor_event,
-			      QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_PKTS,
-			      tx_ppdu_stats->tx_ucast_success.num,
-			      NL80211_ATTR_PAD)) {
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_PKTS,
+			tx_ppdu_stats->tx_ucast_success.packets)) {
 		ath12k_err(NULL, "nla put failure: tx ucast success pkts");
 		nla_nest_cancel(vendor_event, attr);
 		return -EINVAL;
@@ -6902,9 +6896,9 @@ ath12k_tele_sdwftx_stats_update(struct sk_buff *skb, struct ath12k_dp_qos_tx_sta
 		goto end;
 	}
 
-	if (nla_put_u64_64bit(skb,
-			      QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_PKTS,
-			      tx->tx_success.num, NL80211_ATTR_PAD) ||
+	if (nla_put_u32(skb,
+			QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_PKTS,
+			tx->tx_success.packets) ||
 	    nla_put_u64_64bit(skb,
 			      QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_BYTES,
 			      tx->tx_success.bytes,
@@ -6920,9 +6914,9 @@ ath12k_tele_sdwftx_stats_update(struct sk_buff *skb, struct ath12k_dp_qos_tx_sta
 		goto end;
 	}
 
-	if (nla_put_u64_64bit(skb,
-			      QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_PKTS,
-			      tx->tx_failed.num, NL80211_ATTR_PAD) ||
+	if (nla_put_u32(skb,
+			QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_PKTS,
+			tx->tx_failed.packets) ||
 	    nla_put_u64_64bit(skb,
 			      QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_BYTES,
 			      tx->tx_failed.bytes, NL80211_ATTR_PAD)) {
@@ -6937,9 +6931,9 @@ ath12k_tele_sdwftx_stats_update(struct sk_buff *skb, struct ath12k_dp_qos_tx_sta
 		goto end;
 	}
 
-	if (nla_put_u64_64bit(skb,
-			      QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_PKTS,
-			      tx->tx_ingress.num, NL80211_ATTR_PAD) ||
+	if (nla_put_u32(skb,
+			QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_PKTS,
+			tx->tx_ingress.packets) ||
 	    nla_put_u64_64bit(skb,
 			      QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_BYTES,
 			      tx->tx_ingress.bytes, NL80211_ATTR_PAD)) {
@@ -7003,9 +6997,9 @@ ath12k_tele_sdwftx_stats_update(struct sk_buff *skb, struct ath12k_dp_qos_tx_sta
 		goto end;
 	}
 
-	if (nla_put_u64_64bit(skb,
-			      QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_PKTS,
-			      tx->dropped.fw_rem.num, NL80211_ATTR_PAD) ||
+	if (nla_put_u32(skb,
+			QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_PKTS,
+			tx->dropped.fw_rem.packets) ||
 	    nla_put_u64_64bit(skb,
 			      QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_BYTES,
 			      tx->dropped.fw_rem.bytes,
