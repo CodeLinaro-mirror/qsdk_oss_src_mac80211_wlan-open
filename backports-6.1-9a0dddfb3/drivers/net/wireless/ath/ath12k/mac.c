@@ -10511,6 +10511,7 @@ static int ath12k_scan_stop(struct ath12k *ar)
 	if (ret == 0) {
 		ath12k_warn(ar->ab,
 			    "failed to receive scan abort comple: timed out\n");
+		ath12k_critical_failure_trigger(ar->ab, ATH12K_CRIT_SCAN_FAILURE);
 		ret = -ETIMEDOUT;
 	} else if (ret > 0) {
 		ret = 0;
@@ -10688,6 +10689,7 @@ static int ath12k_start_scan(struct ath12k *ar,
 		if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags))
 			return -ESHUTDOWN;
 
+		ath12k_critical_failure_trigger(ar->ab, ATH12K_CRIT_SCAN_FAILURE);
 		WARN_ON(1);
 		ret = ath12k_scan_stop(ar);
 		if (ret)
