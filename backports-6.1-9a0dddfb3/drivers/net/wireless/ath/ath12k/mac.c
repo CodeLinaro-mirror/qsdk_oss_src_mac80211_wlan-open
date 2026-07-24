@@ -1763,7 +1763,8 @@ void ath12k_mac_peer_hlist_cleanup(void *data,
 }
 
 static void ath12k_mac_dec_num_stations(struct ath12k_link_vif *arvif,
-					struct ath12k_sta *ahsta)
+					struct ath12k_sta *ahsta,
+					struct ath12k_link_sta *arsta)
 {
 	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(ahsta);
 	struct ath12k *ar = arvif->ar;
@@ -1777,6 +1778,15 @@ static void ath12k_mac_dec_num_stations(struct ath12k_link_vif *arvif,
 		return;
 
 	ar->num_stations--;
+
+	if (arsta && arsta->is_multistream) {
+		if (ar->num_stations_multistream)
+			ar->num_stations_multistream--;
+		arsta->is_multistream = false;
+		ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+			   "GreenAP: pdev_id %u STA removed as multistream num_ms=%u\n",
+			   ar->pdev->pdev_id, ar->num_stations_multistream);
+	}
 
 #ifdef CPTCFG_ATH12K_POWER_OPTIMIZATION
 	ath12k_ath_update_active_pdev_count(ar);
@@ -6728,6 +6738,10 @@ static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 
 	/* Initialize vap_cfg parameters to default values */
 	arvif->vap_cfg.bcn_tx_power = 255;
+	if (!ahvif->ps_timeout[link_id])
+		ahvif->ps_timeout[link_id] = ATH12K_GREEN_AP_PS_TIMEOUT_DEFAULT;
+	arvif->vap_cfg.ap_ps_on = ahvif->ap_ps_on[link_id];
+	arvif->vap_cfg.ps_timeout = ahvif->ps_timeout[link_id];
 	arvif->vap_cfg.he_ar_gi_ltf = IEEE80211_HE_AR_DEFAULT_LTF_SGI_COMBINATION;
 	arvif->vap_cfg.he_ar_ldpc = IEEE80211_HE_AR_LDPC_DEFAULT;
 	arvif->vap_cfg.he_rtsthrshld = IEEE80211_HEOP_RTS_THRESHOLD_DISABLED;
@@ -6785,8 +6799,8 @@ void ath12k_mac_ap_ps_recalc(struct ath12k *ar)
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
 	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
-			 "ap_ps_recalc: ap_ps_enabled=%d agile_chan=%s num_stations=%d ap_ps_state=%d\n",
-			 ar->ap_ps_enabled,
+			 "GreenAP: ap_ps_recalc pdev_id %u: ap_ps_enabled=%d agile_chan=%s num_stations=%d ap_ps_state=%d\n",
+			 ar->pdev->pdev_id, ar->ap_ps_enabled,
 			 ar->agile_chandef.chan ? "set" : "NULL",
 			 ar->num_stations, ar->ap_ps_state);
 
@@ -6812,37 +6826,121 @@ void ath12k_mac_ap_ps_recalc(struct ath12k *ar)
 		allow_ap_ps = false;
 		if (ar->ap_ps_enabled)
 			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
-					 "ap ps deferred: agile CAC running on freq %d\n",
+					 "GreenAP: pdev_id %u ap ps deferred, agile CAC running on freq %d\n",
+					 ar->pdev->pdev_id,
 					 ar->agile_chandef.chan ?
 					 ar->agile_chandef.chan->center_freq : 0);
 	}
 
 	if (!allow_ap_ps)
 		ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L0,
-				 "ap ps is not allowed\n");
+				 "GreenAP: pdev_id %u ap ps not allowed\n",
+				 ar->pdev->pdev_id);
 
-	if (allow_ap_ps && !ar->num_stations && ar->ap_ps_enabled)
-		state = ATH12K_AP_PS_STATE_ON;
-
-	if (ar->ap_ps_state == state)
-		return;
-
-	ret = ath12k_wmi_pdev_ap_ps_cmd_send(ar, ar->pdev->pdev_id, state);
-	if (!ret) {
-		ar->ap_ps_state = state;
-		ath12k_info(ar->ab,
-			    "GreenAP: pdev_id %u state changed to %s (ap_ps_enabled=%d num_stations=%d allow_ap_ps=%d)\n",
-			    ar->pdev->pdev_id,
-			    state == ATH12K_AP_PS_STATE_ON ? "ON" : "OFF",
-			    ar->ap_ps_enabled,
-			    ar->num_stations,
-			    allow_ap_ps);
-	} else {
-		ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L0,
-				 "failed to send ap ps command pdev_id %u state %u\n",
-				 ar->pdev->pdev_id, state);
+	if (allow_ap_ps && ar->ap_ps_enabled) {
+		switch (ar->ap_ps_mode) {
+		case ATH12K_GREEN_AP_MODE_NO_STA:
+			if (!ar->num_stations)
+				state = ATH12K_AP_PS_STATE_ON;
+			break;
+		case ATH12K_GREEN_AP_MODE_NUM_STREAM:
+			if (!ar->num_stations_multistream)
+				state = ATH12K_AP_PS_STATE_ON;
+			break;
+		case ATH12K_GREEN_AP_MODE_DISABLED:
+		default:
+			break;
+		}
 	}
+
+	if (ar->ap_ps_state == state) {
+		/* Already in target state. If target is OFF, cancel any pending timer. */
+		if (state == ATH12K_AP_PS_STATE_OFF)
+			wiphy_delayed_work_cancel(ath12k_ar_to_hw(ar)->wiphy,
+						  &ar->ap_ps_timer);
+		return;
+	}
+
+	/* Transitioning to OFF: cancel pending timer and send WMI immediately. */
+	if (state == ATH12K_AP_PS_STATE_OFF) {
+		wiphy_delayed_work_cancel(ath12k_ar_to_hw(ar)->wiphy,
+					  &ar->ap_ps_timer);
+		ret = ath12k_wmi_pdev_ap_ps_cmd_send(ar, ar->pdev->pdev_id,
+						     ATH12K_AP_PS_STATE_OFF);
+		if (!ret) {
+			ar->ap_ps_state = ATH12K_AP_PS_STATE_OFF;
+			ath12k_info(ar->ab,
+				    "GreenAP: pdev_id %u state changed to OFF (ap_ps_enabled=%d num_stations=%d allow_ap_ps=%d)\n",
+				    ar->pdev->pdev_id, ar->ap_ps_enabled,
+				    ar->num_stations, allow_ap_ps);
+
+			/* Mode 2 (NUM_STREAM): while GreenAP is ON the radio runs in 1x1,
+			 * so a newly associated STA's rx_nss is unreliable and is
+			 * conservatively treated as multistream, causing GreenAP to
+			 * turn OFF above.  Queue the ps_timeout timer so ap_ps_timer_work
+			 * re-evaluates the STA's real NSS once the radio is back to full
+			 * chainmask. If the STA is genuinely 1x1, GreenAP re-enables;
+			 * if NSS > 1, the timer work logs an abort and GAP stays OFF.
+			 */
+			if (ar->ap_ps_mode == ATH12K_GREEN_AP_MODE_NUM_STREAM &&
+			    ar->ap_ps_timeout) {
+				u32 timeout_jiffies = msecs_to_jiffies(ar->ap_ps_timeout
+								       * 1000);
+				wiphy_delayed_work_queue(ath12k_ar_to_hw(ar)->wiphy,
+							 &ar->ap_ps_timer,
+							 timeout_jiffies);
+			}
+		} else {
+			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L0,
+					 "GreenAP: failed to send ap ps OFF cmd pdev_id %u\n",
+					 ar->pdev->pdev_id);
+		}
+		return;
+	}
+
+	ath12k_info(ar->ab, "GreenAP: pdev_id %u scheduling ON after %u s\n",
+		    ar->pdev->pdev_id, ar->ap_ps_timeout);
+	wiphy_delayed_work_queue(ath12k_ar_to_hw(ar)->wiphy, &ar->ap_ps_timer,
+				 msecs_to_jiffies(ar->ap_ps_timeout * 1000));
 }
+
+void ath12k_mac_ap_ps_seed_multistream_count(struct ath12k *ar,
+					     struct ath12k_link_sta *exclude)
+{
+	struct ieee80211_hw *hw = ath12k_ar_to_hw(ar);
+	struct ath12k_link_sta *arsta;
+	struct ieee80211_link_sta *link_sta;
+	u32 count = 0;
+	u32 bkt;
+
+	lockdep_assert_wiphy(hw->wiphy);
+
+	spin_lock_bh(&ar->arsta_lock);
+	ath12k_link_sta_for_each(ar, bkt, arsta) {
+		if (arsta == exclude)
+			continue;
+		if (arsta->is_bridge_peer || !arsta->ahsta)
+			continue;
+		/* wiphy lock is held, so sta->link[] is stable */
+		link_sta = wiphy_dereference(hw->wiphy,
+					     ath12k_ahsta_to_sta(arsta->ahsta)->
+								 link[arsta->link_id]);
+		if (link_sta) {
+			if (link_sta->rx_nss > 1) {
+				count++;
+				arsta->is_multistream = true;
+			} else {
+				arsta->is_multistream = false;
+			}
+		} else {
+			arsta->is_multistream = false;
+		}
+	}
+	spin_unlock_bh(&ar->arsta_lock);
+
+	ar->num_stations_multistream = count;
+}
+EXPORT_SYMBOL(ath12k_mac_ap_ps_seed_multistream_count);
 
 static void ath12k_free_peer_migrate_list(struct ath12k_link_vif *arvif)
 {
@@ -7164,6 +7262,15 @@ ath12k_mac_op_change_vif_links(struct ieee80211_hw *hw,
 	for_each_set_bit(link_id, &to_remove, IEEE80211_MLD_MAX_NUM_LINKS) {
 		bool is_link_repurposed;
 
+		/* Scan_arvif pre-cleanup above calls ath12k_mac_unassign_link_vif
+		 * for link 0 which atomically clears both ahvif->link[0] and the
+		 * corresponding links_map bit.  If to_remove also contains link 0,
+		 * skip it here; the previous code returned -EINVAL early, leaving
+		 * remaining to_remove bits unprocessed and links_map stale.
+		 */
+		if ((ahvif->links_map & BIT(link_id)) == 0)
+			continue;
+
 		arvif = wiphy_dereference(hw->wiphy, ahvif->link[link_id]);
 		if (WARN_ON(!arvif))
 			return -EINVAL;
@@ -7199,6 +7306,23 @@ ath12k_mac_op_change_vif_links(struct ieee80211_hw *hw,
 			return -EINVAL;
 		}
 
+		/* Save Green AP config keyed by stable hw_link_id before tearing
+		 * down this link. mac80211 may assign a different link_id to the
+		 * same physical radio when the link is re-added (MLO link_id
+		 * renumbering), so the link_id-keyed arrays cannot survive a
+		 * teardown/re-add cycle. The hw_link_id-keyed shadow arrays are
+		 * restored in ath12k_mac_assign_link_vif() after re-add.
+		 * Reset the link_id slot to defaults so a future link assigned
+		 * the same link_id does not inherit stale config.
+		 */
+		if (arvif->ar->hw_link_id < ATH12K_GROUP_MAX_RADIO) {
+			ahvif->ap_ps_on_by_hwlink[arvif->ar->hw_link_id] =
+					ahvif->ap_ps_on[link_id];
+			ahvif->ps_timeout_by_hwlink[arvif->ar->hw_link_id] =
+					ahvif->ps_timeout[link_id];
+		}
+		ahvif->ap_ps_on[link_id] = 0;
+		ahvif->ps_timeout[link_id] = ATH12K_GREEN_AP_PS_TIMEOUT_DEFAULT;
 		ath12k_mac_remove_link_interface(hw, arvif);
 		ath12k_mac_unassign_link_vif(arvif);
 		if (!is_link_repurposed)
@@ -10209,9 +10333,20 @@ skip_pending_cs_up:
 	}
 
 	if (changed & BSS_CHANGED_AP_PS) {
+		/* Triggered by: iw dev <ifname> set ap_ps -l <link_id> <0|1>
+		 */
 		ar->ap_ps_enabled = info->ap_ps_enable;
-		if (!info->ap_ps_enable)
+		if (!info->ap_ps_enable) {
+			/* * Disable GreenAP and reset runtime state. */
 			ar->ap_ps_disabled_by_agile = false;
+			ar->ap_ps_mode = ATH12K_GREEN_AP_MODE_DISABLED;
+			ar->num_stations_multistream = 0;
+		} else if (ar->ap_ps_mode == ATH12K_GREEN_AP_MODE_DISABLED) {
+			/* Enable GreenAP from DISABLED state */
+			ar->ap_ps_mode = ATH12K_GREEN_AP_MODE_NO_STA;
+		}
+		arvif->vap_cfg.ap_ps_on = info->ap_ps_enable;
+		ahvif->ap_ps_on[arvif->link_id] = info->ap_ps_enable;
 		ath12k_mac_ap_ps_recalc(ar);
 	}
 
@@ -13623,6 +13758,12 @@ static void ath12k_sta_rc_update_wk(struct wiphy *wiphy, struct wiphy_work *wk)
 		if (err)
 			ath12k_warn(ar->ab, "failed to update STA %pM nss %d: %d\n",
 				    arsta->addr, nss, err);
+		if (ar->ap_ps_mode ==
+		    ATH12K_GREEN_AP_MODE_NUM_STREAM && ar->ap_ps_enabled) {
+			ath12k_mac_ap_ps_seed_multistream_count(ar, NULL);
+			ath12k_mac_ap_ps_recalc(ar);
+		}
+
 	}
 
 	if (changed & IEEE80211_RC_SMPS_CHANGED) {
@@ -13773,6 +13914,35 @@ static int ath12k_mac_inc_num_stations(struct ath12k_link_vif *arvif,
 
 	ar->num_stations++;
 
+	if (ar->ap_ps_mode == ATH12K_GREEN_AP_MODE_NUM_STREAM) {
+		struct ieee80211_link_sta *link_sta = ath12k_mac_get_link_sta(arsta);
+		bool is_multistream;
+
+		/*
+		 * rx_nss is unreliable while Green AP is ON: the radio runs in
+		 * 1x1 mode, so the STA's NSS advertisement is capped to 1 stream
+		 * regardless of its true capability. Force is_multistream=true so
+		 * Green AP turns OFF and the STA can re-associate at the full
+		 * chainmask and report its real NSS.
+		 *
+		 * When Green AP is OFF, classify using rx_nss directly. A NULL
+		 * link_sta means capability is unavailable; treat it as multistream
+		 * (worst case) so Green AP is not kept ON for an unclassified STA.
+		 */
+		if (ar->ap_ps_state == ATH12K_AP_PS_STATE_ON || !link_sta)
+			is_multistream = true;
+		else
+			is_multistream = link_sta->rx_nss > 1;
+
+		if (is_multistream) {
+			ar->num_stations_multistream++;
+			arsta->is_multistream = true;
+			ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+				   "GreenAP: pdev_id %u STA added as multistream num_ms=%u\n",
+				   ar->pdev->pdev_id, ar->num_stations_multistream);
+		}
+	}
+
 	return 0;
 }
 
@@ -13781,9 +13951,14 @@ static void ath12k_mac_station_post_remove(struct ath12k *ar,
 					   u8 *addr,
 					   struct ath12k_sta *ahsta, u8 link_id)
 {
+	struct ath12k_link_sta *arsta = ahsta->link[link_id];
+
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
-	ath12k_mac_dec_num_stations(arvif, ahsta);
+	ath12k_mac_dec_num_stations(arvif, ahsta, arsta);
+
+	if (ar->ap_ps_mode == ATH12K_GREEN_AP_MODE_NUM_STREAM)
+		ath12k_mac_ap_ps_seed_multistream_count(ar, arsta);
 
 	ath12k_mac_ap_ps_recalc(ar);
 	ahsta->peer_delete_cmd_sent_bitmap &= ~BIT(link_id);
@@ -14180,7 +14355,7 @@ hash_delete:
 	arsta->ahsta->ar_bitmap &= ~BIT(ar->radio_idx);
 dec_num_station:
 	if (!skip_num_sta_dec)
-		ath12k_mac_dec_num_stations(arvif, arsta->ahsta);
+		ath12k_mac_dec_num_stations(arvif, arsta->ahsta, arsta);
 exit:
 	return ret;
 }
@@ -14598,6 +14773,14 @@ static void ath12k_mac_ml_station_remove(struct ath12k_vif *ahvif,
 		 * In the above case, avoid stale peer entry lookup!
 		 */
 		if (ml_peer_del_all && arvif->peer_del_all_enable) {
+			arsta = wiphy_dereference(ah->hw->wiphy, ahsta->link[link_id]);
+			if (arsta) {
+				ath12k_mac_dec_num_stations(arvif, ahsta, arsta);
+				if (ar->ap_ps_mode ==
+				    ATH12K_GREEN_AP_MODE_NUM_STREAM)
+					ath12k_mac_ap_ps_seed_multistream_count(ar,
+										arsta);
+			}
 			ath12k_mac_ap_ps_recalc(arvif->ar);
 			continue;
 		}
@@ -16365,6 +16548,8 @@ int ath12k_mac_op_change_sta_links(struct ieee80211_hw *hw,
 
 				return ret;
 			}
+
+			ath12k_mac_ap_ps_recalc(ar);
 		}
 
 		if (!ret && ahsta->state < IEEE80211_STA_AUTHORIZED) {
@@ -20444,6 +20629,22 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 
 	arvif->ar = ar;
 
+	/* Restore Green AP config from hw_link_id-keyed shadow if previously
+	 * configured. This corrects link_id renumbering after ML link re-add.
+	 */
+	if (ar->hw_link_id < ATH12K_GROUP_MAX_RADIO &&
+	    arvif->link_id < IEEE80211_MLD_MAX_NUM_LINKS &&
+	    ahvif->ps_timeout_by_hwlink[ar->hw_link_id]) {
+		ahvif->ap_ps_on[arvif->link_id] =
+				ahvif->ap_ps_on_by_hwlink[ar->hw_link_id];
+		ahvif->ps_timeout[arvif->link_id] =
+				ahvif->ps_timeout_by_hwlink[ar->hw_link_id];
+		arvif->vap_cfg.ap_ps_on =
+				ahvif->ap_ps_on_by_hwlink[ar->hw_link_id];
+		arvif->vap_cfg.ps_timeout =
+				ahvif->ps_timeout_by_hwlink[ar->hw_link_id];
+	}
+
 	spin_lock_bh(&ar->ab->base_lock);
 	if (!ab->free_vdev_map) {
 		spin_unlock_bh(&ar->ab->base_lock);
@@ -22321,10 +22522,56 @@ void ath12k_ap_ps_recalc_work(struct wiphy *wiphy, struct wiphy_work *work)
 	struct ath12k *ar = container_of(work, struct ath12k, ap_ps_recalc_wq);
 
 	ath12k_info(ar->ab,
-		    "ap_ps_recalc_work: agile_chan=%s ap_ps_enabled=%d num_stations=%d ap_ps_state=%d\n",
+		    "GreenAP: ap_ps_recalc_work: agile_chan=%s ap_ps_enabled=%d num_stations=%d ap_ps_state=%d\n",
 		    ar->agile_chandef.chan ? "set" : "NULL",
 		    ar->ap_ps_enabled, ar->num_stations, ar->ap_ps_state);
 	ath12k_mac_ap_ps_recalc(ar);
+}
+
+void ath12k_ap_ps_timer_work(struct wiphy *wiphy, struct wiphy_work *work)
+{
+	struct ath12k *ar = container_of(container_of(work, struct wiphy_delayed_work,
+						      work), struct ath12k, ap_ps_timer);
+	int ret;
+
+	lockdep_assert_wiphy(wiphy);
+
+	if (!ar->ap_ps_enabled || ar->ap_ps_state == ATH12K_AP_PS_STATE_ON) {
+		ath12k_info(ar->ab,
+			    "GreenAP: timer pdev=%u guard exit enabled=%d state=%d\n",
+			    ar->pdev->pdev_id, ar->ap_ps_enabled, ar->ap_ps_state);
+		return;
+	}
+
+	if (ar->agile_chandef.chan || ar->ap_ps_disabled_by_agile) {
+		ath12k_info(ar->ab,
+			    "GreenAP: timer pdev=%u abort ON, agile CAC active\n",
+			    ar->pdev->pdev_id);
+		return;
+	}
+
+	if (ar->ap_ps_mode == ATH12K_GREEN_AP_MODE_NUM_STREAM) {
+		ath12k_mac_ap_ps_seed_multistream_count(ar, NULL);
+		if (ar->num_stations_multistream) {
+			ath12k_info(ar->ab,
+				    "GreenAP: timer pdev=%u abort ON, num_ms=%u\n",
+				    ar->pdev->pdev_id, ar->num_stations_multistream);
+			return;
+		}
+	}
+
+	ret = ath12k_wmi_pdev_ap_ps_cmd_send(ar, ar->pdev->pdev_id,
+					     ATH12K_AP_PS_STATE_ON);
+	if (!ret) {
+		ar->ap_ps_state = ATH12K_AP_PS_STATE_ON;
+		ath12k_info(ar->ab,
+			    "GreenAP: pdev_id %u state changed to ON via ps_timeout timer\n",
+			    ar->pdev->pdev_id);
+	} else {
+		ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L0,
+				 "GreenAP: failed to send ap ps ON cmd pdev_id %u (timer)\n",
+				 ar->pdev->pdev_id);
+	}
 }
 
 void ath12k_mac_background_dfs_event(struct ath12k *ar,
@@ -26136,6 +26383,17 @@ ath12k_mac_reconfig_complete(struct ieee80211_hw *hw,
 		/* Re-config extn parameters after recovery */
 		ath12k_extn_reconfig_extn_params(ar);
 #endif
+
+		/* GreenAP: FW comes up with no GreenAP state after SSR. The host
+		 * ap_ps_state may be stale ON (never reset during halt), which
+		 * causes the ap_ps_state == state guard in recalc to skip the WMI
+		 * send. Reset it to OFF first so recalc re-evaluates from scratch
+		 * and re-programs FW to match the restored host configuration.
+		 */
+		if (ar->ap_ps_enabled) {
+			ar->ap_ps_state = ATH12K_AP_PS_STATE_OFF;
+			ath12k_mac_ap_ps_recalc(ar);
+		}
 	}
 
 	ath12k_reconfig_qos_profiles(ab);
@@ -28657,6 +28915,7 @@ static void ath12k_mac_hw_unregister(struct ath12k_hw *ah)
 		cancel_work_sync(&ar->mvr_ch_switch_notify_work);
 		cancel_delayed_work_sync(&ar->scan.timeout);
 		cancel_delayed_work_sync(&ar->scan.roc_done);
+		wiphy_delayed_work_cancel(ath12k_ar_to_hw(ar)->wiphy, &ar->ap_ps_timer);
 		ath12k_debugfs_unregister(ar);
 		ath12k_sysfs_cleanup_extn(ar);
 	}
@@ -29468,6 +29727,9 @@ static int ath12k_mac_setup(struct ath12k *ar)
 		  ath12k_set_previous_country_work);
 	wiphy_work_init(&ar->agile_cac_abort_wq, ath12k_agile_cac_abort_work);
 	wiphy_work_init(&ar->ap_ps_recalc_wq, ath12k_ap_ps_recalc_work);
+	wiphy_delayed_work_init(&ar->ap_ps_timer, ath12k_ap_ps_timer_work);
+	ar->ap_ps_mode = ATH12K_GREEN_AP_MODE_DISABLED;
+	ar->ap_ps_timeout = ATH12K_GREEN_AP_PS_TIMEOUT_DEFAULT;
 
 	wiphy_work_init(&ar->wmi_mgmt_tx_work, ath12k_mgmt_over_wmi_tx_work);
 	skb_queue_head_init(&ar->wmi_mgmt_tx_queue);

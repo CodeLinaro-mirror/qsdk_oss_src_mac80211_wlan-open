@@ -906,8 +906,15 @@ u8 ath12k_get_nss_160mhz(struct ath12k *ar, u8 max_nss);
 u8 ath12k_get_nss_320mhz(struct ath12k *ar, u8 max_nss);
 int ath12k_mac_set_vht_txbf_conf(struct ath12k_link_vif *arvif,
 				 u32 *val);
+#define ATH12K_GREEN_AP_PS_TIMEOUT_DEFAULT	20 /* seconds */
+#define ATH12K_GREEN_AP_PS_TIMEOUT_MIN		20 /* seconds */
+#define ATH12K_GREEN_AP_PS_TIMEOUT_MAX		65534 /* seconds */
+
 void ath12k_mac_ap_ps_recalc(struct ath12k *ar);
+void ath12k_mac_ap_ps_seed_multistream_count(struct ath12k *ar,
+					     struct ath12k_link_sta *exclude);
 void ath12k_ap_ps_recalc_work(struct wiphy *wiphy, struct wiphy_work *work);
+void ath12k_ap_ps_timer_work(struct wiphy *wiphy, struct wiphy_work *work);
 int ath12k_setup_peer_smps(struct ath12k *ar, struct ath12k_link_vif *arvif,
 			   const u8 *addr,
 			   const struct ieee80211_sta_ht_cap *ht_cap,

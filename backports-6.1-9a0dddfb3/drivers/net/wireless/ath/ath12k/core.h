@@ -739,6 +739,12 @@ struct ath12k_qos_map {
 	struct ath12k_dscp_range up[ATH12K_MAX_TID_VALUE];
 };
 
+enum ath12k_green_ap_mode {
+	ATH12K_GREEN_AP_MODE_DISABLED   = 0,
+	ATH12K_GREEN_AP_MODE_NO_STA     = 1,
+	ATH12K_GREEN_AP_MODE_NUM_STREAM = 2,
+};
+
 struct ath12k_vap_cfg {
 	u8 rc_num_retries;
 	u16 max_mtu_size;
@@ -795,6 +801,8 @@ struct ath12k_vap_cfg {
 	u32 vht_sgimask;
 	u32 vht80_rate;
 	u32 dis_lpi_ant_optimize;
+	enum ath12k_green_ap_mode ap_ps_on;
+	u32 ps_timeout;
 	/* Per-link EHT OFDMA/TXBF override */
 	bool eht_dl_ofdma_configured;
 	bool eht_dl_ofdma;
@@ -1184,6 +1192,20 @@ struct ath12k_vif {
 	struct ath12k_link_vif deflink;
 	struct ath12k_link_vif __rcu *link[ATH12K_NUM_MAX_LINKS];
 	struct ath12k_vif_cache *cache[IEEE80211_MLD_MAX_NUM_LINKS];
+	/* Per-link Green AP config indexed by transient IEEE link_id.
+	 * Updated on every SET operation and cleared when the link is removed.
+	 * Used to propagate the current configuration into a newly initialised
+	 * arvif during link creation.
+	 */
+	enum ath12k_green_ap_mode ap_ps_on[IEEE80211_MLD_MAX_NUM_LINKS];
+	u32 ps_timeout[IEEE80211_MLD_MAX_NUM_LINKS];
+	/* Per-radio Green AP config indexed by stable hardware radio index
+	 * (ar->hw_link_id).  Written on SET and on link removal so that the
+	 * configuration survives ML link teardown and re-add, where the
+	 * IEEE link_id assigned to a radio may change between cycles.
+	 */
+	enum ath12k_green_ap_mode ap_ps_on_by_hwlink[ATH12K_GROUP_MAX_RADIO];
+	u32 ps_timeout_by_hwlink[ATH12K_GROUP_MAX_RADIO];
 	/* indicates bitmap of link vif created in FW */
 	u32 links_map;
 	u8 last_scan_link;
@@ -1340,6 +1362,11 @@ struct ath12k_link_sta {
 	 * ahsta is NULL in this case.
 	 */
 	bool is_self_peer;
+	/* set when this arsta was counted in num_stations_multistream;
+	 * cached at add time so dec path doesn't need link_sta which may
+	 * already be NULL when station_post_remove fires at teardown.
+	 */
+	bool is_multistream;
 	/* will be saved to use during recovery */
 	struct ieee80211_key_conf *keys[WMI_MAX_KEY_INDEX + 1];
 #ifdef CPTCFG_ATH12K_CFR
@@ -2055,6 +2082,10 @@ struct ath12k {
 	bool ap_ps_enabled;
 	bool ap_ps_disabled_by_agile;
 	enum ath12k_ap_ps_state ap_ps_state;
+	enum ath12k_green_ap_mode ap_ps_mode;
+	u16 num_stations_multistream;
+	struct wiphy_delayed_work ap_ps_timer;
+	u32 ap_ps_timeout;
 
 	struct cfg80211_chan_def awgn_chandef;
 	u32 chan_bw_interference_bitmap;

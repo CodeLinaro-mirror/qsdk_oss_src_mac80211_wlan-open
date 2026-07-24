@@ -320,6 +320,15 @@ ath12k_multi_bss_config_policy[QCA_WLAN_VENDOR_ATTR_MULTI_BSS_PARAMS_INFO_MAX + 
 	[QCA_WLAN_VENDOR_ATTR_MULTI_BSS_PARAM_VAL_2] = { .type = NLA_U32 },
 };
 
+static const struct nla_policy
+ath12k_vendor_green_ap_policy[QCA_WLAN_VENDOR_ATTR_GREEN_AP_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_SET_GREEN_AP_ENABLE_MODE] = { .type = NLA_U8 },
+	[QCA_WLAN_VENDOR_ATTR_GET_GREEN_AP_ENABLE_MODE] = { .type = NLA_U8 },
+	[QCA_WLAN_VENDOR_ATTR_SET_GREEN_AP_PS_TIMEOUT] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_GET_GREEN_AP_PS_TIMEOUT] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_GREEN_AP_LINK_ID] = { .type = NLA_U8 },
+};
+
 static int ath12k_vendor_send_multi_bss_vdev_param_wmi_cmd(struct ath12k_link_vif *arvif,
 							   u32 param_id, u32 param_value)
 
@@ -16654,6 +16663,143 @@ static int ath12k_vendor_rf_path_mode_get(struct wiphy *wiphy)
 	return -EOPNOTSUPP;
 }
 
+static int ath12k_vendor_green_ap_handler(struct wiphy *wiphy,
+					  struct wireless_dev *wdev,
+					  const void *data, int data_len)
+{
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_GREEN_AP_MAX + 1];
+	struct ath12k_link_vif *arvif;
+	struct ieee80211_vif *vif;
+	struct ath12k_vif *ahvif;
+	unsigned int link_id;
+	struct ath12k *ar;
+	int ret;
+
+	lockdep_assert_wiphy(wiphy);
+
+	if (data && data_len) {
+		ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_GREEN_AP_MAX, data, data_len,
+				ath12k_vendor_green_ap_policy, NULL);
+		if (ret) {
+			ath12k_err(NULL, "GreenAP: failed to parse attrs: %d\n", ret);
+			return ret;
+		}
+	} else {
+		/* tb is a stack variable — without nla_parse it contains garbage.
+		 * Zero it manually so all tb[] checks behave as if no attrs were
+		 * sent; link_id defaults to 0 and the GET path is entered.
+		 */
+		memset(tb, 0, sizeof(tb));
+	}
+	/* Resolve link_id from request: mandatory for MLO, default 0 for non-MLO */
+	vif = wdev_to_ieee80211_vif(wdev);
+	if (!vif)
+		return -EINVAL;
+	ahvif = ath12k_vif_to_ahvif(vif);
+
+	if (vif->valid_links) {
+		link_id = tb[QCA_WLAN_VENDOR_ATTR_GREEN_AP_LINK_ID] ?
+			  nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_GREEN_AP_LINK_ID]) : 0;
+		if (!(vif->valid_links & BIT(link_id)))
+			return -ENOLINK;
+		arvif = wiphy_dereference(wiphy, ahvif->link[link_id]);
+	} else {
+		link_id = 0;
+		arvif = &ahvif->deflink;
+	}
+
+	if (!arvif || !arvif->ar)
+		return -ENOLINK;
+	ar = arvif->ar;
+
+	/* GET path: no SET attrs present.
+	 * cfg80211tool get_ap_ps_on / get_ps_timeout sends only the link_id
+	 * attr (no SET attrs), so absence of SET attrs is the correct GET signal.
+	 * GET attrs are response-only — userspace never sends them, so checking
+	 * tb[GET_*] would never be true.
+	 */
+	if (!tb[QCA_WLAN_VENDOR_ATTR_SET_GREEN_AP_ENABLE_MODE] &&
+	    !tb[QCA_WLAN_VENDOR_ATTR_SET_GREEN_AP_PS_TIMEOUT]) {
+		struct sk_buff *reply;
+
+		reply = cfg80211_vendor_cmd_alloc_reply_skb(wiphy,
+							    nla_total_size(sizeof(u32)) *
+							    2);
+		if (!reply)
+			return -ENOMEM;
+
+		if (nla_put_u8(reply, QCA_WLAN_VENDOR_ATTR_GET_GREEN_AP_ENABLE_MODE,
+			       ahvif->ap_ps_on[link_id]) ||
+		    nla_put_u32(reply, QCA_WLAN_VENDOR_ATTR_GET_GREEN_AP_PS_TIMEOUT,
+				ahvif->ps_timeout[link_id])) {
+			nlmsg_free(reply);
+			return -ENOBUFS;
+		}
+
+		return cfg80211_vendor_cmd_reply(reply);
+	}
+
+	/* SET path */
+	if (tb[QCA_WLAN_VENDOR_ATTR_SET_GREEN_AP_ENABLE_MODE]) {
+		u8 mode = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_SET_GREEN_AP_ENABLE_MODE]);
+
+		switch (mode) {
+		case QCA_WLAN_VENDOR_ATTR_GREEN_AP_MODE_DISABLED:
+			ar->ap_ps_mode = ATH12K_GREEN_AP_MODE_DISABLED;
+			break;
+		case QCA_WLAN_VENDOR_ATTR_GREEN_AP_MODE_NO_STA:
+			ar->ap_ps_mode = ATH12K_GREEN_AP_MODE_NO_STA;
+			break;
+		case QCA_WLAN_VENDOR_ATTR_GREEN_AP_MODE_NUM_STREAM:
+			ar->ap_ps_mode = ATH12K_GREEN_AP_MODE_NUM_STREAM;
+			break;
+		default:
+			ath12k_err(ar->ab,
+				   "GreenAP: invalid mode %u\n", mode);
+			return -EINVAL;
+		}
+
+		ar->ap_ps_enabled = (ar->ap_ps_mode != ATH12K_GREEN_AP_MODE_DISABLED);
+		if (!ar->ap_ps_enabled) {
+			ar->ap_ps_disabled_by_agile = false;
+			ar->num_stations_multistream = 0;
+		} else if (ar->ap_ps_mode == ATH12K_GREEN_AP_MODE_NUM_STREAM) {
+			ath12k_mac_ap_ps_seed_multistream_count(ar, NULL);
+		}
+		arvif->vap_cfg.ap_ps_on = mode;
+		ahvif->ap_ps_on[link_id] = mode;
+		if (ar->hw_link_id < ATH12K_GROUP_MAX_RADIO)
+			ahvif->ap_ps_on_by_hwlink[ar->hw_link_id] = mode;
+		ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+			   "GreenAP: pdev_id %u mode set to %u link_id %u\n",
+			   ar->pdev->pdev_id, mode, link_id);
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_SET_GREEN_AP_PS_TIMEOUT]) {
+		u32 value = nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_SET_GREEN_AP_PS_TIMEOUT]);
+
+		if (value < ATH12K_GREEN_AP_PS_TIMEOUT_MIN ||
+		    value > ATH12K_GREEN_AP_PS_TIMEOUT_MAX) {
+			ath12k_err(NULL,
+				   "GreenAP: ps_timeout out of range (%u), using default %u\n",
+				   value, ATH12K_GREEN_AP_PS_TIMEOUT_DEFAULT);
+			value = ATH12K_GREEN_AP_PS_TIMEOUT_DEFAULT;
+		}
+		ar->ap_ps_timeout = value;
+		arvif->vap_cfg.ps_timeout = value;
+		ahvif->ps_timeout[link_id] = value;
+		if (ar->hw_link_id < ATH12K_GROUP_MAX_RADIO)
+			ahvif->ps_timeout_by_hwlink[ar->hw_link_id] = value;
+		ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+			   "GreenAP: pdev_id %u ps_timeout set to %u s link_id %u\n",
+			   ar->pdev->pdev_id, value, link_id);
+	}
+
+	ath12k_mac_ap_ps_recalc(ar);
+
+	return 0;
+}
+
 static int ath12k_vendor_rf_path_mode_handler(struct wiphy *wiphy,
 					      struct wireless_dev *wdev,
 					      const void *data, int data_len)
@@ -17122,6 +17268,14 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.doit = ath12k_vendor_set_multi_bss_param,
 		.policy = ath12k_multi_bss_param_policy,
 		.maxattr = QCA_WLAN_VENDOR_ATTR_MULTI_BSS_PARAM_MAX,
+		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV | WIPHY_VENDOR_CMD_NEED_WDEV,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_GREEN_AP,
+		.doit = ath12k_vendor_green_ap_handler,
+		.policy = ath12k_vendor_green_ap_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_GREEN_AP_MAX,
 		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV | WIPHY_VENDOR_CMD_NEED_WDEV,
 	},
 };
