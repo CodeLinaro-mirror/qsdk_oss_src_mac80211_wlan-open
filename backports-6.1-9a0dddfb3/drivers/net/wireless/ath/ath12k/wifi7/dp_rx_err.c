@@ -462,6 +462,12 @@ ath12k_wifi7_dp_process_wbm_rx_packets(struct ath12k_dp *dp,
 
 					if (drop)
 						drop_reason = ATH_RX_NULL_Q_DESC;
+
+					if (!drop)
+						dp_rx_update_protocol_tag(ar->ab,
+									  dp_pdev,
+									  msdu,
+									  rx_desc);
 				} else {
 					reason = WBM_ERR_DROP_REO_GENERIC;
 

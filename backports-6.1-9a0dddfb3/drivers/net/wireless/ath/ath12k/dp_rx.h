@@ -536,4 +536,12 @@ void ath12k_dp_tid_wbm_err_stats(struct ath12k_pdev_dp *dp_pdev,
 				 u8 tid,
 				 bool is_reo,
 				 u32 error_code);
+void dp_rx_update_protocol_tag(struct ath12k_base *ab,
+			       struct ath12k_pdev_dp *dp_pdev,
+			       struct sk_buff *msdu,
+			       struct hal_rx_desc *rx_desc);
+void dp_rx_update_flow_tag(struct ath12k_base *ab,
+			   struct ath12k_pdev_dp *dp_pdev,
+			   struct sk_buff *msdu,
+			   struct hal_rx_desc *rx_desc);
 #endif /* ATH12K_DP_RX_H */
