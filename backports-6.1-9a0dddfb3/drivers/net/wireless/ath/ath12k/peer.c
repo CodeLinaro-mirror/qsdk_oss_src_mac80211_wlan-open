@@ -1226,8 +1226,9 @@ void ath12k_peer_deauth_disassoc_tx_dec(struct ath12k *ar, const u8 *addr)
 	if (arsta) {
 		pending = atomic_dec_if_positive(&arsta->pending_deauth_disassoc_tx);
 		if (pending < 0)
-			ath12k_err(ar->ab, "pending_deauth_disassoc_tx underflow:%d\n",
-				    pending);
+			ath12k_dbg_level(NULL, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+					 "pending_deauth_disassoc_tx underflow:%d\n",
+					 pending);
 	}
 	spin_unlock_bh(&ar->arsta_lock);
 
