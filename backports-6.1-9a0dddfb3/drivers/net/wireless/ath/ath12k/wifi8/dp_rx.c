@@ -302,10 +302,18 @@ int ath12k_wifi8_dp_fse_cmd_send(struct ath12k_base *ab,
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_dp *central_dp = ath12k_get_central_dp(dp);
-	struct ath12k_base *central_ab = central_dp->ab;
-	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(central_dp);
+	struct ath12k_base *central_ab;
+	struct ath12k_dp_wifi8 *dp_wifi8;
 	struct hal_srng *cmd_ring;
 	int ret;
+
+	if (!central_dp) {
+		ath12k_dbg(ab, ATH12K_DBG_DP_FST, "Central DP is NULL");
+		return 0;
+	}
+
+	central_ab = central_dp->ab;
+	dp_wifi8 = ath12k_get_dp_wifi8(central_dp);
 
 	if ((test_bit(ATH12K_FLAG_CRASH_FLUSH, &central_ab->dev_flags) &&
 	     !test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &central_ab->dev_flags)) ||
