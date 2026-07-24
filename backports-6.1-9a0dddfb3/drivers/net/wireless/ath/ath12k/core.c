@@ -2865,14 +2865,62 @@ int ath12k_wsi_bypass_precheck(struct ath12k_base *ab, unsigned int value)
 	return 0;
 }
 
+static int ath12k_core_wsi_remap_radio_start(struct ath12k_base *ab)
+{
+	struct ath12k_hw_group *ag = ath12k_ab_to_ag(ab);
+	int ret = 0, i;
+	struct ath12k *ar = NULL;
+	struct ath12k_bridge_iter bridge_iter = {};
+	u8 active_num_devices;
+
+	for (i = 0; i < ab->num_radios; i++) {
+		ar = ab->pdevs[i].ar;
+
+		if (!ar) {
+			ath12k_err(ab, "ar is NULL\n");
+			ret = -EINVAL;
+			goto exit;
+		}
+
+		ret = ath12k_mac_start(ar);
+		if (ret) {
+			ath12k_err(ar->ab, "vdev_id : %s radio_idx : %u] fail to start mac operations in pdev idx %d ret %d\n",
+				   ATH12K_INVALID_VDEV_ID, ar->radio_idx,
+				   ar->pdev_idx, ret);
+			goto exit;
+		}
+	}
+
+	active_num_devices = ag->num_devices - ag->num_bypassed;
+	if (ab->wsi_remap_state == ATH12K_WSI_BYPASS_ADD_DEVICE &&
+	    active_num_devices == ATH12K_MIN_NUM_DEVICES_NLINK && ar) {
+		void (*iterator)(void *data,
+				 u8 *mac,
+				 struct ieee80211_vif *vif);
+
+		iterator = ath12k_mac_add_bridge_vdevs_iter;
+		bridge_iter.ah = ar->ah;
+		bridge_iter.active_num_devices = active_num_devices;
+		ieee80211_iterate_interfaces(ar->ah->hw,
+					     IEEE80211_IFACE_ITER_NORMAL,
+					     iterator,
+					     &bridge_iter);
+	}
+
+	ath12k_info(ab, "WSI remap: Device re-addition completed\n");
+
+exit:
+	/* Reset the WSI flags */
+	ag->wsi_remap_in_progress = false;
+	ab->wsi_remap_state = 0;
+
+	return ret;
+}
 
 int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 {
 	struct ath12k_hw_group *ag = ath12k_ab_to_ag(ab);
 	int ret, i;
-	struct ath12k *ar = NULL;
-	struct ath12k_bridge_iter bridge_iter = {};
-	u8 active_num_devices;
 	struct ath12k_base *partner_ab;
 	bool hw_grp_ready = false;
 
@@ -2994,37 +3042,12 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 		}
 
 		if (ag->wsi_remap_in_progress) {
-			/* During bypass, device will restart from start.
-			 * But the ath12k reference will be already present.
-			 * Hence reset the flags here.
-			 */
-			for (i = 0; i < ab->num_radios; i++) {
-				ar = ab->pdevs[i].ar;
-				ar->pdev_suspend = false;
+			ret = ath12k_core_wsi_remap_radio_start(ab);
+			if (ret) {
+				ath12k_err(ab, "WSI readd failed: %d\n", ret);
+				goto err_core_stop;
 			}
 
-			if (!ar)
-				ath12k_err(ab, "ar is NULL\n");
-
-			active_num_devices = ag->num_devices - ag->num_bypassed;
-			if (ab->wsi_remap_state == ATH12K_WSI_BYPASS_ADD_DEVICE &&
-			    active_num_devices == ATH12K_MIN_NUM_DEVICES_NLINK && ar) {
-				void (*iterator)(void *data,
-						 u8 *mac,
-						 struct ieee80211_vif *vif);
-
-				iterator = ath12k_mac_add_bridge_vdevs_iter;
-				bridge_iter.ah = ar->ah;
-				bridge_iter.active_num_devices = active_num_devices;
-				ieee80211_iterate_interfaces(ar->ah->hw,
-							     IEEE80211_IFACE_ITER_NORMAL,
-							     iterator,
-							     &bridge_iter);
-			}
-			/* Reset the WSI flags */
-			ag->wsi_remap_in_progress = false;
-			ab->wsi_remap_state = 0;
-			ath12k_info(ab, "WSI remap: Device re-addition completed\n");
 		}
 
 		if (!ath12k_ftm_mode) {
