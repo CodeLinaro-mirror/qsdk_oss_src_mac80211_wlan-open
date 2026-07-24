@@ -497,6 +497,9 @@ void ath12k_wifi8_umac_reset_handle_post_reset_complete(struct ath12k_base *ab)
 		ath12k_dp_tid_map_precedence(ab->ag->dp_hw_grp);
 		ath12k_hif_irq_enable(cumac_ab);
 		ath12k_hif_mgmt_irq_enable(cumac_ab);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+		ath12k_wifi8_umac_reset_ppeds_start(cumac_ab);
+#endif
 		clear_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &cumac_ab->dev_flags);
 	}
 
