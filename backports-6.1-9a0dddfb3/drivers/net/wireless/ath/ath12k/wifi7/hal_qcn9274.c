@@ -914,6 +914,8 @@ void ath12k_wifi7_hal_extract_rx_spd_data_qcn9274(struct hal_rx_spd_data *rx_inf
 		le32_get_bits(flow_idx_info, RX_MSDU_END_INFO7_FLOW_IDX_TIMEOUT);
 	rx_info->rx_mpdu_info.flow_idx_invalid =
 		le32_get_bits(flow_idx_info, RX_MSDU_END_INFO7_FLOW_IDX_INVALID);
+	rx_info->cce_match =
+		le32_get_bits(flow_idx_info, RX_MSDU_END_INFO7_CCE_MATCH);
 	rx_info->rx_mpdu_info.flow_info.flow_metadata =
 		le16_get_bits(rx_desc->u.qcn9274_compact.msdu_end.fse_metadata,
 			      ATH12K_DP_RX_FSE_FLOW_METADATA_MASK);
@@ -1145,6 +1147,10 @@ const struct hal_ops hal_qcn9274_ops = {
 	.hal_mon_ops_init = ath12k_wifi7_hal_mon_ops_init,
 	.get_hw_hptp = ath12k_wifi7_hal_get_hw_hptp,
 	.rx_desc_get_fse_info = ath12k_wifi7_hal_rx_desc_get_fse_info_qcn9274,
+	.rx_get_fse_metadata = ath12k_wifi7_hal_rx_get_fse_metadata_qcn9274,
+	.rx_get_cce_metadata = ath12k_wifi7_hal_rx_get_cce_metadata_qcn9274,
+	.rx_get_cce_match_bit = ath12k_wifi7_hal_rx_get_cce_match_bit_qcn9274,
+	.rx_get_flow_params = ath12k_wifi7_hal_rx_get_flow_params_qcn9274,
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 	.reo_hw_setup_ipa = ath12k_hal_reo_ring_ipa_ctrl_hash_ix0_setup,
 #endif
