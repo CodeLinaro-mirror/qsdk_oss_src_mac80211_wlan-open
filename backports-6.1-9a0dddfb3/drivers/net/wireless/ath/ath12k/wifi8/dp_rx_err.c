@@ -1306,6 +1306,7 @@ ath12k_wifi8_dp_process_reo_rx_err_packets(struct ath12k_dp *dp,
 	u32 drop_reason, error_code;
 	bool drop;
 	bool vow_stats_needed = false;
+	bool fse_tagged;
 	struct ath12k_hal *hal = dp->hal;
 	u32 hal_rx_desc_sz = hal->hal_desc_sz;
 	u16 msdu_len;
@@ -1341,6 +1342,7 @@ ath12k_wifi8_dp_process_reo_rx_err_packets(struct ath12k_dp *dp,
 			src = HAL_WBM_REL_SRC_MODULE_RXDMA;
 		}
 
+		fse_tagged = false;
 		drop = ath12k_dp_err_drop_needed(src,
 						 rx_mpdu_info->reo_push_reason,
 						 rx_mpdu_info->reo_error_code,
@@ -1429,10 +1431,27 @@ ath12k_wifi8_dp_process_reo_rx_err_packets(struct ath12k_dp *dp,
 			ath12k_tid_rx_stats(ahvif, tid, msdu_len, ATH_RX_WBM_REL_TOTAL);
 		}
 
+		if (!drop) {
+			struct dp_rx_tag_params tag = {
+				.cce_match        = spd_desc_l->cce_match,
+				.cce_metadata     = spd_desc_l->cce_metadata,
+				.flow_idx_invalid = rx_mpdu_info->flow_idx_invalid,
+				.flow_idx_timeout = rx_mpdu_info->flow_idx_timeout,
+				.flow_metadata    =
+					rx_mpdu_info->flow_info.flow_metadata,
+			};
+
+			if (tag.cce_match && dp_pdev->protocol_tag_active_count)
+				dp_rx_update_protocol_tag(dp_pdev, msdu, &tag);
+			dp_rx_update_flow_tag(dp_pdev, msdu, &tag);
+		}
+
 		if (src == HAL_WBM_REL_SRC_MODULE_REO) {
 			if (rx_mpdu_info->reo_push_reason ==
 				HAL_REO_DEST_RING_PUSH_REASON_ROUTING_INSTRUCTION) {
 				dp->device_stats.wbm_err.hal_reo_route++;
+				fse_tagged = !rx_mpdu_info->flow_idx_invalid &&
+					     !rx_mpdu_info->flow_idx_timeout;
 				drop = ath12k_wifi8_handle_reo_route(dp_pdev, peer,
 								     &rx_status,
 								     spd_desc_l,
@@ -1442,6 +1461,9 @@ ath12k_wifi8_dp_process_reo_rx_err_packets(struct ath12k_dp *dp,
 					drop_reason = ATH_RX_INVALID_RBM;
 			} else if (rx_mpdu_info->reo_push_reason ==
 					HAL_REO_DEST_RING_PUSH_REASON_ERR_DETECTED) {
+				/* flow_idx is always invalid on REO error frames;
+				 * fse_tagged stays false (initialized at loop top)
+				 */
 				error_code = rx_mpdu_info->reo_error_code;
 				if (error_code ==
 					HAL_REO_DEST_RING_ERROR_CODE_DESC_ADDR_ZERO) {
@@ -1476,8 +1498,15 @@ ath12k_wifi8_dp_process_reo_rx_err_packets(struct ath12k_dp *dp,
 				continue;
 			}
 
-			if (drop && msdu)
+			if (drop && msdu) {
+				if (fse_tagged)
+					dp_pdev->fse_cce_stats.fse_drop_pkts++;
+				if (spd_desc_l->cce_match) {
+					dp_pdev->fse_cce_stats.wbm_reo_cce_drop++;
+					dp_pdev->fse_cce_stats.cce_drop_pkts++;
+				}
 				dev_kfree_skb_any(msdu);
+			}
 
 			if (stats_needed) {
 				if (drop)
@@ -1492,6 +1521,14 @@ ath12k_wifi8_dp_process_reo_rx_err_packets(struct ath12k_dp *dp,
 
 			if (rx_mpdu_info->rxdma_push_reason !=
 				HAL_RXDMA_PUSH_REASON_ERR_DETECTED) {
+				fse_tagged = !rx_mpdu_info->flow_idx_invalid &&
+					     !rx_mpdu_info->flow_idx_timeout;
+				if (fse_tagged) {
+					dp_pdev->fse_cce_stats.wbm_rxdma_fse_drop++;
+					dp_pdev->fse_cce_stats.fse_drop_pkts++;
+				}
+				if (spd_desc_l->cce_match)
+					dp_pdev->fse_cce_stats.cce_drop_pkts++;
 				reason = WBM_ERR_DROP_INVALID_PUSH_REASON;
 				ath12k_dp_rx_wbm_err_dev_free_skb(dp, msdu,
 								  reason);
@@ -1554,8 +1591,14 @@ ath12k_wifi8_dp_process_reo_rx_err_packets(struct ath12k_dp *dp,
 				ath12k_dp_tid_wbm_err_stats(dp_pdev, tid, false,
 							    error_code);
 
-			if (drop && msdu)
+			/* flow_idx is always invalid on RXDMA error frames;
+			 * only count CCE drops here
+			 */
+			if (drop && msdu) {
+				if (spd_desc_l->cce_match)
+					dp_pdev->fse_cce_stats.cce_drop_pkts++;
 				dev_kfree_skb_any(msdu);
+			}
 
 			if (stats_needed) {
 				if (drop)

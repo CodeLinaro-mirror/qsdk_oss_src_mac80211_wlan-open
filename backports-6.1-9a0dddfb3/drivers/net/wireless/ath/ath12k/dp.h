@@ -362,6 +362,7 @@ struct ath12k_pdev_dp {
 
 	/* CCE protocol tag map: indexed by ath12k_routing_pkt_type */
 	struct ath12k_rx_protocol_tag_map protocol_tag_map[ATH12K_PKT_TYPE_MAX];
+	u8 protocol_tag_active_count;
 
 	/* FSE/CCE statistics */
 	struct ath12k_fse_cce_stats fse_cce_stats;

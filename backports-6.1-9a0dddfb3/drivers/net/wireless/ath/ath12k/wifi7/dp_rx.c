@@ -1116,10 +1116,21 @@ ath12k_wifi7_dp_process_reo_rx_packets(struct ath12k_dp *dp,
 						    spd_desc_l,
 						    (struct hal_rx_desc *)rx_tlv_hdr);
 
-		dp_rx_update_protocol_tag(partner_ab, dp_pdev, msdu,
-					  (struct hal_rx_desc *)rx_tlv_hdr);
-		dp_rx_update_flow_tag(partner_ab, dp_pdev, msdu,
-				      (struct hal_rx_desc *)rx_tlv_hdr);
+		{
+			struct dp_rx_tag_params tag = {
+				.cce_match        = spd_desc_l->cce_match,
+				.cce_metadata     = spd_desc_l->cce_metadata,
+				.flow_idx_invalid =
+				spd_desc_l->rx_mpdu_info.flow_idx_invalid,
+				.flow_idx_timeout =
+				spd_desc_l->rx_mpdu_info.flow_idx_timeout,
+				.flow_metadata    =
+				spd_desc_l->rx_mpdu_info.flow_info.flow_metadata,
+			};
+			if (tag.cce_match && dp_pdev->protocol_tag_active_count)
+				dp_rx_update_protocol_tag(dp_pdev, msdu, &tag);
+			dp_rx_update_flow_tag(dp_pdev, msdu, &tag);
+		}
 
 		if (likely(msdu_idx + 1 < num_msdus)) {
 			struct hal_rx_spd_data *spd_desc_next = &rx_spd[msdu_idx + 1];
@@ -1924,33 +1935,6 @@ out_unlock:
 	return ret;
 }
 
-/*
- * ath12k_wifi7_dp_rx_err_cce_drop() - drop MSDU if CCE metadata == CCE_DROP
- *
- * Called in the REO exception path with rcu_read_lock() held.
- * Returns true and frees the MSDU when the CCE hardware has flagged the
- * packet for discard; the caller must then skip to the unlock/exit path.
- */
-static bool
-ath12k_wifi7_dp_rx_err_cce_drop(struct ath12k_base *ab,
-				 struct ath12k_pdev_dp *dp_pdev,
-				 struct sk_buff *msdu,
-				 struct hal_rx_desc *rx_desc)
-{
-	const struct hal_ops *hal_ops = ab->hw_params->hal_ops;
-
-	if (!hal_ops->rx_get_cce_metadata)
-		return false;
-
-	if (hal_ops->rx_get_cce_metadata(rx_desc) != CCE_DROP)
-		return false;
-
-	dp_pdev->fse_cce_stats.reo_err_cce_drop++;
-	dp_pdev->fse_cce_stats.cce_drop_pkts++;
-	dev_kfree_skb_any(msdu);
-	return true;
-}
-
 static int
 ath12k_wifi7_dp_process_rx_err_buf(struct ath12k_pdev_dp *dp_pdev,
 				   struct hal_reo_dest_ring *desc,
@@ -2034,10 +2018,6 @@ ath12k_wifi7_dp_process_rx_err_buf(struct ath12k_pdev_dp *dp_pdev,
 
 	rx_desc = (struct hal_rx_desc *)msdu->data;
 	ath12k_wifi7_dp_extract_rx_desc_data(dp, &rx_desc_data, rx_desc, rx_desc);
-
-	dp_rx_update_protocol_tag(ab, dp_pdev, msdu, rx_desc);
-	if (ath12k_wifi7_dp_rx_err_cce_drop(ab, dp_pdev, msdu, rx_desc))
-		goto exit;
 
 	if (ath12k_dp_stats_enabled(dp_pdev) &&
 	    ath12k_tid_stats_enabled(dp_pdev)) {
@@ -2663,7 +2643,7 @@ ath12k_wifi7_dp_rx_flow_alloc_entry(struct ath12k_base *ab,
 	fse = ath12k_dp_rx_flow_get_fse(fst, flow_idx);
 	fse->flow_hash = flow_hash;
 	fse->flow_id = flow_idx;
-	fse->is_valid = true;
+
 
 	return fse;
 }
@@ -2686,6 +2666,7 @@ int ath12k_wifi7_dp_rx_flow_add_entry(struct ath12k_dp *dp,
 	struct hal_rx_flow flow = { 0 };
 	struct dp_rx_fst *fst = dp->dp_hw_grp->fst;
 	struct dp_rx_fse *fse;
+	bool is_new;
 
 	/* Allocate entry in DP FST */
 	fse = ath12k_wifi7_dp_rx_flow_alloc_entry(ab, fst, flow_info, &flow);
@@ -2693,6 +2674,11 @@ int ath12k_wifi7_dp_rx_flow_add_entry(struct ath12k_dp *dp,
 		ath12k_dbg(ab, ATH12K_DBG_DP_FST, "RX FSE alloc failed");
 		return -ENOMEM;
 	}
+
+	/* is_new is true only for a genuinely fresh slot; alloc_entry no longer
+	 * sets is_valid, so we can detect re-programs (EEXIST path) here.
+	 */
+	is_new = !fse->is_valid;
 
 	flow.drop = flow_info->drop;
 
@@ -2724,8 +2710,12 @@ int ath12k_wifi7_dp_rx_flow_add_entry(struct ath12k_dp *dp,
 		return -EEXIST;
 	}
 
-	fst->num_entries++;
-	fst->flows_per_reo[fse->reo_indication - 1]++;
+	fse->is_valid = true;
+	if (is_new) {
+		fst->num_entries++;
+		if (fse->reo_indication)
+			fst->flows_per_reo[fse->reo_indication - 1]++;
+	}
 
 	ath12k_dbg(ab, ATH12K_DBG_DP_FST,
 		   "FST num_entries = %d, reo_dest_ind = %d, reo_dest_hand = %u",

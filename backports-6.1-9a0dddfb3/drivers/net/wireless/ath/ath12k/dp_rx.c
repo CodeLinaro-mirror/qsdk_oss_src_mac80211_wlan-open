@@ -1611,6 +1611,8 @@ int ath12k_dp_rx_flow_add_entry(struct ath12k_base *ab,
 	else
 		fst->ipv6_fse_rule_cnt++;
 
+	dp->dp_hw_grp->fse_active_count++;
+
 out:
 	return ret;
 }
@@ -1657,6 +1659,9 @@ int ath12k_dp_rx_flow_delete_entry(struct ath12k_base *ab,
 	else
 		fst->ipv6_fse_rule_cnt--;
 
+	if (dp->dp_hw_grp->fse_active_count)
+		dp->dp_hw_grp->fse_active_count--;
+
 out:
 	return ret;
 }
@@ -1690,6 +1695,7 @@ int ath12k_dp_rx_flow_delete_all_entries(struct ath12k_base *ab)
 
 	fst->ipv4_fse_rule_cnt = 0;
 	fst->ipv6_fse_rule_cnt = 0;
+	dp->dp_hw_grp->fse_active_count = 0;
 
 	ath12k_dbg(ab, ATH12K_DBG_DP_FST,
 		   "FST num_entries = %d", fst->num_entries);
@@ -1700,29 +1706,26 @@ out:
 /**
  * dp_rx_update_protocol_tag() - stamp rxcb->protocol_tag from CCE metadata
  *
- * Called in the REO hot path for every MSDU after MPDU validation.  Reads the
- * CCE match bit from the rx_msdu_end TLV; if set, copies cce_metadata into
+ * Called in the REO hot path for every MSDU after MPDU validation.  Reads
+ * cce_match from the scratchpad; if set, copies cce_metadata into
  * rxcb->protocol_tag and increments the per-protocol CCE hit counter.
- * No-op when CCE_MATCH is clear or hal_ops are not available.
+ * No-op when CCE_MATCH is clear or no protocols are configured.
  */
-void dp_rx_update_protocol_tag(struct ath12k_base *ab,
-			       struct ath12k_pdev_dp *dp_pdev,
+void dp_rx_update_protocol_tag(struct ath12k_pdev_dp *dp_pdev,
 			       struct sk_buff *msdu,
-			       struct hal_rx_desc *rx_desc)
+			       const struct dp_rx_tag_params *tag)
 {
 	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(msdu);
-	const struct hal_ops *hal_ops = ab->hw_params->hal_ops;
 	u16 cce_meta;
 	int i;
 
-	if (!hal_ops->rx_get_cce_match_bit ||
-	    !hal_ops->rx_get_cce_match_bit(rx_desc))
+	if (!tag->cce_match)
 		return;
 
-	if (!hal_ops->rx_get_cce_metadata)
+	if (!dp_pdev->protocol_tag_active_count)
 		return;
 
-	cce_meta = hal_ops->rx_get_cce_metadata(rx_desc);
+	cce_meta = tag->cce_metadata;
 	rxcb->protocol_tag = cce_meta;
 
 	for (i = 0; i < ATH12K_PKT_TYPE_MAX; i++) {
@@ -1742,19 +1745,20 @@ EXPORT_SYMBOL_GPL(dp_rx_update_protocol_tag);
  * the lower 16 bits of fse_metadata (the user-programmed flow tag) into
  * rxcb->flow_tag and increments the FSE hit counter when non-zero.
  */
-void dp_rx_update_flow_tag(struct ath12k_base *ab,
-			   struct ath12k_pdev_dp *dp_pdev,
+void dp_rx_update_flow_tag(struct ath12k_pdev_dp *dp_pdev,
 			   struct sk_buff *msdu,
-			   struct hal_rx_desc *rx_desc)
+			   const struct dp_rx_tag_params *tag)
 {
 	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(msdu);
-	const struct hal_ops *hal_ops = ab->hw_params->hal_ops;
 	u16 flow_tag;
 
-	if (!hal_ops->rx_get_fse_metadata)
+	if (!dp_pdev->dp->dp_hw_grp->fse_active_count)
 		return;
 
-	flow_tag = (u16)(hal_ops->rx_get_fse_metadata(rx_desc) & 0xFFFF);
+	if (tag->flow_idx_invalid || tag->flow_idx_timeout)
+		return;
+
+	flow_tag = tag->flow_metadata;
 	rxcb->flow_tag = flow_tag;
 
 	if (flow_tag)
@@ -1803,6 +1807,7 @@ void ath12k_dp_rx_fst_init(struct ath12k_base *ab)
 
 	fst->ipv4_fse_rule_cnt = 0;
 	fst->ipv6_fse_rule_cnt = 0;
+	dp->dp_hw_grp->fse_active_count = 0;
 	dp->fst_config.fst_core_mask = 0x7;
 	dp->fst_config.fst_num_cores = 0;
 

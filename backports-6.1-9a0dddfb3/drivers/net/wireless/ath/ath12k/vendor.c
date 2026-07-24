@@ -670,7 +670,6 @@ static int ath12k_vendor_set_multi_bss_param(struct wiphy *wiphy,
 static const struct nla_policy
 ath12k_rx_pkt_protocol_tag_policy[QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_OP_CODE]    = {.type = NLA_U8},
-	[QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_PDEV_ID]    = {.type = NLA_U32},
 	[QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_PROTO_TYPE] = {.type = NLA_U32},
 	[QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_TAG_VALUE]  = {.type = NLA_U16},
 };
@@ -17353,15 +17352,29 @@ ath12k_dp_rx_update_pdev_protocol_tag(struct wiphy *wiphy,
 				      const void *data, int data_len)
 {
 	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_MAX + 1];
-	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
-	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
+	struct ieee80211_vif *vif = wdev_to_ieee80211_vif(wdev);
 	struct ath12k_wmi_pkt_route_param param = {};
 	struct ath12k_pdev_dp *dp_pdev;
+	struct ath12k_link_vif *arvif;
+	struct ath12k_vif *ahvif;
 	struct ath12k *ar;
-	u32 pdev_id, proto_type;
+	u32 proto_type;
 	u16 tag_value = 0;
 	u8 op_code;
 	int ret;
+
+	if (!vif) {
+		ath12k_err(NULL, "rx_protocol_tag: no vif for wdev\n");
+		return -EINVAL;
+	}
+
+	ahvif = ath12k_vif_to_ahvif(vif);
+	arvif = &ahvif->deflink;
+	ar    = arvif->ar;
+	if (!ar) {
+		ath12k_err(NULL, "rx_protocol_tag: no ar for vif\n");
+		return -EINVAL;
+	}
 
 	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_MAX,
 			data, data_len,
@@ -17371,8 +17384,7 @@ ath12k_dp_rx_update_pdev_protocol_tag(struct wiphy *wiphy,
 		return ret;
 	}
 
-	if (!tb[QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_PDEV_ID] ||
-	    !tb[QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_PROTO_TYPE]) {
+	if (!tb[QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_PROTO_TYPE]) {
 		ath12k_err(NULL, "rx_protocol_tag: missing required attrs\n");
 		return -EINVAL;
 	}
@@ -17381,7 +17393,6 @@ ath12k_dp_rx_update_pdev_protocol_tag(struct wiphy *wiphy,
 	op_code = tb[QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_OP_CODE]
 		  ? nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_OP_CODE])
 		  : ATH12K_WMI_PKTROUTE_ADD;
-	pdev_id    = nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_PDEV_ID]);
 	proto_type = nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_PROTO_TYPE]);
 
 	if (op_code == ATH12K_WMI_PKTROUTE_ADD) {
@@ -17400,18 +17411,6 @@ ath12k_dp_rx_update_pdev_protocol_tag(struct wiphy *wiphy,
 	if (proto_type >= ATH12K_PKT_TYPE_MAX) {
 		ath12k_err(NULL, "rx_protocol_tag: proto_type %u out of range (max %u)\n",
 			   proto_type, ATH12K_PKT_TYPE_MAX - 1);
-		return -EINVAL;
-	}
-
-	if (pdev_id >= ah->num_radio) {
-		ath12k_err(NULL, "rx_protocol_tag: pdev_id %u out of range (max %u)\n",
-			   pdev_id, ah->num_radio - 1);
-		return -EINVAL;
-	}
-
-	ar = ath12k_ah_to_ar(ah, pdev_id);
-	if (!ar) {
-		ath12k_err(NULL, "rx_protocol_tag: no ar for pdev_id %u\n", pdev_id);
 		return -EINVAL;
 	}
 
@@ -17434,9 +17433,12 @@ ath12k_dp_rx_update_pdev_protocol_tag(struct wiphy *wiphy,
 	if (op_code == ATH12K_WMI_PKTROUTE_ADD) {
 		dp_pdev->protocol_tag_map[proto_type].tag     = tag_value;
 		dp_pdev->protocol_tag_map[proto_type].enabled = true;
+		dp_pdev->protocol_tag_active_count++;
 	} else {
 		dp_pdev->protocol_tag_map[proto_type].tag     = 0;
 		dp_pdev->protocol_tag_map[proto_type].enabled = false;
+		if (dp_pdev->protocol_tag_active_count)
+			dp_pdev->protocol_tag_active_count--;
 	}
 
 	return ret;
@@ -17455,22 +17457,18 @@ ath12k_dp_rx_flow_tag_op(struct wiphy *wiphy,
 			 const void *data, int data_len)
 {
 	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_MAX + 1];
-	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
-	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
-	struct ath12k_base *ab;
-	struct ath12k *ar;
+	struct ath12k_base *ab_list[ATH12K_MAX_SOCS] = {};
 	struct rx_flow_info flow_info = {};
 	struct hal_flow_tuple_info *fti = &flow_info.flow_tuple_info;
 	u8 op_code, ip_ver, proto;
-	int ret;
+	int ret = 0;
 
-	/* FST is per-ath12k_base; use pdev 0 to reach the right ab */
-	ar = ath12k_ah_to_ar(ah, 0);
-	if (!ar) {
-		ath12k_err(NULL, "rx_flow_tag_op: no ar for pdev 0\n");
-		return -EINVAL;
+	/* FST is per hw_group; collect ab_list just to get a valid ab pointer. */
+	if (!ath12k_core_get_ab_list_by_wiphy(wiphy, ab_list, ATH12K_MAX_SOCS) ||
+	    !ab_list[0]) {
+		ath12k_err(NULL, "rx_flow_tag_op: no SoC found for this wiphy\n");
+		return -ENODEV;
 	}
-	ab = ar->ab;
 
 	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_MAX,
 			data, data_len,
@@ -17556,15 +17554,15 @@ ath12k_dp_rx_flow_tag_op(struct wiphy *wiphy,
 			nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_RING_ID]);
 		}
 
-		ret = ath12k_dp_rx_flow_add_entry(ab, &flow_info);
+		ret = ath12k_dp_rx_flow_add_entry(ab_list[0], &flow_info);
 		if (ret)
-			ath12k_warn(ab,
-				    "rx_flow_tag_op: flow_add failed ret=%d\n", ret);
+			ath12k_warn(ab_list[0],
+				    "rx_flow_tag_op: add failed ret=%d\n", ret);
 	} else /* DEL */ {
-		ret = ath12k_dp_rx_flow_delete_entry(ab, &flow_info);
+		ret = ath12k_dp_rx_flow_delete_entry(ab_list[0], &flow_info);
 		if (ret)
-			ath12k_warn(ab,
-				    "rx_flow_tag_op: flow_del failed ret=%d\n", ret);
+			ath12k_warn(ab_list[0],
+				    "rx_flow_tag_op: del failed ret=%d\n", ret);
 	}
 
 	return ret;
