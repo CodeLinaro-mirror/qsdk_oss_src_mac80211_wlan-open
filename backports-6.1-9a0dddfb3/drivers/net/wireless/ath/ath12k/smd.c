@@ -240,7 +240,7 @@ static int ath12k_smd_bss_assoc(struct ath12k *ar,
 		is_auth = true;
 
 	ath12k_dp_arch_link_peer_assoc(dp, &ar->ah->dp_hw,
-				       target_mld_addr, ar->hw_link_id, ahvif->vif);
+				       target_mld_addr, ar->hw_link_id);
 
 	ret = ath12k_setup_peer_smps(ar, arvif, link_info->target_bssid,
 				     &ht_cap, &he_6ghz_cap);
@@ -1959,7 +1959,7 @@ u16 ath12k_smd_ctx_get_rx_ba_bufsize(struct ath12k_base *ab, struct ath12k_hw *a
 	/* fetch current active buffer size from dp */
 	spin_lock_bh(&ah->dp_hw.peer_hash_lock);
 
-	dp_peer = ath12k_dp_peer_find_by_addr(&ah->dp_hw, (u8 *)peer_addr, NULL);
+	dp_peer = ath12k_dp_peer_find_by_addr(&ah->dp_hw, (u8 *)peer_addr);
 	if (dp_peer && dp_peer->rx_tid[tid].active)
 		ba_win_sz = dp_peer->rx_tid[tid].ba_win_sz;
 

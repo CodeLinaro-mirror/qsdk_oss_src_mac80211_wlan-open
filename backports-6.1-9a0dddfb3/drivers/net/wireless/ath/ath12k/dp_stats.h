@@ -1891,6 +1891,5 @@ void ath12k_dp_netstats_peer_update(struct ath12k_dp_hw *dp_hw,
 				    const u8 *dp_peer_addr,
 				    u8 hw_link_id,
 				    const u8 *peer_mac_filter,
-				    struct rtnl_link_stats64 *stats,
-				    struct ieee80211_vif *vif);
+				    struct rtnl_link_stats64 *stats);
 #endif
