@@ -37,6 +37,8 @@ const struct ath12k_dp_arch_mon_ops ath12k_wifi8_dp_arch_mon_dual_ring_ops = {
 	.rx_filter_update = ath12k_dp_mon_rx_update_ring_filter,
 	.rx_monitor_mode_set = ath12k_dp_mon_rx_monitor_mode_set,
 	.rx_monitor_mode_reset = ath12k_dp_mon_rx_monitor_mode_reset,
+	.rx_nrp_set = ath12k_dp_mon_rx_nrp_set,
+	.rx_nrp_reset = ath12k_dp_mon_rx_nrp_reset,
 	.setup_ppdu_desc = ath12k_wifi8_dp_mon_rx_dual_ring_setup_ppdu_desc,
 	.cleanup_ppdu_desc = ath12k_wifi8_dp_mon_rx_dual_ring_cleanup_ppdu_desc,
 	.mon_rx_wq_init = ath12k_wifi8_dp_mon_rx_wq_init,
@@ -1645,12 +1647,17 @@ ath12k_wifi8_dp_mon_rx_process_ppdu(struct work_struct *work)
 			if (!list_empty(&dp->neighbor_peers)) {
 				list_for_each_entry_safe(nrp, tmp,
 							 &dp->neighbor_peers, list) {
+					u8 avg = nrp->avg_rssi;
+					u8 snr = ppdu_info->rssi_comb;
+
 					is_addr_equal =
 					ether_addr_equal(nrp->addr,
 							 ppdu_info->nrp_info.mac_addr2);
 					if (filter_category ==
 					    DP_MPDU_FILTER_CATEGORY_MD && is_addr_equal) {
+						avg = ath12k_dp_get_avg_snr(snr, avg);
 						nrp->rssi = ppdu_info->rssi_comb;
+						nrp->avg_rssi = avg;
 						nrp->timestamp =
 							ktime_to_ms(ktime_get_real());
 						goto unlock;
