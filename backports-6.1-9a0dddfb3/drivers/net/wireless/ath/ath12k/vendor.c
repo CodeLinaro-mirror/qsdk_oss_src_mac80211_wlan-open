@@ -675,9 +675,29 @@ ath12k_rx_pkt_protocol_tag_policy[QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_MAX +
 	[QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_TAG_VALUE]  = {.type = NLA_U16},
 };
 
+static const struct nla_policy
+ath12k_rx_flow_tag_op_policy[QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_OP_CODE]  = {.type = NLA_U8},
+	[QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_IP_VER]   = {.type = NLA_U8},
+	[QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_SRC_IPV4] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_DST_IPV4] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_SRC_IPV6] = NLA_POLICY_EXACT_LEN(16),
+	[QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_DST_IPV6] = NLA_POLICY_EXACT_LEN(16),
+	[QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_SRC_PORT] = {.type = NLA_U16},
+	[QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_DST_PORT] = {.type = NLA_U16},
+	[QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_PROTO]    = {.type = NLA_U8},
+	[QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_TAG]      = {.type = NLA_U16},
+	[QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_DROP]     = {.type = NLA_FLAG},
+	[QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_RING_ID]  = {.type = NLA_U8},
+};
+
 static int ath12k_dp_rx_update_pdev_protocol_tag(struct wiphy *wiphy,
 						 struct wireless_dev *wdev,
 						 const void *data, int data_len);
+
+static int ath12k_dp_rx_flow_tag_op(struct wiphy *wiphy,
+				    struct wireless_dev *wdev,
+				    const void *data, int data_len);
 
 /**
  * ath12k_vendor_repurpose_link() - Mark an MLO link for repurposing
@@ -17293,6 +17313,14 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.maxattr = QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_MAX,
 		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
 	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_RX_FLOW_TAG_OP,
+		.doit = ath12k_dp_rx_flow_tag_op,
+		.policy = ath12k_rx_flow_tag_op_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_MAX,
+		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
+	},
 };
 
 /**
@@ -17392,6 +17420,134 @@ ath12k_dp_rx_update_pdev_protocol_tag(struct wiphy *wiphy,
 	} else {
 		dp_pdev->protocol_tag_map[proto_type].tag     = 0;
 		dp_pdev->protocol_tag_map[proto_type].enabled = false;
+	}
+
+	return ret;
+}
+
+/**
+ * ath12k_dp_rx_flow_tag_op() - FSE flow-tag add/delete vendor cmd handler
+ *
+ * Parses the 5-tuple + tag/drop/ring_id from NL attrs, populates
+ * struct rx_flow_info, and calls ath12k_dp_rx_flow_add_entry() or
+ * ath12k_dp_rx_flow_delete_entry().
+ */
+static int
+ath12k_dp_rx_flow_tag_op(struct wiphy *wiphy,
+			 struct wireless_dev *wdev,
+			 const void *data, int data_len)
+{
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_MAX + 1];
+	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
+	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
+	struct ath12k_base *ab;
+	struct ath12k *ar;
+	struct rx_flow_info flow_info = {};
+	struct hal_flow_tuple_info *fti = &flow_info.flow_tuple_info;
+	u8 op_code, ip_ver, proto;
+	int ret;
+
+	/* FST is per-ath12k_base; use pdev 0 to reach the right ab */
+	ar = ath12k_ah_to_ar(ah, 0);
+	if (!ar) {
+		ath12k_err(NULL, "rx_flow_tag_op: no ar for pdev 0\n");
+		return -EINVAL;
+	}
+	ab = ar->ab;
+
+	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_MAX,
+			data, data_len,
+			ath12k_rx_flow_tag_op_policy, NULL);
+	if (ret) {
+		ath12k_err(NULL, "rx_flow_tag_op: failed to parse NL attrs\n");
+		return ret;
+	}
+
+	if (!tb[QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_OP_CODE] ||
+	    !tb[QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_IP_VER]  ||
+	    !tb[QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_SRC_PORT] ||
+	    !tb[QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_DST_PORT] ||
+	    !tb[QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_PROTO]) {
+		ath12k_err(NULL, "rx_flow_tag_op: missing required attrs\n");
+		return -EINVAL;
+	}
+
+	op_code = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_OP_CODE]);
+	if (op_code > 1) {
+		ath12k_err(NULL, "rx_flow_tag_op: invalid op_code %u (0=ADD 1=DEL)\n",
+			   op_code);
+		return -EINVAL;
+	}
+
+	ip_ver = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_IP_VER]);
+	if (ip_ver != 4 && ip_ver != 6) {
+		ath12k_err(NULL, "rx_flow_tag_op: ip_ver must be 4 or 6\n");
+		return -EINVAL;
+	}
+
+	flow_info.is_addr_ipv4 = (ip_ver == 4);
+
+	if (ip_ver == 4) {
+		if (!tb[QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_SRC_IPV4] ||
+		    !tb[QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_DST_IPV4]) {
+			ath12k_err(NULL, "rx_flow_tag_op: missing IPv4 addrs\n");
+			return -EINVAL;
+		}
+		fti->src_ip_31_0  =
+		nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_SRC_IPV4]);
+		fti->dest_ip_31_0 =
+		nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_DST_IPV4]);
+		/* upper words stay zero for IPv4 */
+	} else {
+		const u8 *src_v6, *dst_v6;
+
+		if (!tb[QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_SRC_IPV6] ||
+		    !tb[QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_DST_IPV6]) {
+			ath12k_err(NULL, "rx_flow_tag_op: missing IPv6 addrs\n");
+			return -EINVAL;
+		}
+		src_v6 = nla_data(tb[QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_SRC_IPV6]);
+		dst_v6 = nla_data(tb[QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_DST_IPV6]);
+
+		fti->src_ip_127_96 = get_unaligned_be32(src_v6);
+		fti->src_ip_95_64  = get_unaligned_be32(src_v6 + 4);
+		fti->src_ip_63_32  = get_unaligned_be32(src_v6 + 8);
+		fti->src_ip_31_0   = get_unaligned_be32(src_v6 + 12);
+
+		fti->dest_ip_127_96 = get_unaligned_be32(dst_v6);
+		fti->dest_ip_95_64  = get_unaligned_be32(dst_v6 + 4);
+		fti->dest_ip_63_32  = get_unaligned_be32(dst_v6 + 8);
+		fti->dest_ip_31_0   = get_unaligned_be32(dst_v6 + 12);
+	}
+
+	fti->src_port    = nla_get_u16(tb[QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_SRC_PORT]);
+	fti->dest_port   = nla_get_u16(tb[QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_DST_PORT]);
+	proto            = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_PROTO]);
+	fti->l4_protocol = proto;
+
+	if (op_code == 0 /* ADD */) {
+		if (!tb[QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_TAG]) {
+			ath12k_err(NULL, "rx_flow_tag_op: TAG required for ADD\n");
+			return -EINVAL;
+		}
+		flow_info.fse_metadata =
+		nla_get_u16(tb[QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_TAG]);
+		flow_info.drop         = !!tb[QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_DROP];
+
+		if (tb[QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_RING_ID]) {
+			flow_info.ring_id =
+			nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_RING_ID]);
+		}
+
+		ret = ath12k_dp_rx_flow_add_entry(ab, &flow_info);
+		if (ret)
+			ath12k_warn(ab,
+				    "rx_flow_tag_op: flow_add failed ret=%d\n", ret);
+	} else /* DEL */ {
+		ret = ath12k_dp_rx_flow_delete_entry(ab, &flow_info);
+		if (ret)
+			ath12k_warn(ab,
+				    "rx_flow_tag_op: flow_del failed ret=%d\n", ret);
 	}
 
 	return ret;
