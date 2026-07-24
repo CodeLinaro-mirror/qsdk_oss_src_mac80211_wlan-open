@@ -14987,8 +14987,8 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 						&ahvif->dp_vif,
 						sta->addr);
 		if (ret) {
-			ath12k_hw_warn(ah, "unable to do dp assoc for sta %pM",
-				       sta->addr);
+			ath12k_hw_warn(ah, "unable to do dp assoc for sta %pM ret = %d",
+				       sta->addr, ret);
 			goto exit;
 		}
 
@@ -20359,8 +20359,8 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 						&ahvif->dp_vif,
 						arvif->bssid);
 		if (ret) {
-			ath12k_hw_warn(ah, "unable to do dp assoc for sta %pM",
-				       arvif->bssid);
+			ath12k_hw_warn(ah, "unable to do dp assoc for sta %pM ret= %d",
+				       arvif->bssid, ret);
 			goto err_peer_del;
 		}
 
