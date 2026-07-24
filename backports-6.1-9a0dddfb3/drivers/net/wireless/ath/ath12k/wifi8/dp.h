@@ -107,6 +107,7 @@ struct ath12k_wifi8_tx_exc_stats {
 struct ath12k_wifi8_rx_stats {
 	u32 rx_flush_pkts;
 	u32 rx_mgmt_flush_pkts;
+	u32 rx_flush_null_descs;
 };
 
 struct ath12k_wifi8_dp_stats {
