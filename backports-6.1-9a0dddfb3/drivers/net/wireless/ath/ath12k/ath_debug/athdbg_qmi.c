@@ -836,7 +836,8 @@ void athdbg_qmi_qdss_mem_free(struct ath12k_base *ab)
 		for (i = 0; i < ab->dbg_qmi.qdss_mem_seg_len; i++) {
 			mem_chunk = &ab->dbg_qmi.qdss_mem[i];
 			if (mem_chunk->v.ioaddr) {
-				dma_free_coherent(&ab->qmi_mem_dev.dev, mem_chunk->size,
+				dma_free_coherent(&ab->qmi_mem_dev.pdev.dev,
+						  mem_chunk->size,
 						  mem_chunk->v.ioaddr,
 						  mem_chunk->paddr);
 				mem_chunk->v.ioaddr = NULL;
