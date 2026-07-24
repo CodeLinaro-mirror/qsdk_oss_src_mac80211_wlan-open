@@ -578,6 +578,7 @@ void ath12k_wifi7_dp_rx_h_undecap_eth(struct ath12k_pdev_dp *dp_pdev,
 	status->flag &= ~RX_FLAG_8023;
 }
 
+#define ETH_P_1905 0x893a
 static
 int ath12k_wifi7_dp_rx_h_undecap(struct ath12k_pdev_dp *dp_pdev,
 				 struct sk_buff *msdu,
@@ -639,9 +640,9 @@ int ath12k_wifi7_dp_rx_h_undecap(struct ath12k_pdev_dp *dp_pdev,
 			break;
 		}
 
-
 		/* Drop the 3addr da_mcbc packets if allow_3addr_mc is not set
 		 * for 4addr sta as it will double the packet for connected clients.
+		 * Allow only 3addr IEEE1905 packets which are required for Easymesh.
 		 */
 #ifdef CPTCFG_QCN_EXTN
 		if (peer && peer->vif) {
@@ -652,7 +653,8 @@ int ath12k_wifi7_dp_rx_h_undecap(struct ath12k_pdev_dp *dp_pdev,
 #endif
 
 		if (is_4addr_sta && rx_msdu_info->da_is_mcbc &&
-		    !rx_msdu_info->to_ds && !allow_3addr_mc) {
+		    !rx_msdu_info->to_ds && !allow_3addr_mc &&
+		    ehdr->h_proto != cpu_to_be16(ETH_P_1905)) {
 			if (ath12k_dp_stats_enabled(dp_pdev) &&
 			    ath12k_tid_stats_enabled(dp_pdev)) {
 				rcu_read_lock();
