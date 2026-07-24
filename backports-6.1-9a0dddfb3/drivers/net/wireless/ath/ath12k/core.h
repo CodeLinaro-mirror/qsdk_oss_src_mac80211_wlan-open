@@ -2621,6 +2621,10 @@ struct ath12k_base {
 #endif
 	struct ath12k_cfg_ctx *cfg_ctx;
 	unsigned long dev_flags;
+	/* Skip RDDM collection of partner chips if cumac hw error causes
+	 * fallback to Mode0
+	 */
+	bool recovery_skip_dump;
 	struct completion driver_recovery;
 	struct workqueue_struct *workqueue;
 	struct work_struct restart_work;
