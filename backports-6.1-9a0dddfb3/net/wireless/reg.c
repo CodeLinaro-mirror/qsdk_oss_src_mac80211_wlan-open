@@ -2477,13 +2477,8 @@ static bool reg_wdev_chan_valid(struct wiphy *wiphy, struct wireless_dev *wdev)
 							&chandef))) {
 				break;
 			}
-			if (wdev_is_scan_radio(wdev))
-				ret = cfg80211_chandef_usable(wiphy, &chandef,
-							      IEEE80211_CHAN_DISABLED);
-			else
-				ret = cfg80211_reg_can_beacon_relax(wiphy,
-								    &chandef,
-								    iftype);
+			ret = cfg80211_reg_can_beacon_relax(wiphy, &chandef,
+							    iftype);
 			if (!ret)
 				return ret;
 			}
