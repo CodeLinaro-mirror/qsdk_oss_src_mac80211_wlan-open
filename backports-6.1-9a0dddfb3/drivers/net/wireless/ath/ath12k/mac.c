@@ -22994,7 +22994,8 @@ static int
 ath12k_mac_multi_vdev_restart(struct ath12k *ar,
 			      const struct cfg80211_chan_def *chandef,
 			      u32 *vdev_id, int len,
-			      bool radar_enabled)
+			      bool radar_enabled,
+			      const struct wmi_npca_arg *npca_arg)
 {
 	struct ath12k_base *ab = ar->ab;
 	struct wmi_pdev_multiple_vdev_restart_req_arg arg = {};
@@ -23033,6 +23034,9 @@ ath12k_mac_multi_vdev_restart(struct ath12k *ar,
 	}
 
 	arg.ru_punct_bitmap = ~punct_bitmap;
+
+	if (npca_arg && npca_arg->enabled)
+		arg.npca_arg = *npca_arg;
 
 	ret = ath12k_wmi_pdev_multiple_vdev_restart(ar, &arg);
 	if (ret)
@@ -23243,6 +23247,8 @@ ath12k_mac_update_vif_chan_mvr(struct ath12k *ar,
 	u8 size, link_id = 0;
 	bool is_bridge_vdev;
 	struct ieee80211_bss_conf *link;
+	struct wmi_npca_arg npca_arg = {};
+	bool npca_collected = false;
 
 	chandef = &vifs[0].new_ctx->def;
 	tx_arvif = NULL;
@@ -23298,6 +23304,12 @@ ath12k_mac_update_vif_chan_mvr(struct ath12k *ar,
 
 		arvif->mvr_processing = true;
 		vdev_ids[n_vdevs++] = arvif->vdev_id;
+
+		if (!npca_collected) {
+			ath12k_mac_npca_get_vdev_args(arvif, chandef, &npca_arg);
+			if (npca_arg.enabled)
+				npca_collected = true;
+		}
 	}
 
 	if (!n_vdevs) {
@@ -23309,7 +23321,8 @@ ath12k_mac_update_vif_chan_mvr(struct ath12k *ar,
 	reinit_completion(&ar->mvr_complete);
 
 	ret = ath12k_mac_multi_vdev_restart(ar, chandef, vdev_ids, n_vdevs,
-					    vifs[0].new_ctx->radar_enabled);
+					    vifs[0].new_ctx->radar_enabled,
+					    npca_collected ? &npca_arg : NULL);
 	if (ret) {
 		ath12k_warn(ab, "mac failed to send mvr command (%d)\n", ret);
 		ath12k_critical_failure_trigger(ab, ATH12K_CRIT_MVR_FAILURE);

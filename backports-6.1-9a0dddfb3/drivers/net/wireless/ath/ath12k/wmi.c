@@ -21391,11 +21391,13 @@ int ath12k_wmi_pdev_multiple_vdev_restart(struct ath12k *ar,
 	struct ath12k_base *ab = ar->ab;
 	struct wmi_pdev_multiple_vdev_restart_request_cmd *cmd;
 	struct ath12k_wmi_channel_params *chan;
+	struct wmi_uhr_ap_npca_params *npca_params;
 	struct wmi_tlv *tlv;
 	struct ath12k_wmi_channel_params *chan_device;
 	u32 num_vdev_ids;
 	__le32 *vdev_ids;
 	size_t vdev_ids_len;
+	size_t npca_tlv_len;
 	struct sk_buff *skb;
 	void *ptr;
 	int ret, len, i;
@@ -21412,9 +21414,10 @@ int ath12k_wmi_pdev_multiple_vdev_restart(struct ath12k *ar,
 	num_vdev_ids = arg->vdev_ids.id_len;
 	vdev_ids_len = num_vdev_ids * sizeof(__le32);
 
+	/* dbw_chan (optional) + dbw_chan_info (optional, zero-len placeholder) */
 	len = sizeof(*cmd) + TLV_HDR_SIZE + vdev_ids_len +
 	      sizeof(*chan) + TLV_HDR_SIZE + TLV_HDR_SIZE +
-	      TLV_HDR_SIZE;
+	      TLV_HDR_SIZE + TLV_HDR_SIZE + TLV_HDR_SIZE;
 
 	device_params_present = ath12k_wmi_check_device_present(arg->width_device,
 								arg->center_freq_device,
@@ -21422,6 +21425,9 @@ int ath12k_wmi_pdev_multiple_vdev_restart(struct ath12k *ar,
 
 	if (device_params_present)
 		len += TLV_HDR_SIZE + sizeof(*chan_device);
+
+	npca_tlv_len = arg->npca_arg.enabled ? sizeof(*npca_params) : 0;
+	len += TLV_HDR_SIZE + npca_tlv_len;
 
 	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
 	if (!skb)
@@ -21479,6 +21485,62 @@ int ath12k_wmi_pdev_multiple_vdev_restart(struct ath12k *ar,
 						  arg->center_freq_device,
 						  arg->width_device);
 		ptr += sizeof(*chan_device);
+	} else {
+		tlv = ptr;
+		tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, 0);
+		ptr += sizeof(*tlv);
+	}
+
+	/* Zero-length placeholder for dbw_chan_info (mandatory before npca_params) */
+	tlv = ptr;
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, 0);
+	ptr += sizeof(*tlv);
+
+	/* npca_params TLV — single common entry for all vdevs */
+	tlv = ptr;
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, npca_tlv_len);
+	ptr += TLV_HDR_SIZE;
+
+	if (arg->npca_arg.enabled) {
+		struct wmi_npca_arg *na = &arg->npca_arg;
+
+		npca_params = ptr;
+		npca_params->tlv_header =
+			ath12k_wmi_tlv_cmd_hdr(WMI_TAG_UHR_AP_NPCA_PARAMS,
+					       sizeof(*npca_params));
+		npca_params->vdev_id = 0;
+		npca_params->mode_tuple_field = cpu_to_le32(WMI_NPCA_MODE_ENABLE);
+
+		ath12k_wmi_put_wmi_channel(&npca_params->npca_chan,
+					   &arg->vdev_start_arg);
+		npca_params->npca_chan.tlv_header =
+			ath12k_wmi_tlv_cmd_hdr(WMI_TAG_CHANNEL,
+					       sizeof(npca_params->npca_chan));
+		npca_params->npca_chan.mhz = cpu_to_le32(na->npca_freq);
+
+		npca_params->puncture_20mhz_bitmap =
+			cpu_to_le32(na->npca_punct_bitmap);
+		npca_params->npca_cap1 =
+			le32_encode_bits(na->npca_min_dur_threshold,
+					 WMI_NPCA_CAP1_MIN_THRESHOLD) |
+			le32_encode_bits(na->npca_switch_delay,
+					 WMI_NPCA_CAP1_SWITCH_DELAY) |
+			le32_encode_bits(na->npca_switch_back_delay,
+					 WMI_NPCA_CAP1_SWITCH_BACK_DELAY) |
+			le32_encode_bits(na->npca_initial_qsrc,
+					 WMI_NPCA_CAP1_INITIAL_QSRC) |
+			le32_encode_bits(na->npca_moplen,
+					 WMI_NPCA_CAP1_MOPLEN);
+		npca_params->npca_cap2 = 0;
+
+		ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+			   "mvr npca npca_freq=%u punct=0x%x min_dur=%u sw_dly=%u swb_dly=%u qsrc=%u moplen=%u cap1=0x%x\n",
+			   na->npca_freq, na->npca_punct_bitmap,
+			   na->npca_min_dur_threshold, na->npca_switch_delay,
+			   na->npca_switch_back_delay, na->npca_initial_qsrc,
+			   na->npca_moplen,
+			   le32_to_cpu(npca_params->npca_cap1));
+		ptr += sizeof(*npca_params);
 	}
 
 	spin_lock_bh(&ar->data_lock);

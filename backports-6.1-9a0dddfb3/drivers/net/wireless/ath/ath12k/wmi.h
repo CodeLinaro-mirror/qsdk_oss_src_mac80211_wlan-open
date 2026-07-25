@@ -8688,6 +8688,7 @@ struct wmi_pdev_multiple_vdev_restart_req_arg {
 	u16 ru_punct_bitmap;
 	u32 width_device;
 	u32 center_freq_device;
+	struct wmi_npca_arg npca_arg;     /* common NPCA config for all vdevs */
 };
 
 struct wmi_pdev_multiple_vdev_restart_request_cmd {
