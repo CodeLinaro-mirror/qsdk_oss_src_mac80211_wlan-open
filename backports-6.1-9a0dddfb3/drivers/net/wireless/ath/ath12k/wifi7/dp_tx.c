@@ -3763,6 +3763,9 @@ void ath12k_ppeds_tx_update_stats(struct ath12k *ar, int skb_len,
 	/* Update peer TX statistics for PPE DS offload path */
 	ath12k_dp_tx_ppeds_update_peer_basic_stats(peer->dp_peer, ts.status, hw_link_id);
 
+	if (ts.status == HAL_WBM_TQM_REL_REASON_FRAME_ACKED)
+		WRITE_ONCE(peer->peer_stats.last_ack, jiffies);
+
 	if (unlikely(ath12k_dp_stats_enabled(dp_pdev))) {
 		ath12k_dp_tx_ppeds_update_peer_debug_stats(peer->dp_peer, &ts,
 							   hw_link_id);

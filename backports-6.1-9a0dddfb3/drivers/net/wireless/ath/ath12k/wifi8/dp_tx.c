@@ -3685,6 +3685,9 @@ void ath12k_ppeds_tx_update_stats(struct ath12k *ar, int skb_len,
 		return;
 	}
 
+	if (ts.status == HAL_WBM_TQM_REL_REASON_FRAME_ACKED)
+		WRITE_ONCE(peer->peer_stats.last_ack, jiffies);
+
 	if (ath12k_dp_stats_enabled(dp_pdev) &&
 	    ath12k_tid_stats_enabled(dp_pdev)) {
 		ahvif = ath12k_vif_to_ahvif(ath12k_dp_link_peer_get_vif(peer));
