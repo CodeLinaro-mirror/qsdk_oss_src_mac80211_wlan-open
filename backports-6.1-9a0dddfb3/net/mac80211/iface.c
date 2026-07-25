@@ -378,8 +378,12 @@ static int ieee80211_check_concurrent_iface(struct ieee80211_sub_if_data *sdata,
 			 * check whether it may have the same address
 			 */
 			if (!identical_mac_addr_allowed(iftype,
-							nsdata->vif.type))
+							nsdata->vif.type)) {
+				sdata_err(sdata, "DUP MAC addr %pM -> %s, vif types: %d/%d\n",
+					  sdata->vif.addr, nsdata->name,
+					  sdata->vif.type, nsdata->vif.type);
 				return -ENOTUNIQ;
+			}
 
 			/*
 			 * can only add VLANs to enabled APs
