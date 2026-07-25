@@ -42,6 +42,7 @@ static int ath12k_wifi8_peer_rx_tid_delete_handler(struct ath12k_base *ab,
 						   struct ath12k_dp_rx_tid *rx_tid,
 						   u8 tid);
 void ath12k_wifi8_peer_rx_tid_qref_reset(struct ath12k_base *ab, u16 peer_id, u16 tid);
+static void ath12k_wifi8_dp_rx_fse_cache_inval_full_work(struct work_struct *work);
 
 static inline bool ath12k_wifi8_dp_reo_cmd_shutdown(struct ath12k_base *ab)
 {
@@ -323,6 +324,18 @@ int ath12k_wifi8_dp_fse_cmd_send(struct ath12k_base *ab,
 
 	cmd_ring = &central_ab->hal.srng_list[dp_wifi8->fse_cmd_ring.ring_id];
 	ret = ath12k_wifi8_hal_fse_cmd_send(central_ab, cmd_ring, fse_cmd);
+	if (ret == -ENOBUFS) {
+		struct dp_rx_fst *fst = central_dp->dp_hw_grp->fst;
+
+		/* The FSE command ring is full. Rather than failing the caller,
+		 * schedule a single deferred full cache invalidation and return 0
+		 * to the caller.
+		 */
+		if (!delayed_work_pending(&fst->cache_inval_full_work))
+			schedule_delayed_work(&fst->cache_inval_full_work,
+					      msecs_to_jiffies(ATH12K_FSE_CACHE_INVAL_FULL_DELAY_MS));
+		ret = 0;
+	}
 
 	return ret;
 }
@@ -2763,6 +2776,13 @@ int ath12k_wifi8_dp_rx_fst_attach(struct ath12k_dp *dp, struct dp_rx_fst *fst)
 		return -ENOMEM;
 	}
 
+	/* Deferred full cache invalidation used to coalesce per-entry FSE
+	 * commands when the command ring is full.
+	 */
+	fst->ab = ab;
+	INIT_DELAYED_WORK(&fst->cache_inval_full_work,
+			  ath12k_wifi8_dp_rx_fse_cache_inval_full_work);
+
 	return 0;
 }
 
@@ -2770,6 +2790,7 @@ void ath12k_wifi8_dp_rx_fst_detach(struct ath12k_dp *dp, struct dp_rx_fst *fst)
 {
 	struct ath12k_base *ab = dp->ab;
 
+	cancel_delayed_work_sync(&fst->cache_inval_full_work);
 	ath12k_wifi8_hal_rx_fst_detach(ab, fst->hal_rx_fst);
 	kfree(fst->base);
 }
@@ -3068,6 +3089,18 @@ int ath12k_wifi8_dp_rx_flow_delete_all_entries(struct ath12k_dp *dp)
 		   "FST num_entries = %d", fst->num_entries);
 
 	return 0;
+}
+
+static void ath12k_wifi8_dp_rx_fse_cache_inval_full_work(struct work_struct *work)
+{
+	struct dp_rx_fst *fst = container_of(to_delayed_work(work),
+					     struct dp_rx_fst,
+					     cache_inval_full_work);
+
+	ath12k_info(fst->ab, "Delayed fse cache invalidation work");
+
+	ath12k_wifi8_dp_rx_flow_fse_cache_operation(fst->ab, DP_FST_CACHE_INVALIDATE_FULL,
+						    NULL);
 }
 
 int ath12k_wifi8_dp_rx_flow_fse_cache_operation(struct ath12k_base *ab,

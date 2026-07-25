@@ -17,6 +17,8 @@ enum dp_rx_ppeds_wbm_refill_ring {
 	PPE2WBM_SW_REFILL_RING = 1,
 };
 
+#define ATH12K_FSE_CACHE_INVAL_FULL_DELAY_MS	500
+
 struct dp_rx_fse {
 	struct hal_rx_fse *hal_fse;
 	u32 flow_hash;

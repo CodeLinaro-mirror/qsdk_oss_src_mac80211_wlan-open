@@ -2168,9 +2168,10 @@ int ath12k_wifi8_hal_fse_cmd_send(struct ath12k_base *ab, struct hal_srng *srng,
 
 	if (!fse_desc) {
 		ret = -ENOBUFS;
-		ath12k_info(ab, "FSE CMD send: no space in ring_id=%u new_hp=%u new_tp=%u",
-			    srng->ring_id, srng->u.src_ring.hp,
-			    srng->u.src_ring.tp_addr ? *srng->u.src_ring.tp_addr : 0);
+		ath12k_dbg(ab, ATH12K_DBG_DP_FST,
+			   "FSE CMD send: no space in ring_id=%u new_hp=%u new_tp=%u",
+			   srng->ring_id, srng->u.src_ring.hp,
+			   srng->u.src_ring.tp_addr ? *srng->u.src_ring.tp_addr : 0);
 		goto out;
 	}
 	memcpy(fse_desc, fse_cmd, sizeof(*fse_cmd));
