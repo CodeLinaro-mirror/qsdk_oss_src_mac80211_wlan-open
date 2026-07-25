@@ -2766,7 +2766,8 @@ core_pdev_create:
                 }
 
 		if (ath12k_en_fwlog == true) {
-			if (ath12k_enable_fwlog(ab))
+			ret = ath12k_enable_fwlog(ab);
+			if (ret < 0)
 				ath12k_err(ab, "failed to enable fwlog: %d\n", ret);
 		}
 
