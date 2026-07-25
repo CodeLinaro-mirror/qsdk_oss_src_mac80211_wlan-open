@@ -23305,7 +23305,7 @@ ath12k_mac_update_vif_chan_mvr(struct ath12k *ar,
 		arvif->mvr_processing = true;
 		vdev_ids[n_vdevs++] = arvif->vdev_id;
 
-		if (!npca_collected) {
+		if (!npca_collected && chandef && !ath12k_mac_is_bridge_vdev(arvif)) {
 			ath12k_mac_npca_get_vdev_args(arvif, chandef, &npca_arg);
 			if (npca_arg.enabled)
 				npca_collected = true;
