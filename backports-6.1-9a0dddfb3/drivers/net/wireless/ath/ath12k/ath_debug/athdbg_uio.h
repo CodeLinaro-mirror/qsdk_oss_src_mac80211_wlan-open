@@ -13,6 +13,11 @@ int athdbg_uio_register(void);
 int athdbg_uio_unregister(void);
 void athdbg_uio_critical_failure_trigger(struct ath12k_base *ab,
 					 u32 crit_enum);
+void athdbg_uio_log_info(struct ath12k_base *ab, const char *fmt, va_list args);
+void athdbg_uio_log_warn(struct ath12k_base *ab, const char *fmt, va_list args);
+void athdbg_uio_log_err(struct ath12k_base *ab, const char *fmt, va_list args);
+void athdbg_uio_log_debug(struct ath12k_base *ab, u64 mask, const char *fmt,
+			  va_list args);
 
 struct ath12k_crit_record {
 	u64 ts_nsec;

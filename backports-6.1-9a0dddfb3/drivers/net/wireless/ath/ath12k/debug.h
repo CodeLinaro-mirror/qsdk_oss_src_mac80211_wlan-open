@@ -157,7 +157,7 @@ enum ath12k_crit_event {
 	ATH12K_CRIT_MVR_FAILURE = 5,
 };
 
-#ifdef CPTCFG_ATHDEBUG
+#if defined(CPTCFG_ATHDEBUG) && defined(CPTCFG_ATHDEBUG_UIO_LOGGING)
 void athdbg_uio_critical_failure_trigger(struct ath12k_base *ab, uint32_t crit_enum);
 
 #define ath12k_critical_failure_trigger(ab, crit_enum) \
