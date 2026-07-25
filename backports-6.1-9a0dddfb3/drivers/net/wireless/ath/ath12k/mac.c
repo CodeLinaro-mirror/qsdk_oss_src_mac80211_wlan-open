@@ -19483,6 +19483,12 @@ int ath12k_mac_start(struct ath12k *ar)
 		}
 	}
 
+	ret = ath12k_thermal_throttling_config_default(ar);
+	if (ret) {
+		ath12k_err(ab, "failed to set thermal throttle: %d\n", ret);
+		goto err;
+	}
+
 	ret = ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_PMF_QOS,
 					1, pdev->pdev_id);
 
@@ -28953,6 +28959,8 @@ static int ath12k_mac_setup_register(struct ath12k *ar,
 	if (total_vdevs == ATH12K_MAX_NUM_VDEVS_NLINK)
 		ar->max_num_stations -= TARGET_NUM_BRIDGE_SELF_PEER;
 
+	ath12k_thermal_init_configs(ar);
+
 	return 0;
 }
 
@@ -29577,6 +29585,7 @@ static int ath12k_mac_setup(struct ath12k *ar)
 	init_completion(&ar->mlo_setup_done);
 	init_completion(&ar->completed_11d_scan);
 	init_completion(&ar->thermal.wmi_sync);
+	mutex_init(&ar->thermal.lock);
 	init_completion(&ar->mvr_complete);
 	init_completion(&ar->suspend);
 	init_completion(&ar->pdev_resume);
