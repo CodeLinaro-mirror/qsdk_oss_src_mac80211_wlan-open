@@ -23,7 +23,9 @@
 #include <net/codel.h>
 #include <net/ieee80211_radiotap.h>
 #include <asm/unaligned.h>
+#ifdef CPTCFG_QCN_EXTN
 #include "../../net/mac80211/qcn_extns/cmn_extn.h"
+#endif /* CPTCFG_QCN_EXTN */
 
 /**
  * DOC: Introduction
