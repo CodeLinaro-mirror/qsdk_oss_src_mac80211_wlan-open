@@ -165,10 +165,16 @@ static int ath12k_smd_bss_assoc(struct ath12k *ar,
 
 	if (ctx)
 		ath12k_mac_peer_assoc_prepare_smd(ar, arvif, arsta, peer_arg,
-					      false, link_sta, ctx);
+						  false, link_sta, ctx);
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 	else
 		ath12k_peer_assoc_prepare(ar, arvif, arsta, peer_arg,
 					  false, link_sta);
+#else
+	else
+		ath12k_mac_peer_assoc_prepare_smd(ar, arvif, arsta, peer_arg,
+						  false, link_sta, NULL);
+#endif /* CPTCFG_QCN_EXTN_MESH_SUPPORT */
 
 	ret = ath12k_mac_vif_recalc_sta_he_txbf(ar, arvif, &he_cap, &hemode);
 	if (ret) {

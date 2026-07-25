@@ -1544,7 +1544,7 @@ ath12k_wifi8_deliver_ethernet_frame(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_hal *hal = dp_pdev->dp->hal;
 	bool ret;
 
-	rx_tlv_hdr = rx_spd->vaddr;
+	rx_tlv_hdr = (struct hal_rx_desc *)rx_spd->vaddr;
 	rx_msdu_info = &rx_spd->rx_msdu_info;
 	rx_mpdu_info = &rx_spd->rx_mpdu_info;
 	tid = rx_mpdu_info->tid;
@@ -1573,7 +1573,7 @@ ath12k_wifi8_deliver_ethernet_frame(struct ath12k_pdev_dp *dp_pdev,
 
 		if (ret) {
 			dev_kfree_skb_any(msdu);
-			return 1;
+			return;
 		}
 
 		status->flag |= RX_FLAG_8023 |
@@ -1620,7 +1620,7 @@ ath12k_wifi8_deliver_ethernet_frame(struct ath12k_pdev_dp *dp_pdev,
 		stats->sent_to_stack_ucast_bytes += msdu->len;
 	}
 
-	dp->device_stats.non_fast_unicast_rx[rx_spd->reo.ring_id][dp->device_id]++;
+	dp->device_stats.non_fast_unicast_rx[rx_spd->ring_id][dp->device_id]++;
 	prefetch(skb_shinfo(msdu));
 
 	ieee80211_rx_napi(ath12k_dp_pdev_to_hw(dp_pdev), pubsta, msdu, napi);

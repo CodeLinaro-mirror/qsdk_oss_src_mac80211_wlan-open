@@ -1296,7 +1296,9 @@ static void ath12k_wifi8_mac_op_tx(struct ieee80211_hw *hw,
 	struct ieee80211_sta *sta = control->sta;
 	struct ath12k_link_sta *arsta = NULL;
 	struct ath12k_sta *ahsta = NULL;
+#ifdef CPTCFG_QCN_EXTN
 	u32 info_flags = info->flags;
+#endif /* CPTCFG_QCN_EXTN */
 	struct ieee80211_tx_info info_tx;
 	struct ath12k_dp_vif *dp_vif = &ahvif->dp_vif;
 	bool is_mcast = false, is_eth = false, is_data = false;

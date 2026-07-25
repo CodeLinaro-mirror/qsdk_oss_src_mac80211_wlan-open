@@ -212,8 +212,10 @@ static bool ath12k_wifi7_handle_null_queue(struct ath12k_pdev_dp *dp_pdev,
 	bool is_4addr_sta;
 	bool to_ds = rx_msdu_info->to_ds;
 	bool fr_ds = rx_msdu_info->fr_ds;
+#ifdef CPTCFG_QCN_EXTN
 	struct ath12k_dp_vif *dp_vif;
 	struct ath12k_vif *ahvif;
+#endif /* CPTCFG_QCN_EXTN */
 	bool allow_3addr_mc = false;
 
 	switch (spd_desc_l->tlv_info.decap) {

@@ -1394,16 +1394,20 @@ void ath12k_peer_qos_queue_ind_handler(struct ath12k_base *ab,
 	struct htt_t2h_qos_info_ind *resp;
 	struct ath12k_dp_peer_qos *qos;
 	struct ath12k_dp_link_peer *link_peer = NULL;
+#ifdef CPTCFG_QCN_EXTN
 	struct ath12k_sdwf_msduq_evt_data evt_data = {0};
 	struct ath12k *ar;
 	u8 pdev_idx = 0;
+#endif /* CPTCFG_QCN_EXTN */
 	bool send_event = false;
 	u32 htt_qtype, remapped_tid, peer_id;
 	u32 def_tid_msduq, max_def_msduq, qos_tid_msduq;
 	u32 hlos_tid, flow_or, ast_idx, who_cl, tgt_opaque_id;
 	u32 max_qos_msduq;
 	u8 msduq_index, q_id;
+#ifdef CPTCFG_QCN_EXTN
 	u16 msduq, qos_id;
+#endif /* CPTCFG_QCN_EXTN */
 
 	resp = (struct htt_t2h_qos_info_ind *)skb->data;
 	htt_qtype = u32_get_bits(__le32_to_cpu(resp->info0),
@@ -1466,6 +1470,7 @@ void ath12k_peer_qos_queue_ind_handler(struct ath12k_base *ab,
 							tgt_opaque_id;
 
 			/* Collect data for SDWF MSDUQ vendor event */
+#ifdef CPTCFG_QCN_EXTN
 			if (qos->msduq_map[hlos_tid][q_id].reserved) {
 				msduq = qos->msduq_map[hlos_tid][q_id].msduq;
 				qos_id = qos->msduq_map[hlos_tid][q_id].qos_id;
@@ -1481,6 +1486,7 @@ void ath12k_peer_qos_queue_ind_handler(struct ath12k_base *ab,
 					}
 				}
 			}
+#endif /* CPTCFG_QCN_EXTN */
 		}
 
 		if (qos->telemetry_peer_ctx)
@@ -1493,9 +1499,11 @@ void ath12k_peer_qos_queue_ind_handler(struct ath12k_base *ab,
 	rcu_read_unlock();
 
 	if (send_event) {
+#ifdef CPTCFG_QCN_EXTN
 		ar = ab->pdevs[pdev_idx].ar;
 		if (ar)
 			ath12k_vendor_sdwf_msduq_send_event(ar, &evt_data);
+#endif /* CPTCFG_QCN_EXTN */
 	}
 }
 
@@ -2646,7 +2654,9 @@ static void ath12k_mac_dp_peer_cleanup_cb(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_sta *ahsta;
 
 	spin_lock_bh(&dp->dp_lock);
+#ifdef CPTCFG_QCN_EXTN
 	ath12k_dp_ipa_peer_notify(ar, link_peer, NULL, link_peer->vdev_id, false);
+#endif /* CPTCFG_QCN_EXTN */
 	/*Skip this for non primary_links and vdev peers*/
 	if (ath12k_dp_link_peer_get_sta(link_peer) && link_peer->dp_peer &&
 	    link_peer->primary_link) {

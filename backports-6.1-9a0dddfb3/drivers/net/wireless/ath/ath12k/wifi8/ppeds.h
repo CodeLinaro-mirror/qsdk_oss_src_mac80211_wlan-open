@@ -102,6 +102,7 @@ int ath12k_wifi8_ppeds_attach_vif(struct ath12k_base *ab,
 				u32 vdev_id, int bank_id, u8 lmac_id);
 int ath12k_wifi8_dp_srng_ppeds_alloc(struct ath12k_base *ab);
 int ath12k_wifi8_dp_srng_ppeds_init(struct ath12k_base *ab);
+
 void ath12k_ppeds_get_rxfill_ring_info_v2(int ds_node_id,
 					  struct ppe_ds_wlan_rxfill_ring_info *info);
 static inline struct ath12k_base *

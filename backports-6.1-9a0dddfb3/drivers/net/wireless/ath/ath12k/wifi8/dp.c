@@ -758,11 +758,13 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 	ab->dp->ppe.ppe_ops->ath12k_ppeds_interrupt_start(ab);
 #endif
 
+#ifdef CPTCFG_QCN_EXTN
 	ret = ath12k_wifi8_dp_ipa_init(ab);
 	if (ret) {
 		ath12k_err(ab, "IPA: ipa init failed");
 		goto fail_congestion_control;
 	}
+#endif /* CPTCFG_QCN_EXTN */
 
 	dp_wifi8->init_done = true;
 	ath12k_info(ab, "CUMAC init successful");

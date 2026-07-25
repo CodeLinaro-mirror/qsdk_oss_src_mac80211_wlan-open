@@ -439,6 +439,9 @@ ath12k_dp_mon_rx_config_filters(struct ath12k_dp *dp,
 	int i, ret;
 	struct ath12k_base *ab = dp->ab;
 
+	if (!ab)
+		return -EINVAL;
+
 	for (i = 0; i < dp->hw_params->num_rxdma_per_pdev; i++) {
 		int ring_buf_size, mac_id, ring_id;
 		enum hal_ring_type ring_type;

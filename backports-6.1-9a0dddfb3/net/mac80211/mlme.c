@@ -2196,9 +2196,9 @@ ieee80211_add_link_elems(struct ieee80211_sub_if_data *sdata,
 		ieee80211_add_s1g_capab_ie(sdata, &sband->s1g_cap, skb);
 	}
 
+#ifdef CPTCFG_QCN_EXTN
 	struct ieee80211_bss *bss = (void *)cbss->priv;
 
-#ifdef CPTCFG_QCN_EXTN
 	ieee80211_add_qcn_vendor_ie_extn(skb, &bss->bss_extn,
 					 assoc_data->link[link_id].conn.mode);
 #endif /* CPTCFG_QCN_EXTN */
@@ -6662,7 +6662,9 @@ ieee80211_determine_our_sta_mode(struct ieee80211_sub_if_data *sdata,
 	}
 	conn->mode = IEEE80211_CONN_MODE_EHT;
 
+#ifdef CPTCFG_QCN_EXTN
 	ieee80211_modify_bw_limit_for_240mhz(is_5ghz, conn);
+#endif /* CPTCFG_QCN_EXTN */
 
 	/* check bandwidth */
 	if (is_6ghz &&

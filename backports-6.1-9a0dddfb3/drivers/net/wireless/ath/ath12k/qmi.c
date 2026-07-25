@@ -6495,9 +6495,14 @@ static int ath12k_qmi_request_device_info(struct ath12k_base *ab)
 	int ret = 0;
 
 	/*device info message only supported for internal-PCI devices */
+#ifdef CPTCFG_QCN_EXTN
 	if (ab->hw_rev != ATH12K_HW_QCN6432_HW10 &&
-		ab->hw_rev != ATH12K_HW_QCN9160_HW10)
+	    ab->hw_rev != ATH12K_HW_QCN9160_HW10)
 		return 0;
+#else
+	if (ab->hw_rev != ATH12K_HW_QCN6432_HW10)
+		return 0;
+#endif /* CPTCFG_QCN_EXTN */
 
 	memset(&req, 0, sizeof(req));
 	memset(&resp, 0, sizeof(resp));

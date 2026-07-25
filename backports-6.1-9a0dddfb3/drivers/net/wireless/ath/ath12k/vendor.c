@@ -3617,8 +3617,10 @@ static int ath12k_get_dp_vif_attr_len(struct ath12k_telemetry_command *cmd)
 	if (cmd->feat.feat_proto)
 		total_size += ath12k_get_feat_proto_vap_attr_size();
 
+#ifdef CPTCFG_QCN_EXTN
 	if (cmd->feat.feat_rx)
 		total_size += ath12k_get_dp_rx_scan_radio_stats_len();
+#endif /* CPTCFG_QCN_EXTN */
 
 	/*Aggregated Sta Stats Size */
 	total_size += ath12k_get_dp_peer_attr_len(cmd);
@@ -8090,11 +8092,13 @@ static int ath12k_fill_vap_rx_stats(struct ath12k *ar,
 	int ret;
 
 	/*Rx scan stats */
+#ifdef CPTCFG_QCN_EXTN
 	if (ath12k_scan_radio_supported(ar->pdev)) {
 		ret = ath12k_fill_rx_scan_radio_stats(
 				vendor_event, &telemetry_vif->rx_scan_radio_stats);
 		return ret;
 	}
+#endif /* CPTCFG_QCN_EXTN */
 
 	/* Aggregated Peer Rx Stats */
 	ret = ath12k_fill_peer_rx_stats(ar,
@@ -10077,8 +10081,10 @@ static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 			   wdev->netdev->name);
 	}
 
+#ifdef CPTCFG_QCN_EXTN
 	if (ath12k_vendor_set_wifi_config_extn(wiphy, tb, wdev))
 		return -EINVAL;
+#endif /* CPTCFG_QCN_EXTN */
 
 	return 0;
 }
@@ -12937,6 +12943,7 @@ int ath12k_get_num_beaconing_vifs(struct ath12k *ar)
 	return count;
 }
 
+#ifdef CPTCFG_QCN_EXTN
 static enum nl80211_chan_width
 ath12k_vendor_bandwidth_to_chan_width(u32 bandwidth)
 {
@@ -13198,6 +13205,7 @@ static int ath12k_vendor_get_channel_switch_time(struct wiphy *wiphy,
 
 	return cfg80211_vendor_cmd_reply(reply);
 }
+#endif /* CPTCFG_QCN_EXTN */
 
 static int ath12k_vendor_sdwf_streaming_stats_configure(struct wireless_dev *wdev,
 							struct nlattr *streaming_stats)
@@ -14121,7 +14129,9 @@ static int ath12k_dump_me_list_entries(struct ath12k_vif *ahvif, u8 list_type)
 {
 	struct ath12k_dp_vif *dp_vif;
 	struct ath12k_me_db *me_db;
+#ifdef CPTCFG_QCN_EXTN
 	u32 filter_flags;
+#endif /* CPTCFG_QCN_EXTN */
 	u16 count = 0;
 	int ret;
 
@@ -14139,6 +14149,7 @@ static int ath12k_dump_me_list_entries(struct ath12k_vif *ahvif, u8 list_type)
 		   &me_db->hmmc_db, list_type);
 
 	/* Map list_type to dump filter flags */
+#ifdef CPTCFG_QCN_EXTN
 	switch (list_type) {
 	case IEEE80211_HMMC_LIST:
 		filter_flags = ATH12K_ME_DUMP_HMMC_V4;
@@ -14161,8 +14172,9 @@ static int ath12k_dump_me_list_entries(struct ath12k_vif *ahvif, u8 list_type)
 		return -EINVAL;
 	}
 
-#ifdef CPTCFG_QCN_EXTN
 	ret = ath12k_me_hmmc_dump_extn(me_db, filter_flags, &count);
+#else
+	ret = -EOPNOTSUPP;
 #endif /* CPTCFG_QCN_EXTN */
 	if (ret < 0)
 		ath12k_err(NULL, "Error dumping ME list entries (type %u)\n",
@@ -16822,6 +16834,7 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.policy = ath12k_vendor_ext_mon_policy,
 		.maxattr = QCA_VENDOR_ATTR_EXT_MON_MAX,
 	},
+#ifdef CPTCFG_QCN_EXTN
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
 		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_TDMA_SCHEDULE_CONFIG,
@@ -16830,6 +16843,7 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.maxattr = QCA_WLAN_VENDOR_ATTR_TDMA_SCHEDULE_MAX,
 		.flags = WIPHY_VENDOR_CMD_NEED_WDEV,
 	},
+#endif /* CPTCFG_QCN_EXTN */
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
 		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_OEM_DATA,
