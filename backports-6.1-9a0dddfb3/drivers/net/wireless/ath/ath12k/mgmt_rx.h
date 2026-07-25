@@ -197,7 +197,11 @@ static inline int ath12k_mgmt_arch_op_htt_setup(struct ath12k_mgmt *mgmt)
 	if (!mgmt->arch_ops->mgmt_op_htt_setup)
 		return -EOPNOTSUPP;
 
+#ifdef CPTCFG_QCN_EXTN
 	if (ath12k_cfg_get(mgmt->ab, ATH12K_CFG_REO_MGMT_PATH_DISABLE)) {
+#else
+	if (false) { /* non-extn: REO mgmt path always enabled */
+#endif /* CPTCFG_QCN_EXTN */
 		ath12k_info(mgmt->ab,
 			    "REO2SW management path is disabled, not configuring RDIs");
 		return 0;

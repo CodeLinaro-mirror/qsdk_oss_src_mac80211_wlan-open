@@ -9507,8 +9507,12 @@ ath12k_mac_sta_bss_color_collision_config(struct ath12k *ar,
 	bool collision_detect;
 	int ret;
 
+#ifdef CPTCFG_QCN_EXTN
 	collision_detect = ath12k_cfg_get(ar->ab,
 					  ATH12K_CFG_STA_BSS_COLOR_COLLISION_DETECTION);
+#else
+	collision_detect = true; /* default: enabled */
+#endif /* CPTCFG_QCN_EXTN */
 	ret = ath12k_wmi_send_bss_color_change_enable_cmd(ar,
 							  arvif->vdev_id,
 							  collision_detect);
@@ -20560,8 +20564,12 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 			reinit_completion(&ar->completed_11d_scan);
 			ar->state_11d = ATH12K_11D_PREPARING;
 		}
+#ifdef CPTCFG_QCN_EXTN
 		rep_ul_resp = ((ath12k_cfg_get(ab, ATH12K_CFG_REP_UL_RESP) >>
 							ar->pdev->pdev_id) & 01);
+#else
+		rep_ul_resp = 0;
+#endif /* CPTCFG_QCN_EXTN */
 		if (rep_ul_resp) {
 			param_value = 0;
 			param_id = WMI_VDEV_PARAM_SET_HEMU_MODE;
@@ -29003,7 +29011,11 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 	 * explicitly, hence advertising the same to mac80211 using
 	 * max_beacon_size.
 	 */
+#ifdef CPTCFG_QCN_EXTN
 	wiphy->max_beacon_size = ath12k_cfg_get(ab, ATH12K_CFG_AP_MAX_MGMT_FRM_SZ);
+#else
+	wiphy->max_beacon_size = 1500; /* default upstream value */
+#endif /* CPTCFG_QCN_EXTN */
 
 	if (is_6ghz) {
 		wiphy_ext_feature_set(wiphy,
