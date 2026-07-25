@@ -1356,6 +1356,11 @@ void ath12k_wifi8_hal_reo_hw_setup(struct ath12k_base *ab)
 	val = ath12k_hif_read32(ab, reo_base + HAL_REO1_MISC_CFG_1);
 	val |= u32_encode_bits(1, HAL_REO1_MISC_CFG_1_REO_ERR_DELINK_ENABLE);
 	val |= u32_encode_bits(1, HAL_REO1_MISC_CFG_1_RXDMA_ERR_DELINK_ENABLE);
+	/*
+	 * WAR enablement for HW issue on tresles V1 for TRSLONE-1155
+	 * This setting should be skipped for trestles V2
+	 */
+	val &= ~HAL_REO1_MISC_CFG_1_STOP_DELINKING_DURING_CORRUPTION;
 	val &= ~HAL_REO1_MISC_CFG_1_REO_MSDU_FETCH_OPTIMIZE;
 	val &= ~HAL_REO1_MISC_CFG_1_REO_MSDU_LINK_SHARING_EN;
 	ath12k_hif_write32(ab, reo_base + HAL_REO1_MISC_CFG_1, val);
