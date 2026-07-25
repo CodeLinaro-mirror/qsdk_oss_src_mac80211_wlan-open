@@ -553,8 +553,12 @@ void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 	struct ath12k_hw_group *ag = ab->ag;
 	bool state = false;
 	bool no_recovery, collect_dump;
+#ifdef CPTCFG_QCN_EXTN
 	bool ath12k_skip_partner_chip_dump =
 		ath12k_cfg_get(ab, ATH12K_CFG_SKIP_PARTNER_CHIP_DUMP);
+#else
+	bool ath12k_skip_partner_chip_dump = false;
+#endif /* CPTCFG_QCN_EXTN */
 
 	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 		return;

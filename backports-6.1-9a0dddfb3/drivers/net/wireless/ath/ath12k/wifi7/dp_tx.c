@@ -21,7 +21,9 @@
 #endif /* CPTCFG_EXT_IPA_OFFLOAD && CPTCFG_QCN_EXTN */
 #include "../telemetry_agent_if.h"
 #include "dp_peer.h"
+#ifdef CPTCFG_QCN_EXTN
 #include "../qcn_extns/ini.h"
+#endif
 
 #ifndef CPTCFG_EXT_IPA_OFFLOAD
 #define ATH12K_DMA_UNMAP_WITH_FREE_SKB(...) ((void)0)

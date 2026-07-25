@@ -20,9 +20,9 @@
 #include "debug.h"
 #include "dp_tx.h"
 #include "dp_ext_desc.h"
-#ifdef CPTCFG_QCN_EXTN
+#if defined(CONFIG_BRIDGE_MCAST_OFFLOAD) && defined(CPTCFG_QCN_EXTN)
 #include "qcn_extns/me_snoop_extn.h"
-#endif /* CPTCFG_QCN_EXTN */
+#endif /* CONFIG_BRIDGE_MCAST_OFFLOAD && CPTCFG_QCN_EXTN */
 #include "dp_stats.h"
 
 static inline u16 ath12k_dp_get_me_peer_id(struct ath12k_dp *dp,
@@ -384,13 +384,12 @@ int ath12k_dp_me_tx(struct ath12k_dp_vif *dp_vif, struct sk_buff *skb,
 	force_mcuc += !!(ctx.me_flags & ATH12K_ME_FLAGS_BIT_FORCE_ME);
 
 	if (!force_mcuc) {
-#if defined(CONFIG_BRIDGE_MCAST_OFFLOAD)
+#if defined(CONFIG_BRIDGE_MCAST_OFFLOAD) && defined(CPTCFG_QCN_EXTN)
 		ctx.grp = ath12k_me_snoop_grp_find(dp_vif, skb);
 		if (!ctx.grp)
 			return -EINVAL;
 
 		bitmap_zero(ctx.tx_bmap, ATH12K_ME_MAX_SNOOP_PEERS);
-#ifdef CPTCFG_QCN_EXTN
 		action_fn = ath12k_dp_me_tx_ucast_grp_extn;
 #else
 		/*
@@ -398,10 +397,7 @@ int ath12k_dp_me_tx(struct ath12k_dp_vif *dp_vif, struct sk_buff *skb,
 		 * needs to be sent as multicast
 		 */
 		return -EINVAL;
-#endif /* CPTCFG_QCN_EXTN */
-#else
-		return -EINVAL;
-#endif /* CONFIG_BRIDGE_MCAST_OFFLOAD */
+#endif /* CONFIG_BRIDGE_MCAST_OFFLOAD && CPTCFG_QCN_EXTN */
 	}
 
 	/*
