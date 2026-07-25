@@ -3079,33 +3079,6 @@ void ath12k_mac_bcn_tx_event(struct ath12k_link_vif *arvif)
 	}
 }
 
-static int ath12k_mac_authorize_self_peer(struct ath12k_link_vif *arvif)
-{
-	struct ath12k *ar = arvif->ar;
-	int ret;
-	enum wmi_peer_authorize_mode mode;
-
-	if (arvif->self_peer_authorized || !arvif->self_arsta)
-		return 0;
-
-	if (!(arvif->rsnie_present || arvif->wpaie_present))
-		mode = WMI_PEER_AUTHORIZE_OPEN_MODE;
-	else
-		mode = WMI_PEER_AUTHORIZE_SECURED_MODE;
-
-	ret = ath12k_wmi_set_peer_param(ar, arvif->self_arsta->addr,
-					arvif->vdev_id, WMI_PEER_AUTHORIZE,
-					mode);
-	if (ret) {
-		ath12k_warn(ar->ab, "Unable to authorize self peer %pM vdev %d: %d\n",
-			    arvif->self_arsta->addr, arvif->vdev_id, ret);
-		return ret;
-	}
-
-	arvif->self_peer_authorized = true;
-	return 0;
-}
-
 static void ath12k_control_beaconing(struct ath12k_link_vif *arvif,
 				     struct ieee80211_bss_conf *info)
 {
@@ -3161,13 +3134,6 @@ static void ath12k_control_beaconing(struct ath12k_link_vif *arvif,
 		params.tx_bssid = tx_arvif->bssid;
 		params.nontx_profile_idx = info->bssid_index;
 		params.nontx_profile_cnt = 1 << info->bssid_indicator;
-	}
-
-	if (ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
-		ret = ath12k_mac_authorize_self_peer(arvif);
-		if (ret)
-			ath12k_warn(ar->ab, "Failed to send peer authorize for BSS peer %pM vdev:%d: %d\n",
-				    arvif->addr, arvif->vdev_id, ret);
 	}
 
 	/* Skip VDEV UP command in case of Scan Radio */
@@ -6211,7 +6177,7 @@ void ath12k_bss_assoc(struct ath12k *ar,
 	bool is_auth = false;
 	bool is_peer_dms = false;
 	u32 hemode = 0, bandwidth;
-	int ret, key_idx;
+	int ret;
 	struct ath12k_dp_vif *dp_vif;
 	struct ath12k_me_db *me_db;
 	u16 bridge_bitmap;
@@ -6219,7 +6185,6 @@ void ath12k_bss_assoc(struct ath12k *ar,
 	bool is_bridge_vdev = ath12k_mac_is_bridge_vdev(arvif);
 	struct ath12k_hw *ah = NULL;
 	union ath12k_config_param val = {0};
-	bool is_arsta_secured = false;
 	void *dp_peer;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
@@ -6434,15 +6399,8 @@ skip_vdev_up:
 	ret = ath12k_dp_peer_get_param_by_mac_addr(ar->dp.dp_hw, arvif->bssid,
 						   ATH12K_DP_PEER_AUTHORIZE_PARAM,
 						   &val);
-	if (!ret && val.is_authorized) {
+	if (!ret && val.is_authorized)
 		is_auth = true;
-		for (key_idx = 0; key_idx <= WMI_MAX_KEY_INDEX; key_idx++) {
-			if (!arsta->keys[key_idx])
-				continue;
-			is_arsta_secured = true;
-			break;
-		}
-	}
 
 	/* SMD transition: activate primary link TX queues now that
 	 * PEER_ASSOC + VDEV_UP are complete for the target AP.
@@ -6489,8 +6447,13 @@ skip_vdev_up:
 skip_dms_peer_notify:
 	/* Authorize BSS Peer */
 	if (is_auth) {
-		if (is_arsta_secured)
-			mode = WMI_PEER_AUTHORIZE_SECURED_MODE;
+		if (arsta->is_secured_peer) {
+			if (test_bit(ATH12K_GROUP_FLAG_HW_CRYPTO_DISABLED,
+				     &ar->ab->ag->flags))
+				mode = WMI_PEER_AUTHORIZE_SW_ENCRYPTION_MODE;
+			else
+				mode = WMI_PEER_AUTHORIZE_SECURED_MODE;
+		}
 		ret = ath12k_wmi_set_peer_param(ar, arvif->bssid,
 						arvif->vdev_id,
 						WMI_PEER_AUTHORIZE,
@@ -6703,7 +6666,6 @@ static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 
 	arvif->ahvif = ahvif;
 	arvif->link_id = _link_id;
-	arvif->self_peer_authorized = false;
 
 	/* Protects the datapath stats update on a per link basis */
 	spin_lock_init(&arvif->link_stats_lock);
@@ -9905,11 +9867,6 @@ skip_tpc_update:
 			ath12k_warn(ar->ab, "failed to update bcn template: %d\n",
 				    ret);
 
-		ret = ath12k_mac_authorize_self_peer(arvif);
-		if (ret)
-			ath12k_warn(ar->ab, "failed to send BSS peer authorize: %d\n",
-				    ret);
-
 		if (!arvif->pending_csa_up)
 			goto skip_pending_cs_up;
 
@@ -11990,8 +11947,11 @@ int ath12k_mac_set_key(struct ath12k *ar, enum set_key_cmd cmd,
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
-	if (arsta)
+	if (arsta) {
 		sta = ath12k_ahsta_to_sta(arsta->ahsta);
+		if (cmd == SET_KEY)
+			arsta->is_secured_peer = true;
+	}
 
 	if (test_bit(ATH12K_GROUP_FLAG_HW_CRYPTO_DISABLED, &ab->ag->flags))
 		return 1;
@@ -12194,8 +12154,14 @@ int ath12k_mac_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 
 				ret = ath12k_mac_set_key(arvif->ar, cmd, arvif,
 							 arsta, key, NULL);
-				if (ret)
+				if (ret) {
+					/* SW encryption mode, loop through all
+					 * links and set is_secured_peer variable.
+					 */
+					if (ret == 1)
+						continue;
 					break;
+				}
 				if (cmd == SET_KEY)
 					arsta->keys[key->keyidx] = key;
 				else
@@ -14016,11 +13982,10 @@ static int ath12k_mac_station_authorize(struct ath12k *ar,
 	struct ath12k_dp_vif *dp_vif = NULL;
 	struct ath12k_me_db *me_db;
 	bool is_peer_dms = false;
-	int ret, key_idx;
+	int ret;
 	void *dp_peer;
 	union ath12k_config_param val = {0};
 	enum wmi_peer_authorize_mode mode = WMI_PEER_AUTHORIZE_OPEN_MODE;
-	bool is_arsta_secured = false;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -14063,14 +14028,20 @@ static int ath12k_mac_station_authorize(struct ath12k *ar,
 	}
 
 skip_dms_peer_notify:
-	for (key_idx = 0; key_idx <= WMI_MAX_KEY_INDEX; key_idx++) {
-		if (!arsta->keys[key_idx])
-			continue;
-		is_arsta_secured = true;
-		break;
+	/* In mesh mode, peer keys are installed only after the peer enters the
+	 * authorized state. Since is_secured_peer is set as part of the key
+	 * installation process, it may not be updated when peer authorization
+	 * is triggered. To avoid treating a secured mesh peer as unsecured,
+	 * use secured_bss as an alternate indication for MESH_11S vdevs.
+	 */
+	if (arsta->is_secured_peer ||
+	    (arvif->vdev_subtype == WMI_VDEV_SUBTYPE_MESH_11S &&
+	     arvif->secured_bss)) {
+		if (test_bit(ATH12K_GROUP_FLAG_HW_CRYPTO_DISABLED, &ar->ab->ag->flags))
+			mode = WMI_PEER_AUTHORIZE_SW_ENCRYPTION_MODE;
+		else
+			mode = WMI_PEER_AUTHORIZE_SECURED_MODE;
 	}
-	if (is_arsta_secured)
-		mode = WMI_PEER_AUTHORIZE_SECURED_MODE;
 
 	if (arvif->is_up) {
 		ret = ath12k_wmi_set_peer_param(ar, arsta->addr,
@@ -16217,6 +16188,7 @@ static int ath12k_sta_ml_reconfig_handler(struct ieee80211_hw *hw,
 						    i, ret);
 					goto out;
 				}
+				arsta->is_secured_peer = true;
 				break;
 			}
 
