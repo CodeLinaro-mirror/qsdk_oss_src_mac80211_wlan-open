@@ -4840,8 +4840,9 @@ static void ath12k_update_recovery_mode(struct ath12k_hw_group *ag,
 	if (ath12k_check_erp_power_down(ag))
 		ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
 
-	/* Fallback to mode0 recovery during a cumac HW crash */
+	/* Fallback to mode0 recovery during a cumac HW crash when Mode-2 is selected */
 	if (asserted_ab->is_cumac_chip &&
+	    ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2 &&
 	    !test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &asserted_ab->dev_flags)) {
 		ath12k_info(asserted_ab, "Recovery is falling back to Mode0 due to cumac HW assert\n");
 		ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
@@ -4851,7 +4852,7 @@ static void ath12k_update_recovery_mode(struct ath12k_hw_group *ag,
 			if (asserted_ab == partner_ab)
 				continue;
 			/* Skip RDDM collection of partner chips if cumac hw error causes
-			 * fallback to mode
+			 * fallback to mode0
 			 */
 			partner_ab->recovery_skip_dump = true;
 		}
