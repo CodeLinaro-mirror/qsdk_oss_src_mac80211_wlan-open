@@ -5575,7 +5575,7 @@ static void ath12k_peer_assoc_h_npca(struct ath12k *ar,
 
 	arg->npca.enabled = true;
 	arg->npca.npca_offset = link_sta->npca_offset;
-	arg->npca.npca_punct_bitmap = link_sta->npca_puncture_bitmap;
+	arg->npca.npca_punct_bitmap = ~link_sta->npca_puncture_bitmap;
 	arg->npca.npca_min_dur_threshold = npca_info->npca_min_dur_threshold;
 	arg->npca.npca_switch_delay = npca_info->npca_switch_delay;
 	arg->npca.npca_switch_back_delay = npca_info->npca_switch_back_delay;
@@ -22077,7 +22077,7 @@ ath12k_mac_npca_get_vdev_args(struct ath12k_link_vif *arvif,
 	npca_arg->npca_moplen = link_conf->npca.moplen;
 
 	npca_arg->npca_freq = chandef->npca_freq;
-	npca_arg->npca_punct_bitmap = chandef->npca_puncture_bitmap;
+	npca_arg->npca_punct_bitmap = ~chandef->npca_puncture_bitmap;
 }
 
 void ath12k_agile_cac_abort_work(struct wiphy *wiphy,
