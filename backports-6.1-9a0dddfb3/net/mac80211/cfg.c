@@ -4946,6 +4946,14 @@ static int __ieee80211_csa_finalize(struct ieee80211_link_data *link_data)
 
 	link_conf->csa_active = false;
 
+	/* 11bn D1.5: NPCA must be disabled on a channel change. It is only
+	 * re-enabled by a subsequent start_ap or enhanced critical update.
+	 */
+	if (link_conf->npca.enabled) {
+		link_conf->npca.enabled = false;
+		changed |= BSS_CHANGED_NPCA;
+	}
+
 	err = ieee80211_set_after_csa_beacon(link_data, &changed);
 	if (err)
 		return err;
