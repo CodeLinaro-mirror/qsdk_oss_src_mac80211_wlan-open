@@ -14,9 +14,13 @@
 #include "vendor.h"
 #include "sdwf.h"
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/ipa/dp_ipa.h"
+#endif /* CPTCFG_QCN_EXTN */
 #endif
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/ipa/dp_ipa_pub.h"
+#endif /* CPTCFG_QCN_EXTN */
 
 u16 ath12k_dp_get_peer_based_tcl_metadata(struct ath12k_dp *dp, u16 peer_id,
 					  u8 valid_htt_ext)

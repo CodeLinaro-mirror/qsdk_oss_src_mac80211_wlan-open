@@ -8,7 +8,9 @@
 #include "core.h"
 #include "me.h"
 #include "debug.h"
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/me_snoop_extn.h"
+#endif /* CPTCFG_QCN_EXTN */
 
 void ath12k_print_me_configs(struct ath12k_me_db *me_db)
 {
@@ -53,7 +55,9 @@ static void ath12k_me_db_free_rcu(struct rcu_head *rcu)
 	spin_lock_bh(&db->lock);
 	ath12k_me_hmmc_list_flush(db);
 #if defined(CONFIG_BRIDGE_MCAST_OFFLOAD)
+#ifdef CPTCFG_QCN_EXTN
 	ath12k_me_snoop_list_flush_extn(&db->snoop);
+#endif /* CPTCFG_QCN_EXTN */
 #endif
 	spin_unlock_bh(&db->lock);
 
@@ -150,7 +154,9 @@ int ath12k_me_db_init(struct ath12k_dp_vif *dp_vif)
 
 #if defined(CONFIG_BRIDGE_MCAST_OFFLOAD)
 	/* Allocate snoop cache (single block) and map buckets */
+#ifdef CPTCFG_QCN_EXTN
 	ath12k_me_snoop_list_init_extn(&db->snoop);
+#endif /* CPTCFG_QCN_EXTN */
 #endif
 
 	rcu_assign_pointer(dp_vif->me_db, db);

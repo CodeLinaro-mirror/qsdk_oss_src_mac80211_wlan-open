@@ -22,7 +22,9 @@
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 #include "qcn_extns/ipa/dp_ipa.h"
 #endif
+#if defined(CPTCFG_EXT_IPA_OFFLOAD) && defined(CPTCFG_QCN_EXTN)
 #include "../qcn_extns/ipa/dp_ipa_pub.h"
+#endif /* CPTCFG_EXT_IPA_OFFLOAD && CPTCFG_QCN_EXTN */
 
 static int ath12k_wifi7_dp_service_srng(struct ath12k_dp *dp,
 					struct ath12k_ext_irq_grp *irq_grp,
@@ -359,11 +361,13 @@ static int ath12k_wifi7_dp_op_device_init(struct ath12k_dp *dp)
 		ab->dp->ppe.ppe_ops->ath12k_ppeds_interrupt_start(ab);
 #endif
 
+#if defined(CPTCFG_EXT_IPA_OFFLOAD) && defined(CPTCFG_QCN_EXTN)
 	ret = ath12k_wifi7_dp_ipa_init(ab);
 	if (ret) {
 		ath12k_err(dp->ab, "IPA: ipa init failed");
 		goto fail_dp_mon_rx_deinit;
 	}
+#endif /* CPTCFG_EXT_IPA_OFFLOAD && CPTCFG_QCN_EXTN */
 
 	return 0;
 

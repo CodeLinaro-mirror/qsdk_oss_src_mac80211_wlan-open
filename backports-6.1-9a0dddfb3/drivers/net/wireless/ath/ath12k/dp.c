@@ -19,9 +19,13 @@
 #include "dp_peer.h"
 #include "hal.h"
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/ipa/dp_ipa.h"
+#endif /* CPTCFG_QCN_EXTN */
 #endif
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/ipa/dp_ipa_pub.h"
+#endif /* CPTCFG_QCN_EXTN */
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 #include "ppe.h"
 #endif

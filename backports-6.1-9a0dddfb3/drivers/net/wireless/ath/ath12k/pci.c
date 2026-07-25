@@ -21,7 +21,9 @@
 #include "umac_reset.h"
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 #include <linux/iommu.h>
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/ipa/dp_ipa.h"
+#endif /* CPTCFG_QCN_EXTN */
 #endif
 
 #define ATH12K_PCI_BAR_NUM		0
@@ -449,7 +451,9 @@ static int ath12k_pci_claim(struct ath12k_pci *ab_pci, struct pci_dev *pdev)
 		goto release_region;
 	}
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
+#ifdef CPTCFG_QCN_EXTN
 	ab->ath12k_base_extn.mem_pa = pci_resource_start(pdev, ATH12K_PCI_BAR_NUM);
+#endif /* CPTCFG_QCN_EXTN */
 #endif
 
 	ab->mem_pa = pci_resource_start(pdev, ATH12K_PCI_BAR_NUM);
@@ -1443,12 +1447,14 @@ static int ath12k_pci_probe(struct pci_dev *pdev,
 
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 	/* Init smmu for SDX */
+#ifdef CPTCFG_QCN_EXTN
 	ret = ath12k_pci_init_smmu_extn(ab_pci);
 	if (ret) {
 		ath12k_err(ab, "failed to SMMU_INIT device: %d\n", ret);
 		goto err_pci_free_region;
 	}
-#endif
+#endif /* CPTCFG_QCN_EXTN */
+#endif /* CPTCFG_EXT_IPA_OFFLOAD */
 	/* Call device specific probe. This is the callback that can
 	 * be used to override any ops in future
 	 */
@@ -1500,6 +1506,12 @@ static int ath12k_pci_probe(struct pci_dev *pdev,
 		goto err_irq_affinity_cleanup;
 	}
 
+#if defined(CPTCFG_EXT_IPA_OFFLOAD) && defined(CPTCFG_QCN_EXTN)
+	ret = ath12k_dp_ipa_plugin_register_ops_extn(ab);
+	if (ret)
+		goto err_mhi_unregister;
+	ath12k_info(ab, "IPA: ipa plugin are registered");
+#endif /* CPTCFG_EXT_IPA_OFFLOAD && CPTCFG_QCN_EXTN */
 	ret = ath12k_hal_srng_init(ab);
 	if (ret)
 		goto err_mhi_unregister;
@@ -1584,6 +1596,14 @@ err_ce_free:
 err_hal_srng_deinit:
 	ath12k_hal_srng_deinit(ab);
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+ipa_plugin_unregister:
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_dp_ipa_plugin_deregister_ops_extn(ab);
+#endif /* CPTCFG_EXT_IPA_OFFLOAD && CPTCFG_QCN_EXTN */
+#endif
+
+
 err_mhi_unregister:
 	ath12k_mhi_unregister(ab_pci);
 
@@ -1595,7 +1615,9 @@ err_pci_msi_free:
 
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 err_pci_deinit_smmu:
+#ifdef CPTCFG_QCN_EXTN
 	ath12k_pci_deinit_smmu_extn(ab_pci);
+#endif /* CPTCFG_QCN_EXTN */
 #endif
 
 err_pci_free_region:
@@ -1657,7 +1679,9 @@ qmi_fail:
 		ab_pci->device_ops->dp_deinit(ab->dp);
 
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
+#ifdef CPTCFG_QCN_EXTN
 	ath12k_dp_ipa_plugin_deregister_ops_extn(ab);
+#endif /* CPTCFG_QCN_EXTN */
 #endif
 	ath12k_pci_msi_free(ab_pci);
 #ifdef CONFIG_IO_COHERENCY

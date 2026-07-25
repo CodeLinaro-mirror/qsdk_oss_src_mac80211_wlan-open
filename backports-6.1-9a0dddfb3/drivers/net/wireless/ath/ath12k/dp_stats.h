@@ -12,7 +12,9 @@
 #include "dp.h"
 #include "ppe.h"
 #include <linux/ip.h>
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/ath12k_cmn_extn.h"
+#endif /* CPTCFG_QCN_EXTN */
 
 struct ath12k_dp_link_peer;
 
@@ -1120,7 +1122,9 @@ struct ath12k_telemetry_dp_peer {
 struct ath12k_telemetry_dp_vif {
 	bool is_extended;
 	struct ath12k_dp_aggr_vif_stats aggr_vif_stats;
+#ifdef CPTCFG_QCN_EXTN
 	struct ath12k_dp_rx_scan_radio_stats rx_scan_radio_stats;
+#endif /* CPTCFG_QCN_EXTN */
 };
 
 /* Telemetry Radio Stats */

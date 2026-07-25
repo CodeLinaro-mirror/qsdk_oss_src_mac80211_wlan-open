@@ -6,9 +6,9 @@
 
 #include <linux/inet.h>
 #include "core.h"
-#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#if defined(CPTCFG_EXT_IPA_OFFLOAD) && defined(CPTCFG_QCN_EXTN)
 #include "qcn_extns/ipa/dp_ipa.h"
-#endif
+#endif /* CPTCFG_EXT_IPA_OFFLOAD && CPTCFG_QCN_EXTN */
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 #include "ppe.h"
 #endif
@@ -7315,9 +7315,9 @@ void ath12k_debugfs_register(struct ath12k *ar)
 			    &fops_pktlog_remote_ip);
 	debugfs_create_file("remote_port", 0444, ar->debug.debugfs_pdev, ar,
 			    &fops_pktlog_remote_port);
-#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#if defined(CPTCFG_EXT_IPA_OFFLOAD) && defined(CPTCFG_QCN_EXTN)
 	ath12k_debugfs_register_ipa_extn(ar);
-#endif
+#endif /* CPTCFG_EXT_IPA_OFFLOAD && CPTCFG_QCN_EXTN */
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))

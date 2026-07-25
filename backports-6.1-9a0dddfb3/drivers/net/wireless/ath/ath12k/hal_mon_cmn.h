@@ -7,7 +7,9 @@
 #define HAL_MON_CMN_H
 
 #include "hw.h"
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/ath12k_cmn_extn.h"
+#endif /* CPTCFG_QCN_EXTN */
 
 #define HAL_RX_MON_MAX_AGGR_SIZE	128
 #define HAL_RX_MAX_MPDU				256
@@ -740,7 +742,9 @@ struct hal_rx_mon_ppdu_info {
 	u16 punctured_pattern;
 	u16 punc_bw;
 	struct hal_rx_user_ctrl_frm_info ctrl_frm_info[HAL_MAX_UL_MU_USERS];
+#ifdef CPTCFG_QCN_EXTN
 	struct hal_mon_ppdu_info_extn ppdu_info_extn;
+#endif /* CPTCFG_QCN_EXTN */
 	u8 ampdu_flag;
 	u8 band;
 	u32 rx_antenna;

@@ -20,7 +20,9 @@
 #include "dp_peer.h"
 #include "dp_stats.h"
 #include "dp_htt.h"
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/mesh_util.h"
+#endif /* CPTCFG_QCN_EXTN */
 
 void ath12k_tid_tx_stats(struct ath12k_vif *ahvif, u8 tid, u32 len, u32 reason)
 {

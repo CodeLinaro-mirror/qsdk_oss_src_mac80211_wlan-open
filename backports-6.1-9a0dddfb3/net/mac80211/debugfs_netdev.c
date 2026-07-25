@@ -21,11 +21,13 @@
 #include "rate.h"
 #include "debugfs.h"
 #include "debugfs_netdev.h"
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/debugfs_bigtk.h"
 #include "qcn_extns/debugfs_gtk.h"
 #include "qcn_extns/debugfs_ptk.h"
 #include "qcn_extns/debugfs_igtk.h"
 #include "qcn_extns/debugfs_cigtk.h"
+#endif /* CPTCFG_QCN_EXTN */
 #include "driver-ops.h"
 
 const char *rx_drop_reason_strings[RX_DROP_REASON_MAX] = {

@@ -30,7 +30,10 @@
 #include "hal_qcn9625.h"
 #include "mgmt_rx.h"
 #include "dp_peer.h"
+#include "../dp_mon.h"
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/wifi8_dp_extn.h"
+#endif /* CPTCFG_QCN_EXTN */
 #include "../cfr.h"
 
 /*
