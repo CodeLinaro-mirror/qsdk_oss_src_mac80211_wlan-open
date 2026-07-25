@@ -11130,6 +11130,16 @@ ath12k_mac_find_link_id_by_ar(struct ath12k_vif *ahvif, struct ath12k *ar)
 	 * scan requests to firmware based on device.
 	 */
 
+	/* For non-ML vifs (e.g. monitor), links_map is 0 so the loop above
+	 * does not iterate. Check the deflink directly: if it is already
+	 * created on the requested ar, reuse it for scan instead of
+	 * allocating a new scan vdev (which would fail for monitor because
+	 * ar->monitor_vdev_created is already set).
+	 */
+	if (!ahvif->links_map && ahvif->deflink.is_created &&
+	    ahvif->deflink.ar == ar)
+		return ahvif->deflink.link_id;
+
 	/* Set all non-scan links (0-14) of scan_links_map so that ffs() will
 	 * choose an available link among scan links (i.e link id >= 15)
 	 */
@@ -11510,7 +11520,12 @@ void ath12k_mac_op_cancel_hw_scan(struct ieee80211_hw *hw,
 	lockdep_assert_wiphy(hw->wiphy);
 
 	arvif = wiphy_dereference(hw->wiphy, ahvif->link[link_id]);
-	if (!arvif || arvif->is_started)
+	/* For monitor vifs the vdev is always started; allow scan abort
+	 * regardless of is_started so that an in-progress scan can be
+	 * cancelled cleanly.
+	 */
+	if (!arvif || (arvif->is_started &&
+		       ahvif->vdev_type != WMI_VDEV_TYPE_MONITOR))
 		return;
 
 	ar = arvif->ar;
