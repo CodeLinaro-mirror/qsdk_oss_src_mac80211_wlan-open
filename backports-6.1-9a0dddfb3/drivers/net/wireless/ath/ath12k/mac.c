@@ -28970,6 +28970,15 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 
 		wiphy->flags |= WIPHY_FLAG_SUPPORTS_MLO;
 
+		/*
+		 * Each MLO link maps to its own radio/pdev (hw_link_id), so
+		 * this hardware is STR-capable: a non-primary link can be
+		 * received/transmitted concurrently with the primary link.
+		 * Without this flag, nl80211_assoc_bss() fails MLO association
+		 * even when having RNR-derived companion-link BSS entries.
+		 */
+		wiphy->flags |= WIPHY_FLAG_SUPPORTS_NSTR_NONPRIMARY;
+
 		if(!is_raw_mode)
 			ieee80211_hw_set(hw, MLO_MCAST_MULTI_LINK_TX);
 
