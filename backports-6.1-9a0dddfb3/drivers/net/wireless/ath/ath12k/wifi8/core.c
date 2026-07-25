@@ -18,6 +18,7 @@
 #include "../qmi.h"
 #ifdef CPTCFG_QCN_EXTN
 #include "../qcn_extns/ini.h"
+#include "../vendor_services.h"
 #endif
 
 static int pci_err;
@@ -309,6 +310,8 @@ static int ath12k_wifi8_init(void)
 {
 	ath12k_erp_init();
 
+	ath12k_vendor_services_init();
+
 #ifdef CPTCFG_QCN_EXTN
 	ath12k_cfg_global_init();
 #endif
@@ -329,6 +332,8 @@ static void ath12k_wifi8_exit(void)
 #ifdef CPTCFG_QCN_EXTN
 	ath12k_cfg_global_deinit();
 #endif
+
+	ath12k_vendor_services_deinit();
 
 	ath12k_erp_deinit();
 }
