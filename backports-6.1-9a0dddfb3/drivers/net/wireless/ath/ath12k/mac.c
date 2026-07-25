@@ -9379,7 +9379,61 @@ ath12k_mac_fill_reg_tpc_eirp_pref_punctured(
  * - Otherwise, it falls back to ath12k_mac_fill_reg_tpc_info().
  *
  */
-static void ath12k_mac_fill_reg_tpc(struct ath12k *ar, struct wireless_dev *wdev,
+/**
+ * ath12k_mac_sta_sp_tpe_defer_needed - Check if client-SP SET_TPC must be deferred
+ * @ar: radio context
+ * @arvif: link vif being evaluated
+ *
+ * A non-AFC repeater STA operating under an SP root AP must read its transmit
+ * limit from the root AP's TPE IE (assoc response / beacon).  Before the assoc
+ * response is received mac80211 clears bss_conf->tpe, so num_tpe_psd/eirp are
+ * zero.  ath12k_mac_init_root_tpe() then fills both arrays with the sentinel
+ * value ATH12K_MAX_TX_POWER (127), and the subsequent EIRP-from-PSD conversion
+ * overflows s8, producing -116/-113/-110 dBm which is sent to firmware.
+ *
+ * Return true when the client-SP fill/WMI path must be skipped and deferred
+ * until a later TPE-ready SET_TPC path runs with valid TPE.
+ */
+static bool ath12k_mac_sta_sp_tpe_defer_needed(struct ath12k *ar,
+					   struct ath12k_link_vif *arvif)
+{
+	struct ieee80211_bss_conf *bss_conf;
+	const struct ieee80211_parsed_tpe *tpe;
+	enum wmi_reg_6g_client_type client_type;
+
+	if (arvif->ahvif->vdev_type != WMI_VDEV_TYPE_STA)
+		return false;
+
+	bss_conf = ath12k_mac_get_link_bss_conf(arvif);
+	if (!bss_conf)
+		return false;
+
+	/* Only the non-AFC STA-under-SP-root path uses TPE for TPC limits */
+	if (bss_conf->power_type != IEEE80211_REG_SP_AP)
+		return false;
+	if (ar->afc.is_6ghz_afc_power_event_received)
+		return false;
+
+	tpe = &bss_conf->tpe;
+
+	/* Mirror the client_type selection in ath12k_mac_parse_tx_pwr_env() */
+	client_type = ieee80211_get_6ghz_client_type(ath12k_ar_to_hw(ar)->wiphy,
+						     bss_conf->power_type - 1);
+	if (client_type == WMI_REG_SUBORDINATE_CLIENT &&
+	    bss_conf->power_type - 1 == NL80211_REG_AP_SP &&
+	    ar->ab->sp_rule)
+		client_type = WMI_REG_DEFAULT_CLIENT;
+
+	/* Defer if no TPE entry is valid for the selected client type */
+	return !(tpe->psd_local[client_type].valid ||
+		 tpe->psd_reg_client[client_type].valid ||
+		 tpe->additional_psd_reg_client[client_type].valid ||
+		 tpe->max_local[client_type].valid ||
+		 tpe->max_reg_client[client_type].valid ||
+		 tpe->additional_max_reg_client[client_type].valid);
+}
+
+static bool ath12k_mac_fill_reg_tpc(struct ath12k *ar, struct wireless_dev *wdev,
 				    struct ath12k_link_vif *arvif,
 				    struct ieee80211_chanctx_conf *chanctx)
 {
@@ -9390,7 +9444,7 @@ static void ath12k_mac_fill_reg_tpc(struct ath12k *ar, struct wireless_dev *wdev
 
 	if (!bss_conf) {
 		ath12k_warn(ar->ab, "BSS conf is NULL for link %d\n", arvif->link_id);
-		return;
+		return false;
 	}
 
 	ath12k_mac_get_6ghz_power_mode_decision(ar, arvif, bss_conf->power_type,
@@ -9406,6 +9460,12 @@ static void ath12k_mac_fill_reg_tpc(struct ath12k *ar, struct wireless_dev *wdev
 		     decision.ap_repeater_sp_client) ||
 		    (ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
 		    !ar->afc.is_6ghz_afc_power_event_received)) {
+			/* Safety net: if TPE is not yet available, refuse to fill
+			 * with sentinel-derived values. A later TPE-ready SET_TPC path
+			 * will re-run with valid TPE.
+			 */
+			if (ath12k_mac_sta_sp_tpe_defer_needed(ar, arvif))
+				return false;
 			ath12k_mac_fill_reg_tpc_info_with_psd_eirp_pwr_for_client_sp
 								(ar,
 								 arvif,
@@ -9426,13 +9486,14 @@ static void ath12k_mac_fill_reg_tpc(struct ath12k *ar, struct wireless_dev *wdev
 							ar, arvif,
 							chanctx,
 							reg_6g_power_mode))
-			return;
+			return true;
 
 		ath12k_mac_fill_reg_tpc_info_with_eirp_power(ar, arvif,
 							     chanctx);
 	} else {
 		ath12k_mac_fill_reg_tpc_info(ar, arvif, chanctx);
 	}
+	return true;
 }
 
 static void
@@ -9540,13 +9601,20 @@ void ath12k_mac_bss_info_changed(struct ath12k *ar,
 			if (ahvif->vdev_type == WMI_VDEV_TYPE_STA)
 				ath12k_mac_parse_tx_pwr_env(ar, arvif);
 
+			/* Defer client-SP SET_TPC when TPE is not yet available.
+			 * A later TPE-ready path will re-issue SET_TPC.
+			 */
+			if (ath12k_mac_sta_sp_tpe_defer_needed(ar, arvif))
+				goto skip_tpc_update;
+
 			if (!chanctx) {
 				ath12k_err(ar->ab, "[vdev_id : %u radio_idx : %u] channel context is NULL",
 					   arvif->vdev_id, ar->radio_idx);
 				return;
 			}
 
-			ath12k_mac_fill_reg_tpc(ar, wdev, arvif, chanctx);
+			if (!ath12k_mac_fill_reg_tpc(ar, wdev, arvif, chanctx))
+				goto skip_tpc_update;
 			ret = ath12k_wmi_send_vdev_set_tpc_power(ar,
 								 arvif->vdev_id,
 								 &arvif->reg_tpc_info);
@@ -9579,6 +9647,7 @@ void ath12k_mac_bss_info_changed(struct ath12k *ar,
 		}
 	}
 
+skip_tpc_update:
 	if (changed & BSS_CHANGED_BEACON_INT) {
 		arvif->beacon_interval = info->beacon_int;
 
@@ -12717,7 +12786,6 @@ ath12k_mac_get_sp_client_power_for_connecting_ap(struct ath12k *ar,
 	ath12k_reg_get_regulatory_pwrs(ar, MHZ_TO_KHZ(center_freq),
 				       NL80211_REG_REGULAR_CLIENT_SP,
 				       &sp_reg_eirp, &sp_reg_psd);
-
 	for (pwr_lvl_idx = 0; pwr_lvl_idx < num_pwr_levels; pwr_lvl_idx++) {
 		s8 tmp_eirp = ATH12K_MAX_TX_POWER;
 
@@ -22157,7 +22225,8 @@ void ath12k_mac_set_tpc_power(struct ath12k *ar, struct ath12k_link_vif *arvif)
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA)
 		ath12k_mac_parse_tx_pwr_env(ar, arvif);
 
-	ath12k_mac_fill_reg_tpc(ar, wdev, arvif, chanctx);
+	if (!ath12k_mac_fill_reg_tpc(ar, wdev, arvif, chanctx))
+		return;
 	ath12k_wmi_send_vdev_set_tpc_power(ar, arvif->vdev_id, &arvif->reg_tpc_info);
 }
 
@@ -22190,13 +22259,20 @@ ath12k_mac_vdev_config_after_start(struct ath12k_link_vif *arvif,
 		if (ahvif->vdev_type == WMI_VDEV_TYPE_STA)
 			ath12k_mac_parse_tx_pwr_env(ar, arvif);
 
+		/* Defer client-SP SET_TPC when TPE is not yet available.
+		 * A later TPE-ready path will re-issue SET_TPC.
+		 */
+		if (ath12k_mac_sta_sp_tpe_defer_needed(ar, arvif))
+			return 0;
+
 		if (!chanctx) {
 			ath12k_err(ar->ab, "[vdev_id : %u radio_idx : %u] channel context is NULL",
 				   arvif->vdev_id, ar->radio_idx);
 			return -ENOLINK;
 		}
 
-		ath12k_mac_fill_reg_tpc(ar, wdev, arvif, chanctx);
+		if (!ath12k_mac_fill_reg_tpc(ar, wdev, arvif, chanctx))
+			return 0;
 		ret = ath12k_wmi_send_vdev_set_tpc_power(ar, arvif->vdev_id,
 							 &arvif->reg_tpc_info);
 		if (!ret && ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
