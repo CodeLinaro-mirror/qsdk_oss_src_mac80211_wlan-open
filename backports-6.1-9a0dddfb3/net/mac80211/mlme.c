@@ -430,7 +430,7 @@ check_uhr:
 
 		if (dis_subch_bmap) {
 			npca_punct = get_unaligned_le16(dis_subch_bmap);
-			npca_chandef.punctured = npca_punct;
+			npca_chandef.npca_puncture_bitmap = npca_punct;
 			/*
 			 * must be a valid puncturing pattern for this channel as
 			 * well as puncturing all subchannels that are already in

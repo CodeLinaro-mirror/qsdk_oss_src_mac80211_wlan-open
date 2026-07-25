@@ -164,19 +164,42 @@ bool valid_puncturing_bitmap(const struct cfg80211_chan_def *chandef)
 		return chandef->punctured == 0;
 	}
 
-	if (!chandef->punctured)
-		return true;
+	if (chandef->punctured) {
+		/* check if primary channel is punctured */
+		if (chandef->punctured & (u16)BIT((primary_center - start_freq) / 20))
+			return false;
 
-	/* check if primary channel is punctured */
-	if (chandef->punctured & (u16)BIT((primary_center - start_freq) / 20))
+		for (i = 0; i < per_bw_puncturing[idx].len; i++) {
+			if (per_bw_puncturing[idx].valid_values[i] == chandef->punctured)
+				goto check_npca;
+		}
 		return false;
-
-	for (i = 0; i < per_bw_puncturing[idx].len; i++) {
-		if (per_bw_puncturing[idx].valid_values[i] == chandef->punctured)
-			return true;
 	}
 
-	return false;
+check_npca:
+	/*
+	 * Validate NPCA puncture bitmap when present (80/160/320 MHz).
+	 * npca_puncture_bitmap spans the full operating bandwidth (same
+	 * coordinate space as chandef->punctured). npca_freq is the NPCA
+	 * primary channel frequency; it must not be punctured in the bitmap,
+	 * and the bitmap must be a valid puncturing pattern for this width.
+	 */
+	if (chandef->npca_freq && chandef->npca_puncture_bitmap) {
+		/* NPCA primary channel must not be punctured */
+		if (chandef->npca_puncture_bitmap &
+		    (u16)BIT((chandef->npca_freq - start_freq) / 20))
+			return false;
+
+		/* must be a valid puncturing pattern for this bandwidth */
+		for (i = 0; i < per_bw_puncturing[idx].len; i++) {
+			if (per_bw_puncturing[idx].valid_values[i] ==
+			    chandef->npca_puncture_bitmap)
+				return true;
+		}
+		return false;
+	}
+
+	return true;
 }
 EXPORT_SYMBOL(valid_puncturing_bitmap);
 
