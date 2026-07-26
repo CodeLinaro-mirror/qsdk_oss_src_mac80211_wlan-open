@@ -21161,23 +21161,34 @@ static int nl80211_uhr_mode_update(struct sk_buff *skb, struct genl_info *info)
 		if (!(wdev->valid_links & BIT(link_id)))
 			return -EINVAL;
 
-		/* Verify NPCA is supported on this link's band */
 		intbss = wdev->links[link_id].client.current_bss;
 		if (!intbss || !intbss->pub.channel)
 			return -EINVAL;
 
 		band = intbss->pub.channel->band;
-		npca_info =
-		ieee80211_get_uhr_iftype_npca_info(rdev->wiphy.bands[band],
-							       wdev->iftype);
-		if (!npca_info || !npca_info->npca_enabled)
-			return -EOPNOTSUPP;
 
+		/*
+		 * Whether NPCA is actually supported by the ASSOCIATED AP is
+		 * verified separately, in mac80211's
+		 * ieee80211_uhr_mode_update(), against the AP peer's own
+		 * advertised UHR capability (link_sta->pub->uhr_cap). The
+		 * check here gates on the LOCAL radio's own static
+		 * per-iftype capability table instead -- both gates are
+		 * required: a request must be supported by this radio's own
+		 * hardware/firmware AND by the peer it is associated with.
+		 */
 		sw_delay = tb[NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCH_DELAY];
 		swbk_delay = tb[NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCHBACK_DELAY];
 
 		if (tb[NL80211_UHR_MODE_UPDATE_ATTR_NPCA_ENABLE] ||
 		    sw_delay || swbk_delay) {
+			npca_info =
+				ieee80211_get_uhr_iftype_npca_info(
+						rdev->wiphy.bands[band],
+						wdev->iftype);
+			if (!npca_info || !npca_info->npca_enabled)
+				return -EOPNOTSUPP;
+
 			params.npca_update[link_id] = true;
 
 			if (tb[NL80211_UHR_MODE_UPDATE_ATTR_NPCA_ENABLE])
