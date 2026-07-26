@@ -4686,11 +4686,15 @@ static void ath12k_partner_chip_power_state_info(struct ath12k_hw_group *ag,
 		if (ab->is_reset)
 			continue;
 
-		ret = ath12k_qmi_partner_chip_power_info_send(ab, power_state);
+		if (ab->hif.bus == ATH12K_BUS_PCI) {
+			ret = ath12k_qmi_partner_chip_power_info_send(ab, power_state);
 
-		if (ret < 0)
-			ath12k_err(ab, "Failed to send the power state for the chip\n");
+			if (ret < 0)
+				ath12k_err(ab, "Failed to send the power state for the chip\n");
+		}
 	}
+
+	ag->block_peer_create = (power_state == FW_ASSERTED_CHIP_PWR_DOWN);
 }
 
 static void ath12k_core_disable_ext_irq_during_recovery(struct ath12k_base *ab)
@@ -4965,12 +4969,10 @@ static void ath12k_core_reset(struct work_struct *work)
 
 	ath12k_dbg(ab, ATH12K_DBG_BOOT, "waiting recovery start...\n");
 
-	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2 &&
-	    ab->hif.bus == ATH12K_BUS_PCI)
+	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2)
 		ath12k_partner_chip_power_state_info(ag, FW_ASSERTED_CHIP_PWR_DOWN);
 
 	if (ab->fw_recovery_support) {
-
 		if (ab->hif.bus == ATH12K_BUS_PCI) {
 			ath12k_hif_power_down(ab, false);
 		} else {
@@ -5014,14 +5016,15 @@ static void ath12k_core_reset(struct work_struct *work)
 
 		if (ath12k_check_erp_power_down(ag))
 			ab->powerup_triggered = true;
-
-		if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2 &&
-		    ab->hif.bus == ATH12K_BUS_PCI)
-			ath12k_partner_chip_power_state_info(ag,
-							     FW_ASSERTED_CHIP_PWR_UP);
-
 		ath12k_dbg(ab, ATH12K_DBG_BOOT, "reset started\n");
 	}
+
+	/*As a foolproof clear ag->block_peer_create unconditionally for Mode-0*/
+	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2)
+		ath12k_partner_chip_power_state_info(ag,
+						     FW_ASSERTED_CHIP_PWR_UP);
+	else
+		ag->block_peer_create = false;
 
 	mutex_unlock(&ag->mutex);
 }
