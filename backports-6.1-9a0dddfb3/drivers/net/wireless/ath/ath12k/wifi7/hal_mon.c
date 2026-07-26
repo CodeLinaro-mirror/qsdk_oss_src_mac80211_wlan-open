@@ -3946,9 +3946,8 @@ ath12k_wifi7_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 		eht->known = cpu_to_le32(known);
 
 		data = __le32_to_cpu(eht->data[0]);
-		data |= ATH12K_LE32_DEC_ENC(cmn_usr_info->info0,
-					    HAL_RX_PHY_CMN_USER_INFO0_GI,
-					    IEEE80211_RADIOTAP_EHT_DATA0_GI);
+		data |= u32_encode_bits(ath12k_eht_gi_to_nl80211_eht_gi(ppdu_info->gi),
+					IEEE80211_RADIOTAP_EHT_DATA0_GI);
 		eht->data[0] = cpu_to_le32(data);
 		break;
 	}
