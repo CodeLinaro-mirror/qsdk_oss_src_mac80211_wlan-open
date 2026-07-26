@@ -4742,15 +4742,15 @@ ath12k_wifi8_dp_tx_proceed_drop(struct ath12k_wifi8_dp_congestion_control *congs
 
 		if (!dp_peer) {
 			rcu_read_unlock();
-			ath12k_err(ab, "peer find failed for flow peer_id %d\n",
-				   peer_id);
+			ath12k_info(ab, "peer find failed for flow peer_id %d\n",
+				    peer_id);
 			continue;
 		}
 
 		tx_flow_info = ath12k_dp_get_tx_flow_info_from_peer(dp_peer);
 		if (!tx_flow_info) {
-			ath12k_err(ab, "invalid tx flow info peer %pM in proceed drop",
-				   dp_peer->addr);
+			ath12k_info(ab, "invalid tx flow info peer %pM in proceed drop",
+				    dp_peer->addr);
 			rcu_read_unlock();
 			continue;
 		}
