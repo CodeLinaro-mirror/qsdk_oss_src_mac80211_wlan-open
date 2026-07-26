@@ -2928,11 +2928,21 @@ ath12k_wifi8_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 					     HAL_RX_PHYRX_RSSI_LEGACY_INFO_INFO0_RX_BW);
 		break;
 	}
-	case HAL_PHYRX_OTHER_RECEIVE_INFO: {
+	case HAL_PHYRX_COMMON_USER_INFO: {
 		const struct hal_phyrx_common_user_info *cmn_usr_info = tlv_data;
+		struct hal_rx_radiotap_eht *eht = &ppdu_info->eht_info.eht;
+		u32 known, data;
 
 		ppdu_info->gi = le32_get_bits(cmn_usr_info->info0,
 					      HAL_RX_PHY_CMN_USER_INFO0_GI);
+		known = __le32_to_cpu(eht->known);
+		known |= IEEE80211_RADIOTAP_EHT_KNOWN_GI;
+		eht->known = cpu_to_le32(known);
+
+		data = __le32_to_cpu(eht->data[0]);
+		data |= u32_encode_bits(ath12k_eht_gi_to_nl80211_eht_gi(ppdu_info->gi),
+					IEEE80211_RADIOTAP_EHT_DATA0_GI);
+		eht->data[0] = cpu_to_le32(data);
 		break;
 	}
 	case HAL_RX_PPDU_START_USER_INFO:
