@@ -722,6 +722,8 @@ struct ath12k_dp_arch_ops {
 				  const u8 *addr);
 	void (*dp_smd_clear_old_peer_rx_lut)(struct ath12k_dp *dp,
 					     struct ath12k_dp_peer *dp_peer);
+	/* Release parked ext_ctx when a PREP transition is aborted. */
+	void (*dp_smd_abort_prep)(struct ath12k_dp *dp);
 	int (*dp_get_peer_holq)(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 				u8 *addr,
 				struct peer_assoc_holq_params *holq_params);
@@ -1676,6 +1678,13 @@ ath12k_dp_arch_smd_clear_old_peer_rx_lut(struct ath12k_dp *dp,
 {
 	if (dp->arch_ops->dp_smd_clear_old_peer_rx_lut)
 		dp->arch_ops->dp_smd_clear_old_peer_rx_lut(dp, dp_peer);
+}
+
+static inline void
+ath12k_dp_arch_smd_abort_prep(struct ath12k_dp *dp)
+{
+	if (dp->arch_ops->dp_smd_abort_prep)
+		dp->arch_ops->dp_smd_abort_prep(dp);
 }
 
 static inline void ath12k_dp_get_mac_addr(u32 addr_l32, u16 addr_h16, u8 *addr)

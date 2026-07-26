@@ -1571,6 +1571,7 @@ static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 	.dp_smd_prep_rx_tid = ath12k_wifi8_dp_smd_prep_rx_tid,
 	.dp_smd_exec_rx_tid = ath12k_wifi8_dp_smd_exec_rx_tid,
 	.dp_smd_clear_old_peer_rx_lut = ath12k_wifi8_dp_smd_clear_old_peer_rx_lut,
+	.dp_smd_abort_prep = ath12k_wifi8_dp_smd_abort_prep,
 	.peer_tx_tid_sn_reset = ath12k_wifi8_peer_tx_tid_sn_reset,
 	.peer_rx_tid_svld_reset = ath12k_wifi8_peer_rx_tid_svld_reset,
 };
