@@ -1121,6 +1121,12 @@ int ath12k_wifi8_dp_peer_assoc(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 		return 0;
 	}
 
+	if (dp_peer->peer_ext_ctx) {
+		ath12k_err(dp->ab,
+			   "peer ext is already allocated, wrong peer found %pM", addr);
+		return -ENOENT;
+	}
+
 	peer_ext_ctx = kzalloc(sizeof(*peer_ext_ctx), GFP_ATOMIC);
 	if (!peer_ext_ctx) {
 		spin_unlock_bh(&dp_hw->peer_hash_lock);

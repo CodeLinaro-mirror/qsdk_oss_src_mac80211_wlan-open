@@ -239,7 +239,8 @@ int ath12k_wifi8_hal_tqm_remove_msdu_cmd(struct ath12k_base *ab,
 	u32 cmd_num;
 
 	tlv->tl = le64_encode_bits(HAL_TQM_REMOVE_MSDU_BO, HAL_TLV_HDR_TAG) |
-		  le64_encode_bits(sizeof(*desc), HAL_TLV_HDR_LEN);
+		  le64_encode_bits(sizeof(*desc), HAL_TLV_64_HDR_LENGTH) |
+		  le64_encode_bits(ab->pdevs[0].hw_link_id, HAL_TLV_64_HDR_SRC_LINK_ID);
 
 	desc = (struct hal_tqm_remove_msdu *)tlv->value;
 	memset_startat(desc, 0, cmd_hdr.info0);
@@ -286,7 +287,8 @@ int ath12k_wifi8_hal_tqm_remove_mpdu_cmd(struct ath12k_base *ab,
 	u32 cmd_num;
 
 	tlv->tl = le64_encode_bits(HAL_TQM_REMOVE_MPDU_BO, HAL_TLV_HDR_TAG) |
-		  le64_encode_bits(sizeof(*desc), HAL_TLV_HDR_LEN);
+		  le64_encode_bits(sizeof(*desc), HAL_TLV_64_HDR_LENGTH) |
+		  le64_encode_bits(ab->pdevs[0].hw_link_id, HAL_TLV_64_HDR_SRC_LINK_ID);
 
 	desc = (struct hal_tqm_remove_mpdu *)tlv->value;
 	memset_startat(desc, 0, cmd_hdr.info0);
@@ -333,7 +335,8 @@ int ath12k_wifi8_hal_tqm_sync_cmd(struct ath12k_base *ab,
 	u32 cmd_num;
 
 	tlv->tl = le64_encode_bits(HAL_TQM_SYNC_CMD_BO, HAL_TLV_HDR_TAG) |
-		  le64_encode_bits(sizeof(*desc), HAL_TLV_HDR_LEN);
+		  le64_encode_bits(sizeof(*desc), HAL_TLV_64_HDR_LENGTH) |
+		  le64_encode_bits(ab->pdevs[0].hw_link_id, HAL_TLV_64_HDR_SRC_LINK_ID);
 
 	desc = (struct hal_tqm_sync_cmd *)tlv->value;
 	memset_startat(desc, 0, cmd_hdr.info0);
@@ -408,7 +411,8 @@ int ath12k_wifi8_hal_tqm_get_mpduq_stats(struct ath12k_base *ab,
 	u32 cmd_num;
 
 	tlv->tl = le64_encode_bits(HAL_TQM_GET_MPDUQ_STATS_BO, HAL_TLV_HDR_TAG) |
-		  le64_encode_bits(sizeof(*desc), HAL_TLV_HDR_LEN);
+		  le64_encode_bits(sizeof(*desc), HAL_TLV_64_HDR_LENGTH) |
+		  le64_encode_bits(ab->pdevs[0].hw_link_id, HAL_TLV_64_HDR_SRC_LINK_ID);
 
 	desc = (struct hal_tqm_get_mpduq_stats *)tlv->value;
 	memset_startat(desc, 0, cmd_hdr.info0);
@@ -449,7 +453,8 @@ int ath12k_wifi8_hal_tqm_update_mpduq(struct ath12k_base *ab,
 	u32 cmd_num;
 
 	tlv->tl = le64_encode_bits(HAL_TQM_UPDATE_MPDUQ_BO, HAL_TLV_HDR_TAG) |
-		  le64_encode_bits(sizeof(*desc), HAL_TLV_HDR_LEN);
+		  le64_encode_bits(sizeof(*desc), HAL_TLV_64_HDR_LENGTH) |
+		  le64_encode_bits(ab->pdevs[0].hw_link_id, HAL_TLV_64_HDR_SRC_LINK_ID);
 
 	desc = (struct hal_tqm_update_mpduq *)tlv->value;
 	memset(desc, 0, sizeof(*desc));
@@ -541,7 +546,8 @@ int ath12k_wifi8_hal_tqm_update_msduq(struct ath12k_base *ab,
 	update_params = &cmd->update_tx_msdu_params;
 
 	tlv->tl = le64_encode_bits(HAL_TQM_UPDATE_MSDUQ_BO, HAL_TLV_HDR_TAG) |
-		  le64_encode_bits(sizeof(*desc), HAL_TLV_HDR_LEN);
+		  le64_encode_bits(sizeof(*desc), HAL_TLV_64_HDR_LENGTH) |
+		  le64_encode_bits(ab->pdevs[0].hw_link_id, HAL_TLV_64_HDR_SRC_LINK_ID);
 
 	desc = (struct hal_tqm_update_tx_msdu_flow *)tlv->value;
 	memset(desc, 0, sizeof(*desc));
