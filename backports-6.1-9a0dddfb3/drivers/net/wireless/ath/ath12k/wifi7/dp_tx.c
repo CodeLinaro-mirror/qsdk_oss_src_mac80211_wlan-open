@@ -139,7 +139,8 @@ static inline
 void ath12k_wifi_qos_hlos_tid(struct hal_tcl_data_cmd *desc,
 			      u8 tid)
 {
-	desc->info3 |= u32_encode_bits(tid, HAL_TCL_DATA_CMD_INFO3_TID) |
+	desc->info3 |= u32_encode_bits(tid < ATH12K_MAX_TID_VALUE ? tid : 0,
+				       HAL_TCL_DATA_CMD_INFO3_TID) |
 		 u32_encode_bits(1, HAL_TCL_DATA_CMD_INFO3_TID_OVERWRITE);
 }
 

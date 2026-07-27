@@ -418,7 +418,8 @@ static inline
 void ath12k_wifi_qos_hlos_tid(struct hal_tcl_data_cmd *desc,
 			      u8 tid)
 {
-	desc->info1 |= u32_encode_bits(tid, HAL_TCL_DATA_CMD_INFO1_HLOS_TID) |
+	desc->info1 |= u32_encode_bits(tid < ATH12K_MAX_TID_VALUE ? tid : 0,
+				       HAL_TCL_DATA_CMD_INFO1_HLOS_TID) |
 		       u32_encode_bits(1, HAL_TCL_DATA_CMD_INFO1_HLOS_TID_OVERWRITE);
 }
 
@@ -3961,7 +3962,8 @@ static int ath12k_wifi8_dp_tx_reinject(struct ath12k_dp *dp,
 		tcl_desc.info1 |=
 			FIELD_PREP(HAL_TCL_DATA_CMD_INFO1_HLOS_TID,
 				   FIELD_GET(HAL_TCL_EXIT_BASE_INFO0_TID,
-					     le32_to_cpu(tx_exception_desc->info0))) |
+					     le32_to_cpu(tx_exception_desc->info0)) &
+				   (ATH12K_MAX_TID_VALUE - 1)) |
 			FIELD_PREP(HAL_TCL_DATA_CMD_INFO1_HLOS_TID_OVERWRITE,
 				   HLOS_TID_OVERWRITE_ENABLED);
 	if (le16_get_bits(tx_exception_desc->info3,
