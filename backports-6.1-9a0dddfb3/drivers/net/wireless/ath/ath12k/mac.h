@@ -334,6 +334,19 @@ enum rate_info_bw ath12k_mac_bw_to_mac80211_bw(enum ath12k_supported_bw bw);
 enum ath12k_supported_bw ath12k_mac_mac80211_bw_to_ath12k_bw(enum rate_info_bw bw);
 u8 ath12k_mac_get_bw_offset(enum ieee80211_sta_rx_bandwidth bandwidth);
 enum hal_encrypt_type ath12k_dp_tx_get_encrypt_type(u32 cipher);
+
+/**
+ * ath12k_dp_tx_get_mpdu_encap_hdr_len() - get per-MPDU security encap overhead
+ * @enctype: HAL encryption type (enum hal_encrypt_type)
+ *
+ * Returns the total per-MPDU security overhead in bytes (IV + MIC + ICV)
+ * This accounts for the extra bytes added to each MPDU when computing
+ * the MPDU queue (mpduq) header length.
+ *
+ * Return: overhead in bytes, or 0 for open/unknown types.
+ */
+int ath12k_dp_tx_get_mpdu_encap_hdr_len(enum hal_encrypt_type enctype);
+
 int ath12k_mac_rfkill_enable_radio(struct ath12k *ar, bool enable);
 int ath12k_mac_rfkill_config(struct ath12k *ar);
 int ath12k_mac_wait_tx_complete(struct ath12k *ar);
