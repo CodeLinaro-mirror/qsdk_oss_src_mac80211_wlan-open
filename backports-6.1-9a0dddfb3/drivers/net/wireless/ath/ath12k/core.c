@@ -2126,7 +2126,7 @@ int ath12k_core_pdev_enable_telemetry_stats(struct ath12k_base *ab)
 static bool ath12k_check_ab_preferred_band(struct ath12k_base *ab,
 					   enum ath12k_cumac_band preferred_band)
 {
-	u32 supported_band;
+	u32 supported_band, low_5ghz_chan, high_5ghz_chan;
 	int i;
 
 	if (!ab || ab->num_radios == 0)
@@ -2137,21 +2137,52 @@ static bool ath12k_check_ab_preferred_band(struct ath12k_base *ab,
 		if (!supported_band)
 			continue;
 
+		low_5ghz_chan = ab->hal_reg_cap[i].low_5ghz_chan;
+		high_5ghz_chan = ab->hal_reg_cap[i].high_5ghz_chan;
+
 		switch (preferred_band) {
 		case ATH12K_CUMAC_BAND_2GHZ:
 			if (supported_band & WMI_HOST_WLAN_2GHZ_CAP)
 				return true;
 			break;
+		case ATH12K_CUMAC_BAND_5GHZ_LOW:
+			if ((supported_band & WMI_HOST_WLAN_5GHZ_CAP) &&
+			    !(low_5ghz_chan >= ATH12K_MIN_6GHZ_FREQ &&
+			      high_5ghz_chan <= ATH12K_MAX_6GHZ_FREQ) &&
+			    high_5ghz_chan <= ATH12K_MIN_5G_HIGH_BAND_FREQ)
+				return true;
+			break;
+		case ATH12K_CUMAC_BAND_5GHZ_HIGH:
+			if ((supported_band & WMI_HOST_WLAN_5GHZ_CAP) &&
+			    !(low_5ghz_chan >= ATH12K_MIN_6GHZ_FREQ &&
+			      high_5ghz_chan <= ATH12K_MAX_6GHZ_FREQ) &&
+			    low_5ghz_chan >= ATH12K_MAX_5G_LOW_BAND_FREQ &&
+			    high_5ghz_chan <= ATH12K_MIN_6GHZ_FREQ)
+				return true;
+			break;
 		case ATH12K_CUMAC_BAND_5GHZ:
 			if ((supported_band & WMI_HOST_WLAN_5GHZ_CAP) &&
-			    !(ab->hal_reg_cap[i].low_5ghz_chan >= ATH12K_MIN_6GHZ_FREQ &&
-			      ab->hal_reg_cap[i].high_5ghz_chan <= ATH12K_MAX_6GHZ_FREQ))
+			    !(low_5ghz_chan >= ATH12K_MIN_6GHZ_FREQ &&
+			      high_5ghz_chan <= ATH12K_MAX_6GHZ_FREQ))
+				return true;
+			break;
+		case ATH12K_CUMAC_BAND_6GHZ_LOW:
+			if ((supported_band & WMI_HOST_WLAN_5GHZ_CAP) &&
+			    low_5ghz_chan >= ATH12K_MIN_6GHZ_FREQ &&
+			    high_5ghz_chan <= ATH12K_MAX_6GHZ_FREQ &&
+			    high_5ghz_chan <= ATH12K_MAX_6G_LOW_BAND_FREQ)
+				return true;
+			break;
+		case ATH12K_CUMAC_BAND_6GHZ_HIGH:
+			if ((supported_band & WMI_HOST_WLAN_5GHZ_CAP) &&
+			    low_5ghz_chan >= ATH12K_MAX_6G_LOW_BAND_FREQ &&
+			    high_5ghz_chan <= ATH12K_MAX_6GHZ_FREQ)
 				return true;
 			break;
 		case ATH12K_CUMAC_BAND_6GHZ:
 			if ((supported_band & WMI_HOST_WLAN_5GHZ_CAP) &&
-			    ab->hal_reg_cap[i].low_5ghz_chan >= ATH12K_MIN_6GHZ_FREQ &&
-			    ab->hal_reg_cap[i].high_5ghz_chan <= ATH12K_MAX_6GHZ_FREQ)
+			    low_5ghz_chan >= ATH12K_MIN_6GHZ_FREQ &&
+			    high_5ghz_chan <= ATH12K_MAX_6GHZ_FREQ)
 				return true;
 			break;
 		default:
@@ -2204,8 +2235,32 @@ static int ath12k_core_send_cumac_chip(struct ath12k_hw_group *ag)
 	return ret;
 }
 
-#define ATH12K_CUMAC_BAND_PRIO_MAX 3
-#define ATH12K_CUMAC_BAND_PRIO_STR_LEN 32
+#define ATH12K_CUMAC_BAND_PRIO_MAX 7
+#define ATH12K_CUMAC_BAND_PRIO_STR_LEN 64
+
+static const char *ath12k_cumac_band_to_string(enum ath12k_cumac_band band)
+{
+	switch (band) {
+	case ATH12K_CUMAC_BAND_NONE:
+		return "None";
+	case ATH12K_CUMAC_BAND_2GHZ:
+		return "2GHz";
+	case ATH12K_CUMAC_BAND_5GHZ:
+		return "5GHz";
+	case ATH12K_CUMAC_BAND_6GHZ:
+		return "6GHz";
+	case ATH12K_CUMAC_BAND_5GHZ_LOW:
+		return "5GHz Low";
+	case ATH12K_CUMAC_BAND_5GHZ_HIGH:
+		return "5GHz High";
+	case ATH12K_CUMAC_BAND_6GHZ_LOW:
+		return "6GHz Low";
+	case ATH12K_CUMAC_BAND_6GHZ_HIGH:
+		return "6GHz High";
+	default:
+		return "Unknown";
+	}
+}
 
 static int ath12k_parse_cumac_band_priority(enum ath12k_cumac_band *prio_band,
 					    struct ath12k_base *ab)
@@ -2237,8 +2292,16 @@ static int ath12k_parse_cumac_band_priority(enum ath12k_cumac_band *prio_band,
 
 		if (strcasecmp(token, "2GHz") == 0)
 			band = ATH12K_CUMAC_BAND_2GHZ;
+		else if (strcasecmp(token, "5GHz_L") == 0)
+			band = ATH12K_CUMAC_BAND_5GHZ_LOW;
+		else if (strcasecmp(token, "5GHz_H") == 0)
+			band = ATH12K_CUMAC_BAND_5GHZ_HIGH;
 		else if (strcasecmp(token, "5GHz") == 0)
 			band = ATH12K_CUMAC_BAND_5GHZ;
+		else if (strcasecmp(token, "6GHz_L") == 0)
+			band = ATH12K_CUMAC_BAND_6GHZ_LOW;
+		else if (strcasecmp(token, "6GHz_H") == 0)
+			band = ATH12K_CUMAC_BAND_6GHZ_HIGH;
 		else if (strcasecmp(token, "6GHz") == 0)
 			band = ATH12K_CUMAC_BAND_6GHZ;
 		else {
@@ -2268,7 +2331,11 @@ static int ath12k_select_cumac_chip(struct ath12k_hw_group *ag)
 	u8 best_chip_prio;
 	enum ath12k_cumac_band preferred_cumac_band = ATH12K_CUMAC_BAND_NONE;
 	enum ath12k_cumac_band default_prio_band[] = {ATH12K_CUMAC_BAND_6GHZ,
+						      ATH12K_CUMAC_BAND_6GHZ_LOW,
+						      ATH12K_CUMAC_BAND_6GHZ_HIGH,
 						      ATH12K_CUMAC_BAND_5GHZ,
+						      ATH12K_CUMAC_BAND_5GHZ_LOW,
+						      ATH12K_CUMAC_BAND_5GHZ_HIGH,
 						      ATH12K_CUMAC_BAND_2GHZ};
 	enum ath12k_cumac_band override_prio_band[ATH12K_CUMAC_BAND_PRIO_MAX];
 	enum ath12k_cumac_band *prio_band;
@@ -2304,6 +2371,13 @@ static int ath12k_select_cumac_chip(struct ath12k_hw_group *ag)
 
 	if (ag->num_devices == 1) {
 		cumac_ab = ag->ab[0];
+		for (j = 0; j < max_prio_order; j++) {
+			if (ath12k_check_ab_preferred_band(cumac_ab,
+							   prio_band[j])) {
+				preferred_cumac_band = prio_band[j];
+				break;
+			}
+		}
 		goto select_cumac;
 	}
 
@@ -2345,9 +2419,9 @@ select_cumac:
 	ag->cumac_chip_id = cumac_ab->device_id;
 	ag->cumac_selected = true;
 	ath12k_info(cumac_ab,
-		    "Selected CUMAC chip: chip_id=%d band=%d\n",
+		    "Selected CUMAC chip: chip_id=%d band=%s\n",
 		    cumac_ab->device_id,
-		    preferred_cumac_band);
+		    ath12k_cumac_band_to_string(preferred_cumac_band));
 
 	return 0;
 }
