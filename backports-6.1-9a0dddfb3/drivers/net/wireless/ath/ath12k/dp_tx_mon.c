@@ -4015,9 +4015,9 @@ int ath12k_dp_ext_mon_tx_alloc(struct ath12k_pdev_dp *dp_pdev)
 
 	INIT_LIST_HEAD(&tx_config->peer_list);
 
-	spin_lock_bh(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+	spin_lock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
 	tx_mon->tx_ext_mon.tx_ext_mon_config = tx_config;
-	spin_unlock_bh(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+	spin_unlock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
 
 	return 0;
 }
@@ -4040,14 +4040,10 @@ void ath12k_dp_ext_mon_tx_free(struct ath12k_pdev_dp *dp_pdev)
 		return;
 	}
 
-	spin_lock_bh(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+	spin_lock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
 	tx_config = tx_mon->tx_ext_mon.tx_ext_mon_config;
-	if (!tx_config) {
-		spin_unlock_bh(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
-		return;
-	}
 	tx_mon->tx_ext_mon.tx_ext_mon_config = NULL;
-	spin_unlock_bh(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+	spin_unlock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
 
 	kfree(tx_config);
 }
