@@ -727,6 +727,7 @@ ath12k_wifi8_hal_reo_qdesc_update_bitmaps_direct(struct ath12k_base *ab,
 
 int ath12k_wifi8_peer_rx_tid_reo_update_for_smd(struct ath12k_base *ab,
 						struct ath12k_dp_hw *dp_hw,
+						struct ieee80211_vif *vif,
 						const u8 *peer_addr,
 						struct ath12k_rx_smd_ctx_per_tid
 						*rx_tid_ctx)
@@ -757,7 +758,7 @@ int ath12k_wifi8_peer_rx_tid_reo_update_for_smd(struct ath12k_base *ab,
 
 	spin_lock_bh(&dp_hw->peer_hash_lock);
 
-	dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, (u8 *)peer_addr);
+	dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, (u8 *)peer_addr, vif);
 	if (!dp_peer) {
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		ath12k_warn(ab, "failed to find peer %pM for SMD REO update\n",
@@ -887,6 +888,7 @@ done:
  */
 int ath12k_wifi8_peer_rx_tid_svld_reset(struct ath12k_base *ab,
 					struct ath12k_dp_hw *dp_hw,
+					struct ieee80211_vif *vif,
 					const u8 *peer_addr)
 {
 	struct ath12k_dp_rx_tid *rx_tid;
@@ -900,7 +902,7 @@ int ath12k_wifi8_peer_rx_tid_svld_reset(struct ath12k_base *ab,
 
 	spin_lock_bh(&dp_hw->peer_hash_lock);
 
-	dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, (u8 *)peer_addr);
+	dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, (u8 *)peer_addr, vif);
 	if (!dp_peer) {
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		ath12k_warn(ab, "SMD SVLD reset: peer %pM not found\n", peer_addr);
@@ -994,6 +996,7 @@ void ath12k_wifi8_peer_rx_tid_reo_clear_vld_cmd_init(struct ath12k_dp_rx_tid *rx
  */
 int ath12k_wifi8_peer_rx_tid_reo_clear_vld(struct ath12k_base *ab,
 					   struct ath12k_dp_hw *dp_hw,
+					   struct ieee80211_vif *vif,
 					   const u8 *peer_addr,
 					   u8 tid)
 {
@@ -1014,7 +1017,7 @@ int ath12k_wifi8_peer_rx_tid_reo_clear_vld(struct ath12k_base *ab,
 
 	lockdep_assert_held(&dp_hw->peer_hash_lock);
 
-	dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, (u8 *)peer_addr);
+	dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, (u8 *)peer_addr, vif);
 	if (!dp_peer) {
 		ath12k_warn(ab, "failed to find peer %pM for REO VLD clear\n",
 			    peer_addr);
@@ -3910,6 +3913,7 @@ static void ath12k_wifi8_dp_smd_rx_flush_done(struct ath12k_dp *dp, void *ctx,
 
 int ath12k_wifi8_dp_smd_prep_rx_tid(struct ath12k_dp *dp,
 				    struct ath12k_dp_hw *dp_hw,
+				    struct ieee80211_vif *vif,
 				    const u8 *addr)
 {
 	struct ath12k_dp_peer *current_dp_peer;
@@ -3922,7 +3926,7 @@ int ath12k_wifi8_dp_smd_prep_rx_tid(struct ath12k_dp *dp,
 	long timeout;
 
 	spin_lock_bh(&dp_hw->peer_hash_lock);
-	current_dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, addr);
+	current_dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, addr, vif);
 	spin_unlock_bh(&dp_hw->peer_hash_lock);
 
 	if (!current_dp_peer) {
@@ -4065,6 +4069,7 @@ err_free:
 
 int ath12k_wifi8_dp_smd_exec_rx_tid(struct ath12k_dp *dp,
 				    struct ath12k_dp_hw *dp_hw,
+				    struct ieee80211_vif *vif,
 				    const u8 *addr)
 {
 	struct ath12k_dp_peer *target_dp_peer;
@@ -4075,7 +4080,7 @@ int ath12k_wifi8_dp_smd_exec_rx_tid(struct ath12k_dp *dp,
 	int tid;
 
 	spin_lock_bh(&dp_hw->peer_hash_lock);
-	target_dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, addr);
+	target_dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, addr, vif);
 	spin_unlock_bh(&dp_hw->peer_hash_lock);
 
 	if (!target_dp_peer) {

@@ -236,7 +236,8 @@ void ath12k_smd_ctx_to_ieee80211_ctx(struct ath12k_smd_ctx *ctx,
 				     struct ieee80211_smd_ctx *i80211_ctx);
 
 u16 ath12k_smd_ctx_get_rx_ba_bufsize(struct ath12k_base *ab, struct ath12k_hw *ah,
-				     const u8 *peer_addr, u8 tid, u16 orig_ba_win_sz);
+				     struct ieee80211_vif *vif, const u8 *peer_addr,
+				     u8 tid, u16 orig_ba_win_sz);
 
 static inline void ath12k_smd_ctx_encode_ba_buf_size(u16 buf_size, u16 *buf_size_base,
 						     u16 *buf_size_ext)
@@ -261,7 +262,8 @@ void ath12k_smd_ctx_get_tx_lsn_offset(struct ath12k_smd_ctx *drv_ctx,
 void ath12k_smd_get_vendor_ctx_bitmaps(struct ath12k_smd_ctx *drv_ctx,
 				       struct ath12k_rx_smd_ctx_per_tid *tid);
 int ath12k_smd_set_vendor_ctx(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
-			      struct ath12k_smd_ctx *ctx, struct ieee80211_sta *sta);
+			      struct ieee80211_vif *vif, struct ath12k_smd_ctx *ctx,
+			      struct ieee80211_sta *sta);
 
 void ath12k_smd_ctx_queue_work(struct work_struct *ctx_wk);
 void ath12k_smd_ctx_collector_work(struct work_struct *work);

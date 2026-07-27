@@ -63,9 +63,9 @@ void ath12k_mlo_info_get(u8 node_id, struct  mlo_param *params)
 void ath12k_ast_info_get(struct  ath12k_base *ab, struct ath12k_vif *ahvif,
 			 u8 *addr, struct ath_dp_ast_param *params)
 {
-	if (ath12k_dp_arch_ast_param_get(ab->dp, ahvif->ah,
-				&params->ast_info, &params->hw_peer_id,
-				addr))
+	if (ath12k_dp_arch_ast_param_get(ab->dp, ahvif->ah, ahvif->vif,
+					 &params->ast_info, &params->hw_peer_id,
+					 addr))
 		params->valid = true;
 	else
 		params->valid = false;
@@ -358,10 +358,10 @@ int ath12k_get_mscs_priority(struct ath_mscs_get_priority_param *params)
 	ab = ar->ab;
 
 	spin_lock_bh(&ar->ah->dp_hw.peer_hash_lock);
-	src_peer = ath12k_dp_peer_find_by_addr(&ar->ah->dp_hw, params->src_mac);
+	src_peer = ath12k_dp_peer_find_by_addr(&ar->ah->dp_hw, params->src_mac, src_vif);
 	if (!src_peer) {
 		dst_peer = ath12k_dp_peer_find_by_addr(&ar->ah->dp_hw,
-							     params->dst_mac);
+							     params->dst_mac, src_vif);
 		if (dst_peer) {
 			if (dst_peer->mscs_session_exists &&
 			    !skb->priority) {

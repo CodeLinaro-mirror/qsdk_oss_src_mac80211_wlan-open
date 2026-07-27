@@ -1831,7 +1831,8 @@ void ath12k_mac_dp_peer_cleanup_all(struct ath12k *ar)
 	list_for_each_entry_safe_reverse(arvif, tmp_vif, &ar->arvifs, list) {
 		if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
 			ath12k_dp_arch_peer_delete(dp, ar->ah, arvif->bssid,
-						   NULL, ar->hw_link_id);
+						   NULL, ar->hw_link_id,
+						   arvif->ahvif->vif);
 			if (arvif->self_arsta) {
 				spin_lock_bh(&ar->arsta_lock);
 				ath12k_link_sta_hlist_delete(ar, arvif->self_arsta);
@@ -3638,7 +3639,7 @@ static void ath12k_peer_assoc_h_basic(struct ath12k *ar,
 
 	arg->peer_caps = bss_conf->assoc_capability;
 	if (ar && ar->ah)
-		arg->sta_id = ath12k_dp_peer_get_sta_id(&ar->ah->dp_hw,
+		arg->sta_id = ath12k_dp_peer_get_sta_id(&ar->ah->dp_hw, vif,
 							sta->addr);
 	else
 		arg->sta_id = ATH12K_STA_ID_INVALID;
@@ -5613,7 +5614,7 @@ static void ath12k_peer_assoc_h_flowq(struct ath12k_link_sta *arsta,
 	ar = arvif->ar;
 	ret = ath12k_arch_dp_get_peer_mgmt_flowq(ar->ab->dp, &ar->ah->dp_hw,
 						 sta->addr,
-						 &arg->flowq_params);
+						 &arg->flowq_params, arvif->ahvif->vif);
 	if (ret)
 		arg->flowq_params.enabled = false;
 
@@ -5632,7 +5633,7 @@ static void ath12k_peer_assoc_h_holq(struct ath12k_link_sta *arsta,
 	ar = arvif->ar;
 	ret = ath12k_arch_dp_get_peer_holq(ar->ab->dp, &ar->ah->dp_hw,
 					   sta->addr,
-					   &arg->holq_params);
+					   &arg->holq_params, arvif->ahvif->vif);
 	if (ret)
 		arg->holq_params.enabled = false;
 
@@ -6481,7 +6482,7 @@ void ath12k_bss_assoc(struct ath12k *ar,
 	}
 
 	ath12k_dp_arch_link_peer_assoc(dp, &ar->ah->dp_hw,
-				       vif->cfg.ap_addr, ar->hw_link_id);
+				       vif->cfg.ap_addr, ar->hw_link_id, vif);
 	ret = ath12k_setup_peer_smps(ar, arvif, bssid,
 				     &ht_cap, &he_6ghz_cap);
 	if (ret) {
@@ -6531,13 +6532,13 @@ skip_vdev_up:
 		   "[radio_idx : %u] mac vdev %d up (associated) bssid %pM aid %d\n",
 		   ar->radio_idx, arvif->vdev_id, bssid, vif->cfg.aid);
 
-	ret = ath12k_dp_peer_get_param_by_mac_addr(ar->dp.dp_hw, arvif->bssid,
+	ret = ath12k_dp_peer_get_param_by_mac_addr(ar->dp.dp_hw, vif, arvif->bssid,
 						   ATH12K_DP_PEER_DMS_DISABLE_PARAM,
 						   &val);
 	if (!ret)
 		is_peer_dms = !val.dms_disable;
 
-	ret = ath12k_dp_peer_get_param_by_mac_addr(ar->dp.dp_hw, arvif->bssid,
+	ret = ath12k_dp_peer_get_param_by_mac_addr(ar->dp.dp_hw, vif, arvif->bssid,
 						   ATH12K_DP_PEER_AUTHORIZE_PARAM,
 						   &val);
 	if (!ret && val.is_authorized)
@@ -6559,7 +6560,7 @@ skip_vdev_up:
 						       vif->cfg.ap_addr,
 						       BIT(ar->hw_link_id));
 
-		if (ath12k_dp_arch_smd_exec_rx_tid(dp, dp_hw, vif->cfg.ap_addr))
+		if (ath12k_dp_arch_smd_exec_rx_tid(dp, dp_hw, vif, vif->cfg.ap_addr))
 			ath12k_warn(ab,
 				    "smd bss_assoc: rx_tid restore failed for %pM (non-fatal)\n",
 				    vif->cfg.ap_addr);
@@ -7123,7 +7124,7 @@ static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 			    ar->radio_idx, arvif->vdev_id, ret);
 
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
-		ret = ath12k_peer_delete(ar, arvif->vdev_id, arvif->bssid,
+		ret = ath12k_peer_delete(ar, arvif, arvif->bssid,
 					 false, 0, false, NULL);
 		if (ret)
 			ath12k_warn(ar->ab, "[radio_idx : %u] failed to submit AP self-peer removal on vdev %d link id %d: %d"
@@ -7132,7 +7133,7 @@ static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 				    arvif->vdev_id, arvif->link_id, ret, ar->num_peers);
 
 		ath12k_dp_arch_peer_delete(dp, ah, arvif->bssid,
-					   NULL, ar->hw_link_id);
+					   NULL, ar->hw_link_id, ahvif->vif);
 
 		/* Remove and free the self-peer arsta that was registered
 		 * in ar->arsta_list during vdev creation.
@@ -12427,7 +12428,7 @@ int ath12k_mac_set_key(struct ath12k *ar, enum set_key_cmd cmd,
 	}
 
 	ret = ath12k_dp_peer_set_key_config(&ar->dp, peer_addr, cmd, key, sta,
-					    &enctype);
+					    arvif->ahvif->vif, &enctype);
 	if (!ret && cmd == SET_KEY && arsta)
 		arsta->ahsta->enctype = enctype;
 
@@ -13837,7 +13838,7 @@ static int ath12k_mac_station_assoc(struct ath12k *ar,
 						    &val);
 	}
 	ath12k_dp_arch_link_peer_assoc(dp, &ar->ah->dp_hw,
-				       sta->addr, ar->hw_link_id);
+				       sta->addr, ar->hw_link_id, vif);
 
 	/* If single VHT/HE/EHT rate is configured (by set_bitrate_mask()),
 	 * peer_assoc will disable VHT/HE/EHT. This is now enabled by a peer specific
@@ -14547,7 +14548,7 @@ static int ath12k_mac_station_remove(struct ath12k *ar,
 		skip_peer_del = true;
 	}
 
-	ret = ath12k_peer_delete(ar, arvif->vdev_id, arsta->addr, skip_peer_del,
+	ret = ath12k_peer_delete(ar, arvif, arsta->addr, skip_peer_del,
 				 ahsta->mlo_hw_link_id_bitmap,
 				 ahsta->peer_delete_send_mlo_hw_bitmap, sta);
 	if (ret)
@@ -14710,8 +14711,8 @@ static int ath12k_mac_station_add(struct ath12k *ar,
 		peer_param.mlo_bridge_peer = false;
 	}
 	peer_param.ml_enabled = sta->mlo;
-	peer_param.peer_id = ath12k_dp_peer_get_peer_id(&ar->ah->dp_hw, sta->addr);
-	peer_param.sta_id = ath12k_dp_peer_get_sta_id(&ar->ah->dp_hw, sta->addr);
+	peer_param.peer_id = ath12k_dp_peer_get_peer_id(&ar->ah->dp_hw, vif, sta->addr);
+	peer_param.sta_id = ath12k_dp_peer_get_sta_id(&ar->ah->dp_hw, vif, sta->addr);
 	peer_param.epp_peer = sta->epp_peer;
 
 	ret = ath12k_peer_create(ar, arvif, sta, &peer_param);
@@ -14764,7 +14765,7 @@ static int ath12k_mac_station_add(struct ath12k *ar,
 	return 0;
 
 free_peer:
-	ath12k_peer_delete(ar, arvif->vdev_id, arsta->addr, false,
+	ath12k_peer_delete(ar, arvif, arsta->addr, false,
 			   arsta->ahsta->mlo_hw_link_id_bitmap,
 			   arsta->ahsta->peer_delete_send_mlo_hw_bitmap, sta);
 	if (arsta->ahsta->peer_delete_cmd_sent_bitmap & BIT(arsta->link_id)) {
@@ -15351,8 +15352,10 @@ static void ath12k_tx_pn_request(struct ath12k *ar,
 	union ath12k_config_param val = {0};
 
 	val.pn_params.keyidx = keyix;
-	ret = ath12k_dp_peer_get_param_by_mac_addr(ar->dp.dp_hw, arvif->bssid,
-						   ATH12K_DP_PEER_PN_PARAMS, &val);
+	ret = ath12k_dp_peer_get_param_by_mac_addr(ar->dp.dp_hw, arvif->ahvif->vif,
+						   arvif->bssid,
+						   ATH12K_DP_PEER_PN_PARAMS,
+						   &val);
 	if (ret)
 		return;
 
@@ -16169,7 +16172,7 @@ ml_station_remove:
 		}
 		if (ar)
 			ath12k_dp_arch_peer_delete(ar->ab->dp, ah, sta->addr,
-						   sta, ar->hw_link_id);
+						   sta, ar->hw_link_id, ahvif->vif);
 
 		wiphy_work_cancel(wiphy, &ahsta->set_4addr_wk);
 
@@ -16184,7 +16187,7 @@ ml_station_remove:
 peer_delete:
 	if (ret)
 		ath12k_dp_arch_peer_delete(arvif->ar->ab->dp, ah, sta->addr, sta,
-					   arvif->ar->hw_link_id);
+					   arvif->ar->hw_link_id, ahvif->vif);
 hash_del:
 	if (ret) {
 		spin_lock_bh(&ag->ahsta_lock);
@@ -17315,7 +17318,8 @@ skip_pri_link_selection:
 				INIT_HLIST_NODE(&def_arsta->hlist_addr);
 				ath12k_link_sta_hlist_add(tmp_ar, def_arsta);
 				spin_unlock_bh(&tmp_ar->arsta_lock);
-				ath12k_dp_arch_assoc_link_update(tmp_ar->ab->dp, ah, sta);
+				ath12k_dp_arch_assoc_link_update(tmp_ar->ab->dp, ah, sta,
+								 vif);
 			}
 		}
 	}
@@ -17345,7 +17349,7 @@ void ath12k_mac_migrate_assoc_link(struct ath12k_sta *ahsta, u8 new_link_id)
 	ahsta->assoc_link_id = new_link_id;
 
 	sta = ath12k_ahsta_to_sta(ahsta);
-	ath12k_dp_arch_assoc_link_update(new_ar->ab->dp, ahvif->ah, sta);
+	ath12k_dp_arch_assoc_link_update(new_ar->ab->dp, ahvif->ah, sta, ahvif->vif);
 }
 
 void ath12k_mac_op_set_dscp_tid(struct ieee80211_hw *hw,
@@ -21672,7 +21676,7 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 
 err_peer_del:
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
-		fbret = ath12k_peer_delete(ar, arvif->vdev_id, link_addr,
+		fbret = ath12k_peer_delete(ar, arvif, link_addr,
 					   false, 0, false, NULL);
 		if (fbret) {
 			ath12k_warn(ar->ab, "[radio_idx : %u] failed to delete peer %pM vdev_id %d ret %d\n",
@@ -21692,7 +21696,7 @@ err_self_arsta_del:
 err_dp_peer_del:
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_AP)
 		ath12k_dp_arch_peer_delete(ab->dp, ah, arvif->bssid,
-					   NULL, ar->hw_link_id);
+					   NULL, ar->hw_link_id, ahvif->vif);
 
 err_vdev_del:
 	ath12k_wmi_vdev_delete(ar, arvif->vdev_id);
@@ -27612,7 +27616,7 @@ void ath12k_mac_op_preserved_link_stats(struct ieee80211_hw *hw,
 	ahvif =  ath12k_vif_to_ahvif(vif);
 	ah = ahvif->ah;
 	spin_lock_bh(&ah->dp_hw.peer_hash_lock);
-	dp_peer = ath12k_dp_peer_find_by_addr(&ah->dp_hw, sta->addr);
+	dp_peer = ath12k_dp_peer_find_by_addr(&ah->dp_hw, sta->addr, vif);
 	if (!dp_peer)
 		goto out;
 
@@ -32722,7 +32726,8 @@ static int ath12k_netstats_peer_iter_cb(struct ath12k *ar,
 				       dp_peer_addr,
 				       ar->hw_link_id,
 				       ctx->peer_mac,
-				       ctx->stats);
+				       ctx->stats,
+				       ctx->vif);
 	return 0;
 }
 
@@ -32775,6 +32780,7 @@ void ath12k_mac_op_get_netstats(struct ieee80211_hw *hw,
 	/* Set up iterator context (CP -> DP bridge) */
 	ctx.stats    = stats;
 	ctx.peer_mac = peer_mac;
+	ctx.vif = ahvif->vif;
 
 	for_each_set_bit(link_id, &links_map, ATH12K_NUM_MAX_LINKS) {
 		if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS)

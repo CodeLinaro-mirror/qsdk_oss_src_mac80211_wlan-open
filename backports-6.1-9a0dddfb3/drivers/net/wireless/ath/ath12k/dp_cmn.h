@@ -306,8 +306,8 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 			       struct ieee80211_sta *sta, u8 *addr, u8 link_id,
 			       struct ieee80211_vif *vif, u8 vp_type, int vp_num,
 			       bool mlo_bridge_peer);
-void ath12k_dp_link_peer_unassign(struct ath12k *ar, u8 vdev_id, u8 *addr,
-				  struct ieee80211_sta *sta);
+void ath12k_dp_link_peer_unassign(struct ath12k *ar, struct ath12k_link_vif *arvif,
+				  u8 *addr, struct ieee80211_sta *sta);
 int
 ath12k_dp_link_peer_batch_cleanup(struct ath12k *ar,
 				  bool (*peer_match)(struct ath12k_dp_link_peer *,
@@ -321,8 +321,10 @@ void ath12k_dp_mon_deinit(struct ath12k_dp *dp);
 void ath12k_dp_cp_link_peer_unassign(struct ath12k *ar, struct ath12k_link_vif *arvif,
 				     struct ath12k_sta *ahsta, u8 link_id, u8 *addr,
 				     bool update_bmap);
-u16 ath12k_dp_peer_get_peer_id(struct ath12k_dp_hw *dp_hw, u8 *addr);
-u16 ath12k_dp_peer_get_sta_id(struct ath12k_dp_hw *dp_hw, u8 *addr);
+u16 ath12k_dp_peer_get_peer_id(struct ath12k_dp_hw *dp_hw, struct ieee80211_vif *vif,
+			       u8 *addr);
+u16 ath12k_dp_peer_get_sta_id(struct ath12k_dp_hw *dp_hw, struct ieee80211_vif *vif,
+			      u8 *addr);
 
 enum ath12k_dp_peer_param {
 	ATH12K_DP_PEER_PEERID_PARAM,
@@ -440,10 +442,13 @@ int ath12k_dp_peer_get_param_by_dp_peer(void *ptr, enum ath12k_dp_peer_param par
 					union ath12k_config_param *val);
 
 int ath12k_dp_peer_set_param_by_mac_addr(struct ath12k_dp_hw *dp_hw,
+					 struct ieee80211_vif *vif,
 					 const u8 *addr,
 					 enum ath12k_dp_peer_param param,
 					 union ath12k_config_param *val);
-int ath12k_dp_peer_get_param_by_mac_addr(struct ath12k_dp_hw *dp_hw, const u8 *addr,
+int ath12k_dp_peer_get_param_by_mac_addr(struct ath12k_dp_hw *dp_hw,
+					 struct ieee80211_vif *vif,
+					 const u8 *addr,
 					 enum ath12k_dp_peer_param param,
 					 union ath12k_config_param *val);
 int ath12k_dp_peer_get_param_by_peer_id(struct ath12k_pdev_dp *dp_pdev, u16 peer_id,
@@ -491,22 +496,26 @@ int ath12k_dp_link_peer_get_param_by_dp_peer_and_link_id(void *ptr, u8 link_id,
 							 union ath12k_config_param *val);
 
 int ath12k_dp_link_peer_set_param_by_mld_and_link_mac(struct ath12k_dp_hw *dp_hw,
+						      struct ieee80211_vif *vif,
 						      const u8 *mld_mac,
 						      const u8 *link_mac,
 						      enum ath12k_dp_link_peer_param param,
 						      union ath12k_config_param *val);
 
 int ath12k_dp_link_peer_get_param_by_mld_and_link_mac(struct ath12k_dp_hw *dp_hw,
+						      struct ieee80211_vif *vif,
 						      const u8 *mld_mac,
 						      const u8 *link_mac,
 						      enum ath12k_dp_link_peer_param param,
 						      union ath12k_config_param *val);
 
 int ath12k_dp_link_peer_set_param_by_mld_mac_and_link_id(struct ath12k_dp_hw *dp_hw,
+							 struct ieee80211_vif *vif,
 							 const u8 *mld_mac, u8 link_id,
 							 enum ath12k_dp_link_peer_param param,
 							 union ath12k_config_param *val);
 int ath12k_dp_link_peer_get_param_by_mld_mac_and_link_id(struct ath12k_dp_hw *dp_hw,
+							 struct ieee80211_vif *vif,
 							 const u8 *mld_mac, u8 link_id,
 							 enum ath12k_dp_link_peer_param param,
 							 union ath12k_config_param *val);
@@ -548,7 +557,7 @@ int ath12k_dp_link_peer_get_4addr_params(void *ptr, const u8 *addr,
 					 struct ath12k_4addr_params *params);
 int ath12k_dp_peer_set_key_config(struct ath12k_pdev_dp *dp_pdev, const u8 *addr,
 				  enum set_key_cmd cmd, struct ieee80211_key_conf *key,
-				  struct ieee80211_sta *sta,
+				  struct ieee80211_sta *sta, struct ieee80211_vif *vif,
 				  enum hal_encrypt_type *enctype);
 void ath12k_dp_peer_cleanup_all(struct ath12k *ar);
 void ath12k_dp_vif_peer_stats_update(struct ath12k_dp_hw *dp_hw,

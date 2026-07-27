@@ -706,7 +706,8 @@ struct ath12k_dp_arch_ops {
 			      struct ath12k_dp_peer_create_params *params,
 			      struct ieee80211_vif *vif);
 	void (*dp_peer_delete)(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 *addr,
-			       struct ieee80211_sta *sta, u8 hw_link_id);
+			       struct ieee80211_sta *sta, u8 hw_link_id,
+			       struct ieee80211_vif *vif);
 	int (*dp_peer_assoc)(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 			     struct ath12k_dp_vif *dp_vif, u8 *addr,
 			     struct ath12k_dp_peer_create_params *params);
@@ -720,10 +721,11 @@ struct ath12k_dp_arch_ops {
 					    u8 hw_link_id);
 	int (*dp_ppeds_tx_completion_handler)(struct ath12k_base *ab, int budget);
 	void (*dp_link_peer_assoc)(struct ath12k_dp_hw *dp_hw, struct ath12k_dp *dp,
-				   u8 *addr, u32 hw_link_id);
+				   u8 *addr, u32 hw_link_id, struct ieee80211_vif *vif);
 	int (*dp_get_peer_mgmt_flowq)(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 				      u8 *addr,
-				      struct peer_assoc_flowq_params *flowq_params);
+				      struct peer_assoc_flowq_params *flowq_params,
+				      struct ieee80211_vif *vif);
 	int (*dp_smd_prep_transfer_ext_ctx)(struct ath12k_dp *dp,
 					    struct ath12k_dp_peer *current_dp_peer,
 					    const u8 *target_mld_addr,
@@ -736,17 +738,20 @@ struct ath12k_dp_arch_ops {
 					   u16 active_hw_links);
 	int (*dp_smd_prep_rx_tid)(struct ath12k_dp *dp,
 				  struct ath12k_dp_hw *dp_hw,
+				  struct ieee80211_vif *vif,
 				  const u8 *addr);
 	int (*dp_smd_exec_rx_tid)(struct ath12k_dp *dp,
 				  struct ath12k_dp_hw *dp_hw,
+				  struct ieee80211_vif *vif,
 				  const u8 *addr);
 	void (*dp_smd_clear_old_peer_rx_lut)(struct ath12k_dp *dp,
 					     struct ath12k_dp_peer *dp_peer);
 	/* Release parked ext_ctx when a PREP transition is aborted. */
-	void (*dp_smd_abort_prep)(struct ath12k_dp *dp);
+	void (*dp_smd_abort_prep)(struct ath12k_dp *dp, struct ieee80211_vif *vif);
 	int (*dp_get_peer_holq)(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 				u8 *addr,
-				struct peer_assoc_holq_params *holq_params);
+				struct peer_assoc_holq_params *holq_params,
+				struct ieee80211_vif *vif);
 	void (*dp_vif_configure)(struct ath12k_dp *dp, struct ath12k_vif *ahvif,
 				 enum ath12k_dp_op_type optype);
 	void (*dp_link_vif_configure)(struct ath12k_dp *dp, struct ath12k_vif *ahvif,
@@ -790,18 +795,21 @@ struct ath12k_dp_arch_ops {
 	ssize_t (*dump_device_dp_stats)(struct ath12k_dp *dp, char *buf, int size);
 	void (*reset_device_dp_stats)(struct ath12k_dp *dp);
 	void (*dp_assoc_link_update)(struct ath12k_dp *dp, struct ath12k_hw *ah,
-				     struct ieee80211_sta *sta);
+				     struct ieee80211_sta *sta,
+				     struct ieee80211_vif *vif);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	bool (*dp_ast_param_get)(struct ath12k_hw *ah, uint16_t *ast_info,
-				 u16 *hw_peer_id, u8 *addr);
+	bool (*dp_ast_param_get)(struct ath12k_hw *ah, struct ieee80211_vif *vif,
+				 u16 *ast_info, u16 *hw_peer_id, u8 *addr);
 #endif
 	int (*peer_rx_tid_reo_update_for_smd)(struct ath12k_base *ab,
 					      struct ath12k_dp_hw *dp_hw,
+					      struct ieee80211_vif *vif,
 					      const u8 *peer_addr,
 					      struct ath12k_rx_smd_ctx_per_tid
 					      *rx_tid_ctx);
 	int (*dp_peer_fetch_smd_ctx)(struct ath12k_base *ab,
 				     struct ath12k_dp_hw *dp_hw,
+				     struct ieee80211_vif *vif,
 				     struct ath12k_dp_smd_ctx *ctx,
 				     void (*rx_cb)(struct ath12k_dp *dp, void *ctx,
 						   struct hal_reo_status *status),
@@ -812,6 +820,7 @@ struct ath12k_dp_arch_ops {
 				  u16 msduq, u16 qos_id);
 	int (*peer_tx_tid_update_for_smd)(struct ath12k_base *ab,
 					  struct ath12k_dp_hw *dp_hw,
+					  struct ieee80211_vif *vif,
 					  const u8 *peer_addr,
 					  struct ath12k_tx_smd_ctx_per_tid *tx_tid_ctx);
 	ssize_t (*dump_svc_sorted_list)(struct ath12k_dp *dp, u8 ac_mask,
@@ -826,9 +835,11 @@ struct ath12k_dp_arch_ops {
 	int (*set_congestion_ctrl_param)(struct ath12k_dp *dp, u32 type, u32 value);
 	int (*peer_tx_tid_sn_reset)(struct ath12k_base *ab,
 				    struct ath12k_dp_hw *dp_hw,
+				    struct ieee80211_vif *vif,
 				    const u8 *peer_addr);
 	int (*peer_rx_tid_svld_reset)(struct ath12k_base *ab,
 				      struct ath12k_dp_hw *dp_hw,
+				      struct ieee80211_vif *vif,
 				      const u8 *peer_addr);
 	int (*get_coredump_seg_count)(struct ath12k_dp *dp);
 	int (*get_coredump_segs)(struct ath12k_dp *dp,
@@ -1419,12 +1430,13 @@ static inline void ath12k_dp_arch_pdev_free(struct ath12k_dp *dp)
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 static inline bool
 ath12k_dp_arch_ast_param_get(struct ath12k_dp *dp,
-			     struct ath12k_hw *ah,
+			     struct ath12k_hw *ah, struct ieee80211_vif *vif,
 			     u16 *ast_info, u16 *hw_peer_id,
 			     u8 *addr)
 {
 	if (dp->arch_ops->dp_ast_param_get)
-		return dp->arch_ops->dp_ast_param_get(ah, ast_info, hw_peer_id, addr);
+		return dp->arch_ops->dp_ast_param_get(ah, vif, ast_info, hw_peer_id,
+						      addr);
 	return false;
 }
 #endif
@@ -1445,19 +1457,21 @@ static inline void
 ath12k_dp_arch_peer_delete(struct ath12k_dp *dp,
 			   struct ath12k_hw *ah,
 			   u8 *addr,
-			   struct ieee80211_sta *sta, u8 hw_link_id)
+			   struct ieee80211_sta *sta, u8 hw_link_id,
+			   struct ieee80211_vif *vif)
 {
 	if (dp->arch_ops->dp_peer_delete)
-		dp->arch_ops->dp_peer_delete(dp, ah, addr, sta, hw_link_id);
+		dp->arch_ops->dp_peer_delete(dp, ah, addr, sta, hw_link_id, vif);
 }
 
 static inline void
 ath12k_dp_arch_assoc_link_update(struct ath12k_dp *dp,
 				 struct ath12k_hw *ah,
-				 struct ieee80211_sta *sta)
+				 struct ieee80211_sta *sta,
+				 struct ieee80211_vif *vif)
 {
 	if (dp->arch_ops->dp_assoc_link_update)
-		dp->arch_ops->dp_assoc_link_update(dp, ah, sta);
+		dp->arch_ops->dp_assoc_link_update(dp, ah, sta, vif);
 }
 
 static inline int ath12k_dp_arch_peer_assoc(struct ath12k_dp *dp,
@@ -1506,22 +1520,24 @@ ath12k_dp_arch_peer_drv_cleanup_indication(struct ath12k_dp *dp,
 
 static inline void ath12k_dp_arch_link_peer_assoc(struct ath12k_dp *dp,
 						  struct ath12k_dp_hw *dp_hw,
-						  u8 *addr, u32 hw_link_id)
+						  u8 *addr, u32 hw_link_id,
+						  struct ieee80211_vif *vif)
 {
 	if (dp->arch_ops->dp_link_peer_assoc)
 		return dp->arch_ops->dp_link_peer_assoc(dp_hw, dp, addr,
-							hw_link_id);
+							hw_link_id, vif);
 }
 
 static inline int
 ath12k_arch_dp_get_peer_mgmt_flowq(struct ath12k_dp *dp,
 				   struct ath12k_dp_hw *dp_hw,
 				   u8 *addr,
-				   struct peer_assoc_flowq_params *flowq_params)
+				   struct peer_assoc_flowq_params *flowq_params,
+				   struct ieee80211_vif *vif)
 {
 	if (dp->arch_ops->dp_get_peer_mgmt_flowq)
 		return dp->arch_ops->dp_get_peer_mgmt_flowq(dp, dp_hw, addr,
-							    flowq_params);
+							    flowq_params, vif);
 	return -EINVAL;
 }
 
@@ -1529,11 +1545,12 @@ static inline int
 ath12k_arch_dp_get_peer_holq(struct ath12k_dp *dp,
 			     struct ath12k_dp_hw *dp_hw,
 			     u8 *addr,
-			     struct peer_assoc_holq_params *holq_params)
+			     struct peer_assoc_holq_params *holq_params,
+			     struct ieee80211_vif *vif)
 {
 	if (dp->arch_ops->dp_get_peer_holq)
 		return dp->arch_ops->dp_get_peer_holq(dp, dp_hw, addr,
-						      holq_params);
+						      holq_params, vif);
 	return -EINVAL;
 }
 
@@ -1569,6 +1586,7 @@ static inline int ath12k_dp_arch_get_peer_init_status(struct ath12k_dp *dp,
 static inline int
 ath12k_dp_arch_dp_peer_fetch_smd_ctx(struct ath12k_dp *dp,
 				     struct ath12k_dp_hw *dp_hw,
+				     struct ieee80211_vif *vif,
 				     struct ath12k_dp_smd_ctx *ctx,
 				     void (*rx_cb)(struct ath12k_dp *dp, void *ctx,
 						   struct hal_reo_status *reo_status),
@@ -1576,7 +1594,7 @@ ath12k_dp_arch_dp_peer_fetch_smd_ctx(struct ath12k_dp *dp,
 						   u8 *addr, u8 tid))
 {
 	if (dp->arch_ops->dp_peer_fetch_smd_ctx)
-		return dp->arch_ops->dp_peer_fetch_smd_ctx(dp->ab, dp_hw, ctx,
+		return dp->arch_ops->dp_peer_fetch_smd_ctx(dp->ab, dp_hw, vif, ctx,
 							   rx_cb, tx_cb);
 	return 0;
 }
@@ -1584,11 +1602,12 @@ ath12k_dp_arch_dp_peer_fetch_smd_ctx(struct ath12k_dp *dp,
 static inline int
 ath12k_dp_arch_peer_tx_tid_update_for_smd(struct ath12k_dp *dp,
 					  struct ath12k_dp_hw *dp_hw,
+					  struct ieee80211_vif *vif,
 					  const u8 *peer_addr,
 					  struct ath12k_tx_smd_ctx_per_tid *tx_tid_ctx)
 {
 	if (dp->arch_ops->peer_tx_tid_update_for_smd)
-		return dp->arch_ops->peer_tx_tid_update_for_smd(dp->ab, dp_hw,
+		return dp->arch_ops->peer_tx_tid_update_for_smd(dp->ab, dp_hw, vif,
 								peer_addr,
 								tx_tid_ctx);
 
@@ -1598,12 +1617,14 @@ ath12k_dp_arch_peer_tx_tid_update_for_smd(struct ath12k_dp *dp,
 static inline int
 ath12k_dp_arch_peer_rx_tid_reo_update_for_smd(struct ath12k_dp *dp,
 					      struct ath12k_dp_hw *dp_hw,
+					      struct ieee80211_vif *vif,
 					      const u8 *peer_addr,
 					      struct ath12k_rx_smd_ctx_per_tid
 					      *rx_tid_ctx)
 {
 	if (dp->arch_ops->peer_rx_tid_reo_update_for_smd)
 		return dp->arch_ops->peer_rx_tid_reo_update_for_smd(dp->ab, dp_hw,
+								    vif,
 								    peer_addr,
 								    rx_tid_ctx);
 	return 0;
@@ -1637,22 +1658,24 @@ static inline int ath12k_dp_arch_set_congestion_ctrl_param(struct ath12k_dp *dp,
 static inline int
 ath12k_dp_arch_peer_tx_tid_sn_reset(struct ath12k_dp *dp,
 				    struct ath12k_dp_hw *dp_hw,
+				    struct ieee80211_vif *vif,
 				    const u8 *peer_addr)
 {
 	if (dp->arch_ops->peer_tx_tid_sn_reset)
 		return dp->arch_ops->peer_tx_tid_sn_reset(dp->ab, dp_hw,
-							  peer_addr);
+							  vif, peer_addr);
 	return -EOPNOTSUPP;
 }
 
 static inline int
 ath12k_dp_arch_peer_rx_tid_svld_reset(struct ath12k_dp *dp,
 				      struct ath12k_dp_hw *dp_hw,
+				      struct ieee80211_vif *vif,
 				      const u8 *peer_addr)
 {
 	if (dp->arch_ops->peer_rx_tid_svld_reset)
 		return dp->arch_ops->peer_rx_tid_svld_reset(dp->ab, dp_hw,
-							    peer_addr);
+							   vif, peer_addr);
 	return -EOPNOTSUPP;
 }
 
@@ -1686,10 +1709,11 @@ ath12k_dp_arch_smd_exec_activate_links(struct ath12k_dp *dp,
 static inline int
 ath12k_dp_arch_smd_prep_rx_tid(struct ath12k_dp *dp,
 			       struct ath12k_dp_hw *dp_hw,
+			       struct ieee80211_vif *vif,
 			       const u8 *addr)
 {
 	if (dp->arch_ops->dp_smd_prep_rx_tid)
-		return dp->arch_ops->dp_smd_prep_rx_tid(dp, dp_hw, addr);
+		return dp->arch_ops->dp_smd_prep_rx_tid(dp, dp_hw, vif, addr);
 
 	return -EOPNOTSUPP;
 }
@@ -1697,10 +1721,11 @@ ath12k_dp_arch_smd_prep_rx_tid(struct ath12k_dp *dp,
 static inline int
 ath12k_dp_arch_smd_exec_rx_tid(struct ath12k_dp *dp,
 			       struct ath12k_dp_hw *dp_hw,
+			       struct ieee80211_vif *vif,
 			       const u8 *addr)
 {
 	if (dp->arch_ops->dp_smd_exec_rx_tid)
-		return dp->arch_ops->dp_smd_exec_rx_tid(dp, dp_hw, addr);
+		return dp->arch_ops->dp_smd_exec_rx_tid(dp, dp_hw, vif, addr);
 
 	return -EOPNOTSUPP;
 }
@@ -1714,10 +1739,10 @@ ath12k_dp_arch_smd_clear_old_peer_rx_lut(struct ath12k_dp *dp,
 }
 
 static inline void
-ath12k_dp_arch_smd_abort_prep(struct ath12k_dp *dp)
+ath12k_dp_arch_smd_abort_prep(struct ath12k_dp *dp, struct ieee80211_vif *vif)
 {
 	if (dp->arch_ops->dp_smd_abort_prep)
-		dp->arch_ops->dp_smd_abort_prep(dp);
+		dp->arch_ops->dp_smd_abort_prep(dp, vif);
 }
 
 static inline void ath12k_dp_get_mac_addr(u32 addr_l32, u16 addr_h16, u8 *addr)

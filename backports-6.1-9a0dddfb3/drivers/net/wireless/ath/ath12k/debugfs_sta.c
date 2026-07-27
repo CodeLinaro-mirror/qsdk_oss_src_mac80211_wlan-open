@@ -561,7 +561,7 @@ ath12k_dbg_sta_read_qos_msduq(struct file *file, char __user *user_buf,
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
 
 	spin_lock_bh(&ah->dp_hw.peer_hash_lock);
-	peer = ath12k_dp_peer_find_by_addr(&ah->dp_hw, sta->addr);
+	peer = ath12k_dp_peer_find_by_addr(&ah->dp_hw, sta->addr, ahsta->ahvif->vif);
 	if (!peer) {
 		goto ret;
 	}
@@ -695,7 +695,7 @@ static ssize_t ath12k_dbg_sta_write_fetch_reo_ctx(struct file *file,
 
 	/* dp_peer is keyed by MLD address (sta->addr), not per-link address */
 	spin_lock_bh(&ah->dp_hw.peer_hash_lock);
-	dp_peer = ath12k_dp_peer_find_by_addr(&ah->dp_hw, sta->addr);
+	dp_peer = ath12k_dp_peer_find_by_addr(&ah->dp_hw, sta->addr, ahsta->ahvif->vif);
 	if (!dp_peer) {
 		spin_unlock_bh(&ah->dp_hw.peer_hash_lock);
 		ret = -ENOENT;
@@ -780,7 +780,7 @@ ath12k_dbg_sta_read_scs(struct file *file, char __user *user_buf,
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
 	spin_lock_bh(&ah->dp_hw.peer_hash_lock);
 
-	peer = ath12k_dp_peer_find_by_addr(&ah->dp_hw, arsta->addr);
+	peer = ath12k_dp_peer_find_by_addr(&ah->dp_hw, arsta->addr, ahsta->ahvif->vif);
 	if (!peer)
 		goto ret;
 

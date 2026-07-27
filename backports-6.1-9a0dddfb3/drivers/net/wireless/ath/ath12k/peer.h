@@ -54,7 +54,7 @@ struct ath12k_peer_del_tracker {
 };
 
 void ath12k_peer_cleanup(struct ath12k *ar, u32 vdev_id);
-int ath12k_peer_delete(struct ath12k *ar, u32 vdev_id, u8 *addr,
+int ath12k_peer_delete(struct ath12k *ar, struct ath12k_link_vif *arvif, u8 *addr,
 		       bool skip_peer_del, u32 mlo_hw_link_id_bitmap,
 		       bool peer_delete_send_mlo_hw_bitmap, struct ieee80211_sta *sta);
 int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,

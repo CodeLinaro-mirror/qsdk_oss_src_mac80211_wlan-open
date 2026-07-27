@@ -96,7 +96,7 @@ static int ath12k_uhr_smd_transfer_ext_ctx(struct ath12k_vif *ahvif,
 	dp = ath12k_ab_to_dp(ab);
 	dp_hw = &current_arsta->arvif->ar->ah->dp_hw;
 
-	if (ath12k_dp_arch_smd_prep_rx_tid(dp, dp_hw, current_sta->addr))
+	if (ath12k_dp_arch_smd_prep_rx_tid(dp, dp_hw, ahvif->vif, current_sta->addr))
 		ath12k_warn(ab,
 			    "smd prep: rx_tid park failed for %pM (non-fatal)\n",
 			    current_sta->addr);
@@ -243,7 +243,7 @@ static int ath12k_smd_bss_assoc(struct ath12k *ar,
 		is_auth = true;
 
 	ath12k_dp_arch_link_peer_assoc(dp, &ar->ah->dp_hw,
-				       target_mld_addr, ar->hw_link_id);
+				       target_mld_addr, ar->hw_link_id, ahvif->vif);
 
 	ret = ath12k_setup_peer_smps(ar, arvif, link_info->target_bssid,
 				     &ht_cap, &he_6ghz_cap);
@@ -288,7 +288,8 @@ static int ath12k_smd_bss_assoc(struct ath12k *ar,
 						       target_mld_addr,
 						       BIT(arvif->ar->hw_link_id));
 
-		if (ath12k_dp_arch_smd_exec_rx_tid(dp, dp_hw, target_mld_addr))
+		if (ath12k_dp_arch_smd_exec_rx_tid(dp, dp_hw, ahvif->vif,
+						   target_mld_addr))
 			ath12k_warn(ab,
 				    "smd: rx_tid restore skipped %pM (no parked info)\n",
 				    target_mld_addr);
@@ -659,7 +660,8 @@ static void ath12k_uhr_smd_activate_ext_ctx(struct ath12k_vif *ahvif,
 					       target_sta->addr,
 					       active_hw_links);
 
-	if (ath12k_dp_arch_smd_exec_rx_tid(dp, dp_hw, target_sta->addr))
+	if (ath12k_dp_arch_smd_exec_rx_tid(dp, dp_hw, target_ahsta->ahvif->vif,
+					   target_sta->addr))
 		ath12k_warn(ab,
 			    "smd: rx_tid restore skipped %pM (no parked info)\n",
 			    target_sta->addr);
@@ -731,7 +733,7 @@ static int ath12k_uhr_abort_transition(struct ath12k_vif *ahvif,
 	if (primary_arvif && primary_arvif->ar) {
 		dp = ath12k_ab_to_dp(primary_arvif->ar->ab);
 		if (dp)
-			ath12k_dp_arch_smd_abort_prep(dp);
+			ath12k_dp_arch_smd_abort_prep(dp, ahvif->vif);
 	}
 
 	return 0;
@@ -1335,6 +1337,7 @@ int ath12k_smd_uhr_link_reconfig(struct ieee80211_hw *hw,
 			if (info->request_ul_sn_not_transferred) {
 				ret = ath12k_dp_arch_peer_tx_tid_sn_reset(ar->ab->dp,
 								&ahvif->ah->dp_hw,
+								ahvif->vif,
 								current_sta->addr);
 				if (ret)
 					ath12k_warn(ar->ab,
@@ -1345,6 +1348,7 @@ int ath12k_smd_uhr_link_reconfig(struct ieee80211_hw *hw,
 				ret = ath12k_dp_arch_peer_rx_tid_svld_reset(
 							ar->ab->dp,
 							&ahvif->ah->dp_hw,
+							ahvif->vif,
 							current_sta->addr);
 				if (ret)
 					ath12k_warn(ar->ab,
@@ -1464,7 +1468,7 @@ int ath12k_smd_post_sta_session_ctx_req(struct ath12k_vif *ahvif,
 		spin_unlock_bh(&ahsta->ba_lock);
 	}
 
-	ret = ath12k_dp_arch_dp_peer_fetch_smd_ctx(dp, dp_hw, &dp_ctx,
+	ret = ath12k_dp_arch_dp_peer_fetch_smd_ctx(dp, dp_hw, ahvif->vif, &dp_ctx,
 						   ath12k_smd_ctx_hw_rx_tid_cb,
 						   ath12k_smd_ctx_hw_tx_tid_cb);
 	if (ret) {
@@ -2152,7 +2156,8 @@ static bool ath12k_smd_ctx_hw_completion(struct ath12k_smd_info *smd_info,
 }
 
 u16 ath12k_smd_ctx_get_rx_ba_bufsize(struct ath12k_base *ab, struct ath12k_hw *ah,
-				     const u8 *peer_addr, u8 tid, u16 orig_ba_win_sz)
+				     struct ieee80211_vif *vif, const u8 *peer_addr,
+				     u8 tid, u16 orig_ba_win_sz)
 {
 	struct ath12k_dp_peer *dp_peer;
 	struct ath12k_dp *dp = ab->dp;
@@ -2165,7 +2170,7 @@ u16 ath12k_smd_ctx_get_rx_ba_bufsize(struct ath12k_base *ab, struct ath12k_hw *a
 	/* fetch current active buffer size from dp */
 	spin_lock_bh(&ah->dp_hw.peer_hash_lock);
 
-	dp_peer = ath12k_dp_peer_find_by_addr(&ah->dp_hw, (u8 *)peer_addr);
+	dp_peer = ath12k_dp_peer_find_by_addr(&ah->dp_hw, (u8 *)peer_addr, vif);
 	if (dp_peer && dp_peer->rx_tid[tid].active)
 		ba_win_sz = dp_peer->rx_tid[tid].ba_win_sz;
 
@@ -2597,6 +2602,7 @@ static void ath12k_smd_ctx_hw_rx_tid_cb(struct ath12k_dp *dp, void *cb_ctx,
 		}
 		if (test_bit(ATH12K_SMD_CTX_VALID_BA_PARAMS, req->ctx.valid_ctx_bmap) &&
 		    drv_ba_valid) {
+			struct ath12k_vif *ahvif = ahsta->ahvif;
 			struct ath12k_smd_ctx_ba *ul_ba = &req->ctx.ul.ba[tid];
 			u16 orig_buf_size = drv_ba.buf_size;
 			u16 buf_size_base = 0, buf_size_ext = 0;
@@ -2604,6 +2610,7 @@ static void ath12k_smd_ctx_hw_rx_tid_cb(struct ath12k_dp *dp, void *cb_ctx,
 			ba_setup = true;
 			ba_buf_size =
 				ath12k_smd_ctx_get_rx_ba_bufsize(ab, ah,
+								 ahvif->vif,
 								 sta->addr,
 								 tid,
 								 orig_buf_size);
@@ -2863,7 +2870,8 @@ void ath12k_smd_get_vendor_ctx_bitmaps(struct ath12k_smd_ctx *drv_ctx,
 EXPORT_SYMBOL(ath12k_smd_get_vendor_ctx_bitmaps);
 
 int ath12k_smd_set_vendor_ctx(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
-			      struct ath12k_smd_ctx *ctx, struct ieee80211_sta *sta)
+			      struct ieee80211_vif *vif, struct ath12k_smd_ctx *ctx,
+			      struct ieee80211_sta *sta)
 {
 	struct ath12k_rx_smd_ctx_per_tid rx_tid = {};
 	struct ath12k_tx_smd_ctx_per_tid tx_tid = {};
@@ -2892,8 +2900,8 @@ int ath12k_smd_set_vendor_ctx(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 		ath12k_dp_rx_peer_tid_ba_config(dp, tid, &ba_win_size, &_ssn);
 		rx_tid.ba_win_sz = ba_win_size;
 
-		ret = ath12k_dp_arch_peer_rx_tid_reo_update_for_smd(dp, dp_hw, sta->addr,
-								    &rx_tid);
+		ret = ath12k_dp_arch_peer_rx_tid_reo_update_for_smd(dp, dp_hw, vif,
+								    sta->addr, &rx_tid);
 		if (ret)
 			return ret;
 
@@ -2905,8 +2913,8 @@ int ath12k_smd_set_vendor_ctx(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 		memcpy(tx_tid.pn_number, ctx->vendor_ctx.ctx_v1.dl_mgmt_pn,
 		       IEEE80211_MAX_PN_LEN);
 
-		ret = ath12k_dp_arch_peer_tx_tid_update_for_smd(dp, dp_hw, sta->addr,
-								&tx_tid);
+		ret = ath12k_dp_arch_peer_tx_tid_update_for_smd(dp, dp_hw, vif,
+								sta->addr, &tx_tid);
 		if (ret)
 			return ret;
 		break;

@@ -1521,7 +1521,7 @@ static void ath12k_wifi8_mac_op_sta_set_4addr(struct ieee80211_hw *hw,
 				vlan_iface->is_wds_4addr = true;
 
 			ath12k_wifi8_dp_vif_update_4addr(&ah->dp_hw, &ahvif->dp_vif,
-							 sta->addr);
+							 sta);
 		}
 	}
 }
@@ -1529,6 +1529,7 @@ static void ath12k_wifi8_mac_op_sta_set_4addr(struct ieee80211_hw *hw,
 static int ath12k_wifi8_smd_ensure_tx_tid_queues(struct ath12k_base *ab,
 						 struct ath12k_dp *dp,
 						 struct ath12k_dp_hw *dp_hw,
+						 struct ieee80211_vif *vif,
 						 const u8 *peer_addr, u8 tid)
 {
 	struct ath12k_dp_tx_queue_metadata tx_queue_params = {};
@@ -1544,7 +1545,7 @@ static int ath12k_wifi8_smd_ensure_tx_tid_queues(struct ath12k_base *ab,
 	 * removal, so dp_peer remains valid across the lock gap.
 	 */
 	spin_lock_bh(&dp_hw->peer_hash_lock);
-	dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, peer_addr);
+	dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, peer_addr, vif);
 	if (!dp_peer) {
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		ath12k_warn(ab, "SMD DL alloc: peer %pM not found for tid %u\n",
@@ -1638,8 +1639,8 @@ static int ath12k_wifi8_mac_op_set_smd_ctx(struct ieee80211_hw *hw,
 		/* for WMI smd roam config cmd */
 		ahsta->smd_info.rx_ba_buf_size[tid] = rx_tid.ba_win_sz;
 
-		ret = ath12k_dp_arch_peer_rx_tid_reo_update_for_smd(dp, dp_hw, sta->addr,
-								    &rx_tid);
+		ret = ath12k_dp_arch_peer_rx_tid_reo_update_for_smd(dp, dp_hw, vif,
+								    sta->addr, &rx_tid);
 		if (ret)
 			ath12k_err(ab,
 				   "Failed to set SMD UL ctx for %pM tid: %d err: %d",
@@ -1675,7 +1676,7 @@ static int ath12k_wifi8_mac_op_set_smd_ctx(struct ieee80211_hw *hw,
 		if (!ba_buf_size)
 			continue;
 
-		ret = ath12k_wifi8_smd_ensure_tx_tid_queues(ab, dp, dp_hw,
+		ret = ath12k_wifi8_smd_ensure_tx_tid_queues(ab, dp, dp_hw, vif,
 							    sta->addr, tid);
 		if (ret) {
 			ath12k_err(ab,
@@ -1684,8 +1685,8 @@ static int ath12k_wifi8_mac_op_set_smd_ctx(struct ieee80211_hw *hw,
 			continue;
 		}
 
-		ret = ath12k_dp_arch_peer_tx_tid_update_for_smd(dp, dp_hw, sta->addr,
-								&tx_tid);
+		ret = ath12k_dp_arch_peer_tx_tid_update_for_smd(dp, dp_hw, vif,
+								sta->addr, &tx_tid);
 		if (ret) {
 			ath12k_err(ab,
 				   "Failed to set SMD DL ctx for %pM tid: %d err: %d",
@@ -1707,7 +1708,7 @@ static int ath12k_wifi8_mac_op_set_smd_ctx(struct ieee80211_hw *hw,
 		ath12k_dbg_level(ab, ATH12K_DBG_SMD, ATH12K_DBG_L3,
 				 "SMD vendor context in set_ctx: %*ph",
 				 (int)ctx->drv_ctx_size, ctx->drv_ctx);
-		ret = ath12k_smd_set_vendor_ctx(dp, dp_hw, drv_ctx, sta);
+		ret = ath12k_smd_set_vendor_ctx(dp, dp_hw, vif, drv_ctx, sta);
 		if (ret)
 			ath12k_err(ab,
 				   "Failed to set SMD vendor ctx for %pM, err: %d",
