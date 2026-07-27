@@ -3682,6 +3682,7 @@ int ath12k_wifi8_dp_rx_process_reo_flush_err(struct ath12k_dp *dp,
 	struct list_head ppe2wbm_used_list;
 	int quota = budget;
 	u32 cookie;
+	u64 paddr;
 
 	srng = &ab->hal.srng_list[dp_wifi8->reo_flush_ring.ring_id];
 
@@ -3702,6 +3703,22 @@ int ath12k_wifi8_dp_rx_process_reo_flush_err(struct ath12k_dp *dp,
 				    BUFFER_ADDR_INFO1_RET_BUF_MGR);
 		cookie = le32_get_bits(rx_desc->buf_addr_info.info1,
 				       BUFFER_ADDR_INFO1_SW_COOKIE);
+		paddr = (((u64)le32_get_bits(rx_desc->buf_addr_info.info1,
+					     BUFFER_ADDR_INFO1_ADDR)) << 32) |
+				le32_get_bits(rx_desc->buf_addr_info.info0,
+					      BUFFER_ADDR_INFO0_ADDR);
+
+		/*
+		 * NULL descriptors are possible here due to WAR for HW issue TRSLONE-1155
+		 * This issue is specific to V1 HW
+		 *
+		 * Handle this case gracefuly.
+		 */
+		if (!paddr && !cookie) {
+			stats->rx_flush_null_descs++;
+			ath12k_warn(ab, "NULL descriptor released to host WAR kicked in for TRSLONE-1155\n");
+			continue;
+		}
 
 		if (rbm == dp->hal->hal_params->rx_buf_rbm || rbm == 0) {
 			desc_info = ath12k_dp_get_rx_desc(dp, cookie);

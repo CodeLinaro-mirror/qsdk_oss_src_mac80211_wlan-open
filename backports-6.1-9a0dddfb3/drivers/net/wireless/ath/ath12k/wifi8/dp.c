@@ -1151,8 +1151,11 @@ static ssize_t ath12k_wifi8_dump_device_dp_stats(struct ath12k_dp *dp,
 			 stats->buf_len_err);
 
 	len += scnprintf(buf + len, size - len,
-			 "\nRx flush count: %u\nRx mgmt flush count: %u\n",
-			 rx_stats->rx_flush_pkts, rx_stats->rx_mgmt_flush_pkts);
+			 "\nRx flush count: %u\nRx mgmt flush count: %u\n"
+			 " NULL desc: %u\n",
+			 rx_stats->rx_flush_pkts,
+			 rx_stats->rx_mgmt_flush_pkts,
+			 rx_stats->rx_flush_null_descs);
 
 	len += ath12k_wifi8_global_ast_stats(dp, buf + len, size - len);
 	return len;
