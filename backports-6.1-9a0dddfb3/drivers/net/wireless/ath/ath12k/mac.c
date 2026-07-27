@@ -2127,6 +2127,7 @@ static int ath12k_mac_monitor_stop(struct ath12k *ar, struct ath12k_vif *ahvif)
 	ar->num_started_vdevs--;
 	ath12k_dp_mon_rx_config_monitor_mode(ar, true);
 	ret = ath12k_dp_mon_rx_update_filter(ar);
+	ath12k_dp_tx_mon_set_tx_mon_teardown(ar);
 	ath12k_dp_mon_tx_set_monitor_flags(ar, stop_tx_mon, &ahvif->dp_vif.monitor_flags);
 	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
 			 "mac monitor stopped ret %d\n", ret);

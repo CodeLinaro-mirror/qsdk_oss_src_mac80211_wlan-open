@@ -4034,6 +4034,143 @@ ath12k_dp_ext_mon_delete_tx_peer_list(struct list_head *peer_list)
 	}
 }
 
+static void
+ath12k_dp_ext_mon_prepare_remove_peer(struct ath12k_pdev_dp *dp_pdev,
+				      struct ath12k_dp_ext_mon_tx_peer_params
+				      *ext_mon_peer_params)
+{
+	struct ath12k_dp_ext_mon_peer *peer, *tmp;
+	const struct ath12k_ext_mon_peer_info *peer_info;
+	bool found;
+	int i;
+	struct list_head *peer_list = ext_mon_peer_params->peer_list;
+	const struct ath12k_ext_mon_peer_config *peer_config =
+		ext_mon_peer_params->peer_config;
+
+	for (i = 0; i < peer_config->count; i++) {
+		peer_info = &peer_config->peer_info[i];
+		found = false;
+
+		/** An all-zero MAC is the wildcard sentinel for "remove all
+		 * TX peers"; splice the whole list to peers_to_wmi instead
+		 * of matching against individual entries.
+		 */
+		if (is_zero_ether_addr(peer_info->mac_addr)) {
+			*ext_mon_peer_params->ext_mon_peer_count = 0;
+			list_splice_tail_init(peer_list,
+					      ext_mon_peer_params->peers_to_wmi);
+			return;
+		}
+		if (!peer_info->ra_addr) {
+			ath12k_warn(dp_pdev->dp,
+				    "skipping peer %pM: TA not allowed in TX direction\n",
+				    peer_config->peer_info[i].mac_addr);
+			continue;
+		}
+
+		list_for_each_entry_safe(peer, tmp, peer_list, list) {
+			if (ether_addr_equal(peer->peer_info.mac_addr,
+					     peer_info->mac_addr)) {
+				list_del(&peer->list);
+				(*ext_mon_peer_params->ext_mon_peer_count)--;
+				list_add_tail(&peer->list,
+					      ext_mon_peer_params->peers_to_wmi);
+				found = true;
+				break;
+			}
+		}
+
+		if (!found)
+			ath12k_warn(dp_pdev->dp, "peer %pM (%s) not found for remove\n",
+				    peer_info->mac_addr,
+				    peer_info->ra_addr ? "RA" : "TA");
+	}
+}
+
+static int
+ath12k_dp_ext_mon_remove_tx_peers(struct ath12k_pdev_dp *dp_pdev,
+				  bool retain_peer_list,
+				  const struct ath12k_ext_mon_peer_config *peer_config)
+{
+	struct ath12k_pdev_tx_mon *tx_mon;
+	struct ath12k_dp_tx_ext_mon_config *tx_ext_mon;
+	LIST_HEAD(peers_to_wmi);
+	int ret = 0, vdev_id;
+	u8 peer_count;
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	struct ath12k_dp_ext_mon_tx_peer_params tx_mon_peer_params = {
+		.peers_to_wmi = &peers_to_wmi,
+		.peer_config = peer_config,
+	};
+
+	vdev_id = ath12k_dp_ext_mon_find_mon_vdev_id(dp_pdev);
+	if (vdev_id == -1)
+		ath12k_warn(dp_pdev->dp, "no active monitor vdev found\n");
+
+	tx_mon = dp_pdev->dp_mon_pdev->dp_pdev_tx_mon;
+
+	spin_lock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+
+	tx_ext_mon = tx_mon->tx_ext_mon.tx_ext_mon_config;
+	if (unlikely(!tx_ext_mon)) {
+		ath12k_warn(dp_pdev->dp, "ext_mon for tx direction is null\n");
+		spin_unlock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+		return -EINVAL;
+	}
+
+	tx_mon_peer_params.peer_list = &tx_ext_mon->peer_list;
+	tx_mon_peer_params.ext_mon_peer_count = &tx_ext_mon->peer_count;
+	peer_count = tx_ext_mon->peer_count;
+	ath12k_dp_ext_mon_prepare_remove_peer(dp_pdev, &tx_mon_peer_params);
+
+	mon_ops = ath12k_dp_mon_ops_get(dp_pdev->dp);
+
+	tx_mon_peer_params.toggle_hw_state =
+		(tx_ext_mon->peer_count == 0);
+	spin_unlock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+
+	if (vdev_id == -1)
+		goto delete_peer_list;
+	tx_mon_peer_params.vdev_id = vdev_id;
+
+	if (mon_ops && mon_ops->ext_mon_remove_wmi_tx_peers)
+		ret = mon_ops->ext_mon_remove_wmi_tx_peers(dp_pdev,
+							   &tx_mon_peer_params);
+	if (retain_peer_list) {
+		/**
+		 * splice the wmi peers back into tx_config->peer_list so
+		 * host-side bookkeeping survives instead of being dropped
+		 */
+		spin_lock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+		list_splice_tail_init(&peers_to_wmi, &tx_ext_mon->peer_list);
+		tx_ext_mon->peer_count = peer_count;
+		spin_unlock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+		return ret;
+	}
+delete_peer_list:
+	ath12k_dp_ext_mon_delete_tx_peer_list(&peers_to_wmi);
+
+	return ret;
+}
+
+static int
+ath12k_dp_ext_mon_tx_remove_all_peers(struct ath12k_pdev_dp *dp_pdev)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct ath12k_pdev_tx_mon *tx_mon;
+	int ret = 0;
+	struct ath12k_ext_mon_peer_config peer_config;
+
+	tx_mon = dp_mon_pdev->dp_pdev_tx_mon;
+	peer_config.count = 1;
+	eth_zero_addr(peer_config.peer_info[0].mac_addr);
+
+	ret = ath12k_dp_ext_mon_remove_tx_peers(dp_pdev, !tx_mon->tx_mon_teardown,
+						&peer_config);
+
+	return ret;
+}
+
 void ath12k_dp_ext_mon_tx_free(struct ath12k_pdev_dp *dp_pdev)
 {
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
@@ -4050,6 +4187,8 @@ void ath12k_dp_ext_mon_tx_free(struct ath12k_pdev_dp *dp_pdev)
 		ath12k_warn(dp_pdev->dp->ab, "tx monitor is null\n");
 		return;
 	}
+	tx_mon->tx_mon_teardown = true;
+	ath12k_dp_ext_mon_tx_remove_all_peers(dp_pdev);
 
 	spin_lock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
 	tx_config = tx_mon->tx_ext_mon.tx_ext_mon_config;
@@ -4104,10 +4243,11 @@ int ath12k_dp_mon_tx_htt_src_ring_setup(struct ath12k_dp *dp)
 	return ret;
 }
 
-static void ath12k_dp_tx_mon_reset_ext_mon_config(struct ath12k_pdev_dp *dp_pdev)
+static int ath12k_dp_tx_mon_reset_ext_mon_config(struct ath12k_pdev_dp *dp_pdev)
 {
 	struct ath12k_dp_tx_ext_mon *tx_ext_mon;
 	struct ath12k_dp_tx_ext_mon_config *tx_config;
+	int ret = 0;
 
 	tx_ext_mon = &dp_pdev->dp_mon_pdev->dp_pdev_tx_mon->tx_ext_mon;
 
@@ -4124,6 +4264,8 @@ static void ath12k_dp_tx_mon_reset_ext_mon_config(struct ath12k_pdev_dp *dp_pdev
 		memset(&tx_config->fpmo, 0, sizeof(tx_config->fpmo));
 	}
 	spin_unlock(&tx_ext_mon->tx_ext_mon_lock);
+	ret = ath12k_dp_ext_mon_tx_remove_all_peers(dp_pdev);
+	return ret;
 }
 
 static int ath12k_dp_mon_tx_filter_cfg(const struct ath12k_dp_arch_mon_ops *mon_ops,
@@ -4185,7 +4327,9 @@ int ath12k_dp_mon_tx_config_full_monitor(struct ath12k *ar, bool set)
 	if (mon_ops && mon_ops->mon_tx_filter_configure) {
 		ret = ath12k_dp_mon_tx_filter_cfg(mon_ops, dp_pdev,
 						  DP_MON_TX_FULL_MONITOR, set);
-		ath12k_dp_tx_mon_reset_ext_mon_config(dp_pdev);
+		if (ret)
+			return ret;
+		ret = ath12k_dp_tx_mon_reset_ext_mon_config(dp_pdev);
 	}
 
 	return ret;
@@ -4470,6 +4614,9 @@ int ath12k_dp_mon_tx_monitor_start_stop(struct ath12k *ar, bool state)
 			   "Not running Tx mon on requested interface\n");
 		return 0;
 	}
+
+	if (state)
+		dp_pdev_tx_mon->tx_mon_teardown = false;
 
 	ret = ath12k_dp_mon_tx_config_full_monitor(ar, state);
 	if (ret) {
@@ -5571,6 +5718,8 @@ ath12k_dp_ext_mon_handle_tx_peer(struct ath12k_pdev_dp *dp_pdev,
 	switch (peer_config->action) {
 	case QCA_VENDOR_EXT_MON_PEER_ACTION_ADD:
 		return ath12k_dp_ext_mon_add_tx_peers(dp_pdev, peer_config);
+	case QCA_VENDOR_EXT_MON_PEER_ACTION_REMOVE:
+		return ath12k_dp_ext_mon_remove_tx_peers(dp_pdev, false, peer_config);
 	default:
 		ath12k_warn(dp_pdev->dp, "invalid peer action %u\n",
 				peer_config->action);
@@ -5904,3 +6053,10 @@ ath12k_dp_mon_tx_get_ext_mon_filter_len(u8 filter_len)
 	}
 }
 EXPORT_SYMBOL(ath12k_dp_mon_tx_get_ext_mon_filter_len);
+
+void
+ath12k_dp_tx_mon_set_tx_mon_teardown(struct ath12k *ar)
+{
+	if (ar->dp.dp_mon_pdev && ar->dp.dp_mon_pdev->dp_pdev_tx_mon)
+		ar->dp.dp_mon_pdev->dp_pdev_tx_mon->tx_mon_teardown = true;
+}

@@ -344,14 +344,16 @@ int
 ath12k_dp_ext_mon_get_tx_filter(struct ath12k_pdev_dp *dp_pdev,
 				struct ath12k_ext_mon_config *resp);
 int ath12k_dp_ext_mon_get_tx_peer(struct ath12k_pdev_dp *dp_pdev,
-					struct ath12k_ext_mon_config *resp);
+				  struct ath12k_ext_mon_config *resp);
 int ath12k_dp_ext_mon_set_tx_filter(struct ath12k_pdev_dp *dp_pdev,
 				    const struct ath12k_ext_mon_filter_config
 				    *new_config);
 enum ath12k_dp_mon_tx_dma_length
 ath12k_dp_mon_tx_get_ext_mon_filter_len(u8 filter_len);
 int ath12k_dp_ext_mon_handle_tx_peer(struct ath12k_pdev_dp *dp_pdev,
-				      const struct ath12k_ext_mon_peer_config
-				      *peer_config);
+				     const struct ath12k_ext_mon_peer_config
+				     *peer_config);
+void
+ath12k_dp_tx_mon_set_tx_mon_teardown(struct ath12k *ar);
 
 #endif /* ATH12K_DP_TX_MON_H */
