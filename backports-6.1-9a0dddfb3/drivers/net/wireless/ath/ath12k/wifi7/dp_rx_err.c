@@ -24,7 +24,7 @@
 #include "hal_wcn7850.h"
 #include "../debugfs.h"
 #include "../dp.h"
-#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#if defined(CPTCFG_EXT_IPA_OFFLOAD) && defined(CPTCFG_QCN_EXTN)
 #include "qcn_extns/ipa/dp_ipa.h"
 #endif
 
