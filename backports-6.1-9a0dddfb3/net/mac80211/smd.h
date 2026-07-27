@@ -68,7 +68,8 @@ void ieee80211_smd_stop_old_link(struct ieee80211_vif *vif,
 				  struct ieee80211_link_data *old_link,
 				  unsigned int link_id);
 void ieee80211_smd_free_old_links(struct ieee80211_sub_if_data *sdata,
-				  struct ieee80211_smd_prep_target *target);
+				  struct ieee80211_smd_prep_target *target,
+				  bool remap_keys);
 void ieee80211_smd_rollback_link_assign(struct ieee80211_sub_if_data *sdata,
 					struct ieee80211_smd_prep_target *target);
 void ieee80211_smd_free_target_links(struct ieee80211_smd_prep_target *target);

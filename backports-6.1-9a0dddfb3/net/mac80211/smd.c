@@ -506,7 +506,8 @@ void ieee80211_smd_stop_old_link(struct ieee80211_vif *vif,
 }
 
 void ieee80211_smd_free_old_links(struct ieee80211_sub_if_data *sdata,
-				  struct ieee80211_smd_prep_target *target)
+				  struct ieee80211_smd_prep_target *target,
+				  bool remap_keys)
 {
 	struct ieee80211_local *local = sdata->local;
 	struct ieee80211_link_data *link;
@@ -514,8 +515,6 @@ void ieee80211_smd_free_old_links(struct ieee80211_sub_if_data *sdata,
 	LIST_HEAD(old_keys);
 
 	lockdep_assert_wiphy(local->hw.wiphy);
-
-	synchronize_rcu();
 
 	for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS; link_id++) {
 		struct ieee80211_link_data *old_link = target->old_links[link_id];
@@ -536,7 +535,7 @@ void ieee80211_smd_free_old_links(struct ieee80211_sub_if_data *sdata,
 	 * that block post-transition TAP key installation (key.c:506).
 	 * Remove them now, before cfg80211_notify(COMPLETE) fires.
 	 */
-	if (target->link_id_remap)
+	if (target->link_id_remap && remap_keys)
 		ieee80211_smd_remap_link_keys(sdata, target->sap_to_tap_link);
 
 	for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS; link_id++) {
@@ -546,7 +545,10 @@ void ieee80211_smd_free_old_links(struct ieee80211_sub_if_data *sdata,
 
 		link = target->old_links[link_id];
 		ieee80211_link_debugfs_remove(link);
-		kfree(target->old_links[link_id]);
+
+		if (sdata->vif.valid_links & BIT(link_id))
+			ieee80211_free_link_container(link);
+
 		target->old_links[link_id] = NULL;
 	}
 }
@@ -784,7 +786,6 @@ static int __smd_dl_drain_remap(struct ieee80211_sub_if_data *sdata,
 		target->new_links[tap_link_id]->conf.link_id = tap_link_id;
 		target->new_links[tap_link_id]->data.link_id = tap_link_id;
 	}
-	synchronize_rcu();
 
 	for (tap_link_id = 0; tap_link_id < IEEE80211_MLD_MAX_NUM_LINKS; tap_link_id++) {
 		nl = target->new_links[tap_link_id];
