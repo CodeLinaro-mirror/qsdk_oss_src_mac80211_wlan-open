@@ -1007,6 +1007,7 @@ struct ath12k_dp_link_vif {
 	int bank_id;
 	enum wmi_phy_mode phymode;
 	struct ath12k_dp_preserved_stats link_peer_delete_stats;
+	struct ath12k_base *ab;
 };
 
 struct ath12k_vlan_iface {

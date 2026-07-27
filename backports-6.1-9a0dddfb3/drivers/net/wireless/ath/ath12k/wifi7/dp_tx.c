@@ -1547,7 +1547,7 @@ void ath12k_wifi7_mcbc_handler(struct ath12k_dp_vif *dp_vif,
 	do {
 		struct ath12k_link_vif *arvif =
 			rcu_dereference(ahvif->link[link_id]);
-		struct ath12k *ar = NULL;
+		struct ath12k_base *ab = NULL;
 
 		if (!arvif || !arvif->is_up) {
 			DP_STATS_INC(dp_vif,
@@ -1556,7 +1556,6 @@ void ath12k_wifi7_mcbc_handler(struct ath12k_dp_vif *dp_vif,
 			goto next;
 		}
 
-		ar = arvif->ar;
 		dp_link_vif = &dp_vif->dp_link_vif[link_id];
 
 		if (!dp_link_vif) {
@@ -1566,7 +1565,11 @@ void ath12k_wifi7_mcbc_handler(struct ath12k_dp_vif *dp_vif,
 			goto next;
 		}
 
-		dp_pdev = ath12k_dp_to_dp_pdev(ar->ab->dp,
+		ab = dp_link_vif->ab;
+		if (!ab)
+			goto next;
+
+		dp_pdev = ath12k_dp_to_dp_pdev(ab->dp,
 					       dp_link_vif->pdev_idx);
 		if (!dp_pdev) {
 			DP_STATS_INC(dp_vif,
@@ -1695,10 +1698,9 @@ void ath12k_wifi7_ucast_handler(struct ath12k_dp_vif *dp_vif,
 				struct ath12k_dp_peer *dp_peer)
 {
 	struct ath12k_vif *ahvif = container_of(dp_vif, struct ath12k_vif, dp_vif);
-	struct ath12k_link_vif *arvif = rcu_dereference(ahvif->link[link_id]);
 	struct ath12k_dp_link_vif *dp_link_vif = &dp_vif->dp_link_vif[link_id];
 	struct ath12k_dp *dp = NULL;
-	struct ath12k *ar = arvif->ar;
+	struct ath12k_base *ab;
 	struct ath12k_pdev_dp *dp_pdev = NULL;
 	struct ath12k_tx_desc_info *tx_desc = NULL;
 	struct ath12k_dp_tx_msdu_info msdu_info = {0};
@@ -1710,8 +1712,12 @@ void ath12k_wifi7_ucast_handler(struct ath12k_dp_vif *dp_vif,
 	u8 tid = skb->priority & IEEE80211_QOS_CTL_TID_MASK;
 	enum ath12k_dp_tx_enq_error drop_reason = DP_TX_ENQ_DROP_MISC;
 
+	ab = dp_link_vif->ab;
+	if (!ab)
+		goto fail;
+
 	/* Get DP pdev */
-	dp_pdev = ath12k_dp_to_dp_pdev(ar->ab->dp, dp_link_vif->pdev_idx);
+	dp_pdev = ath12k_dp_to_dp_pdev(ab->dp, dp_link_vif->pdev_idx);
 	if (!dp_pdev) {
 		drop_reason = DP_TX_ENQ_DROP_INV_PDEV;
 		goto fail;
@@ -1720,8 +1726,8 @@ void ath12k_wifi7_ucast_handler(struct ath12k_dp_vif *dp_vif,
 	prefetch(dp_pdev);
 
 	/* Check recovery state */
-	if (ath12k_wifi7_tx_validate_recovery(arvif->ar->ab)) {
-		ieee80211_free_txskb(dp_pdev->ar->ah->hw, skb);
+	if (ath12k_wifi7_tx_validate_recovery(ab)) {
+		ieee80211_free_txskb(ath12k_dp_pdev_to_hw(dp_pdev), skb);
 		drop_reason = DP_TX_ENQ_DROP_FW_RECOVERY;
 		return;
 	}
@@ -1738,7 +1744,7 @@ void ath12k_wifi7_ucast_handler(struct ath12k_dp_vif *dp_vif,
 
 	/* Setup MSDU info */
 	ath12k_wifi7_ucast_setup_msdu_info(dp_link_vif, &msdu_info, skb,
-					   htt_mesh, arsta, ar->ab);
+					   htt_mesh, arsta, ab);
 
 	/* Fast path: no features enabled */
 	if (unlikely((DP_FEATURE_IS_ANY(dp_vif) || skb_ctrl->features))) {
