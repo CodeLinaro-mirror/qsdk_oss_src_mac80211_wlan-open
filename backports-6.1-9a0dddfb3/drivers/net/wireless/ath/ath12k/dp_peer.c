@@ -496,11 +496,6 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 	if (ret)
 		goto err_dp_peer;
 
-	if (ath12k_extd_rx_stats_enabled(dp_pdev) &&
-	    !peer->peer_stats.rx_stats) {
-		peer->peer_stats.rx_stats = kzalloc(sizeof(*peer->peer_stats.rx_stats), GFP_ATOMIC);
-	}
-
 	dp_peer->qos_stats_lvl = (ar->dp.qos_stats &
 				  ATH12K_QOS_STATS_COLLECTION_MASK) >> 2;
 
@@ -1846,6 +1841,8 @@ static void ath12k_dp_tx_ppdu_stats_free(struct ath12k_dp_link_peer *link_peer)
 int ath12k_dp_peer_link_stats_alloc(struct ath12k_dp_link_peer *link_peer,
 				    struct ath12k_pdev_dp *dp_pdev)
 {
+	struct ath12k_dp_link_peer_stats *peer_stats = NULL;
+
 	if (!link_peer || !dp_pdev) {
 		ath12k_err(NULL,
 			   "Link stats alloc NULL arg: link_peer=%p dp_pdev=%p\n",
@@ -1853,15 +1850,26 @@ int ath12k_dp_peer_link_stats_alloc(struct ath12k_dp_link_peer *link_peer,
 		return -EINVAL;
 	}
 
+	peer_stats = &link_peer->peer_stats;
+
+	if (ath12k_extd_rx_stats_enabled(dp_pdev) &&
+	    !peer_stats->rx_stats) {
+		peer_stats->rx_stats = kzalloc(sizeof(*peer_stats->rx_stats),
+					       GFP_ATOMIC);
+		if (!peer_stats->rx_stats)
+			return -ENOMEM;
+	}
+
 	if (ath12k_dp_hw_peer_stats_enabled(dp_pdev) &&
-	    !link_peer->peer_stats.hw_link_stats) {
-		link_peer->peer_stats.hw_link_stats =
-			kzalloc(sizeof(*link_peer->peer_stats.hw_link_stats),
+	    !peer_stats->hw_link_stats) {
+		peer_stats->hw_link_stats =
+			kzalloc(sizeof(*peer_stats->hw_link_stats),
 				GFP_ATOMIC);
-		if (!link_peer->peer_stats.hw_link_stats) {
+		if (!peer_stats->hw_link_stats) {
 			ath12k_err(NULL,
 				   "failed to alloc hw_stats for link peer %pM\n",
 				   link_peer->addr);
+			kfree(peer_stats->rx_stats);
 			return -ENOMEM;
 		}
 	}
@@ -1869,8 +1877,11 @@ int ath12k_dp_peer_link_stats_alloc(struct ath12k_dp_link_peer *link_peer,
 	if (dp_pdev && (dp_pdev->dp_stats_mask & DP_ENABLE_QOS_STATS)) {
 		ath12k_dp_qos_link_stats_alloc(link_peer);
 
-		if (!link_peer->peer_stats.link_qos_stats)
+		if (!peer_stats->link_qos_stats) {
+			kfree(peer_stats->rx_stats);
+			kfree(peer_stats->hw_link_stats);
 			return -ENOMEM;
+		}
 	}
 
 	ath12k_dp_tx_stats_alloc(link_peer, dp_pdev);

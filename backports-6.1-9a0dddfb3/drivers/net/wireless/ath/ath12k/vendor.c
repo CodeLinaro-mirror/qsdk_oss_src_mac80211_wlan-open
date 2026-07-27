@@ -5371,16 +5371,18 @@ static int ath12k_fill_tid_delay_stats(struct sk_buff *vendor_event,
  */
 static int ath12k_fill_peer_delay_stats(struct ath12k *ar,
 					struct sk_buff *vendor_event,
-					struct ath12k_dp_peer_stats *peer_stats)
+					struct ath12k_dp_mld_peer_stats *mld_stats)
 {
-	struct ath12k_dp_peer_tid_agg_delay_stats *delay = peer_stats->delay;
+	struct ath12k_dp_peer_tid_agg_delay_stats *delay;
 	struct ath12k_dp_peer_delay_tid_stats *tid_stats;
 	struct nlattr *tid_attr;
 	int tid;
 	int ret;
 
-	if (!delay)
+	if (!mld_stats || !mld_stats->agg_mld_stats)
 		return 0;
+
+	delay = &mld_stats->agg_mld_stats->delay;
 
 	for (tid = 0; tid < DP_TID_MAX &&
 	     tid < QCA_VENDOR_WLAN_TELEMETRY_DATA_TIDS; tid++) {
@@ -5438,13 +5440,16 @@ static int ath12k_fill_peer_delay_stats(struct ath12k *ar,
  */
 static int ath12k_fill_peer_jitter_stats(struct ath12k *ar,
 					 struct sk_buff *vendor_event,
-					 struct ath12k_dp_peer_stats *peer_stats)
+					 struct ath12k_dp_mld_peer_stats *mld_stats)
 {
 	struct nlattr *tid_attr;
+	struct ath12k_dp_peer_tid_agg_jitter_stats *jitter;
 	int tid;
 
-	if (!peer_stats->jitter)
+	if (!mld_stats || !mld_stats->agg_mld_stats)
 		return 0;
+
+	jitter = &mld_stats->agg_mld_stats->jitter;
 
 	for (tid = 0; tid < QCA_VENDOR_WLAN_TELEMETRY_DATA_TIDS &&
 	     tid < DP_TID_MAX; tid++) {
@@ -5456,19 +5461,22 @@ static int ath12k_fill_peer_jitter_stats(struct ath12k *ar,
 
 		if (nla_put_u32(vendor_event,
 				QCA_VENDOR_ATTR_JITTER_STATS_TX_AVG_JITTER,
-				peer_stats->jitter->tid_stats[tid].tx_avg_jitter) ||
+				jitter->tid_stats[tid].tx_avg_jitter) ||
 		    nla_put_u32(vendor_event,
 				QCA_VENDOR_ATTR_JITTER_STATS_TX_AVG_DELAY,
-				peer_stats->jitter->tid_stats[tid].tx_avg_delay) ||
-		    nla_put_u32(vendor_event,
-				QCA_VENDOR_ATTR_JITTER_STATS_TX_AVG_ERR,
-				peer_stats->jitter->tid_stats[tid].tx_avg_err) ||
-		    nla_put_u32(vendor_event,
-				QCA_VENDOR_ATTR_JITTER_STATS_TX_TOTAL_SUCCESS,
-				peer_stats->jitter->tid_stats[tid].tx_total_success) ||
-		    nla_put_u32(vendor_event,
-				QCA_VENDOR_ATTR_JITTER_STATS_TX_DROP,
-				peer_stats->jitter->tid_stats[tid].tx_drop)) {
+				jitter->tid_stats[tid].tx_avg_delay) ||
+		    nla_put_u64_64bit(vendor_event,
+				      QCA_VENDOR_ATTR_JITTER_STATS_TX_AVG_ERR,
+				      jitter->tid_stats[tid].tx_avg_err,
+				      NL80211_ATTR_PAD) ||
+		    nla_put_u64_64bit(vendor_event,
+				      QCA_VENDOR_ATTR_JITTER_STATS_TX_TOTAL_SUCCESS,
+				      jitter->tid_stats[tid].tx_total_success,
+				      NL80211_ATTR_PAD) ||
+		    nla_put_u64_64bit(vendor_event,
+				      QCA_VENDOR_ATTR_JITTER_STATS_TX_DROP,
+				      jitter->tid_stats[tid].tx_drop,
+				      NL80211_ATTR_PAD)) {
 			ath12k_err(NULL, "nla put failure: jitter stats attr");
 			nla_nest_cancel(vendor_event, tid_attr);
 			return -EINVAL;
@@ -5482,19 +5490,22 @@ static int ath12k_fill_peer_jitter_stats(struct ath12k *ar,
 
 static int ath12k_fill_peer_sojourn_stats(struct ath12k *ar,
 					  struct sk_buff *vendor_event,
-					  struct ath12k_dp_peer_stats *peer_stats)
+					  struct ath12k_dp_mld_peer_stats *mld_stats)
 {
 	struct ath12k_dp_peer_tid_sojourn_stats *tid_stats;
+	struct ath12k_dp_peer_tid_agg_sojourn_stats *sojourn;
 	struct nlattr *tid_attr;
 	int tid;
 	u64 avg_sojourn_msdu;
 
-	if (!peer_stats->sojourn)
+	if (!mld_stats || !mld_stats->agg_mld_stats)
 		return 0;
+
+	sojourn = &mld_stats->agg_mld_stats->sojourn;
 
 	for (tid = 0; tid < QCA_VENDOR_WLAN_TELEMETRY_DATA_TIDS &&
 	     tid < DP_TID_MAX; tid++) {
-		tid_stats = &peer_stats->sojourn->tid_stats[tid];
+		tid_stats = &sojourn->tid_stats[tid];
 		tid_attr = nla_nest_start(vendor_event, tid + 1);
 		if (!tid_attr) {
 			ath12k_err(NULL, "nla nest failure: sojourn stats TID %d", tid);
@@ -7306,15 +7317,15 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 					    struct ath12k_telemetry_command *cmd)
 {
 	struct ath12k_telemetry_dp_peer *telemetry_peer;
-	struct ath12k_dp_link_peer_hw_stats *hw_link_stats;
-	struct ath12k_dp_peer_hw_stats *hw_stats;
-	struct ath12k_htt_tx_ppdu_stats *tx_ppdu_stats;
+	struct ath12k_dp_link_peer_hw_stats *hw_link_stats = NULL;
+	struct ath12k_dp_peer_hw_stats *hw_stats = NULL;
+	struct ath12k_htt_tx_ppdu_stats *tx_ppdu_stats = NULL;
 	struct ath12k *ar = &ahvif->ah->radio[0];
-	struct ath12k_dp_proto_stats_peer *proto;
-	struct ath12k_dp_peer_tid_agg_delay_stats *delay = NULL;
-	struct ath12k_dp_peer_tid_agg_jitter_stats *jitter = NULL;
-	struct ath12k_dp_peer_tid_agg_sojourn_stats *sojourn = NULL;
-	struct ath12k_rx_peer_stats *rx_mon_stats;
+	struct ath12k_dp_proto_stats_peer *proto = NULL;
+	struct ath12k_dp_mld_agg_latency_peer_stats *agg_mld_stats = NULL;
+	struct ath12k_rx_peer_stats *rx_mon_stats = NULL;
+	struct ath12k_dp_link_peer_qos_stats *qos_stats = NULL;
+
 	struct nlattr *attr;
 	int ret = -EINVAL;
 
@@ -7325,88 +7336,60 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 	}
 
 	memset(telemetry_peer, 0, sizeof(*telemetry_peer));
+
 	/* Allocate RX stats if requested */
 	rx_mon_stats = vmalloc(sizeof(*rx_mon_stats));
-	if (!rx_mon_stats) {
-		vfree(telemetry_peer);
-		return -ENOMEM;
-	}
+	if (!rx_mon_stats)
+		goto out;
+
 	memset(rx_mon_stats, 0,
 	       sizeof(struct ath12k_rx_peer_stats));
 	telemetry_peer->link_peer_stats.rx_stats = rx_mon_stats;
 	telemetry_peer->peer_type = ATH12K_PEER_INVAL;
 
 	tx_ppdu_stats = vzalloc(sizeof(*tx_ppdu_stats));
-	if (!tx_ppdu_stats) {
-		vfree(telemetry_peer);
-		return -ENOMEM;
-	}
+	if (!tx_ppdu_stats)
+		goto out;
+
 	telemetry_peer->link_peer_stats.tx_ppdu_stats = tx_ppdu_stats;
 
-	proto = vzalloc(sizeof(*proto));
-	if (!proto) {
-		vfree(tx_ppdu_stats);
-		vfree(rx_mon_stats);
-		vfree(telemetry_peer);
-		return -ENOMEM;
+	if (ath12k_proto_stats_enabled(&ar->dp)) {
+		proto = vzalloc(sizeof(*proto));
+		if (!proto)
+			goto out;
+
+		telemetry_peer->peer_stats.proto = proto;
 	}
-	telemetry_peer->peer_stats.proto = proto;
 
 	if (ath12k_dp_hw_peer_stats_enabled(&ar->dp)) {
 		hw_link_stats = vzalloc(sizeof(*hw_link_stats));
 		if (!hw_link_stats) {
-			vfree(proto);
-			vfree(tx_ppdu_stats);
-			vfree(rx_mon_stats);
-			vfree(telemetry_peer);
-			return -ENOMEM;
+			goto out;
 		}
 		telemetry_peer->link_peer_stats.hw_link_stats = hw_link_stats;
 
 		hw_stats = vzalloc(sizeof(*hw_stats));
-		if (!hw_stats) {
-			vfree(hw_link_stats);
-		}
+		if (!hw_stats)
+			goto out;
+
 		telemetry_peer->mld_stats.hw_stats = hw_stats;
 	}
 
 	if (ath12k_dp_latency_stats_enabled(&ar->dp)) {
-		delay = vzalloc(sizeof(*delay));
+		agg_mld_stats = vzalloc(sizeof(*agg_mld_stats));
 
-		if (!delay) {
-			vfree(hw_link_stats);
-			vfree(proto);
-			vfree(tx_ppdu_stats);
-			vfree(rx_mon_stats);
-			vfree(telemetry_peer);
-			return -ENOMEM;
-		}
-		telemetry_peer->peer_stats.delay = delay;
+		if (!agg_mld_stats)
+			goto out;
 
-		jitter = vzalloc(sizeof(*jitter));
-		if (!jitter) {
-			vfree(delay);
-			vfree(hw_link_stats);
-			vfree(proto);
-			vfree(tx_ppdu_stats);
-			vfree(rx_mon_stats);
-			vfree(telemetry_peer);
-			return -ENOMEM;
-		}
-		telemetry_peer->peer_stats.jitter = jitter;
+		telemetry_peer->mld_stats.agg_mld_stats = agg_mld_stats;
+	}
 
-		sojourn = vzalloc(sizeof(*sojourn));
-		if (!sojourn) {
-			vfree(jitter);
-			vfree(delay);
-			vfree(hw_link_stats);
-			vfree(proto);
-			vfree(tx_ppdu_stats);
-			vfree(rx_mon_stats);
-			vfree(telemetry_peer);
-			return -ENOMEM;
-		}
-		telemetry_peer->peer_stats.sojourn = sojourn;
+	if (ath12k_debugfs_is_qos_stats_enabled(ar)) {
+		qos_stats = vzalloc(sizeof(*qos_stats));
+		if (!qos_stats)
+			goto out;
+
+		telemetry_peer->link_peer_stats.link_qos_stats = qos_stats;
 	}
 
 	if (ath12k_get_peer_telemetry_stats(ahvif, telemetry_peer, cmd->mac,
@@ -7475,22 +7458,6 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 
 	if (cmd->svc_id != INVALID_SVC_ID &&
 	    (cmd->feat.feat_sdwftx || cmd->feat.feat_sdwfdelay)) {
-		struct ath12k_dp_link_peer_qos_stats *qos_stats;
-
-		qos_stats = vzalloc(sizeof(*qos_stats));
-		if (!qos_stats) {
-			if (ath12k_dp_hw_peer_stats_enabled(&ar->dp)) {
-				vfree(hw_stats);
-				vfree(hw_link_stats);
-			}
-			vfree(proto);
-			vfree(tx_ppdu_stats);
-			vfree(rx_mon_stats);
-			vfree(telemetry_peer);
-			return -ENOMEM;
-		}
-		telemetry_peer->link_peer_stats.link_qos_stats = qos_stats;
-
 		ret = ath12k_telemetry_get_qos_stats(ahvif,
 						     telemetry_peer, cmd);
 		if (ret) {
@@ -7552,7 +7519,7 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 		if (attr) {
 			if (ath12k_fill_peer_delay_stats(ar,
 							 vendor_event,
-							 &telemetry_peer->peer_stats)) {
+							 &telemetry_peer->mld_stats)) {
 				ath12k_err(NULL, "nla put failure: Delay stats");
 				ret = -EINVAL;
 				goto out;
@@ -7570,7 +7537,7 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 		if (attr) {
 			if (ath12k_fill_peer_jitter_stats(ar,
 							  vendor_event,
-							  &telemetry_peer->peer_stats)) {
+							  &telemetry_peer->mld_stats)) {
 				ath12k_err(NULL, "nla put failure: Jitter stats");
 				ret = -EINVAL;
 				goto out;
@@ -7588,7 +7555,7 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 		if (attr) {
 			if (ath12k_fill_peer_sojourn_stats(ar,
 							   vendor_event,
-							   &telemetry_peer->peer_stats)) {
+							   &telemetry_peer->mld_stats)) {
 				ath12k_err(NULL, "nla put failure: Sojourn stats");
 				ret = -EINVAL;
 				goto out;
@@ -7602,15 +7569,11 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 
 	ret = 0;
 out:
-	if (ath12k_dp_hw_peer_stats_enabled(&ar->dp)) {
-		vfree(hw_stats);
-		vfree(hw_link_stats);
-	}
-	vfree(telemetry_peer->link_peer_stats.link_qos_stats);
+	vfree(qos_stats);
+	vfree(agg_mld_stats);
+	vfree(hw_stats);
+	vfree(hw_link_stats);
 	vfree(proto);
-	vfree(delay);
-	vfree(jitter);
-	vfree(sojourn);
 	vfree(tx_ppdu_stats);
 	vfree(rx_mon_stats);
 	vfree(telemetry_peer);
