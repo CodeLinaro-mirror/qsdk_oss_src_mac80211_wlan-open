@@ -452,13 +452,15 @@ int ath12k_wifi7_deliver_raw_frame(struct ath12k_pdev_dp *dp_pdev,
 
 	decrypted = ath12k_hal_rx_h_is_decrypted(hal, rx_tlv_hdr);
 
-	if (decrypted) {
+	if (decrypted && enctype != HAL_ENCRYPT_TYPE_OPEN) {
 		status->flag |= RX_FLAG_DECRYPTED | RX_FLAG_MMIC_STRIPPED;
 
 		if (ra_mcbc)
 			status->flag |= RX_FLAG_MIC_STRIPPED | RX_FLAG_ICV_STRIPPED;
 		else
 			status->flag |= RX_FLAG_IV_STRIPPED | RX_FLAG_PN_VALIDATED;
+	} else {
+		decrypted = false;
 	}
 
 	/* copy from scratch_pad to ieee80211_rx_status */
@@ -473,7 +475,7 @@ int ath12k_wifi7_deliver_raw_frame(struct ath12k_pdev_dp *dp_pdev,
 	ath12k_dp_rx_h_undecap_raw(dp_pdev, msdu,
 				   (struct hal_rx_desc *)rx_tlv_hdr,
 				   enctype,
-				   status, 1, peer_id,
+				   status, decrypted, peer_id,
 				   rx_msdu_info->first_msdu,
 				   rx_msdu_info->last_msdu);
 
