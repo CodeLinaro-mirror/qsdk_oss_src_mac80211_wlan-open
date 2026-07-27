@@ -1482,11 +1482,9 @@ int ieee80211_smd_parse_ml_persta(struct ieee80211_sub_if_data *sdata,
 		if (sta_control & IEEE80211_MLE_STA_CONTROL_STA_MAC_ADDR_PRESENT) {
 			sta_info = prof->variable;
 
-			sdata_dbg(sdata, "smd: link[%u] bssid=%pM\n",
-				  link_id, sta_info);
-
-			ether_addr_copy(target->assoc_data->link[link_id].addr,
-					sta_info);
+			sdata_dbg(sdata, "smd: link[%u] ap_link_addr=%pM (sta_addr kept as %pM)\n",
+				  link_id, sta_info,
+				  target->assoc_data->link[link_id].addr);
 
 			if (prof->sta_info_len >= 7) {
 				target->assoc_data->link[link_id].elems =
