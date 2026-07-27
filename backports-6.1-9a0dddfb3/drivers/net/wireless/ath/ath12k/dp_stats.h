@@ -199,8 +199,7 @@ enum ath12k_dp_pkt_l5_proto_type {
 };
 
 enum ath12k_dp_proto_stats_rx_level {
-	RX_RECV_FROM_HW = 0,
-	RX_SENT_TO_STACK,
+	RX_SENT_TO_STACK = 0,
 	RX_RECV_MAX,
 };
 
