@@ -3205,7 +3205,16 @@ static void ath12k_mac_handle_beacon_iter(void *data, u8 *mac,
 	if (!ether_addr_equal(mgmt->bssid, vif->bss_conf.bssid))
 		return;
 
-	cancel_delayed_work(&ahvif->deflink.connection_loss_work);
+	/* cancel_delayed_work() will trigger WARNING in kernel when it tries to
+	 * cancel work that is in the pending queue. Avoid calling
+	 * cancel_delayed_work() for work in pending state and set the flag -
+	 * ATH12K_FLAG_BEACON_RECEIVED. When the worker executes, return from
+	 * the worker without doing anything.
+	 */
+	if (work_pending(&ahvif->deflink.connection_loss_work.work))
+		set_bit(ATH12K_FLAG_BEACON_RECEIVED, &ahvif->deflink.beacon_flags);
+	else
+		cancel_delayed_work(&ahvif->deflink.connection_loss_work);
 }
 
 void ath12k_mac_handle_beacon(struct ath12k *ar, struct sk_buff *skb)
@@ -3237,6 +3246,7 @@ static void ath12k_mac_handle_beacon_miss_iter(void *data, u8 *mac,
 	 * doesn't make sense to continue operation. Queue connection loss work
 	 * which can be cancelled when beacon is received.
 	 */
+	clear_bit(ATH12K_FLAG_BEACON_RECEIVED, &ahvif->deflink.beacon_flags);
 	ieee80211_queue_delayed_work(hw, &ahvif->deflink.connection_loss_work,
 				     ATH12K_CONNECTION_LOSS_HZ);
 }
@@ -3361,6 +3371,9 @@ static void ath12k_mac_vif_sta_connection_loss_work(struct work_struct *work)
 	struct ieee80211_vif *vif = arvif->ahvif->vif;
 
 	if (!arvif->is_up)
+		return;
+
+	if (test_and_clear_bit(ATH12K_FLAG_BEACON_RECEIVED, &arvif->beacon_flags))
 		return;
 
 	ieee80211_connection_loss(vif);
