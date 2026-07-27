@@ -4608,14 +4608,9 @@ skip_ml_params:
 		ptr += sizeof(*eht_mcs);
 	}
 
-	/* To align with FW expectation set EHT OPS present bit for peer assoc only
-	 * based on enable_mcs15 flag. FW expects bit-0 to be set when MCS15 is enabled.
-	 * Remove this EHT OPS present bit once FW change is ready to check only bit-6.
-	 */
+	/* Set EHT OPS bit-6 for disabling MCS15 */
 	if (!arg->enable_mcs15)
 		cmd->peer_eht_ops |= cpu_to_le32(IEEE80211_EHT_OPER_MCS15_DISABLE);
-	else
-		cmd->peer_eht_ops |= cpu_to_le32(BIT(0));
 
 	tlv = ptr;
 	len = arg->ml.enabled ? arg->ml.num_partner_links * sizeof(*partner_info) : 0;
