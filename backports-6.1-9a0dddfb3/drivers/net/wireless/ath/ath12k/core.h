@@ -869,6 +869,7 @@ struct ath12k_link_vif {
 	bool is_created;
 	bool is_started;
 	bool is_up;
+	bool smd_prep_vdev_stopped;
 	u8 bssid[ETH_ALEN];
 	u8 addr[ETH_ALEN];
 	struct cfg80211_bitrate_mask bitrate_mask;

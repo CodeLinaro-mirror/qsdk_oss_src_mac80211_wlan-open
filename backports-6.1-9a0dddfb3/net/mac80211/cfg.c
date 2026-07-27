@@ -7134,7 +7134,8 @@ static int ieee80211_mgd_st_execute(struct ieee80211_sub_if_data *sdata,
 	if (ret) {
 		ieee80211_smd_prep_reset_target(sdata,
 						&ifmgd->prep_targets[target_slot],
-						WLAN_STATUS_UNSPECIFIED_FAILURE, 0);
+						WLAN_STATUS_UNSPECIFIED_FAILURE, 0,
+						false);
 		return ret;
 	}
 

@@ -64,7 +64,7 @@ void ieee80211_smd_prep_timeout_work(struct wiphy *wiphy,
 		   target->target_mld_addr);
 
 	ieee80211_smd_prep_reset_target(sdata, target,
-					WLAN_STATUS_UNSPECIFIED_FAILURE, 0);
+					WLAN_STATUS_UNSPECIFIED_FAILURE, 0, false);
 }
 
 void ieee80211_smd_prep_init(struct ieee80211_sub_if_data *sdata)
@@ -86,6 +86,60 @@ void ieee80211_smd_prep_init(struct ieee80211_sub_if_data *sdata)
 					ieee80211_smd_prep_timeout_work);
 		wiphy_delayed_work_init(&ifmgd->prep_targets[i].exec_timeout_work,
 					ieee80211_smd_exec_timeout_work);
+	}
+}
+
+void ieee80211_smd_cancel_all_targets(struct ieee80211_sub_if_data *sdata)
+{
+	struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
+	int i;
+
+	lockdep_assert_wiphy(sdata->local->hw.wiphy);
+
+	if (!ifmgd->prep_targets)
+		return;
+
+	for (i = 0; i < ifmgd->max_prepared_targets; i++) {
+		struct ieee80211_smd_prep_target *target = &ifmgd->prep_targets[i];
+
+		if (!target->target_sta && !target->sta_inserted &&
+		    !target->assoc_data && !target->drv_info)
+			continue;
+
+		if (target->prep_activated) {
+			struct wiphy_delayed_work *tailroom_delayed_wk;
+			struct wiphy_work *tailroom_wk;
+
+			/*
+			 * Reverse the sdata->link[] remapping done by
+			 * assoc_success(): restore old SAP containers back into
+			 * sdata->link[] and NULL target->old_links[].
+			 *
+			 * After rollback:
+			 *  - sdata->link[sap_lid] = old SAP container (valid,
+			 *    referenced by valid_links → freed + keys cleaned by
+			 *    ieee80211_vif_set_links(0,0) in set_disassoc)
+			 *  - target->new_links[tap_lid] = TAP container (freed
+			 *    by prep_reset_target → free_target_links below)
+			 *  - target->old_links[] = all NULL (cleared by rollback)
+			 */
+			ieee80211_smd_rollback_link_assign(sdata, target);
+
+			sdata->vif.active_links  = sdata->vif.valid_links;
+			sdata->vif.dormant_links = 0;
+
+			tailroom_delayed_wk = &sdata->dec_tailroom_needed_wk;
+			tailroom_wk = &sdata->dec_tailroom_needed_wk.work;
+
+			wiphy_delayed_work_cancel(sdata->local->hw.wiphy,
+						  tailroom_delayed_wk);
+			ieee80211_delayed_tailroom_dec(sdata->local->hw.wiphy,
+						       tailroom_wk);
+		}
+
+		ieee80211_smd_prep_reset_target(sdata, target,
+						WLAN_STATUS_UNSPECIFIED_FAILURE,
+						0, true);
 	}
 }
 
@@ -902,14 +956,23 @@ static void ieee80211_smd_exec_timeout_work(struct wiphy *wiphy,
 	sdata_info(sdata, "smd: exec timeout expired for target %pM\n",
 		   target->target_mld_addr);
 
+	if (target->prep_activated) {
+		sdata_info(sdata,
+			   "smd: exec timeout after prep_activate — disconnecting from %pM\n",
+			   sdata->vif.cfg.ap_addr);
+		ieee80211_sta_connection_lost(sdata,
+					      WLAN_REASON_DISASSOC_DUE_TO_INACTIVITY,
+					      false);
+		return;
+	}
+
 	/*
-	 * Execution didn't happen in time. Abort the preparation by:
-	 * 1. Notifying driver to abort via uhr_link_reconfig(ABORT)
-	 * 2. Cleaning up target sta_info
-	 * 3. Resetting the target state
+	 * prep_activate did not run (timeout fired before PREP response was
+	 * processed, or PREP response processing failed).  A simple target
+	 * reset is sufficient — sdata->link[] is still intact.
 	 */
 	ieee80211_smd_prep_reset_target(sdata, target,
-					WLAN_STATUS_UNSPECIFIED_FAILURE, 1);
+					WLAN_STATUS_UNSPECIFIED_FAILURE, 1, false);
 }
 
 #define IEEE80211_SMD_PREP_TIMEOUT_TU	64
@@ -991,7 +1054,8 @@ static void ieee80211_smd_prep_invalidate_target(struct ieee80211_if_managed *if
 
 void ieee80211_smd_prep_reset_target(struct ieee80211_sub_if_data *sdata,
 				     struct ieee80211_smd_prep_target *target,
-				     u16 status, u16 type)
+				     u16 status, u16 type,
+				     bool skip_sta_destroy)
 {
 	struct ieee80211_local *local = sdata->local;
 	struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
@@ -1038,10 +1102,11 @@ void ieee80211_smd_prep_reset_target(struct ieee80211_sub_if_data *sdata,
 	}
 
 	if (target->target_sta && status != WLAN_STATUS_SUCCESS) {
-		struct sta_info *current_sta =
-			sta_info_get(sdata, sdata->vif.cfg.ap_addr);
+		struct sta_info *current_sta;
 		struct ieee80211_uhr_link_reconfig_info *info;
 		int ret = 0;
+
+		current_sta = sta_info_get(sdata, target->current_sta_addr);
 
 		if (current_sta) {
 			info = kzalloc(sizeof(*info), GFP_KERNEL);
@@ -1064,26 +1129,19 @@ void ieee80211_smd_prep_reset_target(struct ieee80211_sub_if_data *sdata,
 		}
 
 		/*
-		 * Use the correct destruction path based on whether the STA
-		 * was inserted into the hash table. __sta_info_destroy() requires
-		 * the STA to be in the hash; sta_info_free() handles the
-		 * pre-insertion case (e.g. exec timeout before STA fully setup).
-		 *
-		 * A concurrent disconnect may have already removed the link
-		 * state that __sta_info_destroy() depends on; if it fails, log
-		 * and fall back to sta_info_free() to avoid leaking the object.
+		 * skip_sta_destroy=true means our caller (ieee80211_set_disassoc
+		 * via ieee80211_smd_cancel_all_targets) will let sta_info_flush()
+		 * destroy the STA — don't touch it here.  For all other callers
+		 * use the correct path based on whether it was hash-inserted.
 		 */
-		if (target->sta_inserted) {
-			if (__sta_info_destroy(target->target_sta)) {
-				sdata_info(sdata,
-					   "smd: sta_info_destroy failed for %pM, freeing directly\n",
-					   target->target_sta->sta.addr);
+		if (!skip_sta_destroy) {
+			if (target->sta_inserted)
+				WARN_ON(__sta_info_destroy(target->target_sta));
+			else
 				sta_info_free(local, target->target_sta);
-			}
-		} else {
-			sta_info_free(local, target->target_sta);
 		}
 		target->target_sta = NULL;
+		target->sta_inserted = false;
 	}
 
 	kfree(target->assoc_data);
@@ -1172,7 +1230,7 @@ void ieee80211_smd_prep_reset(struct ieee80211_sub_if_data *sdata,
 		if (ifmgd->prep_targets[i].valid)
 			ieee80211_smd_prep_reset_target(sdata,
 							&ifmgd->prep_targets[i],
-							status_code, type);
+							status_code, type, false);
 	}
 
 	/* Reset global SMD state after all per-target cleanup is done */

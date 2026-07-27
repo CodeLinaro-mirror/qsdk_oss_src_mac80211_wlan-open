@@ -981,9 +981,16 @@ int ath12k_peer_mlo_link_peers_delete(struct ath12k_vif *ahvif,
 		arvif = wiphy_dereference(ah->hw->wiphy, ahvif->link[link_id]);
 		arsta = wiphy_dereference(ah->hw->wiphy, ahsta->link[link_id]);
 
-		ar = arvif->ar;
+		ar = arvif ? arvif->ar : NULL;
 		if (!ar)
 			continue;
+
+		if (!arsta) {
+			ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
+				   "peer_mlo_link_peers_delete: arsta NULL for link_id=%u sta %pM (SMD abort), skipping\n",
+				   link_id, sta->addr);
+			continue;
+		}
 
 #ifdef CPTCFG_QCN_EXTN
 		ath12k_smart_ant_api_peer_disconnect(arsta);

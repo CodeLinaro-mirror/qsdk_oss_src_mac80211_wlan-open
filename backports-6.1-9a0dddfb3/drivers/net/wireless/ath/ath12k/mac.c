@@ -14106,15 +14106,20 @@ static int ath12k_mac_station_remove(struct ath12k *ar,
 	wiphy_work_cancel(ar->ah->hw->wiphy, &arsta->update_wk);
 
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA) {
-		if (!test_bit(ATH12K_FLAG_RECOVERY, &ar->ab->dev_flags))
-			WARN_ON(!arvif->is_started);
-		ath12k_bss_disassoc(ar, arvif);
-
-		ret = ath12k_mac_vdev_stop(arvif);
-		if (ret)
-			ath12k_warn(ar->ab, "failed to stop vdev %i: %d\n",
-				    arvif->vdev_id, ret);
-		arvif->is_started = false;
+		if (arvif->smd_prep_vdev_stopped) {
+			arvif->smd_prep_vdev_stopped = false;
+			arvif->is_started = false;
+		} else {
+			if (!test_bit(ATH12K_FLAG_RECOVERY, &ar->ab->dev_flags))
+				WARN_ON(!arvif->is_started);
+			ath12k_bss_disassoc(ar, arvif);
+			if (arvif->is_started)
+				ret = ath12k_mac_vdev_stop(arvif);
+			if (ret)
+				ath12k_warn(ar->ab, "failed to stop vdev %i: %d\n",
+					    arvif->vdev_id, ret);
+			arvif->is_started = false;
+		}
 	}
 
 	if (sta->mlo)
@@ -24676,6 +24681,12 @@ ath12k_mac_unassign_vif_chanctx_handle(struct ieee80211_hw *hw,
 				    arvif->vdev_id, ret);
 		else
 			arvif->is_started = false;
+		/*
+		 * Mark that this STA vdev was stopped here (e.g. during SMD
+		 * PREP link removal) so ath12k_mac_station_remove() can
+		 * suppress the !is_started WARN for this legitimate case.
+		 */
+		arvif->smd_prep_vdev_stopped = true;
 	}
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	ath12k_ppeds_detach_link_vif(arvif, arvif->ppe_vp_profile_idx);

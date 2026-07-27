@@ -975,7 +975,7 @@ out_fail:
 
 out:
 	if (status_code != WLAN_STATUS_SUCCESS)
-		ieee80211_smd_prep_reset_target(sdata, target, status_code, 0);
+		ieee80211_smd_prep_reset_target(sdata, target, status_code, 0, false);
 }
 
 static void ieee80211_process_smd_exec_resp(struct ieee80211_sub_if_data *sdata,
@@ -1069,7 +1069,7 @@ static void ieee80211_process_smd_exec_resp(struct ieee80211_sub_if_data *sdata,
 	if (status_code != WLAN_STATUS_SUCCESS) {
 		sdata_info(sdata, "smd: exec rejected with status %u\n",
 			   status_code);
-		ieee80211_smd_prep_reset_target(sdata, target, status_code, 1);
+		ieee80211_smd_prep_reset_target(sdata, target, status_code, 1, false);
 		return;
 	}
 
@@ -1084,7 +1084,8 @@ static void ieee80211_process_smd_exec_resp(struct ieee80211_sub_if_data *sdata,
 				  "smd: exec group key data truncated (%u > %zu)\n",
 				  group_key_data_len, len);
 			ieee80211_smd_prep_reset_target(sdata, target,
-						WLAN_STATUS_UNSPECIFIED_FAILURE, 1);
+						WLAN_STATUS_UNSPECIFIED_FAILURE, 1,
+						false);
 			return;
 		}
 
@@ -1152,7 +1153,7 @@ static void ieee80211_process_smd_exec_resp(struct ieee80211_sub_if_data *sdata,
 		if (t->valid && t != target)
 			ieee80211_smd_prep_reset_target(sdata, t,
 							WLAN_STATUS_REQUEST_DECLINED,
-							0);
+							0, false);
 	}
 
 	if (target->transition_done_in_prep) {
@@ -1173,7 +1174,8 @@ static void ieee80211_process_smd_exec_resp(struct ieee80211_sub_if_data *sdata,
 		sdata_info(sdata, "ST: aborted — %pM (phase=exec)\n",
 			   target->target_mld_addr);
 		ieee80211_smd_prep_reset_target(sdata, target,
-						WLAN_STATUS_UNSPECIFIED_FAILURE, 1);
+						WLAN_STATUS_UNSPECIFIED_FAILURE, 1,
+						false);
 		return;
 	}
 
