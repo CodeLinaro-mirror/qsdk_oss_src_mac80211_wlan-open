@@ -749,6 +749,7 @@ enum ath12k_green_ap_mode {
 
 struct ath12k_vap_cfg {
 	u8 rc_num_retries;
+	u8 ba_mode;
 	u16 max_mtu_size;
 	u32 dyn_bw_rts;
 	u32 cwm_enable;
