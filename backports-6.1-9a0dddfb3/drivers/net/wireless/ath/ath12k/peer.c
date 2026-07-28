@@ -979,7 +979,17 @@ int ath12k_peer_mlo_link_peers_delete(struct ath12k_vif *ahvif,
 	mlo_hw_link_id_bitmap = ahsta->mlo_hw_link_id_bitmap;
 	for_each_set_bit(link_id, &links, ATH12K_NUM_MAX_LINKS) {
 		arvif = wiphy_dereference(ah->hw->wiphy, ahvif->link[link_id]);
+		/*
+		 * ahsta->link[link_id] may be NULL for MLO STA after
+		 * sta_pre_rcu_remove() cleared it before synchronize_net().
+		 * Use saved_link_sta as fallback — it was saved in
+		 * sta_pre_rcu_remove() before the pointer was cleared.
+		 */
 		arsta = wiphy_dereference(ah->hw->wiphy, ahsta->link[link_id]);
+		if (!arsta)
+			arsta = ahsta->saved_link_sta[link_id];
+		if (!arsta)
+			continue;
 
 		ar = arvif ? arvif->ar : NULL;
 		if (!ar)

@@ -818,7 +818,14 @@ void ath12k_dp_cp_link_peer_unassign(struct ath12k *ar,
 	spin_unlock_bh(&dp_hw->peer_hash_lock);
 	rcu_read_unlock();
 
+	/*
+	 * ahsta->link[link_id] may already be NULL if sta_pre_rcu_remove()
+	 * cleared it before mac80211's synchronize_net(). Use saved_link_sta
+	 * as fallback.
+	 */
 	arsta = wiphy_dereference(ah->hw->wiphy, ahsta->link[link_id]);
+	if (!arsta)
+		arsta = ahsta->saved_link_sta[link_id];
 	if (WARN_ON(!arsta))
 		return;
 

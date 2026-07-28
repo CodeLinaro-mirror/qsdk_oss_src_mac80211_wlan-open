@@ -1842,6 +1842,7 @@ static const struct ieee80211_ops ath12k_ops_wifi7 = {
 	.cancel_hw_scan                 = ath12k_mac_op_cancel_hw_scan,
 	.set_key                        = ath12k_mac_op_set_key,
 	.set_rekey_data	                = ath12k_mac_op_set_rekey_data,
+	.sta_pre_rcu_remove             = ath12k_mac_op_sta_pre_rcu_remove,
 	.sta_state                      = ath12k_mac_op_sta_state,
 	.sta_set_txpwr			= ath12k_mac_op_sta_set_txpwr,
 	.link_sta_rc_update		= ath12k_mac_op_link_sta_rc_update,
