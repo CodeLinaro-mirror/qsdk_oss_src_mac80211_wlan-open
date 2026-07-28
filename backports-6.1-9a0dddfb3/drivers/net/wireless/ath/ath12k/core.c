@@ -1693,8 +1693,9 @@ static void ath12k_core_dump_mem_profile_info(struct ath12k_base *ab)
 		    cfg->dp_params.rx_desc_count);
 
 	ath12k_info(ab,
-		    "mem_params: tx_mon buf_sz=%u dst_sz=%u num_ppdu=%u status_buf=%u\n",
+		    "mem_params: tx_mon : buf_sz=%u fill_lvl=%u dst_sz=%u num_ppdu=%u status_buf=%u\n",
 		    cfg->dp_params.tx_monitor_buf_ring_size,
+		    cfg->dp_params.tx_monitor_buf_ring_fill_lvl,
 		    cfg->dp_params.tx_monitor_dst_ring_size,
 		    cfg->dp_params.tx_monitor_num_ppdu_desc,
 		    cfg->dp_params.tx_monitor_num_status_buf);

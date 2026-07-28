@@ -4494,7 +4494,8 @@ void ath12k_dp_mon_tx_desc_pool_free(struct ath12k_dp *dp)
 
 size_t ath12k_dp_mon_get_tx_free_desc_list(struct ath12k_dp *dp,
 					   struct dp_rxdma_mon_ring *rx_ring,
-					   struct list_head *list)
+					   struct list_head *list,
+					   size_t ring_lvl)
 {
 	struct ath12k_dp_tx_mon *dp_tx_mon = dp->dp_mon ? dp->dp_mon->dp_tx_mon : NULL;
 	struct dp_mon_desc_list_params list_params;
@@ -4509,7 +4510,7 @@ size_t ath12k_dp_mon_get_tx_free_desc_list(struct ath12k_dp *dp,
 	list_params.buff_size = 0;
 	list_params.is_tx_monitor = true;
 
-	return ath12k_dp_mon_get_free_desc_list(dp, rx_ring, &list_params, 0);
+	return ath12k_dp_mon_get_free_desc_list(dp, rx_ring, &list_params, ring_lvl);
 }
 
 int ath12k_dp_mon_tx_buff_alloc(struct ath12k_dp *dp)
@@ -4519,6 +4520,7 @@ int ath12k_dp_mon_tx_buff_alloc(struct ath12k_dp *dp)
 	struct ath12k_dp_tx_mon *dp_tx_mon = dp_mon ? dp_mon->dp_tx_mon : NULL;
 	struct dp_rxdma_mon_ring *tx_ring;
 	int num_entries, ret = -EINVAL, free_list_count;
+	size_t ring_lvl = DP_TX_MON_BUF_RING_FILL_LVL(ab);
 	LIST_HEAD(list);
 
 	if (!dp_tx_mon)
@@ -4541,7 +4543,7 @@ int ath12k_dp_mon_tx_buff_alloc(struct ath12k_dp *dp)
 	tx_ring->bufs_max = num_entries;
 
 	free_list_count =
-		ath12k_dp_mon_get_tx_free_desc_list(dp, tx_ring, &list);
+		ath12k_dp_mon_get_tx_free_desc_list(dp, tx_ring, &list, ring_lvl);
 
 	if (unlikely(!free_list_count)) {
 		ath12k_warn(dp, "Tx Mon: No entries available for mon buf ring\n");
@@ -4553,6 +4555,11 @@ int ath12k_dp_mon_tx_buff_alloc(struct ath12k_dp *dp)
 		ath12k_warn(dp, "Tx Mon: Replenish of mon buf ring failed\n");
 		return ret;
 	}
+
+	if (tx_ring->bufs_max > ring_lvl)
+		tx_ring->bufs_fill_lvl = ring_lvl;
+	else
+		tx_ring->bufs_fill_lvl = tx_ring->bufs_max;
 
 	spin_lock_bh(&dp_tx_mon->tx_mon_desc_lock);
 	dp_tx_mon->tx_mon_buf_ring_ready = true;
@@ -4650,14 +4657,17 @@ int ath12k_dp_mon_tx_set_monitor_flags(struct ath12k *ar, u32 new_flags, u32 *cu
 	struct ath12k_pdev_tx_mon *dp_pdev_tx_mon;
 
 	dp_mon_pdev = ar->dp.dp_mon_pdev;
+	if (!ath12k_dp_tx_mon_feature_eval(ar->dp.dp)) {
+		ath12k_warn(ar->ab, "Tx Monitor: Config disabled/mismatch\n");
+		return 0;
+	}
+
 	if (!dp_mon_pdev || !dp_mon_pdev->dp_pdev_tx_mon) {
 		ath12k_warn(ar->ab, "Tx Monitor: Invalid Pdev (%d)\n", ret);
 		return ret;
 	}
 
 	dp_pdev_tx_mon = dp_mon_pdev->dp_pdev_tx_mon;
-	if (!ath12k_dp_tx_mon_feature_eval(ar->dp.dp))
-		return 0;
 
 	req_state = !(new_flags & MONITOR_FLAG_SKIP_TX);
 	ret = ath12k_dp_mon_tx_monitor_start_stop(ar, req_state);
@@ -4690,13 +4700,10 @@ bool ath12k_dp_tx_mon_feature_eval(struct ath12k_dp *dp)
 
 	if (!DP_TX_MONITOR || !ab->hw_params->supports_tx_monitor) {
 		ab->hw_params->supports_tx_monitor = false;
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "TX Monitor disabled\n");
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX,
+			   "TX Monitor Feature flag disabled\n");
 		return false;
 	}
-
-	if (!DP_TX_MON_BUF_RING_SIZE(ab) || !DP_TX_MON_DST_RING_SIZE(ab) ||
-	    !DP_TX_MON_NUM_PPDU_DESC(ab) || !DP_TX_MON_NUM_STATUS_BUF(ab))
-		return false;
 
 	return true;
 }
@@ -5465,6 +5472,7 @@ void ath12k_dp_mon_tx_process_low_thres(struct ath12k_dp *dp)
 	struct dp_rxdma_mon_ring *tx_buff_ring;
 	struct hal_srng *srng;
 	int num_free, free_list_count;
+	int reserved_bufs;
 	LIST_HEAD(list);
 
 	if (!dp_tx_mon)
@@ -5483,12 +5491,25 @@ void ath12k_dp_mon_tx_process_low_thres(struct ath12k_dp *dp)
 	tx_buff_ring = &dp_tx_mon->tx_mon_buf_ring;
 	srng = &dp->hal->srng_list[tx_buff_ring->refill_buf_ring.ring_id];
 
+	/* Buffers intentionally left unfilled so the ring is maintained at
+	 * bufs_fill_lvl, not full.
+	 */
+	reserved_bufs = tx_buff_ring->bufs_max - tx_buff_ring->bufs_fill_lvl;
+
 	spin_lock_bh(&srng->lock);
 	ath12k_hal_srng_access_begin(ab, srng);
 
 	num_free = ath12k_hal_srng_src_num_free(ab, srng, true);
+
+	/* Discount the buffers intentionally left unfilled. num_free is signed:
+	 * if the physical free count is below the reserved gap, num_free goes
+	 * negative here and is caught by the half-fill check below (it never
+	 * reaches the unsigned list_cut_nodes count). Keep num_free signed.
+	 */
+	num_free = num_free - reserved_bufs;
+
 	/* if ring is less than half filled need to replenish */
-	if (num_free < (tx_buff_ring->bufs_max / 2)) {
+	if (num_free < (tx_buff_ring->bufs_fill_lvl / 2)) {
 		ath12k_hal_srng_access_end(ab, srng);
 		spin_unlock_bh(&srng->lock);
 		spin_unlock_bh(&dp_tx_mon->tx_mon_desc_lock);
