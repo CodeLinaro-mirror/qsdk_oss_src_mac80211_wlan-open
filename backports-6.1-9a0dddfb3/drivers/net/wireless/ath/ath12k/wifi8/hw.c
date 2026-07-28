@@ -1900,6 +1900,8 @@ static void ath12k_wifi8_mac_op_sta_set_4addr(struct ieee80211_hw *hw,
 
 			ath12k_wifi8_dp_vif_update_4addr(&ah->dp_hw, &ahvif->dp_vif,
 							 sta);
+			ATH12K_WIFI8_DP_IPA_WDS_BANK_SETUP(ah, ahvif);
+			ATH12K_DP_IPA_WDS_APVLAN_CONNECT(hw, ahvif);
 		}
 	}
 }

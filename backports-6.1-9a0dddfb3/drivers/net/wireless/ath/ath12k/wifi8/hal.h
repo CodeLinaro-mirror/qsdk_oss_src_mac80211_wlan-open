@@ -118,6 +118,7 @@ enum rdi_based_source_ring_selection {
  */
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 #define HAL_WIFI8_IPA_REO_RDI		5
+#define HAL_TCL_PPE_INDEX_MAPPING_TABLE_SLOT_MASK 0x3F
 #endif
 
 /* calculate the register address from bar0 of shadow register x */
