@@ -3919,6 +3919,7 @@ ath12k_fill_mu_be_ppdu_cnt(struct sk_buff *vendor_event,
 		if (!mu_attr) {
 			ath12k_err(NULL,
 				   "nla nest failure: mu be ppdu %d", i);
+			nla_nest_cancel(vendor_event, attr);
 			return -EINVAL;
 		}
 
@@ -3928,6 +3929,8 @@ ath12k_fill_mu_be_ppdu_cnt(struct sk_buff *vendor_event,
 				ath12k_err(NULL,
 					   "nla put failure: mu be ppdu mcs %d:%d",
 					   i, j);
+				nla_nest_cancel(vendor_event, mu_attr);
+				nla_nest_cancel(vendor_event, attr);
 				return -EINVAL;
 			}
 		}
@@ -4001,6 +4004,7 @@ ath12k_fill_mu_bn_ppdu_cnt(struct sk_buff *vendor_event,
 		if (!mu_attr) {
 			ath12k_err(NULL,
 				   "nla nest failure: mu bn ppdu %d", i);
+			nla_nest_cancel(vendor_event, attr);
 			return -EINVAL;
 		}
 
@@ -4010,6 +4014,8 @@ ath12k_fill_mu_bn_ppdu_cnt(struct sk_buff *vendor_event,
 				ath12k_err(NULL,
 					   "nla put failure: mu bn ppdu mcs %d:%d",
 					   i, j);
+				nla_nest_cancel(vendor_event, mu_attr);
+				nla_nest_cancel(vendor_event, attr);
 				return -EINVAL;
 			}
 		}
@@ -5563,7 +5569,7 @@ static int ath12k_fill_peer_tx_stats(struct ath12k *ar,
 	struct nlattr *attr1;
 	struct nlattr *attr;
 	int ring_num;
-	bool is_hw_stats;
+	bool is_hw_stats = false;
 
 
 	if (ath12k_dp_hw_peer_stats_enabled(&ar->dp))
@@ -5583,6 +5589,7 @@ static int ath12k_fill_peer_tx_stats(struct ath12k *ar,
 			ath12k_err(NULL,
 				   "nla nest failure: Peer per pkt stats - ring %d",
 				   ring_num + 1);
+			nla_nest_cancel(vendor_event, attr);
 			return -EINVAL;
 		}
 
@@ -5591,7 +5598,8 @@ static int ath12k_fill_peer_tx_stats(struct ath12k *ar,
 							    is_hw_stats)) {
 			ath12k_err(NULL, "Error filling peer tx per pkt stats for ring %d",
 				   ring_num + 1);
-			nla_nest_end(vendor_event, attr);
+			nla_nest_cancel(vendor_event, attr1);
+			nla_nest_cancel(vendor_event, attr);
 			return -EINVAL;
 		}
 
@@ -6849,7 +6857,7 @@ static int ath12k_fill_peer_rx_stats(struct ath12k *ar,
 	struct nlattr *attr;
 	int ring_num;
 	struct ath12k_rx_peer_stats *rx_mon_stats;
-	bool is_hw_stats;
+	bool is_hw_stats = false;
 
 	if (ath12k_dp_hw_peer_stats_enabled(&ar->dp))
 		is_hw_stats = true;
