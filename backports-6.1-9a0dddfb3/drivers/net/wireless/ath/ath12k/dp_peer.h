@@ -103,6 +103,8 @@ struct ath12k_dp_link_peer {
 	bool is_bridge_peer;
 	u8 hw_link_id;
 
+	struct ath12k_dp *dp;
+
 	/* link stats */
 	struct rate_info txrate;
 	struct rate_info rxrate;
@@ -246,6 +248,8 @@ struct ath12k_dp_peer {
 
 	/* Hash table node for MAC address lookup */
 	struct hlist_node hash_node;
+
+	bool pre_rcu_remove_done;
 };
 
 #define QOS_MSDUQ_MAX ((QOS_TID_MDSUQ_MAX * QOS_TID_MAX) + MSDUQ_MAX_DEF)
@@ -402,6 +406,7 @@ struct ath12k_dp_peer *ath12k_dp_vdev_peer_find(struct ath12k_dp_hw *dp_hw,
 struct ath12k_dp_peer *ath12k_dp_vdev_peer_check(struct ath12k_dp_hw *dp_hw,
 						 u8 *addr, u8 hw_link_id);
 u8 ath12k_dp_validate_hw_link_id(u8 hw_link_id);
+void ath12k_dp_peer_pre_rcu_remove(struct ieee80211_hw *hw, struct ath12k_sta *ahsta);
 
 /*
  * Peer Walk API - Walks across DP peers and performs the desired action.

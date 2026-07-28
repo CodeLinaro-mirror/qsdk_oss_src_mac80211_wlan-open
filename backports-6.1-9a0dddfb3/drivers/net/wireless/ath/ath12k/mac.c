@@ -14103,8 +14103,8 @@ static int ath12k_mac_station_remove(struct ath12k *ar,
 	struct ieee80211_vif *vif = ahvif->vif;
 	bool skip_peer_del = false;
 	int ret = 0;
-	void *dp_peer = ath12k_sta_get_dp_peer_wiphy_locked(ath12k_ar_to_hw(ar)->wiphy,
-							    ahsta);
+	struct ath12k_dp_hw *dp_hw = &ar->ah->dp_hw;
+	struct ath12k_dp_peer *dp_peer;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -14134,7 +14134,13 @@ static int ath12k_mac_station_remove(struct ath12k *ar,
 	ath12k_smart_ant_api_peer_disconnect(arsta);
 #endif
 
+	spin_lock_bh(&dp_hw->peer_hash_lock);
+
+	dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, sta->addr);
+
 	ath12k_dp_peer_cleanup(ar, dp_peer, arvif->vdev_id, arsta->addr);
+
+	spin_unlock_bh(&dp_hw->peer_hash_lock);
 
 	/*
 	 * Check if peer_del_all is enabled for this vdev
@@ -15293,6 +15299,8 @@ void ath12k_mac_op_sta_pre_rcu_remove(struct ieee80211_hw *hw,
 	 */
 
 	ahsta->pre_rcu_remove_done = true;
+
+	ath12k_dp_peer_pre_rcu_remove(hw, ahsta);
 }
 EXPORT_SYMBOL(ath12k_mac_op_sta_pre_rcu_remove);
 

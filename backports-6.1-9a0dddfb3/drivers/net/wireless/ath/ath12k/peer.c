@@ -909,19 +909,13 @@ int ath12k_peer_dp_cp_link_peer_delete(struct ath12k_link_vif *arvif,
 	bool ml_peer_del_all = false;
 	struct ath12k *ar;
 	int ret;
-	struct ath12k_dp_peer *dp_peer;
 
 	if (!arvif)
 		return 0;
 
 	ar = arvif->ar;
 
-	dp_peer = ath12k_sta_get_dp_peer_wiphy_locked(ath12k_ar_to_hw(ar)->wiphy, ahsta);
-	if (!dp_peer)
-		return 0;
-
 	ml_peer_del_all = ar->ab->hw_params->peer_del_all_support;
-	ath12k_dp_peer_cleanup(ar, dp_peer, arvif->vdev_id, addr);
 	ath12k_dp_cp_link_peer_unassign(ar, arvif, ahsta, link_id, addr, update_bmap);
 
 	if (ml_peer_del_all && arvif->peer_del_all_enable) {
