@@ -5375,3 +5375,82 @@ ath12k_dp_ext_mon_get_tx_peer(struct ath12k_pdev_dp *dp_pdev,
 
 	return 0;
 }
+
+static int
+ath12k_dp_ext_mon_update_tx_config(struct ath12k_pdev_mon_dp *dp_mon_pdev,
+				   const struct ath12k_ext_mon_filter_config *new_config)
+{
+	struct ath12k_dp_tx_ext_mon *curr;
+	struct ath12k_dp_tx_ext_mon_config *curr_config;
+
+	if (unlikely(!dp_mon_pdev->dp_pdev_tx_mon))
+		return -EINVAL;
+
+	curr = &dp_mon_pdev->dp_pdev_tx_mon->tx_ext_mon;
+
+	spin_lock(&curr->tx_ext_mon_lock);
+	curr_config = curr->tx_ext_mon_config;
+
+	if (unlikely(!curr_config)) {
+		spin_unlock(&curr->tx_ext_mon_lock);
+		ath12k_dbg(dp_mon_pdev->dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
+			   "ext_mon is not initialized\n");
+		return -EINVAL;
+	}
+
+	if (new_config->disable && !curr_config->enable) {
+		spin_unlock(&curr->tx_ext_mon_lock);
+		ath12k_dbg(dp_mon_pdev->dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
+			   "ext_mon is already disabled\n");
+		return 0;
+	}
+
+	if (!new_config->disable) {
+		curr_config->level = new_config->level;
+
+		curr_config->fp = new_config->all_peer;
+		curr_config->fpmo = new_config->target_peer;
+
+		curr_config->fp_enabled =
+			ath12k_dp_ext_mon_is_mode_enabled(&new_config->all_peer);
+		curr_config->fpmo_enabled =
+			ath12k_dp_ext_mon_is_mode_enabled(&new_config->target_peer);
+		curr_config->monitor_flags = new_config->monitor_flags;
+		curr_config->metadata = new_config->meta_data;
+		curr_config->enable = true;
+	} else {
+		curr_config->enable = false;
+		curr_config->level = 0;
+		curr_config->metadata = 0;
+		curr_config->monitor_flags = 0;
+		curr_config->fp_enabled = false;
+		curr_config->fpmo_enabled = false;
+		memset(&curr_config->fp, 0, sizeof(curr_config->fp));
+		memset(&curr_config->fpmo, 0, sizeof(curr_config->fpmo));
+	}
+	spin_unlock(&curr->tx_ext_mon_lock);
+	return 0;
+}
+
+int ath12k_dp_ext_mon_set_tx_filter(struct ath12k_pdev_dp *dp_pdev,
+				    const struct ath12k_ext_mon_filter_config *new_config)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+
+	if (unlikely(!dp_mon_pdev)) {
+		ath12k_warn(dp_pdev->dp, "monitor pdev is null\n");
+		return -EINVAL;
+	}
+
+	if (unlikely(!dp_mon_pdev->dp_pdev_tx_mon)) {
+		ath12k_warn(dp_pdev->dp, "tx monitor pdev is null\n");
+		return -EINVAL;
+	}
+
+	if (!dp_mon_pdev->dp_pdev_tx_mon->tx_monitor_started) {
+		ath12k_warn(dp_pdev->dp, "Enable TX monitor for this feature.\n");
+		return -EINVAL;
+	}
+	return ath12k_dp_ext_mon_update_tx_config(dp_mon_pdev, new_config);
+}
+EXPORT_SYMBOL(ath12k_dp_ext_mon_set_tx_filter);

@@ -131,6 +131,7 @@
 enum dp_mon_tx_filter_mode;
 struct dp_mon_tx_filter;
 struct ath12k_ext_mon_config;
+struct ath12k_ext_mon_filter_config;
 
 /**
  * struct ath12k_pdev_tx_mon_stats - per-pdev TX monitor ring stats counters
@@ -331,5 +332,7 @@ ath12k_dp_ext_mon_get_tx_filter(struct ath12k_pdev_dp *dp_pdev,
 				struct ath12k_ext_mon_config *resp);
 int ath12k_dp_ext_mon_get_tx_peer(struct ath12k_pdev_dp *dp_pdev,
 					struct ath12k_ext_mon_config *resp);
-
+int ath12k_dp_ext_mon_set_tx_filter(struct ath12k_pdev_dp *dp_pdev,
+				    const struct ath12k_ext_mon_filter_config
+				    *new_config);
 #endif /* ATH12K_DP_TX_MON_H */
