@@ -318,6 +318,8 @@ static void ath12k_wifi8_dp_umac_deinit(struct ath12k_dp *dp)
 	ath12k_wifi8_dp_tx_congestion_control_deinit(dp);
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	if (ab->dp->ppe.ppe_ops && dp->ppe.ppe_ops->ath12k_ppeds_stop)
+		dp->ppe.ppe_ops->ath12k_ppeds_stop(ab);
 	if (ab->dp->ppe.ppe_ops && dp->ppe.ppe_ops->ath12k_ppeds_detach)
 		dp->ppe.ppe_ops->ath12k_ppeds_detach(ab);
 	ath12k_nss_plugin_unregister_ops(ab);
