@@ -12518,6 +12518,7 @@ static void ath12k_mgmt_rx_event(struct ath12k_base *ab, struct sk_buff *skb)
 
 	rcu_read_lock();
 	arvif = ath12k_mac_get_arvif(ar, vdev_id);
+
 	if (rx_ev.status & WMI_RX_STATUS_ERR_PN) {
 		mgmt_stats->rx_pn_err_cnt++;
 		if (arvif)
@@ -12527,6 +12528,15 @@ static void ath12k_mgmt_rx_event(struct ath12k_base *ab, struct sk_buff *skb)
 		dev_kfree_skb(skb);
 		goto exit;
 	}
+
+	if (arvif && arvif->ahvif)
+		vif = ath12k_ahvif_to_vif(arvif->ahvif);
+
+	if (vif &&
+	    (vif->type == NL80211_IFTYPE_AP || vif->type == NL80211_IFTYPE_STATION) &&
+	    ieee80211_is_action(hdr->frame_control))
+		ath12k_update_peer_tx_ba_params(ar, vif, skb);
+
 	if (arvif) {
 		rssi = status->signal;
 
@@ -12548,14 +12558,6 @@ static void ath12k_mgmt_rx_event(struct ath12k_base *ab, struct sk_buff *skb)
 			arsta->min_rssi = min(arsta->min_rssi, rssi);
 		}
 	}
-
-	if (arvif && arvif->ahvif)
-		vif = ath12k_ahvif_to_vif(arvif->ahvif);
-
-	if (vif &&
-	    (vif->type == NL80211_IFTYPE_AP || vif->type == NL80211_IFTYPE_STATION) &&
-	    ieee80211_is_action(hdr->frame_control))
-		ath12k_update_peer_tx_ba_params(ar, vif, skb);
 
 skip_rssi_update:
 	rcu_read_unlock();
