@@ -232,6 +232,12 @@ static void ath12k_mhi_op_status_cb(struct mhi_controller *mhi_cntrl,
 		}
 
 		ath12k_mhi_set_state_bit(ab_pci, ATH12K_MHI_RDDM);
+		/* Skip SSR recovery during reboot — group flag ensures any
+		 * radio's shutdown suppresses RDDM recovery on all radios.
+		 */
+		if (test_bit(ATH12K_GROUP_FLAG_SHUTDOWN, &ag->flags))
+			return;
+
 		set_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags);
 
 		if (!test_bit(ATH12K_GROUP_FLAG_UNREGISTER, &ag->flags)) {
