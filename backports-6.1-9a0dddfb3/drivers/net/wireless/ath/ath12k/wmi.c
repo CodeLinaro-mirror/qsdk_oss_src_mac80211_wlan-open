@@ -14374,27 +14374,41 @@ static int ath12k_wmi_dcs_intf_subtlv_parser(struct ath12k_base *ab,
 
 	switch (tag) {
 	case WMI_TAG_DCS_AWGN_INT_TYPE:
-		awgn_info = (struct wmi_dcs_awgn_info *)ptr;
+		if (len < sizeof(*awgn_info))
+			ath12k_dbg(ab, ATH12K_DBG_WMI,
+				   "AWGN Info TLV truncated: len=%u expected=%zu\n",
+				   len, sizeof(*awgn_info));
 
+		memcpy(data, ptr, min_t(size_t, len, sizeof(*awgn_info)));
+		awgn_info = (struct wmi_dcs_awgn_info *)data;
 		ath12k_dbg(ab, ATH12K_DBG_WMI,
 			   "AWGN Info: channel width: %d, chan freq: %d, center_freq0: %d, center_freq1: %d, bw_intf_bitmap: %d\n",
 			   awgn_info->channel_width, awgn_info->chan_freq, awgn_info->center_freq0, awgn_info->center_freq1,
 			   awgn_info->chan_bw_interference_bitmap);
-		memcpy(data, awgn_info, sizeof(*awgn_info));
 		break;
 	case WMI_TAG_WLAN_DCS_CW_INT:
-		cw_info = (struct wmi_dcs_cw_info *)ptr;
+		if (len < sizeof(*cw_info))
+			ath12k_dbg(ab, ATH12K_DBG_WMI,
+				   "CW Info TLV truncated: len=%u expected=%zu\n",
+				   len, sizeof(*cw_info));
+
+		memcpy(data, ptr, min_t(size_t, len, sizeof(*cw_info)));
+		cw_info = (struct wmi_dcs_cw_info *)data;
 		ath12k_dbg(ab, ATH12K_DBG_WMI, "CW Info: channel=%d", cw_info->channel);
-		memcpy(data, cw_info, sizeof(*cw_info));
 		break;
 	case WMI_TAG_DCS_OBSS_INT_TYPE:
-		obss_info = (struct wmi_dcs_obss_info *)ptr;
+		if (len < sizeof(*obss_info))
+			ath12k_dbg(ab, ATH12K_DBG_WMI,
+				   "OBSS Info TLV truncated: len=%u expected=%zu\n",
+				   len, sizeof(*obss_info));
+
+		memcpy(data, ptr, min_t(size_t, len, sizeof(*obss_info)));
+		obss_info = (struct wmi_dcs_obss_info *)data;
 		ath12k_dbg(ab, ATH12K_DBG_WMI,
 			   "OBSS Info: width: %d, cf: %d, cf0: %d, cf1: %d, bmap: %d\n",
 			   obss_info->channel_width, obss_info->chan_freq,
 			   obss_info->center_freq0, obss_info->center_freq1,
 			   obss_info->chan_bw_interference_bitmap);
-		memcpy(data, obss_info, sizeof(*obss_info));
 		break;
 	case WMI_TAG_ATH_DCS_WLAN_INT_STAT:
 		wlan_info = (struct wmi_dcs_wlan_interference_stats_ev *)ptr;
@@ -14692,13 +14706,26 @@ ath12k_wmi_process_csa_switch_count_event(struct ath12k_base *ab,
 	rcu_read_unlock();
 }
 
+static int ath12k_wmi_csa_tlv_iter(struct ath12k_base *ab, u16 tag, u16 len,
+				   const void *ptr, void *data)
+{
+	struct ath12k_wmi_csa_vdev_ids_parse_state *s = data;
+
+	if (tag == WMI_TAG_ARRAY_UINT32)
+		s->vdev_ids_len = len;
+
+	return 0;
+}
+
 static void
 ath12k_wmi_pdev_csa_switch_count_status_event(struct ath12k_base *ab,
 					      struct sk_buff *skb)
 {
+	struct ath12k_wmi_csa_vdev_ids_parse_state parse_state = {};
 	const void **tb;
 	const struct ath12k_wmi_pdev_csa_event *ev;
 	const u32 *vdev_ids;
+	u32 num_vdev_ids;
 	int ret;
 
 	tb = ath12k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
@@ -14713,6 +14740,30 @@ ath12k_wmi_pdev_csa_switch_count_status_event(struct ath12k_base *ab,
 
 	if (!ev || !vdev_ids) {
 		ath12k_warn(ab, "failed to fetch pdev csa switch count ev");
+		kfree(tb);
+		return;
+	}
+
+	ret = ath12k_wmi_tlv_iter(ab, skb->data, skb->len,
+				  ath12k_wmi_csa_tlv_iter, &parse_state);
+	if (ret) {
+		ath12k_warn(ab, "failed to parse tlv for vdev ids len: %d\n", ret);
+		kfree(tb);
+		return;
+	}
+
+	if (parse_state.vdev_ids_len % sizeof(*vdev_ids)) {
+		ath12k_warn(ab, "invalid vdev_ids tlv len %u\n",
+			    parse_state.vdev_ids_len);
+		kfree(tb);
+		return;
+	}
+
+	num_vdev_ids = parse_state.vdev_ids_len / sizeof(*vdev_ids);
+	if (num_vdev_ids != ev->num_vdevs) {
+		ath12k_warn(ab,
+			    "invalid number of vdev_ids (%u) for num_vdevs %u\n",
+			    num_vdev_ids, ev->num_vdevs);
 		kfree(tb);
 		return;
 	}
@@ -16143,6 +16194,11 @@ int wmi_print_ctrl_path_awgn_stats_tlv(struct ath12k_base *ab, u16 len,
 			break;
 	}
 
+	if (!ar->supports_6ghz) {
+		ath12k_warn(ab, "AWGN stats is not supported on a non 6 GHz radio\n");
+		return -EINVAL;
+	}
+
 	stats = kzalloc(sizeof(*stats), GFP_ATOMIC);
 	if (!stats)
 		return -ENOMEM;
@@ -16617,6 +16673,26 @@ static int ath12k_wmi_tpc_stats_copy_buffer(struct ath12k_base *ab,
 	return 0;
 }
 
+static int ath12k_tpc_calc_tbl_size(__le32 d1, __le32 d2, __le32 d3, __le32 d4,
+				    u32 *total_size)
+{
+	u32 v1, v2, v3, v4;
+
+	*total_size = 0;
+
+	v1 = le32_to_cpu(d1);
+	v2 = le32_to_cpu(d2);
+	v3 = le32_to_cpu(d3);
+	v4 = le32_to_cpu(d4);
+
+	if (check_mul_overflow(v1, v2, total_size) ||
+	    check_mul_overflow(*total_size, v3, total_size) ||
+	    check_mul_overflow(*total_size, v4, total_size))
+		return -EINVAL;
+
+	return 0;
+}
+
 static int ath12k_tpc_get_reg_pwr(struct ath12k_base *ab,
 				  struct wmi_tpc_stats_arg *tpc_stats,
 				  struct wmi_max_reg_power_fixed_params *ev)
@@ -16637,8 +16713,14 @@ static int ath12k_tpc_get_reg_pwr(struct ath12k_base *ab,
 	}
 
 	/* Each entry is 2 byte hence multiplying the indices with 2 */
-	total_size = le32_to_cpu(ev->d1) * le32_to_cpu(ev->d2) *
-		     le32_to_cpu(ev->d3) * le32_to_cpu(ev->d4) * 2;
+	if (ath12k_tpc_calc_tbl_size(ev->d1, ev->d2, ev->d3, ev->d4,
+				     &total_size)) {
+		return -EINVAL;
+	}
+
+	if (check_mul_overflow(total_size, 2U, &total_size))
+		return -EINVAL;
+
 	if (le32_to_cpu(ev->reg_array_len) != total_size) {
 		ath12k_warn(ab,
 			    "Total size and reg_array_len doesn't match for tpc stats\n");
@@ -16715,8 +16797,11 @@ static int ath12k_tpc_get_ctl_pwr_tbl(struct ath12k_base *ab,
 		return -EINVAL;
 	}
 
-	total_size = le32_to_cpu(ev->d1) * le32_to_cpu(ev->d2) *
-		     le32_to_cpu(ev->d3) * le32_to_cpu(ev->d4);
+	if (ath12k_tpc_calc_tbl_size(ev->d1, ev->d2, ev->d3, ev->d4,
+				     &total_size)) {
+		return -EINVAL;
+	}
+
 	if (le32_to_cpu(ev->ctl_array_len) != total_size) {
 		ath12k_warn(ab,
 			    "Total size and ctl_array_len doesn't match for tpc stats\n");

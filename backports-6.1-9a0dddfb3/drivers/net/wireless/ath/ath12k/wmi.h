@@ -6633,6 +6633,10 @@ struct wmi_pdev_check_cal_version_event {
 	__le32 pdev_id;
 } __packed;
 
+struct ath12k_wmi_csa_vdev_ids_parse_state {
+	u16 vdev_ids_len;
+};
+
 struct ath12k_wmi_pdev_csa_event {
 	__le32 pdev_id;
 	__le32 current_switch_count;
