@@ -7635,6 +7635,12 @@ int ath12k_mac_get_bridge_link_id_from_ahvif(struct ath12k_vif *ahvif,
 			ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
 					 "arvif found link_id %d for bridge_bitmap 0x%x\n",
 					 *link_id, bridge_bitmap);
+			if (!arvif->is_started) {
+				ath12k_err(ab,
+					   "bridge vdev not started on link %d addr %pM, cannot create bridge peer\n",
+					   *link_id, arvif->addr);
+				continue;
+			}
 			ret = 0;
 			break;
 		}
@@ -25119,6 +25125,103 @@ static void ath12k_mac_configure_bridge_vap_sta_mode(struct ieee80211_hw *hw,
 	}
 }
 
+/**
+ * Restart already-created bridge vdevs when a normal vdev that needs bridging
+ * is being started. This is needed in disable/enable bss.
+ */
+static void ath12k_mac_restart_bridge_vdevs(struct ieee80211_hw *hw,
+					    struct ieee80211_vif *vif,
+					    struct ieee80211_bss_conf *link_conf)
+{
+	struct ath12k_hw *ah = hw->priv;
+	struct ath12k_vif *ahvif = (void *)vif->drv_priv;
+	struct ath12k_link_vif *arvif, *tmp_arvif;
+	struct ath12k_wsi_info *wsi_info;
+	struct ieee80211_chanctx_conf *bridge_ctx;
+	unsigned long links_map, started_links_map = 0;
+	u32 device_idx;
+	u8 link_id, curr_link_id, bridge_link_id;
+	bool bridge_needed = false;
+	int ret;
+
+	curr_link_id = link_conf->link_id;
+	arvif = ahvif->link[curr_link_id];
+	if (!arvif) {
+		ath12k_err(NULL,
+			   "restart bridge: vdev not found for link_id=%u MLD:%pM\n",
+			   curr_link_id, vif->addr);
+		return;
+	}
+	device_idx = arvif->ar->ab->wsi_info.index;
+
+	/* Check if all bridge links are already started; if so, nothing to do. */
+	bridge_link_id = ATH12K_BRIDGE_LINK_MIN;
+	links_map = ahvif->links_map;
+	for_each_set_bit_from(bridge_link_id, &links_map, ATH12K_NUM_MAX_LINKS) {
+		arvif = ahvif->link[bridge_link_id];
+		if (!arvif || !arvif->is_created)
+			continue;
+
+		if (!arvif->is_started)
+			goto check_bridge_needed;
+	}
+
+	return;
+
+check_bridge_needed:
+	/* Only consider normal links whose vdev is currently started, excluding
+	 * repurposed links.
+	 */
+	for_each_set_bit(link_id, &links_map, IEEE80211_MLD_MAX_NUM_LINKS) {
+		tmp_arvif = ahvif->link[link_id];
+
+		if (tmp_arvif && tmp_arvif->is_started &&
+		    !(ahvif->repurposed_links & BIT(link_id)))
+			started_links_map |= BIT(link_id);
+	}
+
+	for_each_set_bit(link_id, &started_links_map, IEEE80211_MLD_MAX_NUM_LINKS) {
+		if (link_id == curr_link_id)
+			continue;
+		arvif = ahvif->link[link_id];
+		if (!arvif || !arvif->ar)
+			continue;
+		wsi_info = ath12k_core_get_current_wsi_info(arvif->ar->ab);
+		if (BIT(device_idx) & wsi_info->diag_device_idx_bmap) {
+			bridge_needed = true;
+			break;
+		}
+	}
+
+	if (!bridge_needed)
+		return;
+
+	links_map = ahvif->links_map & ATH12K_BRIDGE_LINKS_MASK;
+	for_each_set_bit(bridge_link_id, &links_map, ATH12K_NUM_MAX_LINKS) {
+		arvif = ahvif->link[bridge_link_id];
+		if (!arvif || !arvif->is_created || arvif->is_started)
+			continue;
+
+		bridge_ctx = ath12k_mac_get_ctx_for_bridge(ah,
+							   arvif->ar->hw_link_id);
+
+		ret = ath12k_mac_assign_vif_chanctx_handle(hw, vif, NULL,
+							   bridge_ctx,
+							   bridge_link_id,
+							   arvif->ar->hw_link_id);
+		if (ret) {
+			ath12k_warn(arvif->ar->ab,
+				    "restart bridge: failed to restart bridge vdev %d link_id %d: ret:%d\n",
+				    arvif->vdev_id, bridge_link_id, ret);
+			ath12k_mac_handle_failures_bridge_addition(hw, vif);
+			return;
+		}
+		ath12k_dbg_level(arvif->ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
+				 "restart bridge: bridge vdev %d link_id %d restarted for MLD:%pM\n",
+				 arvif->vdev_id, bridge_link_id, vif->addr);
+	}
+}
+
 static int ath12k_mac_create_and_start_bridge(struct ieee80211_hw *hw,
 					      struct ieee80211_vif *vif,
 					      struct ieee80211_bss_conf *link_conf,
@@ -25188,13 +25291,18 @@ static int ath12k_mac_create_and_start_bridge(struct ieee80211_hw *hw,
 			ahvif->mode0_recover_bridge_vdevs = false;
 		}
 	} else {
-		/* Only MLO with more than 1 link, needs bridge vdevs */
-		if (ahvif->links_map & ATH12K_BRIDGE_LINKS_MASK)
-			goto exit;
-
 		/* if its a repurposed link, do not create bridge vap */
 		if (BIT(link_conf->link_id) & ahvif->repurposed_links)
 			goto exit;
+
+		/* Only MLO with more than 1 link, needs bridge vdevs */
+		if (ahvif->links_map & ATH12K_BRIDGE_LINKS_MASK) {
+			/* Bridge vdevs already exist but may have been stopped.
+			 * Restart the bridge vdevs on need.
+			 */
+			ath12k_mac_restart_bridge_vdevs(hw, vif, link_conf);
+			goto exit;
+		}
 
 		curr_link_id = link_conf->link_id;
 		arvif = ahvif->link[curr_link_id];
