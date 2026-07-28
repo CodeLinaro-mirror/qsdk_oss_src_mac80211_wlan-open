@@ -263,6 +263,13 @@ enum txmon_generated_response {
 	TXMON_GEN_RESP_SELFGEN_NDP_LMR
 };
 
+enum ath12k_dp_mon_tx_dma_length {
+	ATH12K_DP_MON_TX_DMA_LENGTH_64B = BIT(0),
+	ATH12K_DP_MON_TX_DMA_LENGTH_128B = BIT(1),
+	ATH12K_DP_MON_TX_DMA_LENGTH_256B = BIT(2),
+	ATH12K_DP_MON_TX_DMA_LENGTH_MAX = GENMASK(2, 0),
+};
+
 int ath12k_dp_mon_tx_process_ring(struct ath12k_pdev_dp *dp_pdev, int mac_id,
 				  struct napi_struct *napi, int *budget);
 
@@ -335,4 +342,6 @@ int ath12k_dp_ext_mon_get_tx_peer(struct ath12k_pdev_dp *dp_pdev,
 int ath12k_dp_ext_mon_set_tx_filter(struct ath12k_pdev_dp *dp_pdev,
 				    const struct ath12k_ext_mon_filter_config
 				    *new_config);
+enum ath12k_dp_mon_tx_dma_length
+ath12k_dp_mon_tx_get_ext_mon_filter_len(u8 filter_len);
 #endif /* ATH12K_DP_TX_MON_H */

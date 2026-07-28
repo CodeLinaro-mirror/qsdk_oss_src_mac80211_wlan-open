@@ -2535,6 +2535,83 @@ int ath12k_wifi7_dp_ext_mon_filter(struct sk_buff *mpdu,
 	return 0;
 }
 
+void
+ath12k_wifi7_dp_mon_tx_setup_ext_mon_filter(struct ath12k_pdev_dp *dp_pdev,
+					    struct htt_tx_ring_tlv_filter *src_tlv_filter)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct ath12k_dp_tx_ext_mon *tx_ext_mon =
+		&dp_mon_pdev->dp_pdev_tx_mon->tx_ext_mon;
+	struct ath12k_dp_tx_ext_mon_config *tx_config;
+	struct ath12k_ext_mon_pkt_config ext_mon_filter;
+	u8 mgmt_len, ctrl_len, data_len;
+	bool sw_peer_filtering;
+
+	src_tlv_filter->tx_mon_downstream_tlv_flags =
+					HTT_TX_MON_FILTER_DW_STRM_TLV_DEFAULT_MODE;
+	src_tlv_filter->tx_mon_upstream_tlv_flags0 =
+					HTT_TX_MON_FILTER_UP_STRM_TLV_FLAG0;
+	src_tlv_filter->tx_mon_upstream_tlv_flags1 =
+					HTT_TX_MON_FILTER_UP_STRM_TLV_FLAG1;
+	src_tlv_filter->tx_mon_upstream_tlv_flags2 =
+					HTT_TX_MON_FILTER_UP_STRM_TLV_FLAG2;
+
+	spin_lock(&tx_ext_mon->tx_ext_mon_lock);
+	tx_config = tx_ext_mon->tx_ext_mon_config;
+	if (!tx_config) {
+		spin_unlock(&tx_ext_mon->tx_ext_mon_lock);
+		return;
+	}
+	if (!tx_config->fp_enabled && !tx_config->fpmo_enabled) {
+		spin_unlock(&tx_ext_mon->tx_ext_mon_lock);
+		return;
+	}
+
+	sw_peer_filtering = (tx_config->fp_enabled && tx_config->fpmo_enabled);
+	ext_mon_filter = tx_config->fp_enabled ? tx_config->fp : tx_config->fpmo;
+
+	if (ext_mon_filter.filter[ATH12K_EXT_MON_FRAME_MGMT] || sw_peer_filtering)
+		src_tlv_filter->tx_mon_mgmt_filter = 0x1;
+	if (ext_mon_filter.filter[ATH12K_EXT_MON_FRAME_CTRL] || sw_peer_filtering)
+		src_tlv_filter->tx_mon_ctrl_filter = 0x1;
+	if (ext_mon_filter.filter[ATH12K_EXT_MON_FRAME_DATA] || sw_peer_filtering)
+		src_tlv_filter->tx_mon_data_filter = 0x1;
+
+	mgmt_len = ext_mon_filter.len[ATH12K_EXT_MON_FRAME_MGMT];
+	src_tlv_filter->tx_mon_mgmt_pkt_dma_len =
+		ath12k_dp_mon_tx_get_ext_mon_filter_len(mgmt_len);
+	ctrl_len = ext_mon_filter.len[ATH12K_EXT_MON_FRAME_CTRL];
+	src_tlv_filter->tx_mon_ctrl_pkt_dma_len =
+		ath12k_dp_mon_tx_get_ext_mon_filter_len(ctrl_len);
+	data_len = ext_mon_filter.len[ATH12K_EXT_MON_FRAME_DATA];
+	src_tlv_filter->tx_mon_data_pkt_dma_len =
+		ath12k_dp_mon_tx_get_ext_mon_filter_len(data_len);
+
+	switch (tx_config->level) {
+	case ATH12K_EXT_MON_FILTER_LEVEL_MPDU:
+	case ATH12K_EXT_MON_FILTER_LEVEL_PPDU:
+		src_tlv_filter->mgmt_mpdu_msdu_log_en = 1;
+		src_tlv_filter->mgmt_log_typ = HTT_TX_MON_WMASK_IN2_MPDU_LOG;
+		src_tlv_filter->ctrl_mpdu_msdu_log_en = 1;
+		src_tlv_filter->ctrl_log_typ = HTT_TX_MON_WMASK_IN2_MPDU_LOG;
+		src_tlv_filter->data_mpdu_msdu_log_en = 1;
+		src_tlv_filter->data_log_typ = HTT_TX_MON_WMASK_IN2_MPDU_LOG;
+		break;
+	default:
+		break;
+	}
+	spin_unlock(&tx_ext_mon->tx_ext_mon_lock);
+}
+
+void
+ath12k_wifi7_dp_mon_tx_setup_spl_pkt_cap_filter(struct ath12k_dp *dp,
+						struct htt_tx_ring_tlv_filter
+						 *src_tlv_filter)
+{
+	ath12k_dp_mon_tx_setup_mon_mode_filter(dp, src_tlv_filter);
+	src_tlv_filter->mac_addr_filter_en = 1;
+}
+
 int ath12k_wifi7_dp_mon_tx_config_filter(struct ath12k_pdev_dp *dp_pdev,
 					 bool enable)
 {
@@ -2566,6 +2643,14 @@ int ath12k_wifi7_dp_mon_tx_config_filter(struct ath12k_pdev_dp *dp_pdev,
 		switch (mode) {
 		case DP_MON_TX_FULL_MONITOR:
 			ath12k_dp_mon_tx_setup_mon_mode_filter(dp, src_tlv_filter);
+			break;
+		case DP_MON_TX_FILTER_EXT_MON_MODE:
+			ath12k_wifi7_dp_mon_tx_setup_ext_mon_filter(dp_pdev,
+								    src_tlv_filter);
+			break;
+		case DP_MON_TX_FILTER_SPL_PKT_CAP:
+			ath12k_wifi7_dp_mon_tx_setup_spl_pkt_cap_filter(dp,
+									src_tlv_filter);
 			break;
 		default:
 			ath12k_err(NULL, "Tx monitor mode invalid - skipping tx mon mode config\n");
