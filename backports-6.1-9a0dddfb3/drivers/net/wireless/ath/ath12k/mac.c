@@ -6244,6 +6244,13 @@ void ath12k_bss_assoc(struct ath12k *ar,
 	} else {
 		link_id = bss_conf->link_id;
 		ether_addr_copy(bssid, bss_conf->bssid);
+		/* During SMD exec, assign_chanctx resets arvif->bssid to the
+		 * STA's own link addr before bss_assoc runs. Fix it here so
+		 * any early return below still leaves arvif->bssid correct
+		 * for subsequent GTK installs.
+		 */
+		if (ahvif->smd.exec_in_progress && !is_zero_ether_addr(bss_conf->bssid))
+			ether_addr_copy(arvif->bssid, bss_conf->bssid);
 	}
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
@@ -7271,8 +7278,21 @@ ath12k_mac_op_change_vif_links(struct ieee80211_hw *hw,
 			continue;
 
 		arvif = wiphy_dereference(hw->wiphy, ahvif->link[link_id]);
-		if (WARN_ON(!arvif))
+		if (!arvif) {
+			/* SMD remap pre-NULLed this slot because the arvif was
+			 * moved to a different tap index. This is expected
+			 * skip without a WARN.
+			 */
+			if (ahvif->smd_remap_cleared_links & BIT(link_id)) {
+				ath12k_dbg(NULL, ATH12K_DBG_SMD,
+					   "smd: link[%u] already cleared by remap, skip remove\n",
+					   link_id);
+				ahvif->smd_remap_cleared_links &= ~BIT(link_id);
+				continue;
+			}
+			WARN_ON(1);
 			return -EINVAL;
+		}
 
 		is_link_repurposed = ahvif->repurposed_links & BIT(link_id);
 

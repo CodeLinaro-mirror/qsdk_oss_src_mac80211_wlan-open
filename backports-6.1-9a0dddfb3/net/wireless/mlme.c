@@ -2276,6 +2276,10 @@ static void cfg80211_uhr_reconfig_handle_exec(struct wireless_dev *wdev,
 		if (!target->prepared_bss[link_id])
 			continue;
 		cfg80211_smd_transfer_bss(wdev, done->target_mld_addr, link_id);
+		if (done->links[link_id].addr &&
+		    is_valid_ether_addr(done->links[link_id].addr))
+			memcpy(wdev->links[link_id].addr,
+			       done->links[link_id].addr, ETH_ALEN);
 	}
 
 	/* Do not free prep state - COMPLETE or ABORT will do that */
@@ -2307,7 +2311,8 @@ EXPORT_SYMBOL(cfg80211_uhr_reconfig_resp_done);
 void cfg80211_notify_smd_bss_transition(struct net_device *dev,
 					const u8 *target_mld_addr,
 					enum nl80211_smd_transition_type type,
-					u16 status_code)
+					u16 status_code,
+					const struct cfg80211_uhr_reconfig_done *done)
 {
 	struct cfg80211_smd_prep_target *target = NULL;
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
@@ -2392,6 +2397,18 @@ void cfg80211_notify_smd_bss_transition(struct net_device *dev,
 		 */
 		old_valid = wdev->valid_links;
 		wdev->valid_links = all_tap_links;
+
+		/* Sync per-link STA addresses for all TAP links. */
+		if (done) {
+			tmp = all_tap_links;
+			for_each_set_bit(link_id, &tmp, IEEE80211_MLD_MAX_NUM_LINKS) {
+				if (done->links[link_id].addr &&
+				    is_valid_ether_addr(done->links[link_id].addr))
+					memcpy(wdev->links[link_id].addr,
+					       done->links[link_id].addr,
+					       ETH_ALEN);
+			}
+		}
 
 		wiphy_dbg(wiphy, "smd: transition_complete primary=0x%x tap=0x%x valid=0x%x\n",
 			  primary_links, all_tap_links, wdev->valid_links);
@@ -2516,6 +2533,24 @@ int cfg80211_smd_transfer_bss(struct wireless_dev *wdev,
 	return 0;
 }
 EXPORT_SYMBOL(cfg80211_smd_transfer_bss);
+
+void cfg80211_smd_link_established(struct wireless_dev *wdev,
+				   unsigned int link_id)
+{
+	lockdep_assert_wiphy(wdev->wiphy);
+
+	/* Only applicable for MLO connections */
+	if (!wdev->valid_links)
+		return;
+
+	if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS) {
+		WARN_ONCE(1, "%s: invalid link_id %u\n", __func__, link_id);
+		return;
+	}
+
+	wdev->valid_links |= BIT(link_id);
+}
+EXPORT_SYMBOL(cfg80211_smd_link_established);
 
 /**
  * cfg80211_smd_cleanup_target - Cleanup SMD target on ABORT/TIMEOUT

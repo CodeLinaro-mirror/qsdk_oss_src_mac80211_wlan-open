@@ -11699,6 +11699,10 @@ void cfg80211_uhr_reconfig_resp_done(struct net_device *dev,
  * @type: transition type (%NL80211_SMD_TRANSITION_COMPLETE or
  *	  %NL80211_SMD_TRANSITION_ABORT)
  * @status_code: Status code (0 for complete, abort reason for ABORT)
+ * @done: reconfig done info carrying per-link STA addresses (COMPLETE only,
+ *	NULL for ABORT). links[link_id].addr is written to wdev->links[].addr
+ *	for all valid TAP links so the wdev layer reflects correct addresses
+ *	after a diff-links remap.
  *
  * COMPLETE: Called after DL drain, Updates wdev->links[].client.current_bss
  *           for primary link, unholds BSS, cleans up prep state. Notifies
@@ -11710,7 +11714,8 @@ void cfg80211_uhr_reconfig_resp_done(struct net_device *dev,
 void cfg80211_notify_smd_bss_transition(struct net_device *dev,
 					const u8 *target_mld_addr,
 					enum nl80211_smd_transition_type type,
-					u16 status_code);
+					u16 status_code,
+					const struct cfg80211_uhr_reconfig_done *done);
 
 int cfg80211_smd_hold_prepared_bss(struct wireless_dev *wdev,
 				   const u8 *target_mld_addr,
@@ -11721,6 +11726,8 @@ int cfg80211_smd_transfer_bss(struct wireless_dev *wdev,
 			      unsigned int link_id);
 void cfg80211_smd_cleanup_target(struct wireless_dev *wdev,
 				 const u8 *target_mld_addr);
+void cfg80211_smd_link_established(struct wireless_dev *wdev,
+				   unsigned int link_id);
 /**
  * cfg80211_schedule_channels_check - schedule regulatory check if needed
  * @wdev: the wireless device to check

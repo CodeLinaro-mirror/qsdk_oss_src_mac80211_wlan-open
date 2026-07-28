@@ -796,7 +796,10 @@ static void ieee80211_process_smd_prep_resp(struct ieee80211_sub_if_data *sdata,
 		target->assoc_data->link[tap_link_id].bss = fresh_bss;
 	}
 
-	ieee80211_smd_build_link_id_remap(sdata, target);
+	if (ieee80211_smd_build_link_id_remap(sdata, target)) {
+		sdata_info(sdata, "smd: link id remap failed\n");
+		goto out_free_elems;
+	}
 
 	while (pos + 2 <= (u8 *)mgmt + orig_len) {
 		u8 id = pos[0];
