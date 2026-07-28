@@ -4118,6 +4118,11 @@ ath12k_dp_ext_mon_remove_tx_peers(struct ath12k_pdev_dp *dp_pdev,
 		return -EINVAL;
 	}
 
+	if (tx_ext_mon->peer_count == 0) {
+		spin_unlock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+		return 0;
+	}
+
 	tx_mon_peer_params.peer_list = &tx_ext_mon->peer_list;
 	tx_mon_peer_params.ext_mon_peer_count = &tx_ext_mon->peer_count;
 	peer_count = tx_ext_mon->peer_count;
@@ -4327,9 +4332,7 @@ int ath12k_dp_mon_tx_config_full_monitor(struct ath12k *ar, bool set)
 	if (mon_ops && mon_ops->mon_tx_filter_configure) {
 		ret = ath12k_dp_mon_tx_filter_cfg(mon_ops, dp_pdev,
 						  DP_MON_TX_FULL_MONITOR, set);
-		if (ret)
-			return ret;
-		ret = ath12k_dp_tx_mon_reset_ext_mon_config(dp_pdev);
+		ath12k_dp_tx_mon_reset_ext_mon_config(dp_pdev);
 	}
 
 	return ret;
@@ -5605,7 +5608,8 @@ ath12k_dp_ext_mon_tx_prepare_add_peers(struct ath12k_pdev_dp *dp_pdev,
 
 static int
 ath12k_dp_ext_mon_add_tx_peers(struct ath12k_pdev_dp *dp_pdev,
-				const struct ath12k_ext_mon_peer_config *peer_config)
+			       bool skip_validation,
+			       const struct ath12k_ext_mon_peer_config *peer_config)
 {
 	struct ath12k_pdev_tx_mon *tx_mon;
 	const struct ath12k_dp_arch_mon_ops *mon_ops;
@@ -5643,19 +5647,30 @@ ath12k_dp_ext_mon_add_tx_peers(struct ath12k_pdev_dp *dp_pdev,
 		goto unlock;
 	}
 
-	tx_mon_peer_params.peer_list = &tx_ext_mon->peer_list;
-	tx_mon_peer_params.ext_mon_peer_count = &tx_ext_mon->peer_count;
+	if (skip_validation) {
+		tx_mon_peer_params.staged_count = tx_ext_mon->peer_count;
+		/**
+		 * Staging all peers to add present in the peer list.
+		 * Making peer_count = 0 to stage all the peers for addition.
+		 */
+		tx_ext_mon->peer_count = 0;
+		list_splice_tail_init(&tx_ext_mon->peer_list,
+				      tx_mon_peer_params.peers_to_wmi);
+	} else {
+		tx_mon_peer_params.peer_list = &tx_ext_mon->peer_list;
+		tx_mon_peer_params.ext_mon_peer_count = &tx_ext_mon->peer_count;
 
-	ret = ath12k_dp_ext_mon_tx_prepare_add_peers(dp_pdev, &tx_mon_peer_params);
-	if (ret)
-		goto unlock;
-
+		ret = ath12k_dp_ext_mon_tx_prepare_add_peers(dp_pdev,
+							     &tx_mon_peer_params);
+		if (ret)
+			goto unlock;
+	}
 	if (tx_ext_mon->peer_count == 0)
 		tx_mon_peer_params.toggle_hw_state = true;
 	spin_unlock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
 
 	/**
-	 * ath12k_dp_ext_mon_add_wmi_tx_peers sends a WMI command and
+	 * ext_mon_add_wmi_tx_peers sends a WMI command and
 	 * waits on the firmware round-trip, which can sleep, that is
 	 * unsafe under a spinlock. tx_ext_mon_config is re-checked,
 	 * re-locked below before peers_to_wmi is spliced back into
@@ -5717,7 +5732,7 @@ ath12k_dp_ext_mon_handle_tx_peer(struct ath12k_pdev_dp *dp_pdev,
 
 	switch (peer_config->action) {
 	case QCA_VENDOR_EXT_MON_PEER_ACTION_ADD:
-		return ath12k_dp_ext_mon_add_tx_peers(dp_pdev, peer_config);
+		return ath12k_dp_ext_mon_add_tx_peers(dp_pdev, false, peer_config);
 	case QCA_VENDOR_EXT_MON_PEER_ACTION_REMOVE:
 		return ath12k_dp_ext_mon_remove_tx_peers(dp_pdev, false, peer_config);
 	default:
@@ -5936,6 +5951,32 @@ static void ath12k_dp_ext_mon_tx_recover(struct ath12k_pdev_dp *dp_pdev,
 	dp_tx_mon_disable_full_tx_mon(dp_pdev, ar);
 }
 
+static int
+ath12k_dp_ext_mon_reconfigure_tx_peers(struct ath12k_pdev_dp *dp_pdev,
+				       const struct ath12k_dp_tx_ext_mon_config
+				       *old, const struct ath12k_ext_mon_filter_config
+				       *new_config)
+{
+	int ret = 0;
+	struct ath12k_ext_mon_peer_config peer_config;
+	u8 old_filter_mode = (old->fp_enabled << 1) | old->fpmo_enabled;
+	bool fp_enabled =
+		ath12k_dp_ext_mon_is_mode_enabled(&new_config->all_peer);
+	bool fpmo_enabled =
+		ath12k_dp_ext_mon_is_mode_enabled(&new_config->target_peer);
+	u8 new_filter_mode = (fp_enabled << 1) | fpmo_enabled;
+
+	if (old_filter_mode == new_filter_mode)
+		return 0;
+
+	peer_config.count = old->peer_count;
+	ret = ath12k_dp_ext_mon_tx_remove_all_peers(dp_pdev);
+	if (ret)
+		return ret;
+	ret = ath12k_dp_ext_mon_add_tx_peers(dp_pdev, true, &peer_config);
+	return ret;
+}
+
 int ath12k_dp_ext_mon_set_tx_filter(struct ath12k_pdev_dp *dp_pdev,
 				    const struct ath12k_ext_mon_filter_config *new_config)
 {
@@ -5990,6 +6031,9 @@ int ath12k_dp_ext_mon_set_tx_filter(struct ath12k_pdev_dp *dp_pdev,
 	old.fp            = tx_config->fp;
 	old.fpmo          = tx_config->fpmo;
 	old_mode          = tx_mon->tx_monitor_mode;
+	old.fp_enabled    = tx_config->fp_enabled;
+	old.fpmo_enabled  = tx_config->fpmo_enabled;
+	old.peer_count    = tx_config->peer_count;
 	spin_unlock(&tx_ext_mon->tx_ext_mon_lock);
 
 	/* S3: disable — restore full monitor */
@@ -5999,7 +6043,6 @@ int ath12k_dp_ext_mon_set_tx_filter(struct ath12k_pdev_dp *dp_pdev,
 			ath12k_warn(dp_pdev->dp->ab,
 				    "TX Mon: full monitor restore failed: %d\n", ret);
 			dp_tx_mon_disable_full_tx_mon(dp_pdev, ar);
-			return ret;
 		}
 		return ret;
 	}
@@ -6031,7 +6074,10 @@ int ath12k_dp_ext_mon_set_tx_filter(struct ath12k_pdev_dp *dp_pdev,
 			    "TX Mon: filter apply failed for mode %u: %d\n",
 			    new_mode, ret);
 		ath12k_dp_ext_mon_tx_recover(dp_pdev, &old, old_mode);
+		return ret;
 	}
+
+	ret = ath12k_dp_ext_mon_reconfigure_tx_peers(dp_pdev, &old, new_config);
 	return ret;
 }
 EXPORT_SYMBOL(ath12k_dp_ext_mon_set_tx_filter);
