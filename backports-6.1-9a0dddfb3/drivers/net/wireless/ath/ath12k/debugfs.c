@@ -7632,7 +7632,8 @@ static ssize_t ath12k_write_simulate_fw_crash(struct file *file,
 			break;
 	}
 
-	if (!ar || ar->ah->state != ATH12K_HW_STATE_ON)
+	if (!ar || (ar->ah->state != ATH12K_HW_STATE_ON &&
+	    !ath12k_ftm_mode))
 		return -ENETDOWN;
 
 	if (ath12k_hw_group_recovery_in_progress(ag)) {
