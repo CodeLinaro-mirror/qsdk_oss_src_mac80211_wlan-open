@@ -3216,11 +3216,6 @@ void ath12k_wifi8_dp_pdev_free(struct ath12k_base *ab)
 			ar->dp.dp_mon_pdev_configured = false;
 		}
 	}
-
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	if (ab->dp->ppe.ppe_ops && dp->ppe.ppe_ops->ath12k_ppeds_stop)
-		dp->ppe.ppe_ops->ath12k_ppeds_stop(ab);
-#endif
 }
 
 int ath12k_wifi8_dp_pdev_alloc(struct ath12k_base *ab)
@@ -3332,10 +3327,6 @@ err_cleanup_pdevs:
 		}
 	}
 
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	if (ab->dp->ppe.ppe_ops && dp->ppe.ppe_ops->ath12k_ppeds_stop)
-		dp->ppe.ppe_ops->ath12k_ppeds_stop(ab);
-#endif
 out:
 	return ret;
 }
