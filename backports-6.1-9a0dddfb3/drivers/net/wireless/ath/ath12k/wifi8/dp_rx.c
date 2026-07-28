@@ -3596,7 +3596,7 @@ int ath12k_wifi8_dp_rx_ring_init(struct ath12k_base *ab)
 	return 0;
 }
 
-static bool
+static void
 ath12k_wifi8_flush_handle_null_queue(struct ath12k_dp *dp,
 				     struct ath12k_rx_desc_info *desc_info,
 				     struct hal_reo_dest_ring *rx_desc,
@@ -3615,9 +3615,10 @@ ath12k_wifi8_flush_handle_null_queue(struct ath12k_dp *dp,
 	u8 hw_link_id;
 	int msdu_idx = 0;
 	bool drop;
+	int len;
 
 	if (!desc_info->skb)
-		return false;
+		return;
 
 	ath12k_core_dmac_inv_range(desc_info->vaddr,
 				   desc_info->vaddr + DP_RX_BUFFER_SIZE);
@@ -3629,18 +3630,20 @@ ath12k_wifi8_flush_handle_null_queue(struct ath12k_dp *dp,
 
 	if (rx_spd.rx_mpdu_info.reo_dest_buffer_type ==
 	    HAL_REO_DEST_RING_BUFFER_TYPE_LINK_DESC)
-		return false;
+		return;
 
 	rx_spd.msdu = desc_info->skb;
 	rx_spd.vaddr = desc_info->vaddr;
 
+	desc_info->skb = NULL;
+
 	hw_link_id = ath12k_dp_validate_hw_link_id(rx_spd.rx_mpdu_info.src_link_id);
 	dp_pdev = ath12k_dp_hw_grp_to_dp_pdev(dp_hw_grp, hw_link_id);
 	if (unlikely(!dp_pdev))
-		return false;
+		goto drop_packet;
 
 	if (!rcu_dereference(dp_pdev->dp->ab->pdevs_active[dp_pdev->ar->pdev_idx]))
-		return false;
+		goto drop_packet;
 
 	peer_metadata = rx_spd.rx_mpdu_info.peer_meta_data;
 	peer_id = ath12k_wifi8_dp_rx_get_peer_id(dp->ab, dp->peer_metadata_ver,
@@ -3651,16 +3654,29 @@ ath12k_wifi8_flush_handle_null_queue(struct ath12k_dp *dp,
 	hw_link_id = ath12k_dp_validate_hw_link_id(hw_link_id);
 	rx_spd.rx_mpdu_info.src_link_id = hw_link_id;
 
+	if (rx_spd.rx_msdu_info.msdu_continuation)
+		goto drop_packet;
+
 	hal_rx_desc_sz = dp->hal->hal_desc_sz;
+
+	len = rx_spd.rx_msdu_info.msdu_length + hal_rx_desc_sz +
+		(rx_spd.rx_msdu_info.l3_header_padding_msb ? 2 : 0);
+
+	if (skb_tailroom(rx_spd.msdu) < len)
+		goto drop_packet;
+
 	ath12k_wifi8_dp_adjust_skb(&rx_spd, NULL, &msdu_idx, hal_rx_desc_sz);
 
 	drop = ath12k_wifi8_handle_null_queue(dp_pdev, peer, &rx_status,
 					      &rx_spd, napi, &prev_tlv);
 	if (drop)
-		dev_kfree_skb_any(rx_spd.msdu);
+		goto drop_packet;
 
-	desc_info->skb = NULL;
-	return true;
+	return;
+
+drop_packet:
+	dev_kfree_skb_any(rx_spd.msdu);
+	return;
 }
 
 int ath12k_wifi8_dp_rx_process_reo_flush_err(struct ath12k_dp *dp,
