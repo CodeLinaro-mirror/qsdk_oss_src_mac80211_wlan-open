@@ -3566,7 +3566,15 @@ static void ath12k_core_pre_reconfigure_recovery(struct ath12k_base *ab)
 			arvif->is_started = false;
 			arvif->is_created = false;
 			arvif->is_up = false;
+			arvif->spectral_enabled = false;
 		}
+
+#ifdef CPTCFG_ATH12K_SPECTRAL
+		spin_lock_bh(&ar->spectral.lock);
+		ar->spectral.mode = SPECTRAL_SCAN_MODE_INVALID;
+		ar->spectral.scan_active = false;
+		spin_unlock_bh(&ar->spectral.lock);
+#endif
 
 		ath12k_core_radio_cleanup(ar);
 		wiphy_unlock(ah->hw->wiphy);
