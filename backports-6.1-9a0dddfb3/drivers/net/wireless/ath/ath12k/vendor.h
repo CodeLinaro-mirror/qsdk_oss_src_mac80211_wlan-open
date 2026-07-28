@@ -66,6 +66,7 @@ struct ath12k_wifi_generic_params {
 /* ME Dump List Operations */
 enum ieee80211_wlanconfig_me_stats_op {
 	IEEE80211_ME_STATS_PRINT_INFO  = 0,
+	IEEE80211_ME_STATS_PRINT_SNOOP  = 1,
 };
 
 /* ME Dump List Attributes */

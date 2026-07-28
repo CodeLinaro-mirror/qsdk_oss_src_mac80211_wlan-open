@@ -16,6 +16,7 @@
 #include "qcn_extns/vendor_extn.h"
 #include "qcn_extns/me_hmmc_extn.h"
 #include "qcn_extns/me_extn.h"
+#include "qcn_extns/me_snoop_extn.h"
 #include "mac.h"
 #include "ppe.h"
 #include "vendor.h"
@@ -13938,6 +13939,7 @@ static int ath12k_vendor_me_dump(struct wiphy *wiphy,
 	struct ath12k_me_db *me_db;
 	struct ieee80211_vif *vif;
 	struct ath12k_vif *ahvif;
+	struct ath12k_base *ab;
 	int ret;
 
 	if (nla_parse(tb, QCA_WLAN_VENDOR_ATTR_ME_STATS_PRINT_MAX,
@@ -13955,6 +13957,7 @@ static int ath12k_vendor_me_dump(struct wiphy *wiphy,
 
 	ahvif = ath12k_vif_to_ahvif(vif);
 	dp_vif = &ahvif->dp_vif;
+	ab = ath12k_ah_to_ar(ahvif->ah, 0)->ab;
 
 	me_db = ath12k_me_db_get(dp_vif);
 	if (!me_db)
@@ -13963,6 +13966,9 @@ static int ath12k_vendor_me_dump(struct wiphy *wiphy,
 	switch (nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_ME_STATS_PRINT_TYPE])) {
 	case IEEE80211_ME_STATS_PRINT_INFO:
 		ret = ath12k_me_info_print_extn(me_db, dp_vif);
+		break;
+	case IEEE80211_ME_STATS_PRINT_SNOOP:
+		ret = ath12k_me_snoop_print_extn(ab, me_db);
 		break;
 	default:
 		ret = -EINVAL;
