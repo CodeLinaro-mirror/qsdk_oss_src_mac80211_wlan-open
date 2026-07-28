@@ -2011,9 +2011,10 @@ static int ath12k_mac_monitor_vdev_stop(struct ath12k *ar)
 	return ret;
 }
 
-static int ath12k_mac_monitor_vdev_delete(struct ath12k *ar)
+static int ath12k_mac_monitor_vdev_delete(struct ath12k_link_vif *arvif)
 {
 	int ret;
+	struct ath12k *ar = arvif->ar;
 	unsigned long time_left;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
@@ -2027,25 +2028,26 @@ static int ath12k_mac_monitor_vdev_delete(struct ath12k *ar)
 	if (ret) {
 		ath12k_warn(ar->ab, "failed to request wmi monitor vdev %i removal: %d\n",
 			    ar->monitor_vdev_id, ret);
-		return ret;
+		goto cleanup;
 	}
 
 	time_left = wait_for_completion_timeout(&ar->vdev_delete_done,
 						ATH12K_VDEV_DELETE_TIMEOUT_HZ);
-	if (time_left == 0) {
+	if (time_left == 0)
 		ath12k_warn(ar->ab, "Timeout in receiving vdev delete response\n");
-	} else {
-		ar->allocated_vdev_map &= ~(1LL << ar->monitor_vdev_id);
-		spin_lock_bh(&ar->ab->base_lock);
-		ar->ab->free_vdev_map |= 1LL << (ar->monitor_vdev_id);
-		spin_unlock_bh(&ar->ab->base_lock);
-		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "mac monitor vdev %d deleted\n",
-			   ar->monitor_vdev_id);
-		WARN_ON(!ar->num_created_vdevs);
-		ar->num_created_vdevs--;
-		ar->monitor_vdev_id = -1;
-		ar->monitor_vdev_created = false;
-	}
+
+cleanup:
+	ar->allocated_vdev_map &= ~(1LL << ar->monitor_vdev_id);
+	spin_lock_bh(&ar->ab->base_lock);
+	ar->ab->free_vdev_map |= 1LL << (ar->monitor_vdev_id);
+	list_del(&arvif->list);
+	spin_unlock_bh(&ar->ab->base_lock);
+	ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "mac monitor vdev %d deleted\n",
+		   ar->monitor_vdev_id);
+	WARN_ON(!ar->num_created_vdevs);
+	ar->num_created_vdevs--;
+	ar->monitor_vdev_id = -1;
+	ar->monitor_vdev_created = false;
 
 	return ret;
 }
@@ -24835,7 +24837,7 @@ ath12k_mac_assign_vif_chanctx_handle(struct ieee80211_hw *hw,
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR) {
 		ret = ath12k_mac_monitor_start(ar);
 		if (ret) {
-			ath12k_mac_monitor_vdev_delete(ar);
+			ath12k_mac_monitor_vdev_delete(arvif);
 			goto out;
 		}
 
