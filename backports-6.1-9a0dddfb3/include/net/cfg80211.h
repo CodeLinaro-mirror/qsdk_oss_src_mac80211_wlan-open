@@ -5676,6 +5676,7 @@ struct cfg80211_smd_transition_info {
  * @set_rekey_data: give the data necessary for GTK rekeying to the driver
  *
  * @start_ap: Start acting in AP mode defined by the parameters.
+ * @bootup_cac_handle_ap: Post-start AP boot-up CAC handling on DFS channels.
  * @update_ap: Update parameters for an access point mode interface.
  *	This should reject the call when AP mode wasn't started.
  * @stop_ap: Stop being an AP, including stopping beaconing.
@@ -6100,6 +6101,11 @@ struct cfg80211_ops {
 
 	int	(*start_ap)(struct wiphy *wiphy, struct net_device *dev,
 			    struct cfg80211_ap_settings *settings);
+#ifdef CPTCFG_QCN_EXTN
+	void	(*bootup_cac_handle_ap)(struct wiphy *wiphy,
+					struct net_device *dev,
+					struct cfg80211_ap_settings *settings);
+#endif /* CPTCFG_QCN_EXTN */
 	int	(*update_ap)(struct wiphy *wiphy, struct net_device *dev,
 			     struct cfg80211_ap_settings *settings);
 	int	(*stop_ap)(struct wiphy *wiphy, struct net_device *dev,

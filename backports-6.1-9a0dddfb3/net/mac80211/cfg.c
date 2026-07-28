@@ -2139,21 +2139,6 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 
 	ieee80211_set_critical_update(sdata, link_id, &params->beacon.cu_params, false);
 
-#ifdef CPTCFG_QCN_EXTN
-	/*
-	 * Boot-up CAC: if this is the first BSS being started on a 5 GHz DFS
-	 * channel, start the per-chanctx dfs_cac_timer with the regulatory
-	 * CAC time for the channel. Subsequent start_ap calls on the same
-	 * chanctx see the timer already active and inherit its timing state.
-	 */
-	if (cfg80211_chandef_dfs_usable(local->hw.wiphy, &params->chandef) &&
-	    !cfg80211_chandef_dfs_available(local->hw.wiphy, &params->chandef))
-		ieee80211_bootup_cac_handle_skip_extn(sdata, link,
-						      &params->chandef,
-						      params->residual_cac_ms,
-						      params->skip_cac);
-#endif /* CPTCFG_QCN_EXTN */
-
 	return 0;
 
 error:
@@ -2161,6 +2146,31 @@ error:
 
 	return err;
 }
+
+#ifdef CPTCFG_QCN_EXTN
+static void ieee80211_bootup_cac_handle_ap(struct wiphy *wiphy,
+					   struct net_device *dev,
+					   struct cfg80211_ap_settings *params)
+{
+	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+	struct ieee80211_link_data *link;
+	unsigned int link_id = params->beacon.link_id;
+
+	lockdep_assert_wiphy(wiphy);
+
+	if (!cfg80211_chandef_dfs_usable(wiphy, &params->chandef) ||
+	    cfg80211_chandef_dfs_available(wiphy, &params->chandef))
+		return;
+
+	link = sdata_dereference(sdata->link[link_id], sdata);
+	if (!link)
+		return;
+
+	ieee80211_bootup_cac_handle_skip_extn(sdata, link, &params->chandef,
+					      params->residual_cac_ms,
+					      params->skip_cac);
+}
+#endif /* CPTCFG_QCN_EXTN */
 
 static int ieee80211_update_ap(struct wiphy *wiphy, struct net_device *dev,
 			       struct cfg80211_ap_settings *params)
@@ -7421,6 +7431,9 @@ const struct cfg80211_ops mac80211_config_ops = {
 	.set_default_beacon_key = ieee80211_config_default_beacon_key,
 	.set_default_control_key = ieee80211_config_default_control_key,
 	.start_ap = ieee80211_start_ap,
+#ifdef CPTCFG_QCN_EXTN
+	.bootup_cac_handle_ap = ieee80211_bootup_cac_handle_ap,
+#endif /* CPTCFG_QCN_EXTN */
 	.update_ap = ieee80211_update_ap,
 	.stop_ap = ieee80211_stop_ap,
 	.add_station = ieee80211_add_station,

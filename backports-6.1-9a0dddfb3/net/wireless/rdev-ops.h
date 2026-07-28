@@ -189,6 +189,18 @@ static inline int rdev_start_ap(struct cfg80211_registered_device *rdev,
 	return ret;
 }
 
+#ifdef CPTCFG_QCN_EXTN
+static inline void rdev_bootup_cac_handle_ap(struct cfg80211_registered_device *rdev,
+					     struct net_device *dev,
+					     struct cfg80211_ap_settings *settings)
+{
+	if (!rdev->ops->bootup_cac_handle_ap)
+		return;
+
+	rdev->ops->bootup_cac_handle_ap(&rdev->wiphy, dev, settings);
+}
+#endif /* CPTCFG_QCN_EXTN */
+
 static inline int rdev_update_ap(struct cfg80211_registered_device *rdev,
 				     struct net_device *dev,
 				     struct cfg80211_ap_settings *info)
