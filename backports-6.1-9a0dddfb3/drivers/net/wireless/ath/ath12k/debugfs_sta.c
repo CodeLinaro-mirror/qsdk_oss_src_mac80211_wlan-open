@@ -1721,7 +1721,7 @@ static ssize_t ath12k_dbg_sta_dump_tx_stats(struct file *file,
 
 	len += scnprintf(buf + len, size - len,
 			"\nTX duration\n %llu usecs\n",
-			tx_stats->tx_duration);
+			link_peer->tx_duration);
 
 	len += scnprintf(buf + len, size - len,
 			"BA fails\n %llu\n", tx_stats->ba_fails);
