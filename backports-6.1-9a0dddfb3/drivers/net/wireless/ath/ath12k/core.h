@@ -3521,6 +3521,11 @@ int ath12k_wifi_stats_reply_setup(struct ath12k_telemetry_command *cmd);
 struct ath12k_wsi_info *ath12k_core_get_current_wsi_info(struct ath12k_base *ab);
 int ath12k_core_dynamic_wsi_remap(struct ath12k_base *ab);
 void ath12k_core_pci_link_speed(struct ath12k_base *ab, u16 link_speed, u16 link_width);
+void ath12k_update_mlo_adj_chip(struct ath12k_hw_group *ag);
+void ath12k_core_wsi_remap_mlo_reconfig(struct ath12k_hw_group *ag);
+int ath12k_core_wsi_remap_pdev_suspend(struct ath12k_base *ab);
+void ath12k_core_cleanup(struct ath12k_base *ab);
+void ath12k_core_to_group_ref_put(struct ath12k_base *ab);
 void ath12k_core_radio_cleanup(struct ath12k *ar);
 void ath12k_telemetry_notify_breach(u8 *mac_addr, u8 svc_id, u8 param,
 				    bool set_clear, u8 tid);
@@ -3551,5 +3556,6 @@ void ath12k_core_cu_notify(struct ath12k *ar, struct ath12k_link_vif *arvif);
 struct wireless_dev *ath12k_get_wdev_from_netdev(struct net_device *dev);
 int ath12k_wsi_bypass_precheck(struct ath12k_base *ab, unsigned int value);
 int ath12k_core_mlo_setup(struct ath12k_hw_group *ag);
+int ath12k_core_wsi_mlo_teardown_umac_reset(struct ath12k_base *ab);
 
 #endif /* _CORE_H_ */

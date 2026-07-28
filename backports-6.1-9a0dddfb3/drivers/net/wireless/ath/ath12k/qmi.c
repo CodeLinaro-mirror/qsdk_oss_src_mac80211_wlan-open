@@ -6357,6 +6357,7 @@ void ath12k_qmi_firmware_stop(struct ath12k_base *ab)
 		return;
 	}
 }
+EXPORT_SYMBOL(ath12k_qmi_firmware_stop);
 
 int ath12k_qmi_firmware_start(struct ath12k_base *ab,
 			      u32 mode)
@@ -7417,3 +7418,4 @@ void ath12k_qmi_free_resource(struct ath12k_base *ab)
 	athdbg_if_get_service(ab, ATHDBG_SRV_QDSS_MEM_FREE);
 #endif
 }
+EXPORT_SYMBOL(ath12k_qmi_free_resource);

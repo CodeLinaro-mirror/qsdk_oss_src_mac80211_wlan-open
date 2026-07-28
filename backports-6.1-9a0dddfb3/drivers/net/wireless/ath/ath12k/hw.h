@@ -245,7 +245,10 @@ struct ath12k_cp_arch_ops {
 	int (*cu_mem_alloc)(struct ath12k *ar, struct ath12k_link_vif *arvif);
 	void (*cu_mem_free)(struct ath12k *ar, struct ath12k_link_vif *arvif);
 	void (*cu_notify)(struct ath12k *ar, struct ath12k_link_vif *arvif);
+	int (*wsi_bypass_remove)(struct ath12k_base *ab);
+	int (*wsi_bypass_add)(struct ath12k_base *ab);
 };
+
 
 enum ath12k_umcmn_interrupt_handling {
 	UMCMN_INTERRUPT_DISABLE,

@@ -640,6 +640,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.wmi_init = ath12k_wifi7_wmi_init_qcn9274,
 
 		.hal_ops = &hal_qcn9274_ops,
+		.cp_arch_ops = &ath12k_wifi7_cp_ops,
 
 		.qmi_cnss_feature_bitmap = BIT(CNSS_QDSS_CFG_MISS_V01),
 
@@ -764,6 +765,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.wmi_init = ath12k_wifi7_wmi_init_wcn7850,
 
 		.hal_ops = &hal_wcn7850_ops,
+		.cp_arch_ops = &ath12k_wifi7_cp_ops,
 
 		.qmi_cnss_feature_bitmap = BIT(CNSS_QDSS_CFG_MISS_V01) |
 					   BIT(CNSS_PCIE_PERST_NO_PULL_V01),
@@ -883,6 +885,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.wmi_init = ath12k_wifi7_wmi_init_qcn9274,
 
 		.hal_ops = &hal_qcn9274_ops,
+		.cp_arch_ops = &ath12k_wifi7_cp_ops,
 
 		.qmi_cnss_feature_bitmap = BIT(CNSS_QDSS_CFG_MISS_V01),
 
@@ -1014,6 +1017,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.wmi_init = &ath12k_wifi7_wmi_init_qcn9274,
 
 		.hal_ops = &hal_qcn9274_ops,
+		.cp_arch_ops = &ath12k_wifi7_cp_ops,
 
 		.qmi_cnss_feature_bitmap = BIT(CNSS_QDSS_CFG_MISS_V01),
 		.rfkill_pin = 0,
@@ -1139,6 +1143,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 
 		.wmi_init = &ath12k_wifi7_wmi_init_qcn9274,
 		.hal_ops = &hal_qcn9274_ops,
+		.cp_arch_ops = &ath12k_wifi7_cp_ops,
 
 		.supports_aspm = true,
 		.send_platform_model = true,
@@ -1243,6 +1248,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.wmi_init = &ath12k_wifi7_wmi_init_qcn9274,
 
 		.hal_ops = &hal_qcn9274_ops,
+		.cp_arch_ops = &ath12k_wifi7_cp_ops,
 
 		.qmi_cnss_feature_bitmap = BIT(CNSS_QDSS_CFG_MISS_V01),
 

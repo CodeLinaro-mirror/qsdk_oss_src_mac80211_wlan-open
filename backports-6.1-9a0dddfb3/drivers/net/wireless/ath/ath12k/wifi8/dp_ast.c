@@ -385,7 +385,7 @@ int ath12k_dp_ast_table_init(struct ath12k_dp_hw_group *dp_hw_grp)
 		/* send htt to all the chips */
 		for (i = 0; i < ATH12K_MAX_SOCS; i++) {
 			dp = dp_hw_grp->dp[i];
-			if (!dp)
+			if (!dp || dp->ab->is_bypassed)
 				continue;
 
 			ret = ath12k_dp_rx_htt_ast_info_setup(dp->ab, &ast_info);

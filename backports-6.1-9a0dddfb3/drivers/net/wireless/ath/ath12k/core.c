@@ -1112,7 +1112,6 @@ void ath12k_core_to_group_ref_get(struct ath12k_base *ab)
 		   ag->id, ag->num_started);
 }
 
-static inline
 void ath12k_core_to_group_ref_put(struct ath12k_base *ab)
 {
 	struct ath12k_hw_group *ag = ab->ag;
@@ -1131,6 +1130,7 @@ void ath12k_core_to_group_ref_put(struct ath12k_base *ab)
 	ath12k_dbg(ab, ATH12K_DBG_BOOT, "core de-attached from group %d, num_started %d\n",
 		   ag->id, ag->num_started);
 }
+EXPORT_SYMBOL(ath12k_core_to_group_ref_put);
 
 int ath12k_core_power_up(struct ath12k_hw_group *ag)
 {
@@ -1175,7 +1175,7 @@ int ath12k_core_power_up(struct ath12k_hw_group *ag)
 	return 0;
 }
 
-static void ath12k_core_cleanup(struct ath12k_base *ab)
+void ath12k_core_cleanup(struct ath12k_base *ab)
 {
 	ath12k_umac_reset_fallback_cleanup(ab);
 
@@ -1192,6 +1192,7 @@ static void ath12k_core_cleanup(struct ath12k_base *ab)
 	ath12k_hal_srng_deinit(ab);
 	ath12k_dp_umac_reset_deinit(ab);
 }
+EXPORT_SYMBOL(ath12k_core_cleanup);
 
 static void ath12k_core_power_down_device(struct ath12k_hw_group *ag,
 					  struct ath12k_base *ab, bool standby_mode,
@@ -2083,6 +2084,7 @@ err_mlo_teardown:
 
 	return ret;
 }
+EXPORT_SYMBOL(ath12k_core_mlo_setup);
 
 int ath12k_core_pdev_enable_telemetry_stats(struct ath12k_base *ab)
 {
@@ -2834,19 +2836,20 @@ void ath12k_fw_stats_reset(struct ath12k *ar)
 	spin_unlock_bh(&ar->data_lock);
 }
 
-static void ath12k_core_wsi_remap_mlo_reconfig(struct ath12k_hw_group *ag)
+void ath12k_core_wsi_remap_mlo_reconfig(struct ath12k_hw_group *ag)
 {
 	int i;
 	struct ath12k_base *partner_ab;
 
 	for (i = 0; i < ag->num_devices; i++) {
 		partner_ab = ag->ab[i];
-		if (!partner_ab->is_bypassed) {
+		if (partner_ab && !partner_ab->is_bypassed) {
 			ath12k_dbg(partner_ab, ATH12K_DBG_WSI_BYPASS, "WSI Bypass: Trigger MLO reconfig");
 			ath12k_qmi_trigger_mlo_reconfig(partner_ab);
 		}
 	}
 }
+EXPORT_SYMBOL(ath12k_core_wsi_remap_mlo_reconfig);
 
 int ath12k_wsi_bypass_precheck(struct ath12k_base *ab, unsigned int value)
 {
@@ -2869,11 +2872,6 @@ int ath12k_wsi_bypass_precheck(struct ath12k_base *ab, unsigned int value)
 		return -EBUSY;
 	}
 
-	if (ab->is_cumac_chip) {
-		ath12k_err(ab, "Bypass of CUMAC chip is not supported\n");
-		return -EOPNOTSUPP;
-	}
-
 	if ((!(test_bit(WMI_TLV_SERVICE_11BN, ab->wmi_ab.svc_map)) &&
 	    ((ag->num_devices - ag->num_bypassed) == ATH12K_MIN_ACTIVE_CHIP_FOR_BYPASS) &&
 	    value == ATH12K_WSI_BYPASS_REMOVE_DEVICE)) {
@@ -2881,8 +2879,9 @@ int ath12k_wsi_bypass_precheck(struct ath12k_base *ab, unsigned int value)
 		return -EINVAL;
 	}
 
-	if ((!ab->is_bypassed && value == ATH12K_WSI_BYPASS_ADD_DEVICE) ||
-	    (ab->is_bypassed && value == ATH12K_WSI_BYPASS_REMOVE_DEVICE)) {
+	if (!ab->is_cumac_chip &&
+	    ((!ab->is_bypassed && value == ATH12K_WSI_BYPASS_ADD_DEVICE) ||
+	    (ab->is_bypassed && value == ATH12K_WSI_BYPASS_REMOVE_DEVICE))) {
 		ath12k_err(ab, "Invalid operation\n");
 		return -EINVAL;
 	}
@@ -2893,6 +2892,19 @@ int ath12k_wsi_bypass_precheck(struct ath12k_base *ab, unsigned int value)
 			ath12k_err(ab, "Invalid Radio\n");
 			return -EINVAL;
 		}
+
+		if (ab->is_cumac_chip && ar->pdev_suspend &&
+		    value == ATH12K_WSI_BYPASS_REMOVE_DEVICE) {
+			ath12k_err(ab, "Invalid operation: CUMAC already suspended\n");
+			return -EINVAL;
+		}
+
+		if (ab->is_cumac_chip && !ar->pdev_suspend &&
+		    value == ATH12K_WSI_BYPASS_ADD_DEVICE) {
+			ath12k_err(ab, "Invalid operation: CUMAC not suspended\n");
+			return -EINVAL;
+		}
+
 		if (ar->num_created_vdevs > 0) {
 			ath12k_err(ab, "Vaps are active, cannot do bypass\n");
 			return -EBUSY;
@@ -5642,7 +5654,7 @@ exit:
 	return ag;
 }
 
-static void ath12k_update_mlo_adj_chip(struct ath12k_hw_group *ag)
+void ath12k_update_mlo_adj_chip(struct ath12k_hw_group *ag)
 {
 	int i;
 	struct ath12k_base *partner_ab;
@@ -5658,6 +5670,7 @@ static void ath12k_update_mlo_adj_chip(struct ath12k_hw_group *ag)
 		mutex_unlock(&partner_ab->core_lock);
 	}
 }
+EXPORT_SYMBOL(ath12k_update_mlo_adj_chip);
 
 void ath12k_core_pci_link_speed(struct ath12k_base *ab, u16 link_speed,
 				u16 link_width)
@@ -5697,8 +5710,9 @@ void ath12k_core_pci_link_speed(struct ath12k_base *ab, u16 link_speed,
 		ath12k_err(ab, "Failed to set the link width\n");
 #endif
 }
+EXPORT_SYMBOL(ath12k_core_pci_link_speed);
 
-static int ath12k_core_wsi_remap_pdev_suspend(struct ath12k_base *ab)
+int ath12k_core_wsi_remap_pdev_suspend(struct ath12k_base *ab)
 {
 	int i, ret = 0;
 	struct ath12k *ar;
@@ -5710,7 +5724,10 @@ static int ath12k_core_wsi_remap_pdev_suspend(struct ath12k_base *ab)
 			return -EINVAL;
 		}
 		ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS, "WSI Bypass: PDEV suspend");
-		ret = ath12k_mac_pdev_suspend(ar);
+		if (ab->is_cumac_chip)
+			ath12k_mac_stop(ar);
+		else
+			ret = ath12k_mac_pdev_suspend(ar);
 		if (ret) {
 			ath12k_err(ab, "PDEV suspend failed for wsi remap: %d\n", ret);
 			goto fail;
@@ -5720,17 +5737,13 @@ static int ath12k_core_wsi_remap_pdev_suspend(struct ath12k_base *ab)
 fail:
 	return ret;
 }
+EXPORT_SYMBOL(ath12k_core_wsi_remap_pdev_suspend);
 
-int ath12k_core_dynamic_wsi_remap(struct ath12k_base *ab)
+int ath12k_core_wsi_mlo_teardown_umac_reset(struct ath12k_base *ab)
 {
 	int ret = 0, i;
 	struct ath12k_hw *ah;
-	struct ath12k_hw_group *ag;
-	struct ath12k *ar = NULL;
-
-	ag = ab->ag;
-
-	ag->wsi_remap_in_progress = true;
+	struct ath12k_hw_group *ag = ab->ag;
 
 	ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS, "WSI Bypass: MLO teardown with Umac reset");
 	ath12k_core_mlo_hw_queues_stop(ab->ag);
@@ -5756,93 +5769,33 @@ int ath12k_core_dynamic_wsi_remap(struct ath12k_base *ab)
 		}
 	}
 
+	return ret;
+}
+EXPORT_SYMBOL(ath12k_core_wsi_mlo_teardown_umac_reset);
+
+int ath12k_core_dynamic_wsi_remap(struct ath12k_base *ab)
+{
+	int ret = 0;
+
+	ab->ag->wsi_remap_in_progress = true;
+
+	/* Dispatch to the chip-family ops for the remove/add logic. */
+	if (!ab->hw_params->cp_arch_ops) {
+		ath12k_err(ab, "WSI Bypass: no wsi_bypass_ops registered for this chip\n");
+		ret = -EOPNOTSUPP;
+		goto fail;
+	}
+
 	if (ab->wsi_remap_state == ATH12K_WSI_BYPASS_REMOVE_DEVICE) {
-		/* Send WMI_PDEV_SUSPEND for the chip which is bypassed */
-		ret = ath12k_core_wsi_remap_pdev_suspend(ab);
-		if (ret) {
-			ath12k_err(ab, "pdev suspend failed with error %d", ret);
+		if (ab->hw_params->cp_arch_ops->wsi_bypass_remove)
+			ret = ab->hw_params->cp_arch_ops->wsi_bypass_remove(ab);
+		if (ret)
 			goto fail;
-		}
-
-		ab->is_bypassed = true;
-
-		ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS, "WSI Bypass: Send Mode OFF for Q6");
-		ath12k_qmi_firmware_stop(ab);
-		ath12k_qmi_free_resource(ab);
-
-		/* Clean up the states for bypassed chip */
-		ath12k_core_cleanup(ab);
-
-		/* Update the counters in the hw group */
-		ag->num_bypassed++;
-		ath12k_core_to_group_ref_put(ab);
-		ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS,
-			   "WSI Bypass: num_bypassed: %d num_started: %d",
-			   ag->num_bypassed, ag->num_started);
-
-		/* Update the new adj chip info */
-		ath12k_update_mlo_adj_chip(ag);
-
-		mutex_lock(&ag->mutex);
-		/* Trigger MLO reconfig QMI message to All active chips */
-		ath12k_core_wsi_remap_mlo_reconfig(ag);
-
-		/* Put PCIe link to low speed mode */
-		ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS, "WSI Bypass: Configure PCIe link to low speed");
-		ath12k_core_pci_link_speed(ab, 1, 1);
-
-		ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS, "WSI Bypass: Initiate MLO setup after bypass");
-		ath12k_core_mlo_setup(ag);
-		mutex_unlock(&ag->mutex);
-		/* Reset the flags */
-		ag->wsi_remap_in_progress = false;
-		ab->wsi_remap_state = ATH12K_WSI_BYPASS_REMOVE_DEVICE;
-		ath12k_info(ab, "WSI remap: Device bypass completed\n");
 	} else if (ab->wsi_remap_state == ATH12K_WSI_BYPASS_ADD_DEVICE) {
-		ab->is_bypassed = false;
-		ag->num_bypassed--;
-
-		ath12k_hif_irq_disable(ab);
-		ath12k_hif_ce_irq_disable(ab);
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-		if (ab->dp->ppe.ppe_ops &&
-			ab->dp->ppe.ppe_ops->ath12k_ppeds_interrupt_stop)
-			ab->dp->ppe.ppe_ops->ath12k_ppeds_interrupt_stop(ab);
-#endif
-
-		ath12k_hif_power_down(ab, false);
-		/* Reset the PCIe link speed */
-		ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS, "WSI Bypass: Reset PCIe link speed");
-		ath12k_core_pci_link_speed(ab, 3, 2);
-
-		/* Update the new adj chip info */
-		ath12k_update_mlo_adj_chip(ag);
-
-		/* Power on the Q6. After FW image load, FW will initiate
-		 * QMI sequence. After the normal bootup sequence, the
-		 * counter will be reset after WMI ready from the FW
-		 */
-		ret = ath12k_hal_srng_init(ab);
-		if (ret) {
-			ath12k_err(ab, "srng init failed %d\n", ret);
-			return ret;
-		}
-
-		for (i = 0; i < ab->num_radios; i++) {
-			ar = ab->pdevs[i].ar;
-			ar->pdev_suspend = false;
-		}
-
-		ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS, "WSI Bypass: Power on Q6");
-		ret = ath12k_hif_power_up(ab);
-		if (ret) {
-			ath12k_err(ab, "failed to power up :%d\n", ret);
+		if (ab->hw_params->cp_arch_ops->wsi_bypass_add)
+			ret = ab->hw_params->cp_arch_ops->wsi_bypass_add(ab);
+		if (ret)
 			goto fail;
-		}
-
-		ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS,
-			   "WSI Bypass: num_bypassed %d num_started %d",
-			   ag->num_bypassed, ag->num_started);
 	}
 
 fail:
