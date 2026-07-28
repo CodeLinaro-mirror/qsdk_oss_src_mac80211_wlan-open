@@ -73,7 +73,7 @@ const struct ath12k_dp_arch_mon_ops ath12k_wifi7_dp_arch_mon_dual_ring_ops = {
 	/* At VAP up/down */
 	.mon_tx_htt_srng_setup = ath12k_dp_mon_tx_htt_srng_setup,
 	.mon_tx_htt_srng_cleanup = ath12k_dp_mon_tx_htt_srng_cleanup,
-	.mon_tx_filter_configure = ath12k_dp_mon_tx_config_filter,
+	.mon_tx_filter_configure = ath12k_wifi7_dp_mon_tx_config_filter,
 	.mon_tx_filter_update = ath12k_dp_mon_tx_update_ring_filter,
 	/* At Pdev Init/Exit */
 	.mon_tx_dst_ring_alloc_setup = ath12k_dp_mon_tx_dst_ring_alloc_setup,
@@ -2534,3 +2534,50 @@ int ath12k_wifi7_dp_ext_mon_filter(struct sk_buff *mpdu,
 
 	return 0;
 }
+
+int ath12k_wifi7_dp_mon_tx_config_filter(struct ath12k_pdev_dp *dp_pdev,
+					 bool enable)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct ath12k_pdev_tx_mon *tx_mon;
+	struct ath12k_dp *dp = dp_pdev->dp;
+	struct dp_mon_tx_filter filter = {0};
+	struct htt_tx_ring_tlv_filter *src_tlv_filter;
+	enum dp_mon_tx_filter_srng_type srng_type =
+		DP_MON_TX_FILTER_SRNG_TYPE_TXMON_DEST;
+	u8 mode;
+
+	if (!dp_mon_pdev || !dp_mon_pdev->dp_pdev_tx_mon) {
+		ath12k_err(NULL, "TX Monitor: mon pdev / tx mon is NULL\n");
+		return -EINVAL;
+	}
+
+	tx_mon = dp_mon_pdev->dp_pdev_tx_mon;
+	mode = tx_mon->tx_monitor_mode;
+
+	if (!dp || !dp->hal) {
+		ath12k_err(NULL, "dp / dp hal  invalid - skipping tx mon mode config\n");
+		return -EINVAL;
+	}
+
+	if (enable) {
+		filter.valid = true;
+		src_tlv_filter = &filter.filter;
+		switch (mode) {
+		case DP_MON_TX_FULL_MONITOR:
+			ath12k_dp_mon_tx_setup_mon_mode_filter(dp, src_tlv_filter);
+			break;
+		default:
+			ath12k_err(NULL, "Tx monitor mode invalid - skipping tx mon mode config\n");
+			return -EINVAL;
+		}
+		ath12k_hal_mon_tx_get_wmask_config(dp->hal, &src_tlv_filter->wmask);
+		tx_mon->tx_mon_filter[mode][srng_type] = filter;
+	} else {
+		tx_mon->tx_mon_filter[mode][srng_type] = filter;
+	}
+	ath12k_dp_mon_tx_display_filters(dp, mode, &filter);
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_wifi7_dp_mon_tx_config_filter);
+
