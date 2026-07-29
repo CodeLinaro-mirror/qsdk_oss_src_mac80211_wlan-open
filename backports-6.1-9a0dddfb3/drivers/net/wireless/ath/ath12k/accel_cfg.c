@@ -266,6 +266,12 @@ u32 ath12k_get_metadata_info(struct ath_dp_metadata_param *md_param)
 		msduq_peer = ath12k_sdwf_get_msduq_peer(wdev, dest_mac,
 				&md_param->sawf_param,
 				md_param->is_scs_mscs);
+
+		if (msduq_peer != SDWF_PEER_MSDUQ_INVALID) {
+			md_param->sawf_param.msduq = msduq_peer & 0x3F;
+			md_param->sawf_param.msduq_valid = true;
+			md_param->stream_param.valid = false;
+		}
 	}
 
 	metadata = ath_encode_metadata(link_id, msduq_peer);

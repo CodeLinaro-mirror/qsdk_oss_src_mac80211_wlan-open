@@ -46,6 +46,8 @@ struct  mlo_param {
  * @pcp: pcp value
  * @valid_flag: flag to indicate if pcp is valid or not
  * @mcast_flag: flag to indicate if query is for multicast
+ * @msduq: sdwf msduq set by wlan
+ * @msduq_valid: set by wlan when msduq value is valid
  */
 
 struct  sawf_param {
@@ -58,11 +60,18 @@ struct  sawf_param {
 		rule_id,
 		pcp,
 		valid_flag;
+	u8	msduq;
+	bool	msduq_valid;
 };
 
 struct ath_dp_ast_param {
 	u16 ast_info;
 	u16 hw_peer_id;
+	bool valid;
+};
+
+struct ath_stream_param {
+	u16 stream_id;
 	bool valid;
 };
 
@@ -83,6 +92,7 @@ struct	ath_dp_metadata_param {
 	struct	sawf_param	sawf_param;
 	struct	ath_dp_ast_param ast_param;
 	uint8_t out_wifi_arch_info;
+	struct  ath_stream_param stream_param;
 };
 
 struct ath_ul_params {
