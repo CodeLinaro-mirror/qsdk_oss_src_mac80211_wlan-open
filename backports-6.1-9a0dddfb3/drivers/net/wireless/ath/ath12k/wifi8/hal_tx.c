@@ -14,7 +14,9 @@
 #define HAL_TX_BITS_PER_TID 3
 #define HAL_TX_NUM_DSCP_REG_SIZE 32
 
-#define ATH12K_TQM_CMD_NUM_MASK 0x01FFFFFF
+#define ATH12K_TQM_CMD_NUM_MASK 0x3FFFFF
+/* Bit 25 is reserved and should always set to 0 */
+#define ATH12K_TQM_CMD_LINK_ID  GENMASK(24, 22)
 
 void ath12k_wifi8_hal_tx_cmd_desc_setup(struct ath12k_base *ab,
 					struct hal_tcl_data_cmd *tcl_cmd,
@@ -248,6 +250,10 @@ int ath12k_wifi8_hal_tqm_remove_msdu_cmd(struct ath12k_base *ab,
 	cmd_num = atomic_inc_return(&dp->tqm_cmd_num) & ATH12K_TQM_CMD_NUM_MASK;
 	if (unlikely(cmd_num == 0))
 		cmd_num = atomic_inc_return(&dp->tqm_cmd_num) & ATH12K_TQM_CMD_NUM_MASK;
+
+	cmd_num = cmd_num | le32_encode_bits(ab->pdevs[0].hw_link_id,
+					     ATH12K_TQM_CMD_LINK_ID);
+
 	desc->cmd_hdr.tqm_cmd_number = cpu_to_le32(cmd_num);
 
 	desc->cmd_hdr.info0 = le32_encode_bits(0x7F, HAL_TQM_INFO0_SESSION_ID) |
@@ -296,6 +302,10 @@ int ath12k_wifi8_hal_tqm_remove_mpdu_cmd(struct ath12k_base *ab,
 	cmd_num = atomic_inc_return(&dp->tqm_cmd_num) & ATH12K_TQM_CMD_NUM_MASK;
 	if (unlikely(cmd_num == 0))
 		cmd_num = atomic_inc_return(&dp->tqm_cmd_num) & ATH12K_TQM_CMD_NUM_MASK;
+
+	cmd_num = cmd_num | le32_encode_bits(ab->pdevs[0].hw_link_id,
+					     ATH12K_TQM_CMD_LINK_ID);
+
 	desc->cmd_hdr.tqm_cmd_number = cpu_to_le32(cmd_num);
 
 	desc->cmd_hdr.info0 = le32_encode_bits(0x7F, HAL_TQM_INFO0_SESSION_ID) |
@@ -344,6 +354,10 @@ int ath12k_wifi8_hal_tqm_sync_cmd(struct ath12k_base *ab,
 	cmd_num = atomic_inc_return(&dp->tqm_cmd_num) & ATH12K_TQM_CMD_NUM_MASK;
 	if (unlikely(cmd_num == 0))
 		cmd_num = atomic_inc_return(&dp->tqm_cmd_num) & ATH12K_TQM_CMD_NUM_MASK;
+
+	cmd_num = cmd_num | le32_encode_bits(ab->pdevs[0].hw_link_id,
+					     ATH12K_TQM_CMD_LINK_ID);
+
 	desc->cmd_hdr.tqm_cmd_number = cpu_to_le32(cmd_num);
 
 	desc->cmd_hdr.info0 = le32_encode_bits(0x7F, HAL_TQM_INFO0_SESSION_ID) |
@@ -421,6 +435,9 @@ int ath12k_wifi8_hal_tqm_get_mpduq_stats(struct ath12k_base *ab,
 	if (unlikely(cmd_num == 0))
 		cmd_num = atomic_inc_return(&dp->tqm_cmd_num) & ATH12K_TQM_CMD_NUM_MASK;
 
+	cmd_num = cmd_num | le32_encode_bits(ab->pdevs[0].hw_link_id,
+					     ATH12K_TQM_CMD_LINK_ID);
+
 	desc->cmd_hdr.tqm_cmd_number = cpu_to_le32(cmd_num);
 	desc->cmd_hdr.info0 = le32_encode_bits(0x7F, HAL_TQM_INFO0_SESSION_ID) |
 		le32_encode_bits(1, HAL_TQM_INFO0_STATUS_REQUIRED_FOR_HOST) |
@@ -463,6 +480,9 @@ int ath12k_wifi8_hal_tqm_update_mpduq(struct ath12k_base *ab,
 	cmd_num = atomic_inc_return(&dp->tqm_cmd_num) & ATH12K_TQM_CMD_NUM_MASK;
 	if (unlikely(cmd_num == 0))
 		cmd_num = atomic_inc_return(&dp->tqm_cmd_num) & ATH12K_TQM_CMD_NUM_MASK;
+
+	cmd_num = cmd_num | le32_encode_bits(ab->pdevs[0].hw_link_id,
+					     ATH12K_TQM_CMD_LINK_ID);
 
 	desc->cmd_hdr.tqm_cmd_number = cpu_to_le32(cmd_num);
 	desc->cmd_hdr.info0 = le32_encode_bits(0x7F, HAL_TQM_INFO0_SESSION_ID) |
@@ -553,9 +573,12 @@ int ath12k_wifi8_hal_tqm_update_msduq(struct ath12k_base *ab,
 	memset(desc, 0, sizeof(*desc));
 	memset_startat(desc, 0, cmd_hdr.info0);
 
-	cmd_num = atomic_inc_return(&dp->tqm_cmd_num);
+	cmd_num = atomic_inc_return(&dp->tqm_cmd_num) & ATH12K_TQM_CMD_NUM_MASK;
 	if (unlikely(cmd_num == 0))
-		cmd_num = atomic_inc_return(&dp->tqm_cmd_num);
+		cmd_num = atomic_inc_return(&dp->tqm_cmd_num) & ATH12K_TQM_CMD_NUM_MASK;
+
+	cmd_num = cmd_num | le32_encode_bits(ab->pdevs[0].hw_link_id,
+					     ATH12K_TQM_CMD_LINK_ID);
 
 	desc->cmd_hdr.tqm_cmd_number = cpu_to_le32(cmd_num);
 	desc->cmd_hdr.info0 = le32_encode_bits(0x7F, HAL_TQM_INFO0_SESSION_ID) |
