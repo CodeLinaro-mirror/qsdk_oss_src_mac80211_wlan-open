@@ -1415,6 +1415,7 @@ struct ath12k_ba_session_params {
 
 struct ath12k_smd_info {
 	bool ctx_inflight;
+	bool teardown;
 	u8 st_control;
 	bool latest_ctx_valid;
 	ktime_t latest_ctx_ts;

@@ -15249,6 +15249,10 @@ static void ath12k_mac_sta_smd_info_cleanup(struct ath12k_sta *ahsta)
 	struct ath12k_smd_ctx_req *req, *tmp;
 	LIST_HEAD(cleanup_list);
 
+	spin_lock_bh(&ahsta->smd_info.ctx_list_lock);
+	ahsta->smd_info.teardown = true;
+	spin_unlock_bh(&ahsta->smd_info.ctx_list_lock);
+
 	cancel_work_sync(&ahsta->smd_info.ctx_wk);
 	kfree(ahsta->smd_info.current_req);
 	ahsta->smd_info.current_req = NULL;
@@ -15520,13 +15524,6 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 				       sta->addr, ret);
 			goto exit;
 		}
-
-		if (vif->type == NL80211_IFTYPE_AP && sta->smd_params.smd_enabled) {
-			INIT_LIST_HEAD(&ahsta->smd_info.ctx_list);
-			spin_lock_init(&ahsta->smd_info.ctx_list_lock);
-			INIT_WORK(&ahsta->smd_info.ctx_wk,
-				  ath12k_smd_ctx_collector_work);
-		}
 	}
 
 	/* In the ML station scenario, activate all partner links once the
@@ -15673,7 +15670,19 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 				}
 			}
 		}
+
+		/* Initialize SMD context data after successful transition to state3 */
+		if (vif->type == NL80211_IFTYPE_AP && sta->smd_params.smd_enabled) {
+			INIT_LIST_HEAD(&ahsta->smd_info.ctx_list);
+			spin_lock_init(&ahsta->smd_info.ctx_list_lock);
+			INIT_WORK(&ahsta->smd_info.ctx_wk,
+				  ath12k_smd_ctx_collector_work);
+		}
 	}
+
+	if (old_state == IEEE80211_STA_ASSOC && new_state == IEEE80211_STA_AUTH &&
+	    vif->type == NL80211_IFTYPE_AP && sta->smd_params.smd_enabled)
+		ath12k_mac_sta_smd_info_cleanup(ahsta);
 
 	if (old_state == IEEE80211_STA_AUTHORIZED && new_state == IEEE80211_STA_ASSOC) {
 		spin_lock_bh(&ahsta->ba_lock);
@@ -15696,10 +15705,6 @@ ml_station_remove:
 		if (sta->mlo) {
 			ath12k_mac_ml_station_remove(ahvif, ahsta);
 			cancel_work_sync(&ahsta->migration_wk);
-			if (vif->type == NL80211_IFTYPE_AP &&
-			    sta->smd_params.smd_enabled) {
-				ath12k_mac_sta_smd_info_cleanup(ahsta);
-			}
 		} else {
 			link_id = ffs(ahsta->links_map) - 1;
 			if (is_recovery && link_id >= 0) {
