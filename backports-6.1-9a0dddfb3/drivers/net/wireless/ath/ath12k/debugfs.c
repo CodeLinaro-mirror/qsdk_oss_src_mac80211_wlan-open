@@ -7286,6 +7286,9 @@ ath12k_write_reset_dp_tx_mon_stats(struct file *file,
 			if (ah->radio[i].ab != ab)
 				continue;
 
+			memset(&ah->radio[i].tx_mon_ssr_stats, 0,
+			       sizeof(ah->radio[i].tx_mon_ssr_stats));
+
 			pdev = &ah->radio[i].dp;
 			pdev_mon_dp = pdev->dp_mon_pdev;
 			if (unlikely(!pdev_mon_dp))

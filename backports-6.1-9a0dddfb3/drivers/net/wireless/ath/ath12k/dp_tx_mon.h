@@ -112,9 +112,10 @@
 
 #define _ATH12K_STAT_INC(dp_pdev, field) \
 	do { \
-		if (likely(dp_pdev && dp_pdev->dp_mon_pdev && \
-			dp_pdev->dp_mon_pdev->dp_pdev_tx_mon)) \
-			dp_pdev->dp_mon_pdev->dp_pdev_tx_mon->pdev_tx_mon_stats.field++; \
+		if (likely((dp_pdev) && (dp_pdev)->dp_mon_pdev && \
+			(dp_pdev)->dp_mon_pdev->dp_pdev_tx_mon)) \
+			(dp_pdev)->dp_mon_pdev->dp_pdev_tx_mon-> \
+				pdev_tx_mon_stats.field++; \
 	} while (0)
 
 #define ATH12K_TX_MON_STAT_INC(dp_pdev, field)  _ATH12K_STAT_INC(dp_pdev, field)

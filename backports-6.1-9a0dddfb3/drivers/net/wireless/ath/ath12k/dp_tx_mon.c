@@ -555,13 +555,16 @@ ath12k_dp_tx_mon_flush_tlv(struct ath12k_pdev_dp *dp_pdev,
  * @mon_desc_list: List of monitor descriptors to flush
  *
  * This function flushes monitor descriptors when errors occur during
- * ring processing. It processes any TLV data in the descriptors and
- * returns the descriptors to the free list.
+ * ring processing. It processes any TLV data in the descriptors,
+ * returns the descriptors to the free list, and returns the number of
+ * descriptors that had an active monitor buffer to flush.
  *
  * Called from NAPI context when PPDU preparation fails or during
  * error recovery scenarios.
+ *
+ * Return: Number of descriptors with a non-NULL monitor buffer flushed.
  */
-static void
+static u32
 ath12k_dp_tx_mon_flush_desc_list(struct ath12k_pdev_dp *dp_pdev,
 				 struct list_head *mon_desc_list)
 {
@@ -570,11 +573,14 @@ ath12k_dp_tx_mon_flush_desc_list(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_hal *hal = &dp_pdev->dp->ab->hal;
 	bool pkt_buf_cnt_in_desc = ath12k_hal_mon_tx_pkt_buf_cnt_in_desc(hal);
 	struct ath12k_dp_mon_status_desc desc;
+	u32 mon_desc_flushed = 0;
 
 	list_for_each_entry_safe(entry_desc, tmp_desc,
 				 mon_desc_list, list) {
 		if (unlikely(!entry_desc->mon_buf))
 			continue;
+
+		mon_desc_flushed++;
 
 		ath12k_core_dma_unmap_page(dp_pdev->dp->dev, entry_desc->paddr,
 					   ATH12K_DP_MON_TX_BUF_SIZE,
@@ -594,6 +600,8 @@ ath12k_dp_tx_mon_flush_desc_list(struct ath12k_pdev_dp *dp_pdev,
 
 	/* Free descriptor list */
 	ath12k_dp_mon_tx_desc_free(dp_pdev, mon_desc_list, dp_mon);
+
+	return mon_desc_flushed;
 }
 
 /**
@@ -5989,11 +5997,16 @@ void ath12k_dp_mon_tx_ssr_restart_pdev(struct ath12k_pdev_dp *dp_pdev)
 {
 	struct ath12k_pdev_mon_dp *dp_mon_pdev;
 	struct ath12k_pdev_tx_mon *dp_pdev_tx_mon;
+	struct ath12k_tx_mon_ssr_stats *stats;
 	struct ath12k_dp_mon_ppdu_desc *ppdu_desc;
 	struct hal_srng *tx_mon_dst_ring;
+	struct list_head *work_list;
 	LIST_HEAD(local_drain_list);
 	struct ath12k *ar;
 	bool desc_initialized;
+	u32 ppdu_desc_drained = 0;
+	u32 status_desc_drained = 0;
+	u32 mon_desc_flushed;
 	u32 ring_id;
 	int i, ret;
 
@@ -6008,6 +6021,9 @@ void ath12k_dp_mon_tx_ssr_restart_pdev(struct ath12k_pdev_dp *dp_pdev)
 		ar->is_tx_monitor_enabled_on_ssr = false;
 		return;
 	}
+	work_list = &dp_pdev_tx_mon->tx_mon_desc_work_list;
+	stats = &ar->tx_mon_ssr_stats;
+	stats->restart_attempts++;
 
 	spin_lock_bh(&dp_pdev_tx_mon->tx_mon_ppdu_desc_lock);
 	desc_initialized = dp_pdev_tx_mon->tx_mon_ppdu_desc_initialized;
@@ -6015,6 +6031,7 @@ void ath12k_dp_mon_tx_ssr_restart_pdev(struct ath12k_pdev_dp *dp_pdev)
 	if (!desc_initialized) {
 		ath12k_warn(ar->ab,
 			    "TX monitor desc pool not ready during SSR recovery\n");
+		stats->restart_no_pool++;
 		ar->is_tx_monitor_enabled_on_ssr = false;
 		return;
 	}
@@ -6022,12 +6039,14 @@ void ath12k_dp_mon_tx_ssr_restart_pdev(struct ath12k_pdev_dp *dp_pdev)
 	ring_id = dp_pdev_tx_mon->tx_mon_dst_ring.ring_id;
 	tx_mon_dst_ring = &ar->ab->hal.srng_list[ring_id];
 	spin_lock_bh(&tx_mon_dst_ring->lock);
-	ath12k_dp_tx_mon_flush_desc_list(dp_pdev,
-					 &dp_pdev_tx_mon->tx_mon_desc_work_list);
+	mon_desc_flushed = ath12k_dp_tx_mon_flush_desc_list(dp_pdev, work_list);
 	spin_unlock_bh(&tx_mon_dst_ring->lock);
+	stats->mon_desc_flushed += mon_desc_flushed;
 
-	if (dp_pdev_tx_mon->tx_mon_wq_initialized)
+	if (dp_pdev_tx_mon->tx_mon_wq_initialized) {
+		stats->work_cancel++;
 		cancel_work_sync(&dp_pdev_tx_mon->txmon_work);
+	}
 
 	spin_lock_bh(&dp_pdev_tx_mon->tx_mon_ppdu_desc_lock);
 	list_splice_init(&dp_pdev_tx_mon->tx_mon_ppdu_desc_used_list,
@@ -6037,11 +6056,17 @@ void ath12k_dp_mon_tx_ssr_restart_pdev(struct ath12k_pdev_dp *dp_pdev)
 	spin_unlock_bh(&dp_pdev_tx_mon->tx_mon_ppdu_desc_lock);
 
 	list_for_each_entry(ppdu_desc, &local_drain_list, list) {
-		for (i = 0; i < ppdu_desc->status_desc_cnt; i++)
+		ppdu_desc_drained++;
+		for (i = 0; i < ppdu_desc->status_desc_cnt; i++) {
+			if (ppdu_desc->status_desc[i].mon_buf)
+				status_desc_drained++;
 			ath12k_dp_mon_tx_drain_status_desc(dp_pdev,
 							   &ppdu_desc->status_desc[i]);
+		}
 		ath12k_dp_mon_reset_ppdu_desc(ppdu_desc);
 	}
+	stats->ppdu_desc_drained += ppdu_desc_drained;
+	stats->status_desc_drained += status_desc_drained;
 
 	spin_lock_bh(&dp_pdev_tx_mon->tx_mon_ppdu_desc_lock);
 	list_splice_tail_init(&local_drain_list,
@@ -6054,7 +6079,10 @@ void ath12k_dp_mon_tx_ssr_restart_pdev(struct ath12k_pdev_dp *dp_pdev)
 	if (ret) {
 		ath12k_warn(ar->ab,
 			    "TX monitor restart failed during SSR: %d\n", ret);
+		stats->restart_fail++;
 		ar->is_tx_monitor_enabled_on_ssr = false;
+	} else {
+		stats->restart_success++;
 	}
 }
 
