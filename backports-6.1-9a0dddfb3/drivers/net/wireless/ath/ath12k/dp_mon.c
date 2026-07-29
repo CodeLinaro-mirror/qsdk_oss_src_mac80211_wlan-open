@@ -1581,6 +1581,7 @@ ath12k_dp_mon_link_peer_signal_stats(struct ath12k_pdev_dp *dp_pdev,
 	u16 peer_id;
 	u8 pdev_id;
 	u8 soc_id;
+	u8 i;
 
 	if (!dp_pdev)
 		return;
@@ -1603,6 +1604,8 @@ ath12k_dp_mon_link_peer_signal_stats(struct ath12k_pdev_dp *dp_pdev,
 	ewma_avg_snr_add(&stats->avg_snr, stats->snr);
 	stats->snr_avg = ewma_avg_snr_read(&stats->avg_snr);
 	stats->channel_bw = ppdu_info->bw;
+	for (i = 0; i < HAL_RX_MAX_NSS; i++)
+		stats->rssi_chain_pri20[i] = ppdu_info->rssi_chain_pri20[i];
 
 	if (likely(ppdu_info->fc_valid)) {
 		switch (ppdu_info->frame_control & 0x00F0) {
