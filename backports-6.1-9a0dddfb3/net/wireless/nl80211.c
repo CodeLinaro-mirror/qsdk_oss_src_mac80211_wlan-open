@@ -760,7 +760,7 @@ nl80211_smd_ctx_ul_policy[NL80211_SMD_CTX_UL_ATTR_MAX + 1] = {
 static struct nla_policy
 nl80211_smd_ctx_ba_policy[NL80211_SMD_CTX_BA_ATTR_MAX + 1] = {
 	[NL80211_SMD_CTX_BA_ATTR_BUFF_SIZE] = { .type = NLA_U16 },
-	[NL80211_SMD_CTX_BA_ATTR_POLICY] = { .type = NLA_FLAG },
+	[NL80211_SMD_CTX_BA_ATTR_POLICY] = { .type = NLA_U8 },
 	[NL80211_SMD_CTX_BA_ATTR_AMSDU_SUPPORT] = { .type = NLA_FLAG },
 	[NL80211_SMD_CTX_BA_ATTR_TIMEOUT] = { .type = NLA_U16 },
 	[NL80211_SMD_CTX_BA_ATTR_EXT_NO_FRAG] = { .type = NLA_FLAG },
@@ -21263,7 +21263,7 @@ static size_t nl80211_smd_ctx_nl_size(struct cfg80211_smd_transition_info *st_in
 		n += nla_total_size(0);                        /* ba_params nest header */
 		n += n_dl_tids * (nla_total_size(0) +          /* tid nest header */
 				nla_total_size(sizeof(u16)) +  /* buff_size */
-				nla_total_size(0) +            /* policy */
+				nla_total_size(sizeof(u8)) +   /* policy */
 				nla_total_size(0) +            /* amsdu_support */
 				nla_total_size(sizeof(u16)) +  /* timeout */
 				nla_total_size(0) +            /* ext_no_frag */
@@ -21290,7 +21290,7 @@ static size_t nl80211_smd_ctx_nl_size(struct cfg80211_smd_transition_info *st_in
 		n += nla_total_size(0);
 		n += n_ul_tids * (nla_total_size(0) +
 				nla_total_size(sizeof(u16)) +
-				nla_total_size(0) +
+				nla_total_size(sizeof(u8)) +
 				nla_total_size(0) +
 				nla_total_size(sizeof(u16)) +
 				nla_total_size(0) +
@@ -21330,8 +21330,7 @@ static int nl80211_put_smd_ctx_ba_params(struct sk_buff *msg,
 
 		if (nla_put_u16(msg, NL80211_SMD_CTX_BA_ATTR_BUFF_SIZE,
 				ba->buffer_size) ||
-		    (ba->ba_policy &&
-		     nla_put_flag(msg, NL80211_SMD_CTX_BA_ATTR_POLICY)) ||
+		    nla_put_u8(msg, NL80211_SMD_CTX_BA_ATTR_POLICY, ba->ba_policy) ||
 		    (ba->amsdu_supported &&
 		     nla_put_flag(msg, NL80211_SMD_CTX_BA_ATTR_AMSDU_SUPPORT)) ||
 		    nla_put_u16(msg, NL80211_SMD_CTX_BA_ATTR_TIMEOUT,
@@ -21513,7 +21512,8 @@ static void nl80211_set_smd_ctx_ba_params(struct nlattr *tb,
 			ba->buffer_size =
 				nla_get_u16(ba_tb[NL80211_SMD_CTX_BA_ATTR_BUFF_SIZE]);
 
-		ba->ba_policy = !!ba_tb[NL80211_SMD_CTX_BA_ATTR_POLICY];
+		if (ba_tb[NL80211_SMD_CTX_BA_ATTR_POLICY])
+			ba->ba_policy = nla_get_u8(ba_tb[NL80211_SMD_CTX_BA_ATTR_POLICY]);
 
 		ba->amsdu_supported = !!ba_tb[NL80211_SMD_CTX_BA_ATTR_AMSDU_SUPPORT];
 
