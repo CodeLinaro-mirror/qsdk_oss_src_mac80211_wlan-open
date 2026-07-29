@@ -286,6 +286,8 @@ static const struct ath12k_wmi_tlv_policy ath12k_wmi_tlv_policies[] = {
 		.min_len = sizeof(struct wmi_pdev_ctl_failsafe_chk_event) },
 	[WMI_TAG_PDEV_CHECK_CAL_VERSION_EVENT] = {
 		.min_len = sizeof(struct wmi_pdev_check_cal_version_event) },
+	[WMI_TAG_PDEV_SET_TGTR2P_TABLE_EVENT_FIXED_PARAM] = {
+		.min_len = sizeof(struct wmi_pdev_set_tgtr2p_table_event) },
 	[WMI_TAG_HOST_SWFDA_EVENT] = {
 		.min_len = sizeof(struct wmi_fils_discovery_event) },
 	[WMI_TAG_OFFLOAD_PRB_RSP_TX_STATUS_EVENT] = {
@@ -14363,6 +14365,48 @@ static void ath12k_pdev_check_cal_version_event(struct ath12k_base *ab,
 	kfree(tb);
 }
 
+static void ath12k_wmi_pdev_tgtr2p_table_event(struct ath12k_base *ab,
+					       struct sk_buff *skb)
+{
+	const struct wmi_pdev_set_tgtr2p_table_event *ev;
+	const void **tb;
+	int ret;
+
+	tb = ath12k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
+	if (IS_ERR(tb)) {
+		ret = PTR_ERR(tb);
+		ath12k_warn(ab, "failed to parse tgtr2p event tlv: %d\n", ret);
+		return;
+	}
+
+	ev = tb[WMI_TAG_PDEV_SET_TGTR2P_TABLE_EVENT_FIXED_PARAM];
+	if (!ev) {
+		ath12k_warn(ab, "tgtr2p event: missing fixed param TLV\n");
+		kfree(tb);
+		return;
+	}
+
+	switch (le32_to_cpu(ev->status)) {
+	case WMI_PDEV_TGTR2P_SUCCESS:
+		ath12k_dbg(ab, ATH12K_DBG_WMI,
+			   "tgtr2p_table_event: pdev_id=%u status=SUCCESS\n",
+			   le32_to_cpu(ev->pdev_id));
+		break;
+	case WMI_PDEV_TGTR2P_SUCCESS_WAITING_FOR_END_OF_UPDATE:
+		ath12k_dbg(ab, ATH12K_DBG_WMI,
+			   "tgtr2p_table_event: pdev_id=%u status=WAITING_FOR_END_OF_UPDATE\n",
+			   le32_to_cpu(ev->pdev_id));
+		break;
+	default:
+		ath12k_warn(ab,
+			    "tgtr2p_table_event: pdev_id=%u status=%u (error)\n",
+			    le32_to_cpu(ev->pdev_id), le32_to_cpu(ev->status));
+		break;
+	}
+
+	kfree(tb);
+}
+
 static int ath12k_wmi_dcs_intf_subtlv_parser(struct ath12k_base *ab,
 					     u16 tag, u16 len,
 					     const void *ptr, void *data)
@@ -19564,6 +19608,9 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 		break;
 	case WMI_PDEV_CHECK_CAL_VERSION_EVENTID:
 		ath12k_pdev_check_cal_version_event(ab, skb);
+		break;
+	case WMI_PDEV_SET_TGTR2P_TABLE_EVENTID:
+		ath12k_wmi_pdev_tgtr2p_table_event(ab, skb);
 		break;
 	case WMI_PDEV_CSA_SWITCH_COUNT_STATUS_EVENTID:
 		ath12k_wmi_pdev_csa_switch_count_status_event(ab, skb);

@@ -602,6 +602,7 @@ enum wmi_tlv_cmd_id {
 	WMI_PDEV_MULTIPLE_VDEV_SET_PARAM_CMDID = 0x4048,
 	WMI_PDEV_MEC_AGING_TIMER_CONFIG_CMDID = 0x4049,
 	WMI_PDEV_SET_BIOS_INTERFACE_CMDID = 0x404A,
+	WMI_PDEV_SET_TGTR2P_TABLE_CMDID = 0x404F,
 	WMI_PDEV_SET_RF_PATH_CMDID = 0x4050,
 	WMI_PDEV_WSI_STATS_INFO_CMDID = 0x4051,
 	WMI_PDEV_SET_CUMAC_CHIP_CMDID = 0x405D,
@@ -1097,6 +1098,7 @@ enum wmi_tlv_event_id {
 	WMI_PDEV_SET_RF_PATH_RESP_EVENTID =
 					WMI_PDEV_GET_HALPHY_CAL_STATUS_EVENTID + 8,
 	WMI_PDEV_UHR_CU_EVENTID = 0x4036,
+	WMI_PDEV_SET_TGTR2P_TABLE_EVENTID = 0x4037,
 	WMI_PDEV_SET_CUMAC_CHIP_ID_CONFIRMATION_EVENTID = 0x4038,
 	WMI_VDEV_START_RESP_EVENTID = WMI_TLV_CMD(WMI_GRP_VDEV),
 	WMI_VDEV_STOPPED_EVENTID,
@@ -2545,7 +2547,11 @@ enum wmi_tlv_tag {
 	WMI_TAG_MLO_LINK_REMOVAL_CMD_FIXED_PARAM = 0x464,
 	WMI_CTRL_PATH_PMLO_STATS = 0x479,
 	WMI_TAG_TDMA_SCHEDULE_REQUEST_CMD = 0x47f,
+	WMI_TAG_PDEV_SET_TGTR2P_TABLE_CMD_FIXED_PARAM = 0x482,
+	WMI_TAG_PDEV_SET_TGTR2P_TABLE_EVENT_FIXED_PARAM = 0x483,
+	WMI_TAG_PEER_BULK_SET_CMD_FIXED_PARAM = 0x484,
 	WMI_TAG_SCAN_BLANKING_PARAMS_INFO = 0x486,
+	WMI_TAG_PEER_LIST = 0x487,
 	WMI_CTRL_PATH_BLANKING_STATS = 0x493,
 	WMI_TAG_PDEV_SET_RF_PATH_CMD_FIXED_PARAM = 0x494,
 	WMI_TAG_PDEV_SET_RF_PATH_RESP_EVENT_FIXED_PARAM = 0x49E,
@@ -8790,6 +8796,96 @@ struct wmi_chan_width_peer_list {
 	struct ath12k_wmi_mac_addr_params mac_addr;
 	__le32 chan_width;
 	__le32 puncture_20mhz_bitmap;
+} __packed;
+
+/**
+ * struct wmi_peer_bulk_set_cmd - WMI_PEER_BULK_SET_CMDID fixed params
+ * @tlv_header: TLV header (tag + length)
+ * @vdev_var: vdev_id in bits [7:0], bit[31] = valid-vdev-id flag
+ *
+ * Followed by a WMI_TAG_ARRAY_STRUCT TLV containing wmi_peer_list entries.
+ */
+struct wmi_peer_bulk_set_cmd {
+	__le32 tlv_header;
+	__le32 vdev_var;
+} __packed;
+
+/**
+ * struct wmi_peer_list - per-peer entry for WMI_PEER_BULK_SET_CMDID
+ * @tlv_header: TLV header (tag + length)
+ * @peer_macaddr: peer MAC address
+ * @param_id: WMI_PEER_USE_FIXED_PWR (14) for TX power control
+ * @param_value: power limit in firmware units
+ */
+struct wmi_peer_list {
+	__le32 tlv_header;
+	struct ath12k_wmi_mac_addr_params peer_macaddr;
+	__le32 param_id;
+	__le32 param_value;
+} __packed;
+
+/**
+ * struct ath12k_sta_peer_table_entry - kernel-internal per-STA power entry
+ * @peer_macaddr: 6-byte MAC address
+ * @peer_pwr_limit: signed TX power limit
+ */
+struct ath12k_sta_peer_table_entry {
+	u8 peer_macaddr[ETH_ALEN];
+	s32 peer_pwr_limit;
+} __packed;
+
+/**
+ * struct wmi_pdev_set_tgtr2p_table_cmd - WMI_PDEV_SET_TGTR2P_TABLE_CMDID
+ * @tlv_header: TLV header (tag + length)
+ * @pdev_id: pdev identifier
+ * @freq_band: 0=5GHz, 1=2.4GHz, 2=6GHz
+ * @sub_band: sub-band index within the selected frequency band
+ * @is_ext: 0=default R2P table, 1=extension fields (11be targets only)
+ * @target_type: chip identifier (0=Alder/IPQ95xx, 1=Pine/QCN90xx,
+ *               0x10=Waikiki/QCN92xx)
+ * @r2p_array_len: byte length of the power table that follows in the TLV
+ * @end_of_r2ptable_update: 1 signals FW to commit the update after this
+ *                          is the last sub-band message for the frequency band
+ *
+ * Followed by a WMI_TAG_ARRAY_BYTE TLV containing r2p_array_len bytes of
+ * s8 power values (unit: 0.25 dBm).
+ */
+struct wmi_pdev_set_tgtr2p_table_cmd {
+	__le32 tlv_header;
+	__le32 pdev_id;
+	__le32 freq_band;
+	__le32 sub_band;
+	__le32 is_ext;
+	__le32 target_type;
+	__le32 r2p_array_len;
+	__le32 end_of_r2ptable_update;
+} __packed;
+
+/**
+ * enum wmi_pdev_tgtr2p_event_status - status codes returned in
+ * WMI_PDEV_SET_TGTR2P_TABLE_EVENTID
+ */
+enum wmi_pdev_tgtr2p_event_status {
+	WMI_PDEV_TGTR2P_SUCCESS = 0,
+	WMI_PDEV_TGTR2P_SUCCESS_WAITING_FOR_END_OF_UPDATE,
+	WMI_PDEV_TGTR2P_ERROR_INVALID_FREQ_BAND,
+	WMI_PDEV_TGTR2P_ERROR_INVALID_SUB_BAND,
+	WMI_PDEV_TGTR2P_ERROR_EXTENSION_FIELDS_NOT_ENABLED_IN_BDF,
+	WMI_PDEV_TGTR2P_ERROR_INVALID_TARGET_TYPE,
+	WMI_PDEV_TGTR2P_ERROR_R2P_ARRAY_LEN_MISMATCH,
+};
+
+/**
+ * struct wmi_pdev_set_tgtr2p_table_event - FW response for
+ *	WMI_PDEV_SET_TGTR2P_TABLE_CMDID
+ * @tlv_header: TLV header (tag + length)
+ * @status:   see enum wmi_pdev_tgtr2p_event_status
+ * @pdev_id:  pdev the response is for
+ */
+struct wmi_pdev_set_tgtr2p_table_event {
+	__le32 tlv_header;
+	__le32 status;
+	__le32 pdev_id;
 } __packed;
 
 struct wmi_bcn_tmpl_ml_params {
