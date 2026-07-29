@@ -2888,9 +2888,9 @@ enum wmi_tlv_service {
 	WMI_TLV_SERVICE_THERM_THROT_POUT_REDUCTION = 410,
 	WMI_SERVICE_WDS_NULL_FRAME_SUPPORT = 421,
 	WMI_SERVICE_MEC_AGING_TIMER_SUPPORT = 423,
-	WMI_TLV_SERVICE_IS_TARGET_IPA = 425,
-	WMI_TLV_SERVICE_THERM_THROT_TX_CHAIN_MASK = 426,
-	WMI_TLV_SERVICE_THERM_THROT_5_LEVELS = 429,
+	WMI_SERVICE_IS_TARGET_IPA = 425,
+	WMI_SERVICE_THERM_THROT_TX_CHAIN_MASK = 426,
+	WMI_SERVICE_THERM_THROT_5_LEVELS = 429,
 
 	WMI_SERVICE_UMAC_MIGRATION_SUPPORT = 436,
 	WMI_SERVICE_HW_BLACKLIST_CHAN_SUPPORT = 445,
@@ -6049,12 +6049,17 @@ enum set_init_cc_flags {
 
 #define THERMAL_LEVELS  4
 #define ENHANCED_THERMAL_LEVELS  5
+#define ATH12K_THERMAL_LEVELS 6
+#define ATH12K_TT_CHAINMASK 3
 
-struct ath12k_wmi_tt_level_config_param {
-	s32 tmplwm;
-	s32 tmphwm;
+struct tt_level_config {
+	u32 tmplwm;
+	u32 tmphwm;
 	u32 dcoffpercent;
+	u32 priority;
 	u32 pout_reduction_db;
+	u16 tx_chain_mask;
+	u32 duty_cycle;
 };
 
 struct wmi_therm_throt_stats_event {
@@ -6064,26 +6069,32 @@ struct wmi_therm_throt_stats_event {
 	__le32 therm_throt_levels;
 } __packed;
 
-
-struct ath12k_wmi_thermal_mitigation_arg {
-	int num_levels;
-	const struct ath12k_wmi_tt_level_config_param *levelconf;
+struct wmi_therm_throt_level_stats_info {
+	__le32 level_count;
+	__le32 dc_count;
 };
 
-struct ath12k_wmi_therm_throt_config_request_cmd {
+struct ath12k_wmi_thermal_mitigation_arg {
+	u32 pdev_id;
+	u32 enable;
+	u32 dc;
+	u32 dc_per_event;
+	struct tt_level_config levelconf[ENHANCED_THERMAL_LEVELS];
+};
+
+struct wmi_therm_throt_config_request_cmd {
 	__le32 tlv_header;
 	__le32 pdev_id;
 	__le32 enable;
 	__le32 dc;
-	/* After how many duty cycles the firmware sends stats to host */
 	__le32 dc_per_event;
 	__le32 therm_throt_levels;
 } __packed;
 
-struct ath12k_wmi_therm_throt_level_config_param {
+struct wmi_therm_throt_level_config_info {
 	__le32 tlv_header;
-	a_sle32 temp_lwm;
-	a_sle32 temp_hwm;
+	__le32 temp_lwm;
+	__le32 temp_hwm;
 	__le32 dc_off_percent;
 	__le32 prio;
 	__le32 pout_reduction_25db;
@@ -11066,8 +11077,9 @@ int ath12k_wmi_send_init_country_cmd(struct ath12k *ar,
 int ath12k_wmi_pdev_pktlog_enable(struct ath12k *ar, u32 pktlog_filter);
 int ath12k_wmi_pdev_pktlog_disable(struct ath12k *ar);
 int ath12k_wmi_pdev_peer_pktlog_filter(struct ath12k *ar, u8 *addr, u8 enable);
-int ath12k_wmi_send_thermal_mitigation_cmd(struct ath12k *ar,
-					   struct ath12k_wmi_thermal_mitigation_arg *arg);
+int
+ath12k_wmi_send_thermal_mitigation_cmd(struct ath12k *ar,
+				       struct ath12k_wmi_thermal_mitigation_arg *arg);
 int
 ath12k_wmi_send_set_current_country_cmd(struct ath12k *ar,
 					struct wmi_set_current_country_arg *arg);
