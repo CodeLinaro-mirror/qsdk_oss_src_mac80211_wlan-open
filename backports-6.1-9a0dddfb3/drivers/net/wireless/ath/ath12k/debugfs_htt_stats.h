@@ -5650,7 +5650,7 @@ struct ath12k_htt_stats_latency_prof_cal_data_tlv {
 	__le32 enable;
 	__le32 pdev_id;
 	__le32 cal_cnt[ATH12K_HTT_STATS_MAX_PROF_CAL];
-	__le32 latency_prof_name[ATH12K_HTT_STATS_MAX_PROF_CAL]
+	u8 latency_prof_name[ATH12K_HTT_STATS_MAX_PROF_CAL]
 [ATH12K_HTT_STATS_MAX_PROF_STATS_NAME_LEN];
 	struct {
 	__le32 cnt;
