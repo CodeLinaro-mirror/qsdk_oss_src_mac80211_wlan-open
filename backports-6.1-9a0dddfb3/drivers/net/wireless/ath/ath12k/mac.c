@@ -6737,10 +6737,10 @@ static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 
 	/* Initialize vap_cfg parameters to default values */
 	arvif->vap_cfg.bcn_tx_power = 255;
-	if (!ahvif->ps_timeout[link_id])
-		ahvif->ps_timeout[link_id] = ATH12K_GREEN_AP_PS_TIMEOUT_DEFAULT;
-	arvif->vap_cfg.ap_ps_on = ahvif->ap_ps_on[link_id];
-	arvif->vap_cfg.ps_timeout = ahvif->ps_timeout[link_id];
+	if (!ahvif->ps_timeout[_link_id])
+		ahvif->ps_timeout[_link_id] = ATH12K_GREEN_AP_PS_TIMEOUT_DEFAULT;
+	arvif->vap_cfg.ap_ps_on = ahvif->ap_ps_on[_link_id];
+	arvif->vap_cfg.ps_timeout = ahvif->ps_timeout[_link_id];
 	arvif->vap_cfg.he_ar_gi_ltf = IEEE80211_HE_AR_DEFAULT_LTF_SGI_COMBINATION;
 	arvif->vap_cfg.he_ar_ldpc = IEEE80211_HE_AR_LDPC_DEFAULT;
 	arvif->vap_cfg.he_rtsthrshld = IEEE80211_HEOP_RTS_THRESHOLD_DISABLED;
@@ -6853,10 +6853,19 @@ void ath12k_mac_ap_ps_recalc(struct ath12k *ar)
 	}
 
 	if (ar->ap_ps_state == state) {
-		/* Already in target state. If target is OFF, cancel any pending timer. */
-		if (state == ATH12K_AP_PS_STATE_OFF)
-			wiphy_delayed_work_cancel(ath12k_ar_to_hw(ar)->wiphy,
-						  &ar->ap_ps_timer);
+		if (state == ATH12K_AP_PS_STATE_OFF) {
+			if (ar->ap_ps_mode == ATH12K_GREEN_AP_MODE_NUM_STREAM &&
+			    ar->ap_ps_timeout) {
+				u32 timeout_jiffies = msecs_to_jiffies(ar->ap_ps_timeout
+								       * 1000);
+				wiphy_delayed_work_queue(ath12k_ar_to_hw(ar)->wiphy,
+							 &ar->ap_ps_timer,
+							 timeout_jiffies);
+			} else {
+				wiphy_delayed_work_cancel(ath12k_ar_to_hw(ar)->wiphy,
+							  &ar->ap_ps_timer);
+			}
+		}
 		return;
 	}
 
