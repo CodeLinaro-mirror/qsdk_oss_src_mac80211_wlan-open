@@ -1710,7 +1710,7 @@ ath12k_wifi8_dp_mon_rx_process_ppdu(struct work_struct *work)
 			}
 
 			filter_category =
-				ppdu_info->userstats[ppdu_info->userid].filter_category;
+				ppdu_info->userstats[ppdu_info->user_id].filter_category;
 			if (filter_category == DP_MPDU_FILTER_CATEGORY_MO)
 				goto free_buf;
 

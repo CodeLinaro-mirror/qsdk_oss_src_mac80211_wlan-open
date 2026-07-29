@@ -746,7 +746,6 @@ struct hal_rx_mon_ppdu_info {
 	u8 addr3[ETH_ALEN];
 	u8 addr4[ETH_ALEN];
 	struct hal_rx_user_status userstats[HAL_MAX_UL_MU_USERS];
-	u8 userid;
 	bool first_msdu_in_mpdu;
 	bool is_ampdu;
 	u8 medium_prot_type;
