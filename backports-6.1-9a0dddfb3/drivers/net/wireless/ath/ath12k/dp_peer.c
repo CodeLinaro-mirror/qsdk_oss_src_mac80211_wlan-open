@@ -2797,7 +2797,10 @@ static void ath12k_mac_dp_peer_cleanup_cb(struct ath12k_pdev_dp *dp_pdev,
 				sta = ath12k_dp_peer_get_sta(dp_peer);
 				ahsta = ath12k_sta_to_ahsta(sta);
 
-				clear_bit(dp_peer->peer_id, dp_hw->free_peer_id_map);
+				/* Clear bit for peer id in wifi8 case only */
+				if (dp->global_peer_id_supported)
+					clear_bit(dp_peer->peer_id,
+						  dp_hw->free_peer_id_map);
 
 				if (ahsta->ml_peer_id != ATH12K_MLO_PEER_ID_INVALID) {
 					clear_bit(ahsta->ml_peer_id,
