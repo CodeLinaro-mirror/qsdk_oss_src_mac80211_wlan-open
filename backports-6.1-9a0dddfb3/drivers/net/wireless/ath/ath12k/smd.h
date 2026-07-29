@@ -199,6 +199,10 @@ struct ath12k_smd_ctx_req {
 	ktime_t enqueued_ts;
 	struct list_head list;
 	void (*handler)(struct ath12k_smd_info *smd_info, struct ath12k_smd_ctx_req *req);
+
+	/* vif for async get_smd_ctx */
+	struct ieee80211_vif *vif;
+	bool exec_via_target;
 };
 
 struct ath12k_smd_ctx_tx_cb_per_tid {
@@ -217,9 +221,18 @@ const char *ath12k_uhr_reconf_type_str(enum ieee80211_uhr_link_reconf_resp_type 
 	return type == IEEE80211_UHR_LINK_RECONF_TYPE_ST_PREP ? "Prep" : "Exec";
 }
 
+int ath12k_smd_post_sta_session_ctx_req(struct ath12k_vif *ahvif,
+					struct ath12k_link_vif *arvif,
+					struct ath12k_smd_ctx_req *req,
+					struct ath12k_smd_info *smd_info);
 int ath12k_smd_collect_sta_session_ctx(struct ath12k *ar, struct sk_buff *skb);
 void ath12k_smd_update_ctx_to_stack(struct ath12k_smd_info *smd_info,
 				    struct ath12k_smd_ctx_req *req);
+void ath12k_smd_update_ctx_for_user(struct ath12k_smd_info *smd_info,
+				    struct ath12k_smd_ctx_req *req);
+
+void ath12k_smd_ctx_to_ieee80211_ctx(struct ath12k_smd_ctx *ctx,
+				     struct ieee80211_smd_ctx *i80211_ctx);
 
 u16 ath12k_smd_ctx_get_rx_ba_bufsize(struct ath12k_base *ab, struct ath12k_hw *ah,
 				     const u8 *peer_addr, u8 tid, u16 orig_ba_win_sz);
@@ -236,6 +249,9 @@ static inline u16 ath12k_smd_ctx_decode_ba_buf_size(u16 buf_size_base,
 {
 	return (buf_size_ext << IEEE80211_ADDBA_EXT_BUF_SIZE_SHIFT | buf_size_base);
 }
+
+int ath12k_smd_reuse_sta_session_prep_ctx(struct ath12k_smd_info *smd_info,
+					  struct ath12k_smd_ctx_req *req);
 
 void ath12k_smd_parse_vendor_ctx(struct ieee80211_smd_ctx *ctx,
 				 struct ath12k_smd_ctx *drv_ctx);

@@ -1706,6 +1706,108 @@ static int ath12k_wifi8_mac_op_set_smd_ctx(struct ieee80211_hw *hw,
 	return 0;
 }
 
+static int ath12k_wifi8_mac_op_get_smd_ctx(struct ieee80211_hw *hw,
+					   struct ieee80211_vif *vif,
+					   struct ieee80211_sta *sta,
+					   struct cfg80211_smd_transition_info *st_info)
+{
+	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
+	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
+	struct ath12k_smd_info *smd_info = &ahsta->smd_info;
+	struct ieee80211_smd_ctx *ctx = st_info->ctx;
+	struct ath12k_smd_ctx_req *req = NULL;
+	struct ath12k_link_vif *arvif;
+	struct ath12k_base *ab;
+
+	lockdep_assert_wiphy(hw->wiphy);
+
+	arvif = ath12k_get_arvif_from_link_id(ahvif, ahvif->deflink.link_id);
+	if (!arvif)
+		return -EINVAL;
+
+	ab = arvif->ar->ab;
+
+	if (!sta->smd_params.smd_enabled) {
+		ath12k_err(ab, "Cannot fetch SMD context from a non-SMD STA %pM",
+			   sta->addr);
+		return -EINVAL;
+	}
+
+	req = kzalloc(sizeof(*req), GFP_KERNEL);
+	if (!req)
+		return -ENOMEM;
+
+	/* Set common context validity bits */
+	set_bit(ATH12K_SMD_CTX_VALID_PN, req->ctx.valid_ctx_bmap);
+	set_bit(ATH12K_SMD_CTX_VALID_BA_PARAMS, req->ctx.valid_ctx_bmap);
+
+	if (test_bit(IEEE80211_SMD_CTX_VALID_DL_SN, ctx->valid_ctx_bmap))
+		set_bit(ATH12K_SMD_CTX_VALID_DL_SN, req->ctx.valid_ctx_bmap);
+	if (test_bit(IEEE80211_SMD_CTX_VALID_UL_SN, ctx->valid_ctx_bmap))
+		set_bit(ATH12K_SMD_CTX_VALID_UL_SN, req->ctx.valid_ctx_bmap);
+
+	spin_lock_init(&req->lock);
+	req->mmpdu = NULL;
+	req->state = SMD_CTX_INIT;
+	req->type = (u8)st_info->type;
+	req->vif = vif;
+	req->handler = ath12k_smd_update_ctx_for_user;
+	req->enqueued_ts = ktime_get();
+	memcpy(req->sta_addr, sta->addr, ETH_ALEN);
+	bitmap_copy(req->ctx.dl.valid_tid_bmap, ctx->dl.valid_tid_bmap,
+		    IEEE80211_MAX_NUM_TIDS);
+	bitmap_copy(req->ctx.ul.valid_tid_bmap, ctx->ul.valid_tid_bmap,
+		    IEEE80211_MAX_NUM_TIDS);
+	req->exec_via_target = true;
+
+	spin_lock_bh(&smd_info->smd_lock);
+
+	if (st_info->type == CFG80211_ST_TYPE_PREP &&
+	    !ath12k_smd_reuse_sta_session_prep_ctx(smd_info, req)) {
+		ath12k_dbg(ab, ATH12K_DBG_SMD, "Using cached ST Prep context for %pM",
+			   sta->addr);
+		spin_unlock_bh(&smd_info->smd_lock);
+		/* synchronous cache-hit: fill caller's ctx and return 0 */
+		ath12k_smd_ctx_to_ieee80211_ctx(&req->ctx, ctx);
+		kfree(req);
+		return 0;
+	}
+
+	if (!smd_info->ctx_inflight) {
+		int ret;
+
+		rcu_read_lock();
+		arvif = rcu_dereference(ahsta->ahvif->link[ahsta->assoc_link_id]);
+		if (!arvif || !arvif->ar) {
+			rcu_read_unlock();
+			spin_unlock_bh(&smd_info->smd_lock);
+			kfree(req);
+			return -ENOLINK;
+		}
+
+		ret = ath12k_smd_post_sta_session_ctx_req(ahsta->ahvif, arvif, req,
+							  smd_info);
+		ath12k_dbg(ab, ATH12K_DBG_SMD,
+			   "Posted user ctx request (0x%*pb) for %pM (ret: %d)",
+			   ATH12K_SMD_CTX_NUM_VALID_CTX, req->ctx.valid_ctx_bmap,
+			   sta->addr, ret);
+		rcu_read_unlock();
+
+		if (ret) {
+			spin_unlock_bh(&smd_info->smd_lock);
+			kfree(req);
+			return ret;
+		}
+	} else {
+		list_add_tail(&req->list, &smd_info->ctx_list);
+		ath12k_smd_ctx_queue_work(&smd_info->ctx_wk);
+	}
+
+	spin_unlock_bh(&smd_info->smd_lock);
+
+	return -EINPROGRESS;
+}
+
 static const struct ieee80211_ops ath12k_ops_wifi8 = {
 	.tx				= ath12k_wifi8_mac_op_tx,
 	.wake_tx_queue			= ieee80211_handle_wake_tx_queue,
@@ -1791,6 +1893,7 @@ static const struct ieee80211_ops ath12k_ops_wifi8 = {
 	.uhr_mode_update		= ath12k_mac_op_sta_uhr_mode_update,
 	.critical_update		= ath12k_mac_op_critical_update,
 	.set_smd_ctx			= ath12k_wifi8_mac_op_set_smd_ctx,
+	.get_smd_ctx			= ath12k_wifi8_mac_op_get_smd_ctx,
 #ifdef CPTCFG_QCN_EXTN
 	.set_muedca_mode		= ath12k_mac_set_muedca_mode,
 #endif /* CPTCFG_QCN_EXTN */
