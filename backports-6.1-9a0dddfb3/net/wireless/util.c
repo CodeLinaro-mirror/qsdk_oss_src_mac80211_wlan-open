@@ -2240,6 +2240,10 @@ void ieee80211_fragment_element(struct sk_buff *skb, u8 *len_pos, u8 frag_id)
 		/* remaining data gets smaller */
 		elem_len -= 255;
 		/* make space for the fragment ID/len in SKB */
+		if (skb_tailroom(skb) < 2) {
+			if (pskb_expand_head(skb, 0, 2, GFP_ATOMIC))
+				return;
+		}
 		skb_put(skb, 2);
 		/* shift back the remaining data to place fragment ID/len */
 		memmove(len_pos + 255 + 3, len_pos + 255 + 1, elem_len);
@@ -3121,6 +3125,9 @@ void cfg80211_remove_link(struct wireless_dev *wdev, unsigned int link_id)
 	struct cfg80211_registered_device *rdev = wiphy_to_rdev(wdev->wiphy);
 
 	lockdep_assert_wiphy(wdev->wiphy);
+
+	if (link_id >= ARRAY_SIZE(wdev->links))
+		return;
 
 	switch (wdev->iftype) {
 	case NL80211_IFTYPE_AP:

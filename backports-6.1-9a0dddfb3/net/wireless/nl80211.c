@@ -26046,6 +26046,9 @@ void cfg80211_report_obss_beacon_khz(struct wiphy *wiphy, const u8 *frame,
 	void *hdr;
 	struct cfg80211_beacon_registration *reg;
 
+	if (!frame)
+		return;
+
 	trace_cfg80211_report_obss_beacon(wiphy, frame, len, freq, sig_dbm);
 
 	spin_lock_bh(&rdev->beacon_registrations_lock);
