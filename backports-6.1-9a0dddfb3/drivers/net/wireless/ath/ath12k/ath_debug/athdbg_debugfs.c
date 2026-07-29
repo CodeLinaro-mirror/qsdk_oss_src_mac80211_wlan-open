@@ -327,9 +327,14 @@ static ssize_t athdbg_qdss_collect_read(struct file *file,
 					loff_t *ppos)
 {
 	static const char debugfs_data[] =
-		"echo 0x1  - QDSS Dump\n"
-		"echo 0x40 - PHYA0 Dump\n"
-		"echo 0x80 - PHYA1 Dump\n";
+		"echo 0x1\t- QDSS Trace Dump\n"
+		"echo 0x4\t- ETB SoC Dump (SoC-level Embedded Trace Buffer)\n"
+		"echo 0x8\t- ETB Dump (Primary Embedded Trace Buffer)\n"
+		"echo 0x40\t- PHY Array 0 Dump (PHYA0 - Primary PHY instance)\n"
+		"echo 0x80\t- PHY Array 1 Dump (PHYA1 - Secondary PHY instance, Dual-MAC only)\n"
+		"echo 0x400\t- AUX PHY Dump (Auxiliary PHY listen/scan radio)\n"
+		"echo 0x800\t- MCSS Dump (MAC Compute SubSystem)\n"
+		"echo 0x1000\t- ETB2 Dump (Secondary Embedded Trace Buffer)\n";
 
 	return simple_read_from_buffer(user_buf, count, ppos,
 					debugfs_data,
@@ -360,16 +365,19 @@ static ssize_t athdbg_qdss_collect_write(struct file *file,
 
 	switch (val) {
 	case ATHDBG_QDSS_DUMP:
-	case ATHDBG_PHYA0_DUMP:
+	case ATHDBG_QDSS_PHYA0:
+	case ATHDBG_QDSS_ETB_SOC:
+	case ATHDBG_QDSS_ETB_WCSS:
+	case ATHDBG_QDSS_AUX:
+	case ATHDBG_QDSS_MCSS:
+	case ATHDBG_QDSS_ETB2_WCSS:
 		break;
-
-	case ATHDBG_PHYA1_DUMP:
+	case ATHDBG_QDSS_PHYA1:
 		if (!ab->is_dualmac) {
 			pr_err("PHYA1 dump not supported %x\n", val);
 			return -EINVAL;
 		}
 		break;
-
 	default:
 		pr_err("Invalid value %x\n", val);
 		return -EINVAL;
@@ -385,9 +393,6 @@ static ssize_t athdbg_qdss_collect_write(struct file *file,
 		pr_err("Firmware not ready for QDSS collection\n");
 		return -EAGAIN;
 	}
-
-	if (!val)
-		return ret;
 
 	dbg_req = kzalloc(sizeof(*dbg_req), GFP_ATOMIC);
 	if (!dbg_req)
