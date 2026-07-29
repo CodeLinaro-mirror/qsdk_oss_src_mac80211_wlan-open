@@ -1409,7 +1409,7 @@ struct ath12k_ba_session_params {
 	u16  ssn;
 	u16  timeout;
 	bool amsdu;
-	bool policy;
+	enum ieee80211_ba_policy policy;
 	bool valid;
 };
 
