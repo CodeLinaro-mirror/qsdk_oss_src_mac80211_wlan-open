@@ -757,6 +757,7 @@ nl80211_smd_ctx_policy[NL80211_SMD_CTX_ATTR_MAX + 1] = {
 	[NL80211_SMD_CTX_ATTR_UL] = { .type = NLA_NESTED },
 	[NL80211_SMD_CTX_ATTR_QOS] = { .type = NLA_NESTED },
 	[NL80211_SMD_CTX_ATTR_VENDOR] = { .type = NLA_BINARY },
+	[NL80211_SMD_CTX_ATTR_VALID_CTX] = { .type = NLA_U8 },
 };
 
 static struct nla_policy
@@ -21442,7 +21443,7 @@ static int nl80211_ap_power_save(struct sk_buff *skb, struct genl_info *info)
 	return 0;
 }
 
-static size_t nl80211_smd_ctx_nl_size(struct cfg80211_smd_transition_info *st_info)
+size_t nl80211_smd_ctx_nl_size(struct cfg80211_smd_transition_info *st_info)
 {
 	const struct ieee80211_smd_ctx *ctx = st_info->ctx;
 	int n_dl_tids = 0, n_ul_tids = 0;
@@ -21570,8 +21571,8 @@ nla_fail:
 	return -ENOBUFS;
 }
 
-static int nl80211_put_smd_ctx(struct sk_buff *msg,
-			       struct cfg80211_smd_transition_info *st_info)
+int nl80211_put_smd_ctx(struct sk_buff *msg,
+			struct cfg80211_smd_transition_info *st_info)
 {
 	struct nlattr *dl_sn = NULL, *ul_sn = NULL, *ul_pn = NULL;
 	struct nlattr *smd_ctx = NULL, *dl = NULL, *ul = NULL;
@@ -21890,6 +21891,154 @@ static int nl80211_set_smd_ctx(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	return rdev_set_smd_ctx(rdev, wdev, addr, &st_info);
+}
+
+static bool
+__cfg80211_smd_ctx_pending_exists(struct wireless_dev *wdev, const u8 *addr)
+{
+	struct cfg80211_smd_get_ctx_pending *pending = NULL, *tmp_pending;
+
+	spin_lock_bh(&wdev->smd_get_ctx_lock);
+	list_for_each_entry(tmp_pending, &wdev->smd_get_ctx_pending_list, list) {
+		if (!memcmp(tmp_pending->sta_addr, addr, ETH_ALEN)) {
+			pending = tmp_pending;
+			break;
+		}
+	}
+	spin_unlock_bh(&wdev->smd_get_ctx_lock);
+
+	return !!pending;
+}
+
+static int nl80211_get_smd_ctx(struct sk_buff *skb, struct genl_info *info)
+{
+	struct cfg80211_registered_device *rdev = info->user_ptr[0];
+	struct nlattr *dl_tb[NL80211_SMD_CTX_DL_ATTR_MAX + 1];
+	struct nlattr *ul_tb[NL80211_SMD_CTX_UL_ATTR_MAX + 1];
+	struct nlattr *tb[NL80211_SMD_CTX_ATTR_MAX + 1];
+	struct net_device *dev = info->user_ptr[1];
+	struct wireless_dev *wdev = dev->ieee80211_ptr;
+	struct cfg80211_smd_transition_info st_info = {0};
+	struct cfg80211_smd_get_ctx_pending *pending;
+	struct ieee80211_smd_ctx *ctx;
+	struct nlattr *bmap_attr;
+	const u8 *addr = NULL;
+	u8 valid_ctx;
+	int ret;
+
+	if (!rdev->ops->get_smd_ctx)
+		return -EOPNOTSUPP;
+
+	if (!info->attrs[NL80211_ATTR_MAC] || !info->attrs[NL80211_ATTR_SMD_CTX])
+		return -EINVAL;
+
+	addr = nla_data(info->attrs[NL80211_ATTR_MAC]);
+
+	if (nla_parse_nested(tb, NL80211_SMD_CTX_ATTR_MAX,
+			     info->attrs[NL80211_ATTR_SMD_CTX],
+			     nl80211_smd_ctx_policy, NULL))
+		return -EINVAL;
+
+	if (!tb[NL80211_SMD_CTX_ATTR_TYPE] ||
+	    !tb[NL80211_SMD_CTX_ATTR_VALID_CTX] ||
+	    (!tb[NL80211_SMD_CTX_ATTR_DL] && !tb[NL80211_SMD_CTX_ATTR_UL]))
+		return -EINVAL;
+
+	if (__cfg80211_smd_ctx_pending_exists(wdev, addr))
+		return -EBUSY;
+
+	ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
+	if (!ctx)
+		return -ENOMEM;
+
+	st_info.ctx = ctx;
+	st_info.type = nla_get_u8(tb[NL80211_SMD_CTX_ATTR_TYPE]);
+
+	valid_ctx = nla_get_u8(tb[NL80211_SMD_CTX_ATTR_VALID_CTX]);
+	bitmap_write(ctx->valid_ctx_bmap, valid_ctx, 0, IEEE80211_SMD_CTX_NUM_VALID_CTX);
+
+	if (tb[NL80211_SMD_CTX_ATTR_DL]) {
+		if (nla_parse_nested(dl_tb, NL80211_SMD_CTX_DL_ATTR_MAX,
+				     tb[NL80211_SMD_CTX_ATTR_DL],
+				     nl80211_smd_ctx_dl_policy, NULL)) {
+			kfree(ctx);
+			return -EINVAL;
+		}
+
+		bmap_attr = dl_tb[NL80211_SMD_CTX_DL_ATTR_VALID_TID_BITMAP];
+		if (bmap_attr)
+			bitmap_write(ctx->dl.valid_tid_bmap, nla_get_u8(bmap_attr),
+				     0, IEEE80211_SMD_CTX_NUM_TIDS);
+	}
+
+	if (tb[NL80211_SMD_CTX_ATTR_UL]) {
+		if (nla_parse_nested(ul_tb, NL80211_SMD_CTX_UL_ATTR_MAX,
+				     tb[NL80211_SMD_CTX_ATTR_UL],
+				     nl80211_smd_ctx_ul_policy, NULL)) {
+			kfree(ctx);
+			return -EINVAL;
+		}
+
+		bmap_attr = ul_tb[NL80211_SMD_CTX_UL_ATTR_VALID_TID_BITMAP];
+		if (bmap_attr)
+			bitmap_write(ctx->ul.valid_tid_bmap, nla_get_u8(bmap_attr),
+				     0, IEEE80211_SMD_CTX_NUM_TIDS);
+	}
+
+	ret = rdev_get_smd_ctx(rdev, wdev, addr, &st_info);
+	if (ret && ret != -EINPROGRESS) {
+		kfree(ctx);
+		return ret;
+	}
+
+	if (ret == 0) {
+		/* cache hit: driver replied synchronously, encode and return now */
+		struct sk_buff *msg;
+		void *hdr;
+
+		msg = nlmsg_new(100 + nl80211_smd_ctx_nl_size(&st_info), GFP_ATOMIC);
+		if (!msg) {
+			kfree(ctx->drv_ctx);
+			kfree(ctx);
+			return -ENOMEM;
+		}
+		hdr = nl80211hdr_put(msg, info->snd_portid, info->snd_seq, 0,
+				     NL80211_CMD_GET_SMD_CTX);
+		if (!hdr ||
+		    nla_put(msg, NL80211_ATTR_MAC, ETH_ALEN, addr) ||
+		    nl80211_put_smd_ctx(msg, &st_info)) {
+			kfree(ctx->drv_ctx);
+			kfree(ctx);
+			nlmsg_free(msg);
+			return -ENOBUFS;
+		}
+		genlmsg_end(msg, hdr);
+		kfree(ctx->drv_ctx);
+		kfree(ctx);
+		return genlmsg_reply(msg, info);
+	}
+
+	/*
+	 * -EINPROGRESS: HW collection started. Store a pending entry so that
+	 * cfg80211_get_smd_ctx_done() can find and reply to this request when
+	 * the BH completion fires.  The ctx skel is no longer needed here —
+	 * the driver owns it until completion.
+	 */
+	kfree(ctx);
+
+	pending = kzalloc(sizeof(*pending), GFP_KERNEL);
+	if (!pending)
+		return -ENOMEM;
+
+	INIT_LIST_HEAD(&pending->list);
+	memcpy(pending->sta_addr, addr, ETH_ALEN);
+
+	spin_lock_bh(&wdev->smd_get_ctx_lock);
+	list_add_tail(&pending->list, &wdev->smd_get_ctx_pending_list);
+	spin_unlock_bh(&wdev->smd_get_ctx_lock);
+
+	/* Reply will arrive via cfg80211_get_smd_ctx_done() */
+	return -EINPROGRESS;
 }
 
 #define NL80211_FLAG_NEED_WIPHY		0x01
@@ -23404,6 +23553,12 @@ static const struct genl_small_ops nl80211_small_ops[] = {
 		.flags = GENL_UNS_ADMIN_PERM,
 		.internal_flags = IFLAGS(NL80211_FLAG_NEED_NETDEV_UP),
 	},
+	{
+		.cmd = NL80211_CMD_GET_SMD_CTX,
+		.doit = nl80211_get_smd_ctx,
+		.flags = GENL_UNS_ADMIN_PERM,
+		.internal_flags = IFLAGS(NL80211_FLAG_NEED_NETDEV_UP),
+	},
 };
 
 static struct genl_family nl80211_fam __ro_after_init = {
@@ -24457,6 +24612,54 @@ static void nl80211_smd_send_status(struct net_device *dev,
 
 	genlmsg_multicast_netns(&nl80211_fam, wiphy_net(&rdev->wiphy),
 				msg, 0, NL80211_MCGRP_MLME, GFP_KERNEL);
+	return;
+
+nla_put_failure:
+	nlmsg_free(msg);
+}
+
+/**
+ * nl80211_notify_get_smd_ctx_done - multicast async GET_SMD_CTX completion
+ * @wdev: AP wireless_dev that issued the GET_SMD_CTX command
+ * @sta_addr: MLD address of the STA whose context was collected
+ * @st_info: collected context (NULL on failure)
+ *
+ * Sends NL80211_CMD_GET_SMD_CTX as a multicast on NL80211_MCGRP_MLME so
+ * user space receives it on the usually monitored socket rather than on
+ * the command socket.
+ */
+void nl80211_notify_get_smd_ctx_done(struct wireless_dev *wdev,
+				     const u8 *sta_addr,
+				     struct cfg80211_smd_transition_info *st_info)
+{
+	struct cfg80211_registered_device *rdev = wiphy_to_rdev(wdev->wiphy);
+	struct net_device *dev = wdev->netdev;
+	struct sk_buff *msg;
+	void *hdr;
+	size_t msg_len = NLMSG_DEFAULT_SIZE;
+
+	if (st_info && st_info->ctx)
+		msg_len = 100 + nl80211_smd_ctx_nl_size(st_info);
+
+	msg = nlmsg_new(msg_len, GFP_ATOMIC);
+	if (!msg)
+		return;
+
+	hdr = nl80211hdr_put(msg, 0, 0, 0, NL80211_CMD_GET_SMD_CTX);
+	if (!hdr)
+		goto nla_put_failure;
+
+	if (nla_put_u32(msg, NL80211_ATTR_WIPHY, rdev->wiphy_idx) ||
+	    nla_put_u32(msg, NL80211_ATTR_IFINDEX, dev->ifindex) ||
+	    nla_put(msg, NL80211_ATTR_MAC, ETH_ALEN, sta_addr))
+		goto nla_put_failure;
+
+	if (st_info && st_info->ctx && nl80211_put_smd_ctx(msg, st_info))
+		goto nla_put_failure;
+
+	genlmsg_end(msg, hdr);
+	genlmsg_multicast_netns(&nl80211_fam, wiphy_net(&rdev->wiphy),
+				msg, 0, NL80211_MCGRP_MLME, GFP_ATOMIC);
 	return;
 
 nla_put_failure:

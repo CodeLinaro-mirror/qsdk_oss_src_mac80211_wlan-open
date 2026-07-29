@@ -5670,6 +5670,32 @@ struct cfg80211_smd_transition_info {
 };
 
 /**
+ * struct cfg80211_smd_get_ctx_pending - pending async GET_SMD_CTX request
+ * @list: linkage on wireless_dev.smd_get_ctx_pending_list
+ * @sta_addr: non-AP MLD address for which context was requested
+ */
+struct cfg80211_smd_get_ctx_pending {
+	struct list_head list;
+	u8 sta_addr[ETH_ALEN];
+};
+
+/**
+ * cfg80211_get_smd_ctx_done - deliver async GET_SMD_CTX result to nl80211
+ * @wdev: wireless device that handled the request
+ * @sta_addr: non-AP MLD address the context was collected for
+ * @st_info: SMD BSS Transition Info
+ *
+ * Called (indirectly via ieee80211_get_smd_ctx_done) after async driver context
+ * collection completes. Finds the matching pending request and sends a unicast
+ * NL80211_CMD_GET_SMD_CTX reply to userspace.
+ *
+ * Return: None
+ */
+void cfg80211_get_smd_ctx_done(struct wireless_dev *wdev,
+			       const u8 *sta_addr,
+			       struct cfg80211_smd_transition_info *st_info);
+
+/**
  * struct cfg80211_ops - backend description for wireless configuration
  *
  * This struct is registered by fullmac card drivers and/or wireless stacks
@@ -6116,6 +6142,7 @@ struct cfg80211_smd_transition_info {
  * @set_muedca_mode: Set the mode of setting MU EDCA parameters.
  * @uhr_link_reconf: Initiate SMD preparation with target AP MLD
  * @set_smd_ctx: Set UHR SMD context data for the non-AP MLD.
+ * @get_smd_ctx: Get UHR SMD context data for the non-AP MLD.
  */
 struct cfg80211_ops {
 	int	(*suspend)(struct wiphy *wiphy, struct cfg80211_wowlan *wow);
@@ -6538,6 +6565,9 @@ struct cfg80211_ops {
 			struct net_device *dev,
 			const struct cfg80211_smd_roam_req *req);
 	int	(*set_smd_ctx)(struct wiphy *wiphy, struct wireless_dev *wdev,
+			       const u8 *addr,
+			       struct cfg80211_smd_transition_info *st_info);
+	int	(*get_smd_ctx)(struct wiphy *wiphy, struct wireless_dev *wdev,
 			       const u8 *addr,
 			       struct cfg80211_smd_transition_info *st_info);
 };
@@ -8137,6 +8167,10 @@ struct wireless_dev {
 	u16 valid_links;
 
 	struct cfg80211_smd_prep_state *smd_prep;
+
+	/* protects @smd_get_ctx_pending_list */
+	spinlock_t smd_get_ctx_lock;
+	struct list_head smd_get_ctx_pending_list;
 
 	u32 radio_mask;
 	bool critical_update;
@@ -12014,4 +12048,5 @@ int cfg80211_set_repurpose_link(struct wireless_dev *wdev, u8 link_id);
  * Return: 0 on success, negative error code on failure
  */
 int cfg80211_clear_repurpose_link(struct wireless_dev *wdev, u8 link_id);
+
 #endif /* __NET_CFG80211_H */
