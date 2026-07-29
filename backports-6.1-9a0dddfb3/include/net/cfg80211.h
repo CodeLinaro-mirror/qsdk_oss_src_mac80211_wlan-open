@@ -5566,11 +5566,18 @@ struct cfg80211_ap_power_save_params {
  * @enable: enable (true) or disable (false) NPCA feature
  * @switch_delay: delay in ms before switching to non-primary channel
  * @switch_back_delay: delay in ms before switching back to primary channel
+ * @mode_update: true if NPCA was already enabled on this link and remains
+ *	enabled, and the switch_delay or switch_back_delay value is actually
+ *	changing, i.e. this is a parameter update on an already-enabled link
+ *	rather than a fresh enable, a disable, or a no-op re-send of the same
+ *	values. Computed internally by mac80211 from the link's previous NPCA
+ *	state; not set by the caller.
  */
 struct cfg80211_uhr_npca_params {
 	bool enable;
 	u8 switch_delay;
 	u8 switch_back_delay;
+	bool mode_update;
 };
 
 /**
