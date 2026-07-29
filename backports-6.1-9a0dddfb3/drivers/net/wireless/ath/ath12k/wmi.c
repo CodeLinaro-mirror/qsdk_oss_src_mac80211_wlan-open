@@ -4030,8 +4030,7 @@ int ath12k_wmi_vdev_install_key(struct ath12k *ar,
 }
 
 static void ath12k_wmi_copy_peer_flags(struct wmi_peer_assoc_complete_cmd *cmd,
-				       struct ath12k_wmi_peer_assoc_arg *arg,
-				       bool hw_crypto_disabled)
+				       struct ath12k_wmi_peer_assoc_arg *arg)
 {
 	cmd->peer_flags = 0;
 	cmd->peer_flags_ext = 0;
@@ -4086,13 +4085,13 @@ static void ath12k_wmi_copy_peer_flags(struct wmi_peer_assoc_complete_cmd *cmd,
 
 	/* Suppress authorization for all AUTH modes that need 4-way handshake
 	 * (during re-association).
-	 * Authorization will be done for these modes on key installation.
+	 * Authorization will be done by host after Key installation.
 	 */
 	if (arg->auth_flag  && !arg->ml.ml_reconfig)
 		cmd->peer_flags |= cpu_to_le32(WMI_PEER_AUTH);
 	if (arg->need_ptk_4_way) {
 		cmd->peer_flags |= cpu_to_le32(WMI_PEER_NEED_PTK_4_WAY);
-		if (!hw_crypto_disabled && arg->is_assoc)
+		if (arg->is_assoc)
 			cmd->peer_flags &= cpu_to_le32(~WMI_PEER_AUTH);
 	}
 	if (arg->need_gtk_2_way)
@@ -4403,9 +4402,7 @@ int ath12k_wmi_send_peer_assoc_cmd(struct ath12k *ar,
 	cmd->peer_associd = cpu_to_le32(arg->peer_associd);
 	cmd->punct_bitmap = cpu_to_le32(arg->punct_bitmap);
 
-	ath12k_wmi_copy_peer_flags(cmd, arg,
-				   test_bit(ATH12K_GROUP_FLAG_HW_CRYPTO_DISABLED,
-					    &ar->ab->ag->flags));
+	ath12k_wmi_copy_peer_flags(cmd, arg);
 
 	ether_addr_copy(cmd->peer_macaddr.addr, arg->peer_mac);
 
