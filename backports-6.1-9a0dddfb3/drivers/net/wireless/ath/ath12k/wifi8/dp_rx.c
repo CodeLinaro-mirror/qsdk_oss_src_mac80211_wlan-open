@@ -1996,8 +1996,10 @@ void ath12k_wifi8_rx_sw_desc_sanity_check(struct hal_reo_dest_ring *hw_rx_desc,
 		struct rx_mpdu_desc_info *rx_mpdu_info = &rx_spd->rx_mpdu_info;
 
 		if (rx_mpdu_info->reo_dest_buffer_type ==
-				HAL_REO_DEST_RING_BUFFER_TYPE_LINK_DESC)
+				HAL_REO_DEST_RING_BUFFER_TYPE_LINK_DESC) {
+			rx_spd->buf_addr = hw_rx_desc->buf_addr_info;
 			return;
+		}
 
 		pr_err("HW cookie conversion table seems to be corrupted");
 		WARN_ON(1);
