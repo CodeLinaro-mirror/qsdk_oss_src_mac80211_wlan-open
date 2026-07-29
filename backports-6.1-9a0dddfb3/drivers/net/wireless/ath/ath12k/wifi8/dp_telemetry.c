@@ -226,7 +226,7 @@ ath12k_wifi8_dp_update_tx_peer_telemetry(struct ath12k_dp_peer *dp_peer,
 	for (link_id = 0; link_id < ATH12K_DP_PEER_MAX_MLO_LINKS; link_id++) {
 		u32 success_pkts_mask, success_bytes_mask;
 
-		link_peer = rcu_dereference(dp_peer->link_peers[link_id]);
+		link_peer = ath12k_dp_link_peer_find_by_hw_link_id(dp_peer, link_id);
 		if (!link_peer)
 			continue;
 
@@ -427,7 +427,7 @@ ath12k_wifi8_dp_update_rx_peer_telemetry(struct ath12k_dp_peer *dp_peer,
 
 	/* Per-band/link Rx stats */
 	for (link_id = 0; link_id < ATH12K_DP_PEER_MAX_MLO_LINKS; link_id++) {
-		link_peer = rcu_dereference(dp_peer->link_peers[link_id]);
+		link_peer = ath12k_dp_link_peer_find_by_hw_link_id(dp_peer, link_id);
 		if (!link_peer)
 			continue;
 

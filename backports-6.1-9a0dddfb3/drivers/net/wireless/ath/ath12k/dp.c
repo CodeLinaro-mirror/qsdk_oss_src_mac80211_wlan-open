@@ -4567,7 +4567,7 @@ ath12k_dp_update_hw_link_stats(struct ath12k_pdev_dp *dp_pdev,
 		return;
 
 	rcu_read_lock();
-	tmp_peer = rcu_dereference(dp_peer->link_peers[link_id]);
+	tmp_peer = ath12k_dp_link_peer_find_by_hw_link_id(dp_peer, link_id);
 	if (!tmp_peer || !tmp_peer->peer_stats.hw_link_stats)
 		goto unlock;
 
