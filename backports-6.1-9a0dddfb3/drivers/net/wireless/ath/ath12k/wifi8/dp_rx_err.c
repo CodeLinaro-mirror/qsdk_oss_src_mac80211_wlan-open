@@ -80,7 +80,7 @@ ath12k_wifi8_dp_rx_h_defrag_validate_incr_pn(struct ath12k_pdev_dp *dp_pdev,
 					     struct ath12k_dp_rx_tid *rx_tid,
 					     enum hal_encrypt_type encrypt_type)
 {
-	struct ath12k_dp *dp = dp_pdev->dp;
+	struct ath12k_dp *dp = ath12k_get_central_dp(dp_pdev->dp);
 	struct sk_buff *first_frag, *skb;
 	u64 last_pn;
 	u64 cur_pn;
@@ -417,7 +417,7 @@ static int ath12k_wifi8_dp_rx_h_defrag(struct ath12k_pdev_dp *dp_pdev,
 				       bool decrypted,
 				       struct hal_rx_desc_data *rx_desc_data)
 {
-	struct ath12k_dp *dp = dp_pdev->dp;
+	struct ath12k_dp *dp = ath12k_get_central_dp(dp_pdev->dp);
 	struct ath12k_base *ab = dp->ab;
 	struct sk_buff *skb, *first_frag, *last_frag;
 	struct ieee80211_hdr *hdr;
@@ -647,9 +647,12 @@ int ath12k_wifi8_dp_rx_link_desc_return(struct ath12k_dp *dp,
 					enum hal_wbm_rel_bm_act action)
 {
 	struct hal_wbm_release_ring *desc;
-	struct ath12k_base *ab = dp->ab;
+	struct ath12k_base *ab;
 	struct hal_srng *srng;
 	int ret = 0;
+
+	dp = ath12k_get_central_dp(dp);
+	ab = dp->ab;
 
 	srng = &ab->hal.srng_list[dp->wbm_desc_rel_ring.ring_id];
 
@@ -678,7 +681,7 @@ static int ath12k_wifi8_dp_rx_frag_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 					  struct hal_rx_spd_data *spd_desc_l,
 					  struct hal_rx_desc_data *rx_desc_data)
 {
-	struct ath12k_dp *dp = dp_pdev->dp;
+	struct ath12k_dp *dp = ath12k_get_central_dp(dp_pdev->dp);
 	struct ath12k_base *ab = dp->ab;
 	struct ath12k_dp_peer *peer;
 	struct ath12k_dp_rx_tid *rx_tid;
@@ -694,6 +697,8 @@ static int ath12k_wifi8_dp_rx_frag_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	more_frags = ath12k_wifi8_dp_rx_h_more_frags(ab, msdu);
 	seqno = rx_desc_data->seq_no;
 
+	peer_id = ath12k_wifi8_dp_rx_get_peer_id(dp->ab, dp->peer_metadata_ver,
+						 spd_desc_l->rx_mpdu_info.peer_meta_data);
 	if (!rx_desc_data->seq_ctl_valid || !rx_desc_data->fc_valid ||
 	    tid >= ab->hal.hal_params->num_tids)
 		return -EINVAL;
@@ -814,7 +819,7 @@ ath12k_wifi8_dp_process_rx_err_buf(struct ath12k_pdev_dp *dp_pdev,
 				   struct list_head *used_list,
 				   bool drop, u32 cookie)
 {
-	struct ath12k_dp *dp = dp_pdev->dp;
+	struct ath12k_dp *dp = ath12k_get_central_dp(dp_pdev->dp);
 	struct ath12k *ar = dp_pdev->ar;
 	struct ath12k_base *ab = dp->ab;
 	struct hal_rx_desc_data rx_desc_data = {0};
@@ -841,8 +846,9 @@ ath12k_wifi8_dp_process_rx_err_buf(struct ath12k_pdev_dp *dp_pdev,
 	msdu = desc_info->skb;
 	desc_info->skb = NULL;
 	rxcb = ATH12K_SKB_RXCB(msdu);
-	rxcb->peer_id = le32_get_bits(spd_desc_l->rx_mpdu_info.peer_meta_data,
-				      RX_MPDU_DESC_META_DATA_V1_PEER_ID_WIFI8);
+	rxcb->peer_id =
+		ath12k_wifi8_dp_rx_get_peer_id(dp->ab, dp->peer_metadata_ver,
+					       spd_desc_l->rx_mpdu_info.peer_meta_data);
 
 	list_add_tail(&desc_info->list, used_list);
 
@@ -1328,6 +1334,12 @@ ath12k_wifi8_dp_process_reo_rx_err_packets(struct ath12k_dp *dp,
 		rx_msdu_info = &spd_desc_l->rx_msdu_info;
 		rx_mpdu_info = &spd_desc_l->rx_mpdu_info;
 
+		if (rx_mpdu_info->reo_dest_buffer_type ==
+				HAL_REO_DEST_RING_BUFFER_TYPE_LINK_DESC) {
+			ath12k_wifi8_dp_h_link_desc(dp, spd_desc_l);
+			continue;
+		}
+
 		src = rx_mpdu_info->release_source_module;
 
 		/*
@@ -1352,12 +1364,6 @@ ath12k_wifi8_dp_process_reo_rx_err_packets(struct ath12k_dp *dp,
 
 		rx_desc = (struct hal_rx_desc *)spd_desc_l->vaddr;
 		ath12k_wifi8_dp_extract_rx_spd_data(hal, spd_desc_l, rx_desc);
-
-		if (rx_mpdu_info->reo_dest_buffer_type ==
-				HAL_REO_DEST_RING_BUFFER_TYPE_LINK_DESC) {
-			ath12k_wifi8_dp_h_link_desc(dp, spd_desc_l);
-			continue;
-		}
 
 		if (drop) {
 			dev_kfree_skb_any(spd_desc_l->msdu);
