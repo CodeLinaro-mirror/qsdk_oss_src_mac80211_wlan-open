@@ -498,6 +498,8 @@ ieee80211_calc_legacy_rate_duration(u16 bitrate, bool short_pre,
 	}
 
 	len <<= 3;
+	if (!bitrate)
+		return 0;
 	duration += (len * 10) / bitrate;
 
 	return duration;
@@ -833,6 +835,8 @@ u32 ieee80211_calc_expected_tx_airtime(struct ieee80211_hw *hw,
 	short_pream = vif->bss_conf.use_short_preamble;
 
 	rateidx = basic_rates ? ffs(basic_rates) - 1 : 0;
+	if (!sband || rateidx >= sband->n_bitrates)
+		return 0;
 	rate = sband->bitrates[rateidx].bitrate;
 	cck = sband->bitrates[rateidx].flags & IEEE80211_RATE_MANDATORY_B;
 
