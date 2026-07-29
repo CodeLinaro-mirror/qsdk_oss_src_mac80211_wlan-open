@@ -32618,12 +32618,14 @@ int ath12k_mac_op_sta_uhr_mode_update(struct ieee80211_hw *hw,
 		link_params[num_links].npca_enable = npca->enable;
 		link_params[num_links].npca_switch_delay = npca->switch_delay;
 		link_params[num_links].npca_switch_back_delay = npca->switch_back_delay;
+		link_params[num_links].npca_mode_update = npca->mode_update;
 
 		ath12k_dbg(arvif->ar->ab, ATH12K_DBG_WMI,
-			   "UHR OMP: link_id=%u addr=%pM vdev_id=%u pdev_id=%u hw_link_id=%u npca_en=%u sw_delay=%u swb_delay=%u\n",
+			   "UHR OMP: link_id=%u addr=%pM vdev_id=%u pdev_id=%u hw_link_id=%u npca_en=%u sw_delay=%u swb_delay=%u mode_update=%u\n",
 			   link_id, arsta->addr, arvif->vdev_id,
 			   arvif->ar->pdev->pdev_id, arvif->ar->pdev->hw_link_id,
-			   npca->enable, npca->switch_delay, npca->switch_back_delay);
+			   npca->enable, npca->switch_delay, npca->switch_back_delay,
+			   npca->mode_update);
 
 		/* Use the primary link's ar and pdev_id for sending the WMI cmd */
 		if (!primary_ar || link_id == ahsta->primary_link_id) {

@@ -4085,9 +4085,13 @@ struct wmi_vdev_start_request_cmd {
 /* omp_npca_caps field bit definitions:
  *   Bit 0:3  - NPCA hw_link_id
  *   Bit 4    - Enable (1) / Disable (0) NPCA
+ *   Bit 5    - Mode Update: 1 if NPCA was already enabled on this link
+ *              and this is a parameter update, 0 for a fresh enable or
+ *              for disable (reserved/meaningless when Enable is 0)
  */
 #define WMI_PEER_UHR_OMP_NPCA_CAPS_HW_LINK_ID   GENMASK(3, 0)
 #define WMI_PEER_UHR_OMP_NPCA_CAPS_ENABLE        BIT(4)
+#define WMI_PEER_UHR_OMP_NPCA_CAPS_MODE_UPDATE   BIT(5)
 
 /* omp_npca_param field bit definitions:
  *   Bit 0:5  - NPCA Switch Delay (ms)
@@ -4114,6 +4118,7 @@ struct ath12k_wmi_uhr_omp_link_params {
 	bool npca_enable;
 	u8 npca_switch_delay;
 	u8 npca_switch_back_delay;
+	bool npca_mode_update;
 };
 
 #define MGMT_TX_DL_FRM_LEN		     64
