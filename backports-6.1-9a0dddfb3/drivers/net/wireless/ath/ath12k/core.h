@@ -988,8 +988,8 @@ struct ath12k_link_vif {
 	struct ath12k_mbssid_info *mbssid_info;
 
 	struct ath12k_smd_params smd_params;
-	bool self_peer_authorized;
 	struct ath12k_link_vif_extn arvif_extn;
+	bool secured_bss;
 };
 
 struct ath12k_dp_link_vif {
@@ -1385,6 +1385,7 @@ struct ath12k_link_sta {
 	s8 max_rssi;
 
 	enum wmi_phy_mode phymode;
+	bool is_secured_peer;
 };
 
 struct ath12k_sta_migration_data {

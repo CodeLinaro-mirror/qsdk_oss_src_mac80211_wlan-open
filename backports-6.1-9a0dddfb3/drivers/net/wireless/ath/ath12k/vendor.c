@@ -10027,6 +10027,64 @@ static void ath12k_vendor_wifi_extract_generic_command_params(struct nlattr **tb
 		   params->ifindex, params->link_id, params->radio_idx);
 }
 
+static int
+ath12k_vendor_iface_mode_config(struct wireless_dev *wdev,
+				struct ath12k_wifi_generic_params *wifi_params)
+{
+	struct ieee80211_vif *vif;
+	struct ath12k_vif *ahvif;
+	struct ath12k_link_vif *arvif;
+	enum wmi_peer_authorize_mode mode;
+	struct ath12k *ar;
+	u8 link_id;
+
+	if (!wdev || !wifi_params)
+		return -EINVAL;
+
+	switch (wifi_params->value) {
+	case QCA_WLAN_VENDOR_IFACE_MODE_CLEAR:
+		mode = WMI_PEER_AUTHORIZE_CLEAR;
+		break;
+	case QCA_WLAN_VENDOR_IFACE_MODE_OPEN:
+		mode = WMI_PEER_AUTHORIZE_OPEN_MODE;
+		break;
+	case QCA_WLAN_VENDOR_IFACE_MODE_SECURED:
+		mode = WMI_PEER_AUTHORIZE_SECURED_MODE;
+		break;
+	default:
+		ath12k_err(NULL, "%s: invalid iface mode %u\n", __func__,
+			   wifi_params->value);
+		return -EINVAL;
+	}
+
+	vif = wdev_to_ieee80211_vif(wdev);
+	if (!vif)
+		return -EINVAL;
+
+	ahvif = ath12k_vif_to_ahvif(vif);
+	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA)
+		return 0;
+
+	link_id = wifi_params->link_id == INVALID_LINK_ID ? 0 : wifi_params->link_id;
+	arvif = ath12k_get_arvif_from_link_id(ahvif, link_id);
+	if (!arvif || !arvif->ar)
+		return -EINVAL;
+
+	/* Use SW encryption authorization mode when SW encryption is enabled
+	 * to ensure the correct encryption mode is communicated to firmware.
+	 */
+	ar = arvif->ar;
+	if (mode == WMI_PEER_AUTHORIZE_SECURED_MODE)
+		arvif->secured_bss = true;
+
+	if (test_bit(ATH12K_GROUP_FLAG_HW_CRYPTO_DISABLED, &ar->ab->ag->flags) &&
+	    mode == WMI_PEER_AUTHORIZE_SECURED_MODE)
+		mode = WMI_PEER_AUTHORIZE_SW_ENCRYPTION_MODE;
+
+	return ath12k_wmi_set_peer_param(ar, arvif->addr, arvif->vdev_id,
+					 WMI_PEER_AUTHORIZE, mode);
+}
+
 
 static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 					     struct wireless_dev *wdev,
@@ -10070,6 +10128,11 @@ static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 					   "Failed to set wifi params \n");
 				return -EINVAL;
 			}
+			break;
+		case QCA_WLAN_VENDOR_WIFI_PARAM_INTERFACE_EN_DIS_MODE:
+			ret = ath12k_vendor_iface_mode_config(wdev, &wifi_params);
+			if (ret)
+				return ret;
 			break;
 		default:
 			ret = ath12k_vendor_wifi_config_handler_extn(wiphy, wdev,
