@@ -793,11 +793,12 @@ static ssize_t ath12k_userpd_coredump_read(char *buffer, loff_t offset, size_t c
 
        /* Copy the header first */
         if (offset < header_size) {
-                memcpy(buffer, elfcore, header_size);
-                offset += header_size;
-                bytes_left -= header_size;
-                buffer += header_size;
-                return header_size;
+		copy_size = min_t(size_t, bytes_left, header_size - offset);
+		memcpy(buffer, elfcore, copy_size);
+		offset += copy_size;
+		bytes_left -= copy_size;
+		buffer += copy_size;
+		return copy_size;
         }
 
         while (bytes_left) {
