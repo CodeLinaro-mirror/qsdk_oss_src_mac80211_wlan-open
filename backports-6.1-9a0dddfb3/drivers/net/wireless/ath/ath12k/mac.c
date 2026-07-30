@@ -5579,7 +5579,7 @@ static void ath12k_peer_assoc_h_npca(struct ath12k *ar,
 		return;
 
 	arg->npca.enabled = true;
-	arg->npca.npca_offset = link_sta->npca_offset;
+	arg->npca.npca_primary_channel = link_sta->npca_primary_channel;
 	arg->npca.npca_punct_bitmap = ~link_sta->npca_puncture_bitmap;
 	arg->npca.npca_min_dur_threshold = npca_info->npca_min_dur_threshold;
 	arg->npca.npca_switch_delay = npca_info->npca_switch_delay;
@@ -32844,17 +32844,14 @@ ath12k_mac_fill_npca_arg(struct ath12k_link_vif *arvif,
 				    def->center_freq2,
 				    mode, cf_device, width_device);
 
-	/* Derive NPCA primary channel frequency from the primary channel
-	 * offset field in the IE and the current BSS channel definition.
-	 * The offset is in units of 20 MHz subchannels counted from the
-	 * lowest subchannel of the BSS bandwidth.
+	/* Per 11bn D1.5, the primary channel field is a channel number,
+	 * not a subchannel offset.  Convert directly to MHz.
 	 */
 	arg->npca.mhz =
-		def->center_freq1 -
-		cfg80211_chandef_get_width(def) / 2 +
-		10 +
-		le32_get_bits(npca->params,
-			      IEEE80211_UHR_NPCA_PARAMS_PRIMARY_CHAN_OFFS) * 20;
+		ieee80211_channel_to_frequency(
+			le32_get_bits(npca->params,
+				      IEEE80211_UHR_NPCA_PARAMS_PRIMARY_CHAN),
+			chan->band);
 	arg->npca.band_center_freq1 = le32_to_cpu(chan_info.band_center_freq1);
 	arg->npca.band_center_freq2 = le32_to_cpu(chan_info.band_center_freq2);
 	arg->npca.info = le32_to_cpu(chan_info.info);
@@ -32873,7 +32870,7 @@ ath12k_mac_fill_npca_arg(struct ath12k_link_vif *arvif,
 
 	arg->npca.npca_cap1 =
 		le32_get_bits(npca->params,
-			      IEEE80211_UHR_NPCA_PARAMS_PRIMARY_CHAN_OFFS) |
+			      IEEE80211_UHR_NPCA_PARAMS_PRIMARY_CHAN) |
 		le32_get_bits(npca->params,
 			      IEEE80211_UHR_NPCA_PARAMS_MIN_DUR_THRESH) << 8 |
 		le32_get_bits(npca->params,

@@ -3955,12 +3955,18 @@ struct wmi_vdev_start_smd_params {
 	__le32 flags;
 } __packed;
 
-#define WMI_NPCA_PEER_CAP1_CHAN_OFFSET       GENMASK(3, 0)
-#define WMI_NPCA_PEER_CAP1_MIN_THRESHOLD     GENMASK(7, 4)
-#define WMI_NPCA_PEER_CAP1_SWITCH_DELAY      GENMASK(13, 8)
-#define WMI_NPCA_PEER_CAP1_SWITCH_BACK_DELAY GENMASK(19, 14)
-#define WMI_NPCA_PEER_CAP1_INITIAL_QSRC      GENMASK(21, 20)
-#define WMI_NPCA_PEER_CAP1_MOPLEN            BIT(22)
+/*
+ * Per IEEE P802.11bn D1.5: NPCA Primary Channel (WMI_NPCA_PEER_CAP1_CHAN_OFFSET)
+ * widened from 4 to 8 bits, shifting all subsequent NPCA Operation
+ * Parameters subfields by 4 bits relative to D1.4.
+ */
+#define WMI_NPCA_PEER_CAP1_CHAN_OFFSET            GENMASK(7, 0)
+#define WMI_NPCA_PEER_CAP1_MIN_THRESHOLD          GENMASK(11, 8)
+#define WMI_NPCA_PEER_CAP1_SWITCH_DELAY           GENMASK(17, 12)
+#define WMI_NPCA_PEER_CAP1_SWITCH_BACK_DELAY      GENMASK(23, 18)
+#define WMI_NPCA_PEER_CAP1_INITIAL_QSRC           GENMASK(25, 24)
+#define WMI_NPCA_PEER_CAP1_MOPLEN                 BIT(26)
+#define WMI_NPCA_PEER_CAP1_DIS_SUBCHAN_BMAP_PRESENT BIT(27)
 
 #define WMI_NPCA_PEER_CAP2_PUNCTURE_BITMAP   GENMASK(15, 0)
 
@@ -5787,7 +5793,7 @@ struct peer_assoc_holq_params {
 
 struct peer_assoc_npca_params {
 	bool enabled;
-	u8 npca_offset;
+	u8 npca_primary_channel;
 	u16 npca_punct_bitmap;
 	u8 npca_min_dur_threshold;
 	u8 npca_switch_delay;

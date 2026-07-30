@@ -4416,7 +4416,7 @@ static void *ath12k_wmi_peer_assoc_v2_cmd(struct ath12k *ar,
 					       sizeof(*npca_params));
 
 		npca_params->npca_cap1 =
-			le32_encode_bits(arg->npca.npca_offset,
+			le32_encode_bits(arg->npca.npca_primary_channel,
 					 WMI_NPCA_PEER_CAP1_CHAN_OFFSET) |
 			le32_encode_bits(arg->npca.npca_min_dur_threshold,
 					 WMI_NPCA_PEER_CAP1_MIN_THRESHOLD) |
@@ -4427,15 +4427,17 @@ static void *ath12k_wmi_peer_assoc_v2_cmd(struct ath12k *ar,
 			le32_encode_bits(arg->npca.npca_initial_qsrc,
 					 WMI_NPCA_PEER_CAP1_INITIAL_QSRC) |
 			le32_encode_bits(arg->npca.npca_moplen,
-					 WMI_NPCA_PEER_CAP1_MOPLEN);
+					 WMI_NPCA_PEER_CAP1_MOPLEN) |
+			(arg->npca.npca_punct_bitmap ?
+			 WMI_NPCA_PEER_CAP1_DIS_SUBCHAN_BMAP_PRESENT : 0);
 		npca_params->npca_cap2 =
 			le32_encode_bits(arg->npca.npca_punct_bitmap,
 					 WMI_NPCA_PEER_CAP2_PUNCTURE_BITMAP);
 
 		ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
-			   "peer npca params assign: vdev_id=%u npca_offset=%u punct_bitmap=0x%x min_dur=%u switch_delay=%u switch_back=%u init_qsrc=%u moplen=%u cap1=0x%x cap2=0x%x\n",
+			   "peer npca params assign: vdev_id=%u npca_primary_channel=%u punct_bitmap=0x%x min_dur=%u switch_delay=%u switch_back=%u init_qsrc=%u moplen=%u cap1=0x%x cap2=0x%x\n",
 			   arg->vdev_id,
-			   arg->npca.npca_offset,
+			   arg->npca.npca_primary_channel,
 			   arg->npca.npca_punct_bitmap,
 			   arg->npca.npca_min_dur_threshold,
 			   arg->npca.npca_switch_delay,
