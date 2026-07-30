@@ -3491,6 +3491,33 @@ void ath12k_core_radio_cleanup(struct ath12k *ar)
 	ar->monitor_vdev_created = false;
 }
 
+static void ath12k_arvif_abort_cu_notify(struct ath12k_hw *ah,
+					 struct ath12k_link_vif *arvif)
+{
+	enum nl80211_cu_state notify_state;
+
+	if (!arvif->uhr_ecu.started)
+		return;
+
+	wiphy_work_cancel(ah->hw->wiphy, &arvif->uhr_cu_notify_work);
+
+	switch (arvif->uhr_ecu.cu_state) {
+	case NL80211_CU_STATE_STARTED:
+		notify_state = NL80211_CU_STATE_ABORT;
+		break;
+	case NL80211_CU_STATE_ADV_NOTIFICATION_END:
+	case NL80211_CU_STATE_POST_NOTIFICATION_END:
+	case NL80211_CU_STATE_ECU_END:
+	case NL80211_CU_STATE_ABORT:
+		notify_state = NL80211_CU_STATE_ECU_END;
+		break;
+	}
+
+	ieee80211_cu_notify(ah->hw, arvif->ahvif->vif,
+			    arvif->link_id, notify_state);
+	arvif->uhr_ecu.cu_state = notify_state;
+}
+
 static void ath12k_core_pre_reconfigure_recovery(struct ath12k_base *ab)
 {
 	struct ath12k *ar;
@@ -3515,6 +3542,10 @@ static void ath12k_core_pre_reconfigure_recovery(struct ath12k_base *ab)
 		list_for_each_entry(arvif, &ar->arvifs, list) {
 			if (arvif->is_started)
 				ath12k_debugfs_remove_interface(arvif);
+
+
+			ath12k_arvif_abort_cu_notify(ah, arvif);
+
 			arvif->is_started = false;
 			arvif->is_created = false;
 			arvif->is_up = false;

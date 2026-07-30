@@ -848,6 +848,7 @@ struct ath12k_smd_params {
 };
 
 struct ath12k_uhr_cu_info {
+	bool started;
 	enum nl80211_cu_state cu_state;
 	u32 mode_present;
 	u32 npca_freq;
