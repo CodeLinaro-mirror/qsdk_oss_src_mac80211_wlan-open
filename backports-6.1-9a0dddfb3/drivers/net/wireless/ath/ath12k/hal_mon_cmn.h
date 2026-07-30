@@ -638,6 +638,7 @@ struct hal_rx_mon_ppdu_info {
 	u16 vht_flag_values6;
 	u8 gi;
 	u8 rssi_comb;
+	u8 rssi_chain_pri20[HAL_RX_MAX_NSS];
 	u16 tid;
 	u8 fc_valid;
 	u32 ht_flags : 1,
@@ -746,6 +747,30 @@ struct hal_rx_mon_ppdu_info {
 	u32 rx_antenna;
 	u8 num_non_ofdma_users;
 };
+
+#define HAL_RX_MON_OFFSET(block, field) block##_##field##_OFFSET
+#define HAL_RX_MON_LSB(block, field) block##_##field##_LSB
+#define HAL_RX_MON_MASK(block, field) block##_##field##_MASK
+
+static inline u32 hal_rx_mon_get(const void *ptr, u32 offset, u32 mask, u8 lsb)
+{
+	const u32 *reg;
+
+	reg = (const u32 *)ptr + (offset >> 2);
+	return ((*reg) & mask) >> lsb;
+}
+
+#define HAL_RX_MON_UPDATE_PRI20_RSSI_PER_CHAIN(chain, ppdu_info, rssi_info_tlv) \
+	( \
+		(ppdu_info)->rssi_chain_pri20[(chain)] = \
+			hal_rx_mon_get((rssi_info_tlv), \
+				       HAL_RX_MON_OFFSET(RECEIVE_RSSI_INFO, \
+							 RSSI_PRI20_CHAIN##chain), \
+				       HAL_RX_MON_MASK(RECEIVE_RSSI_INFO, \
+						       RSSI_PRI20_CHAIN##chain), \
+				       HAL_RX_MON_LSB(RECEIVE_RSSI_INFO, \
+						      RSSI_PRI20_CHAIN##chain)) \
+	)
 
 /* in the bitmap 0 indicates no puncturing and 1 indicate that sub channel is punctured */
 #define PUNCTURE_NONE    0x0000

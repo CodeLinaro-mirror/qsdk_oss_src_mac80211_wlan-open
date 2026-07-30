@@ -3905,6 +3905,8 @@ ath12k_wifi7_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 
 	case HAL_PHYRX_RSSI_LEGACY: {
 		const struct hal_rx_phyrx_rssi_legacy_info *rssi = tlv_data;
+		u8 *rssi_info_tlv = (u8 *)tlv_data +
+			HAL_PHYRX_RSSI_LEGACY_PREAMBLE_RSSI_INFO_OFFSET;
 		u32 info[3];
 
 		info[0] = __le32_to_cpu(rssi->info0);
@@ -3925,6 +3927,11 @@ ath12k_wifi7_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 		ppdu_info->rssi_region_offset =
 			u32_get_bits(info[1],
 				     HAL_RX_PHYRX_RSSI_LEGACY_INFO_INFO1_REGION_OFFSET);
+
+		HAL_RX_MON_UPDATE_PRI20_RSSI_PER_CHAIN(0, ppdu_info, rssi_info_tlv);
+		HAL_RX_MON_UPDATE_PRI20_RSSI_PER_CHAIN(1, ppdu_info, rssi_info_tlv);
+		HAL_RX_MON_UPDATE_PRI20_RSSI_PER_CHAIN(2, ppdu_info, rssi_info_tlv);
+		HAL_RX_MON_UPDATE_PRI20_RSSI_PER_CHAIN(3, ppdu_info, rssi_info_tlv);
 		break;
 	}
 	case HAL_PHYRX_COMMON_USER_INFO: {
