@@ -3492,6 +3492,7 @@ void ath12k_wifi8_dp_rx_ring_cleanup(struct ath12k_base *ab)
 static void ath12k_configure_wbm_rxdma_watermark(struct ath12k_base *ab)
 {
 	int i;
+	int val;
 	int sfe_watermark[] = HAL_UMAC_WBM_BUFF_DESC_RING_CFG1;
 	int mgmt_watermark[] = HAL_UMAC_WBM_BUFF_DESC_RING_CFG2;
 	int ppe_watermark[] = HAL_UMAC_WBM_BUFF_DESC_RING_CFG3;
@@ -3502,6 +3503,11 @@ static void ath12k_configure_wbm_rxdma_watermark(struct ath12k_base *ab)
 			HAL_UMAC_WBM_LOW_WATERMARK_SHIFT) | DP_WBM_MGMT_HIGH_WATERMARK;
 	u32 ppe_val = ((DP_WBM_PPE_HIGH_WATERMARK - HAL_UMAC_WBM_LOW_WATERMARK_DIFF) <<
 			HAL_UMAC_WBM_LOW_WATERMARK_SHIFT) | DP_WBM_PPE_HIGH_WATERMARK;
+
+	/* Enable watermark configuration by clearing the disable bit */
+	val = ath12k_hif_read32(ab, wbm_base + HAL_UMAC_WBM_MISC_CTRL);
+	val &= ~HAL_UMAC_WBM_WATERMARK_DISABLE;
+	ath12k_hif_write32(ab, wbm_base + HAL_UMAC_WBM_MISC_CTRL, val);
 
 	for (i = 0; i < HAL_UMAC_WBM_MAX_WATERMARK_CFG_REGS; i++) {
 		ath12k_hif_write32(ab, wbm_base + sfe_watermark[i], sfe_val);
