@@ -142,6 +142,10 @@ struct ath12k_vendor_ch_switch_attrs {
  *     The attributes used with this subcommand
  *     are defined in enum qca_wlan_vendor_attr_ctl_table.
  *
+ * @QCA_NL80211_VENDOR_SUBCMD_WLAN_RTT_BLOB: This vendor subcommand is used to
+ *     download the RTT (Round-Trip Time) calibration blob to firmware in
+ *     fragments. Attributes are defined in enum qca_wlan_vendor_attr_rtt_blob.
+ *
  * @QCA_NL80211_VENDOR_SUBCMD_HW_BLOCKED_CHANS: Vendor subcommand/event used
  *     to query hardware blocked channel information from the driver or firmware.
  *     Request attributes are defined in enum
@@ -248,6 +252,7 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_FSE_CCE_STATS_DUMP = 537,
 	QCA_NL80211_VENDOR_SUBCMD_WLAN_STA_MAX_PWR_TABLE = 538,
 	QCA_NL80211_VENDOR_SUBCMD_WLAN_POWER_TABLE = 539,
+	QCA_NL80211_VENDOR_SUBCMD_WLAN_RTT_BLOB = 540,
 };
 
 /**
@@ -5870,6 +5875,31 @@ enum qca_wlan_vendor_attr_ctl_table {
 	QCA_WLAN_VENDOR_ATTR_CTL_TABLE_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_CTL_TABLE_MAX =
 	QCA_WLAN_VENDOR_ATTR_CTL_TABLE_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_wlan_vendor_attr_rtt_blob - Attributes for RTT blob download.
+ * Used with %QCA_NL80211_VENDOR_SUBCMD_WLAN_RTT_BLOB.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_RTT_BLOB_INVALID: Invalid attribute.
+ * @QCA_WLAN_VENDOR_ATTR_RTT_BLOB_BAND: u32. Band of operation
+ *     (0 = 5 GHz, 1 = 2.4 GHz, 2 = 6 GHz).
+ * @QCA_WLAN_VENDOR_ATTR_RTT_BLOB_RADIO_IDX: u32. Radio index.
+ * @QCA_WLAN_VENDOR_ATTR_RTT_BLOB_LENGTH: u32. Total length in bytes of the
+ *     RTT blob fragment (including the 3-word fragment header).
+ * @QCA_WLAN_VENDOR_ATTR_RTT_BLOB_DATA: binary. RTT blob fragment data.
+ */
+enum qca_wlan_vendor_attr_rtt_blob {
+	QCA_WLAN_VENDOR_ATTR_RTT_BLOB_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_RTT_BLOB_BAND = 1,
+	QCA_WLAN_VENDOR_ATTR_RTT_BLOB_RADIO_IDX = 2,
+	QCA_WLAN_VENDOR_ATTR_RTT_BLOB_LENGTH = 3,
+	QCA_WLAN_VENDOR_ATTR_RTT_BLOB_DATA = 4,
+
+	/* keep last */
+	QCA_WLAN_VENDOR_ATTR_RTT_BLOB_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_RTT_BLOB_MAX =
+		QCA_WLAN_VENDOR_ATTR_RTT_BLOB_AFTER_LAST - 1,
 };
 
 /**
