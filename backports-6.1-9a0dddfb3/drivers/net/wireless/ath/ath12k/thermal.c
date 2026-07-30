@@ -556,7 +556,7 @@ static void ath12k_thermal_cleanup_radio(struct ath12k_base *ab, int i)
 	char pdev_name[20];
 
 	ar = ab->pdevs[i].ar;
-	if (!ar || !ar->thermal.hwmon_dev)
+	if (!ar)
 		return;
 
 	hwmon_device_unregister(ar->thermal.hwmon_dev);
