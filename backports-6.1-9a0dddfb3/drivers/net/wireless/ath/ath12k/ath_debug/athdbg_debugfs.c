@@ -315,13 +315,14 @@ const struct file_operations debugfs_snapshot_fops = {
 };
 EXPORT_SYMBOL(debugfs_snapshot_fops);
 
-static ssize_t athdbg_qdss_enable_read(struct file *file,
-				       char __user *user_buf,
-				       size_t count,
-					loff_t *ppos)
+static ssize_t athdbg_qdss_read(struct file *file,
+				char __user *user_buf,
+				size_t count,
+				loff_t *ppos)
 {
 	static const char debugfs_data[] =
-		" 1 - enable debugfs\n";
+		"echo 0 - disable QDSS tracing\n"
+		"echo 1 - enable QDSS tracing\n";
 
 	return simple_read_from_buffer(user_buf, count, ppos,
 					debugfs_data,
@@ -329,15 +330,15 @@ static ssize_t athdbg_qdss_enable_read(struct file *file,
 }
 
 
-static ssize_t athdbg_qdss_enable_write(struct file *file,
-					const char __user *user_buf,
-					size_t count,
-					loff_t *ppos)
+static ssize_t athdbg_qdss_write(struct file *file,
+				 const char __user *user_buf,
+				 size_t count,
+				 loff_t *ppos)
 {
 	struct ath12k_base *ab = file->private_data;
 	struct athdbg_request *dbg_req;
 	char buf[128] = {0};
-	u8 enable_qdss;
+	u8 qdss_req;
 	int ret = 0;
 
 	ret = simple_write_to_buffer(buf, sizeof(buf) - 1, ppos, user_buf, count);
@@ -348,17 +349,24 @@ static ssize_t athdbg_qdss_enable_write(struct file *file,
 
 	buf[ret] = '\0';
 
-	if (kstrtou8(buf, 10, &enable_qdss))
+	if (kstrtou8(buf, 10, &qdss_req))
 		return -EINVAL;
 
-	if (enable_qdss == 1 && ab->is_qdss_tracing)
+	if (qdss_req > 1)
+		return -EINVAL;
+
+	if (qdss_req == 1 && ab->is_qdss_tracing)
+		return count;
+
+	if (qdss_req == 0 && !ab->is_qdss_tracing)
 		return count;
 
 	dbg_req = kzalloc(sizeof(*dbg_req), GFP_ATOMIC);
 	if (!dbg_req)
 		return -ENOMEM;
 
-	dbg_req->req_type = ATH_DBG_REQ_ENABLE_QDSS;
+	dbg_req->req_type = ATH_DBG_REQ_QDSS;
+	dbg_req->data = qdss_req;
 	dbg_req->ab = ab;
 
 	mutex_lock(&athdbg_base->req_lock);
@@ -373,10 +381,9 @@ exit:
 	return ret;
 }
 
-
 const struct file_operations debugfs_qdss_enable_fops = {
-	.read = athdbg_qdss_enable_read,
-	.write = athdbg_qdss_enable_write,
+	.read = athdbg_qdss_read,
+	.write = athdbg_qdss_write,
 	.open = athdbg_debugfs_open,
 	.owner = THIS_MODULE,
 };
