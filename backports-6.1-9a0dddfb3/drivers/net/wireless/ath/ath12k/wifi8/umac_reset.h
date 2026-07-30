@@ -18,6 +18,7 @@ void ath12k_wifi8_umac_reset_handle_init_recovery(struct ath12k_base *ab);
 int ath12k_cumac_hw_pre_reset(struct ath12k_base *ab);
 int ath12k_cumac_hw_post_reset(struct ath12k_base *ab);
 int ath12k_cumac_hw_reset(struct ath12k_base *ab);
+void ath12k_wifi8_update_tqm_status_ring_tp(struct ath12k_base *ab, bool enable);
 int ath12k_wifi8_umcmn_irq_config(struct ath12k_base *ab);
 void ath12k_wifi8_umcmn_irq_free(struct ath12k_base *ab);
 void ath12k_wifi8_umcmn_irq_enable(struct ath12k_base *ab);
@@ -27,6 +28,7 @@ void ath12k_wifi8_umcmn_timer_enable(struct ath12k_base *ab);
 void ath12k_wifi8_umcmn_timer_free(struct ath12k_base *ab);
 
 #define ATH12K_UMCMN_TIMER_INTERVAL_MS 100
+#define ATH12K_TQM_TP_TIMER_INTERVAL_MS 10
 
 #define HAL_UMAC_UMCMN_R0_ISR_P			0xF1E034
 #define HAL_UMAC_UMCMN_R0_ISR_S0		0xF1E038
@@ -59,6 +61,14 @@ void ath12k_wifi8_umcmn_timer_free(struct ath12k_base *ab);
 #define HAL_UMAC_UMCMN_R0_ISR_S28		0xF1E258
 #define HAL_UMAC_UMCMN_R0_ISR_S29		0xF1E25C
 #define HAL_UMAC_UMCMN_R0_ISR_S30		0xF1E260
+
+#define HAL_UMCMN_ISR_S14_INDEX			14
+#define HAL_UMCMN_ISR_S14_TQM_WATCHDOG		BIT(2)
+
+struct ath12k_tqm_sm_state {
+	u32 sm;
+	u32 bank;
+};
 
 /* CUMAC HW Reset Step Enumerations */
 

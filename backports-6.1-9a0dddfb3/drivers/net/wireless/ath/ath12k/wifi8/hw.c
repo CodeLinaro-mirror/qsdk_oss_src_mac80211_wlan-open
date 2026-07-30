@@ -293,6 +293,7 @@ static const struct ath12k_hw_ops qcn9625_ops = {
 	.rx_peer_tid_skip_pn_replay = ath12k_wifi8_rx_peer_tid_skip_pn_replay_qcn9625,
 	.dp_peer_migration = ath12k_dp_peer_migration_qcn9625,
 	.is_mgmt_reoq_tid = ath12k_wifi8_hal_is_reo_nonqos_mgmt_tid,
+	.update_tqm_status_ring_tp = ath12k_wifi8_update_tqm_status_ring_tp,
 };
 
 /* Interrupt Grouping is as follows
@@ -579,6 +580,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.support_fse = true,
 		.cumac_support = true,
 		.cumac_chip_priority = 1,
+		.tqm_status_war = true,
 		.support_umcmn_interrupts = UMCMN_INTERRUPT_POLL,
 #ifdef PLATFORM_SDX
 		.alloc_cacheable_memory = false,
@@ -716,6 +718,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.support_fse = true,
 		.cumac_support = true,
 		.cumac_chip_priority = 2,
+		.tqm_status_war = true,
 		.support_umcmn_interrupts = UMCMN_INTERRUPT_POLL,
 		.alloc_cacheable_memory = true,
 		.spectral = {

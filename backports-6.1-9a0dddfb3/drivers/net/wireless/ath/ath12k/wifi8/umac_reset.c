@@ -1480,25 +1480,38 @@ static int ath12k_ring_idle_check(struct ath12k_base *ab, int i,
 	return 0;
 }
 
-/* TRSLONE-601: WAR
- * Update the TP of the TQM status ring to ring_size + 32 so that TQM would
- * not backpressure due to FW not reaping the TQM status ring. In Trestles V2,
- * the TQM status would be routed only to the chips indicated by status required
- * bits. And hence this WAR is not required for Trestles V2.
- */
-static void ath12k_update_tqm_status_ring_tp(struct ath12k_base *ab)
+static void ath12k_tqm_tp_timer_handler(struct timer_list *t)
 {
+	struct ath12k_base *ab = from_timer(ab, t, tqm_tp_timer);
 	struct ath12k_hal_wifi8 *hal_wifi8 = ath12k_get_hal_wifi8(&ab->hal);
 	const struct ath12k_hal_reset_rings *reset_ring;
-	u32 ring_base_msb;
-	u32 ring_size;
+	u32 hp;
 
 	reset_ring = &hal_wifi8->reset_rings[HAL_TQM_LOWPRI_STATUS_RING];
 
-	ring_base_msb = ath12k_hif_read32(ab, reset_ring->srng_misc_reg - 12);
-	ring_size = u32_get_bits(ring_base_msb, HAL_TCL1_RING_BASE_MSB_RING_SIZE);
+	/* Mirror the ring HP into the TP so the TQM always sees the ring as
+	 * drained while the FW is not reaping it.
+	 */
+	hp = ath12k_hif_read32(ab, reset_ring->hp);
+	ath12k_hif_write32(ab, reset_ring->hp + 4, hp);
 
-	ath12k_hif_write32(ab, reset_ring->hp + 4, ring_size + 32);
+	mod_timer(&ab->tqm_tp_timer,
+		  jiffies + msecs_to_jiffies(ATH12K_TQM_TP_TIMER_INTERVAL_MS));
+}
+
+void ath12k_wifi8_update_tqm_status_ring_tp(struct ath12k_base *ab, bool enable)
+{
+	if (!ab->hw_params->tqm_status_war)
+		return;
+
+	if (!enable) {
+		del_timer_sync(&ab->tqm_tp_timer);
+		return;
+	}
+
+	timer_setup(&ab->tqm_tp_timer, ath12k_tqm_tp_timer_handler, 0);
+	mod_timer(&ab->tqm_tp_timer,
+		  jiffies + msecs_to_jiffies(ATH12K_TQM_TP_TIMER_INTERVAL_MS));
 }
 
 
@@ -1570,6 +1583,23 @@ static const u32 umcmn_isr_s_fatal_mask[] = {
 	[30] = 0x00000AAA,
 };
 
+static const struct ath12k_tqm_sm_state tqm_sm_pairs[] = {
+	{ HAL_TQM_SM_STATES_IX0, HAL_TQM_BANK_SM_STATES_IX0 },
+	{ HAL_TQM_SM_STATES_IX1, HAL_TQM_BANK_SM_STATES_IX1 },
+	{ HAL_TQM_SM_STATES_IX2, HAL_TQM_BANK_SM_STATES_IX2 },
+	{ HAL_TQM_SM_STATES_IX3, HAL_TQM_BANK_SM_STATES_IX3 },
+	{ HAL_TQM_SM_STATES_IX4, HAL_TQM_BANK_SM_STATES_IX4 },
+	{ HAL_TQM_SM_STATES_IX5, HAL_TQM_BANK_SM_STATES_IX5 },
+	{ HAL_TQM_SM_STATES_IX6, HAL_TQM_BANK_SM_STATES_IX6 },
+	{ HAL_TQM_SM_STATES_IX7, HAL_TQM_BANK_SM_STATES_IX7 },
+	{ HAL_TQM_SM_STATES_IX8, HAL_TQM_BANK_SM_STATES_IX8 },
+	{ HAL_TQM_SM_STATES_IX9, HAL_TQM_BANK_SM_STATES_IX9 },
+	{ HAL_TQM_SM_STATES_IX10, HAL_TQM_BANK_SM_STATES_IX10 },
+	{ HAL_TQM_SM_STATES_IX11, HAL_TQM_BANK_SM_STATES_IX11 },
+	{ HAL_TQM_SM_STATES_IX12, HAL_TQM_BANK_SM_STATES_IX12 },
+	{ HAL_TQM_SM_STATES_IX13, HAL_TQM_BANK_SM_STATES_IX13 },
+};
+
 static void ath12k_clear_isr_registers(struct ath12k_base *ab)
 {
 	int i;
@@ -1594,9 +1624,6 @@ static void ath12k_clear_isr_registers(struct ath12k_base *ab)
 
 static int ath12k_clear_pending_interrupts(struct ath12k_base *ab, u32 arg)
 {
-	/* TRSLONE-601: WAR */
-	ath12k_update_tqm_status_ring_tp(ab);
-
 	ath12k_clear_isr_registers(ab);
 
 	ath12k_umcmn_irq_enable(ab);
@@ -2034,11 +2061,31 @@ void ath12k_wifi8_umcmn_irq_enable(struct ath12k_base *ab)
 	ath12k_hif_umcmn_irq_enable(ab);
 }
 
+static bool ath12k_tqm_watchdog_nonfatal(struct ath12k_base *ab)
+{
+	u32 sm_state, bank_state;
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(tqm_sm_pairs); i++) {
+		sm_state = ath12k_hif_read32(ab, HAL_SEQ_WCSS_UMAC_TQM_REG +
+					     tqm_sm_pairs[i].sm);
+		udelay(HAL_MAC_IDLE_CHECK_DELAY_USEC);
+		bank_state = ath12k_hif_read32(ab, HAL_SEQ_WCSS_UMAC_TQM_REG +
+					       tqm_sm_pairs[i].bank);
+
+		/* TQM states are still processing. wdog is non-fatal */
+		if (sm_state != bank_state)
+			return true;
+	}
+
+	return false;
+}
+
 irqreturn_t ath12k_wifi8_umcmn_interrupt_handler(int irq, void *arg)
 {
 	struct ath12k_base *ab = arg;
 	unsigned long isr_p_long;
-	u32 isr_p, isr_s;
+	u32 isr_p, isr_s, fatal;
 	int bit;
 
 	/* Step 1: Read ISR_P to determine which block triggered the interrupt */
@@ -2056,9 +2103,16 @@ irqreturn_t ath12k_wifi8_umcmn_interrupt_handler(int irq, void *arg)
 			continue;
 
 		isr_s = ath12k_hif_read32(ab, umcmn_isr_s_regs[bit]);
+		fatal = isr_s & umcmn_isr_s_fatal_mask[bit];
+
+		if (ab->hw_params->tqm_status_war &&
+		    bit == HAL_UMCMN_ISR_S14_INDEX &&
+		    (fatal & HAL_UMCMN_ISR_S14_TQM_WATCHDOG) &&
+		    ath12k_tqm_watchdog_nonfatal(ab))
+			fatal &= ~HAL_UMCMN_ISR_S14_TQM_WATCHDOG;
 
 		/* Step 3: Check for fatal errors */
-		if (isr_s & umcmn_isr_s_fatal_mask[bit]) {
+		if (fatal) {
 			ath12k_err(ab,
 				   "umcmn fatal error: ISR_P bit %d, ISR_S%d: 0x%08x, fatal_mask: 0x%08x\n",
 				   bit, bit, isr_s, umcmn_isr_s_fatal_mask[bit]);
