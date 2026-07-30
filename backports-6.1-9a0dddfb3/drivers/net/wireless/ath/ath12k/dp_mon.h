@@ -1324,7 +1324,7 @@ int ath12k_dp_mon_pdev_rx_alloc(struct ath12k_pdev_dp *dp_pdev,
 						      mac_id);
 		if (ret) {
 			ath12k_warn(dp, "failed to setup HAL_RXDMA_MONITOR_DST\n");
-			return -ENOMEM;
+			goto srng_cleanup;
 		}
 	}
 
@@ -1333,7 +1333,7 @@ int ath12k_dp_mon_pdev_rx_alloc(struct ath12k_pdev_dp *dp_pdev,
 		if (ret) {
 			ath12k_warn(dp, "failed to setup ppdu desc ret = %d\n",
 				    ret);
-			return ret;
+			goto cleanup;
 		}
 	}
 
@@ -1366,6 +1366,7 @@ cleanup:
 	if (mon_ops && mon_ops->cleanup_ppdu_desc)
 		mon_ops->cleanup_ppdu_desc(dp_pdev);
 
+srng_cleanup:
 	if (mon_ops && mon_ops->mon_pdev_rx_srng_cleanup)
 		mon_ops->mon_pdev_rx_srng_cleanup(dp_pdev);
 
