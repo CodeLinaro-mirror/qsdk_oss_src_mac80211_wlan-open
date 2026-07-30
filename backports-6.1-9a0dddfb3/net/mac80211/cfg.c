@@ -7577,7 +7577,8 @@ void ieee80211_cu_notify(struct ieee80211_hw *hw,
 		return;
 
 	link->conf->cu_info.cu_in_progress =
-		(cu_state != NL80211_CU_STATE_ECU_END);
+		(cu_state != NL80211_CU_STATE_ECU_END &&
+		 cu_state != NL80211_CU_STATE_ABORT);
 	cfg80211_cu_notify(wdev, link_id, cu_state);
 }
 EXPORT_SYMBOL(ieee80211_cu_notify);
