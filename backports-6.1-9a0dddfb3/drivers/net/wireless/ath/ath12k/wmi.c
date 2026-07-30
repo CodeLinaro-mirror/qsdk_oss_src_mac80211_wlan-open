@@ -6432,69 +6432,110 @@ int
 ath12k_wmi_send_thermal_mitigation_cmd(struct ath12k *ar,
 				       struct ath12k_wmi_thermal_mitigation_arg *arg)
 {
-	struct ath12k_wmi_therm_throt_level_config_param *lvl_conf;
-	struct ath12k_wmi_therm_throt_config_request_cmd *cmd;
 	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct wmi_therm_throt_config_request_cmd *cmd;
+	struct wmi_therm_throt_level_config_info *lvl_conf;
 	struct wmi_tlv *tlv;
 	struct sk_buff *skb;
 	int i, ret, len;
 
-	len = sizeof(*cmd) + TLV_HDR_SIZE + (arg->num_levels * sizeof(*lvl_conf));
+	if (test_bit(WMI_SERVICE_THERM_THROT_5_LEVELS, ar->ab->wmi_ab.svc_map))
+		len = sizeof(*cmd) + TLV_HDR_SIZE + (ENHANCED_THERMAL_LEVELS * sizeof(*lvl_conf));
+	else
+		len = sizeof(*cmd) + TLV_HDR_SIZE + (THERMAL_LEVELS * sizeof(*lvl_conf));
 
 	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
 	if (!skb)
 		return -ENOMEM;
 
-	cmd = (struct ath12k_wmi_therm_throt_config_request_cmd *)skb->data;
+	cmd = (struct wmi_therm_throt_config_request_cmd *)skb->data;
+
 	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_THERM_THROT_CONFIG_REQUEST,
 						 sizeof(*cmd));
+
 	cmd->pdev_id = cpu_to_le32(ar->pdev->pdev_id);
-	cmd->enable = cpu_to_le32(1);
-	cmd->dc = cpu_to_le32(100);
-	cmd->dc_per_event = cpu_to_le32(0xffffffff);
-	cmd->therm_throt_levels = cpu_to_le32(arg->num_levels);
+	cmd->enable = cpu_to_le32(arg->enable);
+	cmd->dc = cpu_to_le32(arg->dc);
+	cmd->dc_per_event = cpu_to_le32(arg->dc_per_event);
+	if (test_bit(WMI_SERVICE_THERM_THROT_5_LEVELS, ar->ab->wmi_ab.svc_map))
+		cmd->therm_throt_levels = cpu_to_le32(ENHANCED_THERMAL_LEVELS);
+	else
+		cmd->therm_throt_levels = cpu_to_le32(THERMAL_LEVELS);
 
 	tlv = (struct wmi_tlv *)(skb->data + sizeof(*cmd));
-	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT,
-					 arg->num_levels * sizeof(*lvl_conf));
+	if (test_bit(WMI_SERVICE_THERM_THROT_5_LEVELS, ar->ab->wmi_ab.svc_map))
+		tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT,
+						 ENHANCED_THERMAL_LEVELS * sizeof(*lvl_conf));
+	else
+		tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT,
+						 THERMAL_LEVELS * sizeof(*lvl_conf));
 
-	lvl_conf = (struct ath12k_wmi_therm_throt_level_config_param *)tlv->value;
+	lvl_conf = (struct wmi_therm_throt_level_config_info *)(skb->data +
+								sizeof(*cmd) +
+								TLV_HDR_SIZE);
 
-	for (i = 0; i < arg->num_levels; i++) {
-		lvl_conf->tlv_header =
-			ath12k_wmi_tlv_cmd_hdr(WMI_TAG_THERM_THROT_LEVEL_CONFIG_INFO,
-					       sizeof(*lvl_conf));
+	if (test_bit(WMI_SERVICE_THERM_THROT_5_LEVELS, ar->ab->wmi_ab.svc_map)) {
+		for (i = 0; i < ENHANCED_THERMAL_LEVELS; i++) {
+			lvl_conf->tlv_header =
+				ath12k_wmi_tlv_cmd_hdr(WMI_TAG_THERM_THROT_LEVEL_CONFIG_INFO,
+						       sizeof(*lvl_conf));
 
-		lvl_conf->temp_lwm = a_cpu_to_sle32(arg->levelconf[i].tmplwm);
-		lvl_conf->temp_hwm = a_cpu_to_sle32(arg->levelconf[i].tmphwm);
-		lvl_conf->dc_off_percent = cpu_to_le32(arg->levelconf[i].dcoffpercent);
+			lvl_conf->temp_lwm = arg->levelconf[i].tmplwm;
+			lvl_conf->temp_hwm = arg->levelconf[i].tmphwm;
+			lvl_conf->dc_off_percent = arg->levelconf[i].dcoffpercent;
+			lvl_conf->prio = arg->levelconf[i].priority;
 
-		if (test_bit(WMI_TLV_SERVICE_THERM_THROT_POUT_REDUCTION,
-			     ar->ab->wmi_ab.svc_map))
-			lvl_conf->pout_reduction_25db =
-				cpu_to_le32(arg->levelconf[i].pout_reduction_db);
+			if (test_bit(WMI_TLV_SERVICE_THERM_THROT_POUT_REDUCTION,
+				     ar->ab->wmi_ab.svc_map))
+				lvl_conf->pout_reduction_25db =
+					arg->levelconf[i].pout_reduction_db;
 
-		if (test_bit(WMI_TLV_SERVICE_THERM_THROT_TX_CHAIN_MASK,
-			     ar->ab->wmi_ab.svc_map))
-			lvl_conf->tx_chain_mask = cpu_to_le32(ar->cfg_tx_chainmask);
+			if (test_bit(WMI_SERVICE_THERM_THROT_TX_CHAIN_MASK,
+				     ar->ab->wmi_ab.svc_map))
+				lvl_conf->tx_chain_mask = arg->levelconf[i].tx_chain_mask;
+			lvl_conf->duty_cycle = arg->levelconf[i].duty_cycle;
+			lvl_conf++;
+		}
+	} else {
+		for (i = 0; i < THERMAL_LEVELS; i++) {
+			lvl_conf->tlv_header =
+				ath12k_wmi_tlv_cmd_hdr(WMI_TAG_THERM_THROT_LEVEL_CONFIG_INFO,
+						       sizeof(*lvl_conf));
 
-		lvl_conf->duty_cycle = cpu_to_le32(ATH12K_THERMAL_DEFAULT_DUTY_CYCLE);
-		lvl_conf++;
+			lvl_conf->temp_lwm = arg->levelconf[i].tmplwm;
+			lvl_conf->temp_hwm = arg->levelconf[i].tmphwm;
+			lvl_conf->dc_off_percent = arg->levelconf[i].dcoffpercent;
+			lvl_conf->prio = arg->levelconf[i].priority;
+
+			if (test_bit(WMI_TLV_SERVICE_THERM_THROT_POUT_REDUCTION,
+				     ar->ab->wmi_ab.svc_map))
+				lvl_conf->pout_reduction_25db =
+					arg->levelconf[i].pout_reduction_db;
+
+			if (test_bit(WMI_SERVICE_THERM_THROT_TX_CHAIN_MASK,
+				     ar->ab->wmi_ab.svc_map))
+				lvl_conf->tx_chain_mask = arg->levelconf[i].tx_chain_mask;
+			lvl_conf->duty_cycle = arg->levelconf[i].duty_cycle;
+			lvl_conf++;
+		}
 	}
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
-		   "WMI vdev set thermal throt pdev_id %u enable dc 100 dc_per_event 0xffffffff levels %d\n",
-		   ar->pdev->pdev_id, arg->num_levels);
+		   "WMI vdev set thermal throt pdev_id %d enable %d dc %d dc_per_event %x levels %d\n",
+		   ar->pdev->pdev_id, arg->enable, arg->dc,
+		   arg->dc_per_event,
+		   (test_bit(WMI_TLV_SERVICE_THERM_THROT_POUT_REDUCTION, ar->ab->wmi_ab.svc_map) ?
+		   ENHANCED_THERMAL_LEVELS : THERMAL_LEVELS));
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_THERM_THROT_SET_CONF_CMDID);
 	if (ret) {
-		ath12k_warn(ar->ab,
-			    "failed to send WMI_THERM_THROT_SET_CONF cmd: %d\n", ret);
+		ath12k_warn(ar->ab, "failed to send THERM_THROT_SET_CONF cmd\n");
 		dev_kfree_skb(skb);
 	}
 
 	return ret;
 }
+
 int ath12k_wmi_send_11d_scan_start_cmd(struct ath12k *ar,
 				       struct wmi_11d_scan_start_arg *arg)
 {
@@ -15174,81 +15215,123 @@ ath12k_wmi_pdev_temperature_event(struct ath12k_base *ab,
 	const struct wmi_pdev_temperature_event *ev;
 	struct ath12k *ar;
 	const void **tb;
-	int temp;
-	u32 pdev_id;
+	int ret;
 
 	tb = ath12k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
 	if (IS_ERR(tb)) {
-		ath12k_warn(ab, "failed to parse tlv: %ld\n", PTR_ERR(tb));
-		return;
+	       ret = PTR_ERR(tb);
+	   ath12k_warn(ab, "failed to parse tlv: %d\n", ret);
+	   return;
 	}
 
 	ev = tb[WMI_TAG_PDEV_TEMPERATURE_EVENT];
 	if (!ev) {
-		ath12k_warn(ab, "failed to fetch pdev temp ev\n");
-		kfree(tb);
-		return;
+	    ath12k_warn(ab, "failed to fetch pdev temp ev");
+	    kfree(tb);
+	    return;
 	}
 
-	temp = a_sle32_to_cpu(ev->temp);
-	pdev_id = le32_to_cpu(ev->pdev_id);
-
-	kfree(tb);
-
 	ath12k_dbg(ab, ATH12K_DBG_WMI,
-		   "pdev temperature ev temp %d pdev_id %u\n",
-		   temp, pdev_id);
+			"pdev temperature ev temp %d pdev_id %d\n", ev->temp,
+			ev->pdev_id);
 
 	rcu_read_lock();
 
-	ar = ath12k_mac_get_ar_by_pdev_id(ab, pdev_id);
+	ar = ath12k_mac_get_ar_by_pdev_id(ab, le32_to_cpu(ev->pdev_id));
 	if (!ar) {
-		ath12k_warn(ab, "invalid pdev id %u in pdev temperature ev\n",
-			    pdev_id);
+		ath12k_warn(ab, "invalid pdev id in pdev temperature ev %d", ev->pdev_id);
 		goto exit;
 	}
 
-	ath12k_thermal_event_temperature(ar, temp);
+	ath12k_thermal_event_temperature(ar, ev->temp);
 exit:
+	kfree(tb);
 	rcu_read_unlock();
 }
 
+static int ath12k_wmi_stats_parser(struct ath12k_base *ab,
+				   u16 tag, u16 tag_len,
+				   const void *ptr,
+				   void *data)
+{
+	int ret = 0;
+	u16 tlv_tag, tlv_len, len = 0;
+	const struct wmi_tlv *tlv;
+	struct wmi_therm_throt_level_stats_info *tt_stats = data;
+
+	switch (tag) {
+	case WMI_TAG_THERM_THROT_STATS_EVENT:
+		break;
+	case WMI_TAG_ARRAY_STRUCT:
+		len = tag_len;
+		tlv = (struct wmi_tlv *)ptr;
+		tlv_tag = u32_get_bits(tlv->header, WMI_TLV_TAG);
+
+		while (len > 0) {
+			len -= sizeof(*tlv);
+			tlv_len = le32_get_bits(tlv->header, WMI_TLV_LEN);
+			ptr += sizeof(*tlv);
+			struct wmi_therm_throt_level_stats_info *stats;
+
+			stats = (struct wmi_therm_throt_level_stats_info *)ptr;
+
+			memcpy(tt_stats, stats,
+			       sizeof(struct wmi_therm_throt_level_stats_info));
+			ptr += tlv_len;
+			tt_stats++;
+			len -= tlv_len;
+		}
+		break;
+	default:
+		ath12k_warn(ab, "Invalid tag received tag %d len %d\n",
+			    tag, len);
+		return -EINVAL;
+	}
+	return ret;
+}
 
 static void ath12k_wmi_thermal_throt_stats_event(struct ath12k_base *ab,
 						 struct sk_buff *skb)
 {
-	const struct wmi_therm_throt_stats_event *ev;
 	struct ath12k *ar;
 	const void **tb;
+	int ret;
+	const struct wmi_therm_throt_stats_event *ev;
+	struct wmi_therm_throt_level_stats_info *stats;
 
 	tb = ath12k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
 	if (IS_ERR(tb)) {
-		ath12k_err(ab, "failed to parse thermal throttling stats tlv: %ld\n",
-			   PTR_ERR(tb));
+		ret = PTR_ERR(tb);
+		ath12k_err(ab, "failed to parse tlv: %d\n", ret);
 		return;
 	}
 
 	ev = tb[WMI_TAG_THERM_THROT_STATS_EVENT];
 	if (!ev) {
-		ath12k_err(ab, "failed to fetch thermal throt stats ev\n");
-		goto out;
+		ath12k_err(ab, "failed to fetch thermal throt stats ev");
+		goto err;
 	}
 
-	rcu_read_lock();
-	ar = ath12k_mac_get_ar_by_pdev_id(ab, le32_to_cpu(ev->pdev_id));
-	if (!ar) {
-		ath12k_warn(ab, "received thermal_throt_stats in invalid pdev %u\n",
-			    le32_to_cpu(ev->pdev_id));
-		rcu_read_unlock();
-		goto out;
-	}
-	rcu_read_unlock();
+	/* Print debug only if DUT temperature is not in optimal range as this
+	 * event is received once on every 2 DC
+	 */
+	if (ev->level > 0)
+		ath12k_dbg(ab, ATH12K_DBG_WMI, "thermal stats ev level %d pdev_id %d\n",
+			   ev->level, ev->pdev_id);
 
-	ath12k_dbg(ab, ATH12K_DBG_WMI,
-		   "thermal stats ev level %u pdev_id %u temp %u throt_levels %u\n",
-		   le32_to_cpu(ev->level), le32_to_cpu(ev->pdev_id),
-		   le32_to_cpu(ev->temp), le32_to_cpu(ev->therm_throt_levels));
-out:
+	ar = ath12k_mac_get_ar_by_pdev_id(ab, ev->pdev_id);
+	if (!ar)
+		goto err;
+
+	stats = ar->tt_level_stats;
+	memcpy(&ar->tt_current_state, ev, sizeof(struct wmi_therm_throt_stats_event));
+	ret = ath12k_wmi_tlv_iter(ab, skb->data, skb->len,
+				  ath12k_wmi_stats_parser,
+				  stats);
+
+	ath12k_thermal_event_throt_level(ar, ev->level);
+
+err:
 	kfree(tb);
 }
 

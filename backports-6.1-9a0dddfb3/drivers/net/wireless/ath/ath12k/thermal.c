@@ -243,42 +243,304 @@ void ath12k_ath_update_active_pdev_count(struct ath12k *ar)
 }
 #endif
 
-static ssize_t ath12k_thermal_temp_show(struct device *dev,
+struct tt_level_config tt_level_configs[ATH12K_THERMAL_LEVELS][ENHANCED_THERMAL_LEVELS] = {
+	{
+		{ /* Level 0 */
+			ATH12K_THERMAL_IPA_LVL0_TEMP_LOW_MARK,
+			ATH12K_THERMAL_IPA_LVL0_TEMP_HIGH_MARK,
+			ATH12K_THERMAL_LVL0_DUTY_CYCLE, 0,
+			THERMAL_CONFIG_POUT0
+		},
+		{ /* Level 1 */
+			ATH12K_THERMAL_IPA_LVL1_TEMP_LOW_MARK,
+			ATH12K_THERMAL_IPA_LVL1_TEMP_HIGH_MARK,
+			ATH12K_THERMAL_LVL1_DUTY_CYCLE, 0,
+			THERMAL_CONFIG_POUT1
+		},
+		{ /* Level 2 */
+			ATH12K_THERMAL_IPA_LVL2_TEMP_LOW_MARK,
+			ATH12K_THERMAL_IPA_LVL2_TEMP_HIGH_MARK,
+			ATH12K_THERMAL_LVL2_DUTY_CYCLE, 0,
+			THERMAL_CONFIG_POUT2,
+		},
+		{ /* Level 3 */
+			ATH12K_THERMAL_IPA_LVL3_TEMP_LOW_MARK,
+			ATH12K_THERMAL_IPA_LVL3_TEMP_HIGH_MARK,
+			ATH12K_THERMAL_LVL3_DUTY_CYCLE, 0,
+			THERMAL_CONFIG_POUT3,
+		},
+		{ /* Level 4 */
+			ATH12K_THERMAL_IPA_LVL4_TEMP_LOW_MARK,
+			ATH12K_THERMAL_IPA_LVL4_TEMP_HIGH_MARK,
+			ATH12K_THERMAL_LVL4_DUTY_CYCLE, 0,
+			THERMAL_CONFIG_POUT4
+		}
+	},
+	{
+		{ /* Level 0 */
+			ATH12K_THERMAL_XFRM_LVL0_TEMP_LOW_MARK,
+			ATH12K_THERMAL_XFRM_LVL0_TEMP_HIGH_MARK,
+			ATH12K_THERMAL_LVL0_DUTY_CYCLE, 0,
+			THERMAL_CONFIG_POUT0
+		},
+		{ /* Level 1 */
+			ATH12K_THERMAL_XFRM_LVL1_TEMP_LOW_MARK,
+			ATH12K_THERMAL_XFRM_LVL1_TEMP_HIGH_MARK,
+			ATH12K_THERMAL_LVL1_DUTY_CYCLE, 0,
+			THERMAL_CONFIG_POUT0
+		},
+		{ /* Level 2 */
+			ATH12K_THERMAL_XFRM_LVL2_TEMP_LOW_MARK,
+			ATH12K_THERMAL_XFRM_LVL2_TEMP_HIGH_MARK,
+			ATH12K_THERMAL_LVL2_DUTY_CYCLE, 0,
+			THERMAL_CONFIG_POUT0
+		},
+		{ /* Level 3 */
+			ATH12K_THERMAL_XFRM_LVL3_TEMP_LOW_MARK,
+			ATH12K_THERMAL_XFRM_LVL3_TEMP_HIGH_MARK,
+			ATH12K_THERMAL_LVL3_DUTY_CYCLE, 0,
+			THERMAL_CONFIG_POUT0
+		},
+		{ /* Level 4 */
+			ATH12K_THERMAL_XFRM_LVL4_TEMP_LOW_MARK,
+			ATH12K_THERMAL_XFRM_LVL4_TEMP_HIGH_MARK,
+			ATH12K_THERMAL_LVL4_DUTY_CYCLE, 0,
+			THERMAL_CONFIG_POUT0
+		}
+	},
+	{
+		{ /* Level 0 */
+			ATH12K_THERMAL_XFRM_LVL0_TEMP_LOW_MARK_IPQ5424,
+			ATH12K_THERMAL_XFRM_LVL0_TEMP_HIGH_MARK_IPQ5424,
+			ATH12K_THERMAL_LVL0_DUTY_CYCLE, 0,
+			THERMAL_CONFIG_POUT0
+		},
+		{ /* Level 1 */
+			ATH12K_THERMAL_XFRM_LVL1_TEMP_LOW_MARK_IPQ5424,
+			ATH12K_THERMAL_XFRM_LVL1_TEMP_HIGH_MARK_IPQ5424,
+			ATH12K_THERMAL_LVL1_DUTY_CYCLE, 0,
+			THERMAL_CONFIG_POUT0
+		},
+		{ /* Level 2 */
+			ATH12K_THERMAL_XFRM_LVL2_TEMP_LOW_MARK_IPQ5424,
+			ATH12K_THERMAL_XFRM_LVL2_TEMP_HIGH_MARK_IPQ5424,
+			ATH12K_THERMAL_LVL2_DUTY_CYCLE, 0,
+			THERMAL_CONFIG_POUT0
+		},
+		{ /* Level 3 */
+			ATH12K_THERMAL_XFRM_LVL3_TEMP_LOW_MARK_IPQ5424,
+			ATH12K_THERMAL_XFRM_LVL3_TEMP_HIGH_MARK_IPQ5424,
+			ATH12K_THERMAL_LVL3_DUTY_CYCLE, 0,
+			THERMAL_CONFIG_POUT0
+		},
+		{ /* Level 4 */
+			ATH12K_THERMAL_XFRM_LVL4_TEMP_LOW_MARK_IPQ5424,
+			ATH12K_THERMAL_XFRM_LVL4_TEMP_HIGH_MARK_IPQ5424,
+			ATH12K_THERMAL_LVL4_DUTY_CYCLE, 0,
+			THERMAL_CONFIG_POUT0
+		}
+	},
+	{
+		{ /* Level 0 */
+			ATH12K_THERMAL_IPA_LVL0_TEMP_LOW_MARK_IPQ5424,
+			ATH12K_THERMAL_IPA_LVL0_TEMP_HIGH_MARK_IPQ5424,
+			ATH12K_THERMAL_LVL0_DUTY_CYCLE, 0,
+			THERMAL_CONFIG_POUT0
+		},
+		{ /* Level 1 */
+			ATH12K_THERMAL_IPA_LVL1_TEMP_LOW_MARK_IPQ5424,
+			ATH12K_THERMAL_IPA_LVL1_TEMP_HIGH_MARK_IPQ5424,
+			ATH12K_THERMAL_LVL1_DUTY_CYCLE, 0,
+			THERMAL_CONFIG_POUT0
+		},
+		{ /* Level 2 */
+			ATH12K_THERMAL_IPA_LVL2_TEMP_LOW_MARK_IPQ5424,
+			ATH12K_THERMAL_IPA_LVL2_TEMP_HIGH_MARK_IPQ5424,
+			ATH12K_THERMAL_LVL2_DUTY_CYCLE, 0,
+			THERMAL_CONFIG_POUT0
+		},
+		{ /* Level 3 */
+			ATH12K_THERMAL_IPA_LVL3_TEMP_LOW_MARK_IPQ5424,
+			ATH12K_THERMAL_IPA_LVL3_TEMP_HIGH_MARK_IPQ5424,
+			ATH12K_THERMAL_LVL3_DUTY_CYCLE, 0,
+			THERMAL_CONFIG_POUT0
+		},
+		{ /* Level 4 */
+			ATH12K_THERMAL_IPA_LVL4_TEMP_LOW_MARK_IPQ5424,
+			ATH12K_THERMAL_IPA_LVL4_TEMP_HIGH_MARK_IPQ5424,
+			ATH12K_THERMAL_LVL4_DUTY_CYCLE, 0,
+			THERMAL_CONFIG_POUT0
+		}
+	},
+	{
+		{ /* Level 0 */
+			ATH12K_THERMAL_XFRM_LVL0_TEMP_LOW_MARK_QCN9625,
+			ATH12K_THERMAL_XFRM_LVL0_TEMP_HIGH_MARK_QCN9625,
+			ATH12K_THERMAL_LVL0_DUTY_CYCLE, 0,
+			THERMAL_CONFIG_POUT0
+		},
+		{ /* Level 1 */
+			ATH12K_THERMAL_XFRM_LVL1_TEMP_LOW_MARK_QCN9625,
+			ATH12K_THERMAL_XFRM_LVL1_TEMP_HIGH_MARK_QCN9625,
+			ATH12K_THERMAL_LVL1_DUTY_CYCLE, 0,
+			THERMAL_CONFIG_POUT1
+		},
+		{ /* Level 2 */
+			ATH12K_THERMAL_XFRM_LVL2_TEMP_LOW_MARK_QCN9625,
+			ATH12K_THERMAL_XFRM_LVL2_TEMP_HIGH_MARK_QCN9625,
+			ATH12K_THERMAL_LVL2_DUTY_CYCLE, 0,
+			THERMAL_CONFIG_POUT2
+		},
+		{ /* Level 3 */
+			ATH12K_THERMAL_XFRM_LVL3_TEMP_LOW_MARK_QCN9625,
+			ATH12K_THERMAL_XFRM_LVL3_TEMP_HIGH_MARK_QCN9625,
+			ATH12K_THERMAL_LVL3_DUTY_CYCLE, 0,
+			THERMAL_CONFIG_POUT3
+		},
+		{ /* Level 4 */
+			ATH12K_THERMAL_XFRM_LVL4_TEMP_LOW_MARK_QCN9625,
+			ATH12K_THERMAL_XFRM_LVL4_TEMP_HIGH_MARK_QCN9625,
+			ATH12K_THERMAL_LVL4_DUTY_CYCLE, 0,
+			THERMAL_CONFIG_POUT4
+		}
+	},
+	{
+		{ /* Level 0 */
+			ATH12K_THERMAL_IPA_LVL0_TEMP_LOW_MARK_QCN9625,
+			ATH12K_THERMAL_IPA_LVL0_TEMP_HIGH_MARK_QCN9625,
+			ATH12K_THERMAL_LVL0_DUTY_CYCLE, 0,
+			THERMAL_CONFIG_POUT0
+		},
+		{ /* Level 1 */
+			ATH12K_THERMAL_IPA_LVL1_TEMP_LOW_MARK_QCN9625,
+			ATH12K_THERMAL_IPA_LVL1_TEMP_HIGH_MARK_QCN9625,
+			ATH12K_THERMAL_LVL1_DUTY_CYCLE, 0,
+			THERMAL_CONFIG_POUT1
+		},
+		{ /* Level 2 */
+			ATH12K_THERMAL_IPA_LVL2_TEMP_LOW_MARK_QCN9625,
+			ATH12K_THERMAL_IPA_LVL2_TEMP_HIGH_MARK_QCN9625,
+			ATH12K_THERMAL_LVL2_DUTY_CYCLE, 0,
+			THERMAL_CONFIG_POUT2
+		},
+		{ /* Level 3 */
+			ATH12K_THERMAL_IPA_LVL3_TEMP_LOW_MARK_QCN9625,
+			ATH12K_THERMAL_IPA_LVL3_TEMP_HIGH_MARK_QCN9625,
+			ATH12K_THERMAL_LVL3_DUTY_CYCLE, 0,
+			THERMAL_CONFIG_POUT3
+		},
+		{ /* Level 4 */
+			ATH12K_THERMAL_IPA_LVL4_TEMP_LOW_MARK_QCN9625,
+			ATH12K_THERMAL_IPA_LVL4_TEMP_HIGH_MARK_QCN9625,
+			ATH12K_THERMAL_LVL4_DUTY_CYCLE, 0,
+			THERMAL_CONFIG_POUT4
+		}
+	},
+};
+
+void ath12k_update_tt_configs(struct ath12k *ar, int level, int tmplwm, int tmphwm,
+			      int dcoffpercent, int pout_reduction_db,
+			      int tx_chain_mask, int duty_cycle)
+{
+	ar->tt_level_configs[level].tx_chain_mask = tx_chain_mask;
+	ar->tt_level_configs[level].tmplwm = tmplwm;
+	ar->tt_level_configs[level].tmphwm = tmphwm;
+	ar->tt_level_configs[level].dcoffpercent = dcoffpercent;
+	ar->tt_level_configs[level].pout_reduction_db = pout_reduction_db;
+	ar->tt_level_configs[level].duty_cycle = duty_cycle;
+
+	ath12k_thermal_set_throttling(ar, ATH12K_THERMAL_LVL0_DUTY_CYCLE);
+}
+
+static int
+ath12k_thermal_get_max_throttle_state(struct thermal_cooling_device *cdev,
+				      unsigned long *state)
+{
+	*state = ATH12K_THERMAL_THROTTLE_MAX;
+
+	return 0;
+}
+
+static int
+ath12k_thermal_get_cur_throttle_state(struct thermal_cooling_device *cdev,
+				      unsigned long *state)
+{
+	struct ath12k *ar = cdev->devdata;
+
+	guard(wiphy)(ath12k_ar_to_hw(ar)->wiphy);
+	*state = ar->thermal.throttle_state;
+
+	return 0;
+}
+
+static int
+ath12k_thermal_set_cur_throttle_state(struct thermal_cooling_device *cdev,
+				      unsigned long throttle_state)
+{
+	struct ath12k *ar = cdev->devdata;
+	int ret;
+
+	if (throttle_state > ATH12K_THERMAL_THROTTLE_MAX) {
+		ath12k_warn(ar->ab, "throttle state %ld is exceeding the limit %d\n",
+			    throttle_state, ATH12K_THERMAL_THROTTLE_MAX);
+		return -EINVAL;
+	}
+	guard(wiphy)(ath12k_ar_to_hw(ar)->wiphy);
+	ret = ath12k_thermal_set_throttling(ar, throttle_state);
+	return ret;
+}
+
+static const struct thermal_cooling_device_ops ath12k_thermal_ops = {
+	.get_max_state = ath12k_thermal_get_max_throttle_state,
+	.get_cur_state = ath12k_thermal_get_cur_throttle_state,
+	.set_cur_state = ath12k_thermal_set_cur_throttle_state,
+};
+
+static ssize_t ath12k_thermal_show_temp(struct device *dev,
 					struct device_attribute *attr,
 					char *buf)
 {
 	struct ath12k *ar = dev_get_drvdata(dev);
-	unsigned long time_left;
+	struct ath12k_hw *ah = ath12k_ar_to_ah(ar);
 	int ret, temperature;
+	unsigned long time_left;
 
 	guard(wiphy)(ath12k_ar_to_hw(ar)->wiphy);
 
-	if (ar->ah->state != ATH12K_HW_STATE_ON)
-		return -ENETDOWN;
+	/* Can't get temperature when the card is off */
+	if (ar->ab->fw_mode != ATH12K_FIRMWARE_MODE_FTM && ah->state != ATH12K_HW_STATE_ON) {
+		ret = -ENETDOWN;
+		goto out;
+	}
 
 	reinit_completion(&ar->thermal.wmi_sync);
 	ret = ath12k_wmi_send_pdev_temperature_cmd(ar);
 	if (ret) {
 		ath12k_warn(ar->ab, "failed to read temperature %d\n", ret);
-		return ret;
+		goto out;
 	}
 
-	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags))
-		return -ESHUTDOWN;
+	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)) {
+		ret = -ESHUTDOWN;
+		goto out;
+	}
 
 	time_left = wait_for_completion_timeout(&ar->thermal.wmi_sync,
 						ATH12K_THERMAL_SYNC_TIMEOUT_HZ);
 	if (!time_left) {
 		ath12k_warn(ar->ab, "failed to synchronize thermal read\n");
-		return -ETIMEDOUT;
+		ret = -ETIMEDOUT;
+		goto out;
 	}
 
 	spin_lock_bh(&ar->data_lock);
 	temperature = ar->thermal.temperature;
 	spin_unlock_bh(&ar->data_lock);
 
-	/* display in millidegree celsius */
-	return sysfs_emit(buf, "%d\n", temperature * 1000);
+	/* display in millidegree celcius */
+	ret = snprintf(buf, PAGE_SIZE, "%d\n", temperature * 1000);
+out:
+	return ret;
 }
 
 void ath12k_thermal_event_temperature(struct ath12k *ar, int temperature)
@@ -286,10 +548,40 @@ void ath12k_thermal_event_temperature(struct ath12k *ar, int temperature)
 	spin_lock_bh(&ar->data_lock);
 	ar->thermal.temperature = temperature;
 	spin_unlock_bh(&ar->data_lock);
-	complete_all(&ar->thermal.wmi_sync);
+	complete(&ar->thermal.wmi_sync);
 }
 
-static SENSOR_DEVICE_ATTR_RO(temp1_input, ath12k_thermal_temp, 0);
+void ath12k_thermal_event_throt_level(struct ath12k *ar, int curr_level)
+{
+	const struct tt_level_config *tt_config;
+
+	if (test_bit(WMI_SERVICE_THERM_THROT_5_LEVELS, ar->ab->wmi_ab.svc_map) &&
+	    curr_level >= ENHANCED_THERMAL_LEVELS)
+		return;
+	else if (curr_level >= THERMAL_LEVELS)
+		return;
+
+	spin_lock_bh(&ar->data_lock);
+	if (test_bit(WMI_SERVICE_IS_TARGET_IPA, ar->ab->wmi_ab.svc_map)) {
+		ar->thermal.throttle_state =
+			tt_level_configs[ATH12K_IPA_THERMAL_LEVEL][curr_level].dcoffpercent;
+	} else {
+		if (ar->ab->hw_params->hw_rev == ATH12K_HW_IPQ5424_HW10) {
+			ar->thermal.throttle_state =
+				tt_level_configs[ATH12K_XFRM_IPQ5424_THERMAL_LEVEL][curr_level].dcoffpercent;
+		} else if (ar->ab->hw_params->hw_rev == ATH12K_HW_QCN9625_HW10) {
+			tt_config = tt_level_configs[ATH12K_XFRM_QCN9625_THERMAL_LEVEL];
+			ar->thermal.throttle_state = tt_config[curr_level].dcoffpercent;
+		} else {
+			ar->thermal.throttle_state =
+				tt_level_configs[ATH12K_XFRM_THERMAL_LEVEL][curr_level].dcoffpercent;
+		}
+	}
+	spin_unlock_bh(&ar->data_lock);
+}
+
+static SENSOR_DEVICE_ATTR(temp1_input, 0444, ath12k_thermal_show_temp,
+			  NULL, 0);
 
 static struct attribute *ath12k_hwmon_attrs[] = {
 	&sensor_dev_attr_temp1_input.dev_attr.attr,
@@ -297,62 +589,156 @@ static struct attribute *ath12k_hwmon_attrs[] = {
 };
 ATTRIBUTE_GROUPS(ath12k_hwmon);
 
-int ath12k_thermal_register(struct ath12k_base *ab)
+int ath12k_thermal_set_throttling(struct ath12k *ar, u32 throttle_state)
 {
-	struct ath12k *ar;
-	int i, ret;
+	struct ath12k_base *sc = ar->ab;
+	struct ath12k_hw *ah = ath12k_ar_to_ah(ar);
+	struct ath12k_wmi_thermal_mitigation_arg param;
+	struct tt_level_config *tt_config;
+	int level, ret;
 
-	if (!IS_REACHABLE(CONFIG_HWMON))
+	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	if (ah->state != ATH12K_HW_STATE_ON &&
+	    ah->state != ATH12K_HW_STATE_RESTARTED)
 		return 0;
 
-	for (i = 0; i < ab->num_radios; i++) {
-		ar = ab->pdevs[i].ar;
+	memset(&param, 0, sizeof(param));
+	param.pdev_id = ar->pdev->pdev_id;
+	param.enable = ATH12K_FW_THERMAL_THROTTLING_ENABLE;
+	param.dc = ATH12K_THERMAL_DEFAULT_DUTY_CYCLE;
+	/* After how many duty cycles the FW sends stats to host */
+	param.dc_per_event = 0x2;
+
+	if (test_bit(WMI_SERVICE_IS_TARGET_IPA, ar->ab->wmi_ab.svc_map)) {
+		tt_level_configs[ATH12K_IPA_THERMAL_LEVEL][0].dcoffpercent =
+			throttle_state;
+	} else {
+		if (ar->ab->hw_params->hw_rev == ATH12K_HW_IPQ5424_HW10) {
+			tt_level_configs[ATH12K_XFRM_IPQ5424_THERMAL_LEVEL][0].dcoffpercent =
+				throttle_state;
+		} else if (ar->ab->hw_params->hw_rev == ATH12K_HW_QCN9625_HW10) {
+			tt_config = tt_level_configs[ATH12K_XFRM_QCN9625_THERMAL_LEVEL];
+			tt_config[0].dcoffpercent = throttle_state;
+		} else {
+			tt_level_configs[ATH12K_XFRM_THERMAL_LEVEL][0].dcoffpercent =
+				throttle_state;
+		}
+	}
+
+	for (level = 0; level < ENHANCED_THERMAL_LEVELS; level++) {
+		param.levelconf[level].tmplwm =
+			ar->tt_level_configs[level].tmplwm;
+		param.levelconf[level].tmphwm =
+			ar->tt_level_configs[level].tmphwm;
+		param.levelconf[level].dcoffpercent =
+			ar->tt_level_configs[level].dcoffpercent;
+		/* disable all data tx queues */
+		param.levelconf[level].priority = 0;
+		param.levelconf[level].duty_cycle = ar->tt_level_configs[level].duty_cycle;
+
+		if (test_bit(WMI_TLV_SERVICE_THERM_THROT_POUT_REDUCTION,
+			     ar->ab->wmi_ab.svc_map))
+			param.levelconf[level].pout_reduction_db =
+				ar->tt_level_configs[level].pout_reduction_db;
+
+		if (test_bit(WMI_SERVICE_THERM_THROT_TX_CHAIN_MASK,
+			     ar->ab->wmi_ab.svc_map)) {
+			param.levelconf[level].tx_chain_mask =
+				ar->tt_level_configs[level].tx_chain_mask;
+		}
+	}
+
+	ret = ath12k_wmi_send_thermal_mitigation_cmd(ar, &param);
+	if (ret) {
+		ath12k_warn(sc, "failed to send thermal mitigation duty cycle %u ret %d\n",
+			    throttle_state, ret);
+	}
+	return ret;
+}
+
+int ath12k_thermal_register(struct ath12k_base *sc)
+{
+	struct thermal_cooling_device *cdev;
+	struct ath12k *ar;
+	struct ath12k_pdev *pdev;
+	struct ieee80211_hw *hw;
+	char pdev_name[20];
+	int i, ret;
+
+	for (i = 0; i < sc->num_radios; i++) {
+		pdev = &sc->pdevs[i];
+		ar = pdev->ar;
 		if (!ar)
 			continue;
+		hw = ar->ah->hw;
+		memset(pdev_name, 0, sizeof(pdev_name));
 
-		ar->thermal.hwmon_dev =
-			hwmon_device_register_with_groups(&ar->ah->hw->wiphy->dev,
-							  "ath12k_hwmon", ar,
-							  ath12k_hwmon_groups);
+		cdev = thermal_cooling_device_register("ath12k_thermal", ar,
+						       &ath12k_thermal_ops);
+
+		if (IS_ERR(cdev)) {
+			ath12k_err(sc, "failed to setup thermal device result: %ld\n",
+				   PTR_ERR(cdev));
+			ret = -EINVAL;
+			goto err_thermal_destroy;
+		}
+
+		ar->thermal.cdev = cdev;
+		snprintf(pdev_name, sizeof(pdev_name), "%s%d", "cooling_device",
+			 ar->hw_link_id);
+
+		ret = sysfs_create_link(&hw->wiphy->dev.kobj, &cdev->device.kobj,
+					pdev_name);
+		if (ret) {
+			ath12k_err(sc, "failed to create cooling device symlink\n");
+			goto err_thermal_destroy;
+		}
+
+		if (!IS_REACHABLE(CONFIG_HWMON))
+			return 0;
+
+		ar->thermal.hwmon_dev = hwmon_device_register_with_groups(&hw->wiphy->dev,
+									  "ath12k_hwmon", ar,
+									  ath12k_hwmon_groups);
 		if (IS_ERR(ar->thermal.hwmon_dev)) {
-			ret = PTR_ERR(ar->thermal.hwmon_dev);
+			ath12k_err(ar->ab, "failed to register hwmon device: %ld\n",
+				   PTR_ERR(ar->thermal.hwmon_dev));
 			ar->thermal.hwmon_dev = NULL;
-			ath12k_err(ar->ab, "failed to register hwmon device: %d\n",
-				   ret);
-			goto err_unregister;
+			ret = -EINVAL;
+			goto err_thermal_destroy;
 		}
 	}
 
 	return 0;
 
-err_unregister:
-	for (i--; i >= 0; i--) {
-		ar = ab->pdevs[i].ar;
-		if (!ar)
-			continue;
-		hwmon_device_unregister(ar->thermal.hwmon_dev);
-		ar->thermal.hwmon_dev = NULL;
-	}
+err_thermal_destroy:
+	ath12k_thermal_unregister(sc);
 	return ret;
 }
 
-void ath12k_thermal_unregister(struct ath12k_base *ab)
+void ath12k_thermal_unregister(struct ath12k_base *sc)
 {
 	struct ath12k *ar;
+	struct ath12k_pdev *pdev;
+	struct ieee80211_hw *hw;
+	char pdev_name[20];
 	int i;
 
-	if (!IS_REACHABLE(CONFIG_HWMON))
-		return;
-
-	for (i = 0; i < ab->num_radios; i++) {
-		ar = ab->pdevs[i].ar;
+	for (i = 0; i < sc->num_radios; i++) {
+		pdev = &sc->pdevs[i];
+		ar = pdev->ar;
 		if (!ar)
 			continue;
 
-		if (ar->thermal.hwmon_dev) {
-			hwmon_device_unregister(ar->thermal.hwmon_dev);
+		hw = ar->ah->hw;
+		memset(pdev_name, 0, sizeof(pdev_name));
+
+		snprintf(pdev_name, sizeof(pdev_name), "%s%d", "cooling_device",
+			 ar->hw_link_id);
+		if (ar->thermal.hwmon_dev)
 			ar->thermal.hwmon_dev = NULL;
-		}
+		sysfs_remove_link(&hw->wiphy->dev.kobj, pdev_name);
+		thermal_cooling_device_unregister(ar->thermal.cdev);
 	}
 }
-
