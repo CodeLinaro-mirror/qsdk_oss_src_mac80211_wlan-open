@@ -12764,10 +12764,12 @@ struct debug_htt_stats_req *stats_req)
 	len += scnprintf(buf + len, buf_len - len,
 			"HTT_STATS_LATENCY_PROF_CAL_DATA_TLV:\n");
 
-	for (i = 1; i < ATH12K_HTT_STATS_MAX_PROF_CAL; i++) {
+	for (i = 0; i < ATH12K_HTT_STATS_MAX_PROF_CAL; i++) {
 	/* ensure latency_prof_name is null-terminated */
 		htt_stats_buf->latency_prof_name[i]
 			[ATH12K_HTT_STATS_MAX_PROF_STATS_NAME_LEN - 1] = '\0';
+		len += scnprintf(buf + len, buf_len - len, "%-32s\n",
+				 htt_stats_buf->latency_prof_name[i]);
 		len += scnprintf(buf + len, buf_len - len,
 				"|%-25s|%8s|%8s|%8s|%8s|%8s|%10s|%14s|%8s|%8s|%8s|",
 				"cal_type", "cnt", "min", "max", "last", "tot",
