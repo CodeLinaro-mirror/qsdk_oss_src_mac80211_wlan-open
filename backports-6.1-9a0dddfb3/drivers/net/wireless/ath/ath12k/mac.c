@@ -20007,7 +20007,6 @@ void ath12k_mac_stop(struct ath12k *ar)
 void ath12k_mac_op_stop(struct ieee80211_hw *hw, bool suspend)
 {
 	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
-	struct ath12k_hw_group *ag = ath12k_ah_to_ag(ah);
 	struct ath12k *ar;
 	int i;
 
@@ -20026,9 +20025,6 @@ void ath12k_mac_op_stop(struct ieee80211_hw *hw, bool suspend)
 	}
 
 	mutex_unlock(&ah->hw_mutex);
-
-	if (ath12k_core_complete_teardown_required(ah))
-		ath12k_core_cleanup_power_down_q6(ag, false);
 }
 EXPORT_SYMBOL(ath12k_mac_op_stop);
 
