@@ -812,9 +812,10 @@ ath12k_wifi8_hal_mon_rx_parse_u_sig_eht_tb(const struct hal_mon_usig_tb *usig_tb
 				le32_get_bits(usig_tb->info0,
 					      HAL_RX_USIG_TB_INFO0_PPDU_TYPE_COMP_MODE);
 
-	common |= ATH12K_LE32_DEC_ENC(usig_tb->info0,
-				      HAL_RX_USIG_TB_INFO0_RX_INTEG_CHECK_PASS,
-				      IEEE80211_RADIOTAP_EHT_USIG_COMMON_BAD_USIG_CRC);
+	common |=
+		u32_encode_bits(!le32_get_bits(usig_tb->info0,
+					       HAL_RX_USIG_TB_INFO0_RX_INTEG_CHECK_PASS),
+				IEEE80211_RADIOTAP_EHT_USIG_COMMON_BAD_USIG_CRC);
 
 	value |= IEEE80211_RADIOTAP_EHT_USIG1_TB_B20_B25_DISREGARD |
 		 u32_encode_bits(ppdu_info->u_sig_info.ppdu_type_comp_mode,
@@ -866,9 +867,10 @@ ath12k_wifi8_hal_mon_rx_parse_u_sig_uhr_tb(const struct hal_mon_usig_tb *usig_tb
 				le32_get_bits(usig_tb->info0,
 					      HAL_RX_USIG_TB_INFO0_PPDU_TYPE_COMP_MODE);
 
-	common |= ATH12K_LE32_DEC_ENC(usig_tb->info0,
-				      HAL_RX_USIG_TB_INFO0_RX_INTEG_CHECK_PASS,
-				      IEEE80211_RADIOTAP_UHR_USIG_COMMON_BAD_USIG_CRC);
+	common |=
+		u32_encode_bits(!le32_get_bits(usig_tb->info0,
+					       HAL_RX_USIG_TB_INFO0_RX_INTEG_CHECK_PASS),
+				IEEE80211_RADIOTAP_UHR_USIG_COMMON_BAD_USIG_CRC);
 
 	value |= IEEE80211_RADIOTAP_UHR_USIG1_TB_B20_B25_DISREGARD |
 		 u32_encode_bits(ppdu_info->u_sig_info.ppdu_type_comp_mode,
@@ -940,9 +942,10 @@ ath12k_wifi8_hal_mon_rx_parse_u_sig_uhr_mu(const struct hal_mon_usig_mu *usig_mu
 				le32_get_bits(usig_mu->info0,
 					      HAL_RX_USIG_MU_INFO0_NUM_EHT_SIG_SYM);
 
-	common |= ATH12K_LE32_DEC_ENC(usig_mu->info0,
-				      HAL_RX_USIG_MU_INFO0_RX_INTEG_CHECK_PASS,
-				      IEEE80211_RADIOTAP_UHR_USIG_COMMON_BAD_USIG_CRC);
+	common |=
+		u32_encode_bits(!le32_get_bits(usig_mu->info0,
+					       HAL_RX_USIG_MU_INFO0_RX_INTEG_CHECK_PASS),
+				IEEE80211_RADIOTAP_UHR_USIG_COMMON_BAD_USIG_CRC);
 
 	value |= u32_encode_bits(ppdu_info->u_sig_info.ppdu_type_comp_mode,
 				 IEEE80211_RADIOTAP_UHR_USIG2_MU_B0_B1_PPDU_TYPE) |
@@ -1004,9 +1007,10 @@ ath12k_wifi8_hal_mon_rx_parse_u_sig_mu(const struct hal_mon_usig_mu *usig_mu,
 				le32_get_bits(usig_mu->info0,
 					      HAL_RX_USIG_MU_INFO0_NUM_EHT_SIG_SYM);
 
-	common |= ATH12K_LE32_DEC_ENC(usig_mu->info0,
-				      HAL_RX_USIG_MU_INFO0_RX_INTEG_CHECK_PASS,
-				      IEEE80211_RADIOTAP_EHT_USIG_COMMON_BAD_USIG_CRC);
+	common |=
+		u32_encode_bits(!le32_get_bits(usig_mu->info0,
+					       HAL_RX_USIG_MU_INFO0_RX_INTEG_CHECK_PASS),
+				IEEE80211_RADIOTAP_EHT_USIG_COMMON_BAD_USIG_CRC);
 
 	value |= IEEE80211_RADIOTAP_EHT_USIG1_MU_B20_B24_DISREGARD |
 		 IEEE80211_RADIOTAP_EHT_USIG1_MU_B25_VALIDATE |
