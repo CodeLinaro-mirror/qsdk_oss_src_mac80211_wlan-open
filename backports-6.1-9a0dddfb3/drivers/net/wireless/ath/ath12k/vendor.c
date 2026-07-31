@@ -6701,11 +6701,14 @@ static int ath12k_vendor_fill_rx_mon_stats(struct sk_buff *skb,
 	for (i = 0; i < QCA_WLAN_VENDOR_ATTR_WLAN_TELEMETRY_RX_PPDU_PKT_TYPE_MAX &&
 	     i < ATH12K_RX_PPDU_PROTO_MAX; i++) {
 		pkt_type_mu_stats = nla_nest_start(skb, i + 1);
-		if (!pkt_type_mu_stats)
+		if (!pkt_type_mu_stats) {
+			nla_nest_cancel(skb, mu_stats);
 			return -EMSGSIZE;
+		}
 
 		if (ath12k_put_rx_mu_stats(skb, rx_stats->rx_mu[i])) {
 			nla_nest_cancel(skb, pkt_type_mu_stats);
+			nla_nest_cancel(skb, mu_stats);
 			return -EMSGSIZE;
 		}
 		nla_nest_end(skb, pkt_type_mu_stats);
@@ -6884,6 +6887,7 @@ static int ath12k_fill_peer_rx_stats(struct ath12k *ar,
 			ath12k_err(NULL,
 				   "nla nest failure: Peer per pkt stats Rx ring %d",
 				   ring_num + 1);
+			nla_nest_cancel(vendor_event, attr);
 			return -EINVAL;
 		}
 
@@ -6895,6 +6899,8 @@ static int ath12k_fill_peer_rx_stats(struct ath12k *ar,
 			ath12k_err(NULL,
 				   "nla put failure: Peer rx per_pkt stats for ring %d",
 				   ring_num + 1);
+			nla_nest_cancel(vendor_event, attr1);
+			nla_nest_cancel(vendor_event, attr);
 			return -EINVAL;
 		}
 
@@ -6906,8 +6912,8 @@ static int ath12k_fill_peer_rx_stats(struct ath12k *ar,
 							 mld_stats,
 							 peer_type)) {
 				ath12k_err(NULL, "Error filling peer HW RX stats");
-				nla_nest_end(vendor_event, attr1);
-				nla_nest_end(vendor_event, attr);
+				nla_nest_cancel(vendor_event, attr1);
+				nla_nest_cancel(vendor_event, attr);
 				return -EINVAL;
 			}
 		}
@@ -7872,8 +7878,8 @@ static int ath12k_stats_device_setup(struct ath12k_telemetry_command *cmd)
 	}
 
 	ar = &ah->radio[cmd->link_id];
-	if (!ar) {
-		ath12k_err(NULL, "ar not present\n");
+	if (!ar->ab) {
+		ath12k_err(NULL, "ab not present\n");
 		return -EINVAL;
 	}
 
@@ -8388,6 +8394,7 @@ static int ath12k_fill_tx_ingress_stats_attrs(struct sk_buff *vendor_event,
 			ath12k_err(NULL, "nla put failure: Ingress stats attr %d type %d",
 				   QCA_VENDOR_ATTR_TX_INGRESS_STATS_DROP_TYPE,
 				   attr_index + 1);
+			nla_nest_cancel(vendor_event, attr);
 			return -EINVAL;
 		}
 	}
@@ -8412,6 +8419,7 @@ static int ath12k_fill_tx_ingress_stats_attrs(struct sk_buff *vendor_event,
 			ath12k_err(NULL, "nla put failure: Ingress stats attr %d type %d",
 				   QCA_VENDOR_ATTR_TX_INGRESS_STATS_ENCAP_TYPE,
 				   attr_index + 1);
+			nla_nest_cancel(vendor_event, attr);
 			return -EINVAL;
 		}
 	}
@@ -8432,6 +8440,7 @@ static int ath12k_fill_tx_ingress_stats_attrs(struct sk_buff *vendor_event,
 			ath12k_err(NULL, "nla put failure: Ingress stats attr %d type %d",
 				   QCA_VENDOR_ATTR_TX_INGRESS_STATS_ENCRYPT_TYPE,
 				   attr_index + 1);
+			nla_nest_cancel(vendor_event, attr);
 			return -EINVAL;
 		}
 	}
@@ -8452,6 +8461,7 @@ static int ath12k_fill_tx_ingress_stats_attrs(struct sk_buff *vendor_event,
 			ath12k_err(NULL, "nla put failure: Ingress stats attr %d type %d",
 				   QCA_VENDOR_ATTR_TX_INGRESS_STATS_DESC_TYPE,
 				   attr_index + 1);
+			nla_nest_cancel(vendor_event, attr);
 			return -EINVAL;
 		}
 	}
@@ -8508,6 +8518,7 @@ static int ath12k_fill_tx_ingress_stats(struct sk_buff *vendor_event,
 			ath12k_err(NULL,
 				   "nla nest failure: vif ingress stats - ring %d",
 				   ring_num + 1);
+			nla_nest_cancel(vendor_event, attr);
 			return -EINVAL;
 		}
 
@@ -8517,6 +8528,9 @@ static int ath12k_fill_tx_ingress_stats(struct sk_buff *vendor_event,
 			ath12k_err(NULL,
 				   "Error filling peer tx ingress stats for ring %d",
 				   ring_num + 1);
+			nla_nest_cancel(vendor_event, attr1);
+			nla_nest_cancel(vendor_event, attr);
+			return -EINVAL;
 		}
 		nla_nest_end(vendor_event, attr1);
 	}
@@ -9684,6 +9698,7 @@ static int ath12k_prepare_radio_vendor_event(struct sk_buff *vendor_event,
 
 	rx_mon_stats = vzalloc(sizeof(*rx_mon_stats));
 	if (!rx_mon_stats) {
+		vfree(tx_ppdu_stats);
 		vfree(telemetry_radio);
 		return -ENOMEM;
 	}
