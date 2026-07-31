@@ -2965,6 +2965,9 @@ static int ieee80211_add_station(struct wiphy *wiphy, struct net_device *dev,
 	if (params->sta_flags_set & BIT(NL80211_STA_FLAG_TDLS_PEER))
 		sta->sta.tdls = true;
 
+	if (params->sta_flags_set & BIT(NL80211_STA_FLAG_MAPC_PEER))
+		sta->sta.mapc = true;
+
 	/* Though the mutex is not needed here (since the station is not
 	 * visible yet), sta_apply_parameters (and inner functions) require
 	 * the mutex due to other paths.
@@ -3129,6 +3132,13 @@ static int ieee80211_change_station(struct wiphy *wiphy,
 	err = sta_apply_parameters(local, sta, params);
 	if (err)
 		return err;
+
+	if (params->mapc_params_present && sta->sta.mapc) {
+		err = drv_sta_set_mapc_params(local, sdata, &sta->sta,
+					      &params->mapc_params);
+		if (err)
+			return err;
+	}
 
 	if (sdata->vif.type == NL80211_IFTYPE_STATION &&
 	    params->sta_flags_mask & BIT(NL80211_STA_FLAG_AUTHORIZED)) {
