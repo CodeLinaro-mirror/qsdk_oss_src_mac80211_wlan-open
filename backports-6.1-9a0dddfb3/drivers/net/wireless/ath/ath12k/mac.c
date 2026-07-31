@@ -16926,6 +16926,17 @@ skip_pri_link_selection:
 		    hweight32(ahsta->links_map) >= 1) {
 			tmp_link_id = ffs(ahsta->links_map) - 1;
 
+			/*
+			 * In CUMAC mode, the replacement link chosen after assoc link
+			 * removal must be the primary/master link.
+			 */
+			if (ah->ag->cumac_enabled) {
+				tmp_link_id = ahsta->primary_link_id;
+				ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
+						"New assoc link:%d for %pM\n",
+						tmp_link_id, ahsta->addr);
+			}
+
 			tmp_arsta = wiphy_dereference(ah->hw->wiphy,
 						      ahsta->link[tmp_link_id]);
 			tmp_arvif = wiphy_dereference(hw->wiphy,
@@ -17131,6 +17142,13 @@ static u8 ath12k_mac_ahsta_get_pri_link_id(struct ath12k_vif *ahvif,
 	if (WARN_ON(!valid_links))
 		return IEEE80211_MLD_MAX_NUM_LINKS;
 
+	/*
+	 * CUMAC devices treat the association link as the primary link.
+	 * Skip primary-link selection and return assoc_link_id directly.
+	 */
+	if (ah->ag->cumac_enabled)
+		return ahsta->assoc_link_id;
+
 	sta = container_of((void *)ahsta, struct ieee80211_sta, drv_priv);
 
 	if (!ahvif->overide_primary_umac)
@@ -17297,7 +17315,10 @@ static int ath12k_mac_get_next_pri_link(struct ath12k_sta *ahsta, u8 *pri_link_i
 	if (!links_map)
 		return -EINVAL;
 
-	*pri_link_id = ath12k_mac_ahsta_get_pri_link_id(ahvif, ahsta, links_map);
+	if (ah->ag->cumac_enabled)
+		*pri_link_id = ffs(links_map) - 1;
+	else
+		*pri_link_id = ath12k_mac_ahsta_get_pri_link_id(ahvif, ahsta, links_map);
 	if (*pri_link_id == IEEE80211_MLD_MAX_NUM_LINKS)
 		return -EINVAL;
 
