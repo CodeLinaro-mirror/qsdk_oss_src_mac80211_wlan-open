@@ -656,10 +656,10 @@ ath12k_wifi8_hal_rx_msdu_link_desc_set(struct ath12k_base *ab,
 				       enum hal_wbm_rel_bm_act action)
 {
 	desc->buf_addr_info = *buf_addr_info;
-	desc->info0 |= le32_encode_bits(HAL_WBM_REL_SRC_MODULE_SW,
+	desc->info0 |= le16_encode_bits(HAL_WBM_REL_SRC_MODULE_SW,
 					HAL_WBM_RELEASE_INFO0_REL_SRC_MODULE) |
-		    //le32_encode_bits(action, HAL_WBM_RELEASE_INFO0_BM_ACTION) |
-		    le32_encode_bits(HAL_WBM_REL_DESC_TYPE_MSDU_LINK,
+		    //le16_encode_bits(action, HAL_WBM_RELEASE_INFO0_BM_ACTION) |
+		    le16_encode_bits(HAL_WBM_REL_DESC_TYPE_MSDU_LINK,
 				     HAL_WBM_RELEASE_INFO0_DESC_TYPE);
 }
 
@@ -2217,27 +2217,27 @@ ath12k_wifi8_hal_invalidate_rx_cache_cmd_send(struct ath12k_base *ab,
 	}
 	memset(ase_cmd, 0x0, sizeof(*ase_cmd));
 
-	ase_cmd->info0 = le32_encode_bits(param->hw_link_bitmap,
+	ase_cmd->info0 = le16_encode_bits(param->hw_link_bitmap,
 					  HAL_ASE_CMD_RING_INFO0_CMD_TO_CHIP_0) |
-			 le32_encode_bits(param->hw_link_bitmap,
+			 le16_encode_bits(param->hw_link_bitmap,
 					  HAL_ASE_CMD_RING_INFO0_CMD_TO_CHIP_1) |
-			 le32_encode_bits(param->hw_link_bitmap,
+			 le16_encode_bits(param->hw_link_bitmap,
 					  HAL_ASE_CMD_RING_INFO0_CMD_TO_CHIP_2) |
-			 le32_encode_bits(param->hw_link_bitmap,
+			 le16_encode_bits(param->hw_link_bitmap,
 					  HAL_ASE_CMD_RING_INFO0_CMD_TO_CHIP_3) |
-			 le32_encode_bits(param->hw_link_bitmap,
+			 le16_encode_bits(param->hw_link_bitmap,
 					  HAL_ASE_CMD_RING_INFO0_CMD_TO_CHIP_4);
 	ase_cmd->mac_addr_31_0 = cpu_to_le32(param->mac_addr_31_0);
 	ase_cmd->mac_addr_47_32 = cpu_to_le16(param->mac_addr_47_32);
-	ase_cmd->info1 = le32_encode_bits(param->is_mcast,
+	ase_cmd->info1 = le16_encode_bits(param->is_mcast,
 					  HAL_ASE_CMD_RING_INFO1_IS_MCAST) |
-			 le32_encode_bits(param->is_mec,
+			 le16_encode_bits(param->is_mec,
 					  HAL_ASE_CMD_RING_INFO1_IS_MEC) |
-			 le32_encode_bits(param->ad1_match,
+			 le16_encode_bits(param->ad1_match,
 					  HAL_ASE_CMD_RING_INFO1_AD1_MATCH) |
-			 le32_encode_bits(param->link_id,
+			 le16_encode_bits(param->link_id,
 					  HAL_ASE_CMD_RING_INFO1_LINK_ID) |
-			 le32_encode_bits(param->cmd_num,
+			 le16_encode_bits(param->cmd_num,
 					  HAL_ASE_CMD_RING_INFO1_GSE_CTRL);
 	ase_cmd->cmd_meta_data_31_0 = cpu_to_le32(param->meta_data_0);
 out:
