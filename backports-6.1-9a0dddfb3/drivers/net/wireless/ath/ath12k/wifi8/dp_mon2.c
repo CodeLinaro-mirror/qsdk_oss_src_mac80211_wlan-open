@@ -1494,6 +1494,7 @@ static int ath12k_wifi8_dp_mon_rx_add_ppdu_desc(struct list_head *mon_desc_used_
 }
 
 static void ath12k_dp_rx_mon_ppdu_notify(struct ath12k_dp *dp,
+					 struct ath12k_pdev_dp *pdev_dp,
 					 struct hal_rx_mon_ppdu_info *ppdu_info)
 {
 	struct ath12k_ppdu_event event;
@@ -1505,8 +1506,10 @@ static void ath12k_dp_rx_mon_ppdu_notify(struct ath12k_dp *dp,
 	if (!ath12k_ppdu_notifier_has_listeners(ATH12K_EVENT_PPDU_RX_COMPLETE))
 		return;
 
-	if (ppdu_info->peer_id == HAL_INVALID_PEERID)
-		return;
+	if (ppdu_info->peer_id == HAL_INVALID_PEERID) {
+		if (unlikely(!ath12k_dp_mon_get_rx_cfr_rcc_filter_valid(pdev_dp)))
+			return;
+	}
 
 	/* Send PPDU notification to registered listeners */
 	ppdu_info->device_id = ath12k_get_ab_device_id(dp->ab);
@@ -1757,7 +1760,7 @@ ath12k_wifi8_dp_mon_rx_process_ppdu(struct work_struct *work)
 unlock:
 			spin_unlock_bh(&dp->dp_lock);
 			rcu_read_unlock_bh();
-			ath12k_dp_rx_mon_ppdu_notify(dp, ppdu_info);
+			ath12k_dp_rx_mon_ppdu_notify(dp, pdev_dp, ppdu_info);
 free_buf:
 			page_frag_free(status_desc->mon_buf);
 			mon_stats->status_buf_free++;
