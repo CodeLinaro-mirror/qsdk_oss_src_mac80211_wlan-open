@@ -8416,6 +8416,9 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 		wdev->links[link_id].ap.chandef = params->chandef;
 		wdev->links[link_id].reg_6g_power_mode =
 		    params->he_6ghz_power_type;
+#ifdef CPTCFG_QCN_EXTN
+		rdev_bootup_cac_handle_ap(rdev, dev, params);
+#endif /* CPTCFG_QCN_EXTN */
 		/* Update ML SSID in wdev when non-repurposed link is started */
 		if (!(wdev->repurposed_links & BIT(link_id))) {
 			wdev->u.ap.ssid_len = params->ssid_len;
