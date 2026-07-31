@@ -2205,6 +2205,9 @@ struct ath12k {
 	u32 mvr_ch_switch_notify_vdev_bm;
 	struct ath12k_peer_map_pending_event peer_map_event;
 	struct ath12k_rf_path_ctx rf_path_ctx;
+
+	/* Cached IGMP/MLD TID override value (0=disabled, 1-7=TID) */
+	u32 igmp_tid_override;
 };
 
 static inline bool ath12k_is_rf_path_switch_supported(struct ath12k *ar)
