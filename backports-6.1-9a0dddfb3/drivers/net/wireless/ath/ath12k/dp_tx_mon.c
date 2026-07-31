@@ -4023,6 +4023,17 @@ int ath12k_dp_ext_mon_tx_alloc(struct ath12k_pdev_dp *dp_pdev)
 }
 EXPORT_SYMBOL(ath12k_dp_ext_mon_tx_alloc);
 
+static void
+ath12k_dp_ext_mon_delete_tx_peer_list(struct list_head *peer_list)
+{
+	struct ath12k_dp_ext_mon_peer *peer, *tmp;
+
+	list_for_each_entry_safe(peer, tmp, peer_list, list) {
+		list_del(&peer->list);
+		kfree(peer);
+	}
+}
+
 void ath12k_dp_ext_mon_tx_free(struct ath12k_pdev_dp *dp_pdev)
 {
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
@@ -5350,6 +5361,223 @@ void ath12k_dp_mon_tx_process_low_thres(struct ath12k_dp *dp)
 		ath12k_dp_mon_tx_buf_replenish(dp, tx_buff_ring, &list, free_list_count);
 }
 EXPORT_SYMBOL(ath12k_dp_mon_tx_process_low_thres);
+
+static int
+ath12k_dp_ext_mon_tx_prepare_add_peers(struct ath12k_pdev_dp *dp_pdev,
+				       struct ath12k_dp_ext_mon_tx_peer_params
+					 *ext_mon_peer_params)
+{
+	struct ath12k_link_vif *arvif;
+	const struct ath12k_ext_mon_peer_info *peer_info;
+	struct ath12k_dp_ext_mon_peer *peer;
+	bool found;
+	int i;
+	const struct ath12k_ext_mon_peer_config *peer_config =
+		ext_mon_peer_params->peer_config;
+	u8 peers_to_add_cnt = peer_config->count;
+
+	for (i = 0; i < peer_config->count; i++) {
+		if (!peer_config->peer_info[i].ra_addr) {
+			ath12k_warn(dp_pdev->dp,
+				    "skipping peer %pM: TA not allowed in TX direction\n",
+				    peer_config->peer_info[i].mac_addr);
+			peers_to_add_cnt--;
+		}
+	}
+
+	if (peers_to_add_cnt == 0)
+		return -EINVAL;
+
+	if ((*ext_mon_peer_params->ext_mon_peer_count) + peers_to_add_cnt >
+		ATH12K_EXT_MON_MAX_PEERS) {
+		ath12k_warn(dp_pdev->dp,
+			    "adding %u peers would exceed max %d (current: %u)\n",
+			    peers_to_add_cnt, ATH12K_EXT_MON_MAX_PEERS,
+			    (*ext_mon_peer_params->ext_mon_peer_count));
+		return -EINVAL;
+	}
+
+	for (i = 0; i < peer_config->count; i++) {
+		peer_info = &peer_config->peer_info[i];
+		found = false;
+
+		if (!peer_info->ra_addr)
+			continue;
+
+		list_for_each_entry(arvif, &dp_pdev->ar->arvifs, list) {
+			if (ether_addr_equal(arvif->bssid, peer_info->mac_addr)) {
+				found = true;
+				ath12k_warn(dp_pdev->dp,
+					    "skipped adding bssid %pM as peer\n",
+					    peer_info->mac_addr);
+				break;
+			}
+		}
+		if (found)
+			continue;
+
+		/* TODO: Optimize with the help of hash table */
+		list_for_each_entry(peer, ext_mon_peer_params->peer_list, list) {
+			if (ether_addr_equal(peer->peer_info.mac_addr,
+					     peer_info->mac_addr)) {
+				found = true;
+				ath12k_warn(dp_pdev->dp, "peer %pM already added\n",
+					    peer_info->mac_addr);
+				break;
+			}
+		}
+		if (found)
+			continue;
+
+		list_for_each_entry(peer, ext_mon_peer_params->peers_to_wmi, list) {
+			if (ether_addr_equal(peer->peer_info.mac_addr,
+					     peer_info->mac_addr)) {
+				found = true;
+				ath12k_warn(dp_pdev->dp,
+					    "peer %pM duplicate in request\n",
+					    peer_info->mac_addr);
+				break;
+			}
+		}
+		if (found)
+			continue;
+
+		peer = kzalloc(sizeof(*peer), GFP_ATOMIC);
+		if (!peer)
+			continue;
+
+		memcpy(&peer->peer_info, peer_info, sizeof(*peer_info));
+		list_add_tail(&peer->list, ext_mon_peer_params->peers_to_wmi);
+		ext_mon_peer_params->staged_count++;
+	}
+
+	if (ext_mon_peer_params->staged_count == 0)
+		return -EINVAL;
+	return 0;
+}
+
+static int
+ath12k_dp_ext_mon_add_tx_peers(struct ath12k_pdev_dp *dp_pdev,
+				const struct ath12k_ext_mon_peer_config *peer_config)
+{
+	struct ath12k_pdev_tx_mon *tx_mon;
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	struct ath12k_dp_tx_ext_mon_config *tx_ext_mon;
+	LIST_HEAD(peers_to_wmi);
+	int ret = 0, vdev_id;
+	struct ath12k_dp_ext_mon_tx_peer_params tx_mon_peer_params = {
+		.peers_to_wmi = &peers_to_wmi,
+		.staged_count = 0,
+		.peer_config = peer_config,
+		.toggle_hw_state = false,
+	};
+
+	vdev_id = ath12k_dp_ext_mon_find_mon_vdev_id(dp_pdev);
+	if (vdev_id == -1) {
+		ath12k_warn(dp_pdev->dp, "no active monitor vdev found\n");
+		return -ENODEV;
+	}
+
+	tx_mon_peer_params.vdev_id = vdev_id;
+	mon_ops = ath12k_dp_mon_ops_get(dp_pdev->dp);
+	if (!mon_ops) {
+		ath12k_warn(dp_pdev->dp,
+			   "peer configuration via ext_mon not supported\n");
+		return -EOPNOTSUPP;
+	}
+
+	tx_mon = dp_pdev->dp_mon_pdev->dp_pdev_tx_mon;
+
+	spin_lock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+	tx_ext_mon = tx_mon->tx_ext_mon.tx_ext_mon_config;
+	if (unlikely(!tx_ext_mon)) {
+		ath12k_warn(dp_pdev->dp, "ext_mon in tx direction is null\n");
+		ret = -EINVAL;
+		goto unlock;
+	}
+
+	tx_mon_peer_params.peer_list = &tx_ext_mon->peer_list;
+	tx_mon_peer_params.ext_mon_peer_count = &tx_ext_mon->peer_count;
+
+	ret = ath12k_dp_ext_mon_tx_prepare_add_peers(dp_pdev, &tx_mon_peer_params);
+	if (ret)
+		goto unlock;
+
+	if (tx_ext_mon->peer_count == 0)
+		tx_mon_peer_params.toggle_hw_state = true;
+	spin_unlock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+
+	/**
+	 * ath12k_dp_ext_mon_add_wmi_tx_peers sends a WMI command and
+	 * waits on the firmware round-trip, which can sleep, that is
+	 * unsafe under a spinlock. tx_ext_mon_config is re-checked,
+	 * re-locked below before peers_to_wmi is spliced back into
+	 * tx_ext_mon->peer_list.
+	 */
+	if (mon_ops->ext_mon_add_wmi_tx_peers)
+		ret = mon_ops->ext_mon_add_wmi_tx_peers(dp_pdev,
+							&tx_mon_peer_params);
+
+	spin_lock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+	tx_ext_mon = tx_mon->tx_ext_mon.tx_ext_mon_config;
+	if (unlikely(!tx_ext_mon)) {
+		spin_unlock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+		/** tx_ext_mon_config was torn down while the WMI add above was
+		 * in flight, so these peers were never committed to
+		 * tx_ext_mon->peer_list. If hw peer filtering was active, FW
+		 * still has them staged from the add call; remove them so FW
+		 * doesn't retain filter entries the host no longer tracks.
+		 */
+		tx_mon_peer_params.toggle_hw_state = true;
+		if (mon_ops->ext_mon_remove_wmi_tx_peers)
+			ret = mon_ops->ext_mon_remove_wmi_tx_peers(dp_pdev,
+								   &tx_mon_peer_params);
+		ath12k_dp_ext_mon_delete_tx_peer_list(&peers_to_wmi);
+		return -EINVAL;
+	}
+
+	tx_ext_mon->peer_count += tx_mon_peer_params.staged_count;
+	list_splice_tail(&peers_to_wmi, &tx_ext_mon->peer_list);
+	/** Peers can be skipped from legitimate reasons,
+	 * the successfully staged subset above is still committed.
+	 * Report -EINVAL anyway so the caller knows the request
+	 * wasn't fully honored, even though it's not a hard failure.
+	 */
+	if  (tx_mon_peer_params.staged_count != peer_config->count)
+		ret = -EINVAL;
+
+unlock:
+	spin_unlock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+	return ret;
+}
+
+int
+ath12k_dp_ext_mon_handle_tx_peer(struct ath12k_pdev_dp *dp_pdev,
+				 const struct ath12k_ext_mon_peer_config *peer_config)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+
+	if (unlikely(!dp_mon_pdev)) {
+		ath12k_warn(dp_pdev->dp, "monitor pdev is null\n");
+		return -EINVAL;
+	}
+
+	if (!dp_mon_pdev->dp_pdev_tx_mon ||
+	    !dp_mon_pdev->dp_pdev_tx_mon->tx_monitor_started) {
+		ath12k_warn(dp_pdev->dp, "Tx monitor not enabled\n");
+		return -EINVAL;
+	}
+
+	switch (peer_config->action) {
+	case QCA_VENDOR_EXT_MON_PEER_ACTION_ADD:
+		return ath12k_dp_ext_mon_add_tx_peers(dp_pdev, peer_config);
+	default:
+		ath12k_warn(dp_pdev->dp, "invalid peer action %u\n",
+				peer_config->action);
+	}
+
+	return -EINVAL;
+}
 
 int
 ath12k_dp_ext_mon_get_tx_filter(struct ath12k_pdev_dp *dp_pdev,

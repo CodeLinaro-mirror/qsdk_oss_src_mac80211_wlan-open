@@ -16,6 +16,7 @@
 #include "../dp_mon_filter.h"
 #include "dp_mon2.h"
 #include "../trace.h"
+#include "../wmi.h"
 #include "../ath12k_notif.h"
 #include "../../net/mac80211/qcn_extns/cmn_extn.h"
 #include "qcn_extns/dp_mon_extn.h"
@@ -78,9 +79,12 @@ const struct ath12k_dp_arch_mon_ops ath12k_wifi7_dp_arch_mon_dual_ring_ops = {
 	/* At Pdev Init/Exit */
 	.mon_tx_dst_ring_alloc_setup = ath12k_dp_mon_tx_dst_ring_alloc_setup,
 	.mon_tx_dst_ring_cleanup = ath12k_dp_mon_tx_dst_ring_cleanup,
+	/* TX ext_mon*/
 	.ext_mon_tx_alloc = ath12k_dp_ext_mon_tx_alloc,
 	.ext_mon_tx_free = ath12k_dp_ext_mon_tx_free,
 	.ext_mon_filter = ath12k_wifi7_dp_ext_mon_filter,
+	.ext_mon_add_wmi_tx_peers = ath12k_wifi7_dp_ext_mon_add_wmi_tx_peers,
+	.ext_mon_remove_wmi_tx_peers = ath12k_wifi7_dp_ext_mon_remove_wmi_tx_peers,
 };
 
 static inline void
@@ -2666,3 +2670,133 @@ int ath12k_wifi7_dp_mon_tx_config_filter(struct ath12k_pdev_dp *dp_pdev,
 }
 EXPORT_SYMBOL(ath12k_wifi7_dp_mon_tx_config_filter);
 
+/**
+ * ath12k_wifi7_dp_ext_mon_tx_hw_peer_filter_enabled() - decide whether the
+ * staged TX ext-mon peer list should be programmed into the HW/FW peer
+ * filter table
+ * @ext_mon_config: active TX extended-monitor filter configuration
+ *
+ * Hardware can only apply peer-scoped TX filtering when @fpmo_enabled
+ * ("target_peer" mode) is the sole active mode. It has no mechanism to
+ * combine a blanket "pass everything" capture (@fp_enabled) with a
+ * peer-scoped filter at the same time - the two modes are mutually
+ * exclusive in HW.
+ *
+ * When @fp_enabled is also set (either alone, or together with
+ * @fpmo_enabled), HW is configured to pass all TX frames, and any
+ * peer-level scoping is done entirely in software by walking the staged
+ * peer list per frame. In that case the peer list must stay host-side
+ * only; pushing it into the HW/FW filter table would be a no-op HW
+ * cannot honor and would leave FW peer-filter state inconsistent with
+ * what software is actually enforcing.
+ *
+ * Return: true only when @fpmo_enabled is set and @fp_enabled is clear -
+ *    the one configuration where the HW/FW peer filter table applies.
+ */
+static int
+ath12k_wifi7_dp_ext_mon_tx_hw_peer_filter_enabled(
+	struct ath12k_dp_tx_ext_mon_config *ext_mon_config)
+{
+	return !(ext_mon_config->fp_enabled) && ext_mon_config->fpmo_enabled;
+}
+
+int
+ath12k_wifi7_dp_ext_mon_add_wmi_tx_peers(struct ath12k_pdev_dp *dp_pdev,
+					 struct ath12k_dp_ext_mon_tx_peer_params
+					 *peer_param)
+{
+	bool enable_filter_action = false;
+	struct ath12k_pdev_tx_mon *tx_mon;
+	struct ath12k_dp_tx_ext_mon_config *tx_ext_mon;
+	struct ath12k_set_tx_peer_filter_params wmi_param = {0};
+	struct ath12k_dp_ext_mon_peer *peer, *tmp;
+	int hw_peer_filter_enabled = 0, ret = 0;
+	struct list_head *peer_list;
+
+	tx_mon = dp_pdev->dp_mon_pdev->dp_pdev_tx_mon;
+
+	spin_lock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+	tx_ext_mon = tx_mon->tx_ext_mon.tx_ext_mon_config;
+	if (unlikely(!tx_ext_mon)) {
+		ath12k_warn(dp_pdev->dp, "ext_mon in tx direction is null\n");
+		spin_unlock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+		return -EINVAL;
+	}
+	hw_peer_filter_enabled =
+		ath12k_wifi7_dp_ext_mon_tx_hw_peer_filter_enabled(tx_ext_mon);
+	spin_unlock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+
+	if (!hw_peer_filter_enabled)
+		return ret;
+
+	peer_list = peer_param->peers_to_wmi;
+
+	wmi_param.vdev_id = (u32)peer_param->vdev_id;
+	list_for_each_entry_safe(peer, tmp, peer_list, list) {
+		if (!enable_filter_action && peer_param->toggle_hw_state) {
+			enable_filter_action = true;
+			wmi_param.action =
+				WMI_PEER_TX_FILTER_ACTION_ADD_AND_ENABLE_FILTERING;
+		} else
+			wmi_param.action = WMI_PEER_TX_FILTER_ACTION_ADD;
+
+		ether_addr_copy(wmi_param.mac_addr, peer->peer_info.mac_addr);
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
+			   "Peer add attempt for %pM\n", wmi_param.mac_addr);
+		if (ath12k_wmi_vdev_set_tx_peer_filter_cmd(dp_pdev->ar,
+							   &wmi_param)) {
+			ath12k_warn(dp_pdev->dp,
+				    "wmi add fail vdev %d peer addr %pM: mismatch H/W state\n",
+				    wmi_param.vdev_id, wmi_param.mac_addr);
+			if (wmi_param.action ==
+				WMI_PEER_TX_FILTER_ACTION_ADD_AND_ENABLE_FILTERING)
+				enable_filter_action = false;
+			list_del(&peer->list);
+			kfree(peer);
+			peer_param->staged_count--;
+			ret = -EINVAL;
+		}
+	}
+	return ret;
+}
+
+int
+ath12k_wifi7_dp_ext_mon_remove_wmi_tx_peers(struct ath12k_pdev_dp *dp_pdev,
+					    struct ath12k_dp_ext_mon_tx_peer_params
+					    *peer_param)
+{
+	struct ath12k_set_tx_peer_filter_params wmi_param = {0};
+	struct ath12k_dp_ext_mon_peer *peer;
+	int is_last, ret = 0;
+	struct list_head *peer_list;
+
+	/**
+	 * Unlike add, remove is sent unconditionally without checking
+	 * hw_peer_filter_enabled: a peer may have been staged host-side
+	 * only (never pushed to FW) if hw peer filtering wasn't active
+	 * when it was added. Removing it is a harmless no-op on the FW
+	 * side in that case.
+	 */
+	peer_list = peer_param->peers_to_wmi;
+	wmi_param.vdev_id = (u32)peer_param->vdev_id;
+	list_for_each_entry(peer, peer_list, list) {
+		is_last = list_is_last(&peer->list, peer_list);
+		if (is_last && peer_param->toggle_hw_state)
+			wmi_param.action =
+				WMI_PEER_TX_FILTER_ACTION_REMOVE_AND_CLEAR_FILTERING;
+		else
+			wmi_param.action = WMI_PEER_TX_FILTER_ACTION_REMOVE;
+
+		ether_addr_copy(wmi_param.mac_addr, peer->peer_info.mac_addr);
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
+			   "Peer remove attempt for %pM\n", wmi_param.mac_addr);
+		if (ath12k_wmi_vdev_set_tx_peer_filter_cmd(dp_pdev->ar, &wmi_param)) {
+			ath12k_warn(dp_pdev->dp,
+				    "Peer remove fail for %pM: mismatch H/W state.\n",
+				    wmi_param.mac_addr);
+			ath12k_warn(dp_pdev->dp, "Please retry add and remove.\n");
+			ret = -EINVAL;
+		}
+	}
+	return ret;
+}
