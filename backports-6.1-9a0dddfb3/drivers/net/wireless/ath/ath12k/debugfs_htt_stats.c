@@ -3309,6 +3309,15 @@ static int ath12k_prep_htt_stats_cfg_params(struct ath12k *ar, u8 type,
 	case ATH12K_DBG_HTT_DBG_EXT_STATS_ML_PEERS_INFO:
 		cfg_params->cfg0 = HTT_STAT_DEFAULT_CFG0_MASK;
 		break;
+	case ATH12K_DBG_HTT_EXT_PEER_CTRL_PATH_TXRX_STATS:
+		cfg_params->cfg0 = HTT_STAT_CTRL_PATH_TXRX_MAC_ADDR;
+		cfg_params->cfg1 |= FIELD_PREP(GENMASK(7, 0), mac_addr[0]);
+		cfg_params->cfg1 |= FIELD_PREP(GENMASK(15, 8), mac_addr[1]);
+		cfg_params->cfg1 |= FIELD_PREP(GENMASK(23, 16), mac_addr[2]);
+		cfg_params->cfg1 |= FIELD_PREP(GENMASK(31, 24), mac_addr[3]);
+		cfg_params->cfg2 |= FIELD_PREP(GENMASK(7, 0), mac_addr[4]);
+		cfg_params->cfg2 |= FIELD_PREP(GENMASK(15, 8), mac_addr[5]);
+		break;
 	default:
 		break;
 	}
@@ -4078,6 +4087,48 @@ ath12k_htt_print_pdev_ctrl_path_tx_stats_tlv(const void *tag_buf, u16 tag_len,
 	len += print_array_to_buf(buf, len, "fw_tx_mgmt_subtype",
 				 htt_stats_buf->fw_tx_mgmt_subtype,
 				 ATH12K_HTT_STATS_SUBTYPE_MAX, "\n\n");
+
+	stats_req->buf_len = len;
+}
+
+static void
+ath12k_htt_print_peer_ctrl_path_txrx_stats_tlv(const void *tag_buf,
+					       struct debug_htt_stats_req *stats_req)
+{
+	const struct ath12k_htt_peer_ctrl_path_txrx_stats_tlv *htt_stat_buf = tag_buf;
+	static const char *mgmt_frm_type[ATH12K_STATS_MGMT_FRM_TYPE_MAX] = {
+		"ASSOC_REQ", "ASSOC_RES", "REASSOC_REQ", "REASSOC_RES",
+		"PRB_REQ", "PRB_RES", "RESV", "RESV", "BCN", "ATIM",
+		"DISASSOC", "AUTH", "DAUTH", "ACTN", "RESV", "RESV",
+	};
+	u8 *buf = stats_req->buf;
+	u32 len = stats_req->buf_len;
+	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE;
+	int i;
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "HTT_STATS_PEER_CTRL_PATH_TXRX_STATS_TAG:\n");
+	len += scnprintf(buf + len, buf_len - len,
+			 "peer_mac_addr = %02x:%02x:%02x:%02x:%02x:%02x\n",
+			 htt_stat_buf->peer_mac_addr[0], htt_stat_buf->peer_mac_addr[1],
+			 htt_stat_buf->peer_mac_addr[2], htt_stat_buf->peer_mac_addr[3],
+			 htt_stat_buf->peer_mac_addr[4], htt_stat_buf->peer_mac_addr[5]);
+
+	len += scnprintf(buf + len, buf_len - len, "peer_tx_mgmt_fc_subtype = ");
+	for (i = 0; i < ATH12K_STATS_MGMT_FRM_TYPE_MAX; i++)
+		len += scnprintf(buf + len, buf_len - len, "%s[%d]:%u, ",
+				 mgmt_frm_type[i], i,
+				 __le32_to_cpu(htt_stat_buf->peer_tx_mgmt_subtype[i]));
+	len -= 2;
+	len += scnprintf(buf + len, buf_len - len, "\n");
+
+	len += scnprintf(buf + len, buf_len - len, "peer_rx_mgmt_fc_subtype = ");
+	for (i = 0; i < ATH12K_STATS_MGMT_FRM_TYPE_MAX; i++)
+		len += scnprintf(buf + len, buf_len - len, "%s[%d]:%u, ",
+				 mgmt_frm_type[i], i,
+				 __le32_to_cpu(htt_stat_buf->peer_rx_mgmt_subtype[i]));
+	len -= 2;
+	len += scnprintf(buf + len, buf_len - len, "\n\n");
 
 	stats_req->buf_len = len;
 }
@@ -15043,6 +15094,9 @@ static int ath12k_dbg_htt_ext_stats_parse(struct ath12k_base *ab,
 		break;
 	case HTT_STATS_PDEV_CTRL_PATH_TX_STATS_TAG:
 		ath12k_htt_print_pdev_ctrl_path_tx_stats_tlv(tag_buf, len, stats_req);
+		break;
+	case HTT_STATS_PEER_CTRL_PATH_TXRX_STATS_TAG:
+		ath12k_htt_print_peer_ctrl_path_txrx_stats_tlv(tag_buf, stats_req);
 		break;
 	case HTT_STATS_MU_PPDU_DIST_TAG:
 		ath12k_htt_print_tx_pdev_mu_ppdu_dist_stats_tlv(tag_buf, len, stats_req);

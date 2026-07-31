@@ -2779,6 +2779,8 @@ struct htt_ext_stats_cfg_cmd {
  */
 #define HTT_STAT_PEER_INFO_MAC_ADDR BIT(0)
 #define HTT_STAT_DEFAULT_PEER_REQ_TYPE 0x7f
+#define HTT_STAT_CTRL_PATH_TXRX_MAC_ADDR BIT(0)
+
 
 /* Used to set different configs to the specified stats type.*/
 struct htt_ext_stats_cfg_params {
