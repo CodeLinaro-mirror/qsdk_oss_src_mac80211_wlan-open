@@ -46,10 +46,13 @@
 #define HAL_TX_MON_WMASK_USER_DESC_COMMON_CFG		0xBF
 #define HAL_TX_MON_WMASK_RX_RESP_REQUIRED_INFO_CFG	0x35
 
+#define HAL_RX_PPDU_START_INFO0_CHAN_NUM		GENMASK(15, 0)
+#define HAL_RX_PPDU_START_INFO0_CHAN_FREQ		GENMASK(31, 16)
+
 struct hal_rx_ppdu_start {
 	__le16 phy_ppdu_id;
 	__le16 rsvd0;
-	__le32 sw_phy_meta_data;
+	__le32 info0;
 	__le32 ppdu_start_ts_31_0;
 	__le32 ppdu_start_ts_63_32;
 	__le32 rsvd1[2];
