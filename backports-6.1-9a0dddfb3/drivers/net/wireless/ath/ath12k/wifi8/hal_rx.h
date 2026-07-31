@@ -319,6 +319,9 @@ void ath12k_wifi8_hal_reo_init_cmd_ring_offset(struct ath12k_base *ab,
 int ath12k_wifi8_hal_fse_cmd_send(struct ath12k_base *ab, struct hal_srng *srng,
 				  struct hal_fse_cmd *fse_cmd);
 void ath12k_wifi8_hal_reo_hw_setup(struct ath12k_base *ab);
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+void ath12k_wifi8_hal_reo_ring_ipa_ctrl_hash_ix0_setup(struct ath12k_base *ab);
+#endif
 void ath12k_wifi8_hal_reo_qdesc_setup(struct hal_rx_reo_queue *qdesc,
 				      int tid, u32 ba_window_size,
 				      u32 start_seq, enum hal_pn_type type,

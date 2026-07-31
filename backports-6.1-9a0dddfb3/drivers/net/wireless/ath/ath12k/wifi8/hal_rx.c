@@ -2195,7 +2195,6 @@ int ath12k_wifi8_hal_fse_cmd_send(struct ath12k_base *ab, struct hal_srng *srng,
 		   srng->ring_id, ret, srng->u.src_ring.hp,
 		   srng->u.src_ring.tp_addr ? *srng->u.src_ring.tp_addr : 0);
 
-
 out:
 	ath12k_hal_srng_access_end(ab, srng);
 	spin_unlock_bh(&srng->lock);
@@ -2253,3 +2252,28 @@ out:
 
 	return ret;
 }
+
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+/**
+ * ath12k_wifi8_hal_reo_ring_ipa_ctrl_hash_ix0_setup() - Set IPA RDI slot in IX_0
+ *
+ * All data peers are programmed with ATH12K_DP_WIFI8_REO2SW5_RDI (=5) via
+ * WMI_PEER_SET_DEFAULT_ROUTING (DP_RX_HASH_ENABLE=0 for IPA builds, so RDI
+ * mode is active).  Only slot 5 in IX_0 needs to point to SW5 (reo2sw5).
+ *
+ * Slots 0-4 are left as-is: slot 0 (error/exception) stays SW0 → host, and
+ * slots 1-4 (CPU rings) are never reached since no peer is programmed with
+ * those RDIs when IPA is active.
+ */
+void ath12k_wifi8_hal_reo_ring_ipa_ctrl_hash_ix0_setup(struct ath12k_base *ab)
+{
+	u32 reo_base = HAL_SEQ_WCSS_UMAC_REO_REG;
+	u32 slot = HAL_WIFI8_IPA_REO_RDI;  /* = 5 */
+	u32 val;
+
+	val = ath12k_hif_read32(ab, reo_base + HAL_REO1_DEST_RING_CTRL_AP_IX_0);
+	val &= ~(GENMASK(4, 0) << (slot * HAL_REO_IX_FIELD_WIDTH));
+	val |= DESTINATION_RING_CTRL_SW5 << (slot * HAL_REO_IX_FIELD_WIDTH);
+	ath12k_hif_write32(ab, reo_base + HAL_REO1_DEST_RING_CTRL_AP_IX_0, val);
+}
+#endif /* CPTCFG_EXT_IPA_OFFLOAD */
