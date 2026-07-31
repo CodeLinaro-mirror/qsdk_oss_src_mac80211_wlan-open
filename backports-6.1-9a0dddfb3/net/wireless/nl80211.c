@@ -583,6 +583,24 @@ nl80211_sta_wme_policy[NL80211_STA_WME_MAX + 1] = {
 };
 
 static const struct nla_policy
+nl80211_sta_mapc_cotdma_policy[NL80211_STA_MAPC_COTDMA_MAX + 1] = {
+	[NL80211_STA_MAPC_COTDMA_CHANNEL_WIDTH]          = { .type = NLA_U8 },
+	[NL80211_STA_MAPC_COTDMA_CCFS]                   = { .type = NLA_U8 },
+	[NL80211_STA_MAPC_COTDMA_DISABLE_SUBCHAN_BITMAP] = { .type = NLA_U16 },
+	[NL80211_STA_MAPC_COTDMA_BSS_COLOR]              = { .type = NLA_U8 },
+	[NL80211_STA_MAPC_COTDMA_RX_TXOP_RETURN]         = { .type = NLA_FLAG },
+};
+
+static const struct nla_policy
+nl80211_sta_mapc_policy[NL80211_STA_MAPC_MAX + 1] = {
+	[NL80211_STA_MAPC_APID]              = { .type = NLA_U16 },
+	[NL80211_STA_MAPC_REMOTE_APID]       = { .type = NLA_U16 },
+	[NL80211_STA_MAPC_CAPABILITY_BITMAP] = { .type = NLA_U16 },
+	[NL80211_STA_MAPC_COTDMA]            =
+		NLA_POLICY_NESTED(nl80211_sta_mapc_cotdma_policy),
+};
+
+static const struct nla_policy
 link_policy[NL80211_CU_MLD_LINK_ATTR_MAX + 1] = {
 	[NL80211_CU_MLD_LINK_ATTR_ID] = { .type = NLA_U8 },
 	[NL80211_CU_MLD_LINK_ATTR_CRITICAL_FLAG] = { .type = NLA_FLAG },
@@ -959,6 +977,7 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 				       IEEE80211_MAX_DATA_LEN),
 	[NL80211_ATTR_ROAM_SUPPORT] = { .type = NLA_FLAG },
 	[NL80211_ATTR_STA_WME] = NLA_POLICY_NESTED(nl80211_sta_wme_policy),
+	[NL80211_ATTR_STA_MAPC] = NLA_POLICY_NESTED(nl80211_sta_mapc_policy),
 	[NL80211_ATTR_SCHED_SCAN_MATCH] = { .type = NLA_NESTED },
 	[NL80211_ATTR_TX_NO_CCK_RATE] = { .type = NLA_FLAG },
 	[NL80211_ATTR_TDLS_ACTION] = { .type = NLA_U8 },
@@ -3921,6 +3940,16 @@ static int nl80211_send_wiphy(struct cfg80211_registered_device *rdev,
 		    nla_put_flag(msg, NL80211_ATTR_BEACON_TX_SYNC_SUPPORT))
 			goto nla_put_failure;
 
+		if (rdev->wiphy.mapc_hw_cap_bitmap) {
+			if (nla_put_u32(msg, NL80211_ATTR_MAPC_HW_CAPS,
+					rdev->wiphy.mapc_hw_cap_bitmap))
+				goto nla_put_failure;
+		}
+
+		if (rdev->wiphy.mapc_max_ctdma_peers &&
+		    nla_put_u8(msg, NL80211_ATTR_MAPC_MAX_CTDMA_PEERS,
+			       rdev->wiphy.mapc_max_ctdma_peers))
+			goto nla_put_failure;
 		state->split_start = 0;
 		break;
 	}
@@ -8580,6 +8609,7 @@ static const struct nla_policy sta_flags_policy[NL80211_STA_FLAG_MAX + 1] = {
 	[NL80211_STA_FLAG_TDLS_PEER] = { .type = NLA_FLAG },
 	[NL80211_STA_FLAG_CFP] = { .type = NLA_FLAG },
 	[NL80211_STA_FLAG_SMD] = { .type = NLA_FLAG },
+	[NL80211_STA_FLAG_MAPC_PEER] = { .type = NLA_FLAG },
 };
 
 static int parse_station_flags(struct genl_info *info,
@@ -8631,8 +8661,9 @@ static int parse_station_flags(struct genl_info *info,
 					 BIT(NL80211_STA_FLAG_SHORT_PREAMBLE) |
 					 BIT(NL80211_STA_FLAG_WME) |
 					 BIT(NL80211_STA_FLAG_MFP) |
-+					 BIT(NL80211_STA_FLAG_CFP) |
-					 BIT(NL80211_STA_FLAG_SMD);
+					 BIT(NL80211_STA_FLAG_CFP) |
+					 BIT(NL80211_STA_FLAG_SMD) |
+					 BIT(NL80211_STA_FLAG_MAPC_PEER);
 		break;
 	case NL80211_IFTYPE_P2P_CLIENT:
 	case NL80211_IFTYPE_STATION:
@@ -9627,7 +9658,7 @@ int cfg80211_check_station_change(struct wiphy *wiphy,
 		return -EINVAL;
 
 	/* When you run into this, adjust the code below for the new flag */
-	BUILD_BUG_ON(NL80211_STA_FLAG_MAX != 11);
+	BUILD_BUG_ON(NL80211_STA_FLAG_MAX != 12);
 
 	switch (statype) {
 	case CFG80211_STA_MESH_PEER_KERNEL:
@@ -9842,6 +9873,62 @@ static int nl80211_parse_sta_wme(struct genl_info *info,
 		return -EINVAL;
 
 	params->sta_modify_mask |= STATION_PARAM_APPLY_UAPSD;
+
+	return 0;
+}
+
+static int nl80211_parse_sta_mapc(struct nlattr *attr,
+				  struct station_parameters *params)
+{
+	struct nlattr *tb[NL80211_STA_MAPC_MAX + 1];
+	struct cfg80211_sta_mapc_params *mp = &params->mapc_params;
+	int err;
+
+	err = nla_parse_nested(tb, NL80211_STA_MAPC_MAX, attr,
+			       nl80211_sta_mapc_policy, NULL);
+	if (err)
+		return err;
+
+	params->mapc_params_present = true;
+
+	if (tb[NL80211_STA_MAPC_APID])
+		mp->apid_to_neighbor_peer =
+			nla_get_u16(tb[NL80211_STA_MAPC_APID]);
+	if (tb[NL80211_STA_MAPC_REMOTE_APID])
+		mp->apid_from_neighbor_peer =
+			nla_get_u16(tb[NL80211_STA_MAPC_REMOTE_APID]);
+	if (tb[NL80211_STA_MAPC_CAPABILITY_BITMAP])
+		mp->mapc_capability_bitmap =
+			nla_get_u16(tb[NL80211_STA_MAPC_CAPABILITY_BITMAP]);
+
+	if (tb[NL80211_STA_MAPC_COTDMA]) {
+		struct nlattr *ctb[NL80211_STA_MAPC_COTDMA_MAX + 1];
+		struct cfg80211_sta_mapc_cotdma *ct = &mp->cotdma;
+
+		err = nla_parse_nested(ctb,
+				       NL80211_STA_MAPC_COTDMA_MAX,
+				       tb[NL80211_STA_MAPC_COTDMA],
+				       nl80211_sta_mapc_cotdma_policy,
+				       NULL);
+		if (err)
+			return err;
+
+		if (ctb[NL80211_STA_MAPC_COTDMA_CHANNEL_WIDTH])
+			ct->channel_width =
+				nla_get_u8(ctb[NL80211_STA_MAPC_COTDMA_CHANNEL_WIDTH]);
+		if (ctb[NL80211_STA_MAPC_COTDMA_CCFS])
+			ct->ccfs =
+				nla_get_u8(ctb[NL80211_STA_MAPC_COTDMA_CCFS]);
+		if (ctb[NL80211_STA_MAPC_COTDMA_DISABLE_SUBCHAN_BITMAP])
+			ct->disable_subchannel_bitmap =
+				nla_get_u16(ctb[
+					NL80211_STA_MAPC_COTDMA_DISABLE_SUBCHAN_BITMAP]);
+		if (ctb[NL80211_STA_MAPC_COTDMA_BSS_COLOR])
+			ct->bss_color =
+				nla_get_u8(ctb[NL80211_STA_MAPC_COTDMA_BSS_COLOR]);
+		ct->rx_txop_return_support =
+			!!ctb[NL80211_STA_MAPC_COTDMA_RX_TXOP_RETURN];
+	}
 
 	return 0;
 }
@@ -10247,6 +10334,12 @@ static int nl80211_set_station(struct sk_buff *skb, struct genl_info *info)
 		goto out_put_vlan;
 	}
 
+	if (info->attrs[NL80211_ATTR_STA_MAPC]) {
+		err = nl80211_parse_sta_mapc(info->attrs[NL80211_ATTR_STA_MAPC],
+					     &params);
+		if (err)
+			goto out_put_vlan;
+	}
 	/* driver will call cfg80211_check_station_change() */
 	err = rdev_change_station(rdev, dev, mac_addr, &params);
 
@@ -10452,7 +10545,7 @@ static int nl80211_new_station(struct sk_buff *skb, struct genl_info *info)
 		return -EINVAL;
 
 	/* When you run into this, adjust the code below for the new flag */
-	BUILD_BUG_ON(NL80211_STA_FLAG_MAX != 11);
+	BUILD_BUG_ON(NL80211_STA_FLAG_MAX != 12);
 
 	switch (dev->ieee80211_ptr->iftype) {
 	case NL80211_IFTYPE_AP:

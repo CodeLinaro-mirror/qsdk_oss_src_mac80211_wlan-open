@@ -2221,6 +2221,47 @@ struct iface_combination_params {
 };
 
 /**
+ * struct cfg80211_sta_mapc_cotdma - Co-TDMA channel profile for a MAPC peer
+ *
+ * Describes the operating channel parameters of a co-ordinating AP peer
+ *
+ * @channel_width: operating channel width; 0=20MHz, 1=40MHz, 2=80MHz,
+ *  3=160MHz, 4=320MHz (MAPC_CHANNEL_WIDTH_* values)
+ * @ccfs: center channel frequency segment 0 index
+ * @disable_subchannel_bitmap: EHT punctured 20 MHz subchannels bitmap
+ * @bss_color: peer BSS color (bits 0–5; B6–B7 reserved)
+ * @rx_txop_return_support: true if the peer supports RX-driven TXOP return
+ */
+struct cfg80211_sta_mapc_cotdma {
+	u8  channel_width;
+	u8  ccfs;
+	u16 disable_subchannel_bitmap;
+	u8  bss_color;
+	bool rx_txop_return_support;
+};
+
+/**
+ * struct cfg80211_sta_mapc_params - MAPC coordination parameters for a peer
+ *
+ * Carries the parameters required to activate and maintain a MAPC
+ * co-ordination agreement with a neighbouring AP peer
+ *
+ * @apid_to_neighbor_peer: APID assigned locally and sent to the peer;
+ *  equivalent to the IEEE AID in the local AP's association context
+ * @apid_from_neighbor_peer: APID assigned by the peer and sent to us;
+ *  used by the peer to identify this AP in its own context
+ * @mapc_capability_bitmap: peer's advertised MAPC capability bitmap
+ *  as received in the most recent Discovery or Negotiation frame
+ * @cotdma: Co-TDMA channel profile; see &struct cfg80211_sta_mapc_cotdma
+ */
+struct cfg80211_sta_mapc_params {
+	u16 apid_to_neighbor_peer;
+	u16 apid_from_neighbor_peer;
+	u16 mapc_capability_bitmap;
+	struct cfg80211_sta_mapc_cotdma cotdma;
+};
+
+/**
  * enum station_parameters_apply_mask - station parameter values to apply
  * @STATION_PARAM_APPLY_UAPSD: apply new uAPSD parameters (uapsd_queues, max_sp)
  * @STATION_PARAM_APPLY_CAPABILITY: apply new capability
@@ -2374,6 +2415,8 @@ struct link_station_del_parameters {
  * @link_sta_params: link related params.
  * @control_mic_pad: padding info for control frames
  * @epp_peer: EPP peer indication
+ * @mapc_params_present: indicates that @mapc_params has been populated
+ * @mapc_params: MAPC coordination parameters for this peer
  */
 struct station_parameters {
 	struct net_device *vlan;
@@ -2403,6 +2446,8 @@ struct station_parameters {
 	struct link_station_parameters link_sta_params;
 	u8 control_mic_pad;
 	bool epp_peer;
+	bool mapc_params_present;
+	struct cfg80211_sta_mapc_params mapc_params;
 };
 
 /**
@@ -7294,6 +7339,9 @@ struct wiphy_radio {
  *	advertise the maximum allowed size for beacon frame.
  *
  * @sta_dfs_en: Enable or disable Station DFS support.
+ *
+ * @mapc_hw_cap_bitmap: MAPC hardware capability bitmap
+ * @mapc_max_ctdma_peers: max Co-TDMA-specific peers
  */
 struct wiphy {
 	struct mutex mtx;
@@ -7462,6 +7510,9 @@ struct wiphy {
 	u8 mbssid_max_ngroups;
 	u16 max_beacon_size;
 	u8 sta_dfs_en;
+
+	u32 mapc_hw_cap_bitmap;
+	u8 mapc_max_ctdma_peers;
 
 	char priv[] __aligned(NETDEV_ALIGN);
 };
