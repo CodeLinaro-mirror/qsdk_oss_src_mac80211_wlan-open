@@ -11696,7 +11696,8 @@ static int ath12k_vendor_view_sdwf_config(struct wiphy *wiphy,
 		if (!ath12k_sdwf_service_configured(ab, i))
 			continue;
 
-		profile = &qos_ctx->profiles[id_dl];
+		if (id_dl != QOS_ID_INVALID)
+			profile = &qos_ctx->profiles[id_dl];
 		nest_start_length = msg->len;
 		svc_class = nla_nest_start(msg, j);
 		if (!svc_class)
@@ -11734,7 +11735,8 @@ static int ath12k_vendor_view_sdwf_config(struct wiphy *wiphy,
 		    ))
 			goto nla_put_failure;
 
-		profile = &qos_ctx->profiles[id_ul];
+		if (id_ul != QOS_ID_INVALID)
+			profile = &qos_ctx->profiles[id_ul];
 		if ((id_ul !=  QOS_ID_INVALID) &&
 		    (nla_put_u8(msg,
 				QCA_WLAN_VENDOR_ATTR_SDWF_SVC_ID, i) ||
