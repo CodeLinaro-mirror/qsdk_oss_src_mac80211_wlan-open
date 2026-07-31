@@ -496,7 +496,7 @@ int ath12k_wifi8_hal_tqm_update_mpduq(struct ath12k_base *ab,
 	paddr_hi = (u8)(upper_32_bits(cmd->update_mpduq.mpdu_q_paddr)
 			& 0x000000ff);
 	desc->mpdu_queue_desc_addr_31_0 = cpu_to_le32(paddr_lo);
-	desc->info0 = le16_encode_bits(paddr_hi,
+	desc->info0 = le32_encode_bits(paddr_hi,
 				       HAL_TQM_UPDATE_MPDUQ_INFO0_MPDUQ_ADDR_HI);
 
 	if (cmd->update_mpduq.update_queue_number) {
@@ -659,7 +659,7 @@ int ath12k_wifi8_hal_tqm_update_msduq(struct ath12k_base *ab,
 		le32_encode_bits(1,
 				 HAL_TQM_FLOW_INFO1_UPDATE_STATUS_REQUIRED_FOR_CHIP0);
 			desc->info4 |=
-			le32_encode_bits(1,
+			le16_encode_bits(1,
 					 HAL_TQM_FLOW_INFO4_STATUS_REQUIRED_FOR_CHIP0);
 		}
 		if (bitmap & ATH12K_CHIP1_BITMAP_MASK) {
@@ -667,7 +667,7 @@ int ath12k_wifi8_hal_tqm_update_msduq(struct ath12k_base *ab,
 		le32_encode_bits(1,
 				 HAL_TQM_FLOW_INFO1_UPDATE_STATUS_REQUIRED_FOR_CHIP1);
 			desc->info4 |=
-			le32_encode_bits(1,
+			le16_encode_bits(1,
 					 HAL_TQM_FLOW_INFO4_STATUS_REQUIRED_FOR_CHIP1);
 		}
 		if (bitmap & ATH12K_CHIP2_BITMAP_MASK) {
@@ -675,7 +675,7 @@ int ath12k_wifi8_hal_tqm_update_msduq(struct ath12k_base *ab,
 		le32_encode_bits(1,
 				 HAL_TQM_FLOW_INFO1_UPDATE_STATUS_REQUIRED_FOR_CHIP2);
 			desc->info4 |=
-			le32_encode_bits(1,
+			le16_encode_bits(1,
 					 HAL_TQM_FLOW_INFO4_STATUS_REQUIRED_FOR_CHIP2);
 		}
 		if (bitmap & ATH12K_CHIP3_BITMAP_MASK) {
@@ -683,7 +683,7 @@ int ath12k_wifi8_hal_tqm_update_msduq(struct ath12k_base *ab,
 		le32_encode_bits(1,
 				 HAL_TQM_FLOW_INFO1_UPDATE_STATUS_REQUIRED_FOR_CHIP3);
 			desc->info4 |=
-			le32_encode_bits(1,
+			le16_encode_bits(1,
 					 HAL_TQM_FLOW_INFO4_STATUS_REQUIRED_FOR_CHIP3);
 		}
 		if (bitmap & ATH12K_CHIP4_BITMAP_MASK) {
@@ -691,7 +691,7 @@ int ath12k_wifi8_hal_tqm_update_msduq(struct ath12k_base *ab,
 		le32_encode_bits(1,
 				 HAL_TQM_FLOW_INFO1_UPDATE_STATUS_REQUIRED_FOR_CHIP4);
 			desc->info4 |=
-			le32_encode_bits(1,
+			le16_encode_bits(1,
 					 HAL_TQM_FLOW_INFO4_STATUS_REQUIRED_FOR_CHIP4);
 		}
 	}
