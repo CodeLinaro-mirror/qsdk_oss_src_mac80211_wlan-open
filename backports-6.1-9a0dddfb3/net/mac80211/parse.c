@@ -210,6 +210,15 @@ ieee80211_parse_extension_element(u32 *crc,
 			elems->uhr_cap_len = len;
 		}
 		break;
+	case WLAN_EID_EXT_UHR_PARAM_UPD:
+		if (params->mode < IEEE80211_CONN_MODE_UHR)
+			break;
+		calc_crc = true;
+		if (ieee80211_uhr_param_upd_size_ok(data, len)) {
+			elems->uhr_params_update = data;
+			elems->uhr_params_update_len = len;
+		}
+		break;
 	case WLAN_EID_EXT_SMD:
 		if (params->mode < IEEE80211_CONN_MODE_UHR)
 			break;
@@ -772,8 +781,7 @@ _ieee802_11_parse_elems_full(struct ieee80211_elems_parse_params *params,
 			ieee80211_parse_tpe(&elems->tpe, pos, elen);
 			break;
 		case WLAN_EID_EXTENSION:
-			ieee80211_parse_extension_element(calc_crc ?
-								&crc : NULL,
+			ieee80211_parse_extension_element(calc_crc ? &crc : NULL,
 							  elem, elems_parse,
 							  params);
 			break;

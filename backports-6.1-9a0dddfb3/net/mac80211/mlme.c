@@ -4904,6 +4904,7 @@ static void ieee80211_set_disassoc(struct ieee80211_sub_if_data *sdata,
 			link->csa_block_tx = false;
 		}
 		link->u.mgd.csa.bw_reconfig = false;
+		link->u.mgd.ecu_countdown = -1;
 
 		ieee80211_link_release_channel(link);
 	}
@@ -8436,6 +8437,68 @@ static void ieee80211_rx_mgmt_beacon(struct ieee80211_link_data *link,
 
 	/* note that after this elems->ml_basic can no longer be used fully */
 	ieee80211_mgd_check_cross_link_csa(sdata, rx_status->link_id, elems);
+
+	/* UHR Parameters Update IE (ECU): track countdown and apply mode
+	 * tuple parameters when it expires, mirroring CSA handling in STA mode.
+	 */
+	if (link->u.mgd.conn.mode >= IEEE80211_CONN_MODE_UHR &&
+	    elems->uhr_params_update &&
+	    elems->uhr_params_update_len >= sizeof(*elems->uhr_params_update)) {
+		const struct ieee80211_uhr_param_upd *upd = elems->uhr_params_update;
+		u8 cntdwn = upd->countdown;
+
+		if (cntdwn >= 128 || cntdwn == 0) {
+			/* ECU fired: apply exactly once on the first beacon of the
+			 * post-notification phase (cntdwn >= 128) or when countdown
+			 * reaches 0.
+			 */
+			if (link->u.mgd.ecu_countdown > 0) {
+				const struct ieee80211_uhr_npca_info *npca_ie;
+
+				drv_critical_update(local, sdata, link->link_id,
+						  NL80211_CU_TYPE_UHR_PARAMS,
+						  (const u8 *)upd,
+						  elems->uhr_params_update_len);
+
+				/* Update the STA-side chandef with the new NPCA
+				 * primary freq and puncture bitmap so that
+				 * ieee80211_update_npca_configs() reflects the
+				 * ECU result in link_conf->chanreq.oper.
+				 */
+				npca_ie = ieee80211_uhr_param_upd_npca(upd,
+						elems->uhr_params_update_len);
+				if (npca_ie) {
+					u32 params = le32_to_cpu(npca_ie->params);
+					u32 prim_chan;
+					u32 npca_freq;
+					u16 npca_bitmap = 0;
+
+					prim_chan = params &
+						IEEE80211_UHR_NPCA_PARAMS_PRIMARY_CHAN;
+					npca_freq =
+						ieee80211_channel_to_frequency(
+							prim_chan, chan->band);
+
+					if (params &
+					    IEEE80211_UHR_NPCA_PARAMS_DIS_SUBCH_BMAP_PRES)
+						npca_bitmap = le16_to_cpu(
+							npca_ie->dis_subch_bmap[0]);
+
+					ieee80211_update_npca_configs(&sdata->vif,
+						link->link_id,
+						npca_freq,
+						npca_bitmap);
+				}
+			}
+			link->u.mgd.ecu_countdown = -1;
+		} else {
+			/* Advance-notification phase (1..127): track countdown. */
+			link->u.mgd.ecu_countdown = (s8)cntdwn;
+		}
+	} else if (link->u.mgd.ecu_countdown >= 0) {
+		/* IE gone before countdown reached 0: cancel */
+		link->u.mgd.ecu_countdown = -1;
+	}
 
 	ieee80211_mgd_update_bss_param_ch_cnt(sdata, bss_conf, elems);
 

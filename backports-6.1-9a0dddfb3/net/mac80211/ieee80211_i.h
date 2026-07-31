@@ -1325,6 +1325,9 @@ struct ieee80211_link_data_managed {
 
 	int wmm_last_param_set;
 	int mu_edca_last_param_set;
+
+	/* UHR ECU countdown; -1=off, 1-127=advance, 0 or >127=fired */
+	s8 ecu_countdown;
 };
 
 struct ieee80211_link_data_ap {
@@ -2340,6 +2343,7 @@ struct ieee802_11_elems {
 	const struct ieee80211_ttlm_elem *ttlm[IEEE80211_TTLM_MAX_CNT];
 	const struct ieee80211_uhr_cap_elem *uhr_cap;
 	const struct ieee80211_uhr_operation *uhr_operation;
+	const struct ieee80211_uhr_param_upd *uhr_params_update;
 
 	/* not the order in the psd values is per element, not per chandef */
 	struct ieee80211_parsed_tpe tpe;
@@ -2366,6 +2370,7 @@ struct ieee802_11_elems {
 	u8 eht_cap_len;
 	u8 uhr_cap_len;
 	u8 uhr_operation_len;
+	u8 uhr_params_update_len;
 
 	/* mult-link element can be de-fragmented and thus u8 is not sufficient */
 	size_t ml_basic_len;
