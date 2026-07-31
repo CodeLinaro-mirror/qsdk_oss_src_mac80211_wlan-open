@@ -3374,7 +3374,7 @@ int ath12k_wifi8_dp_rx_wbm_srng_alloc(struct ath12k_base *ab)
 	ret = ath12k_dp_srng_alloc(ab,
 				   &dp_wifi8->wbm_idle_buf_ring,
 				   HAL_WBM_IDLE_BUF, 0, 0,
-				   DP_WBM_IDLE_BUF_RING_SIZE);
+				   ab->ag->num_devices * DP_WBM_IDLE_BUF_PER_SOC);
 	if (ret) {
 		ath12k_warn(ab, "failed to alloc wbm idle buf ring\n");
 		goto fail;
