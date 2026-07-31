@@ -2102,6 +2102,7 @@ struct ieee80211_local {
 		struct dentry *keys;
 	} debugfs;
 	bool force_tx_status;
+	bool addba_req_enable;
 #endif
 
 	/*
