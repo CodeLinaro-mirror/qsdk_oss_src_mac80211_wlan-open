@@ -29295,6 +29295,12 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 	if (ab->ag->mlo_capable) {
 		ath12k_iftypes_ext_capa[2].eml_capabilities = cap->eml_cap;
 		ath12k_iftypes_ext_capa[2].mld_capa_and_ops = cap->mld_cap;
+		/* Maximum Number of Simultaneous Links - (num of radios - 1) */
+		ath12k_iftypes_ext_capa[2].mld_capa_and_ops &=
+			~IEEE80211_MLD_CAP_OP_MAX_SIMUL_LINKS;
+		ath12k_iftypes_ext_capa[2].mld_capa_and_ops |=
+			(ah->num_radio - 1) & IEEE80211_MLD_CAP_OP_MAX_SIMUL_LINKS;
+
 		ath12k_iftypes_ext_capa[2].ext_mld_capa_and_ops = cap->ext_mld_cap;
 
 		wiphy->flags |= WIPHY_FLAG_SUPPORTS_MLO;
