@@ -227,6 +227,7 @@ enum ath12k_dp_debug_stats_mask {
 	DP_ENABLE_VOW_STATS      = 0x00000040,
 	DP_ENABLE_LATENCY_STATS    = 0x00000080,
 	DP_ENABLE_TX_PPDU_STATS   = 0x00000100,
+	DP_ENABLE_RX_PPDU_STATS  = 0x00000200,
 	DP_ENABLE_QOS_STATS      = 0x80000000,
 };
 
@@ -989,6 +990,7 @@ struct ath12k_dp_mld_peer_stats {
 struct ath12k_dp_link_peer_stats {
 	struct ath12k_htt_tx_stats *tx_stats;
 	struct ath12k_htt_tx_ppdu_stats *tx_ppdu_stats;
+	struct ath12k_rx_ppdu_stats *rx_ppdu_stats;
 	struct ath12k_rx_peer_stats *rx_stats;
 	struct ath12k_dp_mon_peer_stats dp_mon_stats;
 	struct ath12k_dp_link_peer_qos_stats *link_qos_stats;
@@ -1262,11 +1264,6 @@ static const u8 max_mcs_by_preamble[HAL_RX_PREAMBLE_MAX] = {
 	[HAL_RX_PREAMBLE_11BN] = MAX_MCS_11BN,	/* UHR */
 };
 
-struct ath12k_rx_peer_total_stats {
-	u64 total_pkts;
-	u64 total_bytes;
-};
-
 enum ath12k_cmn_bw_types {
 	CMN_BW_20MHZ,
 	CMN_BW_40MHZ,
@@ -1291,21 +1288,19 @@ DECLARE_EWMA(avg_rssi_dp, 10, 8)
 
 /**
  * struct ath12k_dp_link_peer_rx_signal_stats - Per-peer signal statistics
- * @snr:              Current signal-to-noise ratio (SNR) in dB
- * @snr_avg:          Averaged SNR value (scaled/filtered)
  * @avg_snr:          EWMA (Exponentially Weighted Moving Average) tracker for SNR
+ * @avg_snr_dp:       EWMA tracker for DP-specific SNR
+ * @avg_rssi:         EWMA tracker for RSSI
+ * @avg_rssi_dp:      EWMA tracker for DP-specific RSSI
+ * @snr_avg:          Averaged SNR value (scaled/filtered)
+ * @snr_dp_avg:       Averaged DP-specific SNR value
+ * @rssi_avg:         Averaged RSSI value (scaled/filtered)
+ * @rssi_dp_avg:      Averaged DP-specific RSSI value
+ * @snr:              Current signal-to-noise ratio (SNR) in dB
  * @rssi_region_offset: Region-specific RSSI offset applied during conversion
  * @snr_dp:           Data path specific SNR value
- * @snr_dp_avg:       Averaged DP-specific SNR value
- * @avg_snr_dp:       EWMA tracker for DP-specific SNR
- *
  * @rssi:             Current received signal strength indicator (RSSI) in dBm
- * @rssi_avg:         Averaged RSSI value (scaled/filtered)
- * @avg_rssi:         EWMA tracker for RSSI
  * @rssi_dp:          Data path specific RSSI value
- * @rssi_dp_avg:      Averaged DP-specific RSSI value
- * @avg_rssi_dp:      EWMA tracker for DP-specific RSSI
- *
  * @channel_bw:       Represents the effective channel width (in MHz) associated with
  *                    the peer’s signal. Used to compute bandwidth-dependent offsets
  *                    during RSSI calculations.
@@ -1315,29 +1310,137 @@ DECLARE_EWMA(avg_rssi_dp, 10, 8)
  * This structure holds both instantaneous and averaged signal quality
  * metrics (SNR and RSSI) for a given peer, including data path specific
  * values and EWMA smoothing helpers along with current bw info of signal.
+ *
+ * Fields are ordered largest-alignment-first to minimize struct padding.
  */
 struct ath12k_dp_link_peer_rx_signal_stats {
-	u8 snr;
-	u16 snr_avg;
 	struct ewma_avg_snr avg_snr;
-	s8 rssi_region_offset;
-	u8 snr_dp;
-	u16 snr_dp_avg;
 	struct ewma_avg_snr_dp avg_snr_dp;
-
-	s8 rssi;
-	s16 rssi_avg;
 	struct ewma_avg_rssi avg_rssi;
-	s8 rssi_dp;
-	s16 rssi_dp_avg;
 	struct ewma_avg_rssi_dp avg_rssi_dp;
 
+	u16 snr_avg;
+	u16 snr_dp_avg;
+	s16 rssi_avg;
+	s16 rssi_dp_avg;
+
+	u8 snr;
+	s8 rssi_region_offset;
+	u8 snr_dp;
+	s8 rssi;
+	s8 rssi_dp;
 	u8 channel_bw;
 	u8 rssi_chain_pri20[HAL_RX_MAX_NSS];
 };
 
 /**
+ * struct ath12k_rx_ppdu_stats - Per-peer RX PPDU statistics
+ *
+ * Consumer: vendor telemetry (netlink) path, via
+ * ath12k_vendor_fill_rx_mon_stats() in vendor.c.
+ * Enable flag: DP_ENABLE_RX_PPDU_STATS in dp_stats_mask, checked via
+ * ath12k_dp_rx_ppdu_stats_enabled().
+ *
+ * Basic counters:
+ * @num_msdu: Total number of MSDUs received.
+ * @num_msdu_bytes: Total MSDU bytes received.
+ * @num_msdu_retry_count: Number of MSDU retries.
+ * @num_mpdu_retry_count: Number of MPDU retries.
+ * @num_mpdu_fcs_ok: Number of MPDUs received with FCS check passed.
+ * @num_mpdu_fcs_err: Number of MPDUs received with FCS check failed.
+ * @non_ampdu_msdu_count: Number of MSDUs received outside A-MPDU aggregates.
+ * @ampdu_msdu_count: Number of MSDUs received within A-MPDU aggregates.
+ * @num_mpdus: Total number of MPDUs received.
+ * @num_ppdus: Total number of PPDUs received.
+ * @rx_duration: Total RX duration in microseconds.
+ * @gi_count: MSDU counts per guard interval (indexed by HAL_RX_GI_MAX).
+ * @nss_count: MSDU counts per spatial stream (indexed by HAL_RX_MAX_NSS).
+ * @bw_count: MSDU counts per channel bandwidth (indexed by HAL_RX_BW_MAX).
+ * @reception_type: MSDU counts per PPDU reception type
+ *                  (indexed by HAL_RX_RECEPTION_TYPE_MAX).
+ * @nss_info: Last received NSS (bitfield).
+ * @mcs_info: Last received MCS index (bitfield).
+ * @bw_info: Last received bandwidth (bitfield).
+ * @gi_info: Last received guard interval (bitfield).
+ * @preamble_info: Last received preamble type (bitfield).
+ *
+ * Advanced counters:
+ * @num_bar: Number of BlockAck Request (BAR) frames received.
+ * @num_ndpa: Number of NDP Announcement (NDPA) frames received.
+ * @ppdu_reception: PPDU counts per reception type
+ *                  (indexed by HAL_RX_RECEPTION_TYPE_MAX).
+ * @ppdu_nss: PPDU counts per spatial stream (indexed by HAL_RX_MAX_NSS).
+ * @proto_type: MSDU packet counts per 802.11 protocol type (indexed by DOT11_MAX).
+ * @wme_ac_type_pkts: MSDU packet counts per WME Access Category (indexed by WME_NUM_AC).
+ * @wme_ac_type_bytes: MSDU byte counts per WME Access Category (indexed by WME_NUM_AC).
+ * @su_ppdu_count: SU PPDU packet counts per MCS, indexed by ATH12K_RX_PPDU_PROTO_MAX
+ * @punc_bw: MSDU counts per punctured bandwidth mode
+ *           (indexed by MAX_PUNCTURED_MODE).
+ *
+ * MU reception:
+ * @rx_mu: MU reception statistics per protocol and user type
+ *
+ * Rate information:
+ * @last_rx_rate: Last received data rate in kbps.
+ * @rnd_avg_rx_rate: Rounded average RX data rate in kbps.
+ * @avg_rx_rate: Filtered average RX data rate in kbps.
+ * @rx_ratecode: Encoded RX ratecode.
+ * @signal_stats: Per-peer RX signal statistics (SNR, RSSI).
+ */
+struct ath12k_rx_ppdu_stats {
+	/* Basic Stats */
+	u64 num_msdu_bytes;
+	u64 rx_duration;
+	u64 wme_ac_type_bytes[WME_NUM_AC];
+	struct ath12k_dp_link_peer_rx_signal_stats signal_stats;
+
+	u32 num_msdu;
+	u32 num_msdu_retry_count;
+	u32 num_mpdu_retry_count;
+	u32 num_mpdu_fcs_ok;
+	u32 num_mpdu_fcs_err;
+	u32 non_ampdu_msdu_count;
+	u32 ampdu_msdu_count;
+	u32 num_mpdus;
+	u32 num_ppdus;
+	u32 gi_count[HAL_RX_GI_MAX];
+	u32 nss_count[HAL_RX_MAX_NSS];
+	u32 bw_count[HAL_RX_BW_MAX];
+	u32 reception_type[HAL_RX_RECEPTION_TYPE_MAX];
+
+	u32 nss_info:4,
+	    mcs_info:8,
+	    bw_info:4,
+	    gi_info:4,
+	    preamble_info:4;
+
+	/* Advanced Stats */
+	u32 num_bar;
+	u32 num_ndpa;
+	u32 ppdu_reception[HAL_RX_RECEPTION_TYPE_MAX];
+	u32 ppdu_nss[HAL_RX_MAX_NSS];
+	struct pkt_type proto_type[DOT11_MAX];
+	u32 wme_ac_type_pkts[WME_NUM_AC];
+	struct pkt_type su_ppdu_count[ATH12K_RX_PPDU_PROTO_MAX];
+	u32 punc_bw[MAX_PUNCTURED_MODE];
+
+	/* MU stats */
+	struct ath12k_rx_peer_user_stats
+		rx_mu[ATH12K_RX_PPDU_PROTO_MAX][TXRX_TYPE_MU_MAX];
+
+	/* Rate stats */
+	u32 last_rx_rate;
+	u32 rnd_avg_rx_rate;
+	u32 avg_rx_rate;
+	u32 rx_ratecode;
+};
+
+/**
  * struct ath12k_rx_peer_stats - Per-peer RX statistics
+ *
+ * Consumer: debugfs extended-RX-stats path, dumped via debugfs_sta.c.
+ * Enable flag: DP_ENABLE_EXT_RX_STATS in dp_stats_mask, checked via
+ * ath12k_extd_rx_stats_enabled().
  *
  * @num_msdu: Total number of MSDUs received.
  * @num_mpdu_fcs_ok: Number of MPDUs received with FCS check passed.
@@ -1361,42 +1464,6 @@ struct ath12k_dp_link_peer_rx_signal_stats {
  *                (indexed by HAL_RX_RU_ALLOC_TYPE_MAX).
  * @pkt_stats: Per-rate statistics based on packet counts.
  * @byte_stats: Per-rate statistics based on byte counts.
- *
- * SU + MU Basic Stats:
- * @num_msdu_bytes: Total MSDU bytes received.
- * @num_msdu_retry_count: Number of MSDU retries.
- * @num_mpdus: Total number of MPDUs received.
- * @num_mpdu_retry_count: Number of MPDU retries.
- * @num_ppdus: Total number of PPDUs received.
- *
- * Bitfield info:
- * @nss_info: Number of spatial streams (NSS).
- * @mcs_info: Modulation and Coding Scheme (MCS) index.
- * @bw_info: Bandwidth information (channel width).
- * @gi_info: Guard interval information.
- * @preamble_info: Preamble type information.
- *
- * Advance Stats:
- * @bar_count: Number of BlockAck Request (BAR) frames received.
- * @ndpa_count: Number of NDP Announcement (NDPA) frames received for MU-MIMO sounding.
- * @ppdu_reception: Number of PPDUs received per reception type
- *                  (indexed by HAL_RX_RECEPTION_TYPE_MAX).
- * @ppdu_nss: Number of PPDUs received per spatial stream (indexed by HAL_RX_MAX_NSS).
- * @proto_type: MSDU packet counts per 802.11 protocol type (indexed by DOT11_MAX).
- * @wme_ac_type_pkts: MSDU packets and bytes per WME Access Category
- *               (Voice, Video, Best Effort, Background).
- * @su_ppdu_count: SU PPDU packet counts per MCS.
- * @punc_bw: Number of MSDUs received per punctured bandwidth mode.
- *
- * MU statistics:
- * @rx_mu: MU reception statistics per 802.11 protocol type and user type,
- *         indexed by [ATH12K_RX_PPDU_PROTO_MAX][TXRX_TYPE_MU_MAX].
- *
- * Rate Stats :
- * @last_rx_rate: Last received data rate in kbps.
- * @rnd_avg_rx_rate: Rounded average RX data rate in kbps.
- * @avg_rx_rate: Filtered average RX data rate in kbps.
- * @rx_ratecode: Encoded RX ratecode.
  */
 struct ath12k_rx_peer_stats {
 	u64 num_msdu;
@@ -1418,38 +1485,6 @@ struct ath12k_rx_peer_stats {
 	u64 ru_alloc_cnt[HAL_RX_RU_ALLOC_TYPE_MAX];
 	struct ath12k_rx_peer_rate_stats pkt_stats;
 	struct ath12k_rx_peer_rate_stats byte_stats;
-	/* SU + MU Basic Stats */
-	u64 num_msdu_bytes;
-	u32 num_msdu_retry_count;
-	u64 num_mpdus;
-	u32 num_mpdu_retry_count;
-	u64 num_ppdus;
-
-	u32 nss_info:4,
-	    mcs_info:8,
-	    bw_info:4,
-	    gi_info:4,
-	    preamble_info:4;
-
-	/* Advance Stats */
-	u32 num_bar;
-	u32 num_ndpa;
-	u32 ppdu_reception[HAL_RX_RECEPTION_TYPE_MAX];
-	u32 ppdu_nss[HAL_RX_MAX_NSS];
-	struct pkt_type proto_type[DOT11_MAX];
-	u32 wme_ac_type_pkts[WME_NUM_AC];
-	u64 wme_ac_type_bytes[WME_NUM_AC];
-	struct pkt_type su_ppdu_count[ATH12K_RX_PPDU_PROTO_MAX];
-	u32 punc_bw[MAX_PUNCTURED_MODE];
-	/* MU stats */
-	struct ath12k_rx_peer_user_stats
-		rx_mu[ATH12K_RX_PPDU_PROTO_MAX][TXRX_TYPE_MU_MAX];
-	/* Rate stats */
-	u32 last_rx_rate;
-	u32 rnd_avg_rx_rate;
-	u32 avg_rx_rate;
-	u32 rx_ratecode;
-	struct ath12k_dp_link_peer_rx_signal_stats signal_stats;
 };
 
 /* struct ath12k_dp_preserved_stats - Snapshot statistics for MLO datapath

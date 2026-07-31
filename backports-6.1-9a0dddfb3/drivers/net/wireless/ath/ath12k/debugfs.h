@@ -97,6 +97,12 @@ static inline bool ath12k_extd_rx_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
 		(dp_pdev->dp_stats_mask & DP_ENABLE_EXT_RX_STATS));
 }
 
+static inline bool ath12k_dp_rx_ppdu_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
+{
+	return ((dp_pdev->dp_stats_mask & DP_ENABLE_STATS) &&
+		(dp_pdev->dp_stats_mask & DP_ENABLE_RX_PPDU_STATS));
+}
+
 static inline int ath12k_debugfs_rx_filter(struct ath12k *ar)
 {
 	return ar->debug.rx_filter;
@@ -335,6 +341,11 @@ ath12k_htt_tx_ppdu_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
 }
 
 static inline bool ath12k_extd_rx_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
+{
+	return false;
+}
+
+static inline bool ath12k_dp_rx_ppdu_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
 {
 	return false;
 }
