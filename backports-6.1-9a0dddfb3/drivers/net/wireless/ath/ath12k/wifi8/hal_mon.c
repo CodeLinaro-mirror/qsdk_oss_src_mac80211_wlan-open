@@ -2845,6 +2845,12 @@ ath12k_wifi8_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 		info[0] = le16_to_cpu(ppdu_start->phy_ppdu_id);
 
 		ppdu_info->ppdu_id = info[0];
+
+		info[1] = __le32_to_cpu(ppdu_start->info0);
+		ppdu_info->chan_num = u32_get_bits(info[1],
+						   HAL_RX_PPDU_START_INFO0_CHAN_NUM);
+		ppdu_info->freq = u32_get_bits(info[1],
+					       HAL_RX_PPDU_START_INFO0_CHAN_FREQ);
 		ppdu_info->ppdu_ts = ppdu_ts;
 
 		if (ppdu_info->ppdu_id != ppdu_info->last_ppdu_id) {
@@ -2951,9 +2957,9 @@ ath12k_wifi8_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 		ppdu_info->rx_duration =
 			u32_get_bits(info[0],
 				     HAL_RX_PPDU_END_DURATION_INFO1_RX_PPDU_DURATION);
-		ppdu_info->tsft = __le32_to_cpu(ppdu_rx_duration->info1);
+		ppdu_info->tsft = __le32_to_cpu(ppdu_rx_duration->wb_timestamp_upper_32);
 		ppdu_info->tsft = (ppdu_info->tsft << 32) |
-				   __le32_to_cpu(ppdu_rx_duration->info0);
+				   __le32_to_cpu(ppdu_rx_duration->wb_timestamp_lower_32);
 		break;
 	}
 	case HAL_RX_MPDU_START: {
