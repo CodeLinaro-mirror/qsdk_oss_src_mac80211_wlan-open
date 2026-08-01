@@ -417,8 +417,8 @@ int ath12k_telemetry_get_phy_nf(struct ath12k *ar)
 	    test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags))
 		return -ESHUTDOWN;
 
-	stats_req = kzalloc(sizeof(*stats_req) + ATH12K_HTT_STATS_BUF_SIZE,
-			    GFP_KERNEL);
+	stats_req = vzalloc(sizeof(*stats_req) + ATH12K_HTT_STATS_BUF_SIZE);
+
 	if (!stats_req)
 		return -ENOMEM;
 
@@ -428,7 +428,7 @@ int ath12k_telemetry_get_phy_nf(struct ath12k *ar)
 	spin_lock_bh(&ar->data_lock);
 	if (ar->debug.htt_stats.stats_req) {
 		spin_unlock_bh(&ar->data_lock);
-		kfree(stats_req);
+		vfree(stats_req);
 		return -EBUSY;
 	}
 	ar->debug.htt_stats.stats_req = stats_req;
@@ -446,7 +446,7 @@ int ath12k_telemetry_get_phy_nf(struct ath12k *ar)
 	spin_lock_bh(&ar->data_lock);
 	ar->debug.htt_stats.stats_req = NULL;
 	spin_unlock_bh(&ar->data_lock);
-	kfree(stats_req);
+	vfree(stats_req);
 
 	return ret;
 }
