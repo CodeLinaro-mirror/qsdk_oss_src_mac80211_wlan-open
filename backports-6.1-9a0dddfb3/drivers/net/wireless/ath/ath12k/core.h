@@ -2025,6 +2025,7 @@ struct ath12k {
 
 	int num_peers;
 	int num_ml_peers;
+	int num_mapc_peers;
 	int max_num_peers;
 	u32 num_started_vdevs;
 	u32 num_created_vdevs;
@@ -2910,6 +2911,10 @@ struct ath12k_base {
 	bool skip_cumac_hw_reset;
 
 	struct ath12k_mem_profile_based_param mem_params;
+
+	u32 mapc_hw_cap_bitmap;
+	u8 mapc_max_co_ap_peers;
+	u8 mapc_max_ctdma_peers;
 
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));

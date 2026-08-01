@@ -736,6 +736,9 @@ int ath12k_peer_delete(struct ath12k *ar, u32 vdev_id, u8 *addr,
 
 	ar->num_peers--;
 
+	if (sta && sta->mapc && ar->num_mapc_peers > 0)
+		ar->num_mapc_peers--;
+
 	return ret;
 }
 
@@ -844,6 +847,17 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		return -EHOSTDOWN;
 	}
 
+	if (arg->peer_type == WMI_PEER_TYPE_MAPC &&
+	    ar->ab->mapc_max_co_ap_peers > 0 &&
+	    ar->num_mapc_peers >= (int)ar->ab->mapc_max_co_ap_peers) {
+		ath12k_warn(ar->ab,
+			    "[vdev_id:%u radio_idx:%u] MAPC peer limit reached (%d/%u)\n",
+			    arg->vdev_id, ar->radio_idx,
+			    ar->num_mapc_peers,
+			    ar->ab->mapc_max_co_ap_peers);
+		return -ENOBUFS;
+	}
+
 	reinit_completion(&ar->peer_create_done);
 
 	memset(map_event, 0, sizeof(struct ath12k_peer_map_pending_event));
@@ -890,6 +904,9 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 			 arg->vdev_id, ar->radio_idx, arg->peer_addr);
 
 	ar->num_peers++;
+
+	if (arg->peer_type == WMI_PEER_TYPE_MAPC)
+		ar->num_mapc_peers++;
 
 	if (sta && sta->mlo) {
 		/* Count one ML peer per radio for real link peers */

@@ -518,6 +518,7 @@ enum wmi_cmd_group {
 	WMI_GRP_TDMA           = 0x4c,
 	WMI_GRP_ENERGY_MGMT    = 0x4e,
 	WMI_GRP_SMD	       = 0x4f,
+	WMI_GRP_MAPC           = 0x51,
 };
 
 #define WMI_CMD_GRP(grp_id) (((grp_id) << 12) | 0x1)
@@ -1044,6 +1045,8 @@ enum wmi_tlv_cmd_id {
 	/** Command to Handle Energy Management OEM's opaque data */
 	WMI_ENERGY_MGMT_OEM_DATA_CMDID,
 	WMI_ROAM_CONFIG_CMDID = WMI_TLV_CMD(WMI_GRP_SMD),
+	/** WMI cmds for MAPC (Multi-AP Coordination, IEEE 802.11bn) */
+	WMI_PEER_SET_MAPC_PARAMS_CMDID = WMI_TLV_CMD(WMI_GRP_MAPC),
 };
 
 enum wmi_tlv_event_id {
@@ -1303,6 +1306,7 @@ enum wmi_tlv_event_id {
 	WMI_ESP_ESTIMATE_EVENTID = WMI_EVT_GRP_START_ID(WMI_GRP_ESP),
 	WMI_ENERGY_MGMT_OEM_DATA_EVENTID = WMI_EVT_GRP_START_ID(WMI_GRP_ENERGY_MGMT),
 	WMI_SMD_ROAM_CONFIG_EVENTID = WMI_TLV_CMD(WMI_GRP_SMD),
+	WMI_PEER_MAPC_SETUP_STATUS_EVENTID = WMI_EVT_GRP_START_ID(WMI_GRP_MAPC),
 };
 
 enum wmi_tlv_pdev_param {
@@ -2622,6 +2626,15 @@ enum wmi_tlv_tag {
 	WMI_TAG_PEER_UHR_OMP_NPCA_PARAMS,
 	WMI_TAG_ANOMALY_REPORT_HDR = 0x588,
 	WMI_TAG_ANOMALY_ENTRY = 0x589,
+	WMI_TAG_PEER_SET_MAPC_PARAMS_CMD_FIXED_PARAM = 0x0594,
+	WMI_TAG_MAPC_CMN_PARAMS = 0x0595,
+	WMI_TAG_MAPC_COTDMA_PARAMS = 0x0596, /* deprecated, reserved */
+	WMI_TAG_MAPC_COSR_PARAMS = 0x0597,
+	WMI_TAG_MAPC_COBF_PARAMS = 0x0598,
+	WMI_TAG_MAPC_CORTWT_PARAMS = 0x0599,
+	WMI_TAG_MAPC_CTDMA_PROFILE = 0x05AD,
+	WMI_TAG_MAPC_CTDMA_TXOP_SHARING_POLICY = 0x05AE,
+	WMI_TAG_MAPC_PEER_SETUP_STATUS_EVENT_FIXED_PARAM = 0x05AF,
 	WMI_TAG_MAX
 };
 
@@ -2917,6 +2930,12 @@ enum wmi_tlv_service {
 	WMI_TLV_SERVICE_SHARED_CU_MEM_MODEL_COUNT_DOWN = 497,
 	WMI_SERVICE_ML_PEER_MASTER_MIGRATION_SUPPORT = 500,
 	WMI_SERVICE_PDEV_SET_CUMAC_CHIP_CMD_SUPPORT = 520,
+
+	/* MAPC / C-TDMA (802.11bn) service bits, per FW wmi_services.h */
+	WMI_TLV_SERVICE_UHR_MAX_CO_AP_PEERS = 511,
+	WMI_TLV_SERVICE_UHR_CO_AP_CTDMA_TB_PPDU_SUPPORT = 512,
+	WMI_TLV_SERVICE_UHR_CO_AP_CTDMA_TXOP_RETURN_SUPPORT = 513,
+	WMI_TLV_SERVICE_UHR_MAX_CTDMA_AP_PEERS_SUPPORT = 521,
 
 	WMI_MAX_EXT2_SERVICE,
 };
@@ -3581,6 +3600,7 @@ struct ath12k_wmi_soc_hal_reg_caps_params {
 
 #define WMI_MAX_UHRCAP_MAC_SIZE  4
 #define WMI_MAX_UHRCAP_PHY_SIZE  8
+#define WMI_MAX_UHRCAP_DBE_SIZE  2
 
 /* Used for EHT MCS-NSS array. Data at each array index follows the format given
  * in IEEE P802.11be/D2.0, May 20229.4.2.313.4.
@@ -3608,6 +3628,22 @@ struct ath12k_wmi_soc_hal_reg_caps_params {
 /**
  * struct wmi_service_ready_ext2_event - extended service ready event params
  * @afc_deployment_type: AFC deployment type indicated by FW (indoor,outdoor)
+ * @hw_bd_status: board data check report
+ * @tx_aggr_ba_win_size_max: max TX block-ack window FW supports
+ * @rx_aggr_ba_win_size_max: max RX block-ack window FW supports
+ * @num_max_mlo_link_per_ml_bss_supp: max links per STA MLD
+ * @num_max_mlo_link_per_ml_sap_supp: max links per SAP MLD
+ * @supported_wifi_generations: Wi-Fi generation capability bitmap
+ * @supported_wifi_certified_generations: Wi-Fi Alliance certification bitmap
+ * @max_cfr_filter_groups_supp: max CFR filter groups
+ * @sam_capability_1: SAM peer/MSDUQ capability word 0
+ * @sam_capability_2: SAM MPDUQ capability word 1
+ * @uhr_cap_mac_info: UHR MAC capability bitmap array [WMI_MAX_UHRCAP_MAC_SIZE]
+ * @uhr_cap_dbe_info: UHR DBE capability bitmap array [WMI_MAX_UHRCAP_DBE_SIZE]
+ * @max_uhr_co_ap_peers: max general co-AP peers;
+ *   valid when WMI_TLV_SERVICE_UHR_MAX_CO_AP_PEERS svc set
+ * @max_uhr_ctdma_ap_peers: max Co-TDMA peers;
+ *   valid when UHR_MAX_CTDMA_AP_PEERS_SUPPORT svc set
  */
 struct wmi_service_ready_ext2_event {
 	__le32 reg_db_version;
@@ -3623,6 +3659,20 @@ struct wmi_service_ready_ext2_event {
 	__le32 max_num_msduq_supported_per_tid;
 	__le32 default_num_msduq_supported_per_tid;
 	__le32 afc_deployment_type;
+	__le32 hw_bd_status;
+	__le32 tx_aggr_ba_win_size_max;
+	__le32 rx_aggr_ba_win_size_max;
+	__le32 num_max_mlo_link_per_ml_bss_supp;
+	__le32 num_max_mlo_link_per_ml_sap_supp;
+	__le32 supported_wifi_generations;
+	__le32 supported_wifi_certified_generations;
+	__le32 max_cfr_filter_groups_supp;
+	__le32 sam_capability_1;
+	__le32 sam_capability_2;
+	__le32 uhr_cap_mac_info[WMI_MAX_UHRCAP_MAC_SIZE];
+	__le32 uhr_cap_dbe_info[WMI_MAX_UHRCAP_DBE_SIZE];
+	__le32 max_uhr_co_ap_peers;
+	__le32 max_uhr_ctdma_ap_peers;
 } __packed;
 
 struct ath12k_wmi_caps_ext_params {
@@ -4341,6 +4391,103 @@ struct wmi_peer_create_mlo_params {
 	__le32 flags;
 };
 
+/* Bitmask constants for param_set_mask */
+#define ATH12K_WMI_MAPC_SET_CMN     BIT(0)  /* wmi_mapc_cmn_params */
+#define ATH12K_WMI_MAPC_SET_PROFILE BIT(2)  /* wmi_mapc_ctdma_profile */
+#define ATH12K_WMI_MAPC_SET_TXOP    BIT(3)  /* wmi_mapc_ctdma_txop_sharing_policy */
+
+struct ath12k_wmi_peer_mapc_params_arg {
+	u8  peer_addr[ETH_ALEN];
+	u32 vdev_id;
+	u32 param_set_mask;
+	u32 apid_to_neighbor_peer;
+	u32 apid_from_neighbor_peer;
+	u32 mapc_capability_bitmap;
+	u32 channel_width;
+	u32 ccfs;
+	u32 disable_subchannel_bitmap;
+	u32 bss_color;
+	bool rx_txop_return_support;
+	u32 primary_ac;
+	u32 nbr_ap_prio;
+	u32 service_start_time;
+	u32 service_interval;
+	u32 service_end_time;
+	u32 critical_traffic_dur_thresh_us;
+	u32 max_shared_txop_dur_us;
+	u32 min_shared_txop_dur_us;
+};
+
+/* Scheme enable bitmap — bit per scheme */
+#define WMI_MAPC_SCHEME_COBF    BIT(0)  /* Co-BF   (future) */
+#define WMI_MAPC_SCHEME_COSR    BIT(1)  /* Co-SR   (future) */
+#define WMI_MAPC_SCHEME_COTDMA  BIT(2)  /* Co-TDMA (implemented) */
+#define WMI_MAPC_SCHEME_CORTWT  BIT(3)  /* Co-rTWT (future) */
+#define WMI_MAPC_SCHEME_COCR    BIT(4)  /* Co-CR   (future) */
+
+struct wmi_peer_set_mapc_params_cmd_fixed_param {
+	__le32 tlv_header;
+	__le32 vdev_id;
+	struct ath12k_wmi_mac_addr_params peer_macaddr;
+	__le32 mapc_scheme_enable_bitmap;
+} __packed;
+
+struct wmi_mapc_cmn_params {
+	__le32 tlv_header;
+	__le32 mapc_capability_bitmap;
+	__le32 apid_to_neighbor_peer;
+	__le32 apid_from_neighbor_peer;
+} __packed;
+
+struct wmi_mapc_ctdma_profile {
+	__le32 tlv_header;
+	__le32 channel_width;
+	__le32 ccfs;
+	__le32 bss_color;
+	__le32 rx_txop_return_support;
+	__le32 disable_subchannel_bitmap;
+} __packed;
+
+struct wmi_mapc_ctdma_txop_sharing_policy {
+	__le32 tlv_header;
+	__le32 primary_ac;
+	__le32 nbr_ap_prio;
+	__le32 latency_sensitive_threshold_us;
+	__le32 service_start_time;
+	__le32 service_interval;
+	__le32 service_end_time;
+	__le32 critical_traffic_dur_thresh_us;
+	__le32 max_shared_txop_dur_us;
+	__le32 min_shared_txop_dur_us;
+} __packed;
+
+struct wmi_mapc_cosr_params   { __le32 tlv_header; __le32 reserved; } __packed;
+struct wmi_mapc_cobf_params   { __le32 tlv_header; __le32 reserved; } __packed;
+struct wmi_mapc_cortwt_params { __le32 tlv_header; __le32 reserved; } __packed;
+
+struct wmi_mapc_peer_setup_status_event_fixed_param {
+	__le32 tlv_header;
+	__le32 vdev_id;
+	struct ath12k_wmi_mac_addr_params peer_macaddr;
+	__le32 scheme_enable_bitmap;
+	__le32 param_sets_recvd;
+	__le32 param_sets_missing;
+} __packed;
+
+struct wmi_peer_get_mapc_params_cmd_fixed_param {
+	__le32 tlv_header;
+	__le32 vdev_id;
+	struct ath12k_wmi_mac_addr_params peer_macaddr;
+} __packed;
+
+struct wmi_mapc_peer_get_params_event_fixed_param {
+	__le32 tlv_header;
+	__le32 vdev_id;
+	struct ath12k_wmi_mac_addr_params peer_macaddr;
+	__le32 scheme_enable_bitmap;
+	__le32 param_sets_recvd;
+} __packed;
+
 struct ath12k_wmi_pdev_set_regdomain_arg {
 	u16 current_rd_in_use;
 	u16 current_rd_2g;
@@ -4465,6 +4612,7 @@ enum wmi_peer_type {
 	WMI_PEER_TYPE_BSS = 1,
 	WMI_PEER_TYPE_TDLS = 2,
 	WMI_PEER_TYPE_MLO_BRIDGE = 7,
+	WMI_PEER_TYPE_MAPC = 8,
 };
 
 #define ATH12K_WMI_FLAG_STA_ID_VALID	BIT(0)
@@ -11149,6 +11297,8 @@ int ath12k_wmi_send_smd_roam_config(struct ath12k *ar,
 				    struct ath12k_wmi_smd_roam_config_arg *arg);
 int ath12k_wmi_send_peer_assoc_cmd(struct ath12k *ar,
 				   struct ath12k_wmi_peer_assoc_arg *arg);
+int ath12k_wmi_send_peer_set_mapc_params_cmd(struct ath12k *ar,
+				const struct ath12k_wmi_peer_mapc_params_arg *arg);
 int ath12k_wmi_vdev_install_key(struct ath12k *ar,
 				struct wmi_vdev_install_key_arg *arg);
 int ath12k_wmi_pdev_bss_chan_info_request(struct ath12k *ar,

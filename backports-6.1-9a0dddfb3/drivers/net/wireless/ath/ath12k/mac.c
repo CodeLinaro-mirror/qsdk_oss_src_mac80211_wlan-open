@@ -3797,13 +3797,15 @@ static enum wmi_phy_mode ath12k_mac_get_phymode_uhr(struct ath12k *ar,
 						    struct ieee80211_link_sta *link_sta)
 {
 	if (link_sta->bandwidth == IEEE80211_STA_RX_BW_320)
-		if (link_sta->eht_cap.eht_cap_elem.phy_cap_info[0] &
-		    IEEE80211_EHT_PHY_CAP0_320MHZ_IN_6GHZ)
+		if (link_sta->sta->mapc ||
+		    (link_sta->eht_cap.eht_cap_elem.phy_cap_info[0] &
+		     IEEE80211_EHT_PHY_CAP0_320MHZ_IN_6GHZ))
 			return MODE_11BN_UHR320;
 
 	if (link_sta->bandwidth == IEEE80211_STA_RX_BW_160) {
-		if (link_sta->he_cap.he_cap_elem.phy_cap_info[0] &
-		    IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_160MHZ_IN_5G)
+		if (link_sta->sta->mapc ||
+		    (link_sta->he_cap.he_cap_elem.phy_cap_info[0] &
+		     IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_160MHZ_IN_5G))
 			return MODE_11BN_UHR160;
 
 		ath12k_warn(ar->ab, "invalid UHR PHY capability info for 160 Mhz: %d\n",
@@ -4789,13 +4791,15 @@ static enum wmi_phy_mode ath12k_mac_get_phymode_eht(struct ath12k *ar,
 						    struct ieee80211_link_sta *link_sta)
 {
 	if (link_sta->bandwidth == IEEE80211_STA_RX_BW_320)
-		if (link_sta->eht_cap.eht_cap_elem.phy_cap_info[0] &
-		    IEEE80211_EHT_PHY_CAP0_320MHZ_IN_6GHZ)
+		if (link_sta->sta->mapc ||
+		    (link_sta->eht_cap.eht_cap_elem.phy_cap_info[0] &
+		     IEEE80211_EHT_PHY_CAP0_320MHZ_IN_6GHZ))
 			return MODE_11BE_EHT320;
 
 	if (link_sta->bandwidth == IEEE80211_STA_RX_BW_160) {
-		if (link_sta->he_cap.he_cap_elem.phy_cap_info[0] &
-		    IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_160MHZ_IN_5G)
+		if (link_sta->sta->mapc ||
+		    (link_sta->he_cap.he_cap_elem.phy_cap_info[0] &
+		     IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_160MHZ_IN_5G))
 			return MODE_11BE_EHT160;
 
 		ath12k_warn(ar->ab, "invalid EHT PHY capability info for 160 Mhz: %d\n",
@@ -13448,13 +13452,19 @@ static int ath12k_mac_station_assoc(struct ath12k *ar,
 	if (reassoc)
 		return 0;
 
-	ret = ath12k_setup_peer_smps(ar, arvif, arsta->addr,
-				     &ht_cap,
-				     &he_6ghz_cap);
-	if (ret) {
-		ath12k_warn(ar->ab, "failed to setup peer SMPS for vdev %d: %d\n",
-			    arvif->vdev_id, ret);
-		return ret;
+	/* MAPC peers are management-only coordination entities with no
+	 * spatial streams; WMI_PEER_MIMO_PS_STATE is rejected by FW for
+	 * peer_type=8.
+	 */
+	if (!sta->mapc) {
+		ret = ath12k_setup_peer_smps(ar, arvif, arsta->addr,
+					     &ht_cap,
+					     &he_6ghz_cap);
+		if (ret) {
+			ath12k_warn(ar->ab, "failed to setup peer SMPS for vdev %d: %d\n",
+				    arvif->vdev_id, ret);
+			return ret;
+		}
 	}
 
 	if (!sta->wme) {
@@ -14280,7 +14290,8 @@ static int ath12k_mac_station_add(struct ath12k *ar,
 			peer_param.peer_type = WMI_PEER_TYPE_DEFAULT;
 		peer_param.mlo_bridge_peer = true;
 	} else {
-		peer_param.peer_type = WMI_PEER_TYPE_DEFAULT;
+		peer_param.peer_type = sta->mapc ? WMI_PEER_TYPE_MAPC :
+						   WMI_PEER_TYPE_DEFAULT;
 		peer_param.mlo_bridge_peer = false;
 	}
 	peer_param.ml_enabled = sta->mlo;
@@ -15861,6 +15872,59 @@ void ath12k_mac_op_link_going_down(struct ieee80211_hw *hw,
 }
 EXPORT_SYMBOL(ath12k_mac_op_link_going_down);
 
+int
+ath12k_mac_op_sta_set_mapc_params(struct ieee80211_hw *hw,
+				  struct ieee80211_vif *vif,
+				  struct ieee80211_sta *sta,
+				  const struct cfg80211_sta_mapc_params *p)
+{
+	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
+	struct ath12k_link_vif *arvif = &ahvif->deflink;
+	struct ath12k *ar = arvif->ar;
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_wmi_peer_mapc_params_arg arg = {};
+	int ret;
+
+	if (!test_bit(WMI_TLV_SERVICE_UHR_MAX_CTDMA_AP_PEERS_SUPPORT,
+		      ab->wmi_ab.svc_map)) {
+		ath12k_warn(ab,
+			    "FW does not support Co-TDMA (WMI svc bit %d absent); skipping MAPC params for %pM\n",
+			    WMI_TLV_SERVICE_UHR_MAX_CTDMA_AP_PEERS_SUPPORT, sta->addr);
+		return 0;
+	}
+
+	ether_addr_copy(arg.peer_addr, sta->addr);
+	arg.vdev_id                   = arvif->vdev_id;
+	arg.param_set_mask            = ATH12K_WMI_MAPC_SET_CMN |
+					ATH12K_WMI_MAPC_SET_PROFILE;
+	arg.apid_to_neighbor_peer     = p->apid_to_neighbor_peer;
+	arg.apid_from_neighbor_peer   = p->apid_from_neighbor_peer;
+	arg.mapc_capability_bitmap    = p->mapc_capability_bitmap;
+	arg.channel_width             = p->cotdma.channel_width;
+	arg.ccfs                      = p->cotdma.ccfs;
+	arg.disable_subchannel_bitmap = p->cotdma.disable_subchannel_bitmap;
+	arg.bss_color                 = p->cotdma.bss_color;
+	arg.rx_txop_return_support    = p->cotdma.rx_txop_return_support;
+
+	ath12k_dbg(ab, ATH12K_DBG_MAC,
+		   "mac MAPC sta=%pM apid_to=%u apid_from=%u cap=0x%04x ch_width=%u ccfs=%u disable_subchan=0x%04x bss_color=%u rx_txop_return=%d\n",
+		   sta->addr,
+		   arg.apid_to_neighbor_peer, arg.apid_from_neighbor_peer,
+		   arg.mapc_capability_bitmap,
+		   arg.channel_width, arg.ccfs,
+		   arg.disable_subchannel_bitmap, arg.bss_color,
+		   arg.rx_txop_return_support);
+
+	ret = ath12k_wmi_send_peer_set_mapc_params_cmd(ar, &arg);
+	if (ret)
+		ath12k_err(ab,
+			   "failed to send MAPC params WMI cmd for %pM: %d\n",
+			    sta->addr, ret);
+
+	return ret;
+}
+EXPORT_SYMBOL(ath12k_mac_op_sta_set_mapc_params);
+
 void ath12k_mac_op_link_sta_rc_update(struct ieee80211_hw *hw,
 				      struct ieee80211_vif *vif,
 				      struct ieee80211_link_sta *link_sta,
@@ -15920,6 +15984,15 @@ void ath12k_mac_op_link_sta_rc_update(struct ieee80211_hw *hw,
 		   "mac sta rc update for %pM changed %08x bw %d nss %d smps %d\n",
 		   arsta->addr, changed, link_sta->bandwidth, link_sta->rx_nss,
 		   link_sta->smps_mode);
+
+	/* MAPC peers are management-only; BW, NSS and SMPS rate-control
+	 * updates are not applicable and the corresponding WMI peer-param
+	 * commands are rejected by FW for peer_type=8.
+	 */
+	if (sta->mapc) {
+		rcu_read_unlock();
+		return;
+	}
 
 	spin_lock_bh(&ar->data_lock);
 
@@ -29189,6 +29262,37 @@ ath12k_fill_rf_path_ctx(struct ath12k *ar,
 	}
 }
 
+static u32 ath12k_mac_mapc_hw_cap_bitmap(struct ath12k_base *ab)
+{
+	u32 bitmap = 0;
+
+	if (test_bit(WMI_TLV_SERVICE_UHR_MAX_CTDMA_AP_PEERS_SUPPORT, ab->wmi_ab.svc_map))
+		bitmap |= BIT(ATH12K_MAPC_CAP_COTDMA_SUPPORT);
+
+	if (test_bit(WMI_TLV_SERVICE_UHR_CO_AP_CTDMA_TB_PPDU_SUPPORT,
+		     ab->wmi_ab.svc_map))
+		bitmap |= BIT(ATH12K_MAPC_CAP_AP_TB_PPDU_RESPONSE);
+
+	if (test_bit(WMI_TLV_SERVICE_UHR_CO_AP_CTDMA_TXOP_RETURN_SUPPORT,
+		     ab->wmi_ab.svc_map))
+		bitmap |= BIT(ATH12K_MAPC_CAP_COTDMA_RX_TXOP_RETURN);
+
+	ath12k_dbg(ab, ATH12K_DBG_MAC,
+		   "mac MAPC hw_cap=0x%08x (co_ap_svc=%d ctdma_peers_svc=%d tb_ppdu_svc=%d txop_ret_svc=%d) max_co_ap_peers=%u max_ctdma_peers=%u\n",
+		   bitmap,
+		   test_bit(WMI_TLV_SERVICE_UHR_MAX_CO_AP_PEERS,
+			    ab->wmi_ab.svc_map),
+		   test_bit(WMI_TLV_SERVICE_UHR_MAX_CTDMA_AP_PEERS_SUPPORT,
+			    ab->wmi_ab.svc_map),
+		   test_bit(WMI_TLV_SERVICE_UHR_CO_AP_CTDMA_TB_PPDU_SUPPORT,
+			    ab->wmi_ab.svc_map),
+		   test_bit(WMI_TLV_SERVICE_UHR_CO_AP_CTDMA_TXOP_RETURN_SUPPORT,
+			    ab->wmi_ab.svc_map),
+		   ab->mapc_max_co_ap_peers,
+		   ab->mapc_max_ctdma_peers);
+	return bitmap;
+}
+
 static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 {
 	struct ieee80211_hw *hw = ah->hw;
@@ -29573,6 +29677,10 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 		ieee80211_hw_set(hw, SUPPORTS_TX_MONITOR_OFFLOAD);
 
 	hw->wiphy->max_num_akm_suites = ATH12K_MAX_AKM_SUITES;
+
+	ab->mapc_hw_cap_bitmap         = ath12k_mac_mapc_hw_cap_bitmap(ab);
+	wiphy->mapc_hw_cap_bitmap      = ab->mapc_hw_cap_bitmap;
+	wiphy->mapc_max_ctdma_peers    = ab->mapc_max_ctdma_peers;
 
 	ret = ieee80211_register_hw(hw);
 	if (ret) {

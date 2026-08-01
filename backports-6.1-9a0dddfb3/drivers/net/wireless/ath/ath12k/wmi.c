@@ -101,6 +101,8 @@ struct ath12k_wmi_svc_rdy_ext_parse {
 /**
  * ath12k_wmi_svc_rdy_ext2_arg - WMI service ready extended 2
  * @afc_deployment_type: AFC deployment type (indoor, outdoor)
+ * @mapc_max_co_ap_peers: max general co-AP peers supported
+ * @mapc_max_ctdma_ap_peers: max Co-TDMA peers supported
  */
 struct ath12k_wmi_svc_rdy_ext2_arg {
 	u32 reg_db_version;
@@ -116,6 +118,8 @@ struct ath12k_wmi_svc_rdy_ext2_arg {
 	u32 max_tid_msduq;
 	u32 def_tid_msduq;
 	u32 afc_deployment_type;
+	u32 mapc_max_co_ap_peers;
+	u32 mapc_max_ctdma_ap_peers;
 };
 
 struct ath12k_wmi_svc_rdy_ext2_parse {
@@ -2773,6 +2777,145 @@ int ath12k_wmi_set_peer_param(struct ath12k *ar, const u8 *peer_addr,
 
 	return ret;
 }
+
+int ath12k_wmi_send_peer_set_mapc_params_cmd(struct ath12k *ar,
+					const struct ath12k_wmi_peer_mapc_params_arg *arg)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct wmi_peer_set_mapc_params_cmd_fixed_param *fixed;
+	struct wmi_mapc_cmn_params *cmn;
+	struct wmi_mapc_ctdma_profile *profile;
+	struct wmi_mapc_ctdma_txop_sharing_policy *txop;
+	struct wmi_tlv *tlv;
+	struct sk_buff *skb;
+	void *ptr;
+	int ret;
+	size_t skb_len;
+	bool has_cmn     = !!(arg->param_set_mask & ATH12K_WMI_MAPC_SET_CMN);
+	bool has_profile = !!(arg->param_set_mask & ATH12K_WMI_MAPC_SET_PROFILE);
+	bool has_txop    = !!(arg->param_set_mask & ATH12K_WMI_MAPC_SET_TXOP);
+
+	/* fixed param is always present; each group is either 1-element or 0-element */
+	skb_len = sizeof(*fixed);
+	skb_len += TLV_HDR_SIZE + (has_cmn     ? sizeof(*cmn)     : 0);
+	skb_len += TLV_HDR_SIZE + (has_profile ? sizeof(*profile) : 0);
+	skb_len += TLV_HDR_SIZE + (has_txop    ? sizeof(*txop)    : 0);
+	skb_len += 3 * TLV_HDR_SIZE; /* Co-SR, Co-BF, Co-rTWT: always 0-element stubs */
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, skb_len);
+	if (!skb)
+		return -ENOMEM;
+
+	ptr = skb->data;
+
+	/* Fixed param — always present */
+	fixed = ptr;
+	fixed->tlv_header =
+		ath12k_wmi_tlv_cmd_hdr(WMI_TAG_PEER_SET_MAPC_PARAMS_CMD_FIXED_PARAM,
+				       sizeof(*fixed));
+	fixed->vdev_id = cpu_to_le32(arg->vdev_id);
+	ether_addr_copy(fixed->peer_macaddr.addr, arg->peer_addr);
+	fixed->mapc_scheme_enable_bitmap = cpu_to_le32(WMI_MAPC_SCHEME_COTDMA);
+	ptr += sizeof(*fixed);
+
+	/* CMN group: capability bitmap + standard APID pair */
+	tlv = ptr;
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT,
+					 has_cmn ? sizeof(*cmn) : 0);
+	ptr += TLV_HDR_SIZE;
+	if (has_cmn) {
+		cmn = ptr;
+		cmn->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_MAPC_CMN_PARAMS,
+							 sizeof(*cmn));
+		cmn->mapc_capability_bitmap  = cpu_to_le32(arg->mapc_capability_bitmap);
+		cmn->apid_to_neighbor_peer   = cpu_to_le32(arg->apid_to_neighbor_peer);
+		cmn->apid_from_neighbor_peer = cpu_to_le32(arg->apid_from_neighbor_peer);
+		ptr += sizeof(*cmn);
+	}
+
+	/* CTDMA profile group: channel info */
+	tlv = ptr;
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT,
+					 has_profile ? sizeof(*profile) : 0);
+	ptr += TLV_HDR_SIZE;
+	if (has_profile) {
+		profile = ptr;
+		profile->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_MAPC_CTDMA_PROFILE,
+							     sizeof(*profile));
+		profile->channel_width             = cpu_to_le32(arg->channel_width);
+		profile->ccfs                      = cpu_to_le32(arg->ccfs);
+		profile->bss_color                 = cpu_to_le32(arg->bss_color);
+		profile->rx_txop_return_support =
+			cpu_to_le32(arg->rx_txop_return_support ? 1 : 0);
+		profile->disable_subchannel_bitmap =
+			cpu_to_le32(arg->disable_subchannel_bitmap);
+		ptr += sizeof(*profile);
+	}
+
+	/* TXOP policy group: TXOP sharing policy */
+	tlv = ptr;
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT,
+					 has_txop ? sizeof(*txop) : 0);
+	ptr += TLV_HDR_SIZE;
+	if (has_txop) {
+		txop = ptr;
+		txop->tlv_header =
+			ath12k_wmi_tlv_cmd_hdr(WMI_TAG_MAPC_CTDMA_TXOP_SHARING_POLICY,
+					       sizeof(*txop));
+		txop->primary_ac                       = cpu_to_le32(arg->primary_ac);
+		txop->nbr_ap_prio                      = cpu_to_le32(arg->nbr_ap_prio);
+		/* NOTE: latency_sensitive_threshold_us has no cfg80211 source yet;
+		 * always zero until the cfg80211/nl80211 interface is extended.
+		 */
+		txop->latency_sensitive_threshold_us   = 0;
+		txop->service_start_time = cpu_to_le32(arg->service_start_time);
+		txop->service_interval = cpu_to_le32(arg->service_interval);
+		txop->service_end_time = cpu_to_le32(arg->service_end_time);
+		txop->critical_traffic_dur_thresh_us =
+			cpu_to_le32(arg->critical_traffic_dur_thresh_us);
+		txop->max_shared_txop_dur_us = cpu_to_le32(arg->max_shared_txop_dur_us);
+		txop->min_shared_txop_dur_us = cpu_to_le32(arg->min_shared_txop_dur_us);
+		ptr += sizeof(*txop);
+	}
+
+	/* Co-SR, Co-BF, Co-rTWT: always 0-element stubs to hold TLV slot positions */
+	tlv = ptr;
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, 0);
+	ptr += TLV_HDR_SIZE;
+	tlv = ptr;
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, 0);
+	ptr += TLV_HDR_SIZE;
+	tlv = ptr;
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, 0);
+	ptr += TLV_HDR_SIZE;
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "WMI_PEER_SET_MAPC_PARAMS: peer %pM vdev %d mask=0x%x cmn: apid_to=%u apid_from=%u cap=0x%04x\n",
+		   arg->peer_addr, arg->vdev_id, arg->param_set_mask,
+		   arg->apid_to_neighbor_peer, arg->apid_from_neighbor_peer,
+		   arg->mapc_capability_bitmap);
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "WMI_PEER_SET_MAPC_PARAMS: profile: ch_width=%u ccfs=%u dsb=0x%04x bss_color=%u rx_txop_return=%u txop: primary_ac=%u nbr_prio=%u svc_start=%u svc_interval=%u svc_end=%u crit_dur=%u max_txop=%u min_txop=%u\n",
+		   arg->channel_width, arg->ccfs,
+		   arg->disable_subchannel_bitmap, arg->bss_color,
+		   arg->rx_txop_return_support,
+		   arg->primary_ac, arg->nbr_ap_prio,
+		   arg->service_start_time, arg->service_interval, arg->service_end_time,
+		   arg->critical_traffic_dur_thresh_us,
+		   arg->max_shared_txop_dur_us, arg->min_shared_txop_dur_us);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_PEER_SET_MAPC_PARAMS_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "failed to send WMI_PEER_SET_MAPC_PARAMS_CMDID for %pM: %d\n",
+			    arg->peer_addr, ret);
+		dev_kfree_skb(skb);
+	}
+
+	return ret;
+}
+EXPORT_SYMBOL(ath12k_wmi_send_peer_set_mapc_params_cmd);
+
 
 int ath12k_wmi_send_peer_flush_tids_cmd(struct ath12k *ar,
 					u8 peer_addr[ETH_ALEN],
@@ -8871,6 +9014,8 @@ static int ath12k_pull_svc_ready_ext2(struct ath12k_wmi_pdev *wmi_handle,
 	arg->max_tid_msduq = le32_to_cpu(ev->max_num_msduq_supported_per_tid);
 	arg->def_tid_msduq = le32_to_cpu(ev->default_num_msduq_supported_per_tid);
 	arg->afc_deployment_type = le32_to_cpu(ev->afc_deployment_type);
+	arg->mapc_max_co_ap_peers    = le32_to_cpu(ev->max_uhr_co_ap_peers);
+	arg->mapc_max_ctdma_ap_peers = le32_to_cpu(ev->max_uhr_ctdma_ap_peers);
 	return 0;
 }
 
@@ -9350,6 +9495,12 @@ static int ath12k_wmi_svc_rdy_ext2_parse(struct ath12k_base *ab,
 		ab->wmi_ab.dp_peer_meta_data_ver =
 			u32_get_bits(parse->arg.target_cap_flags,
 				     WMI_TARGET_CAP_FLAGS_RX_PEER_METADATA_VERSION);
+		if (test_bit(WMI_TLV_SERVICE_UHR_MAX_CO_AP_PEERS,
+			     ab->wmi_ab.svc_map))
+			ab->mapc_max_co_ap_peers = parse->arg.mapc_max_co_ap_peers;
+		if (test_bit(WMI_TLV_SERVICE_UHR_MAX_CTDMA_AP_PEERS_SUPPORT,
+			     ab->wmi_ab.svc_map))
+			ab->mapc_max_ctdma_peers = parse->arg.mapc_max_ctdma_ap_peers;
 		break;
 
 	case WMI_TAG_ARRAY_STRUCT:
@@ -19577,6 +19728,50 @@ static void ath12k_fw_anomaly_event(struct ath12k_base *ab, struct sk_buff *skb)
 	}
 }
 
+static void ath12k_wmi_mapc_peer_setup_status_event(struct ath12k_base *ab,
+						    struct sk_buff *skb)
+{
+	const struct wmi_mapc_peer_setup_status_event_fixed_param *ev;
+	u8 mac[ETH_ALEN];
+	u32 recvd, missing;
+
+	if (skb->len < sizeof(*ev)) {
+		ath12k_warn(ab,
+			    "MAPC SETUP STATUS event too short: %d < %zu bytes\n",
+			    skb->len, sizeof(*ev));
+		return;
+	}
+
+	ev = (const struct wmi_mapc_peer_setup_status_event_fixed_param *)skb->data;
+
+	ether_addr_copy(mac, ev->peer_macaddr.addr);
+	recvd   = le32_to_cpu(ev->param_sets_recvd);
+	missing = le32_to_cpu(ev->param_sets_missing);
+
+	ath12k_dbg(ab, ATH12K_DBG_WMI,
+		   "MAPC SETUP STATUS: vdev_id=%u peer=%pM scheme_bitmap=0x%x sets_recvd=0x%x (CMN:%c PROF:%c TXOP:%c) sets_missing=0x%x\n",
+		   le32_to_cpu(ev->vdev_id), mac,
+		   le32_to_cpu(ev->scheme_enable_bitmap),
+		   recvd,
+		   (recvd & ATH12K_WMI_MAPC_SET_CMN)     ? 'Y' : 'N',
+		   (recvd & ATH12K_WMI_MAPC_SET_PROFILE) ? 'Y' : 'N',
+		   (recvd & ATH12K_WMI_MAPC_SET_TXOP)    ? 'Y' : 'N',
+		   missing);
+
+	if (missing)
+		ath12k_dbg(ab, ATH12K_DBG_WMI,
+			   "MAPC SETUP STATUS: peer %pM still waiting for sets: %s%s%s\n",
+			   mac,
+			   (missing & ATH12K_WMI_MAPC_SET_CMN)     ? "CMN " : "",
+			   (missing & ATH12K_WMI_MAPC_SET_PROFILE) ? "PROFILE " : "",
+			   (missing & ATH12K_WMI_MAPC_SET_TXOP)    ? "TXOP " : "");
+	else
+		ath12k_dbg(ab, ATH12K_DBG_WMI,
+			   "MAPC SETUP STATUS: peer %pM fully configured — Co-TDMA active\n",
+			   mac);
+}
+
+
 static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 {
 	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
@@ -19871,6 +20066,9 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 		break;
 	case WMI_ANOMALY_REPORT_EVENTID:
 		ath12k_fw_anomaly_event(ab, skb);
+		break;
+	case WMI_PEER_MAPC_SETUP_STATUS_EVENTID:
+		ath12k_wmi_mapc_peer_setup_status_event(ab, skb);
 		break;
 	default:
 		if (!ath12k_wmi_op_rx_extn(id, ab, skb))

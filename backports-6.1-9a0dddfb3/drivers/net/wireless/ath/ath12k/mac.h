@@ -56,6 +56,10 @@ struct ath12k_generic_iter {
 #define ATH12K_PDEV_TX_POWER_INVALID		((u32)-1)
 #define ATH12K_PDEV_TX_POWER_REFRESH_TIME_MSECS	5000 /* msecs */
 
+#define ATH12K_MAPC_CAP_COTDMA_SUPPORT		2
+#define ATH12K_MAPC_CAP_AP_TB_PPDU_RESPONSE	14
+#define ATH12K_MAPC_CAP_COTDMA_RX_TXOP_RETURN	16
+
 /* FIXME: should these be in ieee80211.h? */
 #define IEEE80211_VHT_MCS_SUPPORT_0_11_MASK	GENMASK(23, 16)
 #define IEEE80211_DISABLE_VHT_MCS_SUPPORT_0_11	BIT(24)
@@ -450,6 +454,10 @@ void ath12k_mac_op_link_going_down(struct ieee80211_hw *hw,
 				   struct ieee80211_vif *vif,
 				   struct ieee80211_bss_conf *link_conf,
 				   bool is_netdev_going_down);
+int ath12k_mac_op_sta_set_mapc_params(struct ieee80211_hw *hw,
+				      struct ieee80211_vif *vif,
+				      struct ieee80211_sta *sta,
+				      const struct cfg80211_sta_mapc_params *p);
 void ath12k_mac_op_link_sta_rc_update(struct ieee80211_hw *hw,
 				      struct ieee80211_vif *vif,
 				      struct ieee80211_link_sta *link_sta,
