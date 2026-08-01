@@ -123,11 +123,6 @@
 
 #define ATH12K_BA_USER_ID_INVAL            255
 
-/* ext_mon filtering behavior */
-#define ATH12K_TX_EXT_MON_HW_PEER_FILTER	1
-#define ATH12K_TX_EXT_MON_ALL_PEER_FILTER	2
-#define ATH12K_TX_EXT_MON_SW_PEER_FILTER	3
-
 enum dp_mon_tx_filter_mode;
 struct dp_mon_tx_filter;
 struct ath12k_ext_mon_config;
