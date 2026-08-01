@@ -14294,7 +14294,34 @@ static void ath12k_update_stats_event(struct ath12k_base *ab, struct sk_buff *sk
 
 	/* Handle WMI_REQUEST_PDEV_STAT status update */
 	if (stats.stats_id == WMI_REQUEST_PDEV_STAT) {
+		struct ath12k_fw_stats_pdev *pdev_entry;
+
+		/* Discard any previously cached pdev entries before splicing
+		 * in the new ones.  Without this, periodic timer firings would
+		 * accumulate entries in ar->fw_stats.pdevs indefinitely.
+		 * data_lock is already held here so this is safe.
+		 */
+		ath12k_fw_stats_free(&ar->fw_stats);
+
 		list_splice_tail_init(&stats.pdevs, &ar->fw_stats.pdevs);
+
+		/* Cache the latest pdev counters so periodic-timer consumers
+		 * (chan_util, survey, noise floor) can read fresh values
+		 * without issuing a new blocking WMI request.
+		 */
+		pdev_entry = list_first_entry_or_null(&ar->fw_stats.pdevs,
+						      struct ath12k_fw_stats_pdev,
+						      list);
+		if (pdev_entry) {
+			ar->pdev_prev_rx_clear_count = ar->pdev_rx_clear_count;
+			ar->pdev_prev_cycle_count    = ar->pdev_cycle_count;
+			ar->pdev_rx_clear_count = pdev_entry->rx_clear_count;
+			ar->pdev_cycle_count    = pdev_entry->cycle_count;
+			ar->pdev_chan_nf        = pdev_entry->ch_noise_floor;
+		} else {
+			ath12k_warn(ar->ab, "pdev stats timer: event received but pdev_entry is NULL\n");
+		}
+
 		complete(&ar->fw_stats_done);
 		goto complete;
 	}

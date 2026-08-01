@@ -2121,6 +2121,28 @@ struct ath12k {
 	struct wiphy_delayed_work ap_ps_timer;
 	u32 ap_ps_timeout;
 
+	/* Periodic pdev stats timer: drives continuous FW counter updates
+	 * (CCA/channel utilization, noise floor, tx power) at a configurable
+	 * interval.  Mirrors the qca-wifi scn_stats_timer mechanism.
+	 * Interval of 0 disables the timer.
+	 */
+	struct wiphy_delayed_work pdev_stats_timer;
+	u32 pdev_stats_timer_interval;
+	/* Cached pdev counters updated by the periodic stats event.
+	 * Protected by data_lock.  Consumers read these instead of
+	 * issuing a blocking WMI request.
+	 */
+	u32 pdev_rx_clear_count;
+	u32 pdev_cycle_count;
+	s32 pdev_chan_nf;
+	/* Previous snapshot of the free-running HW counters, saved each time
+	 * the periodic timer updates the cache.  Used to compute a per-interval
+	 * delta for channel utilization instead of a lifetime average.
+	 * Protected by data_lock.
+	 */
+	u32 pdev_prev_rx_clear_count;
+	u32 pdev_prev_cycle_count;
+
 	struct cfg80211_chan_def awgn_chandef;
 	u32 chan_bw_interference_bitmap;
 	bool awgn_intf_handling_in_prog;

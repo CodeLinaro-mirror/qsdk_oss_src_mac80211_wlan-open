@@ -55,6 +55,7 @@ struct ath12k_generic_iter {
 
 #define ATH12K_PDEV_TX_POWER_INVALID		((u32)-1)
 #define ATH12K_PDEV_TX_POWER_REFRESH_TIME_MSECS	5000 /* msecs */
+#define ATH12K_PDEV_STATS_TIMER_DEFAULT_MS		1000 /* msecs */
 
 /* FIXME: should these be in ieee80211.h? */
 #define IEEE80211_VHT_MCS_SUPPORT_0_11_MASK	GENMASK(23, 16)
@@ -384,6 +385,7 @@ void ath12k_peer_assoc_prepare(struct ath12k *ar,
 			       struct ieee80211_link_sta *link_sta);
 #endif
 int ath12k_mac_get_fw_stats(struct ath12k *ar, struct ath12k_fw_stats_req_params *param);
+void ath12k_pdev_stats_timer_work(struct wiphy *wiphy, struct wiphy_work *work);
 int ath12k_mac_get_fw_stats_per_vif(struct ath12k *ar,
 				    struct ath12k_fw_stats_req_params *param);
 int ath12k_mac_op_start(struct ieee80211_hw *hw);
