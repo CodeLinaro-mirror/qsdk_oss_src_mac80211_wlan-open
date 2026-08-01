@@ -3445,6 +3445,12 @@ ath12k_dp_ext_mon_remove_rx_peers(struct ath12k_pdev_dp *dp_pdev,
 		peer_info = &peer_config->peer_info[i];
 		found = false;
 
+		if (is_zero_ether_addr(peer_info->mac_addr)) {
+			ath12k_warn(dp_pdev->dp,
+				    "removing all peers not supported in RX direction\n");
+			continue;
+		}
+
 		list_for_each_entry_safe(peer, tmp, &rx_ext_mon->peer_list, list) {
 			if (ether_addr_equal(peer->peer_info.mac_addr,
 					peer_info->mac_addr) &&

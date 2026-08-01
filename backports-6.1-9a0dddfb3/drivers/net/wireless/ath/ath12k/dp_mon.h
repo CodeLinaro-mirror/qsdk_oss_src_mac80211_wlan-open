@@ -680,6 +680,7 @@ struct ath12k_dp_tx_ext_mon {
  * @tx_mon_ppdu_desc_initialized: TX monitor PPDU descriptor pool init state
  * @tx_mon_wq_initialized: TX monitor workqueue init state
  * @tx_pktlog_hybrid: TX pktlog hybrid mode state
+ * @tx_mon_teardown: TX monitor teardown state
  * @tx_ext_mon: Wrapper embedding the TX extended monitor config pointer and
  *		its protecting spinlock.
  */
@@ -703,6 +704,7 @@ struct ath12k_pdev_tx_mon {
 	bool tx_mon_ppdu_desc_initialized:1;
 	bool tx_mon_wq_initialized:1;
 	bool tx_pktlog_hybrid;
+	bool tx_mon_teardown;
 };
 
 /**
