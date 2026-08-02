@@ -151,38 +151,48 @@ static u16 ath12k_dp_pdev_hwtx_dbucket[HIST_BUCKET_MAX] = {
  * @dst_tx_stats: Destination TX stats structure
  * @src_tx_stats: Source TX stats structure to aggregate from
  *
- * Aggregates per-packet TX statistics from source to destination across all
- * WBM release reasons and TQM release reasons. Used during peer/VIF deletion
- * to preserve statistics.
+ * Aggregates basic per-ring TX counters (comp_pkt, tx_success, tx_failed)
+ * from source to destination. Used during peer/VIF deletion to preserve
+ * statistics.
  */
 void ath12k_dp_aggr_per_pkt_tx_stats(struct ath12k_dp_peer_tx_stats *dst_tx_stats,
 				     struct ath12k_dp_peer_tx_stats *src_tx_stats)
 {
-	int j;
-
 	dst_tx_stats->comp_pkt.packets += src_tx_stats->comp_pkt.packets;
 	dst_tx_stats->comp_pkt.bytes += src_tx_stats->comp_pkt.bytes;
 	dst_tx_stats->tx_success.packets += src_tx_stats->tx_success.packets;
 	dst_tx_stats->tx_success.bytes += src_tx_stats->tx_success.bytes;
 	dst_tx_stats->tx_failed += src_tx_stats->tx_failed;
+}
+
+/**
+ * ath12k_dp_aggr_per_pkt_tx_dbg_stats - Aggregate TX debug statistics
+ * @dst: Destination TX debug stats
+ * @src: Source TX debug stats
+ */
+void ath12k_dp_aggr_per_pkt_tx_dbg_stats(struct ath12k_dp_peer_tx_dbg_stats *dst,
+					  const struct ath12k_dp_peer_tx_dbg_stats *src)
+{
+	int j;
+
 	for (j = 0; j < HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX; j++)
-		dst_tx_stats->wbm_rel_reason[j] += src_tx_stats->wbm_rel_reason[j];
+		dst->wbm_rel_reason[j] += src->wbm_rel_reason[j];
 	for (j = 0; j < HAL_WBM_TQM_REL_REASON_MAX; j++)
-		dst_tx_stats->tqm_rel_reason[j] += src_tx_stats->tqm_rel_reason[j];
-	dst_tx_stats->release_src_not_tqm += src_tx_stats->release_src_not_tqm;
-	dst_tx_stats->retry_count += src_tx_stats->retry_count;
-	dst_tx_stats->total_msdu_retries += src_tx_stats->total_msdu_retries;
-	dst_tx_stats->multiple_retry_count += src_tx_stats->multiple_retry_count;
-	dst_tx_stats->ofdma += src_tx_stats->ofdma;
-	dst_tx_stats->amsdu_cnt += src_tx_stats->amsdu_cnt;
-	dst_tx_stats->non_amsdu_cnt += src_tx_stats->non_amsdu_cnt;
-	dst_tx_stats->inval_link_id_pkt_cnt += src_tx_stats->inval_link_id_pkt_cnt;
-	dst_tx_stats->ucast.packets += src_tx_stats->ucast.packets;
-	dst_tx_stats->ucast.bytes += src_tx_stats->ucast.bytes;
-	dst_tx_stats->mcast.packets += src_tx_stats->mcast.packets;
-	dst_tx_stats->mcast.bytes += src_tx_stats->mcast.bytes;
-	dst_tx_stats->bcast.packets += src_tx_stats->bcast.packets;
-	dst_tx_stats->bcast.bytes += src_tx_stats->bcast.bytes;
+		dst->tqm_rel_reason[j] += src->tqm_rel_reason[j];
+	dst->release_src_not_tqm += src->release_src_not_tqm;
+	dst->retry_count += src->retry_count;
+	dst->total_msdu_retries += src->total_msdu_retries;
+	dst->multiple_retry_count += src->multiple_retry_count;
+	dst->ofdma += src->ofdma;
+	dst->amsdu_cnt += src->amsdu_cnt;
+	dst->non_amsdu_cnt += src->non_amsdu_cnt;
+	dst->inval_link_id_pkt_cnt += src->inval_link_id_pkt_cnt;
+	dst->ucast.packets += src->ucast.packets;
+	dst->ucast.bytes += src->ucast.bytes;
+	dst->mcast.packets += src->mcast.packets;
+	dst->mcast.bytes += src->mcast.bytes;
+	dst->bcast.packets += src->bcast.packets;
+	dst->bcast.bytes += src->bcast.bytes;
 }
 
 /**
@@ -190,9 +200,9 @@ void ath12k_dp_aggr_per_pkt_tx_stats(struct ath12k_dp_peer_tx_stats *dst_tx_stat
  * @dst_rx_stats: Destination RX stats structure
  * @src_rx_stats: Source RX stats structure to aggregate from
  *
- * Aggregates per-packet RX statistics from source to destination including
- * packets received from REO, sent to stack, multicast/unicast counts, and
- * AMSDU/retry information.
+ * Aggregates basic per-ring RX counters (recv_from_reo, sent_to_stack,
+ * sent_to_stack_fast) from source to destination. Used during peer/VIF
+ * deletion to preserve statistics.
  */
 void ath12k_dp_aggr_per_pkt_rx_stats(struct ath12k_dp_peer_rx_stats *dst_rx_stats,
 				     struct ath12k_dp_peer_rx_stats *src_rx_stats)
@@ -204,15 +214,25 @@ void ath12k_dp_aggr_per_pkt_rx_stats(struct ath12k_dp_peer_rx_stats *dst_rx_stat
 	dst_rx_stats->sent_to_stack_fast.packets +=
 						src_rx_stats->sent_to_stack_fast.packets;
 	dst_rx_stats->sent_to_stack_fast.bytes += src_rx_stats->sent_to_stack_fast.bytes;
-	dst_rx_stats->mcast.packets += src_rx_stats->mcast.packets;
-	dst_rx_stats->mcast.bytes += src_rx_stats->mcast.bytes;
-	dst_rx_stats->ucast.packets += src_rx_stats->ucast.packets;
-	dst_rx_stats->ucast.bytes += src_rx_stats->ucast.bytes;
-	dst_rx_stats->non_amsdu += src_rx_stats->non_amsdu;
-	dst_rx_stats->msdu_part_of_amsdu += src_rx_stats->msdu_part_of_amsdu;
-	dst_rx_stats->mpdu_retry += src_rx_stats->mpdu_retry;
-	dst_rx_stats->sg.packets += src_rx_stats->sg.packets;
-	dst_rx_stats->sg.bytes += src_rx_stats->sg.bytes;
+}
+
+/**
+ * ath12k_dp_aggr_per_pkt_rx_dbg_stats - Aggregate RX debug statistics
+ * @dst: Destination RX debug stats
+ * @src: Source RX debug stats
+ */
+void ath12k_dp_aggr_per_pkt_rx_dbg_stats(struct ath12k_dp_peer_rx_dbg_stats *dst,
+					  const struct ath12k_dp_peer_rx_dbg_stats *src)
+{
+	dst->mcast.packets += src->mcast.packets;
+	dst->mcast.bytes += src->mcast.bytes;
+	dst->ucast.packets += src->ucast.packets;
+	dst->ucast.bytes += src->ucast.bytes;
+	dst->non_amsdu += src->non_amsdu;
+	dst->msdu_part_of_amsdu += src->msdu_part_of_amsdu;
+	dst->mpdu_retry += src->mpdu_retry;
+	dst->sg.packets += src->sg.packets;
+	dst->sg.bytes += src->sg.bytes;
 }
 
 /**
@@ -381,7 +401,7 @@ void ath12k_dp_clear_wbm_rx_stats(struct ath12k_wbm_rx_stats *wbm_stats)
  * ath12k_dp_clear_per_pkt_tx_stats - Clear per-packet TX statistics
  * @tx_peer_stats: Peer stats structure containing TX stats to clear
  *
- * Clears per-packet TX statistics across all TCL rings.
+ * Clears basic TX stats across all TCL rings and TX debug stats.
  */
 void ath12k_dp_clear_per_pkt_tx_stats(struct ath12k_dp_peer_stats *tx_peer_stats)
 {
@@ -389,13 +409,14 @@ void ath12k_dp_clear_per_pkt_tx_stats(struct ath12k_dp_peer_stats *tx_peer_stats
 
 	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++)
 		memset(&tx_peer_stats->tx[i], 0, sizeof(struct ath12k_dp_peer_tx_stats));
+	memset(&tx_peer_stats->tx_dbg, 0, sizeof(tx_peer_stats->tx_dbg));
 }
 
 /**
  * ath12k_dp_clear_per_pkt_rx_stats - Clear per-packet RX statistics
  * @rx_peer_stats: Peer stats structure containing RX stats to clear
  *
- * Clears per-packet RX statistics across all REO destination rings.
+ * Clears basic RX stats across all REO destination rings and RX debug stats.
  */
 void ath12k_dp_clear_per_pkt_rx_stats(struct ath12k_dp_peer_stats *rx_peer_stats)
 {
@@ -403,6 +424,7 @@ void ath12k_dp_clear_per_pkt_rx_stats(struct ath12k_dp_peer_stats *rx_peer_stats
 
 	for (i = 0; i < DP_REO_DST_RING_MAX; i++)
 		memset(&rx_peer_stats->rx[i], 0, sizeof(struct ath12k_dp_peer_rx_stats));
+	memset(&rx_peer_stats->rx_dbg, 0, sizeof(rx_peer_stats->rx_dbg));
 }
 
 /**
@@ -458,6 +480,9 @@ void ath12k_dp_aggr_del_stats(struct ath12k_dp_peer_stats *dst_peer_stats,
 	for (i = 0; i < DP_REO_DST_RING_MAX; i++)
 		ath12k_dp_aggr_per_pkt_rx_stats(&dst_peer_stats->rx[i],
 						&src->per_pkt_rx[i]);
+
+	ath12k_dp_aggr_per_pkt_tx_dbg_stats(&dst_peer_stats->tx_dbg, &src->tx_dbg);
+	ath12k_dp_aggr_per_pkt_rx_dbg_stats(&dst_peer_stats->rx_dbg, &src->rx_dbg);
 
 	ath12k_dp_aggr_wbm_rx_stats(&dst_peer_stats->wbm_err,
 				    &src->wbm_err);
@@ -533,6 +558,8 @@ void ath12k_dp_clear_preserved_stats(struct ath12k_dp_preserved_stats *stats)
 		memset(&stats->per_pkt_tx[i], 0, sizeof(stats->per_pkt_tx[i]));
 	for (i = 0; i < DP_REO_DST_RING_MAX; i++)
 		memset(&stats->per_pkt_rx[i], 0, sizeof(stats->per_pkt_rx[i]));
+	memset(&stats->tx_dbg, 0, sizeof(stats->tx_dbg));
+	memset(&stats->rx_dbg, 0, sizeof(stats->rx_dbg));
 	memset(&stats->wbm_err, 0, sizeof(stats->wbm_err));
 	memset(&stats->rx_counters, 0, sizeof(stats->rx_counters));
 }

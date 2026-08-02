@@ -2222,11 +2222,13 @@ ath12k_dp_rx_update_peer_stats(struct ath12k_pdev_dp *pdev,
 	struct ath12k_dp_peer_stats *pstats = NULL;
 	struct ath12k_dp_link_peer *link_peer = NULL;
 	struct ath12k_dp_peer_rx_stats *rx = NULL;
+	struct ath12k_dp_peer_rx_dbg_stats *rx_dbg = NULL;
 	bool skip = ath12k_dp_hw_peer_stats_enabled(pdev);
 
 	hw_link_id = ath12k_dp_validate_hw_link_id(hw_link_id);
 	pstats = &peer->stats[hw_link_id];
 	rx = &pstats->rx[ring_id];
+	rx_dbg = &pstats->rx_dbg;
 
 	link_peer = ath12k_dp_link_peer_find_by_hw_link_id(peer, hw_link_id);
 	if (link_peer)
@@ -2257,14 +2259,14 @@ ath12k_dp_rx_update_peer_stats(struct ath12k_pdev_dp *pdev,
 		rx->sent_to_stack_mcast_fast.packets += stats->sent_to_stack_mcast_fast;
 		rx->sent_to_stack_mcast_fast.bytes += stats->sent_to_stack_mcast_fast_bytes;
 
-		rx->msdu_part_of_amsdu += stats->amsdu;
-		rx->non_amsdu += stats->non_amsdu;
-		rx->mpdu_retry += stats->mpdu_retry;
+		rx_dbg->msdu_part_of_amsdu += stats->amsdu;
+		rx_dbg->non_amsdu += stats->non_amsdu;
+		rx_dbg->mpdu_retry += stats->mpdu_retry;
 
 		if (stats->sent_to_stack_ucast) {
 			if (!skip) {
-				rx->ucast.packets += stats->sent_to_stack_ucast;
-				rx->ucast.bytes += stats->sent_to_stack_ucast_bytes;
+				rx_dbg->ucast.packets += stats->sent_to_stack_ucast;
+				rx_dbg->ucast.bytes += stats->sent_to_stack_ucast_bytes;
 			}
 
 			/* ideally we should have both ucast and mcast pkts sent to stack
@@ -2275,8 +2277,8 @@ ath12k_dp_rx_update_peer_stats(struct ath12k_pdev_dp *pdev,
 		}
 
 		if (stats->sent_to_stack_mcast) {
-			rx->mcast.packets += stats->sent_to_stack_mcast;
-			rx->mcast.bytes += stats->sent_to_stack_mcast_bytes;
+			rx_dbg->mcast.packets += stats->sent_to_stack_mcast;
+			rx_dbg->mcast.bytes += stats->sent_to_stack_mcast_bytes;
 
 			/* ideally we should have both ucast and mcast pkts sent to stack
 			 * stats rather than just one sent_to_stack stats.
@@ -2286,8 +2288,8 @@ ath12k_dp_rx_update_peer_stats(struct ath12k_pdev_dp *pdev,
 		}
 
 		if (stats->sg_cnt) {
-			rx->sg.packets += stats->sg_cnt;
-			rx->sg.bytes += stats->sg_bytes;
+			rx_dbg->sg.packets += stats->sg_cnt;
+			rx_dbg->sg.bytes += stats->sg_bytes;
 		}
 		stats++;
 	}
