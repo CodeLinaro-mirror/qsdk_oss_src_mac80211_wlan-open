@@ -685,22 +685,7 @@ struct ieee80211_smd_prep_target {
 					* reverted on prep reset/abort
 					*/
 	u16 dl_drain_link_mask;        /* BIT(primary_link_id) in TAP link ID space */
-	u16 prep_transition_links;     /* links running PREP transition:
-					* exec_path=0: transitioning_links
-					*              (partner tap_link_ids)
-					* exec_path=1 SLO: = dl_drain_link_mask
-					* exec_path=1 MLO: = transitioning_links (same)
-					*/
-	u16 post_exec_transition_links; /* links transitioning after EXEC Response:
-					 * exec_path=0: = dl_drain_link_mask
-					 *               (async FW event)
-					 * exec_path=1 SLO: = 0 (done in PREP)
-					 * exec_path=1 MLO: = dl_drain_link_mask
-					 *                   (immediate)
-					 */
 	u8  exec_path;                 /* 0 = SAP (§37.15.7), 1 = TAP (§37.15.8) */
-	int exec_link_id;              /* link_id carrying EXEC Request/Response */
-	bool transition_done_in_prep;  /* SLO + exec_path=1: EXEC Resp is confirm */
 
 	/* Link ID remap — same-links default: identity (tap_link_id == sap_link_id) */
 	s8  tap_to_sap_link[IEEE80211_MLD_MAX_NUM_LINKS]; /* tap→sap, -1=none */

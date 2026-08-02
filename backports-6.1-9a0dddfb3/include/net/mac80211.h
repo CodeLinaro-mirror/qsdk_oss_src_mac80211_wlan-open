@@ -2798,6 +2798,7 @@ struct ieee80211_uhr_link_transfer_info {
  * @primary_link_id: Primary Link ID (preserved during prep)
  * @target_aid: AID for target AP MLD
  * @target_ap_mld_addr: Target AP MLD address
+ * @exec_path: Indicates the roam execution path (0 = SAP roam, 1 = TAP roam)
  * @dl_drain_time_tu: DL Drain period in TUs
  * @tap_links_mask: Bitmap of TAP AP link IDs; used by DYNAMIC_CTX and
  *	TERMINATION to restrict per-link WMI commands to TAP links only.
@@ -2813,6 +2814,7 @@ struct ieee80211_uhr_link_reconfig_info {
 	u16 dl_drain_links_mask;
 	u8 primary_link_id;
 	u8 target_ap_mld_addr[ETH_ALEN];
+	u8 exec_path;
 	u32 dl_drain_time_tu;
 	bool request_dl_sn_not_transferred;
 	bool request_ul_sn_not_transferred;

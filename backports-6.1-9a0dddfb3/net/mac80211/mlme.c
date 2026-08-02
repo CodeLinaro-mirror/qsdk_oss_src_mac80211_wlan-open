@@ -12670,6 +12670,7 @@ ieee80211_smd_assoc_success_finalize(struct ieee80211_sub_if_data *sdata,
 	dyn_info->target_aid = target->target_aid;
 	dyn_info->request_dl_sn_not_transferred = target->no_dl_sn;
 	dyn_info->request_ul_sn_not_transferred = target->no_ul_sn;
+	dyn_info->is_exec_via_tap = target->exec_path;
 
 	if (ifmgd->smd_ptk != IEEE80211_SMD_PTK_DISABLED) {
 		struct ieee80211_key *ptk;
@@ -12749,29 +12750,11 @@ int ieee80211_smd_prep_setup(struct ieee80211_sub_if_data *sdata,
 	}
 
 	target_sta = target->target_sta;
-
-	if (target->exec_path == 1 && target->transitioning_links == 0) {
-		target->prep_transition_links = target->dl_drain_link_mask;
-		target->transition_done_in_prep = true;
-	} else {
-		target->prep_transition_links = target->transitioning_links;
-		target->transition_done_in_prep = false;
-	}
-	target->post_exec_transition_links =
-		target->prepared_links_mask & ~target->prep_transition_links;
-
-	target->exec_link_id =
-		(target->exec_path == 0 || target->transitioning_links == 0)
-		? target->primary_link_id
-		: (ffs(target->prep_transition_links) - 1);
-
-	transitioning_links = target->prep_transition_links;
-
+	transitioning_links = target->transitioning_links;
 	sdata_dbg(sdata,
-		  "smd: prep_setup exec_path=%u prep=0x%x post_exec=0x%x primary=%d exec_link=%d\n",
+		  "smd: prep_setup exec_path=%u prep=0x%x primary=%d\n",
 		  target->exec_path, transitioning_links,
-		  target->post_exec_transition_links,
-		  target->primary_link_id, target->exec_link_id);
+		  target->primary_link_id);
 
 	info = kzalloc(sizeof(*info), GFP_KERNEL);
 	if (!info) {
@@ -12795,6 +12778,7 @@ int ieee80211_smd_prep_setup(struct ieee80211_sub_if_data *sdata,
 	info->target_aid = target->target_aid;
 	info->request_dl_sn_not_transferred = target->no_dl_sn;
 	info->request_ul_sn_not_transferred = target->no_ul_sn;
+	info->exec_path = target->exec_path;
 
 	for_each_set_bit(link_id, (unsigned long *)&target->prepared_links_mask,
 			 IEEE80211_MLD_MAX_NUM_LINKS) {
@@ -12932,7 +12916,7 @@ int ieee80211_smd_prep_activate(struct ieee80211_sub_if_data *sdata,
 	struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
 	struct ieee80211_uhr_link_reconfig_info *info = target->drv_info;
 	struct sta_info *current_sta, *target_sta = target->target_sta;
-	u16 transitioning_links = target->prep_transition_links;
+	u16 transitioning_links;
 	u16 upgrade_tap_links = 0;
 	unsigned long slots;
 	unsigned int link_id, tap_id;
@@ -12949,6 +12933,7 @@ int ieee80211_smd_prep_activate(struct ieee80211_sub_if_data *sdata,
 		return -ENOENT;
 	}
 
+	transitioning_links = target->transitioning_links;
 	/* SLO→MLO upgrade: expand valid_links before the assoc_success loop.
 	 *
 	 * For SLO, sdata->vif.valid_links == BIT(primary_link_id).
@@ -13060,7 +13045,7 @@ int ieee80211_smd_prep_activate(struct ieee80211_sub_if_data *sdata,
 	}
 	ifmgd->smd_transitioning_links = 0;
 
-	if (target->prep_transition_links &&
+	if (transitioning_links &&
 	    !ieee80211_smd_move_sta_state(sdata,
 					  target->target_sta->sta.addr,
 					  IEEE80211_STA_ASSOC)) {
