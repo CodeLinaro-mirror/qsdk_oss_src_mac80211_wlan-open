@@ -40,6 +40,7 @@ struct hal_rx_mpdu_start_hw10 {
 	__le32 info0;
 	__le32 rsvd1[6];
 	__le32 info1;
+	__le32 rsvd2;
 	__le16 rsvd3;
 	__le16 sw_peer_id;
 	__le16 info2;
@@ -125,20 +126,16 @@ ath12k_wifi8_hal_mon_rx_mpdu_start_info_get_hw10(const void *tlv_data,
 	struct hal_rx_mpdu_start_hw10 *mpdu_start =
 		(struct hal_rx_mpdu_start_hw10 *)tlv_data;
 	u16 peer_id, addr_16;
-	u32 info[9], addr_32;
+	u32 info[5], addr_32;
 	u8 user_id = ppdu_info->user_id;
 
 	info[0] = __le32_to_cpu(mpdu_start->info0);
 	info[1] = __le32_to_cpu(mpdu_start->info1);
 	info[2] = le16_to_cpu(mpdu_start->info2);
-	info[3] = le16_to_cpu(mpdu_start->info2);
-	info[4] = __le32_to_cpu(mpdu_start->info3);
-	info[5] = __le32_to_cpu(mpdu_start->info4);
-	info[6] = le16_to_cpu(mpdu_start->mpdu_frame_control_field);
-	info[7] = le16_to_cpu(mpdu_start->mac_addr_ad2_15_0);
-	info[8] = le32_to_cpu(mpdu_start->mac_addr_ad2_47_16);
+	info[3] = __le32_to_cpu(mpdu_start->info3);
+	info[4] = __le32_to_cpu(mpdu_start->info4);
 
-	ppdu_info->grp_id = u32_get_bits(info[3],
+	ppdu_info->grp_id = u32_get_bits(info[2],
 					 HAL_RX_MPDU_START_INFO2_SW_GRP_ID);
 
 	peer_id = le16_to_cpu(mpdu_start->sw_peer_id);
@@ -156,21 +153,22 @@ ath12k_wifi8_hal_mon_rx_mpdu_start_info_get_hw10(const void *tlv_data,
 
 	if (userid < HAL_MAX_UL_MU_USERS) {
 		ppdu_info->mpdu_info[user_id].raw_mpdu =
-			u32_get_bits(info[4], HAL_RX_MPDU_START_INFO3_RAW_MPDU);
+			u32_get_bits(info[3], HAL_RX_MPDU_START_INFO3_RAW_MPDU);
 		if (ppdu_info->mpdu_info[user_id].raw_mpdu)
 			ppdu_info->mpdu_info[user_id].decap_type = DP_RX_DECAP_TYPE_RAW;
 		else
 			ppdu_info->mpdu_info[user_id].decap_type =
-				u32_get_bits(info[4], HAL_RX_MPDU_START_INFO3_DECAP_TYPE);
+				u32_get_bits(info[3], HAL_RX_MPDU_START_INFO3_DECAP_TYPE);
 	}
 
-	ppdu_info->mpdu_len += u32_get_bits(info[5],
+	ppdu_info->mpdu_len += u32_get_bits(info[4],
 					    HAL_RX_MPDU_START_INFO4_MPDU_LEN);
 	ppdu_info->nrp_info.mcast_bcast =
-		u32_get_bits(info[5], HAL_RX_MPDU_START_INFO4_MCAST_BCAST);
-	ppdu_info->nrp_info.frame_control = info[6];
-	addr_16 = info[7];
-	addr_32 = info[8];
+		u32_get_bits(info[4], HAL_RX_MPDU_START_INFO4_MCAST_BCAST);
+	ppdu_info->nrp_info.frame_control =
+		le16_to_cpu(mpdu_start->mpdu_frame_control_field);
+	addr_16 = le16_to_cpu(mpdu_start->mac_addr_ad2_15_0);
+	addr_32 = le32_to_cpu(mpdu_start->mac_addr_ad2_47_16);
 	if (ppdu_info->nrp_info.fc_valid &&
 	    ppdu_info->nrp_info.to_ds_flag &&
 	    ppdu_info->nrp_info.mac_addr2_valid)
@@ -183,7 +181,7 @@ ath12k_wifi8_hal_mon_rx_mpdu_start_info_get_hw10(const void *tlv_data,
 		ppdu_info->userstats[userid].ampdu_id =
 			le16_to_cpu(mpdu_start->phy_ppdu_id);
 		ppdu_info->userstats[userid].filter_category =
-			u32_get_bits(info[3], HAL_RX_MPDU_START_INFO2_FILTER_CAT);
+			u32_get_bits(info[2], HAL_RX_MPDU_START_INFO2_FILTER_CAT);
 		ppdu_info->userstats[userid].mpdu_retry +=
 			u32_get_bits(info[1], HAL_RX_MPDU_START_INFO1_MPDU_RETRY);
 		ppdu_info->userstats[userid].frame_control_info_valid =
@@ -203,20 +201,16 @@ ath12k_wifi8_hal_mon_rx_mpdu_start_info_get_compact_hw10(
 	struct hal_rx_mon_mpdu_start_compact_hw10 *mpdu_start =
 		(struct hal_rx_mon_mpdu_start_compact_hw10 *)tlv_data;
 	u16 peer_id, addr_16;
-	u32 info[9], addr_32;
+	u32 info[5], addr_32;
 	u8 user_id = ppdu_info->user_id;
 
 	info[0] = __le32_to_cpu(mpdu_start->info0);
 	info[1] = __le32_to_cpu(mpdu_start->info1);
 	info[2] = le16_to_cpu(mpdu_start->info2);
-	info[3] = le16_to_cpu(mpdu_start->info2);
-	info[4] = __le32_to_cpu(mpdu_start->info3);
-	info[5] = __le32_to_cpu(mpdu_start->info4);
-	info[6] = le16_to_cpu(mpdu_start->mpdu_frame_control_field);
-	info[7] = le16_to_cpu(mpdu_start->mac_addr_ad2_15_0);
-	info[8] = le32_to_cpu(mpdu_start->mac_addr_ad2_47_16);
+	info[3] = __le32_to_cpu(mpdu_start->info3);
+	info[4] = __le32_to_cpu(mpdu_start->info4);
 
-	ppdu_info->grp_id = u32_get_bits(info[3],
+	ppdu_info->grp_id = u32_get_bits(info[2],
 					 HAL_RX_MPDU_START_INFO2_SW_GRP_ID_CMPCT);
 
 	peer_id = le16_to_cpu(mpdu_start->sw_peer_id);
@@ -232,21 +226,22 @@ ath12k_wifi8_hal_mon_rx_mpdu_start_info_get_compact_hw10(
 	ppdu_info->nrp_info.fc_valid =
 		u32_get_bits(info[1], HAL_RX_MPDU_START_INFO1_FC_VALID_CMPCT);
 	ppdu_info->mpdu_info[user_id].raw_mpdu =
-		u32_get_bits(info[4], HAL_RX_MPDU_START_INFO3_RAW_MPDU_CMPCT);
+		u32_get_bits(info[3], HAL_RX_MPDU_START_INFO3_RAW_MPDU_CMPCT);
 	if (ppdu_info->mpdu_info[user_id].raw_mpdu)
 		ppdu_info->mpdu_info[user_id].decap_type = DP_RX_DECAP_TYPE_RAW;
 	else
 		ppdu_info->mpdu_info[user_id].decap_type =
-			u32_get_bits(info[4], HAL_RX_MPDU_START_INFO3_DECAP_TYPE_CMPCT);
+			u32_get_bits(info[3], HAL_RX_MPDU_START_INFO3_DECAP_TYPE_CMPCT);
 
-	ppdu_info->mpdu_len += u32_get_bits(info[5],
+	ppdu_info->mpdu_len += u32_get_bits(info[4],
 					    HAL_RX_MPDU_START_INFO4_MPDU_LEN_CMPCT);
 	ppdu_info->nrp_info.mcast_bcast =
-		u32_get_bits(info[5], HAL_RX_MPDU_START_INFO4_MCAST_BCAST_CMPCT);
-	ppdu_info->nrp_info.frame_control = info[6];
+		u32_get_bits(info[4], HAL_RX_MPDU_START_INFO4_MCAST_BCAST_CMPCT);
+	ppdu_info->nrp_info.frame_control =
+		le16_to_cpu(mpdu_start->mpdu_frame_control_field);
 
-	addr_16 = info[7];
-	addr_32 = info[8];
+	addr_16 = le16_to_cpu(mpdu_start->mac_addr_ad2_15_0);
+	addr_32 = le32_to_cpu(mpdu_start->mac_addr_ad2_47_16);
 	if (ppdu_info->nrp_info.fc_valid &&
 	    ppdu_info->nrp_info.to_ds_flag &&
 	    ppdu_info->nrp_info.mac_addr2_valid)
@@ -259,7 +254,7 @@ ath12k_wifi8_hal_mon_rx_mpdu_start_info_get_compact_hw10(
 		ppdu_info->userstats[userid].ampdu_id =
 			le16_to_cpu(mpdu_start->phy_ppdu_id);
 		ppdu_info->userstats[userid].filter_category =
-			u32_get_bits(info[3], HAL_RX_MPDU_START_INFO2_FILTER_CAT_CMPCT);
+			u32_get_bits(info[2], HAL_RX_MPDU_START_INFO2_FILTER_CAT_CMPCT);
 		ppdu_info->userstats[userid].mpdu_retry +=
 			u32_get_bits(info[1], HAL_RX_MPDU_START_INFO1_MPDU_RETRY_CMPCT);
 		ppdu_info->userstats[userid].frame_control_info_valid =
@@ -281,7 +276,7 @@ ath12k_wifi8_hal_mon_rx_mpdu_start_info_parse_hw10(const void *tlv_data,
 						   struct hal_rx_mon_ppdu_info *ppdu_info,
 						   u32 tlv_len)
 {
-	if (likely(tlv_len < sizeof(struct hal_rx_mon_mpdu_start_compact_hw10)))
+	if (likely(tlv_len < sizeof(struct hal_rx_mpdu_start_hw10)))
 		ath12k_wifi8_hal_mon_rx_mpdu_start_info_get_compact_hw10(tlv_data,
 									 userid,
 									 ppdu_info);

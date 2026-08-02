@@ -3156,7 +3156,7 @@ int ath12k_wifi8_dp_rx_flow_fse_cache_operation(struct ath12k_base *ab,
 		chips |= chip[partner_ab->device_id];
 	}
 
-	fse_cmd.cmd.info0 = cpu_to_le32(chips);
+	fse_cmd.cmd.info0 = cpu_to_le16(chips);
 
 	ret = ath12k_wifi8_dp_fse_cmd_send(ab, &fse_cmd);
 
