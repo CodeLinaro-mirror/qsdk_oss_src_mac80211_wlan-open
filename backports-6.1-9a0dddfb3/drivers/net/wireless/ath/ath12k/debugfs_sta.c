@@ -1733,10 +1733,8 @@ static ssize_t ath12k_dbg_sta_dump_tx_stats(struct file *file,
 	len += scnprintf(buf + len, size - len,
 			"ack fails\n %llu\n\n", tx_stats->ack_fails);
 
-	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++) {
-		for (j = 0; j < HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX; j++)
-			wbm_rel_stats[j] += peer_stats->tx[i].wbm_rel_reason[j];
-	}
+	for (j = 0; j < HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX; j++)
+		wbm_rel_stats[j] = peer_stats->tx_dbg.wbm_rel_reason[j];
 
 	len += scnprintf(buf + len, size - len,
 			 "WBM tx completion stats of data pkts :\n");
