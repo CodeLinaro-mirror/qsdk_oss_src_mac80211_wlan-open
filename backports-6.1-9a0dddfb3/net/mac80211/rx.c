@@ -3959,6 +3959,9 @@ ieee80211_rx_h_mgmt_check(struct ieee80211_rx_data *rx)
 	struct ieee80211_mgmt *mgmt = (struct ieee80211_mgmt *) rx->skb->data;
 	struct ieee80211_rx_status *status = IEEE80211_SKB_RXCB(rx->skb);
 	bool tid_stats_disable = rx->local->hw.tid_stats_disable;
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	ieee80211_rx_result res;
+#endif
 
 	if (ieee80211_is_s1g_beacon(mgmt->frame_control))
 		return RX_CONTINUE;
@@ -3986,8 +3989,9 @@ ieee80211_rx_h_mgmt_check(struct ieee80211_rx_data *rx)
 	}
 
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
-	if (ieee80211_process_mesh_peer_deauth_disassoc(rx) == RX_DROP_MONITOR)
-		return RX_DROP_MONITOR;
+	res = ieee80211_process_mesh_peer_deauth_disassoc(rx);
+	if (res != RX_CONTINUE)
+		return res;
 	if (ieee80211_process_mesh_peer_beacon(rx) == RX_DROP_MONITOR)
 		return RX_DROP_MONITOR;
 #endif /* CPTCFG_QCN_EXTN_MESH_SUPPORT */
