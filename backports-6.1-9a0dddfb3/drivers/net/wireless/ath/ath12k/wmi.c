@@ -867,6 +867,15 @@ ath12k_pull_mac_phy_cap_svc_ready_ext(struct ath12k_wmi_pdev *wmi_handle,
 	pdev_cap->ampdu_density = le32_to_cpu(mac_caps->ampdu_density);
 	pdev_cap->chainmask_table_id = mac_caps->chainmask_table_id;
 
+	if (ab->fw_pdev_count >= ARRAY_SIZE(ab->fw_pdev)) {
+		ath12k_warn(ab,
+			    "fw_pdev array full (%zu entries), dropping pdev_id %u phy_id %u\n",
+			    ARRAY_SIZE(ab->fw_pdev),
+			    ath12k_wmi_mac_phy_get_pdev_id(mac_caps),
+			    le32_to_cpu(mac_caps->phy_id));
+		return -ENOSPC;
+	}
+
 	fw_pdev = &ab->fw_pdev[ab->fw_pdev_count];
 	fw_pdev->supported_bands = supported_bands;
 	fw_pdev->pdev_id = ath12k_wmi_mac_phy_get_pdev_id(mac_caps);
