@@ -886,14 +886,13 @@ static void ath12k_dp_rx_fill_rate_info(struct rate_info *rate,
 	}
 }
 
-static void ath12k_dp_rx_rate_stats_update(struct ath12k_rx_ppdu_stats *rx_stats,
-					   struct hal_rx_mon_ppdu_info *ppdu_info,
+static void ath12k_dp_rx_rate_stats_update(struct hal_rx_mon_ppdu_info *ppdu_info,
 					   struct ath12k_dp_link_peer *peer, u32 uid)
 {
 	struct hal_rx_user_status *user_stats = NULL;
 	bool is_su = true;
 
-	if (!peer || !rx_stats || !ppdu_info)
+	if (!peer || !ppdu_info)
 		return;
 
 	if (ppdu_info->reception_type != HAL_RX_RECEPTION_TYPE_SU) {
@@ -1052,8 +1051,6 @@ void ath12k_dp_mon_rx_update_basic_stats(struct ath12k_dp_link_peer *peer,
 
 	if (ppdu_info->bw < HAL_RX_BW_MAX)
 		rx_stats->bw_count[ppdu_info->bw] += num_msdu;
-
-	ath12k_dp_rx_rate_stats_update(rx_stats, ppdu_info, peer, uid);
 }
 
 /**
@@ -1354,6 +1351,7 @@ void ath12k_dp_mon_rx_update_peer_su_stats(struct ath12k_pdev_dp *pdev_dp,
 	peer->peer_stats.rx_retries += ppdu_info->mpdu_retry;
 	peer->rssi_comb = ppdu_info->rssi_comb;
 	ewma_avg_rssi_add(&peer->avg_rssi, ppdu_info->rssi_comb);
+	ath12k_dp_rx_rate_stats_update(ppdu_info, peer, 0);
 
 	if (ppdu_info->userid < ARRAY_SIZE(ppdu_info->ctrl_frm_info)) {
 		pdev_dp->stats.telemetry_stats.rx_bar_cnt +=
@@ -1631,6 +1629,8 @@ ath12k_dp_mon_rx_update_user_stats(struct ath12k_pdev_dp *pdev_dp,
 
 	peer->peer_stats.rx_retries = user_stats->mpdu_retry;
 	peer->rx_duration += ppdu_info->rx_duration;
+	ath12k_dp_rx_rate_stats_update(ppdu_info, peer, uid);
+
 	peer->rssi_comb = ppdu_info->rssi_comb;
 	ewma_avg_rssi_add(&peer->avg_rssi, ppdu_info->rssi_comb);
 
