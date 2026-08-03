@@ -40,8 +40,8 @@
 
 #ifndef CPTCFG_QCN_EXTN
 
-#define DP_RXDMA_MON_STATUS_RING_SIZE	1024
-#define DP_RXDMA_MONITOR_DESC_RING_SIZE	4096
+#define DP_RXDMA_MON_STATUS_RING_SIZE(ab)	({ (void)(ab); 1024; })
+#define DP_RXDMA_MONITOR_DESC_RING_SIZE(ab)	({ (void)(ab); 4096; })
 
 #else
 #define DP_RXDMA_MON_STATUS_RING_SIZE(ab)	ath12k_cfg_get(ab, \

@@ -198,7 +198,9 @@ static int ath12k_wifi8_dp_rx_h_undecap(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct hal_rx_desc_data rx_desc_data = {0};
 	struct ath12k_dp_peer *dp_peer;
+#ifdef CPTCFG_QCN_EXTN
 	struct ath12k_dp_vif *dp_vif;
+#endif /* CPTCFG_QCN_EXTN */
 	u8 allow_3addr_mc = false;
 	struct ath12k_vif *ahvif;
 	u32 pkt_reason;
