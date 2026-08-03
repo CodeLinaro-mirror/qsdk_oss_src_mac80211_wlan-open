@@ -7339,43 +7339,42 @@ static int ieee80211_uhr_mode_update(struct wiphy *wiphy,
 {
 	struct ieee80211_local *local = wiphy_priv(wiphy);
 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
-	struct link_sta_info *link_sta;
-	struct sta_info *sta, *found_sta = NULL;
+	struct sta_info *sta = NULL;
 	int link_id;
 	int ret;
 
 	lockdep_assert_wiphy(wiphy);
 
-	/* Store the per-link params into the associated link_sta entries first */
-	list_for_each_entry(sta, &local->sta_list, list) {
-		if (sta->sdata != sdata)
-			continue;
-		found_sta = sta;
-		for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS; link_id++) {
-			link_sta = rcu_dereference_protected(sta->link[link_id],
-					lockdep_is_held(&local->hw.wiphy->mtx));
-			if (!link_sta)
-				continue;
-			if (params->npca_update[link_id]) {
-				struct cfg80211_uhr_npca_params *old_npca =
-					&link_sta->pub->npca;
-				struct cfg80211_uhr_npca_params *new_npca =
-					&params->npca[link_id];
+	/* Store NPCA params into the BSS link conf for each requested link */
+	for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS; link_id++) {
+		const struct cfg80211_uhr_npca_params *new_npca;
+		struct ieee80211_bss_npca_params *npca;
+		struct ieee80211_link_data *link;
 
-				new_npca->mode_update =
-					old_npca->enable && new_npca->enable &&
-					(old_npca->switch_delay !=
-					 new_npca->switch_delay ||
-					 old_npca->switch_back_delay !=
-					 new_npca->switch_back_delay);
-				link_sta->pub->npca = *new_npca;
-			}
-		}
-		break;
+		if (!params->npca_update[link_id])
+			continue;
+
+		link = sdata_dereference(sdata->link[link_id], sdata);
+		if (!link)
+			continue;
+
+		new_npca = &params->npca[link_id];
+		npca = &link->conf->npca;
+
+		link->conf->npca_mode_update =
+			npca->enabled && new_npca->enable &&
+			(npca->switch_delay != new_npca->switch_delay ||
+			 npca->switch_back_delay != new_npca->switch_back_delay);
+		npca->enabled = new_npca->enable;
+		npca->switch_delay = new_npca->switch_delay;
+		npca->switch_back_delay = new_npca->switch_back_delay;
 	}
 
-	/* Call the driver once after link_sta params are updated */
-	ret = drv_uhr_mode_update(local, sdata, found_sta);
+	/* Find the associated MLD STA to pass to the driver */
+	sta = sta_info_get(sdata, sdata->vif.cfg.ap_addr);
+
+	/* Call the driver once after bss_conf npca fields are updated */
+	ret = drv_uhr_mode_update(local, sdata, sta);
 	return ret;
 }
 

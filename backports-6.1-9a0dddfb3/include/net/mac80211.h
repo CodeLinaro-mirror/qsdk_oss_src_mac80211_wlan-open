@@ -848,6 +848,9 @@ struct ieee80211_uhr_config {
  * @smd_params: advertised SMD feature params.
  * @cu_info: Critical Update session state, tracks the type and progress
  *	of an ongoing Critical Update for this BSS link.
+ * @npca_mode_update: true if NPCA was already enabled and this is a
+ *	parameter-only update (switch_delay or switch_back_delay changed)
+ *	rather than a fresh enable, disable, or no-op re-send
  */
 struct ieee80211_bss_conf {
 	struct ieee80211_vif *vif;
@@ -981,6 +984,7 @@ struct ieee80211_bss_conf {
 	enum nl80211_auth_type auth_type;
 	struct cfg80211_smd_params smd_params;
 	struct ieee80211_bss_npca_params npca;
+	bool npca_mode_update;
 };
 
 /**
@@ -2953,7 +2957,6 @@ struct ieee80211_sta_aggregates {
  *	notifications and capabilities. The value is only valid after
  *	the station moves to associated state.
  * @txpwr: the station tx power configuration
- * @npca: current NPCA (Non-Primary Channel Access) parameters for this link
  *
  */
 struct ieee80211_link_sta {
@@ -2981,8 +2984,6 @@ struct ieee80211_link_sta {
 	enum ieee80211_sta_rx_bandwidth bandwidth;
 	enum ieee80211_sta_rx_bandwidth sta_max_bandwidth;
 	struct ieee80211_sta_txpwr txpwr;
-
-	struct cfg80211_uhr_npca_params npca;
 };
 
 /**
@@ -5227,7 +5228,7 @@ struct ieee80211_ppe_vp_ds_params {
  * @ap_power_save: Introduces infrastructure in mac80211 to support forwarding of
  *	AP Powersave configuration parameters from user space to driver.
  * @uhr_mode_update: Update per-link UHR mode parameters (NPCA) for the
- *	given station. Called after link_sta npca fields have been updated.
+ *	given VIF. Called after bss_conf npca fields have been updated.
  *	@sta may be NULL if no associated station was found.
  * @critical_update: Initiate a Critical Update session on @link_id.
  *	The driver or firmware must stitch @element into subsequent beacons and
