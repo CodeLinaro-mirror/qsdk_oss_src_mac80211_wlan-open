@@ -332,24 +332,12 @@ cleanup_ppdu_desc:
 EXPORT_SYMBOL(ath12k_dp_mon_tx_wq_start);
 
 /**
- * ath12k_dp_mon_tx_wq_stop() - Stop TX monitor work queue and cleanup descriptors
+ * ath12k_dp_mon_tx_wq_stop() - Destroy TX monitor work queue and free descriptors
  * @dp_pdev: Pointer to DP PDEV context for cleanup operations
  *
- * This function performs complete cleanup of TX monitor work queue infrastructure
- * and PPDU descriptor resources. It should be called during interface shutdown
- * or when TX monitor functionality needs to be deactivated.
- *
- * The function performs cleanup in the following order:
- * 1. Deinitialize work queue and cancel any pending work
- * 2. Cleanup PPDU descriptors and free associated resources
- * 3. Ensure all resources are properly released
- *
- * This function is the counterpart to ath12k_dp_mon_tx_wq_start() and should
- * be called during interface teardown. It complements the basic resource
- * deallocation done in ath12k_dp_mon_tx_pdev_free().
- *
- * Context: Can be called from process context during interface shutdown.
- * Locking: Uses internal locking through architecture-specific operations.
+ * Called at pdev free time (via ath12k_dp_mon_tx_pdev_free()). Drains any
+ * in-flight txmon_work after successful WQ init, destroys the workqueue, and
+ * frees the PPDU descriptor pool.
  */
 void ath12k_dp_mon_tx_wq_stop(struct ath12k_pdev_dp *dp_pdev)
 {
@@ -4754,11 +4742,43 @@ int ath12k_dp_mon_tx_htt_dst_ring_setup(struct ath12k_pdev_dp *dp_pdev, u32 mac_
 	ret = ath12k_dp_tx_htt_srng_setup(dp->ab, ring_id, mac_id,
 					  HAL_TX_MONITOR_DST);
 	if (ret)
-		ath12k_warn(dp->ab, "TX Monitor: failed to configure dst ring %d\n", ret);
+		ath12k_warn(dp->ab,
+			    "TX Monitor: failed to configure dst ring %d\n", ret);
 
 	return ret;
 }
 
+/**
+ * ath12k_dp_mon_tx_monitor_start_stop() - Start or stop TX monitor
+ * @ar: per-radio ath12k context
+ * @state: true to start, false to stop
+ *
+ * Configures TX monitor HW and filter state for the given radio.
+ * Idempotent: starting an already-started or stopping an already-stopped
+ * monitor returns 0 immediately.
+ *
+ * The WQ is pre-initialised at pdev alloc and destroyed at pdev free;
+ * this function does not create or destroy it. The SSR path may clear
+ * tx_monitor_started without clearing is_tx_monitor_enabled_on_ssr so
+ * recovery can distinguish runtime state from restart intent.
+ *
+ * Start sequence (state=true):
+ *   1. Enable the TX monitor destination ring via
+ *      ath12k_dp_mon_tx_config_monitor_mode().
+ *   2. Push the TLV filter configuration to FW via
+ *      ath12k_dp_mon_tx_update_filter().
+ *   3. Set tx_monitor_started=true and is_tx_monitor_enabled_on_ssr=true.
+ *
+ * Stop sequence (state=false):
+ *   1. Disable the TX monitor destination ring.
+ *   2. Push cleared filter configuration to FW.
+ *   3. Set tx_monitor_started=false and is_tx_monitor_enabled_on_ssr=false.
+ *
+ * Context: Process context. Caller must hold wiphy_lock when invoked
+ *          from mac80211 ops path.
+ *
+ * Return: 0 on success, negative error code on failure.
+ */
 int ath12k_dp_mon_tx_monitor_start_stop(struct ath12k *ar, bool state)
 {
 	int ret = -EOPNOTSUPP;
@@ -4791,6 +4811,7 @@ int ath12k_dp_mon_tx_monitor_start_stop(struct ath12k *ar, bool state)
 	if (!state && !dp_pdev_tx_mon->tx_monitor_started) {
 		ath12k_dbg(ar->ab, ATH12K_DBG_DP_MON,
 			   "Not running Tx mon on requested interface\n");
+		ar->is_tx_monitor_enabled_on_ssr = false;
 		return 0;
 	}
 
@@ -4808,16 +4829,16 @@ int ath12k_dp_mon_tx_monitor_start_stop(struct ath12k *ar, bool state)
 	if (ret) {
 		ath12k_warn(ar->ab, "Tx Monitor: fail tx monitor filter update ret %d\n",
 			    ret);
-		/* always set tx mon mode as false in case of failure*/
-		if (ath12k_dp_mon_tx_config_full_monitor(ar, false)) {
+		if (ath12k_dp_mon_tx_config_full_monitor(ar, false))
 			ath12k_err(ar->ab,
 				   "Tx Mon: Config failure potential state mismatch\n");
-			return ret;
-		}
 		dp_pdev_tx_mon->tx_monitor_started = false;
+		ar->is_tx_monitor_enabled_on_ssr = false;
 		return ret;
 	}
 	dp_pdev_tx_mon->tx_monitor_started = state;
+	ar->is_tx_monitor_enabled_on_ssr = state;
+
 	return ret;
 }
 
@@ -5901,6 +5922,140 @@ ath12k_dp_ext_mon_add_tx_peers(struct ath12k_pdev_dp *dp_pdev,
 unlock:
 	spin_unlock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
 	return ret;
+}
+
+/**
+ * ath12k_dp_mon_tx_drain_status_desc() - DMA-unmap and free one TX monitor
+ * status descriptor during SSR cleanup.
+ * @dp_pdev: DP pdev handle, used to reach the DMA device
+ * @desc: status descriptor to drain; no-op if mon_buf is NULL
+ *
+ * Releases a single status descriptor entry during SSR drain. The TLV-aware
+ * cleanup is needed because TX monitor status buffers can reference additional
+ * packet buffers via HAL_TX_MON_BUF_ADDR TLVs.
+ */
+static void
+ath12k_dp_mon_tx_drain_status_desc(struct ath12k_pdev_dp *dp_pdev,
+				   struct ath12k_dp_mon_status_desc *desc)
+{
+	struct ath12k_hal *hal = &dp_pdev->dp->ab->hal;
+	bool pkt_buf_cnt_in_desc;
+
+	if (!desc->mon_buf)
+		return;
+
+	pkt_buf_cnt_in_desc = ath12k_hal_mon_tx_pkt_buf_cnt_in_desc(hal);
+
+	ath12k_core_dma_unmap_page(dp_pdev->dp->dev, desc->paddr,
+				   ATH12K_DP_MON_TX_BUF_SIZE, DMA_FROM_DEVICE);
+	ath12k_dp_tx_mon_flush_tlv(dp_pdev, desc, pkt_buf_cnt_in_desc);
+
+	desc->mon_buf = NULL;
+	desc->paddr = 0;
+	desc->buf_len = 0;
+	desc->end_of_ppdu = false;
+	desc->pkt_buf_cnt = 0;
+}
+
+/**
+ * ath12k_dp_mon_tx_ssr_restart_pdev() - Restart TX monitor after SSR
+ * @dp_pdev: DP pdev handle for the recovering radio
+ *
+ * Called from ath12k_mac_monitor_start() when is_tx_monitor_enabled_on_ssr
+ * is set, indicating that TX monitor was active before the crash.
+ *
+ * The WQ is created by wq_start() at pdev alloc time and destroyed by
+ * wq_stop() at pdev free. It remains alive across SSR because wq_stop() is
+ * not called on the SSR path. This function cancels any in-flight txmon_work
+ * and drains stale descriptors before recovery re-arms the HW/FW monitor state.
+ *
+ * Restart sequence:
+ *   1. Verify dp_pdev_tx_mon is allocated; abort if not.
+ *   2. Verify the descriptor pool is ready; warn and abort if not.
+ *   3. Drain partial descriptors from tx_mon_desc_work_list.
+ *   4. Splice used_list and proc_list into a private local_drain_list under
+ *      tx_mon_ppdu_desc_lock. For each ppdu_desc, DMA-unmap and free every
+ *      status_desc via ath12k_dp_mon_tx_drain_status_desc(), then reset via
+ *      ath12k_dp_mon_reset_ppdu_desc(). Bulk-return to free_list under lock.
+ *   5. Call ath12k_dp_mon_tx_monitor_start_stop(ar, true) to re-enable the HW
+ *      ring and push TLV filter config to FW.
+ *
+ * On monitor_start_stop() failure: is_tx_monitor_enabled_on_ssr is cleared
+ * here explicitly. monitor_start_stop(ar, true) does not reach its state-update
+ * block on early failure returns, so the flag would not be cleared otherwise.
+ * Clearing it prevents a re-entry loop on the next SSR cycle.
+ */
+void ath12k_dp_mon_tx_ssr_restart_pdev(struct ath12k_pdev_dp *dp_pdev)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev;
+	struct ath12k_pdev_tx_mon *dp_pdev_tx_mon;
+	struct ath12k_dp_mon_ppdu_desc *ppdu_desc;
+	struct hal_srng *tx_mon_dst_ring;
+	LIST_HEAD(local_drain_list);
+	struct ath12k *ar;
+	bool desc_initialized;
+	u32 ring_id;
+	int i, ret;
+
+	if (!dp_pdev || !dp_pdev->dp_mon_pdev)
+		return;
+
+	ar = dp_pdev->ar;
+	dp_mon_pdev = dp_pdev->dp_mon_pdev;
+
+	dp_pdev_tx_mon = dp_mon_pdev->dp_pdev_tx_mon;
+	if (WARN_ON(!dp_pdev_tx_mon)) {
+		ar->is_tx_monitor_enabled_on_ssr = false;
+		return;
+	}
+
+	spin_lock_bh(&dp_pdev_tx_mon->tx_mon_ppdu_desc_lock);
+	desc_initialized = dp_pdev_tx_mon->tx_mon_ppdu_desc_initialized;
+	spin_unlock_bh(&dp_pdev_tx_mon->tx_mon_ppdu_desc_lock);
+	if (!desc_initialized) {
+		ath12k_warn(ar->ab,
+			    "TX monitor desc pool not ready during SSR recovery\n");
+		ar->is_tx_monitor_enabled_on_ssr = false;
+		return;
+	}
+
+	ring_id = dp_pdev_tx_mon->tx_mon_dst_ring.ring_id;
+	tx_mon_dst_ring = &ar->ab->hal.srng_list[ring_id];
+	spin_lock_bh(&tx_mon_dst_ring->lock);
+	ath12k_dp_tx_mon_flush_desc_list(dp_pdev,
+					 &dp_pdev_tx_mon->tx_mon_desc_work_list);
+	spin_unlock_bh(&tx_mon_dst_ring->lock);
+
+	if (dp_pdev_tx_mon->tx_mon_wq_initialized)
+		cancel_work_sync(&dp_pdev_tx_mon->txmon_work);
+
+	spin_lock_bh(&dp_pdev_tx_mon->tx_mon_ppdu_desc_lock);
+	list_splice_init(&dp_pdev_tx_mon->tx_mon_ppdu_desc_used_list,
+			 &local_drain_list);
+	list_splice_tail_init(&dp_pdev_tx_mon->tx_mon_ppdu_desc_proc_list,
+			      &local_drain_list);
+	spin_unlock_bh(&dp_pdev_tx_mon->tx_mon_ppdu_desc_lock);
+
+	list_for_each_entry(ppdu_desc, &local_drain_list, list) {
+		for (i = 0; i < ppdu_desc->status_desc_cnt; i++)
+			ath12k_dp_mon_tx_drain_status_desc(dp_pdev,
+							   &ppdu_desc->status_desc[i]);
+		ath12k_dp_mon_reset_ppdu_desc(ppdu_desc);
+	}
+
+	spin_lock_bh(&dp_pdev_tx_mon->tx_mon_ppdu_desc_lock);
+	list_splice_tail_init(&local_drain_list,
+			      &dp_pdev_tx_mon->tx_mon_ppdu_desc_free_list);
+	spin_unlock_bh(&dp_pdev_tx_mon->tx_mon_ppdu_desc_lock);
+
+	/* SSR invalidates the HW/FW TX monitor programming; force re-arm below. */
+	dp_pdev_tx_mon->tx_monitor_started = false;
+	ret = ath12k_dp_mon_tx_monitor_start_stop(ar, true);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "TX monitor restart failed during SSR: %d\n", ret);
+		ar->is_tx_monitor_enabled_on_ssr = false;
+	}
 }
 
 int
