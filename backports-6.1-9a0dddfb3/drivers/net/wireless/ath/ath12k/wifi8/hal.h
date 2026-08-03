@@ -580,19 +580,17 @@ enum rdi_based_source_ring_selection {
 #define HAL_REO_BP_DROP_REO2PPE2	BIT(16)
 
 /* Convenience masks */
-/* All REO2SW rings (SW0..SW11) — enable backpressure drop for all SW rings */
-#define HAL_REO_BP_DROP_REO2SW_ALL	(HAL_REO_BP_DROP_REO2SW0  | \
-					 HAL_REO_BP_DROP_REO2SW1  | \
+/* All REO2SW rings (SW0..SW11) — enable backpressure drop for all SW rings
+ * except flush(REO2SW0) and mgmt(REO2SW8, REO2SW9 and REO2SW11) rings.
+ */
+#define HAL_REO_BP_DROP_REO2SW_ALL	(HAL_REO_BP_DROP_REO2SW1  | \
 					 HAL_REO_BP_DROP_REO2SW2  | \
 					 HAL_REO_BP_DROP_REO2SW3  | \
 					 HAL_REO_BP_DROP_REO2SW4  | \
 					 HAL_REO_BP_DROP_REO2SW5  | \
 					 HAL_REO_BP_DROP_REO2SW6  | \
 					 HAL_REO_BP_DROP_REO2SW7  | \
-					 HAL_REO_BP_DROP_REO2SW8  | \
-					 HAL_REO_BP_DROP_REO2SW9  | \
-					 HAL_REO_BP_DROP_REO2SW10 | \
-					 HAL_REO_BP_DROP_REO2SW11)
+					 HAL_REO_BP_DROP_REO2SW10)
 /* All REO2PPE rings */
 #define HAL_REO_BP_DROP_REO2PPE_ALL	(HAL_REO_BP_DROP_REO2PPE  | \
 					 HAL_REO_BP_DROP_REO2PPE1 | \

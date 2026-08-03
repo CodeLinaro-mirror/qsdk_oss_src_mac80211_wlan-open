@@ -2056,12 +2056,22 @@ void ath12k_wifi8_rx_sw_desc_sanity_check(struct hal_reo_dest_ring *hw_rx_desc,
 	}
 
 	if (unlikely(sw_desc->magic != ATH12K_DP_RX_DESC_MAGIC)) {
-		pr_err("Check HW CC implementation");
+		pr_err("Check HW CC implementation, vaddr = 0x%p, mgmt_pkt = %lu, bar_frame = %lu",
+			(void *)sw_desc->vaddr,
+			FIELD_GET(HAL_RX_MPDU_EXT_DESC_INFO_INFO0_MGMT_PKT,
+				  hw_rx_desc->rx_mpdu_ext_info.info0),
+			FIELD_GET(HAL_RX_MPDU_DESC_INFO_INFO0_BAR_FRAME_FLAG,
+				  hw_rx_desc->rx_mpdu_info.info0));
 		WARN_ON(1);
 	}
 
 	if (unlikely(!sw_desc->in_use)) {
-		pr_err("The SW descriptor is in free pool (!in_use), yet HW released it to host");
+		pr_err("The SW descriptor is in free pool (!in_use), yet HW released it to host, vaddr = 0x%p, mgmt_pkt = %lu, bar_frame = %lu",
+			(void *)sw_desc->vaddr,
+			FIELD_GET(HAL_RX_MPDU_EXT_DESC_INFO_INFO0_MGMT_PKT,
+				  hw_rx_desc->rx_mpdu_ext_info.info0),
+			FIELD_GET(HAL_RX_MPDU_DESC_INFO_INFO0_BAR_FRAME_FLAG,
+				  hw_rx_desc->rx_mpdu_info.info0));
 		WARN_ON(1);
 	}
 }

@@ -758,12 +758,14 @@ void ath12k_wifi7_rx_sw_desc_sanity_check(struct ath12k_rx_desc_info *sw_desc)
 	}
 
 	if (unlikely(sw_desc->magic != ATH12K_DP_RX_DESC_MAGIC)) {
-		pr_err("Check HW CC implementation");
+		pr_err("Check HW CC implementation, vaddr = 0x%p",
+			(void *)sw_desc->vaddr);
 			WARN_ON(1);
 	}
 
 	if (unlikely(!sw_desc->in_use)) {
-		pr_err("The SW descriptor is in free pool (!in_use), yet HW released it to host");
+		pr_err("The SW descriptor is in free pool (!in_use), yet HW released it to host, vaddr = 0x%p",
+			(void *)sw_desc->vaddr);
 		WARN_ON(1);
 	}
 }
