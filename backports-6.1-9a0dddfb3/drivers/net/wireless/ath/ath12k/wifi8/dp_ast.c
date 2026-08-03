@@ -525,6 +525,11 @@ ath12k_wifi8_invalidate_rx_ase_cache(struct ath12k_dp_hw_group *dp_hw_grp,
 	if (!ab || !ast_base)
 		return -EINVAL;
 
+	if ((test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags) &&
+	     !test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags)) ||
+	    test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags))
+		return 0;
+
 	dp_wifi8 = ath12k_get_dp_wifi8(ab->dp);
 	wbm_ase_cmd_ring = &ab->hal.srng_list[dp_wifi8->rx_ase_cmd_ring.ring_id];
 
@@ -570,6 +575,11 @@ ath12k_wifi8_invalidate_tx_ase_cache(struct ath12k_dp_hw_group *dp_hw_grp,
 
 	if (!ab || !ast_base)
 		return -EINVAL;
+
+	if ((test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags) &&
+	     !test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags)) ||
+	    test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags))
+		return 0;
 
 	dp_wifi8 = ath12k_get_dp_wifi8(ab->dp);
 	tx_cmd_ring = &ab->hal.srng_list[dp_wifi8->tcl_cmd_ring.ring_id];
