@@ -1412,7 +1412,9 @@ int ath12k_wmi_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 	void *ptr;
 	struct wmi_tlv *tlv;
 	u16 mcs;
+#ifdef CPTCFG_QCN_EXTN
 	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(frame);
+#endif /* CPTCFG_QCN_EXTN */
 
 	if (!arvif)
 		return -EINVAL;
@@ -1422,9 +1424,14 @@ int ath12k_wmi_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 	len = sizeof(*cmd) + sizeof(*frame_tlv) + roundup(buf_len, sizeof(u32));
 
 	rate_present = ath12k_get_skb_rate(arvif, frame, &mcs, &preamble);
+#ifdef CPTCFG_QCN_EXTN
 	if (is_cfr || rate_present ||
 	    ATH12K_CUSTOM_TX_PARAM_CONFIGURED_EXTN(skb_cb->u.ar))
 		tx_params_valid = true;
+#else
+	if (is_cfr || rate_present)
+		tx_params_valid = true;
+#endif /* CPTCFG_QCN_EXTN */
 
 	hw_link_id_needed = ath12k_wmi_hw_link_id_in_mgmt_send(ar);
 
@@ -9736,6 +9743,7 @@ static int ath12k_wmi_svc_rdy_ext2_parse(struct ath12k_base *ab,
 			}
 			parse->hal_reg_caps_ext2_done = true;
 		} else if (!parse->scan_radio_caps_done) {
+#ifdef CPTCFG_QCN_EXTN
 			ret = ath12k_wmi_tlv_iter(ab, ptr, len,
 						  ath12k_wmi_tlv_scan_radio_caps_ext2,
 						  parse);
@@ -9745,6 +9753,7 @@ static int ath12k_wmi_svc_rdy_ext2_parse(struct ath12k_base *ab,
 					    ret);
 				return ret;
 			}
+#endif /* CPTCFG_QCN_EXTN */
 
 			parse->scan_radio_caps_done = true;
 		} else if (!parse->twt_caps_param_done) {
@@ -11496,14 +11505,12 @@ skip_mgmt_stats:
 	/* Handle custom tx packet before memsetting
 	 * skb_cb via info.
 	 */
-	if (ATH12K_IS_CUSTOM_PKT(skb_cb)) {
 #ifdef CPTCFG_QCN_EXTN
+	if (ATH12K_IS_CUSTOM_PKT(skb_cb)) {
 		ath12k_custom_tx_free_extn(msdu, status);
-#else
-		dev_kfree_skb_any(msdu);
-#endif /* CPTCFG_QCN_EXTN */
 		goto skip_tx_status;
 	}
+#endif /* CPTCFG_QCN_EXTN */
 
 	info = IEEE80211_SKB_CB(msdu);
 	memset(&info->status, 0, sizeof(info->status));
@@ -11521,7 +11528,9 @@ skip_mgmt_stats:
 
 	ieee80211_tx_status_irqsafe(ath12k_ar_to_hw(ar), msdu);
 
+#ifdef CPTCFG_QCN_EXTN
 skip_tx_status:
+#endif /* CPTCFG_QCN_EXTN */
 	num_mgmt = atomic_dec_if_positive(&ar->num_pending_mgmt_tx);
 
 	/* WARN when we received this event without doing any mgmt tx */
@@ -11603,15 +11612,15 @@ static void wmi_process_offchan_tx_comp(struct ath12k *ar, u32 desc_id,
 	if (!(info->flags & IEEE80211_TX_CTL_NO_ACK) && !status)
 		info->flags |= IEEE80211_TX_STAT_ACK;
 
+#ifdef CPTCFG_QCN_EXTN
 	if (!ATH12K_IS_CUSTOM_PKT(skb_cb)) {
 		ieee80211_tx_status_irqsafe(ar->ah->hw, msdu);
 	} else {
-#ifdef CPTCFG_QCN_EXTN
 		ath12k_custom_tx_free_extn(msdu, status);
-#else
-		dev_kfree_skb_any(msdu);
-#endif /* CPTCFG_QCN_EXTN */
 	}
+#else
+	ieee80211_tx_status_irqsafe(ar->ah->hw, msdu);
+#endif /* CPTCFG_QCN_EXTN */
 }
 
 static int ath12k_pull_offchan_tx_compl_param_tlv(struct ath12k_base *ab,
@@ -14938,8 +14947,10 @@ static int ath12k_wmi_dcs_intf_subtlv_parser(struct ath12k_base *ab,
 	struct wmi_dcs_awgn_info *awgn_info;
 	struct wmi_dcs_cw_info *cw_info;
 	struct wmi_dcs_obss_info *obss_info;
+#ifdef CPTCFG_QCN_EXTN
 	struct wmi_dcs_wlan_interference_stats_ev *wlan_info;
 	struct wmi_dcs_wlan_interference_stats *tmp;
+#endif /* CPTCFG_QCN_EXTN */
 
 	switch (tag) {
 	case WMI_TAG_DCS_AWGN_INT_TYPE:
@@ -14980,6 +14991,7 @@ static int ath12k_wmi_dcs_intf_subtlv_parser(struct ath12k_base *ab,
 			   obss_info->chan_bw_interference_bitmap);
 		break;
 	case WMI_TAG_ATH_DCS_WLAN_INT_STAT:
+#ifdef CPTCFG_QCN_EXTN
 		wlan_info = (struct wmi_dcs_wlan_interference_stats_ev *)ptr;
 		tmp = (struct wmi_dcs_wlan_interference_stats *)data;
 		tmp->reg_tsf32 = le32_to_cpu(wlan_info->reg_tsf32);
@@ -14998,6 +15010,7 @@ static int ath12k_wmi_dcs_intf_subtlv_parser(struct ath12k_base *ab,
 		tmp->chan_nf = le32_to_cpu(wlan_info->chan_nf);
 		tmp->my_bss_rx_cycle_count =
 			le32_to_cpu(wlan_info->my_bss_rx_cycle_count);
+#endif /* CPTCFG_QCN_EXTN */
 		break;
 	default:
 		ath12k_warn(ab,
@@ -19952,7 +19965,9 @@ static void ath12k_wmi_pdev_nfcal_power_all_channels_event(struct ath12k_base *a
 		return;
 	}
 
+#ifdef CPTCFG_QCN_EXTN
 	ath12k_vendor_nfcal_power_event(ar, &param);
+#endif /* CPTCFG_QCN_EXTN */
 
 	rcu_read_unlock();
 }
