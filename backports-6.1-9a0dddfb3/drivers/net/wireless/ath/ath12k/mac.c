@@ -20056,6 +20056,8 @@ void ath12k_mac_stop(struct ath12k *ar)
 			   ATH12K_INVALID_VDEV_ID, ar->radio_idx,
 			   ret);
 
+	ath12k_dp_mon_rx_flush_wq(ar);
+
 	clear_bit(ATH12K_FLAG_CAC_RUNNING, &ar->dev_flags);
 
 	cancel_delayed_work_sync(&ar->scan.timeout);

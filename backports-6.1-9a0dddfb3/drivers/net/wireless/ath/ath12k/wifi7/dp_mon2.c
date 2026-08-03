@@ -2313,7 +2313,7 @@ static void ath12k_dp_mon_rx_drain_wq(struct ath12k_pdev_dp *dp_pdev)
 	spin_unlock_bh(&dp_mon_pdev->ppdu_desc_lock);
 }
 
-void ath12k_dp_mon_rx_wq_deinit(struct ath12k_pdev_dp *dp_pdev)
+void ath12k_dp_mon_rx_wq_deinit(struct ath12k_pdev_dp *dp_pdev, bool destroy)
 {
 	struct ath12k_pdev_mon_dp *mon_pdev = dp_pdev->dp_mon_pdev;
 
@@ -2322,7 +2322,9 @@ void ath12k_dp_mon_rx_wq_deinit(struct ath12k_pdev_dp *dp_pdev)
 	ath12k_dp_mon_rx_drain_wq(dp_pdev);
 
 	flush_workqueue(mon_pdev->rxmon_wq);
-	destroy_workqueue(mon_pdev->rxmon_wq);
+
+	if (destroy)
+		destroy_workqueue(mon_pdev->rxmon_wq);
 }
 
 int ath12k_wifi7_dp_ext_mon_validate_request(struct ath12k_pdev_dp *dp_pdev,
