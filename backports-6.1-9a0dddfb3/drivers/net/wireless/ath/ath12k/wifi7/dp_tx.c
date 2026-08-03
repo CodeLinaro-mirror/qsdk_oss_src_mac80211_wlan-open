@@ -16,9 +16,9 @@
 #include "../dp_stats.h"
 #include "../dp_peer.h"
 #include "../telemetry.h"
-#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#if defined(CPTCFG_EXT_IPA_OFFLOAD) && defined(CPTCFG_QCN_EXTN)
 #include "../qcn_extns/ipa/dp_ipa.h"
-#endif
+#endif /* CPTCFG_EXT_IPA_OFFLOAD && CPTCFG_QCN_EXTN */
 #include "../telemetry_agent_if.h"
 #include "dp_peer.h"
 #include "../qcn_extns/ini.h"

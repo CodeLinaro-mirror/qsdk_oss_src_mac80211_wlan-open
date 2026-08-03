@@ -24,7 +24,9 @@
 #include "erp.h"
 #include "fse.h"
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/ipa/dp_ipa.h"
+#endif /* CPTCFG_QCN_EXTN */
 #endif
 #include "vendor.h"
 

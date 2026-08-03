@@ -19,8 +19,10 @@
 #include "../trace.h"
 #include "../wmi.h"
 #include "../ath12k_notif.h"
+#ifdef CPTCFG_QCN_EXTN
 #include "../../net/mac80211/qcn_extns/cmn_extn.h"
 #include "qcn_extns/dp_mon_extn.h"
+#endif /* CPTCFG_QCN_EXTN */
 
 const struct ath12k_dp_arch_mon_ops ath12k_wifi7_dp_arch_mon_dual_ring_ops = {
 	.rx_srng_setup = ath12k_dp_mon_rx_srng_setup,
@@ -907,6 +909,7 @@ ath12k_wifi7_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 		ath12k_dp_mon_rx_deliver_skb(dp_pdev, NULL, mpdu,
 					     rxs, ppdu_info);
 	} else {
+#ifdef CPTCFG_QCN_EXTN
 		/*
 		 * If an ext_mon listener is registered, deliver the MPDU via the
 		 * ext_mon SRCU notifier chain. See struct ieee80211_ext_mon_rx_event_extn
@@ -943,6 +946,10 @@ ath12k_wifi7_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 				   "pkt dropped! listener absent & rtap not needed\n");
 			return -EINVAL;
 		}
+#else
+		/* Rtap not needed, packet to be dropped */
+		return -EOPNOTSUPP;
+#endif /* CPTCFG_QCN_EXTN */
 	}
 
 	return 0;
