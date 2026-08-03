@@ -6215,3 +6215,53 @@ ath12k_dp_tx_mon_set_tx_mon_teardown(struct ath12k *ar)
 	if (ar->dp.dp_mon_pdev && ar->dp.dp_mon_pdev->dp_pdev_tx_mon)
 		ar->dp.dp_mon_pdev->dp_pdev_tx_mon->tx_mon_teardown = true;
 }
+
+int
+ath12k_dp_ext_mon_filter_peer(struct ieee80211_hdr *wh, struct list_head *peer_list)
+{
+	struct ath12k_dp_ext_mon_peer *peer;
+
+	list_for_each_entry(peer, peer_list, list) {
+		if (ether_addr_equal(peer->peer_info.mac_addr, wh->addr1))
+			return 0;
+	}
+	return -EINVAL;
+}
+EXPORT_SYMBOL(ath12k_dp_ext_mon_filter_peer);
+
+int
+ath12k_dp_ext_mon_filter_type(struct ieee80211_hdr *wh,
+			      struct ath12k_ext_mon_pkt_config *pkt_config)
+{
+	u16 type;
+
+	type = ((__le16_to_cpu(wh->frame_control) & IEEE80211_FCTL_FTYPE) >>
+		ATH12K_FC0_TYPE_SHIFT);
+
+	if (type < ATH12K_EXT_MON_FRAME_MAX && pkt_config->filter[type])
+		return 0;
+
+	return -EINVAL;
+}
+EXPORT_SYMBOL(ath12k_dp_ext_mon_filter_type);
+
+int
+ath12k_dp_ext_mon_filter_subtype(struct ieee80211_hdr *wh,
+				 struct ath12k_ext_mon_pkt_config *pkt_config)
+{
+	bool is_mcast = false;
+	u16 type, sub_type;
+
+	type = ((__le16_to_cpu(wh->frame_control) & IEEE80211_FCTL_FTYPE) >>
+		ATH12K_FC0_TYPE_SHIFT);
+	sub_type = ((__le16_to_cpu(wh->frame_control) & IEEE80211_FCTL_STYPE) >>
+		    ATH12K_FC0_SUBTYPE_SHIFT);
+	is_mcast = is_multicast_ether_addr(wh->addr1);
+
+	if (type >= ATH12K_EXT_MON_FRAME_MAX)
+		return -EINVAL;
+
+	return ath12k_dp_ext_mon_subtype_check(pkt_config, type, sub_type,
+					       is_mcast);
+}
+EXPORT_SYMBOL(ath12k_dp_ext_mon_filter_subtype);

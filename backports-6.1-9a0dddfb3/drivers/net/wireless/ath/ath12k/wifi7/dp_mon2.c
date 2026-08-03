@@ -728,30 +728,6 @@ ath12k_wifi7_dp_ext_mon_rx_adjust_mpdu_len(struct ath12k_pdev_dp *dp_pdev,
 	return 0;
 }
 
-int
-ath12k_wifi7_dp_ext_mon_subtype_check(struct ath12k_ext_mon_pkt_config *config,
-				      u8 type, u8 sub_type,
-				      bool is_mcast)
-{
-	u32 filter = config->filter[type];
-
-	switch (type) {
-	case ATH12K_EXT_MON_FRAME_MGMT:
-	case ATH12K_EXT_MON_FRAME_CTRL:
-		if (filter && ((filter >> sub_type) & 0x1))
-			return 0;
-		break;
-
-	case ATH12K_EXT_MON_FRAME_DATA:
-		if ((is_mcast && (filter & FILTER_DATA_MCAST)) ||
-		    (!is_mcast && (filter & FILTER_DATA_UCAST)))
-			return 0;
-		break;
-	}
-
-	return -EINVAL; /* Failure - filter out the frame */
-}
-
 static int
 ath12k_wifi7_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 					struct hal_rx_mon_ppdu_info *ppdu_info,
@@ -816,10 +792,8 @@ ath12k_wifi7_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 			 * are ORed in, extra frame type/subtypes may be received;
 			 * explicitly filter out those unintended frames here.
 			 */
-			ret = ath12k_wifi7_dp_ext_mon_subtype_check(pkt_config,
-								    type,
-								    sub_type,
-								    is_mcast);
+			ret = ath12k_dp_ext_mon_subtype_check(pkt_config, type,
+							      sub_type, is_mcast);
 			if (unlikely(ret)) {
 				spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
 				ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON,
