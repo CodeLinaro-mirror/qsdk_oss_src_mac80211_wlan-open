@@ -15404,6 +15404,7 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 		}
 
 		ahsta->free_logical_idx_map = U16_MAX;
+		ahsta->enctype = HAL_ENCRYPT_TYPE_OPEN;
 		/* ML sta */
 		links_map = ahsta->links_map;
 		existing_sta = test_bit(link_id, &links_map);
