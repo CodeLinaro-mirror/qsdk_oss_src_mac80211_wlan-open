@@ -4280,6 +4280,9 @@ static int ath12k_dp_mon_tx_filter_cfg(const struct ath12k_dp_arch_mon_ops *mon_
 	u8 old_mode = dp_pdev->dp_mon_pdev->dp_pdev_tx_mon->tx_monitor_mode;
 	int ret = 0;
 
+	if (!mon_ops || !mon_ops->mon_tx_filter_configure)
+		return -EINVAL;
+
 	ret = mon_ops->mon_tx_filter_configure(dp_pdev, false);
 
 	if (ret) {
@@ -4329,11 +4332,9 @@ int ath12k_dp_mon_tx_config_full_monitor(struct ath12k *ar, bool set)
 		}
 	}
 
-	if (mon_ops && mon_ops->mon_tx_filter_configure) {
-		ret = ath12k_dp_mon_tx_filter_cfg(mon_ops, dp_pdev,
-						  DP_MON_TX_FULL_MONITOR, set);
-		ath12k_dp_tx_mon_reset_ext_mon_config(dp_pdev);
-	}
+	ret = ath12k_dp_mon_tx_filter_cfg(mon_ops, dp_pdev,
+					  DP_MON_TX_FULL_MONITOR, set);
+	ath12k_dp_tx_mon_reset_ext_mon_config(dp_pdev);
 
 	return ret;
 }
