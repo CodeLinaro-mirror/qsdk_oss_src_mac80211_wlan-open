@@ -899,7 +899,8 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 	},
 };
 
-static bool ath12k_wifi8_mac_is_mgmt_action_link_agnostic(struct sk_buff *skb)
+static bool ath12k_wifi8_mac_is_mgmt_action_link_agnostic(struct ath12k_base *ab,
+							  struct sk_buff *skb)
 {
 	struct ieee80211_mgmt *mgmt = (struct ieee80211_mgmt *)skb->data;
 	const u8 *buf = (u8 *)&mgmt->u.action;
@@ -928,6 +929,17 @@ static bool ath12k_wifi8_mac_is_mgmt_action_link_agnostic(struct sk_buff *skb)
 	action_code = *buf++;
 
 	switch (category) {
+	case WLAN_CATEGORY_SPECTRUM_MGMT:
+		if (action_code == WLAN_ACTION_SPCT_CHL_SWITCH) {
+			bool ml_link = ath12k_mgmt_has_ml_link_info_ie(ab, skb);
+
+			ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
+					 "%s spectrum-mgmt csa link agnostic %s\n",
+					 __func__, ml_link ? "set" : "clear");
+			return ml_link;
+		}
+		break;
+
 	case WLAN_CATEGORY_PROTECTED_EHT:
 		switch (action_code) {
 		case WLAN_PROTECTED_EHT_ACTION_ML_OP_UPDATE_REQ:
@@ -979,7 +991,8 @@ static bool ath12k_wifi8_mac_is_mgmt_action_link_agnostic(struct sk_buff *skb)
 /* This function should be called only for mgmt frames to a Multi-Link device,
  * after meeting master link eligibility. Hence, such sanity checks are skipped.
  */
-static bool ath12k_wifi8_mac_is_mgmt_link_agnostic(struct sk_buff *skb)
+static bool ath12k_wifi8_mac_is_mgmt_link_agnostic(struct ath12k_base *ab,
+						   struct sk_buff *skb)
 {
 	struct ieee80211_mgmt *mgmt = (struct ieee80211_mgmt *)skb->data;
 	u16 fc = le16_to_cpu(mgmt->frame_control);
@@ -989,7 +1002,7 @@ static bool ath12k_wifi8_mac_is_mgmt_link_agnostic(struct sk_buff *skb)
 	case IEEE80211_STYPE_DISASSOC:
 		return true;
 	case IEEE80211_STYPE_ACTION:
-		return ath12k_wifi8_mac_is_mgmt_action_link_agnostic(skb);
+		return ath12k_wifi8_mac_is_mgmt_action_link_agnostic(ab, skb);
 	default:
 		break;
 	}
@@ -1108,7 +1121,7 @@ ath12k_wifi8_mac_get_tx_link(struct ieee80211_sta *sta, struct ieee80211_vif *vi
 	 * addressed mgmt frame can be transmitted on master link after peer assoc.
 	 */
 	if (ahsta->state <= IEEE80211_STA_ASSOC ||
-	    !ath12k_wifi8_mac_is_mgmt_link_agnostic(skb))
+	    !ath12k_wifi8_mac_is_mgmt_link_agnostic(ab, skb))
 		goto skip_link_agnostic_tx;
 
 	ATH12K_SKB_CB(skb)->flags |= ATH12K_SKB_MGMT_LINK_AGNOSTIC;

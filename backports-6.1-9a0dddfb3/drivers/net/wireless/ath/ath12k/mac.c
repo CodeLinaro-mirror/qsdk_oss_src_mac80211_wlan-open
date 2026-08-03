@@ -18792,8 +18792,8 @@ static void ath12k_mgmt_over_wmi_tx_purge(struct ath12k *ar)
 		ath12k_mgmt_over_wmi_tx_drop(ar, skb);
 }
 
-static bool ath12k_mgmt_has_ml_link_info_ie(struct ath12k *ar,
-					    struct sk_buff *skb)
+bool ath12k_mgmt_has_ml_link_info_ie(struct ath12k_base *ab,
+				     struct sk_buff *skb)
 {
 	struct ieee80211_hdr *hdr;
 	struct ieee80211_mgmt *mgmt;
@@ -18801,7 +18801,7 @@ static bool ath12k_mgmt_has_ml_link_info_ie(struct ath12k *ar,
 	const u8 *pos, *end;
 	u8 code, iv_len = 0;
 
-	if (!ar || !ar->ab || !skb || !skb->data)
+	if (!ab || !skb || !skb->data)
 		return false;
 
 	hdr = (struct ieee80211_hdr *)skb->data;
@@ -18813,26 +18813,28 @@ static bool ath12k_mgmt_has_ml_link_info_ie(struct ath12k *ar,
 
 		switch (skb_cb->cipher) {
 		case WLAN_CIPHER_SUITE_CCMP:
+		case WLAN_CIPHER_SUITE_CCMP_256:
 			iv_len = IEEE80211_CCMP_HDR_LEN;
 			break;
-		case WLAN_CIPHER_SUITE_TKIP:
-		case WLAN_CIPHER_SUITE_CCMP_256:
 		case WLAN_CIPHER_SUITE_GCMP:
 		case WLAN_CIPHER_SUITE_GCMP_256:
+			iv_len = IEEE80211_GCMP_HDR_LEN;
+			break;
+		case WLAN_CIPHER_SUITE_TKIP:
 		case WLAN_CIPHER_SUITE_AES_CMAC:
 		case WLAN_CIPHER_SUITE_BIP_GMAC_128:
 		case WLAN_CIPHER_SUITE_BIP_GMAC_256:
 		case WLAN_CIPHER_SUITE_BIP_CMAC_256:
 			break;
 		default:
-			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
+			ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
 					 "ml_info_ie: unsupported protected cipher 0x%x\n",
 					 skb_cb->cipher);
 			return false;
 		}
 	}
 
-	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
+	ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
 			 "ml_info_ie: protected=%u iv_len=%u len=%u\n",
 			 ieee80211_has_protected(hdr->frame_control), iv_len,
 			 skb->len);
@@ -18846,7 +18848,7 @@ static bool ath12k_mgmt_has_ml_link_info_ie(struct ath12k *ar,
 
 	pos++;
 	code = *pos++;
-	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
+	ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
 			 "ml_info_ie: action_code=%u\n", code);
 	if (code != WLAN_ACTION_SPCT_CHL_SWITCH)
 		return false;
@@ -18857,6 +18859,7 @@ static bool ath12k_mgmt_has_ml_link_info_ie(struct ath12k *ar,
 
 	return false;
 }
+EXPORT_SYMBOL(ath12k_mgmt_has_ml_link_info_ie);
 
 static int ath12k_mac_mgmt_action_frame_fill_elem(struct ath12k_link_vif *arvif,
 						  struct sk_buff *skb)
@@ -18942,7 +18945,7 @@ static int ath12k_mac_mgmt_action_frame_fill_elem(struct ath12k_link_vif *arvif,
 
 	switch (category) {
 	case WLAN_CATEGORY_SPECTRUM_MGMT:
-		if (ath12k_mgmt_has_ml_link_info_ie(ar, skb)) {
+		if (ath12k_mgmt_has_ml_link_info_ie(ar->ab, skb)) {
 			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
 					 "spectrum_mgmt: set link-agnostic (can_override_mld_tx=%u)\n",
 					 can_override_mld_tx);

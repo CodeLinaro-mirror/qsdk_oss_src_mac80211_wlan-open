@@ -534,6 +534,8 @@ int ath12k_mac_op_erp(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 		      int link_id, struct cfg80211_erp_params *params);
 int ath12k_mac_mgmt_tx(struct ath12k *ar, struct sk_buff *skb,
 		       bool is_prb_rsp);
+bool ath12k_mgmt_has_ml_link_info_ie(struct ath12k_base *ab,
+				     struct sk_buff *skb);
 int ath12k_mac_op_uhr_smd_update(struct ieee80211_hw *hw,
 				 struct ieee80211_vif *vif,
 				 struct ieee80211_sta *peer,
