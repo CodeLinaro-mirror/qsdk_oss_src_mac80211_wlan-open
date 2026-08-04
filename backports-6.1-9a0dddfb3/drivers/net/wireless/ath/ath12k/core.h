@@ -212,6 +212,7 @@ struct ath12k_dp_params {
 	unsigned int dp_num_clients_max;
 	unsigned int dp_mon_status_buf;
 	unsigned int tx_monitor_buf_ring_size;
+	unsigned int tx_monitor_buf_ring_fill_lvl;
 	unsigned int tx_monitor_dst_ring_size;
 	unsigned int tx_monitor_num_ppdu_desc;
 	unsigned int tx_monitor_num_status_buf;

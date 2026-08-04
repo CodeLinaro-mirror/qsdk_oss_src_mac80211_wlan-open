@@ -27,6 +27,8 @@
 	((ab)->mem_params.dp_params.mon_num_ppdu_desc)
 #define DP_TX_MON_BUF_RING_SIZE(ab) \
 	((ab)->mem_params.dp_params.tx_monitor_buf_ring_size)
+#define DP_TX_MON_BUF_RING_FILL_LVL(ab) \
+	((ab)->mem_params.dp_params.tx_monitor_buf_ring_fill_lvl)
 #define DP_TX_MON_DST_RING_SIZE(ab) \
 	((ab)->mem_params.dp_params.tx_monitor_dst_ring_size)
 #define DP_TX_MON_NUM_PPDU_DESC(ab) \
