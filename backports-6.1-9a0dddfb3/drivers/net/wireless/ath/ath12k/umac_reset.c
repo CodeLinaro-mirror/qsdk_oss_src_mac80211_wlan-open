@@ -1567,18 +1567,18 @@ static void ath12k_umac_reset_clear_mlo_flags(struct ath12k_base *ab)
  * 6. Clears MLO reset flags
  * 7. Calls ath12k_umac_reset_completion() to finish cleanup
  */
-void ath12k_umac_reset_fallback_cleanup(struct ath12k_base *ab)
+static void __ath12k_umac_reset_fallback_cleanup(struct ath12k_base *ab)
 {
 	struct ath12k_hw_group *ag = ab->ag;
 	enum ath12k_umac_reset_state current_state;
 	bool was_in_progress = false;
 
 	if (!ab->hw_params->support_umac_reset)
-		goto complete;
+		return;
 
 	if (!ag) {
 		ath12k_warn(ab, "Hardware group not available for fallback cleanup\n");
-		goto complete;
+		return;
 	}
 
 	/* Get current state */
@@ -1598,18 +1598,29 @@ void ath12k_umac_reset_fallback_cleanup(struct ath12k_base *ab)
 		/* Transition state machine to IDLE */
 		ath12k_umac_reset_transition_to_idle(ab, current_state);
 
-		/* Clear MLO reset flags */
-		ath12k_umac_reset_clear_mlo_flags(ab);
-
 		/* Clear the UMAC recovery in progress flag */
 		clear_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags);
 
 		ath12k_info(ab, "UMAC reset fallback cleanup completed\n");
 	}
+}
 
-complete:
-	/* Always call completion to clear MLO reset info */
-	ath12k_umac_reset_completion(ab);
+void ath12k_umac_reset_fallback_cleanup(struct ath12k_base *ab)
+{
+	struct ath12k_base *partner_ab;
+	struct ath12k_hw_group *ag = ab->ag;
+	int i;
+
+	if (!ath12k_dp_umac_reset_in_progress(ab))
+		return;
+
+	for (i = 0; i < ag->num_devices; i++) {
+		partner_ab = ag->ab[i];
+		__ath12k_umac_reset_fallback_cleanup(partner_ab);
+	}
+
+	/* Clear MLO reset flags */
+	ath12k_umac_reset_clear_mlo_flags(ab);
 }
 EXPORT_SYMBOL(ath12k_umac_reset_fallback_cleanup);
 
