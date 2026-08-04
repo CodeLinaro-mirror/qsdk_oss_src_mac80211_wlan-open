@@ -9973,7 +9973,7 @@ skip_tpc_update:
 			ath12k_warn(ar->ab, "failed to update bcn template: %d\n",
 				    ret);
 
-		if (!arvif->pending_csa_up)
+		if (!arvif->pending_csa_up || info->csa_active)
 			goto skip_pending_cs_up;
 
 		memset(&params, 0, sizeof(params));
