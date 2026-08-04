@@ -134,8 +134,7 @@ int ath12k_get_peer_telemetry_stats(struct ath12k_vif *ahvif,
 				    struct ath12k_telemetry_dp_peer *telemetry_peer,
 				    u8 *addr, u8 link_id);
 void ath12k_vif_iterate_peer(struct ath12k_link_vif *arvif,
-			     struct ath12k_dp_aggr_vif_stats *aggr_vif_stats,
-			     bool is_ds_vif);
+			     struct ath12k_dp_aggr_vif_stats *aggr_vif_stats);
 
 static inline
 struct ath12k_link_sta *ath12k_peer_get_link_sta(struct ath12k_base *ab,
