@@ -5345,6 +5345,7 @@ enum wmi_sta_ps_mode {
 #define WMI_SMPS_PARAM_VALUE_SHIFT 29
 
 #define ATH12K_WMI_FW_HANG_ASSERT_TYPE 1
+#define ATH12K_WMI_Q6_BCR_ASSERT_TYPE 0xA
 #define ATH12K_WMI_FW_HANG_DELAY 0
 
 enum wmi_fw_hang_recovery_mode_type {
