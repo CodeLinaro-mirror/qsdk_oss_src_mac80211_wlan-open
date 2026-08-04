@@ -263,7 +263,6 @@ void ath12k_wifi8_umac_reset_handle_pre_reset(struct ath12k_base *ab)
 
 void ath12k_wifi8_dp_rx_init(struct ath12k_base *ab)
 {
-	ath12k_wifi8_dp_rx_ase_htt_srng_setup(ab);
 	ath12k_wifi8_dp_rx_ring_init(ab);
 	ath12k_dp_umac_rx_desc_cleanup(ab);
 	ath12k_wifi8_dp_rx_wbm_buf_ring_init(ab);
