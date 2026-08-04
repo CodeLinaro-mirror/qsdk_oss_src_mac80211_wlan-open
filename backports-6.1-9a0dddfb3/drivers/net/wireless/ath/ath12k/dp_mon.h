@@ -226,7 +226,7 @@ struct ath12k_dp_arch_mon_ops {
 	int (*setup_ppdu_desc)(struct ath12k_pdev_dp *pdev_dp);
 	void (*cleanup_ppdu_desc)(struct ath12k_pdev_dp *pdev_dp);
 	int (*mon_rx_wq_init)(struct ath12k_pdev_dp *pdev_dp);
-	void (*mon_rx_wq_deinit)(struct ath12k_pdev_dp *pdev_dp);
+	void (*mon_rx_wq_deinit)(struct ath12k_pdev_dp *pdev_dp, bool destroy);
 	void (*rx_nrp_set)(struct ath12k_pdev_dp *dp_pdev);
 	void (*rx_nrp_reset)(struct ath12k_pdev_dp *dp_pdev);
 	void (*rx_smart_mon_set)(struct ath12k_pdev_dp *dp_pdev);
@@ -1372,7 +1372,7 @@ int ath12k_dp_mon_pdev_rx_alloc(struct ath12k_pdev_dp *dp_pdev,
 
 free_rx_wq:
 	if (mon_ops && mon_ops->mon_rx_wq_deinit)
-		mon_ops->mon_rx_wq_deinit(dp_pdev);
+		mon_ops->mon_rx_wq_deinit(dp_pdev, true);
 
 cleanup:
 	if (mon_ops && mon_ops->cleanup_ppdu_desc)
@@ -1446,7 +1446,7 @@ void ath12k_dp_mon_pdev_rx_free(struct ath12k_pdev_dp *dp_pdev)
 	ath12k_dp_mon_pdev_rx_detach(dp_pdev);
 
 	if (mon_ops->mon_rx_wq_deinit)
-		mon_ops->mon_rx_wq_deinit(dp_pdev);
+		mon_ops->mon_rx_wq_deinit(dp_pdev, true);
 
 	if (mon_ops->rx_filter_free)
 		mon_ops->rx_filter_free(dp_pdev);
@@ -1694,6 +1694,23 @@ ath12k_dp_mon_pktlog_config(struct ath12k *ar, bool enable,
 
 	if(mon_ops && mon_ops->pktlog_config)
 		mon_ops->pktlog_config(dp_pdev, mode, filter, enable);
+}
+
+static inline void
+ath12k_dp_mon_rx_flush_wq(struct ath12k *ar)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
+
+	if (unlikely(!dp_pdev || !dp_pdev->dp_mon_pdev))
+		return;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (mon_ops && mon_ops->mon_rx_wq_deinit)
+		mon_ops->mon_rx_wq_deinit(dp_pdev, false);
 }
 
 static inline void
