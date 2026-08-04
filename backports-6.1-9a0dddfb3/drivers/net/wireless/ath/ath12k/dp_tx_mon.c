@@ -3159,18 +3159,43 @@ ath12k_dp_mon_tx_fill_rate_status(struct ath12k_pdev_dp *dp_pdev,
 int ath12k_dp_mon_tx_ext_mon_deliver(struct ath12k_pdev_dp *dp_pdev,
 				     struct sk_buff *mpdu)
 {
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct ath12k_pdev_tx_mon *tx_mon;
+	struct ath12k_dp_tx_ext_mon *tx_ext_mon;
+	struct ath12k_dp_tx_ext_mon_config *tx_config;
 	struct ieee80211_ext_mon_tx_event_extn event;
+	bool need_rtap;
 	int ret;
-	/*ToDo: Add checks for ext mon feature*/
+
 	if (!ieee80211_ext_mon_tx_notifier_has_listeners_extn())
 		return NOTIFY_DONE;
+
+	if (unlikely(!dp_mon_pdev || !dp_mon_pdev->dp_pdev_tx_mon))
+		return NOTIFY_DONE;
+
+	tx_mon = dp_mon_pdev->dp_pdev_tx_mon;
+	tx_ext_mon = &tx_mon->tx_ext_mon;
+
+	spin_lock(&tx_ext_mon->tx_ext_mon_lock);
+	tx_config = tx_ext_mon->tx_ext_mon_config;
+	if (unlikely(!tx_config) || !tx_config->enable) {
+		spin_unlock(&tx_ext_mon->tx_ext_mon_lock);
+		return NOTIFY_DONE;
+	}
+	need_rtap = tx_config->metadata & ATH12K_EXT_MON_METADATA_RTAP_HDR;
+	spin_unlock(&tx_ext_mon->tx_ext_mon_lock);
+
+	/* RTAP_HDR requested: let the frame flow to the POST_RTAP path via
+	 * ieee80211_tx_monitor() -> ieee80211_ext_mon_tx_notify() instead.
+	 */
+	if (need_rtap)
+		return NOTIFY_DONE;
+
 	event.hw = ath12k_dp_pdev_to_hw(dp_pdev);
 	event.mpdu = mpdu;
 	event.sdata = NULL;
-	/* check PRD and update IEEE80211_EXT_MON_PRE_RTAP as per supported values */
-	ret =
-	ieee80211_ext_mon_tx_notifier_call_extn_nc(IEEE80211_EXT_MON_PRE_RTAP,
-						   &event);
+	ret = ieee80211_ext_mon_tx_notifier_call_extn_nc(IEEE80211_EXT_MON_PRE_RTAP,
+							 &event);
 	return ret;
 }
 /**
@@ -4248,6 +4273,29 @@ int ath12k_dp_mon_tx_htt_src_ring_setup(struct ath12k_dp *dp)
 	return ret;
 }
 
+static void
+ath12k_dp_ext_mon_tx_enable_post_rtap(struct ath12k_pdev_dp *dp_pdev, bool enable)
+{
+	struct ieee80211_vif *mon_vif = NULL;
+	struct ath12k_link_vif *arvif;
+
+	list_for_each_entry(arvif, &dp_pdev->ar->arvifs, list) {
+		if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR &&
+		    arvif->is_started) {
+			mon_vif = arvif->ahvif->vif;
+			break;
+		}
+	}
+	if (!mon_vif)
+		return;
+
+	ieee80211_set_ext_tx_monitor(mon_vif, enable);
+	if (enable)
+		ieee80211_set_ext_tx_mon_evt_typ(mon_vif, IEEE80211_EXT_MON_POST_RTAP);
+	else
+		ieee80211_set_ext_tx_mon_evt_typ(mon_vif, IEEE80211_EXT_MON_PRE_RTAP);
+}
+
 static int ath12k_dp_tx_mon_reset_ext_mon_config(struct ath12k_pdev_dp *dp_pdev)
 {
 	struct ath12k_dp_tx_ext_mon *tx_ext_mon;
@@ -4269,6 +4317,7 @@ static int ath12k_dp_tx_mon_reset_ext_mon_config(struct ath12k_pdev_dp *dp_pdev)
 		memset(&tx_config->fpmo, 0, sizeof(tx_config->fpmo));
 	}
 	spin_unlock(&tx_ext_mon->tx_ext_mon_lock);
+	ath12k_dp_ext_mon_tx_enable_post_rtap(dp_pdev, false);
 	ret = ath12k_dp_ext_mon_tx_remove_all_peers(dp_pdev);
 	return ret;
 }
@@ -5930,6 +5979,7 @@ static void ath12k_dp_ext_mon_tx_recover(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
 	struct ath12k_pdev_tx_mon *tx_mon = dp_mon_pdev->dp_pdev_tx_mon;
 	struct ath12k *ar = dp_pdev->ar;
+	bool rtap_enable;
 
 	if (old->enable) {
 		struct ath12k_ext_mon_filter_config restore = {
@@ -5939,6 +5989,8 @@ static void ath12k_dp_ext_mon_tx_recover(struct ath12k_pdev_dp *dp_pdev,
 			.target_peer   = old->fpmo,
 			.meta_data     = old->metadata,
 		};
+		rtap_enable = restore.meta_data & ATH12K_EXT_MON_METADATA_RTAP_HDR;
+		ath12k_dp_ext_mon_tx_enable_post_rtap(dp_pdev, rtap_enable);
 		if (!ath12k_dp_ext_mon_update_tx_config(dp_mon_pdev, &restore) &&
 		    !ath12k_dp_mon_tx_update_send_filter(dp_pdev, tx_mon, old_mode))
 			return;
@@ -5989,6 +6041,7 @@ int ath12k_dp_ext_mon_set_tx_filter(struct ath12k_pdev_dp *dp_pdev,
 	enum dp_mon_tx_filter_mode old_mode;
 	enum dp_mon_tx_filter_mode new_mode = DP_MON_TX_FULL_MONITOR;
 	int ret = 0;
+	bool rtap_enable = new_config->meta_data & ATH12K_EXT_MON_METADATA_RTAP_HDR;
 
 	if (unlikely(!dp_mon_pdev)) {
 		ath12k_warn(dp_pdev->dp->ab, "monitor pdev is null\n");
@@ -6076,6 +6129,8 @@ int ath12k_dp_ext_mon_set_tx_filter(struct ath12k_pdev_dp *dp_pdev,
 		ath12k_dp_ext_mon_tx_recover(dp_pdev, &old, old_mode);
 		return ret;
 	}
+
+	ath12k_dp_ext_mon_tx_enable_post_rtap(dp_pdev, rtap_enable);
 
 	ret = ath12k_dp_ext_mon_reconfigure_tx_peers(dp_pdev, &old, new_config);
 	return ret;
