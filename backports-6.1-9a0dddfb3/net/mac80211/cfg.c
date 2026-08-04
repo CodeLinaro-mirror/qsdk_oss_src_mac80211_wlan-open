@@ -7339,11 +7339,35 @@ static int ieee80211_uhr_mode_update(struct wiphy *wiphy,
 {
 	struct ieee80211_local *local = wiphy_priv(wiphy);
 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
-	struct sta_info *sta = NULL;
+	struct link_sta_info *link_sta;
+	struct sta_info *found_sta = NULL;
 	int link_id;
 	int ret;
 
 	lockdep_assert_wiphy(wiphy);
+
+	/* Find the associated MLD STA */
+	found_sta = sta_info_get(sdata, sdata->vif.cfg.ap_addr);
+
+	/*
+	 * Verify NPCA is supported per the AP peer's own advertised UHR
+	 * capability before mutating any state. Validate all requested
+	 * links up front so a rejection on one link never leaves an
+	 * earlier link's state partially applied.
+	 */
+	if (found_sta) {
+		for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS; link_id++) {
+			link_sta =
+				rcu_dereference_protected(found_sta->link[link_id],
+							  lockdep_is_held(&wiphy->mtx));
+			if (!link_sta)
+				continue;
+			if (params->npca_update[link_id] &&
+			    !(link_sta->pub->uhr_cap.mac.mac_cap[0] &
+			      IEEE80211_UHR_MAC_CAP0_NPCA_SUPP))
+				return -EOPNOTSUPP;
+		}
+	}
 
 	/* Store NPCA params into the BSS link conf for each requested link */
 	for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS; link_id++) {
@@ -7370,11 +7394,8 @@ static int ieee80211_uhr_mode_update(struct wiphy *wiphy,
 		npca->switch_back_delay = new_npca->switch_back_delay;
 	}
 
-	/* Find the associated MLD STA to pass to the driver */
-	sta = sta_info_get(sdata, sdata->vif.cfg.ap_addr);
-
 	/* Call the driver once after bss_conf npca fields are updated */
-	ret = drv_uhr_mode_update(local, sdata, sta);
+	ret = drv_uhr_mode_update(local, sdata, found_sta);
 	return ret;
 }
 
