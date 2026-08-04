@@ -2422,7 +2422,7 @@ static void ath12k_mac_set_arvif_ies(struct ath12k_link_vif *arvif, struct sk_bu
 				     u8 bssid_index, bool *nontx_profile_found)
 {
 	struct ieee80211_mgmt *mgmt = (struct ieee80211_mgmt *)bcn->data;
-	const struct element *elem, *nontx, *index, *nie, *rsnxe;
+	const struct element *elem, *nontx, *index, *nie, *rsnxe, *extcap_elem;
 	struct ieee80211_vht_cap *vht_cap;
 	const u8 *start, *tail;
 	const u8 *vht_cap_ie;
@@ -2468,15 +2468,20 @@ static void ath12k_mac_set_arvif_ies(struct ath12k_link_vif *arvif, struct sk_bu
 		arvif->vht_cap = vht_cap->vht_cap_info;
 	}
 
-	/* Return from here for the transmitted profile */
-	if (!bssid_index)
+	/*
+	 * For the transmitted profile, proceed with the return only if beacon_prot
+	 * is set on the Tx BSS
+	 */
+	if (!bssid_index && arvif->beacon_prot)
 		return;
 
 	/* Initial rsnie_present for the nontransmitted profile is set to be same as that
 	 * of the transmitted profile. It will be changed if security configurations are
 	 * different.
 	 */
-	*nontx_profile_found = false;
+	if (nontx_profile_found)
+		*nontx_profile_found = false;
+
 	for_each_element_id(elem, WLAN_EID_MULTIPLE_BSSID, start, rem_len) {
 		/* Fixed minimum MBSSID element length with at least one
 		 * nontransmitted BSSID profile is 12 bytes as given below;
@@ -2492,7 +2497,7 @@ static void ath12k_mac_set_arvif_ies(struct ath12k_link_vif *arvif, struct sk_bu
 		for_each_element(nontx, elem->data + 1, elem->datalen - 1) {
 			start = nontx->data;
 
-			if (nontx->id != 0 || nontx->datalen < 4)
+			if (nontx->id != 0 || nontx->datalen < 5)
 				continue; /* Invalid nontransmitted profile */
 
 			if (nontx->data[0] != WLAN_EID_NON_TX_BSSID_CAP ||
@@ -2508,8 +2513,32 @@ static void ath12k_mac_set_arvif_ies(struct ath12k_link_vif *arvif, struct sk_bu
 			if (!index || index->datalen < 1 || index->data[0] == 0)
 				continue; /* Invalid MBSSID Index element */
 
+			/*
+			 * If beacon_prot is not enabled for the Tx BSS, check
+			 * whether it is enabled on any Non-Tx BSS. If found,
+			 * enable beacon_prot on the Tx BSS as well.
+			 */
+			if (!bssid_index) {
+				extcap_elem = cfg80211_find_elem(WLAN_EID_EXT_CAPABILITY,
+								 start, nontx->datalen);
+				if (extcap_elem && extcap_elem->datalen >= 11 &&
+				    (extcap_elem->data[10] &
+				     WLAN_EXT_CAPA11_BCN_PROTECT)) {
+					arvif->beacon_prot = true;
+					return;
+				}
+				continue;
+			}
+
 			if (index->data[0] == bssid_index) {
 				*nontx_profile_found = true;
+
+				extcap_elem = cfg80211_find_elem(WLAN_EID_EXT_CAPABILITY,
+								 start, nontx->datalen);
+				if (extcap_elem && extcap_elem->datalen >= 11 &&
+				    (extcap_elem->data[10] & WLAN_EXT_CAPA11_BCN_PROTECT))
+					arvif->beacon_prot = true;
+
 				if (cfg80211_find_ie(WLAN_EID_RSN,
 						     nontx->data,
 						     nontx->datalen)) {
@@ -2821,8 +2850,6 @@ static int ath12k_mac_setup_bcn_tmpl_ema(struct ath12k_link_vif *arvif,
 			ath12k_mac_set_arvif_ies(arvif, beacons->bcn[i].skb,
 						 bssid_index,
 						 &nontx_profile_found);
-			if (arvif->beacon_prot)
-				tx_arvif->beacon_prot = arvif->beacon_prot;
 		}
 
 		ema_args.bcn_cnt = beacons->cnt;
