@@ -1697,6 +1697,9 @@ static const struct ieee80211_ops ath12k_ops_wifi8 = {
 	.uhr_mode_update		= ath12k_mac_op_sta_uhr_mode_update,
 	.critical_update		= ath12k_mac_op_critical_update,
 	.set_smd_ctx			= ath12k_wifi8_mac_op_set_smd_ctx,
+#ifdef CPTCFG_QCN_EXTN
+	.set_muedca_mode		= ath12k_mac_set_muedca_mode,
+#endif /* CPTCFG_QCN_EXTN */
 };
 
 /*
