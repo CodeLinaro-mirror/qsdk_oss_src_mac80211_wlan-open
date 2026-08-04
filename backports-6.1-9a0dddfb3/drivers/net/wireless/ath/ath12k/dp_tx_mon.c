@@ -643,6 +643,7 @@ ath12k_dp_mon_tx_prep_ppdu_info(struct ath12k_pdev_mon_dp *dp_mon_pdev,
 	struct hal_tlv_64_hdr *tlv_hdr;
 	void *tlv_data;
 	u16 tlv_tag, tlv_len;
+	u32 tlv_upper;
 	u32 tlv_userid = 0;
 	int i;
 
@@ -674,12 +675,20 @@ ath12k_dp_mon_tx_prep_ppdu_info(struct ath12k_pdev_mon_dp *dp_mon_pdev,
 	tlv_tag = ath12k_hal_get_tlv_hdr_tag(&dp_pdev->dp->ab->hal, tlv_hdr->tl);
 	tlv_len = le64_get_bits(tlv_hdr->tl, HAL_TLV_64_HDR_LEN);
 	tlv_userid = le64_get_bits(tlv_hdr->tl, HAL_TLV_64_USR_ID);
+	tlv_upper = upper_32_bits(le64_to_cpu(tlv_hdr->tl));
 
-	if (sizeof(struct hal_tlv_64_hdr) + tlv_len > status_desc->buf_len) {
-		ath12k_warn(dp_pdev->dp->ab,
-			    "TX Mon: TLV length exceeds buffer: %u + %u > %u\n",
-			    (u32)sizeof(struct hal_tlv_64_hdr),
-			    tlv_len, status_desc->buf_len);
+	if (unlikely(tlv_upper)) {
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
+			   "TX Mon: Corrupt status buf: tag=0x%x len=%u upper=0x%08x\n",
+			   tlv_tag, tlv_len, tlv_upper);
+		return -EINVAL;
+	}
+
+	if (unlikely(sizeof(*tlv_hdr) + tlv_len > status_desc->buf_len)) {
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
+			   "TX Mon: TLV length exceeds buffer: %u + %u > %u\n",
+			   (u32)sizeof(*tlv_hdr), tlv_len,
+			   status_desc->buf_len);
 		return -EINVAL;
 	}
 
