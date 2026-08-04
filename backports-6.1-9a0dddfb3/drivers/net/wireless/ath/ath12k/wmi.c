@@ -1031,7 +1031,7 @@ static void ath12k_wmi_process_mvr_event(struct ath12k_base *ab, u32 *vdev_id_bm
 {
 	struct ath12k *ar = NULL;
 	struct ath12k_link_vif *arvif = NULL;
-	u32 vdev_bitmap, bit_pos;
+	u32 vdev_bitmap, bit_pos, w;
 	u64 switch_time_us, avg_switch_time_us = 0, mvr_resp_time_us;
 
 	ath12k_dbg(ab, ATH12K_DBG_WMI,
@@ -1040,29 +1040,33 @@ static void ath12k_wmi_process_mvr_event(struct ath12k_base *ab, u32 *vdev_id_bm
 		   (num_vdev_bm == WMI_MVR_RESP_VDEV_BM_MAX_LEN ?
 				   vdev_id_bm[1] : 0x00));
 
-	/* 31-0 bits processing */
-	vdev_bitmap = vdev_id_bm[0];
-
-	for (bit_pos = 0; bit_pos < 32; bit_pos++) {
-
-		if (!(vdev_bitmap & BIT(bit_pos)))
-			continue;
-
-		arvif = ath12k_mac_get_arvif_by_vdev_id(ab, bit_pos);
-		if (!arvif) {
-			ath12k_warn(ab, "wmi mvr resp for unknown vdev %d", bit_pos);
-			continue;
-		}
-
-		arvif->mvr_processing = false;
-		ath12k_dbg(ab, ATH12K_DBG_WMI,
-			   "wmi mvr vdev %d restarted\n", bit_pos);
+	if (num_vdev_bm > WMI_MVR_RESP_VDEV_BM_MAX_LEN) {
+		ath12k_warn(ab, "wmi mvr resp: num_vdev_bm %d exceeds max %d, clamping\n",
+			    num_vdev_bm, WMI_MVR_RESP_VDEV_BM_MAX_LEN);
+		num_vdev_bm = WMI_MVR_RESP_VDEV_BM_MAX_LEN;
 	}
 
-	/* TODO: 63-32 bits processing
-	 * Add support to parse bitmap once support for
-	 * TARGET_NUM_VDEVS > 32 is added
-	 */
+	for (w = 0; w < num_vdev_bm; w++) {
+		vdev_bitmap = vdev_id_bm[w];
+
+		for (bit_pos = 0; bit_pos < 32; bit_pos++) {
+			u32 vdev_id = w * 32 + bit_pos;
+
+			if (!(vdev_bitmap & BIT(bit_pos)))
+				continue;
+
+			arvif = ath12k_mac_get_arvif_by_vdev_id(ab, vdev_id);
+			if (!arvif) {
+				ath12k_warn(ab, "wmi mvr resp for unknown vdev %d",
+					    vdev_id);
+				continue;
+			}
+
+			arvif->mvr_processing = false;
+			ath12k_dbg(ab, ATH12K_DBG_WMI,
+				   "wmi mvr vdev %d restarted\n", vdev_id);
+		}
+	}
 
 	if (arvif)
 		ar = arvif->ar;
