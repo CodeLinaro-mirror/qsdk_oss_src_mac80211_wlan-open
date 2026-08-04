@@ -33052,15 +33052,12 @@ int ath12k_mac_op_sta_uhr_mode_update(struct ieee80211_hw *hw,
 				      struct ieee80211_vif *vif,
 				      struct ieee80211_sta *sta)
 {
-	struct ath12k_vif *ahvif;
-	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
+	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
 	struct ath12k_link_vif *arvif;
-	struct ath12k_link_sta *arsta;
-	struct ieee80211_link_sta *link_sta;
-	struct cfg80211_uhr_npca_params *npca;
+	struct ieee80211_bss_conf *link_conf;
 	struct ath12k_wmi_uhr_omp_link_params link_params[ATH12K_NUM_MAX_LINKS];
 	struct ath12k *primary_ar = NULL;
-	unsigned long valid_links = ahsta->links_map;
+	unsigned long valid_links;
 	u32 primary_pdev_id = 0;
 	u8 link_id;
 	u8 num_links = 0;
@@ -33068,34 +33065,37 @@ int ath12k_mac_op_sta_uhr_mode_update(struct ieee80211_hw *hw,
 
 	lockdep_assert_wiphy(hw->wiphy);
 
-	ahvif = ath12k_vif_to_ahvif(vif);
+	if (!sta)
+		return 0;
+
+	valid_links = ahvif->links_map;
 
 	for_each_set_bit(link_id, &valid_links, ATH12K_NUM_MAX_LINKS) {
-		arsta = wiphy_dereference(hw->wiphy, ahsta->link[link_id]);
 		arvif = ath12k_get_arvif_from_link_id(ahvif, link_id);
-		if (!arsta || !arvif || !arvif->ar)
+		if (!arvif || !arvif->ar)
 			continue;
 
-		link_sta = ath12k_mac_get_link_sta(arsta);
-		if (!link_sta)
+		link_conf = ath12k_mac_get_link_bss_conf(arvif);
+		if (!link_conf)
 			continue;
 
-		npca = &link_sta->npca;
 		link_params[num_links].hw_link_id = arvif->ar->pdev->hw_link_id;
-		link_params[num_links].npca_enable = npca->enable;
-		link_params[num_links].npca_switch_delay = npca->switch_delay;
-		link_params[num_links].npca_switch_back_delay = npca->switch_back_delay;
-		link_params[num_links].npca_mode_update = npca->mode_update;
+		link_params[num_links].npca_enable = link_conf->npca.enabled;
+		link_params[num_links].npca_switch_delay = link_conf->npca.switch_delay;
+		link_params[num_links].npca_switch_back_delay =
+			link_conf->npca.switch_back_delay;
+		link_params[num_links].npca_mode_update = link_conf->npca_mode_update;
 
 		ath12k_dbg(arvif->ar->ab, ATH12K_DBG_WMI,
-			   "UHR OMP: link_id=%u addr=%pM vdev_id=%u pdev_id=%u hw_link_id=%u npca_en=%u sw_delay=%u swb_delay=%u mode_update=%u\n",
-			   link_id, arsta->addr, arvif->vdev_id,
+			   "UHR OMP: link_id=%u bssid=%pM vdev_id=%u pdev_id=%u hw_link_id=%u npca_en=%u sw_delay=%u swb_delay=%u mode_update=%u\n",
+			   link_id, arvif->bssid, arvif->vdev_id,
 			   arvif->ar->pdev->pdev_id, arvif->ar->pdev->hw_link_id,
-			   npca->enable, npca->switch_delay, npca->switch_back_delay,
-			   npca->mode_update);
+			   link_conf->npca.enabled, link_conf->npca.switch_delay,
+			   link_conf->npca.switch_back_delay,
+			   link_conf->npca_mode_update);
 
 		/* Use the primary link's ar and pdev_id for sending the WMI cmd */
-		if (!primary_ar || link_id == ahsta->primary_link_id) {
+		if (!primary_ar || link_id == ahvif->primary_link_id) {
 			primary_ar = arvif->ar;
 			primary_pdev_id = arvif->ar->pdev->pdev_id;
 		}
@@ -33108,9 +33108,10 @@ int ath12k_mac_op_sta_uhr_mode_update(struct ieee80211_hw *hw,
 
 	ath12k_dbg(primary_ar->ab, ATH12K_DBG_WMI,
 		   "UHR OMP: sending MLD cmd sw_peer_id=%u pdev_id=%u num_links=%u\n",
-		   ahsta->dp_peer_id, primary_pdev_id, num_links);
+		   ath12k_sta_to_ahsta(sta)->dp_peer_id, primary_pdev_id, num_links);
 
-	ret = ath12k_wmi_send_peer_uhr_omp_cmd(primary_ar, ahsta->dp_peer_id,
+	ret = ath12k_wmi_send_peer_uhr_omp_cmd(primary_ar,
+						ath12k_sta_to_ahsta(sta)->dp_peer_id,
 						primary_pdev_id,
 						link_params, num_links);
 	if (ret)
