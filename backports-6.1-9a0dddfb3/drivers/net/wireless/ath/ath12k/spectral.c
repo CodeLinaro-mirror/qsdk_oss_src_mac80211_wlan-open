@@ -323,16 +323,19 @@ struct ath12k_link_vif *ath12k_spectral_get_vdev(struct ath12k *ar)
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
-	if (list_empty(&ar->arvifs))
-		return NULL;
-
-	/* if there already is a vif doing spectral, return that. */
+	/* if there already is a created vif doing spectral, return that. */
 	list_for_each_entry(arvif, &ar->arvifs, list)
-		if (arvif->spectral_enabled)
+		if (arvif->is_created && arvif->spectral_enabled)
 			return arvif;
 
-	/* otherwise, return the first vif. */
-	return list_first_entry(&ar->arvifs, typeof(*arvif), list);
+	/* otherwise, return the first created vif. arvifs left over from
+	 * SSR recovery have is_created cleared but may still be linked.
+	 */
+	list_for_each_entry(arvif, &ar->arvifs, list)
+		if (arvif->is_created)
+			return arvif;
+
+	return NULL;
 }
 
 int ath12k_spectral_nl80211_bw_to_idx(enum nl80211_chan_width bw)
