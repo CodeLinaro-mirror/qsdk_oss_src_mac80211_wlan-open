@@ -3753,7 +3753,6 @@ ath12k_dp_aggregate_link_rx_ppdu_stats(struct ath12k_rx_ppdu_stats *dst,
 	if (!dst || !src)
 		return;
 
-	dst->num_msdu += src->num_msdu;
 	dst->num_mpdu_fcs_ok += src->num_mpdu_fcs_ok;
 	dst->num_mpdu_fcs_err += src->num_mpdu_fcs_err;
 	dst->ampdu_msdu_count += src->ampdu_msdu_count;
@@ -3762,7 +3761,6 @@ ath12k_dp_aggregate_link_rx_ppdu_stats(struct ath12k_rx_ppdu_stats *dst,
 	for (i = 0; i < HAL_RX_RECEPTION_TYPE_MAX; i++)
 		dst->reception_type[i] += src->reception_type[i];
 
-	dst->num_msdu_bytes += src->num_msdu_bytes;
 	dst->num_mpdus += src->num_mpdus;
 	dst->num_ppdus += src->num_ppdus;
 	dst->num_bar += src->num_bar;
@@ -4048,6 +4046,13 @@ static void ath12k_dp_aggr_peer_stats(struct ath12k_link_vif *arvif,
 	peer = link_peer->dp_peer;
 	stats_link_id = ar->hw_link_id;
 	link_peer_stats = &aggr_vif_stats->link_peer_stats;
+
+	/* RX packets/bytes derived from PPDU, independent of extended RX
+	 * stats knob (DP_ENABLE_EXT_RX_STATS)
+	 */
+	aggr_vif_stats->rx_pkt_ppdu_stats.rx_packets += link_peer->rx_packets;
+	aggr_vif_stats->rx_pkt_ppdu_stats.rx_bytes += link_peer->rx_bytes;
+
 	if (stats_link_id < ATH12K_DP_PEER_MAX_MLO_LINKS) {
 		ath12k_dp_aggr_per_pkt_peer_stats(dp_pdev, &aggr_vif_stats->peer_stats,
 						  &peer->stats[stats_link_id],
@@ -4103,7 +4108,7 @@ ath12k_dp_aggr_link_vif_del_stats(struct ath12k_link_vif *arvif,
 
 	/* Aggregate preserved stats from deleted link peers of this VIF */
 	ath12k_dp_aggr_del_stats(&aggr_vif_stats->peer_stats,
-				 &aggr_vif_stats->link_peer_stats,
+				 &aggr_vif_stats->rx_pkt_ppdu_stats,
 				 &dp_link_vif->link_peer_delete_stats,
 				 "link_peer_delete_stats");
 }
@@ -4264,6 +4269,7 @@ void ath12k_dp_get_pdev_stats(struct ath12k_pdev_dp *pdev,
 		}
 		memcpy(&aggr_pdev_stats->peer_stats, &aggr_vif_stats->peer_stats,
 		       sizeof(aggr_pdev_stats->peer_stats));
+		aggr_pdev_stats->rx_pkt_ppdu_stats = aggr_vif_stats->rx_pkt_ppdu_stats;
 
 		vfree(aggr_vif_stats);
 	}
@@ -4331,7 +4337,7 @@ void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 			}
 			/* Aggregate stats from deleted link VIFs into MLD VIF */
 			ath12k_dp_aggr_del_stats(&aggr_vif_stats->peer_stats,
-						 &aggr_vif_stats->link_peer_stats,
+						 &aggr_vif_stats->rx_pkt_ppdu_stats,
 						 &dp_vif->link_vif_delete_stats,
 						 "link_vif_delete_stats");
 		}
@@ -4515,6 +4521,12 @@ ath12k_dp_get_link_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 		return -EINVAL;
 	}
 
+	/* RX packets/bytes derived from PPDU, independent of extended RX
+	 * stats knob (DP_ENABLE_EXT_RX_STATS)
+	 */
+	telemetry_peer->rx_pkt_ppdu_stats.rx_packets += link_peer->rx_packets;
+	telemetry_peer->rx_pkt_ppdu_stats.rx_bytes += link_peer->rx_bytes;
+
 	if (hw_link_id < ATH12K_DP_PEER_MAX_MLO_LINKS) {
 		dsc_tx_ppdu_stats = link_peer_stats->tx_ppdu_stats;
 		src_tx_ppdu_stats = link_peer->peer_stats.tx_ppdu_stats;
@@ -4538,6 +4550,24 @@ ath12k_dp_get_link_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 		}
 	}
 	return ret;
+}
+
+void ath12k_dp_update_rx_msdu_counters(struct ath12k_dp_peer *peer,
+				       u8 link_id,
+				       struct ath12k_dp_rx_pkt_ppdu_stats *rx_pkt_stats)
+{
+	struct ath12k_dp_link_peer *tmp_peer;
+
+	rcu_read_lock();
+	tmp_peer = ath12k_dp_link_peer_find_by_hw_link_id(peer, link_id);
+	if (!tmp_peer) {
+		rcu_read_unlock();
+		return;
+	}
+
+	rx_pkt_stats->rx_packets += tmp_peer->rx_packets;
+	rx_pkt_stats->rx_bytes += tmp_peer->rx_bytes;
+	rcu_read_unlock();
 }
 
 void ath12k_update_ext_stats(struct ath12k_pdev_dp *dp_pdev,
@@ -4624,6 +4654,27 @@ void ath12k_dp_aggr_rx_mon_stats(struct ath12k_pdev_dp *dp_pdev,
 							       rx_peer_stats);
 	}
 	rcu_read_unlock();
+}
+
+/**
+ * ath12k_dp_aggr_rx_pkt_ppdu_stats() - Aggregate RX packet/byte counters
+ *				      derived from PPDU across all MLO
+ *				      links of an MLD peer.
+ * @peer: MLD dp_peer whose link peers are summed
+ * @rx_pkt_stats: destination RX packet/byte counters derived from PPDU
+ *
+ * Independent of extended RX stats knob (DP_ENABLE_EXT_RX_STATS);
+ * iterates every live link peer of the MLD peer and accumulates their raw
+ * ath12k_dp_link_peer rx_packets/rx_bytes counters into rx_pkt_stats.
+ */
+static void
+ath12k_dp_aggr_rx_pkt_ppdu_stats(struct ath12k_dp_peer *peer,
+				 struct ath12k_dp_rx_pkt_ppdu_stats *rx_pkt_stats)
+{
+	u8 tmp_link_id;
+
+	for (tmp_link_id = 0; tmp_link_id < ATH12K_DP_PEER_MAX_MLO_LINKS; tmp_link_id++)
+		ath12k_dp_update_rx_msdu_counters(peer, tmp_link_id, rx_pkt_stats);
 }
 
 /**
@@ -4877,6 +4928,8 @@ ath12k_dp_update_legacy_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 						  peer->is_vdev_peer);
 		ath12k_dp_update_hw_link_stats(dp_pdev, peer, link_id,
 					       link_stats);
+		ath12k_dp_update_rx_msdu_counters(peer, link_id,
+						  &telemetry_peer->rx_pkt_ppdu_stats);
 		ath12k_update_ext_stats(dp_pdev, peer, link_id, link_stats);
 	}
 
@@ -4914,7 +4967,10 @@ ath12k_dp_get_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_dp_peer_stats *peer_stats = &telemetry_peer->peer_stats;
 	struct ath12k_dp_link_peer_stats *link_stats = &telemetry_peer->link_peer_stats;
 	struct ath12k_dp_mld_peer_stats *mld_stats = &telemetry_peer->mld_stats;
+	struct ath12k_dp_rx_pkt_ppdu_stats *rx_pkt_stats;
 	int i, ret = 0;
+
+	rx_pkt_stats = &telemetry_peer->rx_pkt_ppdu_stats;
 
 	/* Error case handling for legacy peer */
 	if (!dp_peer->is_mlo && valid_link) {
@@ -4936,6 +4992,8 @@ ath12k_dp_get_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 							    peer_stats,
 							    &dp_peer->stats[stats_link_id],
 							    dp_peer->is_vdev_peer);
+			ath12k_dp_update_rx_msdu_counters(dp_peer, stats_link_id,
+							  rx_pkt_stats);
 			ath12k_update_ext_stats(dp_pdev, dp_peer, stats_link_id,
 						link_stats);
 			ath12k_dp_update_hw_link_stats(dp_pdev,
@@ -4969,10 +5027,16 @@ ath12k_dp_get_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 								  &dp_peer->stats[i],
 								  dp_peer->is_vdev_peer);
 			}
+			/* RX packets/bytes derived from PPDU, independent of
+			 * extended RX stats knob
+			 * (DP_ENABLE_EXT_RX_STATS)
+			 */
+			ath12k_dp_aggr_rx_pkt_ppdu_stats(dp_peer, rx_pkt_stats);
 			/* Include preserved stats of deleted link peers
 			 * when reporting MLD peer stats
 			 */
-			ath12k_dp_aggr_del_stats(peer_stats, link_stats,
+			ath12k_dp_aggr_del_stats(peer_stats,
+						 rx_pkt_stats,
 						 &dp_peer->link_peer_delete_stats,
 						 "link_peer_delete_stats");
 			ath12k_dp_aggr_htt_stats(dp_pdev, dp_peer, link_stats);

@@ -7069,6 +7069,8 @@ static void ath12k_mac_aggr_link_vif_to_mld_vif(struct ath12k *ar,
 	for (i = 0; i < DP_REO_DST_RING_MAX; i++)
 		ath12k_dp_aggr_per_pkt_rx_stats(&mld_vif_stats->per_pkt_rx[i],
 						&link_vif_stats->per_pkt_rx[i]);
+	mld_vif_stats->rx_counters.packets += link_vif_stats->rx_counters.packets;
+	mld_vif_stats->rx_counters.bytes += link_vif_stats->rx_counters.bytes;
 }
 
 static void ath12k_mac_unassign_link_vif(struct ath12k_link_vif *arvif)

@@ -406,7 +406,9 @@ void ath12k_dp_clear_per_pkt_rx_stats(struct ath12k_dp_peer_stats *rx_peer_stats
 /**
  * ath12k_dp_aggr_del_stats() - Aggregate stats from a deleted entity
  * @dst_peer_stats: The destination peer stats structure.
- * @dst_link_peer_stats: Destination link peer stats structure
+ * @dst_rx_pkt_ppdu_stats: Destination RX packet/byte counters derived from
+ *			   PPDU, independent of extended RX stats knob
+ *			   (DP_ENABLE_EXT_RX_STATS)
  * @src: The source structure containing stats from the deleted entity.
  * @stats_type: A string for logging that identifies the aggregation context.
  *
@@ -436,7 +438,7 @@ void ath12k_dp_clear_per_pkt_rx_stats(struct ath12k_dp_peer_stats *rx_peer_stats
  */
 
 void ath12k_dp_aggr_del_stats(struct ath12k_dp_peer_stats *dst_peer_stats,
-			      struct ath12k_dp_link_peer_stats *dst_link_peer_stats,
+			      struct ath12k_dp_rx_pkt_ppdu_stats *dst_rx_pkt_ppdu_stats,
 			      struct ath12k_dp_preserved_stats *src,
 			      const char *stats_type)
 {
@@ -457,6 +459,11 @@ void ath12k_dp_aggr_del_stats(struct ath12k_dp_peer_stats *dst_peer_stats,
 
 	ath12k_dp_aggr_wbm_rx_stats(&dst_peer_stats->wbm_err,
 				    &src->wbm_err);
+
+	if (dst_rx_pkt_ppdu_stats) {
+		dst_rx_pkt_ppdu_stats->rx_packets += src->rx_counters.packets;
+		dst_rx_pkt_ppdu_stats->rx_bytes += src->rx_counters.bytes;
+	}
 }
 
 static u8 ath12k_dp_get_bw_offset(u8 bw)
@@ -525,6 +532,7 @@ void ath12k_dp_clear_preserved_stats(struct ath12k_dp_preserved_stats *stats)
 	for (i = 0; i < DP_REO_DST_RING_MAX; i++)
 		memset(&stats->per_pkt_rx[i], 0, sizeof(stats->per_pkt_rx[i]));
 	memset(&stats->wbm_err, 0, sizeof(stats->wbm_err));
+	memset(&stats->rx_counters, 0, sizeof(stats->rx_counters));
 }
 
 /**

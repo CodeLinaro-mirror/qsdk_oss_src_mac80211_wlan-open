@@ -1166,7 +1166,6 @@ ath12k_dp_mon_rx_update_peer_ppdu_stats(struct ath12k_dp_link_peer *peer,
 	if (!rx_ppdu_stats)
 		return;
 
-	rx_ppdu_stats->num_msdu += num_msdu;
 	rx_ppdu_stats->num_mpdu_fcs_ok += ppdu_info->num_mpdu_fcs_ok;
 	rx_ppdu_stats->num_mpdu_fcs_err += ppdu_info->num_mpdu_fcs_err;
 
@@ -1455,7 +1454,6 @@ ath12k_dp_mon_rx_update_user_ppdu_stats(struct ath12k_dp_link_peer *peer,
 	if (!rx_ppdu_stats)
 		return;
 
-	rx_ppdu_stats->num_msdu += num_msdu;
 	rx_ppdu_stats->num_mpdu_fcs_ok += user_stats->mpdu_cnt_fcs_ok;
 	rx_ppdu_stats->num_mpdu_fcs_err += user_stats->mpdu_cnt_fcs_err;
 

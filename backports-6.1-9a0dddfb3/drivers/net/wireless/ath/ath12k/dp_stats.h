@@ -987,6 +987,22 @@ struct ath12k_dp_mld_peer_stats {
 	struct ath12k_dp_mld_agg_latency_peer_stats *agg_mld_stats;
 };
 
+/**
+ * struct ath12k_dp_rx_pkt_ppdu_stats - RX counters derived from PPDU,
+ * independent of the extended RX stats knob
+ * (DP_ENABLE_EXT_RX_STATS).
+ *
+ * Aggregates ath12k_dp_link_peer::rx_packets/rx_bytes across STA/MLD/VAP/
+ * Radio telemetry scopes and is posted to wifitelemetry unconditionally.
+ *
+ * @rx_packets: Number of RX packets aggregated for this scope
+ * @rx_bytes: Number of RX bytes aggregated for this scope
+ */
+struct ath12k_dp_rx_pkt_ppdu_stats {
+	u32 rx_packets;
+	u64 rx_bytes;
+};
+
 struct ath12k_dp_link_peer_stats {
 	struct ath12k_htt_tx_stats *tx_stats;
 	struct ath12k_htt_tx_ppdu_stats *tx_ppdu_stats;
@@ -1129,12 +1145,20 @@ struct ath12k_dp_aggr_vif_stats {
 	struct ath12k_dp_peer_stats peer_stats;
 	struct ath12k_dp_link_peer_stats link_peer_stats;
 	struct ath12k_dp_mld_peer_stats mld_stats;
+	/* RX counters derived from PPDU, independent of extended RX
+	 * stats knob (DP_ENABLE_EXT_RX_STATS)
+	 */
+	struct ath12k_dp_rx_pkt_ppdu_stats rx_pkt_ppdu_stats;
 };
 
 struct ath12k_dp_aggr_pdev_stats {
 	struct ath12k_dp_peer_stats peer_stats;
 	struct ath12k_dp_link_peer_stats link_peer_stats;
 	struct ath12k_dp_mld_peer_stats mld_stats;
+	/* RX counters derived from PPDU, independent of extended RX
+	 * stats knob (DP_ENABLE_EXT_RX_STATS)
+	 */
+	struct ath12k_dp_rx_pkt_ppdu_stats rx_pkt_ppdu_stats;
 };
 
 struct ath12k_stats_feat {
@@ -1184,6 +1208,10 @@ struct ath12k_telemetry_dp_peer {
 	struct ath12k_dp_peer_stats peer_stats;
 	struct ath12k_dp_link_peer_stats link_peer_stats;
 	struct ath12k_dp_mld_peer_stats mld_stats;
+	/* RX counters derived from PPDU, independent of extended RX
+	 * stats knob (DP_ENABLE_EXT_RX_STATS)
+	 */
+	struct ath12k_dp_rx_pkt_ppdu_stats rx_pkt_ppdu_stats;
 };
 
 /* Telemetry Vif Stats */
@@ -1342,8 +1370,6 @@ struct ath12k_dp_link_peer_rx_signal_stats {
  * ath12k_dp_rx_ppdu_stats_enabled().
  *
  * Basic counters:
- * @num_msdu: Total number of MSDUs received.
- * @num_msdu_bytes: Total MSDU bytes received.
  * @num_msdu_retry_count: Number of MSDU retries.
  * @num_mpdu_retry_count: Number of MPDU retries.
  * @num_mpdu_fcs_ok: Number of MPDUs received with FCS check passed.
@@ -1389,12 +1415,10 @@ struct ath12k_dp_link_peer_rx_signal_stats {
  */
 struct ath12k_rx_ppdu_stats {
 	/* Basic Stats */
-	u64 num_msdu_bytes;
 	u64 rx_duration;
 	u64 wme_ac_type_bytes[WME_NUM_AC];
 	struct ath12k_dp_link_peer_rx_signal_stats signal_stats;
 
-	u32 num_msdu;
 	u32 num_msdu_retry_count;
 	u32 num_mpdu_retry_count;
 	u32 num_mpdu_fcs_ok;
@@ -1523,7 +1547,7 @@ ath12k_dp_update_tx_ppdu_stats_aggr(struct ath12k_pdev_dp *dp_pdev,
 void ath12k_dp_aggr_wbm_rx_stats(struct ath12k_wbm_rx_stats *dst,
 				 struct ath12k_wbm_rx_stats *src);
 void ath12k_dp_aggr_del_stats(struct ath12k_dp_peer_stats *dst_peer_stats,
-			      struct ath12k_dp_link_peer_stats *dst_link_peer_stats,
+			      struct ath12k_dp_rx_pkt_ppdu_stats *dst_rx_pkt_ppdu_stats,
 			      struct ath12k_dp_preserved_stats *src,
 			      const char *stats_type);
 
