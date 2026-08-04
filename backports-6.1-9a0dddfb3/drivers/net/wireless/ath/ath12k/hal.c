@@ -1194,6 +1194,9 @@ void ath12k_hal_dump_srng_stats(struct ath12k_base *ab)
 	struct ath12k_ce_pipe *ce_pipe;
 	int i;
 
+	if (ab->is_bypassed)
+		return;
+
 	ath12k_err(ab, "Last interrupt received for each CE:\n");
 	for (i = 0; i < ab->hw_params->ce_count; i++) {
 		ce_pipe = &ab->ce.ce_pipe[i];

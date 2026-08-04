@@ -22665,6 +22665,9 @@ int ath12k_wmi_dl_qos_profile_create(struct ath12k_base *ab,
 	struct sk_buff *skb;
 	int len, ret;
 
+	if (ab->is_bypassed)
+		return 0;
+
 	ar = ab->pdevs[0].ar;
 	if (!ar)
 		return -EINVAL;
