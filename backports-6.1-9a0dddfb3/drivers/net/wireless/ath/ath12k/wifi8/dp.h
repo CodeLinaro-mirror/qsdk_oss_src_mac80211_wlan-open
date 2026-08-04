@@ -19,6 +19,9 @@
 
 #define DP_TX_EXCEPTION_RING_SIZE      512
 #define DP_WBM_REFILL_RING_MAX         4
+
+/* Dedicated TQM2SW ring for FW-owned buffer completions during recovery */
+#define DP_FW_TQM2SW_RING_SIZE		1024
 #define DP_FSE_CMD_RING_SIZE		8192
 #define DP_PPE2WBM_REFILL_RING_MAX     3
 #define DP_PPE2WBM_SFE_POOL_REFILL_RING_NUM	5
@@ -187,6 +190,7 @@ struct ath12k_dp_wifi8 {
 	struct dp_srng tqm_cmd_ring;
 	struct dp_srng tqm_status_ring;
 	struct dp_srng fse_cmd_ring;
+	struct dp_srng tqm2sw_fw_ring;
 	struct dp_srng sam_cmd_ring;
 	struct dp_srng sam_status_ring;
 	struct dp_srng rx_ase_cmd_ring;

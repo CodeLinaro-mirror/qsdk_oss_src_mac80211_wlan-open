@@ -311,6 +311,7 @@ enum rdi_based_source_ring_selection {
 /*TQM2SW Ring address */
 #define HAL_TQM2SW0_RELEASE_RING_HP		0x3078
 #define HAL_TQM2SW1_RELEASE_RING_HP		0x3080
+#define HAL_TQM2SW5_RELEASE_RING_HP		0x30A0
 #define HAL_TQM2SW6_RELEASE_RING_HP		0x30A8
 
 /* SAM cmd Ring address*/
@@ -846,6 +847,7 @@ enum rdi_based_source_ring_selection {
 /* TQM2SW R0 release address */
 #define HAL_TQM2SW0_RELEASE_RING_BASE_LSB	0x73c
 #define HAL_TQM2SW1_RELEASE_RING_BASE_LSB	0x7b4
+#define HAL_TQM2SW5_RELEASE_RING_BASE_LSB	0x994
 #define HAL_TQM2SW6_RELEASE_RING_BASE_LSB	0xA0C
 
 /* REO2SW6 ring */

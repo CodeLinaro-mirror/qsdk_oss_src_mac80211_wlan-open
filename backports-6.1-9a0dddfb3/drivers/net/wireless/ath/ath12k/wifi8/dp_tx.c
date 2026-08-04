@@ -3456,6 +3456,119 @@ int ath12k_wifi8_sdwf_reinject_handler(struct ath12k_pdev_dp *dp_pdev,
 	return 0;
 }
 
+/*
+ * ath12k_wifi8_dp_tx_exception_fw_buf_handler() - WAR for R-TQM completions
+ *
+ * During target recovery, R-FW-owned buffers arrive in the TX exception ring
+ * with a non-zero RBM in the 20-bit SW cookie (bits[19:18] != 0). Instead of
+ * freeing them directly, the host sends a SW2TQM sync command to C-TQM so
+ * TQM routes the completion to fw_tqm2sw_ring (HAL_TQM_HOST_STATUS_RING=1).
+ *
+ * Builds a minimal hal_tqm2sw_completion_ring descriptor from paddr/rbm/cookie
+ * and delegates all field extraction and command building to the HAL layer via
+ * ath12k_wifi8_hal_tqm_fw_buf_release_cmd_send().
+ */
+int ath12k_wifi8_dp_tx_exception_fw_buf_handler(struct ath12k_dp *dp,
+						dma_addr_t paddr,
+						u8 rbm,
+						u32 cookie)
+{
+	struct ath12k_base *ab = dp->ab;
+	struct ath12k_hal_tqm_cmd cmd = {};
+	int ret;
+
+	/*
+	 * Follow the ath12k_wifi8_dp_tqm_cmd_send pattern:
+	 * populate fw_buf_release_params and call the DP-level send function
+	 * which routes through ath12k_wifi8_hal_tqm_cmd_send() →
+	 * case HAL_TQM_FW_COMPLETION_BO → ath12k_wifi8_hal_tqm_fw_buf_release_cmd().
+	 */
+	cmd.fw_buf_release_params.paddr  = paddr;
+	cmd.fw_buf_release_params.rbm    = rbm;
+	cmd.fw_buf_release_params.cookie = cookie;
+
+	ret = ath12k_wifi8_dp_tqm_cmd_send(ab, HAL_TQM_FW_COMPLETION_BO,
+					   &cmd, NULL, NULL);
+	if (ret < 0)
+		ath12k_warn(ab,
+			    "fw_buf: cmd send failed cookie=0x%x rbm=%u ret=%d\n",
+			    cookie, rbm, ret);
+
+	return ret;
+}
+
+/*
+ * ath12k_wifi8_dp_fw_tqm2sw_handler() - Process fw_tqm2sw_ring completions
+ *
+ * This ring receives completions for TX exception ring entries where the
+ * SW cookie has a non-zero RBM (bits[19:18] != 0), i.e. buffers that belong
+ * to the FW's buffer pool rather than the host's pool.  During target
+ * recovery, R-FW-owned buffers arrive in the TX exception ring; instead of
+ * freeing them directly the host sends a SW2TQM sync command with
+ * HAL_TQM_HOST_STATUS_RING=1, and C-TQM routes the resulting completion here.
+ *
+ * Called when ring_mask->fw_tqm2sw fires (interrupt group 14).
+ */
+int ath12k_wifi8_dp_tqm2sw_fw_handler(struct ath12k_dp *dp, int budget)
+{
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
+	struct ath12k_base *ab = dp->ab;
+	struct hal_tqm2sw_completion_ring *desc;
+	struct hal_srng *srng;
+	struct ath12k_hal_tqm_cmd cmd;
+	int count = 0;
+	int quota = budget;
+	int ret;
+
+	if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags))
+		return 0;
+
+	srng = &ab->hal.srng_list[dp_wifi8->tqm2sw_fw_ring.ring_id];
+
+	spin_lock_bh(&srng->lock);
+	ath12k_hal_srng_access_begin(ab, srng);
+
+	while (budget-- > 0) {
+		desc = ath12k_hal_srng_dst_get_next_entry(ab, srng);
+		if (!desc)
+			break;
+
+		/*
+		 * Follow the ath12k_wifi8_dp_tqm_cmd_send pattern:
+		 * extract paddr/rbm/cookie from the completion descriptor,
+		 * populate fw_buf_release_params, and call the DP-level send
+		 * function which routes through ath12k_wifi8_hal_tqm_cmd_send()
+		 * → case HAL_TQM_FW_COMPLETION_BO →
+		 * ath12k_wifi8_hal_tqm_fw_buf_release_cmd().
+		 */
+		memset(&cmd, 0, sizeof(cmd));
+		cmd.fw_buf_release_params.paddr =
+			((u64)le32_get_bits(desc->buf_addr_info.info1,
+					    BUFFER_ADDR_INFO1_ADDR) << 32) |
+			le32_get_bits(desc->buf_addr_info.info0,
+				      BUFFER_ADDR_INFO0_ADDR);
+		cmd.fw_buf_release_params.rbm =
+			le32_get_bits(desc->buf_addr_info.info1,
+				      BUFFER_ADDR_INFO1_RET_BUF_MGR);
+		cmd.fw_buf_release_params.cookie =
+			le32_get_bits(desc->buf_addr_info.info1,
+				      BUFFER_ADDR_INFO1_SW_COOKIE);
+
+		ret = ath12k_wifi8_dp_tqm_cmd_send(ab, HAL_TQM_FW_COMPLETION_BO,
+						   &cmd, NULL, NULL);
+		if (ret < 0)
+			ath12k_warn(ab,
+				    "tqm2sw_fw: cmd send failed ret=%d\n", ret);
+
+		count++;
+	}
+
+	ath12k_hal_srng_access_end(ab, srng);
+	spin_unlock_bh(&srng->lock);
+
+	return quota - budget;
+}
+
 void ath12k_wifi8_dp_tx_ring_cleanup(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ab->dp;
@@ -3469,6 +3582,9 @@ void ath12k_wifi8_dp_tx_ring_cleanup(struct ath12k_base *ab)
 		ath12k_dp_srng_cleanup(ab, &dp->tx_ring[i].tcl_comp_ring);
 		ath12k_dp_srng_cleanup(ab, &dp->tx_ring[i].tcl_data_ring);
 	}
+	/* Cleanup dedicated FW TQM2SW ring (V1 WAR only) */
+	if (ab->hw_params->tqm2sw_fw_war)
+		ath12k_dp_srng_cleanup(ab, &dp_wifi8->tqm2sw_fw_ring);
 	ath12k_dp_srng_cleanup(ab, &dp_wifi8->tx_exception);
 	ath12k_dp_srng_cleanup(ab, &dp_wifi8->tcl_status_ring);
 	ath12k_dp_srng_cleanup(ab, &dp_wifi8->tcl_cmd_ring);
@@ -3624,6 +3740,24 @@ int ath12k_wifi8_dp_tx_ring_init(struct ath12k_base *ab)
 	if (ret) {
 		ath12k_warn(ab, "failed to init wbm2sw_release ring :%d\n", ret);
 		return ret;
+	}
+
+	/*
+	 * Allocate dedicated TQM2SW ring for FW-owned buffer completions.
+	 * When a TX exception buffer has cookie RBM != 0 (FW-owned), the host
+	 * sends a SW2TQM sync command with HAL_TQM_HOST_STATUS_RING=1. C-TQM
+	 * routes the completion to this ring instead of the normal tqm_status_ring.
+	 * This is a V1-only hardware WAR; skip on V2 and later silicon.
+	 */
+	if (ab->hw_params->tqm2sw_fw_war) {
+		ret = ath12k_dp_srng_setup(ab, &dp_wifi8->tqm2sw_fw_ring,
+					   HAL_TQM2SW_FW_COMPLETION,
+					   0, 0,
+					   DP_FW_TQM2SW_RING_SIZE);
+		if (ret) {
+			ath12k_warn(ab, "failed to set up fw_tqm2sw ring: %d\n", ret);
+			return ret;
+		}
 	}
 
 	ret = ath12k_dp_srng_init(ab, &dp_wifi8->tcl_status_ring, HAL_TCL_STATUS, 0, 0);
@@ -4234,19 +4368,10 @@ int ath12k_wifi8_dp_tx_exception_handler(struct ath12k_dp *dp, int budget)
 	struct ath12k_base *ab = dp->ab;
 	struct hal_tcl_exit_base *tx_exception_desc = NULL;
 	struct ath12k_tx_desc_info *tx_desc = NULL;
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	struct ath12k_ppeds_tx_desc_info *ppeds_tx_desc = NULL;
-	struct sk_buff *skb = NULL;
-	u32 *used_cnt;
-#endif
 	u32 desc_id;
 	struct hal_srng *srng;
 	int quota = budget;
 	dma_addr_t paddr;
-	struct ath12k_tx_sw_metadata sw_metadata = {0};
-	int pdev_tx_comp_cnt[ATH12K_GROUP_MAX_RADIO] = {0};
-	u8 hw_link_id = 0;
-	struct ath12k_pdev_dp *dp_pdev = NULL;
 	int ret;
 	bool tx_exception_error = false;
 
@@ -4274,25 +4399,9 @@ int ath12k_wifi8_dp_tx_exception_handler(struct ath12k_dp *dp, int budget)
 		desc_id = le32_get_bits(tx_exception_desc->buf_addr_info.info1,
 					BUFFER_ADDR_INFO1_SW_COOKIE);
 		tx_desc = ath12k_dp_get_tx_desc(dp, desc_id);
-		if (!tx_desc) {
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-			ppeds_tx_desc = ath12k_dp_get_ppeds_tx_desc(dp->ab, desc_id);
-			if (!ppeds_tx_desc) {
-				stats->invalid_desc++;
-				ath12k_warn(dp->ab,
-					    "unable to get tx_desc %d\n", desc_id);
-				continue;
-			}
-#else
-			stats->invalid_desc++;
-			ath12k_warn(dp->ab,
-				    "unable to get tx_desc %d\n", desc_id);
-			continue;
-#endif
-		}
 
 		if (tx_exception_error)
-			goto tx_buf_release;
+			goto send_tqm2sw_fw_comp;
 
 		if (le32_get_bits(tx_exception_desc->info7,
 				  HAL_TCL_EXIT_BASE_INFO7_FLOW_POINTER_NULL)) {
@@ -4306,56 +4415,24 @@ int ath12k_wifi8_dp_tx_exception_handler(struct ath12k_dp *dp, int budget)
 				continue;
 			}
 		}
-tx_buf_release:
-		if (tx_desc) {
-			sw_metadata.skb = tx_desc->skb;
-			sw_metadata.paddr = tx_desc->paddr;
-			sw_metadata.len = tx_desc->len;
-			sw_metadata.flags = tx_desc->flags;
-			sw_metadata.hw_link_id = tx_desc->hw_link_id;
 
-			tx_desc->paddr_ext_desc = 0;
-
-			pdev_tx_comp_cnt[sw_metadata.hw_link_id]++;
-			ath12k_wifi8_dp_tx_free_txbuf(dp, sw_metadata.skb, &sw_metadata);
-			ath12k_dp_tx_release_txbuf(dp, tx_desc, tx_desc->pool_id);
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-		} else if (ppeds_tx_desc) {
-			spin_lock_bh(&dp->dp_hw_grp->ppeds_tx_desc_lock);
-			ppeds_tx_desc->in_use = false;
-			list_add_tail(&ppeds_tx_desc->list,
-				      &dp->dp_hw_grp->ppeds_tx_desc_free_list);
-
-			used_cnt = this_cpu_ptr(dp->dp_hw_grp->ppeds_tx_desc_used_cnt);
-			(*used_cnt)--;
-
-			skb = ppeds_tx_desc->skb;
-			ppeds_tx_desc->skb = NULL;
-			spin_unlock_bh(&dp->dp_hw_grp->ppeds_tx_desc_lock);
-			dev_kfree_skb_any(skb);
-#endif
-		}
+send_tqm2sw_fw_comp:
+		/*
+		 * For FW-owned buffers (cookie RBM != 0):
+		 * Do NOT free the buffer directly. Instead send a
+		 * SW2TQM command so TQM releases the buffer back to
+		 * the FW's buffer pool. The completion arrives on
+		 * fw_tqm2sw_ring via ath12k_wifi8_dp_fw_tqm2sw_handler().
+		 *
+		 * Release the SW TX descriptor slot regardless.
+		 */
+		ath12k_wifi8_dp_tx_exception_fw_buf_handler(dp, paddr,
+							    (u8)((desc_id >> 18) & 0x3),
+							    desc_id);
 	}
 
 	ath12k_hal_srng_access_end(ab, srng);
 	spin_unlock_bh(&srng->lock);
-
-	for (hw_link_id = 0; hw_link_id < ATH12K_GROUP_MAX_RADIO; hw_link_id++) {
-		if (likely(pdev_tx_comp_cnt[hw_link_id])) {
-			rcu_read_lock();
-			dp_pdev = ath12k_dp_hw_grp_to_dp_pdev(dp->dp_hw_grp, hw_link_id);
-			if (unlikely(!dp_pdev)) {
-				rcu_read_unlock();
-				continue;
-			}
-
-			if (atomic_sub_and_test(pdev_tx_comp_cnt[hw_link_id],
-						&dp_pdev->num_tx_pending))
-				wake_up(&dp_pdev->tx_empty_waitq);
-
-			rcu_read_unlock();
-		}
-	}
 
 	return quota - budget;
 }

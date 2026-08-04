@@ -303,7 +303,8 @@ static const struct ath12k_hw_ops qcn9625_ops = {
  * Group 9: Rx error, Reo Status, TCL status, TQM status
  * Group 10,11 : Monitor destination(TX,RX)
  * Group 12: Monitor buffer(TX,RX)
- * Group 13: Roaming RX ring
+ * Group 13: Roaming RX ring, TX/RX peer telemetry
+ * Group 14: fw_tqm2sw ring (FW-owned buffer completion WAR)
  * Group 18: UMCMN interrupts
  * Group 19-21: PPE interrupts
  * Group 22: UMAC reset
@@ -437,6 +438,14 @@ static struct ath12k_hw_ring_mask ath12k_wifi8_hw_ring_mask_qcn9625 = {
 		0,
 		ATH12K_RX_PEER_TELEMETRY_RING_MASK
 	},
+	/* Group 14: dedicated interrupt for fw_tqm2sw ring
+	 * (FW-owned buffer completion WAR - HAL_TQM_HOST_STATUS_RING=1)
+	 */
+	.tqm2sw_fw = {
+		0, 0, 0, 0,
+		0, 0, 0, 0,
+		ATH12K_FW_TQM2SW_RING_MASK_0,
+	},
 	/* Group 18 */
 	.umcmn_interrupts = {
 		0, 0, 0, 0,
@@ -487,6 +496,9 @@ static struct ath12k_hw_ring_mask ath12k_wifi8_hw_ring_mask_qcn9625 = {
 
 static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 	{
+		/* fw_tqm2sw WAR: enabled only on Trestles V1 (HW1.0).
+		 * This hardware issue is fixed in V2; do not set on HW2.0.
+		 */
 		.name = "qcn9625 hw1.0",
 		.hw_rev = ATH12K_HW_QCN9625_HW10,
 		.fw = {
@@ -628,8 +640,12 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.board_magic = "QCA-ATH12K-BOARD",
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
 		.peer_del_all_support = true,
+		.tqm2sw_fw_war = true,
 	},
 	{
+		/* fw_tqm2sw WAR: enabled only on Trestles V1 (HW1.0).
+		 * This hardware issue is fixed in V2; do not set on HW2.0.
+		 */
 		.name = "qcn9589 hw1.0",
 		.hw_rev = ATH12K_HW_QCN9589_HW10,
 		.fw = {
@@ -762,6 +778,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.board_magic = "QCA-ATH12K-BOARD",
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
 		.peer_del_all_support = true,
+		.tqm2sw_fw_war = true,
 	},
 	{
 		.name = "qcn9625 hw2.0",

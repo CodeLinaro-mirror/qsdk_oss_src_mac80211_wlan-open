@@ -553,6 +553,51 @@ int ath12k_wifi8_hal_tqm_update_mpduq(struct ath12k_base *ab,
 	return le32_to_cpu(desc->cmd_hdr.tqm_cmd_number);
 }
 
+/**
+ * ath12k_wifi8_hal_tqm_fw_buf_release_cmd() - Build TQM FW-completion command
+ * for FW-owned buffer release, routing completion to HAL_TQM_HOST_STATUS_RING_1
+ * (fw_tqm2sw_ring).
+ *
+ * Uses TLV tag HAL_TQM_FW_COMPLETION_BO (637). Extracts paddr, rbm, and cookie
+ * from cmd->fw_buf_release_params and encodes them into buffer_addr_info fields
+ * so TQM/WBM returns the buffer to the correct FW buffer pool.
+ *
+ * Called via ath12k_wifi8_hal_tqm_cmd_send() switch case HAL_TQM_FW_COMPLETION_BO.
+ */
+void ath12k_wifi8_hal_tqm_fw_buf_release_cmd(struct ath12k_base *ab,
+					    struct hal_tlv_64_hdr *tlv,
+					    struct ath12k_hal_tqm_cmd *cmd)
+{
+	struct hal_tqm2sw_completion_ring *desc;
+	dma_addr_t paddr = cmd->fw_buf_release_params.paddr;
+	u8 rbm            = cmd->fw_buf_release_params.rbm;
+	u32 cookie        = cmd->fw_buf_release_params.cookie;
+
+	tlv->tl = le64_encode_bits(637, HAL_TLV_HDR_TAG) |
+		  le64_encode_bits(sizeof(*desc), HAL_TLV_HDR_LEN);
+
+	desc = (struct hal_tqm2sw_completion_ring *)tlv->value;
+
+	/*
+	 * Fill buffer_addr_info fields so TQM/WBM returns the buffer to the
+	 * correct FW buffer pool (return_buffer_manager = rbm):
+	 *   info0 = buffer_addr[31:0]
+	 *   info1 = buffer_addr[39:32] | return_buffer_manager[11:8] |
+	 *           sw_buffer_cookie[31:12]
+	 */
+	desc->buf_addr_info.info0 = le32_encode_bits(lower_32_bits(paddr),
+				       BUFFER_ADDR_INFO0_ADDR);
+	desc->buf_addr_info.info1 = le32_encode_bits(upper_32_bits(paddr) & 0xff,
+				       BUFFER_ADDR_INFO1_ADDR) |
+		      le32_encode_bits(rbm, BUFFER_ADDR_INFO1_RET_BUF_MGR) |
+		      le32_encode_bits(cookie, BUFFER_ADDR_INFO1_SW_COOKIE);
+
+	ath12k_dbg(ab, ATH12K_DBG_DP_TX,
+		   "fw_tqm2sw cmd: paddr=0x%llx rbm=%u cookie=0x%x\n",
+		   (unsigned long long)paddr, rbm, cookie);
+
+}
+
 int ath12k_wifi8_hal_tqm_update_msduq(struct ath12k_base *ab,
 				      struct hal_tlv_64_hdr *tlv,
 				      struct ath12k_hal_tqm_cmd *cmd)
@@ -773,6 +818,9 @@ int ath12k_wifi8_hal_tqm_cmd_send(struct ath12k_base *ab, struct hal_srng *srng,
 	case HAL_TQM_UPDATE_MPDUQ_BO:
 		ret = ath12k_wifi8_hal_tqm_update_mpduq(ab, tlv_desc, cmd);
 		break;
+	case HAL_TQM_FW_COMPLETION_BO:
+		ath12k_wifi8_hal_tqm_fw_buf_release_cmd(ab, tlv_desc, cmd);
+		break;
 	default:
 		ath12k_warn(ab, "Unknown tqm command %d\n", type);
 		ret = -EINVAL;
@@ -780,7 +828,8 @@ int ath12k_wifi8_hal_tqm_cmd_send(struct ath12k_base *ab, struct hal_srng *srng,
 	}
 
 	tqm_desc = (struct hal_tlv_64_hdr *)
-			ath12k_hal_srng_src_get_next_entry_by_cmd_size(ab, srng, type);
+			ath12k_hal_srng_src_get_next_entry_by_cmd_size(ab, srng,
+								       type);
 	if (!tqm_desc) {
 		ret = -ENOBUFS;
 		goto out;
@@ -792,6 +841,7 @@ int ath12k_wifi8_hal_tqm_cmd_send(struct ath12k_base *ab, struct hal_srng *srng,
 		ret = -EINVAL;
 		goto out;
 	}
+
 	err = ath12k_wifi8_hal_srng_write_words(ab, srng, cmd_size,
 						(void *)tqm_desc,
 						ab->tqm_cmd_staging);

@@ -448,6 +448,15 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.max_size = HAL_TQM2PPE_RELEASE_RING_BASE_MSB_RING_SIZE,
 		.name = "hbm_tx_completion",
 	},
+	[HAL_TQM2SW_FW_COMPLETION] = {
+		.start_ring_id = HAL_SRNG_RING_ID_TQM2SW5_RELEASE,
+		.max_rings = 1,
+		.entry_size = sizeof(struct hal_tqm2sw_completion_ring) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_DST,
+		.max_size = HAL_TQM2SW_RELEASE_RING_BASE_MSB_RING_SIZE,
+		.name = "tqm2sw_fw",
+	},
 };
 
 const struct ath12k_hw_regs qcn9625_regs = {
@@ -553,7 +562,6 @@ const struct ath12k_hw_hal_params ath12k_wifi8_hw_hal_params_qcn9625 = {
 			     HAL_TQM_SW_COOKIE_CONV_CFG_TQM2SW2_EN |
 			     HAL_TQM_SW_COOKIE_CONV_CFG_TQM2SW3_EN |
 			     HAL_TQM_SW_COOKIE_CONV_CFG_TQM2SW4_EN |
-			     HAL_TQM_SW_COOKIE_CONV_CFG_TQM2SW5_EN |
 			     HAL_TQM_SW_COOKIE_CONV_CFG_TQM2SW6_EN,
 	.tqm2sw_cc_enable2 = HAL_TQM_SW_COOKIE_CONV_CFG2_TQM2SW7_EN |
 			     HAL_TQM_SW_COOKIE_CONV_CFG2_TQM2SW8_EN |
@@ -1448,6 +1456,11 @@ int ath12k_wifi8_hal_srng_create_config_qcn9625(struct ath12k_hal *hal)
 	s = &hal->srng_config[HAL_TQM2PPE];
 	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_TQM_REG + HAL_TQM2PPE_RELEASE_RING_BASE_LSB;
 	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_TQM_REG + HAL_TQM2PPE_RELEASE_RING_HP;
+
+	/* TQM2SW5 ring 5 for FW-owned buffer completions. */
+	s = &hal->srng_config[HAL_TQM2SW_FW_COMPLETION];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_TQM_REG + HAL_TQM2SW5_RELEASE_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_TQM_REG + HAL_TQM2SW5_RELEASE_RING_HP;
 
 	return 0;
 }

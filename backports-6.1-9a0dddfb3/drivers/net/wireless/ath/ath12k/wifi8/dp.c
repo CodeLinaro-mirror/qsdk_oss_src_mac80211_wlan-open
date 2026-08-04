@@ -142,6 +142,21 @@ static int ath12k_wifi8_cumac_dp_service_srng(struct ath12k_dp *dp,
 			goto done;
 	}
 
+	/*
+	 * Group 14: dedicated interrupt for fw_tqm2sw_ring.
+	 * C-TQM routes FW-owned buffer completions here when
+	 * HAL_TQM_HOST_STATUS_RING=1 is set in the SW2TQM sync command.
+	 * This is a V1-only hardware WAR; skip entirely on V2 and later.
+	 */
+	if (dp->hw_params->tqm2sw_fw_war &&
+	    dp->hw_params->ring_mask->tqm2sw_fw[grp_id]) {
+		work_done = ath12k_wifi8_dp_tqm2sw_fw_handler(dp, budget);
+		budget -= work_done;
+		tot_work_done += work_done;
+		if (budget <= 0)
+			goto done;
+	}
+
 	if (dp->hw_params->ring_mask->sam_status[grp_id]) {
 		work_done = ath12k_wifi8_dp_tx_process_sam_status(dp, budget);
 		budget -= work_done;
