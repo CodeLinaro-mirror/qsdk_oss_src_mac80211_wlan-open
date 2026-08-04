@@ -681,6 +681,9 @@ struct ieee80211_smd_prep_target {
 
 	/* Bitmap correctness fields (Phase 1) */
 	u16 rejected_links_mask;       /* BIT(tap_link_id) rejected in ST Prep Response */
+	u16 upgrade_sap_slots;         /* SAP slots added by SLO->MLO upgrade fix;
+					* reverted on prep reset/abort
+					*/
 	u16 dl_drain_link_mask;        /* BIT(primary_link_id) in TAP link ID space */
 	u16 prep_transition_links;     /* links running PREP transition:
 					* exec_path=0: transitioning_links

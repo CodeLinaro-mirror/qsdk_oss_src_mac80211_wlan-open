@@ -450,11 +450,31 @@ static int ath12k_uhr_prepare_links(struct ath12k_vif *ahvif,
 	target_ahsta->primary_link_id = info->primary_link_id;
 
 	if (current_sta) {
+		struct ath12k_link_vif *primary_arvif;
+		u8 bss_assoc_link_id;
+
 		current_ahsta = ath12k_sta_to_ahsta(current_sta);
-		ctx.current_ahsta  = current_ahsta;
-		ctx.target_ahsta   = target_ahsta;
-		ctx.ahvif          = ahvif;
-		ctx.primary_link_id = info->primary_link_id;
+
+		/* For SLO-to-MLO upgrades the primary SAP slot is a new vdev
+		 * not yet started (ar == NULL). Use the active assoc-link vdev.
+		 */
+		primary_arvif = wiphy_dereference(hw->wiphy,
+						  ahvif->link[info->primary_link_id]);
+		if (primary_arvif && primary_arvif->is_started)
+			bss_assoc_link_id = info->primary_link_id;
+		else
+			bss_assoc_link_id = current_ahsta->assoc_link_id;
+
+		ath12k_dbg(NULL, ATH12K_DBG_SMD,
+			   "uhr prepare: primary_link=%u is_started=%d bss_assoc_link=%u\n",
+			   info->primary_link_id,
+			   primary_arvif ? primary_arvif->is_started : 0,
+			   bss_assoc_link_id);
+
+		ctx.current_ahsta   = current_ahsta;
+		ctx.target_ahsta    = target_ahsta;
+		ctx.ahvif           = ahvif;
+		ctx.primary_link_id = bss_assoc_link_id;
 	}
 
 	{
@@ -1041,10 +1061,13 @@ ath12k_smd_remap_vif_links(struct ath12k_vif *ahvif,
 {
 	struct ieee80211_hw *hw = ahvif->ah->hw;
 	u8 old_primary = ahvif->primary_link_id;
+	unsigned long cleared_links;
+	unsigned int link_id;
 	int tap_lid, sap_lid;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
+	ahvif->smd_remap_cleared_links = 0;
 	for (tap_lid = 0; tap_lid < IEEE80211_MLD_MAX_NUM_LINKS; tap_lid++) {
 		sap_lid = info->tap_to_sap_link[tap_lid];
 		if (sap_lid < 0 || sap_lid == tap_lid || !saved[sap_lid])
@@ -1055,6 +1078,16 @@ ath12k_smd_remap_vif_links(struct ath12k_vif *ahvif,
 		ath12k_dbg(saved[sap_lid]->ar->ab, ATH12K_DBG_MAC,
 			   "smd: vif link[%d] <- link[%d] (vdev %u)\n",
 			   tap_lid, sap_lid, saved[sap_lid]->vdev_id);
+		/*
+		 * Mark sap_lid for NULL-clearing only if no remap writes a new
+		 * arvif into slot sap_lid (i.e. link[sap_lid] is not overwritten
+		 * by another tap[sap_lid]->sap[x] iteration). If tap[sap_lid]
+		 * itself has a non-identity remap, link[sap_lid] gets a new value
+		 * and must not be NULLed.
+		 */
+		if (info->tap_to_sap_link[sap_lid] < 0 ||
+		    info->tap_to_sap_link[sap_lid] == sap_lid)
+			ahvif->smd_remap_cleared_links |= BIT(sap_lid);
 	}
 
 	synchronize_rcu();
@@ -1073,6 +1106,14 @@ ath12k_smd_remap_vif_links(struct ath12k_vif *ahvif,
 		}
 	}
 
+	cleared_links = ahvif->smd_remap_cleared_links;
+	for_each_set_bit(link_id, &cleared_links, IEEE80211_MLD_MAX_NUM_LINKS) {
+		rcu_assign_pointer(ahvif->link[link_id], NULL);
+		ath12k_dbg(NULL, ATH12K_DBG_SMD,
+			   "smd: remap: NULLed link[%u] (moved to tap slot)\n",
+			   link_id);
+	}
+
 	for (tap_lid = 0; tap_lid < IEEE80211_MLD_MAX_NUM_LINKS; tap_lid++) {
 		if (info->tap_to_sap_link[tap_lid] == (int)old_primary) {
 			ahvif->primary_link_id = (u8)tap_lid;
@@ -1085,6 +1126,9 @@ ath12k_smd_remap_vif_links(struct ath12k_vif *ahvif,
 		if (wiphy_dereference(hw->wiphy, ahvif->link[tap_lid]))
 			ahvif->links_map |= BIT(tap_lid);
 	}
+	ath12k_dbg(NULL, ATH12K_DBG_SMD,
+		   "smd: remap_vif_links done links_map=0x%x smd_remap_cleared=0x%x\n",
+		   ahvif->links_map, ahvif->smd_remap_cleared_links);
 }
 
 static void
@@ -1101,6 +1145,10 @@ ath12k_smd_remap_sta_links(struct ieee80211_hw *hw,
 
 	lockdep_assert_wiphy(hw->wiphy);
 
+	ath12k_dbg(ab, ATH12K_DBG_SMD,
+		   "smd: remap_sta_links entry links_map=0x%x primary=%u\n",
+		   old_lmap, info->primary_link_id);
+
 	for (tap_lid = 0; tap_lid < IEEE80211_MLD_MAX_NUM_LINKS; tap_lid++) {
 		if (info->tap_to_sap_link[tap_lid] == (int)info->primary_link_id) {
 			primary_tap_lid = tap_lid;
@@ -1115,8 +1163,11 @@ ath12k_smd_remap_sta_links(struct ieee80211_hw *hw,
 		if (sap_lid < 0 || sap_lid >= IEEE80211_MLD_MAX_NUM_LINKS)
 			continue;
 
-		if (old_lmap & BIT(sap_lid))
-			new_lmap |= BIT(tap_lid);
+		if (old_lmap & BIT(sap_lid)) {
+			if (sap_lid != tap_lid ||
+			    !(ahsta->ahvif->smd_remap_cleared_links & BIT(tap_lid)))
+				new_lmap |= BIT(tap_lid);
+		}
 
 		if (sap_lid == tap_lid)
 			continue;
@@ -1157,6 +1208,8 @@ int ath12k_smd_remap_links_op(struct ath12k_vif *ahvif,
 	int tap_lid;
 
 	lockdep_assert_wiphy(hw->wiphy);
+
+	ahvif->smd_remap_cleared_links = 0;
 
 	for (tap_lid = 0; tap_lid < IEEE80211_MLD_MAX_NUM_LINKS; tap_lid++) {
 		saved_arvif[tap_lid] = wiphy_dereference(hw->wiphy, ahvif->link[tap_lid]);

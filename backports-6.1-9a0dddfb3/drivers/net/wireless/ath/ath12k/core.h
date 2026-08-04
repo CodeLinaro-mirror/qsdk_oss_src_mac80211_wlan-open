@@ -1241,6 +1241,12 @@ struct ath12k_vif {
 
 	struct ath12k_mgmt_frame_stats mgmt_stats;
 	u16 repurposed_links;
+	/* Bitmask of link slots NULLed by ath12k_smd_remap_vif_links() because
+	 * those slots were remapped to different tap indices.  Used by
+	 * ath12k_mac_op_change_vif_links() to distinguish an expected NULL
+	 * (remap-cleared) from an unexpected one (driver bug).
+	 */
+	u16 smd_remap_cleared_links;
 
 	/* Must be last - ends in a flexible-array member.
 	 *

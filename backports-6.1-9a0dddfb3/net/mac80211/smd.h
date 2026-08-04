@@ -52,8 +52,8 @@ int ieee80211_smd_parse_ml_persta(struct ieee80211_sub_if_data *sdata,
 				  const u8 *data, size_t len,
 				  struct ieee80211_smd_prep_target *target);
 
-void ieee80211_smd_build_link_id_remap(struct ieee80211_sub_if_data *sdata,
-				       struct ieee80211_smd_prep_target *target);
+int ieee80211_smd_build_link_id_remap(struct ieee80211_sub_if_data *sdata,
+				      struct ieee80211_smd_prep_target *target);
 int ieee80211_smd_compute_prep_bitmaps(struct ieee80211_sub_if_data *sdata,
 				       struct ieee80211_smd_prep_target *target,
 				       struct ieee80211_mgd_assoc_data *assoc_data);
