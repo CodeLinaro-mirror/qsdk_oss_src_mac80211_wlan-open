@@ -4065,3 +4065,27 @@ void ath12k_dp_ext_mon_update_snr(struct hal_rx_mon_ppdu_info *ppdu_info,
 	}
 }
 EXPORT_SYMBOL(ath12k_dp_ext_mon_update_snr);
+
+int
+ath12k_dp_ext_mon_subtype_check(struct ath12k_ext_mon_pkt_config *config,
+				u8 type, u8 sub_type, bool is_mcast)
+{
+	u32 filter = config->filter[type];
+
+	switch (type) {
+	case ATH12K_EXT_MON_FRAME_MGMT:
+	case ATH12K_EXT_MON_FRAME_CTRL:
+		if (filter && ((filter >> sub_type) & 0x1))
+			return 0;
+		break;
+
+	case ATH12K_EXT_MON_FRAME_DATA:
+		if ((is_mcast && (filter & FILTER_DATA_MCAST)) ||
+		    (!is_mcast && (filter & FILTER_DATA_UCAST)))
+			return 0;
+		break;
+	}
+
+	return -EINVAL; /* Failure - filter out the frame */
+}
+EXPORT_SYMBOL(ath12k_dp_ext_mon_subtype_check);

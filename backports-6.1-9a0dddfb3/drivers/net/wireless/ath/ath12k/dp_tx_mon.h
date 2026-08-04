@@ -128,6 +128,7 @@ struct dp_mon_tx_filter;
 struct ath12k_ext_mon_config;
 struct ath12k_ext_mon_filter_config;
 struct ath12k_ext_mon_peer_config;
+struct ath12k_ext_mon_pkt_config;
 
 /**
  * struct ath12k_pdev_tx_mon_stats - per-pdev TX monitor ring stats counters
@@ -355,5 +356,13 @@ int ath12k_dp_ext_mon_handle_tx_peer(struct ath12k_pdev_dp *dp_pdev,
 				     *peer_config);
 void
 ath12k_dp_tx_mon_set_tx_mon_teardown(struct ath12k *ar);
+int
+ath12k_dp_ext_mon_filter_peer(struct ieee80211_hdr *wh, struct list_head *peer_list);
+int
+ath12k_dp_ext_mon_filter_type(struct ieee80211_hdr *wh,
+			      struct ath12k_ext_mon_pkt_config *pkt_config);
+int
+ath12k_dp_ext_mon_filter_subtype(struct ieee80211_hdr *wh,
+				 struct ath12k_ext_mon_pkt_config *pkt_config);
 
 #endif /* ATH12K_DP_TX_MON_H */

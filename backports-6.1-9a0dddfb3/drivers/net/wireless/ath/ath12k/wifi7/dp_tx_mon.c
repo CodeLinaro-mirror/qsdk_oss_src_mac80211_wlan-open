@@ -22,55 +22,6 @@
 #include "../../net/mac80211/qcn_extns/cmn_extn.h"
 #include "qcn_extns/dp_mon_extn.h"
 
-static inline int
-ath12k_wifi7_dp_ext_mon_filter_peer(struct ieee80211_hdr *wh,
-				    struct list_head *peer_list)
-{
-	struct ath12k_dp_ext_mon_peer *peer;
-
-	list_for_each_entry(peer, peer_list, list) {
-		if (ether_addr_equal(peer->peer_info.mac_addr, wh->addr1))
-			return 0;
-	}
-	return -EINVAL;
-}
-
-static inline int
-ath12k_wifi7_dp_ext_mon_filter_type(struct ieee80211_hdr *wh,
-				    struct ath12k_ext_mon_pkt_config *pkt_config)
-{
-	u16 type;
-
-	type = ((__le16_to_cpu(wh->frame_control) & IEEE80211_FCTL_FTYPE) >>
-		ATH12K_FC0_TYPE_SHIFT);
-
-	if (type < ATH12K_EXT_MON_FRAME_MAX && pkt_config->filter[type])
-		return 0;
-
-	return -EINVAL;
-}
-
-static inline int
-ath12k_wifi7_dp_ext_mon_filter_subtype(struct ieee80211_hdr *wh,
-				       struct ath12k_ext_mon_pkt_config *pkt_config)
-{
-	bool is_mcast = false;
-	u16 type, sub_type;
-
-	type = ((__le16_to_cpu(wh->frame_control) & IEEE80211_FCTL_FTYPE) >>
-		ATH12K_FC0_TYPE_SHIFT);
-	sub_type = ((__le16_to_cpu(wh->frame_control) & IEEE80211_FCTL_STYPE) >>
-		    ATH12K_FC0_SUBTYPE_SHIFT);
-	is_mcast = is_multicast_ether_addr(wh->addr1);
-
-	if (type >= ATH12K_EXT_MON_FRAME_MAX)
-		return -EINVAL;
-
-	return ath12k_wifi7_dp_ext_mon_subtype_check(pkt_config,
-						     type, sub_type,
-						     is_mcast);
-}
-
 /**
  * ath12k_wifi7_dp_ext_mon_filter() - decide whether an MPDU passes TX
  *	ext-mon capture filtering for the pdev's current mode
@@ -124,23 +75,23 @@ int ath12k_wifi7_dp_ext_mon_filter(struct sk_buff *mpdu,
 	switch (filter_mode) {
 	case ATH12K_DP_TX_EXT_MON_HW_PEER_FILTER:
 		/* Perform subtype filtering */
-		ret = ath12k_wifi7_dp_ext_mon_filter_subtype(wh, &tx_ext_mon->fpmo);
+		ret = ath12k_dp_ext_mon_filter_subtype(wh, &tx_ext_mon->fpmo);
 		if (ret)
 			return ret;
 		/* Perform s/w peer check to filter selfgen & leaked frames */
-		return ath12k_wifi7_dp_ext_mon_filter_peer(wh, &tx_ext_mon->peer_list);
+		return ath12k_dp_ext_mon_filter_peer(wh, &tx_ext_mon->peer_list);
 	case ATH12K_DP_TX_EXT_MON_ALL_PEER_FILTER:
 		/* Perform subtype filtering */
-		return ath12k_wifi7_dp_ext_mon_filter_subtype(wh, &tx_ext_mon->fp);
+		return ath12k_dp_ext_mon_filter_subtype(wh, &tx_ext_mon->fp);
 	case ATH12K_DP_TX_EXT_MON_SW_PEER_FILTER:
 		/* Perform s/w peer check to filter targeted peer frames */
-		ret = ath12k_wifi7_dp_ext_mon_filter_peer(wh, &tx_ext_mon->peer_list);
+		ret = ath12k_dp_ext_mon_filter_peer(wh, &tx_ext_mon->peer_list);
 		if (!ret)
 			/* perform subtype filtering */
-			return ath12k_wifi7_dp_ext_mon_filter_subtype(wh,
+			return ath12k_dp_ext_mon_filter_subtype(wh,
 								      &tx_ext_mon->fpmo);
 		/* Perform Type filtering */
-		return ath12k_wifi7_dp_ext_mon_filter_type(wh, &tx_ext_mon->fp);
+		return ath12k_dp_ext_mon_filter_type(wh, &tx_ext_mon->fp);
 	default:
 		break;
 	}

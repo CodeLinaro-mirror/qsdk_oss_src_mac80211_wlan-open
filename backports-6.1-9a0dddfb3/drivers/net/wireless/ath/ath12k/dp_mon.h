@@ -122,6 +122,7 @@ struct dp_mon_rx_filter;
 struct dp_mon_tx_filter;
 struct ath12k_ext_mon_config;
 struct ath12k_dp_tx_ext_mon_config;
+struct ath12k_ext_mon_pkt_config;
 
 struct ath12k_dp_mon_pad_params {
 	u32 frag_size;
@@ -1180,6 +1181,9 @@ void ath12k_dp_mon_rx_process_dest_pktlog(struct ath12k_pdev_dp *dp_pdev,
 					  struct hal_rx_mon_ppdu_info *ppdu_info);
 int ath12k_dp_mon_rx_wq_init_common(struct ath12k_pdev_dp *dp_pdev,
 				    void (*work_handler)(struct work_struct *));
+int
+ath12k_dp_ext_mon_subtype_check(struct ath12k_ext_mon_pkt_config *config,
+				u8 type, u8 sub_type, bool is_mcast);
 
 
 static inline
