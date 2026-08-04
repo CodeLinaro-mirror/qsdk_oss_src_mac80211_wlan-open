@@ -436,7 +436,7 @@ struct dentry *ath12k_debugfs_erp_create(void)
 
 void ath12k_init_pktlog(struct ath12k *ar);
 void ath12k_deinit_pktlog(struct ath12k *ar);
-void ath12k_htt_pktlog_process(struct ath12k *ar, u8 *data);
+void ath12k_htt_pktlog_process(struct ath12k *ar, u8 *data, u32 len);
 void ath12k_htt_ppdu_pktlog_process(struct ath12k *ar, u8 *data, u32 len);
 void ath12k_dp_txrx_stats_buf_pktlog_process(struct ath12k *ar, u8 *data,
 					     u16 log_type, u32 len);
