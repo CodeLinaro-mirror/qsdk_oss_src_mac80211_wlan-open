@@ -1272,18 +1272,23 @@ ath12k_dp_tx_mon_process_mpdu_start(struct ath12k_pdev_dp *dp_pdev,
 
 /**
  * ath12k_dp_tx_mon_generate_data_frm() - Generate data frame with fragments
+ * @dp_pdev: DP pdev handle
  * @ppdu_info: Data PPDU information
  * @user_idx: User index
  * @take_ref: Whether to take reference on buffer page
- *           - true: Increment page reference count (buffer may be reused)
+ *           - true: Increment page reference count (buffer may be reused);
+ *                   uses buffer/offset/length from TX monitor data status info
  *           - false: Transfer page ownership (buffer consumed)
  *
  * Return: 0 on success, negative error code on failure
  */
-int ath12k_dp_tx_mon_generate_data_frm(struct dp_mon_tx_ppdu_info *ppdu_info,
+int ath12k_dp_tx_mon_generate_data_frm(struct ath12k_pdev_dp *dp_pdev,
+				       struct dp_mon_tx_ppdu_info *ppdu_info,
 				       u8 user_idx, bool take_ref)
 {
-	struct sk_buff *skb;
+	struct hal_tx_mon_status_info *status_info =
+		&dp_pdev->dp_mon_pdev->mon_data.data_status_info;
+	struct sk_buff *skb, *tmp_skb;
 	struct hal_rx_mon_ppdu_info *rx_status;
 	struct sk_buff_head *mpdu_q;
 	struct hal_tx_mon_ppdu_info *tx_info;
@@ -1310,14 +1315,37 @@ int ath12k_dp_tx_mon_generate_data_frm(struct dp_mon_tx_ppdu_info *ppdu_info,
 		page = virt_to_head_page(buffer_addr);
 		frag_offset = buffer_addr - page_address(page);
 
-		skb_add_rx_frag(skb, skb_shinfo(skb)->nr_frags,
+		if (take_ref) {
+			buffer_addr = status_info->buffer;
+			page = virt_to_head_page(buffer_addr);
+			frag_offset = status_info->offset;
+			buffer_length = status_info->length;
+		}
+
+		tmp_skb = ath12k_dp_mon_get_skb_valid_frag(dp_pdev->dp, skb);
+		if (!tmp_skb) {
+			tmp_skb = dev_alloc_skb(ATH12K_DP_MON_TX_MAX_RADIO_TAP_HDR);
+			if (!tmp_skb) {
+				ATH12K_TX_MON_STAT_INC_ERR(dp_pdev, skb_alloc_failed);
+				ath12k_warn(dp_pdev->dp->ab,
+					    "TX Mon: SKB allocation failed for frag renewal, user %u\n",
+					    user_idx);
+				return -ENOMEM;
+			}
+			ath12k_dp_mon_append_skb(skb, tmp_skb);
+		}
+
+		skb_add_rx_frag(tmp_skb, skb_shinfo(tmp_skb)->nr_frags,
 				page,
 				frag_offset,
 				buffer_length,
 				ATH12K_DP_MON_TX_BUF_SIZE);
 
+		if (tmp_skb != skb)
+			ath12k_dp_mon_update_skb_len(skb, buffer_length);
+
 		if (take_ref)
-			skb_frag_ref(skb, skb_shinfo(skb)->nr_frags - 1);
+			skb_frag_ref(tmp_skb, skb_shinfo(tmp_skb)->nr_frags - 1);
 	}
 	return 0;
 }
@@ -1876,6 +1904,25 @@ ath12k_dp_tx_mon_generated_response_frm(struct ath12k_pdev_dp *dp_pdev,
 	return 0;
 }
 
+static int
+dp_tx_mon_setup_buf_from_status(struct ath12k_pdev_dp *dp_pdev,
+					struct dp_mon_tx_ppdu_info *ppdu_info)
+{
+	struct hal_tx_mon_status_info *status_info =
+		&dp_pdev->dp_mon_pdev->mon_data.data_status_info;
+
+	if (!status_info->buffer || !status_info->length)
+		return -ENOENT;
+
+	if (!ppdu_info->buffer_addr) {
+		ppdu_info->buffer_addr = status_info->buffer;
+		ppdu_info->buffer_length = status_info->length;
+		ppdu_info->has_buffer_data = true;
+	}
+
+	return 0;
+}
+
 /**
  * ath12k_dp_tx_mon_update_ppdu_info_status() - Update PPDU info based on TLV status
  * @dp_pdev: DP pdev handle
@@ -1958,7 +2005,17 @@ ath12k_dp_tx_mon_update_ppdu_info_status(struct ath12k_pdev_dp *dp_pdev,
 	case HAL_TX_MON_DATA:
 		/* Data frame generation - keep buffer reference for reuse */
 		tx_info->is_used = 1;
-		ret = ath12k_dp_tx_mon_generate_data_frm(tx_ppdu_info,
+		ret = dp_tx_mon_setup_buf_from_status(dp_pdev, tx_ppdu_info);
+		if (ret) {
+			ATH12K_TX_MON_STAT_INC_ERR(dp_pdev, data_gen_failed);
+			ath12k_warn(dp_pdev->dp->ab,
+				    "TX Mon: Failed to setup data buffer for user %u: %d\n",
+				    usr_idx, ret);
+			tx_info->is_used = 0;
+			break;
+		}
+
+		ret = ath12k_dp_tx_mon_generate_data_frm(dp_pdev, tx_ppdu_info,
 							 usr_idx, true);
 		if (ret) {
 			ATH12K_TX_MON_STAT_INC_ERR(dp_pdev, data_gen_failed);
@@ -1983,7 +2040,7 @@ ath12k_dp_tx_mon_update_ppdu_info_status(struct ath12k_pdev_dp *dp_pdev,
 				    ret);
 			tx_info->is_used = 0;
 		} else {
-			ret = ath12k_dp_tx_mon_generate_data_frm(tx_ppdu_info,
+			ret = ath12k_dp_tx_mon_generate_data_frm(dp_pdev, tx_ppdu_info,
 								 usr_idx, false);
 			if (ret) {
 				ATH12K_TX_MON_STAT_INC_ERR(dp_pdev, data_gen_failed);
@@ -2860,6 +2917,56 @@ ath12k_dp_tx_mon_generate_cts_rx_frm(struct ath12k_pdev_dp *dp_pdev,
 }
 
 /**
+ * ath12k_dp_tx_mon_trim_last_frag() - Trim bytes from the tail of the last frag
+ * @dp_pdev: DP PDEV context for logging
+ * @skb: Head SKB, whose fraglist may contain chained SKBs
+ * @trim_len: Number of bytes to remove
+ *
+ * Shrinks the last rx frag of @skb by @trim_len bytes.  When frags have been
+ * distributed across a fraglist chain (as ath12k_dp_tx_mon_generate_data_frm()
+ * does when the head's frags[] array is full), the last frag may live in a
+ * chained SKB rather than in the head itself.  Using the global fraglist count
+ * directly as an index into the head's fixed-size frags[] array overflows
+ * MAX_SKB_FRAGS; this helper walks the chain to find the right owner first.
+ */
+static void ath12k_dp_tx_mon_trim_last_frag(struct ath12k_pdev_dp *dp_pdev,
+					    struct sk_buff *skb, u32 trim_len)
+{
+	struct sk_buff *last_frag_skb = skb;
+	skb_frag_t *last_frag;
+	struct sk_buff *iter;
+	int last_frag_idx;
+
+	skb_walk_frags(skb, iter) {
+		if (skb_shinfo(iter)->nr_frags) {
+			last_frag_skb = iter;
+		} else {
+			ath12k_warn(dp_pdev->dp,
+				    "trim_tail walk: iter=%p has nr_frags=0 len=%u, skipping\n",
+				    iter, iter->len);
+			return;
+		}
+	}
+
+	last_frag_idx = skb_shinfo(last_frag_skb)->nr_frags - 1;
+	last_frag = &skb_shinfo(last_frag_skb)->frags[last_frag_idx];
+	if (skb_frag_size(last_frag) <= trim_len)
+		return;
+
+	skb_coalesce_rx_frag(last_frag_skb,
+			     last_frag_idx,
+			     -trim_len, 0);
+
+	/* skb_coalesce_rx_frag() updated last_frag_skb->{len,data_len}.
+	 * Propagate the change to the head skb when they differ.
+	 */
+	if (last_frag_skb != skb) {
+		skb->len -= trim_len;
+		skb->data_len -= trim_len;
+	}
+}
+
+/**
  * ath12k_dp_tx_mon_frame_trim_mic() - Trim MIC from encrypted frames
  * @skb: SKB containing the frame
  * @ppdu_info: PPDU info structure
@@ -2877,7 +2984,8 @@ ath12k_dp_tx_mon_generate_cts_rx_frm(struct ath12k_pdev_dp *dp_pdev,
  * - Other types: No trimming
  */
 static void
-ath12k_dp_tx_mon_frame_trim_mic(struct sk_buff *skb,
+ath12k_dp_tx_mon_frame_trim_mic(struct ath12k_pdev_dp *dp_pdev,
+				struct sk_buff *skb,
 				struct hal_tx_mon_ppdu_info *ppdu_info,
 				u8 user_idx)
 {
@@ -2924,7 +3032,7 @@ ath12k_dp_tx_mon_frame_trim_mic(struct sk_buff *skb,
 		return;
 
 	if (frag_count > 0)
-		skb_coalesce_rx_frag(skb, frag_count - 1, -trim_len, 0);
+		ath12k_dp_tx_mon_trim_last_frag(dp_pdev, skb, trim_len);
 	else
 		skb_trim(skb, skb->len - trim_len);
 }
@@ -3233,7 +3341,8 @@ ath12k_dp_mon_tx_deliver_frame(struct ath12k_pdev_dp *dp_pdev,
 	int ext_mon_ret;
 
 	if (!is_response_frame)
-		ath12k_dp_tx_mon_frame_trim_mic(skb, ppdu_info, user_idx);
+		ath12k_dp_tx_mon_frame_trim_mic(dp_pdev, skb,
+						ppdu_info, user_idx);
 
 	ath12k_dp_mon_tx_update_mon_info(dp_pdev, &status.mon_info,
 					 ppdu_info, status_info,
