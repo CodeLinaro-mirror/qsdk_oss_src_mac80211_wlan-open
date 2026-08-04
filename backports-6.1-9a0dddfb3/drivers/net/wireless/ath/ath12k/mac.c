@@ -16857,6 +16857,7 @@ skip_pri_link_selection:
 				def_arsta = &ahsta->deflink;
 				wiphy_work_init(&def_arsta->update_wk, ath12k_sta_rc_update_wk);
 				ahsta->assoc_link_id = tmp_link_id;
+				def_arsta->is_assoc_link = true;
 				rcu_assign_pointer(ahsta->link[tmp_link_id], def_arsta);
 				synchronize_rcu();
 
