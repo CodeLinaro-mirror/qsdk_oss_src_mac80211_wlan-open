@@ -2967,6 +2967,49 @@ free_bcn_skb:
 	return ret;
 }
 
+static void
+ath12k_mac_resend_partner_cac_bcn_tmpl(struct ath12k_link_vif *started_arvif)
+{
+	struct ath12k_vif *ahvif = started_arvif->ahvif;
+	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(ahvif);
+	struct ath12k_link_vif *arvif;
+	unsigned long links_map;
+	int ret;
+	u8 link_id;
+
+	if (ahvif->vdev_type != WMI_VDEV_TYPE_AP ||
+	    !ieee80211_vif_is_mld(vif))
+		return;
+
+	if (!started_arvif->chanctx.def.chan)
+		return;
+
+	if (started_arvif->chanctx.def.chan->band == NL80211_BAND_5GHZ)
+		return;
+
+	links_map = ahvif->links_map;
+	for_each_set_bit(link_id, &links_map, IEEE80211_MLD_MAX_NUM_LINKS) {
+		if (link_id == started_arvif->link_id)
+			continue;
+
+		arvif = wiphy_dereference(ahvif->ah->hw->wiphy,
+					     ahvif->link[link_id]);
+		if (!arvif || !arvif->ar || !arvif->is_started ||
+		    !arvif->chanctx.def.chan)
+			continue;
+
+		if (arvif->chanctx.def.chan->band != NL80211_BAND_5GHZ ||
+		    !test_bit(ATH12K_FLAG_CAC_RUNNING, &arvif->ar->dev_flags))
+			continue;
+
+		ret = ath12k_mac_setup_bcn_tmpl(arvif);
+		if (ret)
+			ath12k_warn(arvif->ar->ab,
+				    "failed to update 5G CAC beacon template: %d\n",
+				    ret);
+	}
+}
+
 static void ath12k_update_bcn_tx_status_work(struct wiphy *wiphy,
 					     struct wiphy_work *work)
 {
@@ -24627,6 +24670,7 @@ ath12k_mac_assign_vif_chanctx_handle(struct ieee80211_hw *hw,
 	}
 
 	arvif->is_started = true;
+	ath12k_mac_resend_partner_cac_bcn_tmpl(arvif);
 
 #ifdef CPTCFG_QCN_EXTN
 	if (ath12k_smart_ant_api_start(ar, arvif, SA_NEW_CONFIG) == 0)
