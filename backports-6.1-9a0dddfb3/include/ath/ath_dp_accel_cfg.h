@@ -13,7 +13,6 @@
 #define ATH_SAWF_SVID_VALID 0x1
 #define ATH_SAWF_DSCP_VALID 0x2
 #define ATH_SAWF_PCP_VALID  0x4
-#define QCA_WIFI_NSS_PLUGINS_MSCS 1
 /*
  * wifi classifier metadata
  * ----------------------------------------------------------------------------
