@@ -2238,6 +2238,7 @@ ath12k_htt_pri_link_peer_migrate_indication(struct ath12k_base *ab,
 	int ret;
 	struct ath12k_sta *ahsta = NULL;
 	struct ath12k_pdev_dp *dp_pdev;
+	struct ieee80211_sta *sta;
 
 	msg = (struct ath12k_htt_pri_link_migr_ind_msg *)skb->data;
 
@@ -2300,7 +2301,13 @@ ath12k_htt_pri_link_peer_migrate_indication(struct ath12k_base *ab,
 		goto exit_pri_link_migr_ind;
 	}
 
-	ahsta = ath12k_sta_to_ahsta(ath12k_dp_link_peer_get_sta(peer));
+	sta = ath12k_dp_link_peer_get_sta(peer);
+	if (!sta) {
+		ath12k_warn(pri_ab, "NULL sta\n");
+		goto exit_pri_link_migr_ind;
+	}
+
+	ahsta = ath12k_sta_to_ahsta(sta);
 
 	ahsta->migration_data.ar = arvif->ar;
 	ahsta->migration_data.vdev_id = vdev_id;
