@@ -1966,7 +1966,7 @@ void ath12k_dp_srng_dst_invalidate_entries(struct ath12k_dp *dp,
 	u32 tp, hp;
 	dma_addr_t desc_paddr;
 
-	if (!(srng->flags & HAL_SRNG_FLAGS_CACHED))
+	if (!(srng->flags & HAL_SRNG_FLAGS_CACHED) || !entries)
 		return;
 
 	tp = srng->u.dst_ring.tp;
@@ -1975,7 +1975,7 @@ void ath12k_dp_srng_dst_invalidate_entries(struct ath12k_dp *dp,
 	desc_paddr = srng->ring_base_paddr + (tp * sizeof(u32));
 	if (hp > tp) {
 		dma_sync_single_for_cpu(dp->dev, desc_paddr,
-					entries * sizeof(u32),
+					entries * srng->entry_size * sizeof(u32),
 					DMA_FROM_DEVICE);
 	} else {
 		entries = srng->ring_size - tp;
