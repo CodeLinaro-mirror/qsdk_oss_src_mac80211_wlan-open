@@ -8,6 +8,7 @@
 #include <net/netlink.h>
 #include "core.h"
 #include "vendor.h"
+#include "qca-vendor.h"
 #include "dp_rx.h"
 #include "erp.h"
 #include "debug.h"

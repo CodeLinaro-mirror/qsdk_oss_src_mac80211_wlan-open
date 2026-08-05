@@ -34,6 +34,7 @@
 #include "dp_tx.h"
 #include "dp_tx_mon.h"
 #include "vendor.h"
+#include "qca-vendor.h"
 #include "telemetry_agent_if.h"
 #include "ppe.h"
 #include "cfr.h"
@@ -21711,7 +21712,7 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		ahvif->vdev_type = WMI_VDEV_TYPE_AP;
 		if (wdev && wdev->vap_submode) {
 			ahvif->vap_submode = wdev->vap_submode;
-			if (wdev->vap_submode == QCA_WLAN_VENDOR_VAP_SUBMODE_MESH) {
+			if (wdev->vap_submode == QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_MESH) {
 				arvif->vdev_subtype = WMI_VDEV_SUBTYPE_MESH_NON_11S;
 				if (ab->hw_rev == ATH12K_HW_QCN9625_HW10 ||
 				    ab->hw_rev == ATH12K_HW_QCN9625_HW20) {

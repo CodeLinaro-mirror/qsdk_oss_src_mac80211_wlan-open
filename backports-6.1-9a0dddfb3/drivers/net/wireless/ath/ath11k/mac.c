@@ -27,6 +27,7 @@
 #include "hif.h"
 #include "wow.h"
 #include "vendor.h"
+#include "qca-vendor.h"
 #include "nss.h"
 
 #define CHAN2G(_channel, _freq, _flags) { \
