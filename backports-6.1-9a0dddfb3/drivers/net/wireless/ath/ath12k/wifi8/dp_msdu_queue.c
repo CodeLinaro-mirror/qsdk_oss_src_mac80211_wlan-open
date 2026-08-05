@@ -273,8 +273,12 @@ u8 ath12k_dp_get_chipid_bitmap(struct ath12k_dp_hw_group *dp_hw_grp,
 		if (!partner_dp)
 			continue;
 
-		/* skip programming the cumac chip id */
-		if (partner_dp == ath12k_get_central_dp(partner_dp))
+		/* HW10 implicitly routes add-msdu status to the cumac chip,
+		 * so skip programming it explicitly. HW20 fixed this and
+		 * requires the cumac chip id to be set explicitly too.
+		 */
+		if (partner_dp == ath12k_get_central_dp(partner_dp) &&
+		    partner_dp->ab->hw_rev != ATH12K_HW_QCN9625_HW20)
 			continue;
 
 		bitmap |= BIT(partner_dp->device_id);
