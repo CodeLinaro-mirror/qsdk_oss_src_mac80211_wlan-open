@@ -3646,8 +3646,8 @@ void ath12k_dp_tx_mon_process_ppdu(struct work_struct *work)
 		spin_unlock_bh(&dp_pdev_tx_mon->tx_mon_ppdu_desc_lock);
 		return;
 	}
-	list_splice_init(&dp_pdev_tx_mon->tx_mon_ppdu_desc_used_list,
-			 &dp_pdev_tx_mon->tx_mon_ppdu_desc_proc_list);
+	list_splice_tail_init(&dp_pdev_tx_mon->tx_mon_ppdu_desc_used_list,
+			      &dp_pdev_tx_mon->tx_mon_ppdu_desc_proc_list);
 	spin_unlock_bh(&dp_pdev_tx_mon->tx_mon_ppdu_desc_lock);
 
 	ab = dp_pdev->dp->ab;
