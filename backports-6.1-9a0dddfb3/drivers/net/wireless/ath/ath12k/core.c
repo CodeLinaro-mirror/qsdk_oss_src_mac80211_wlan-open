@@ -5912,7 +5912,7 @@ static void ath12k_core_hw_group_cleanup(struct ath12k_hw_group *ag)
 
 	for (i = 0; i < ag->num_devices; i++) {
 		ab = ag->ab[i];
-		if (!ab)
+		if (!ab || ab->is_bypassed)
 			continue;
 
 		if (!test_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags) &&
