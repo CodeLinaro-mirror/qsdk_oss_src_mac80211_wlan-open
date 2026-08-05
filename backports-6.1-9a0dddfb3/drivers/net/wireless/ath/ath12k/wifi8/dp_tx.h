@@ -21,6 +21,16 @@
 #define ATH12K_DP_TX_SORT_FLOW_DROP_GRACE		2
 #define ATH12K_DP_TX_FLOW_CONTINUOUS_DROP_THRESHOLD	5
 
+/* FW cookie HW link ID field: bits [15:13] of the 20-bit SW cookie.
+ * Encodes the hw_link_id of the chip that owns the buffer, used to
+ * derive the correct FW buffer manager (RBM) in multi-chip configs.
+ */
+#define ATH12K_DP_TX_FW_COOKIE_HW_LINK_ID_M	0x0000E000
+#define ATH12K_DP_TX_FW_COOKIE_HW_LINK_ID_S	13
+#define ATH12K_DP_TX_FW_COOKIE_HW_LINK_ID_GET(_var) \
+	(((_var) & ATH12K_DP_TX_FW_COOKIE_HW_LINK_ID_M) >> \
+	 ATH12K_DP_TX_FW_COOKIE_HW_LINK_ID_S)
+
 /**
  * enum ath12k_wifi8_congstn_ctrl_param_type - congestion control parameter types
  * ATH12K_CONGSTN_CTRL_USED_THRESHOLD: set used_threshold (u32)
@@ -130,16 +140,17 @@ ath12k_wifi8_dp_tx_exception_handler(struct ath12k_dp *dp, int budget)
 	return 0;
 }
 #endif
+
 /*
- * ath12k_wifi8_dp_tx_exception_fw_buf_handler() - WAR for R-TQM completions.
- * Sends SW2TQM FW-completion command for FW-owned buffer (cookie RBM != 0),
- * routing the completion to fw_tqm2sw_ring via C-TQM using
- * HAL_TQM_FW_COMPLETION_BO (637) with return_buffer_manager set to rbm.
+ * ath12k_wifi8_dp_tx_exception_to_tx_comp() - Redirect TX exception buffer
+ * to the normal TX completion ring instead of freeing it directly.
+ * Sends a SW2TQM command so C-TQM routes the completion to the normal TX
+ * completion ring.
  */
-int ath12k_wifi8_dp_tx_exception_fw_buf_handler(struct ath12k_dp *dp,
-						dma_addr_t paddr,
-						u8 rbm,
-						u32 cookie);
+int ath12k_wifi8_dp_tx_exception_to_tx_comp(struct ath12k_dp *dp,
+					    dma_addr_t paddr,
+					    u8 rbm,
+					    u32 cookie);
 int ath12k_wifi8_dp_tqm2sw_fw_handler(struct ath12k_dp *dp, int budget);
 int ath12k_wifi8_dp_tqm_cmd_send(struct ath12k_base *ab,
 				 enum hal_tlv_tag_be type,
