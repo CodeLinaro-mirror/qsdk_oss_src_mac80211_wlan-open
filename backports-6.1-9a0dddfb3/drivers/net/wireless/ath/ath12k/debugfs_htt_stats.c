@@ -15967,7 +15967,7 @@ static int ath12k_open_htt_stats(struct inode *inode,
 		goto err_unlock;
 	}
 
-	stats_req = kzalloc(sizeof(*stats_req) + ATH12K_HTT_STATS_BUF_SIZE, GFP_KERNEL);
+	stats_req = vzalloc(sizeof(*stats_req) + ATH12K_HTT_STATS_BUF_SIZE);
 	if (!stats_req) {
 		ret = -ENOMEM;
 		goto err_unlock;
@@ -15995,7 +15995,7 @@ static int ath12k_open_htt_stats(struct inode *inode,
 
 	return 0;
 out:
-	kfree(stats_req);
+	vfree(stats_req);
 	ar->debug.htt_stats.stats_req = NULL;
 err_unlock:
 	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
@@ -16009,7 +16009,7 @@ static int ath12k_release_htt_stats(struct inode *inode,
 	struct ath12k *ar = inode->i_private;
 
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
-	kfree(file->private_data);
+	vfree(file->private_data);
 	ar->debug.htt_stats.stats_req = NULL;
 	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
 
