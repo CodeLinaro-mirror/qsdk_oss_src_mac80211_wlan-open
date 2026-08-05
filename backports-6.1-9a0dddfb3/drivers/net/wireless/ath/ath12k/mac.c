@@ -11031,6 +11031,47 @@ int ath12k_mac_get_fw_stats(struct ath12k *ar,
 	return 0;
 }
 
+/**
+ * ath12k_pdev_stats_timer_work - periodic pdev stats work handler
+ *
+ * Fires every @ar->pdev_stats_timer_interval ms to request
+ * WMI_REQUEST_PDEV_STAT from firmware.  The WMI event handler
+ * (ath12k_update_stats_event) caches the returned counters in
+ * ar->pdev_{rx_clear_count,cycle_count,chan_nf} under data_lock
+ * so that consumers (chan_util, survey, noise floor) can read
+ * fresh values without issuing a blocking WMI call themselves.
+ *
+ * Self-rearming: re-queues itself at the end unless the interval
+ * has been set to 0 (disabled) or the radio is going down.
+ */
+void ath12k_pdev_stats_timer_work(struct wiphy *wiphy, struct wiphy_work *work)
+{
+	struct ath12k *ar = container_of(container_of(work,
+						  struct wiphy_delayed_work, work),
+					 struct ath12k, pdev_stats_timer);
+	int ret;
+
+	lockdep_assert_wiphy(wiphy);
+
+	if (!ar->pdev_stats_timer_interval)
+		return;
+
+	/* Fire-and-forget WMI send — must not call ath12k_mac_get_fw_stats()
+	 * here because that takes ah->hw_mutex which is already held by the
+	 * wiphy workqueue context, causing a deadlock.  The response arrives
+	 * asynchronously via ath12k_update_stats_event() which caches the
+	 * counters in ar->pdev_{rx_clear_count,cycle_count,chan_nf}.
+	 */
+	ret = ath12k_wmi_send_stats_request_cmd(ar, WMI_REQUEST_PDEV_STAT,
+						 0, ar->pdev->pdev_id);
+	if (ret)
+		ath12k_warn(ar->ab, "pdev stats timer: wmi send failed: %d\n", ret);
+
+	/* Re-arm for the next interval. */
+	wiphy_delayed_work_queue(wiphy, &ar->pdev_stats_timer,
+				 msecs_to_jiffies(ar->pdev_stats_timer_interval));
+}
+
 int ath12k_mac_op_get_txpower(struct ieee80211_hw *hw,
 				     struct ieee80211_vif *vif,
 				     unsigned int link_id,
@@ -19879,6 +19920,11 @@ int ath12k_mac_start(struct ath12k *ar)
 			   ATH12K_INVALID_VDEV_ID, ar->radio_idx, ret);
 		goto err;
 	}
+
+	if (ar->pdev_stats_timer_interval)
+		wiphy_delayed_work_queue(ath12k_ar_to_hw(ar)->wiphy,
+					 &ar->pdev_stats_timer,
+					 msecs_to_jiffies(ar->pdev_stats_timer_interval));
 	return 0;
 err:
 
@@ -20116,6 +20162,7 @@ void ath12k_mac_stop(struct ath12k *ar)
 
 	clear_bit(ATH12K_FLAG_CAC_RUNNING, &ar->dev_flags);
 
+	wiphy_delayed_work_cancel(ath12k_ar_to_hw(ar)->wiphy, &ar->pdev_stats_timer);
 	cancel_delayed_work_sync(&ar->scan.timeout);
 	wiphy_work_cancel(ath12k_ar_to_hw(ar)->wiphy, &ar->scan.vdev_clean_wk);
 	cancel_work_sync(&ar->regd_update_work);
@@ -30194,6 +30241,8 @@ static int ath12k_mac_setup(struct ath12k *ar)
 	wiphy_delayed_work_init(&ar->ap_ps_timer, ath12k_ap_ps_timer_work);
 	ar->ap_ps_mode = ATH12K_GREEN_AP_MODE_DISABLED;
 	ar->ap_ps_timeout = ATH12K_GREEN_AP_PS_TIMEOUT_DEFAULT;
+	wiphy_delayed_work_init(&ar->pdev_stats_timer, ath12k_pdev_stats_timer_work);
+	ar->pdev_stats_timer_interval = 0; /* disabled by default */
 
 	wiphy_work_init(&ar->wmi_mgmt_tx_work, ath12k_mgmt_over_wmi_tx_work);
 	skb_queue_head_init(&ar->wmi_mgmt_tx_queue);

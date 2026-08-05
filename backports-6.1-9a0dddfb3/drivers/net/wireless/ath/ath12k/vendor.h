@@ -4732,6 +4732,11 @@ enum qca_vendor_radio_param {
 	QCA_WLAN_VENDOR_RADIO_PARAM_GET_NFCAL_POWER = 94,
 	QCA_WLAN_VENDOR_RADIO_PARAM_CAL_VER_CHECK = 95,
 	QCA_WLAN_VENDOR_RADIO_PARAM_GET_CHAN_UTIL =  96,
+	/* Set/get the periodic pdev stats timer interval in milliseconds.
+	 * Setting to 0 disables the timer.  Default: 1000 ms.
+	 * Mirrors the qca-wifi OL_ATH_PARAM_MGMT_PDEV_STATS_TIMER knob.
+	 */
+	QCA_WLAN_VENDOR_RADIO_PARAM_PDEV_STATS_TIMER = 97,
 
 	/* Add new params above */
 	QCA_WLAN_VENDOR_RADIO_PARAM_LAST,
