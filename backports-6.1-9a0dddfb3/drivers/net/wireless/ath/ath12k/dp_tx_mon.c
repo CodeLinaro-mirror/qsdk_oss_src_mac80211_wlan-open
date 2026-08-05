@@ -1295,8 +1295,6 @@ int ath12k_dp_tx_mon_generate_data_frm(struct ath12k_pdev_dp *dp_pdev,
 				       struct dp_mon_tx_ppdu_info *ppdu_info,
 				       u8 user_idx, bool take_ref)
 {
-	struct hal_tx_mon_status_info *status_info =
-		&dp_pdev->dp_mon_pdev->mon_data.data_status_info;
 	struct sk_buff *skb, *tmp_skb;
 	struct hal_rx_mon_ppdu_info *rx_status;
 	struct sk_buff_head *mpdu_q;
@@ -1320,16 +1318,8 @@ int ath12k_dp_tx_mon_generate_data_frm(struct ath12k_pdev_dp *dp_pdev,
 	if (ppdu_info->has_buffer_data && ppdu_info->buffer_addr) {
 		buffer_addr = ppdu_info->buffer_addr;
 		buffer_length = ppdu_info->buffer_length;
-
-		page = virt_to_head_page(buffer_addr);
-		frag_offset = buffer_addr - page_address(page);
-
-		if (take_ref) {
-			buffer_addr = status_info->buffer;
-			page = virt_to_head_page(buffer_addr);
-			frag_offset = status_info->offset;
-			buffer_length = status_info->length;
-		}
+		page = ppdu_info->page;
+		frag_offset = ppdu_info->frag_offset;
 
 		tmp_skb = ath12k_dp_mon_get_skb_valid_frag(dp_pdev->dp, skb);
 		if (!tmp_skb) {
@@ -1473,6 +1463,9 @@ ath12k_dp_tx_mon_extract_buffer_info(struct ath12k_pdev_dp *dp_pdev,
 	tx_ppdu_info->msdu_continuation = packet_info->msdu_continuation;
 	tx_ppdu_info->truncated = packet_info->truncated;
 	tx_ppdu_info->has_buffer_data = true;
+	tx_ppdu_info->page = virt_to_head_page(tx_ppdu_info->buffer_addr);
+	tx_ppdu_info->frag_offset = (tx_ppdu_info->buffer_addr -
+				     page_address(tx_ppdu_info->page));
 	ATH12K_TX_MON_STAT_INC(dp_pdev, pkt_buf_processed);
 
 return_mon_desc:
@@ -1927,6 +1920,8 @@ dp_tx_mon_setup_buf_from_status(struct ath12k_pdev_dp *dp_pdev,
 		ppdu_info->buffer_addr = status_info->buffer;
 		ppdu_info->buffer_length = status_info->length;
 		ppdu_info->has_buffer_data = true;
+		ppdu_info->page = virt_to_head_page(ppdu_info->buffer_addr);
+		ppdu_info->frag_offset = status_info->offset;
 	}
 
 	return 0;
