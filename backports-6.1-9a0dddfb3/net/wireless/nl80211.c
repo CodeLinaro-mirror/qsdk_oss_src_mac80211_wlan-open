@@ -20422,11 +20422,16 @@ static int nl80211_erp(struct sk_buff *skb, struct genl_info *info)
 
 		hdr = nl80211hdr_put(msg, info->snd_portid, info->snd_seq, 0,
 				     NL80211_CMD_ERP);
-		if (!hdr)
+		if (!hdr) {
+			nlmsg_free(msg);
 			return -ENOBUFS;
+		}
 
-		if (nla_put_u8(msg, NL80211_ERP_ATTR_STATUS, params.status))
+		if (nla_put_u8(msg, NL80211_ERP_ATTR_STATUS, params.status)) {
+			genlmsg_cancel(msg, hdr);
+			nlmsg_free(msg);
 			return -ENOBUFS;
+		}
 
 		return genlmsg_reply(msg, info);
 	}
