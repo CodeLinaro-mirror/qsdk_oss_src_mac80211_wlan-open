@@ -242,9 +242,13 @@ static void ieee80211_tear_down_links(struct ieee80211_sub_if_data *sdata,
 	for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS; link_id++) {
 		if (!(mask & BIT(link_id)))
 			continue;
-		link = &links[link_id]->data;
-		if (link_id == 0 && !link)
+		if (link_id == 0 && !links[link_id])
 			link = &sdata->deflink;
+		else if (!links[link_id])
+			continue;
+		else
+			link = &links[link_id]->data;
+
 		if (WARN_ON(!link))
 			continue;
 		ieee80211_remove_link_keys(link, &keys);
