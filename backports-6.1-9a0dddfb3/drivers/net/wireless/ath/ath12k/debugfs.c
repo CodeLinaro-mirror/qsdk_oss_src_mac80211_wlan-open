@@ -1518,6 +1518,27 @@ static inline bool ath12k_is_below320mhz_offset_invalid(s32 freq_offset,
 	return ((freq_offset < -half_bw) || (freq_offset > half_bw));
 }
 
+static bool ath12k_is_target_freq_non_dfs(struct ath12k_base *ab,
+					  struct wiphy *wiphy,
+					  u32 center_freq1, s32 freq_offset)
+{
+	u32 target_freq = center_freq1 + freq_offset;
+	/* freq_offset may land between 20 MHz channel boundaries; round to the
+	 * nearest channel center so ieee80211_get_channel() finds a valid entry.
+	 */
+	u32 chan_center = DIV_ROUND_CLOSEST(target_freq, 20) * 20;
+	struct ieee80211_channel *chan = ieee80211_get_channel(wiphy, chan_center);
+
+	if (!chan || !(chan->flags & IEEE80211_CHAN_RADAR)) {
+		ath12k_warn(ab,
+			    "dfs_simulate_radar: %u MHz is not DFS-required, ignoring\n",
+			    target_freq);
+		return true;
+	}
+
+	return false;
+}
+
 static bool ath12k_is_offset_invalid_for_bw(struct ath12k *ar,
 					    s32 freq_offset)
 {
@@ -1550,6 +1571,12 @@ static bool ath12k_is_offset_invalid_for_bw(struct ath12k *ar,
 	}
 
 	ch_width = ath12k_mac_get_chan_width(ctx->def.width);
+
+	if (ch_width != ATH12K_CHWIDTH_320 &&
+	    ath12k_is_target_freq_non_dfs(ar->ab, ath12k_ar_to_hw(ar)->wiphy,
+					  ctx->def.center_freq1, freq_offset))
+		return true;
+
 	switch (ch_width) {
 	case ATH12K_CHWIDTH_320:
 		return ath12k_is_320mhz_offset_invalid(freq_offset);
