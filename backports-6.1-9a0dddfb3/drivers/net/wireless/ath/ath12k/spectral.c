@@ -414,6 +414,7 @@ static void ath12k_spectral_init_param_min_max(struct ath12k *ar)
 int ath12k_spectral_start_scan(struct ath12k *ar)
 {
 	struct ath12k_link_vif *arvif;
+	enum spectral_scan_mode smode;
 	int ret;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
@@ -459,6 +460,16 @@ int ath12k_spectral_start_scan(struct ath12k *ar)
 		return ret;
 
 	spin_lock_bh(&ar->spectral.lock);
+	smode = ar->spectral.mode;
+
+	if (smode >= SPECTRAL_SCAN_MODE_MAX) {
+		spin_unlock_bh(&ar->spectral.lock);
+		return 0;
+	}
+
+	ar->spectral.last_fft_timestamp[smode] = 0;
+	ar->spectral.timestamp_war_offset[smode] = 0;
+	ar->spectral.samples_done = 0;   /* reset per-scan counter */
 	ar->spectral.scan_active = true;
 	spin_unlock_bh(&ar->spectral.lock);
 
@@ -499,7 +510,12 @@ int ath12k_spectral_stop_scan(struct ath12k *ar)
 	spin_lock_bh(&ar->spectral.lock);
 	ar->spectral.mode = SPECTRAL_SCAN_MODE_INVALID;
 	ar->spectral.scan_active = false;
+	ar->spectral.last_fft_timestamp[SPECTRAL_SCAN_MODE_NORMAL] = 0;
+	ar->spectral.timestamp_war_offset[SPECTRAL_SCAN_MODE_NORMAL] = 0;
+	ar->spectral.samples_done = 0;
 	spin_unlock_bh(&ar->spectral.lock);
+
+	ath12k_spectral_reset_buffer(ar);
 
 	/* Cancel after dropping the spectral lock — the hrtimer cb takes the
 	 * same lock, so cancelling while holding it would deadlock.
