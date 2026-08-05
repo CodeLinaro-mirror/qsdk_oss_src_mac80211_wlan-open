@@ -2721,6 +2721,10 @@ static int ath12k_mac_config_vdev_vht_ratemask(struct ath12k_link_vif *arvif,
 	/* higher 32 bits in higher64 is not valid for VHT */
 	arg.mask_lower32_2 = lower_32_bits(higher64);
 
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_mac_vht_mcs10_11_ratemask_extn(arvif, &arg);
+#endif /* CPTCFG_QCN_EXTN */
+
 	ret = ath12k_wmi_vdev_rate_mask(arvif->ar, &arg);
 	if (ret)
 		ath12k_warn(arvif->ar->ab, "failed to submit vdev rate mask command: %d\n",
@@ -4279,6 +4283,10 @@ static void ath12k_peer_assoc_h_vht(struct ath12k *ar,
 	arg->tx_mcs_set &= ~IEEE80211_VHT_MCS_SUPPORT_0_11_MASK;
 	arg->tx_mcs_set |= IEEE80211_DISABLE_VHT_MCS_SUPPORT_0_11;
 
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_peer_assoc_h_vht_mcs10_11_extn(ar, arvif, arsta, arg);
+#endif /* CPTCFG_QCN_EXTN */
+
 	if ((arg->tx_mcs_set & IEEE80211_VHT_MCS_NOT_SUPPORTED) ==
 			IEEE80211_VHT_MCS_NOT_SUPPORTED)
 		arg->peer_vht_caps &= ~IEEE80211_VHT_CAP_MU_BEAMFORMEE_CAPABLE;
@@ -4445,6 +4453,9 @@ static void ath12k_peer_assoc_h_he(struct ath12k *ar,
 	       sizeof(he_cap->he_cap_elem.mac_cap_info));
 	memcpy(&arg->peer_he_cap_phyinfo, he_cap->he_cap_elem.phy_cap_info,
 	       sizeof(he_cap->he_cap_elem.phy_cap_info));
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_peer_assoc_h_he_cap_internal_extn(ar, arsta, arg, band);
+#endif /* CPTCFG_QCN_EXTN */
 
 	if (ath12k_mac_is_bridge_vdev(arvif))
 		peer_he_ops = 0;
@@ -20988,6 +20999,18 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	}
 
 	spin_lock_bh(&ar->ab->base_lock);
+
+#ifdef CPTCFG_QCN_EXTN
+	/* Enable VHT MCS 10/11 (1024-QAM) by default when the hardware
+	 * reports support via the extended vht_supp_mcs bitmap.
+	 * Non-QCA peer support (nq2q) is disabled by default; it can be
+	 * enabled via the QCA_WLAN_VENDOR_VDEV_PARAM_VHT_MCS_10_11_NQ2Q_PEER_SUPP
+	 * vendor command.
+	 */
+	arvif->arvif_extn.vht_mcs10_11_supp = !!ar->pdev->cap.vht_higher_mcs_supp;
+	arvif->arvif_extn.vht_mcs10_11_nq2q_peer_supp = false;
+#endif
+
 	if (!ab->free_vdev_map) {
 		spin_unlock_bh(&ar->ab->base_lock);
 		ath12k_warn(ar->ab, "[vdev_id : %s radio_idx : %u] failed to create vdev. No free vdev id left.\n",

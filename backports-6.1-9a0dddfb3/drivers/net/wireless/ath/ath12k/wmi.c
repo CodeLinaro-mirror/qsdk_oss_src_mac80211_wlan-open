@@ -878,6 +878,14 @@ ath12k_pull_mac_phy_cap_svc_ready_ext(struct ath12k_wmi_pdev *wmi_handle,
 	if (supported_bands & WMI_HOST_WLAN_2GHZ_CAP) {
 		pdev_cap->vht_cap = le32_to_cpu(mac_caps->vht_cap_info_2g);
 		pdev_cap->vht_mcs = le32_to_cpu(mac_caps->vht_supp_mcs_2g);
+#ifdef CPTCFG_QCN_EXTN
+		/* Extract per-SS MCS10/11 bitmap from bits [23:16] of vht_supp_mcs.
+		 * Bit 24 is the validity flag; only store when it is set.
+		 */
+		if (pdev_cap->vht_mcs & BIT(24))
+			pdev_cap->vht_higher_mcs_supp =
+				(pdev_cap->vht_mcs >> 16) & 0xff;
+#endif
 		pdev_cap->tx_chain_mask = le32_to_cpu(mac_caps->tx_chain_mask_2g);
 		pdev_cap->rx_chain_mask = le32_to_cpu(mac_caps->rx_chain_mask_2g);
 	}
@@ -885,6 +893,11 @@ ath12k_pull_mac_phy_cap_svc_ready_ext(struct ath12k_wmi_pdev *wmi_handle,
 	if (supported_bands & WMI_HOST_WLAN_5GHZ_CAP) {
 		pdev_cap->vht_cap = le32_to_cpu(mac_caps->vht_cap_info_5g);
 		pdev_cap->vht_mcs = le32_to_cpu(mac_caps->vht_supp_mcs_5g);
+#ifdef CPTCFG_QCN_EXTN
+		if (pdev_cap->vht_mcs & BIT(24))
+			pdev_cap->vht_higher_mcs_supp =
+				(pdev_cap->vht_mcs >> 16) & 0xff;
+#endif
 		pdev_cap->he_mcs = le32_to_cpu(mac_caps->he_supp_mcs_5g);
 		pdev_cap->tx_chain_mask = le32_to_cpu(mac_caps->tx_chain_mask_5g);
 		pdev_cap->rx_chain_mask = le32_to_cpu(mac_caps->rx_chain_mask_5g);
@@ -915,6 +928,10 @@ ath12k_pull_mac_phy_cap_svc_ready_ext(struct ath12k_wmi_pdev *wmi_handle,
 		cap_band->he_cap_info[0] = le32_to_cpu(mac_caps->he_cap_info_2g);
 		cap_band->he_cap_info[1] = le32_to_cpu(mac_caps->he_cap_info_2g_ext);
 		cap_band->he_mcs = le32_to_cpu(mac_caps->he_supp_mcs_2g);
+#ifdef CPTCFG_QCN_EXTN
+		cap_band->he_cap_info_internal =
+			le32_to_cpu(mac_caps->he_cap_info_internal);
+#endif
 		for (i = 0; i < WMI_MAX_HECAP_PHY_SIZE; i++)
 			cap_band->he_cap_phy_info[i] =
 				le32_to_cpu(mac_caps->he_cap_phy_info_2g[i]);
@@ -936,6 +953,10 @@ ath12k_pull_mac_phy_cap_svc_ready_ext(struct ath12k_wmi_pdev *wmi_handle,
 		cap_band->he_cap_info[0] = le32_to_cpu(mac_caps->he_cap_info_5g);
 		cap_band->he_cap_info[1] = le32_to_cpu(mac_caps->he_cap_info_5g_ext);
 		cap_band->he_mcs = le32_to_cpu(mac_caps->he_supp_mcs_5g);
+#ifdef CPTCFG_QCN_EXTN
+		cap_band->he_cap_info_internal =
+			le32_to_cpu(mac_caps->he_cap_info_internal);
+#endif
 		for (i = 0; i < WMI_MAX_HECAP_PHY_SIZE; i++)
 			cap_band->he_cap_phy_info[i] =
 				le32_to_cpu(mac_caps->he_cap_phy_info_5g[i]);

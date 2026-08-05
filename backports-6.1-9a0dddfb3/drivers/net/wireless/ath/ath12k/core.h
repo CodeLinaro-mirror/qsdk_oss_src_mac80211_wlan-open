@@ -286,7 +286,13 @@ enum ath12k_bdf_search {
 };
 
 #define ATH12K_HT_MCS_MAX	7
+#ifdef CPTCFG_QCN_EXTN
+#define ATH12K_VHT_MCS_10_11_MAX	11
+#define ATH12K_VHT_MCS_MAX	ATH12K_VHT_MCS_10_11_MAX
+#else
 #define ATH12K_VHT_MCS_MAX	9
+#endif
+
 #define ATH12K_HE_MCS_MAX	13
 #define ATH12K_EHT_MCS_MAX	15
 #define ATH12K_UHR_MCS_MAX	23
@@ -2318,6 +2324,13 @@ struct ath12k_band_cap {
 	u32 he_cap_phy_info[PSOC_HOST_MAX_PHY_SIZE];
 	struct ath12k_wmi_ppe_threshold_arg he_ppet;
 	u16 he_6ghz_capa;
+	/* QCA-internal HE capability word from FW SERVICE_READY_EXT.
+	 * bit 0: RX 1xLTF + 0.4us GI in HE SU PPDU
+	 * bit 1: RX 2xLTF + 0.4us GI in HE SU PPDU
+	 * bit 2: 2xLTF in 160/80+80 MHz HE PPDU
+	 * Matches WMI_HE_CAP_1X_LTF_400NS_GI_SUPPORT etc. macros.
+	 */
+	u32 he_cap_info_internal;
 	u32 eht_cap_mac_info[WMI_MAX_EHTCAP_MAC_SIZE];
 	u32 eht_cap_phy_info[WMI_MAX_EHTCAP_PHY_SIZE];
 	u32 uhr_cap_mac_info[WMI_MAX_UHRCAP_MAC_SIZE];
@@ -2336,6 +2349,11 @@ struct ath12k_pdev_cap {
 	u32 ampdu_density;
 	u32 vht_cap;
 	u32 vht_mcs;
+	/* Per-SS MCS10/11 bitmap extracted from FW vht_supp_mcs bits [23:16].
+	 * Bit N set means NSS (N+1) supports VHT MCS 10 and 11.
+	 * Zero means MCS10/11 is not supported by the hardware.
+	 */
+	u8 vht_higher_mcs_supp;
 	/* EHT Duplicate in 6 GHz (MCS14): set when FW reports support in
 	 * service_ready_ext eht_cap_phy_info[1] bit 23.
 	 */
