@@ -1376,6 +1376,25 @@ static const struct qmi_elem_info qmi_wlanfw_ind_register_req_msg_v01_ei[] = {
 					   request_mem_free),
 	},
 	{
+		.data_type	= QMI_OPT_FLAG,
+		.elem_len	= 1,
+		.elem_size	= sizeof(u8),
+		.array_type	= NO_ARRAY,
+		.tlv_type	= 0x29,
+		.offset		= offsetof(struct qmi_wlanfw_ind_register_req_msg_v01,
+					   request_cma_mem_enable_valid),
+	},
+	{
+		.data_type	= QMI_UNSIGNED_1_BYTE,
+		.elem_len	= 1,
+		.elem_size	= sizeof(u8),
+		.array_type	= NO_ARRAY,
+		.tlv_type	= 0x29,
+		.offset		= offsetof(struct qmi_wlanfw_ind_register_req_msg_v01,
+					   request_cma_mem_enable),
+	},
+
+	{
 		.data_type	= QMI_EOTI,
 		.array_type	= NO_ARRAY,
 		.tlv_type	= QMI_COMMON_TLV_TYPE,
@@ -3512,6 +3531,141 @@ struct qmi_elem_info qmi_wlfw_mlo_reconfig_info_resp_msg_v01_ei[] = {
 	},
 };
 
+static const struct qmi_elem_info qmi_wlanfw_cma_mem_seg_s_v01_ei[] = {
+	{
+		.data_type	= QMI_UNSIGNED_4_BYTE,
+		.elem_len	= 1,
+		.elem_size	= sizeof(u32),
+		.array_type	= NO_ARRAY,
+		.tlv_type	= 0,
+		.offset		= offsetof(struct
+					   qmi_wlanfw_cma_mem_seg_s_v01,
+					   size),
+	},
+	{
+		.data_type	= QMI_SIGNED_4_BYTE_ENUM,
+		.elem_len	= 1,
+		.elem_size	= sizeof(enum qmi_wlanfw_mem_type_enum_v01),
+		.array_type	= NO_ARRAY,
+		.tlv_type	= 0,
+		.offset		= offsetof(struct
+					   qmi_wlanfw_cma_mem_seg_s_v01,
+					   type),
+	},
+	{
+		.data_type	= QMI_DATA_LEN,
+		.elem_len	= 1,
+		.elem_size	= sizeof(u8),
+		.array_type	= NO_ARRAY,
+		.tlv_type	= 0,
+		.offset		= offsetof(struct
+					   qmi_wlanfw_cma_mem_seg_s_v01,
+					   mem_cfg_len),
+	},
+	{
+		.data_type	= QMI_STRUCT,
+		.elem_len	= QMI_WLANFW_MAX_NUM_MEM_CFG_V01,
+		.elem_size	= sizeof(struct qmi_wlanfw_mem_cfg_s_v01),
+		.array_type	= VAR_LEN_ARRAY,
+		.tlv_type	= 0,
+		.offset		= offsetof(struct
+					   qmi_wlanfw_cma_mem_seg_s_v01,
+					   mem_cfg),
+		.ei_array	= qmi_wlanfw_mem_cfg_s_v01_ei,
+	},
+	{
+		.data_type	= QMI_UNSIGNED_1_BYTE,
+		.elem_len	= 1,
+		.elem_size	= sizeof(u8),
+		.array_type	= NO_ARRAY,
+		.tlv_type	= 0,
+		.offset		= offsetof(struct
+					   qmi_wlanfw_cma_mem_seg_s_v01,
+					   persist),
+	},
+	{
+		.data_type	= QMI_EOTI,
+		.array_type	= NO_ARRAY,
+		.tlv_type	= QMI_COMMON_TLV_TYPE,
+	},
+};
+
+static const struct qmi_elem_info qmi_wlanfw_request_cma_mem_ind_msg_v01_ei[] = {
+	{
+		.data_type	= QMI_DATA_LEN,
+		.elem_len	= 1,
+		.elem_size	= sizeof(u8),
+		.array_type	= NO_ARRAY,
+		.tlv_type	= 0x01,
+		.offset		= offsetof(struct
+					   qmi_wlanfw_request_cma_mem_ind_msg_v01,
+					   mem_seg_len),
+	},
+	{
+		.data_type	= QMI_STRUCT,
+		.elem_len	= ATH12K_QMI_WLANFW_MAX_NUM_MEM_SEG_V01,
+		.elem_size	= sizeof(struct qmi_wlanfw_cma_mem_seg_s_v01),
+		.array_type	= VAR_LEN_ARRAY,
+		.tlv_type	= 0x01,
+		.offset		= offsetof(struct
+					   qmi_wlanfw_request_cma_mem_ind_msg_v01,
+					   mem_seg),
+		.ei_array	= qmi_wlanfw_cma_mem_seg_s_v01_ei,
+	},
+	{
+		.data_type	= QMI_EOTI,
+		.array_type	= NO_ARRAY,
+		.tlv_type	= QMI_COMMON_TLV_TYPE,
+	},
+};
+
+static const struct qmi_elem_info qmi_wlanfw_respond_cma_mem_req_msg_v01_ei[] = {
+	{
+		.data_type	= QMI_DATA_LEN,
+		.elem_len	= 1,
+		.elem_size	= sizeof(u8),
+		.array_type	= NO_ARRAY,
+		.tlv_type	= 0x01,
+		.offset		= offsetof(struct
+					   qmi_wlanfw_respond_cma_mem_req_msg_v01,
+					   mem_seg_len),
+	},
+	{
+		.data_type	= QMI_STRUCT,
+		.elem_len	= ATH12K_QMI_WLANFW_MAX_NUM_MEM_SEG_V01,
+		.elem_size	= sizeof(struct qmi_wlanfw_mem_seg_resp_s_v01),
+		.array_type	= VAR_LEN_ARRAY,
+		.tlv_type	= 0x01,
+		.offset		= offsetof(struct
+					   qmi_wlanfw_respond_cma_mem_req_msg_v01,
+					   mem_seg),
+		.ei_array	= qmi_wlanfw_mem_seg_resp_s_v01_ei,
+	},
+	{
+		.data_type	= QMI_EOTI,
+		.array_type	= NO_ARRAY,
+		.tlv_type	= QMI_COMMON_TLV_TYPE,
+	},
+};
+
+static const struct qmi_elem_info qmi_wlanfw_respond_cma_mem_resp_msg_v01_ei[] = {
+	{
+		.data_type	= QMI_STRUCT,
+		.elem_len	= 1,
+		.elem_size	= sizeof(struct qmi_response_type_v01),
+		.array_type	= NO_ARRAY,
+		.tlv_type	= 0x02,
+		.offset		= offsetof(struct
+					   qmi_wlanfw_respond_cma_mem_resp_msg_v01,
+					   resp),
+		.ei_array	= qmi_response_type_v01_ei,
+	},
+	{
+		.data_type	= QMI_EOTI,
+		.array_type	= NO_ARRAY,
+		.tlv_type	= QMI_COMMON_TLV_TYPE,
+	},
+};
 static void ath12k_host_cap_hw_link_id_init(struct ath12k_hw_group *ag)
 {
 	struct ath12k_base *ab, *partner_ab;
@@ -4104,6 +4258,8 @@ static int ath12k_qmi_fw_ind_register_send(struct ath12k_base *ab)
 	req->ddr_dump_region_enable = 1;
 	req->request_mem_free_valid = 1;
 	req->request_mem_free = 1;
+	req->request_cma_mem_enable_valid = 1;
+	req->request_cma_mem_enable = 1;
 
 	req->pin_connect_result_enable_valid = 0;
 	req->pin_connect_result_enable = 0;
@@ -4673,6 +4829,7 @@ static int ath12k_qmi_alloc_target_mem_chunk(struct ath12k_base *ab,
 		chunk = &ab->qmi.target_mem[seg_cnt];
 		chunk->type = req_mem[i].type;
 		chunk->size = req_mem[i].size;
+		chunk->persist = req_mem[i].persist;
 
 		/* Allocate memory for the region and the functionality supported
 		 * on the host. For the non-supported memory region, host does not
@@ -4729,7 +4886,12 @@ static int ath12k_qmi_alloc_target_mem_chunk(struct ath12k_base *ab,
 				ret = ath12k_qmi_alloc_chunk(ab, chunk, dev);
 				if (ret)
 					goto err;
-				if (chunk->type == CALDB_MEM_REGION_TYPE)
+				/* Mark chunk persistent if it's a caldb segment
+				 * or if FW explicitly requested persistence
+				 * (e.g. via the CMA mem indication persist flag).
+				 */
+				if (chunk->type == CALDB_MEM_REGION_TYPE ||
+				    chunk->persist)
 					chunk->persist = true;
 			}
 			seg_cnt++;
@@ -6761,6 +6923,124 @@ int ath12k_qmi_event_mem_request(struct ath12k_qmi *qmi, void *data)
 	return ret;
 }
 
+static noinline_for_stack
+int ath12k_qmi_respond_fw_cma_mem_request(struct ath12k_base *ab, void *data)
+{
+	struct qmi_wlanfw_respond_cma_mem_req_msg_v01 *req;
+	struct qmi_wlanfw_respond_cma_mem_resp_msg_v01 resp = {};
+	struct qmi_txn txn;
+	int ret, idx, i, seg_start_idx;
+	int *curr_seg_cnt = data;
+
+	req = kzalloc(sizeof(*req), GFP_KERNEL);
+	if (!req)
+		return -ENOMEM;
+
+	req->mem_seg_len = *curr_seg_cnt;
+	seg_start_idx = ab->qmi.mem_seg_count - *curr_seg_cnt;
+	for (idx = 0, i = seg_start_idx; i < ab->qmi.mem_seg_count; i++, idx++) {
+		req->mem_seg[idx].addr = ab->qmi.target_mem[i].paddr;
+		req->mem_seg[idx].size = ab->qmi.target_mem[i].size;
+		req->mem_seg[idx].type = ab->qmi.target_mem[i].type;
+		ath12k_dbg(ab, ATH12K_DBG_QMI,
+			   "qmi cma req mem_seg[%d] %pad %u %u\n", idx,
+			   &ab->qmi.target_mem[i].paddr,
+			   ab->qmi.target_mem[i].size,
+			   ab->qmi.target_mem[i].type);
+	}
+
+	ret = qmi_txn_init(&ab->qmi.handle, &txn,
+			   qmi_wlanfw_respond_cma_mem_resp_msg_v01_ei, &resp);
+	if (ret < 0)
+		goto out;
+
+	ret = qmi_send_request(&ab->qmi.handle, NULL, &txn,
+			       QMI_WLANFW_RESPOND_CMA_MEM_REQ_V01,
+			       QMI_WLANFW_RESPOND_CMA_MEM_REQ_MSG_V01_MAX_MSG_LEN,
+			       qmi_wlanfw_respond_cma_mem_req_msg_v01_ei, req);
+	if (ret < 0) {
+		qmi_txn_cancel(&txn);
+		ath12k_warn(ab, "qmi failed to respond cma mem request, err = %d\n",
+			    ret);
+		goto out;
+	}
+
+	ret = qmi_txn_wait(&txn, msecs_to_jiffies(ATH12K_QMI_WLANFW_TIMEOUT_MS));
+	if (ret < 0) {
+		ath12k_warn(ab, "qmi cma mem request wait failed, err = %d\n", ret);
+		goto out;
+	}
+
+	if (resp.resp.result != QMI_RESULT_SUCCESS_V01) {
+		ath12k_warn(ab, "respond cma mem req failed, result: %d, err: %d\n",
+			    resp.resp.result, resp.resp.error);
+		ret = -EINVAL;
+	}
+out:
+	kfree(req);
+	return ret;
+}
+
+static void ath12k_qmi_msg_cma_mem_request_cb(struct qmi_handle *qmi_hdl,
+					       struct sockaddr_qrtr *sq,
+					       struct qmi_txn *txn,
+					       const void *data)
+{
+	struct ath12k_qmi *qmi = container_of(qmi_hdl, struct ath12k_qmi, handle);
+	struct ath12k_base *ab = qmi->ab;
+	const struct qmi_wlanfw_request_cma_mem_ind_msg_v01 *msg = data;
+	struct target_mem_chunk *req_mem;
+	int *event_data;
+	int i, ret;
+	u32 req_mem_seg_count;
+
+	ath12k_dbg(ab, ATH12K_DBG_QMI, "qmi firmware request cma memory\n");
+
+	if (msg->mem_seg_len == 0 ||
+	    msg->mem_seg_len > ATH12K_QMI_WLANFW_MAX_NUM_MEM_SEG_V01) {
+		ath12k_warn(ab, "Invalid cma memory segment length: %u\n",
+			    msg->mem_seg_len);
+		return;
+	}
+
+	event_data = kzalloc(sizeof(*event_data), GFP_KERNEL);
+	if (!event_data)
+		return;
+
+	req_mem = kcalloc(msg->mem_seg_len, sizeof(*req_mem), GFP_KERNEL);
+	if (!req_mem) {
+		kfree(event_data);
+		return;
+	}
+
+	req_mem_seg_count = msg->mem_seg_len;
+	for (i = 0; i < req_mem_seg_count; i++) {
+		req_mem[i].type = msg->mem_seg[i].type;
+		req_mem[i].size = msg->mem_seg[i].size;
+		/* Propagate the persist flag from FW so that
+		 * ath12k_qmi_alloc_target_mem_chunk() parks this chunk
+		 * across recovery just like CALDB segments.
+		 */
+		req_mem[i].persist = msg->mem_seg[i].persist;
+		ath12k_dbg(ab, ATH12K_DBG_QMI,
+			   "qmi cma mem seg type %d size %d persist %d\n",
+			   msg->mem_seg[i].type, msg->mem_seg[i].size,
+			   msg->mem_seg[i].persist);
+	}
+
+	ret = ath12k_qmi_alloc_target_mem_chunk(ab, req_mem, req_mem_seg_count);
+	if (ret != req_mem_seg_count) {
+		ath12k_warn(ab, "qmi failed to alloc cma target memory: %d\n", ret);
+		kfree(event_data);
+		kfree(req_mem);
+		return;
+	}
+
+	kfree(req_mem);
+	*event_data = ret;
+	ath12k_qmi_driver_event_post(qmi, ATH12K_QMI_EVENT_REQUEST_CMA_MEM, event_data);
+}
+
 static int ath12k_qmi_request_device_info(struct ath12k_base *ab)
 {
 	struct qmi_wlanfw_device_info_req_msg_v01 req;
@@ -7123,6 +7403,14 @@ static const struct qmi_msg_handler ath12k_qmi_msg_handlers[] = {
 			sizeof(struct qmi_wlanfw_request_mem_free_ind_msg_v01),
 		.fn = ath12k_qmi_msg_mem_free_request_cb,
 	},
+	{
+		.type = QMI_INDICATION,
+		.msg_id = QMI_WLANFW_REQUEST_CMA_MEM_IND_V01,
+		.ei = qmi_wlanfw_request_cma_mem_ind_msg_v01_ei,
+		.decoded_size =
+			sizeof(struct qmi_wlanfw_request_cma_mem_ind_msg_v01),
+		.fn = ath12k_qmi_msg_cma_mem_request_cb,
+	},
 
 	/* end of list */
 	{},
@@ -7309,6 +7597,11 @@ static void ath12k_qmi_driver_event_work(struct work_struct *work)
 			break;
 		case ATH12K_QMI_EVENT_M3_DUMP_UPLOAD_REQ:
 			ath12k_qmi_event_m3_dump_upload_req(qmi, event->data);
+			break;
+		case ATH12K_QMI_EVENT_REQUEST_CMA_MEM:
+			ret = ath12k_qmi_respond_fw_cma_mem_request(ab, event->data);
+			if (ret < 0)
+				set_bit(ATH12K_FLAG_QMI_FAIL, &ab->dev_flags);
 			break;
 		default:
 			ath12k_warn(ab, "invalid event type: %d", event->type);
