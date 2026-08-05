@@ -9713,26 +9713,32 @@ static int ath12k_copy_afc_power_event_fixed_info(struct ath12k_base *ab,
 						  const void *ptr,
 						  u16 len)
 {
-	struct wmi_afc_power_event_param *afc_pwr_param;
 	struct ath12k_afc_sp_reg_info *afc_reg_info;
+	struct wmi_afc_power_event_param afc_pwr_param = {};
+	size_t copy_len;
 
-	afc_pwr_param = (struct wmi_afc_power_event_param *)ptr;
+	if (!ptr)
+		return -EINVAL;
+
+	copy_len = min_t(size_t, len, sizeof(afc_pwr_param));
+	memcpy(&afc_pwr_param, ptr, copy_len);
+
 	afc_reg_info = kzalloc(sizeof(*afc_reg_info), GFP_ATOMIC);
 
 	if (!afc_reg_info)
 		return -ENOMEM;
 
 	afc_reg_info->fw_status_code =
-				le32_to_cpu(afc_pwr_param->fw_status_code);
-	afc_reg_info->resp_id = le32_to_cpu(afc_pwr_param->resp_id);
+				le32_to_cpu(afc_pwr_param.fw_status_code);
+	afc_reg_info->resp_id = le32_to_cpu(afc_pwr_param.resp_id);
 	afc_reg_info->serv_resp_code =
-				le32_to_cpu(afc_pwr_param->afc_serv_resp_code);
+				le32_to_cpu(afc_pwr_param.afc_serv_resp_code);
 	afc_reg_info->afc_wfa_version =
-				le32_to_cpu(afc_pwr_param->afc_wfa_version);
+				le32_to_cpu(afc_pwr_param.afc_wfa_version);
 	afc_reg_info->avail_exp_time_d =
-				le32_to_cpu(afc_pwr_param->avail_exp_time_d);
+				le32_to_cpu(afc_pwr_param.avail_exp_time_d);
 	afc_reg_info->avail_exp_time_t =
-				le32_to_cpu(afc_pwr_param->avail_exp_time_t);
+				le32_to_cpu(afc_pwr_param.avail_exp_time_t);
 	afc->afc_reg_info = afc_reg_info;
 
 	ath12k_dbg(ab, ATH12K_DBG_AFC,
@@ -9836,8 +9842,12 @@ static int ath12k_wmi_afc_fill_chan_obj(struct ath12k_base *ab,
 			   chan_obj[i].global_opclass, chan_obj[i].num_chans);
 		eirp_info = kzalloc(chan_obj[i].num_chans * sizeof(*eirp_info),
 				    GFP_ATOMIC);
-		if (!eirp_info)
+		if (!eirp_info) {
+			while (--i >= 0)
+				kfree(chan_obj[i].chan_eirp_info);
+			kfree(chan_obj);
 			return -ENOMEM;
+		}
 
 		chan_obj[i].chan_eirp_info = eirp_info;
 	}
@@ -9866,6 +9876,13 @@ static int ath12k_wmi_afc_fill_chan_eirp_obj(struct ath12k_base *ab,
 		ath12k_dbg(ab, ATH12K_DBG_AFC, "Chan obj %d Chan eirp count %d\n",
 			   idx1, eirp_count);
 		for (idx2 = 0; idx2 < eirp_count; ++idx2) {
+			if (count >= total_eirp_info) {
+				ath12k_warn(ab,
+					    "AFC chan EIRP info truncated at chan obj %d idx %d, available %u\n",
+					    idx1, idx2, total_eirp_info);
+				return 0;
+			}
+
 			eirp_obj[idx2].cfi =
 				le32_to_cpu(eirp_buf[count].channel_cfi);
 			eirp_obj[idx2].eirp_power =
@@ -9892,10 +9909,17 @@ static int ath12k_copy_afc_expiry_event(struct ath12k_base *ab,
 					struct ath12k_afc_info *afc, const void *ptr,
 					u16 len)
 {
-	struct wmi_afc_expiry_event_param *param = (struct wmi_afc_expiry_event_param *)ptr;
+	struct wmi_afc_expiry_event_param param = {};
+	size_t copy_len;
 
-	afc->request_id = param->request_id;
-	afc->event_subtype = param->event_subtype;
+	if (!ptr)
+		return -EINVAL;
+
+	copy_len = min_t(size_t, len, sizeof(param));
+	memcpy(&param, ptr, copy_len);
+
+	afc->request_id = le32_to_cpu(param.request_id);
+	afc->event_subtype = le32_to_cpu(param.event_subtype);
 	ath12k_dbg(ab, ATH12K_DBG_WMI, "Received AFC expiry request id %u subtye %d\n",
 		   afc->request_id, afc->event_subtype);
 	return 0;
