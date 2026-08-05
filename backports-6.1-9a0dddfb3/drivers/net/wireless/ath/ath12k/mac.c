@@ -11252,6 +11252,7 @@ work_complete:
 	ar->scan.scan_id = 0;
 	ar->scan.parallel_scan_id = 0;
 	ar->scan.state = ATH12K_SCAN_IDLE;
+	ar->scan.is_roc = false;
 	ar->scan_channel = NULL;
 	ar->scan.roc_freq = 0;
 	spin_unlock_bh(&ar->data_lock);
@@ -28325,6 +28326,19 @@ int ath12k_mac_op_cancel_remain_on_channel(struct ieee80211_hw *hw,
 	spin_unlock_bh(&ar->data_lock);
 
 	ath12k_scan_abort(ar);
+
+	/* ath12k_scan_abort() may resolve is_roc via the normal scan cleanup
+	 * path (ath12k_scan_vdev_clean_work()), but in some scan states it
+	 * bails out without ever reaching that path (see the
+	 * ATH12K_SCAN_IDLE/STARTING/ABORTING branches in
+	 * ath12k_scan_abort()). Since the roc_done watchdog is
+	 * unconditionally cancelled below, is_roc must be force-cleared here
+	 * too, otherwise it could remain stuck at true with no remaining
+	 * cleanup path.
+	 */
+	spin_lock_bh(&ar->data_lock);
+	ar->scan.is_roc = false;
+	spin_unlock_bh(&ar->data_lock);
 
 	cancel_delayed_work_sync(&ar->scan.timeout);
 	cancel_delayed_work_sync(&ar->scan.roc_done);
