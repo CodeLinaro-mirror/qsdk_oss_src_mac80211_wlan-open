@@ -6317,8 +6317,9 @@ int ath12k_core_init(struct ath12k_base *ab)
 		ath12k_err(ab, "Unable to create telemetry psoc agent object: %d\n", ret);
 
 #if defined(CONFIG_BRIDGE_MCAST_OFFLOAD)
-	ath12k_core_me_notifier_register_extn(ab);
-	set_bit(__NB_FLAGS_REGISTERED, &ab->me.nb_flags);
+	ret = ath12k_core_me_notifier_register_extn(ab);
+	if (ret)
+		ath12k_err(ab, "Bridge MCAST notifier already registered\n");
 #endif
 
 #ifdef CPTCFG_ATHDEBUG
@@ -6347,8 +6348,8 @@ void ath12k_core_deinit(struct ath12k_base *ab)
 #endif
 
 #if defined(CONFIG_BRIDGE_MCAST_OFFLOAD)
-	if (test_and_clear_bit(__NB_FLAGS_REGISTERED, &ab->me.nb_flags))
-		ath12k_core_me_notifier_unregister_extn(ab);
+	if (ath12k_core_me_notifier_unregister_extn(ab))
+		ath12k_err(ab, "Bridge MCAST notifier already unregistered\n");
 #endif
 
 	ath12k_smd_global_deinit();
