@@ -1353,10 +1353,6 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 					 device_stats->rx_wbm_rel_source[i][j]);
 	}
 
-	len += scnprintf(buf + len, size - len,
-			 "\n\nFIRSTLAST_MSDU_BIT_MISSING_COUNT= %u\n",
-			 device_stats->first_and_last_msdu_bit_miss);
-
 	rcu_read_lock();
 	if (ab->dp) {
 		for (i = 0; i < MAX_RADIOS; i++) {

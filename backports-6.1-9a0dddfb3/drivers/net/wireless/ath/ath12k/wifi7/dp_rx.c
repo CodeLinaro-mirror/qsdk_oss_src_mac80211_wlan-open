@@ -612,8 +612,7 @@ int ath12k_wifi7_dp_rx_h_undecap(struct ath12k_pdev_dp *dp_pdev,
 	case DP_RX_DECAP_TYPE_RAW:
 		pkt_reason = ATH_RX_RAW_PKTS;
 		ath12k_dp_rx_h_undecap_raw(dp_pdev, msdu, desc, enctype, status,
-					   decrypted, peer_id, rx_msdu_info->first_msdu,
-					   rx_msdu_info->last_msdu);
+					   decrypted, peer_id);
 		break;
 	case DP_RX_DECAP_TYPE_ETHERNET2_DIX:
 		pkt_reason = ATH_RX_ETH_PKTS;
