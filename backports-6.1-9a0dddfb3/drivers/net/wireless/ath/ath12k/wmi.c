@@ -26,6 +26,7 @@
 #include "testmode.h"
 #include "dp_mon.h"
 #include "vendor.h"
+#include "qca-vendor.h"
 #include "cfr.h"
 #ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/ini.h"

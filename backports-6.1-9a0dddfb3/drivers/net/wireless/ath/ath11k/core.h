@@ -35,6 +35,7 @@
 #include "fw.h"
 #include "coredump.h"
 #include "vendor.h"
+#include "qca-vendor.h"
 #include "rx_desc.h"
 #include "nss.h"
 #include "cfr.h"

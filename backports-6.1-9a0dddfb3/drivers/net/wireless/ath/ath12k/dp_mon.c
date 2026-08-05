@@ -14,6 +14,7 @@
 #include "dp_tx_mon.h"
 #include "telemetry_agent_if.h"
 #include "vendor.h"
+#include "qca-vendor.h"
 #include "wmi.h"
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 8, 0)
 #include <linux/skbuff_ref.h>
