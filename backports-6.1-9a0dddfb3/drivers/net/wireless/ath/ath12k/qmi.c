@@ -4690,6 +4690,7 @@ static int ath12k_qmi_alloc_target_mem_chunk(struct ath12k_base *ab,
 			     !chunk->size) {
 				chunk->paddr = 0;
 				chunk->v.addr = NULL;
+				seg_cnt++;
 				break;
 			}
 			/* Search the persistent pool before allocating. Pool
