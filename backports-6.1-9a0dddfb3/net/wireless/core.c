@@ -608,6 +608,8 @@ use_default_name:
 	INIT_LIST_HEAD(&rdev->bss_list);
 	INIT_LIST_HEAD(&rdev->sched_scan_req_list);
 	wiphy_work_init(&rdev->scan_done_wk, __cfg80211_scan_done);
+	wiphy_work_init(&rdev->parallel_scan_done_wk,
+			cfg80211_parallel_scan_done_work);
 	INIT_DELAYED_WORK(&rdev->dfs_update_channels_wk,
 			  cfg80211_dfs_channels_update_work);
 	device_initialize(&rdev->wiphy.dev);
@@ -1733,9 +1735,18 @@ static int cfg80211_netdev_notifier_call(struct notifier_block *nb,
 		wiphy_lock(&rdev->wiphy);
 		cfg80211_update_iface_num(rdev, wdev->iftype, -1);
 		if (rdev->scan_req && rdev->scan_req->wdev == wdev) {
+			/* Suppress the WARN_ON when parallel scans are still
+			 * in progress: the normal scan's completion is
+			 * asynchronous and races with NETDEV_DOWN, so
+			 * notified may legitimately still be false here.
+			 */
 			if (WARN_ON(!rdev->scan_req->notified &&
 				    (!rdev->int_scan_req ||
-				     !rdev->int_scan_req->notified)))
+				     !rdev->int_scan_req->notified) &&
+				    !rdev->parallel_scan_reqs[0] &&
+				    !rdev->parallel_scan_reqs[1] &&
+				    !rdev->parallel_scan_reqs[2] &&
+				    !rdev->parallel_scan_reqs[3]))
 				rdev->scan_req->info.aborted = true;
 			___cfg80211_scan_done(rdev, false);
 		}

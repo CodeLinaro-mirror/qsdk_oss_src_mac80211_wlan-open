@@ -12238,12 +12238,14 @@ static int nl80211_trigger_scan(struct sk_buff *skb, struct genl_info *info)
 	bool scan_freqs_khz = false;
 	struct nlattr *attr;
 	struct wiphy *wiphy;
-	int err, tmp, n_ssids = 0, n_channels = 0, i;
+	int err, tmp, n_ssids = 0, n_channels = 0, i, slot;
 	s8 hw_idx = -1;
 	size_t ie_len, size;
 	size_t ssids_offset, ie_offset;
 	bool chandef_found = false;
 	bool freq_info_provided = true;
+	bool parallel_scan = false;
+	struct cfg80211_scan_request *saved_scan_req = NULL;
 
 	wiphy = &rdev->wiphy;
 
@@ -12253,8 +12255,38 @@ static int nl80211_trigger_scan(struct sk_buff *skb, struct genl_info *info)
 	if (!rdev->ops->scan)
 		return -EOPNOTSUPP;
 
-	if (rdev->scan_req || rdev->scan_msg)
-		return -EBUSY;
+	if (rdev->scan_req || rdev->scan_msg) {
+		/*
+		 * A scan is already active. Allow a concurrent parallel scan
+		 * only when the wiphy supports it and scan_msg is not pending.
+		 */
+		if (!(wiphy->flags & WIPHY_FLAG_SUPPORTS_PARALLEL_HW_SCAN) ||
+		    rdev->scan_msg)
+			return -EBUSY;
+		/* All parallel slots already occupied? */
+		for (slot = 0; slot < CFG80211_MAX_PARALLEL_SCANS; slot++)
+			if (!rdev->parallel_scan_reqs[slot])
+				break;
+		if (slot == CFG80211_MAX_PARALLEL_SCANS)
+			return -EBUSY;
+		parallel_scan = true;
+	} else if (wiphy->flags & WIPHY_FLAG_SUPPORTS_PARALLEL_HW_SCAN) {
+		/*
+		 * No normal scan active. If parallel scans are in progress,
+		 * join as a parallel scan if a slot is free. If all parallel
+		 * slots are occupied, proceed as a normal scan using
+		 * the rdev->scan_req slot which is currently free.
+		 */
+		for (slot = 0; slot < CFG80211_MAX_PARALLEL_SCANS; slot++) {
+			if (rdev->parallel_scan_reqs[slot])
+				parallel_scan = true;
+			else if (parallel_scan)
+				break; /* free parallel slot found */
+		}
+		/* All parallel slots full: proceed as normal scan (scan_req is free) */
+		if (parallel_scan && slot == CFG80211_MAX_PARALLEL_SCANS)
+			parallel_scan = false;
+	}
 
 	if (info->attrs[NL80211_ATTR_WIPHY_FREQ]) {
 		if (nl80211_parse_chandef(rdev, info, &chandef, wdev)) {
@@ -12490,6 +12522,17 @@ static int nl80211_trigger_scan(struct sk_buff *skb, struct genl_info *info)
 	request->wdev = wdev;
 	request->wiphy = &rdev->wiphy;
 	request->scan_start = jiffies;
+	request->parallel_hw_scan = parallel_scan;
+
+	/*
+	 * For parallel scans, save the current normal-scan pointer so we can
+	 * restore it after cfg80211_scan() and nl80211_send_scan_start() —
+	 * both read rdev->scan_req, so we must point it at the new request for
+	 * those two calls.  After that, restore so that rdev->scan_req always
+	 * tracks the normal (non-parallel) scan.
+	 */
+	if (parallel_scan)
+		saved_scan_req = rdev->scan_req;
 
 	rdev->scan_req = request;
 	err = cfg80211_scan(rdev);
@@ -12497,13 +12540,53 @@ static int nl80211_trigger_scan(struct sk_buff *skb, struct genl_info *info)
 	if (err)
 		goto out_free;
 
+	/*
+	 * Send the scan start notification while rdev->scan_req still points
+	 * at the new request, then restore for parallel scans.
+	 */
 	nl80211_send_scan_start(rdev, wdev);
+	if (parallel_scan)
+		rdev->scan_req = saved_scan_req;
+
 	dev_hold(wdev->netdev);
+	wiphy_dbg(&rdev->wiphy,
+		  "nl80211 trigger_scan: dev_hold(%s) refcnt=%d parallel_hw_scan=%d\n",
+		  wdev->netdev ? wdev->netdev->name : "<none>",
+		  wdev->netdev ? netdev_refcnt_read(wdev->netdev) : -1,
+		  request->parallel_hw_scan);
+
+	/*
+	 * Only store in parallel_scan_reqs[] if mac80211 actually accepted
+	 * the request as a parallel scan (indicated by a non-zero
+	 * parallel_scan_id being assigned).  If ieee80211_scan_alloc_parallel_ctx
+	 * returned NULL (e.g. channel overlap, slots full), mac80211 fell back
+	 * to a normal scan: parallel_scan_id stays 0 and rdev->scan_req already
+	 * tracks the request via the normal path.  Storing it in
+	 * parallel_scan_reqs[] in that case would cause a double-free when both
+	 * scan_done_wk and parallel_scan_done_wk try to kfree the request.
+	 */
+	if (request->parallel_hw_scan && request->parallel_scan_id) {
+		int slot;
+
+		for (slot = 0; slot < ARRAY_SIZE(rdev->parallel_scan_reqs); slot++) {
+			if (!rdev->parallel_scan_reqs[slot]) {
+				rdev->parallel_scan_reqs[slot] = request;
+				break;
+			}
+		}
+	} else if (parallel_scan && !request->parallel_scan_id) {
+		/* mac80211 rejected the parallel path and ran a normal scan.
+		 * Keep rdev->scan_req pointing at this request so the normal
+		 * completion path works correctly.
+		 */
+		rdev->scan_req = request;
+	}
 
 	return 0;
 
  out_free:
-	rdev->scan_req = NULL;
+	if (parallel_scan)
+		rdev->scan_req = saved_scan_req; /* NULL if no prior normal scan */
 	kfree(request);
 
 	return err;
@@ -23376,9 +23459,9 @@ void nl80211_notify_iface(struct cfg80211_registered_device *rdev,
 }
 
 static int nl80211_add_scan_req(struct sk_buff *msg,
-				struct cfg80211_registered_device *rdev)
+				struct cfg80211_registered_device *rdev,
+				struct cfg80211_scan_request *req)
 {
-	struct cfg80211_scan_request *req = rdev->scan_req;
 	struct nlattr *nest;
 	int i;
 	struct cfg80211_scan_info *info;
@@ -23425,8 +23508,7 @@ static int nl80211_add_scan_req(struct sk_buff *msg,
 	    nla_put_u32(msg, NL80211_ATTR_SCAN_FLAGS, req->flags))
 		goto nla_put_failure;
 
-	info = rdev->int_scan_req ? &rdev->int_scan_req->info :
-		&rdev->scan_req->info;
+	info = &req->info;
 	if (info->scan_start_tsf &&
 	    (nla_put_u64_64bit(msg, NL80211_ATTR_SCAN_START_TIME_TSF,
 			       info->scan_start_tsf, NL80211_BSS_PAD) ||
@@ -23442,6 +23524,7 @@ static int nl80211_add_scan_req(struct sk_buff *msg,
 static int nl80211_prep_scan_msg(struct sk_buff *msg,
 				 struct cfg80211_registered_device *rdev,
 				 struct wireless_dev *wdev,
+				 struct cfg80211_scan_request *req,
 				 u32 portid, u32 seq, int flags,
 				 u32 cmd)
 {
@@ -23459,7 +23542,7 @@ static int nl80211_prep_scan_msg(struct sk_buff *msg,
 		goto nla_put_failure;
 
 	/* ignore errors and send incomplete event anyway */
-	nl80211_add_scan_req(msg, rdev);
+	nl80211_add_scan_req(msg, rdev, req);
 
 	genlmsg_end(msg, hdr);
 	return 0;
@@ -23503,7 +23586,7 @@ void nl80211_send_scan_start(struct cfg80211_registered_device *rdev,
 	if (!msg)
 		return;
 
-	if (nl80211_prep_scan_msg(msg, rdev, wdev, 0, 0, 0,
+	if (nl80211_prep_scan_msg(msg, rdev, wdev, rdev->scan_req, 0, 0, 0,
 				  NL80211_CMD_TRIGGER_SCAN) < 0) {
 		nlmsg_free(msg);
 		return;
@@ -23514,7 +23597,8 @@ void nl80211_send_scan_start(struct cfg80211_registered_device *rdev,
 }
 
 struct sk_buff *nl80211_build_scan_msg(struct cfg80211_registered_device *rdev,
-				       struct wireless_dev *wdev, bool aborted)
+				       struct wireless_dev *wdev,
+				       struct cfg80211_scan_request *req)
 {
 	struct sk_buff *msg;
 
@@ -23522,9 +23606,9 @@ struct sk_buff *nl80211_build_scan_msg(struct cfg80211_registered_device *rdev,
 	if (!msg)
 		return NULL;
 
-	if (nl80211_prep_scan_msg(msg, rdev, wdev, 0, 0, 0,
-				  aborted ? NL80211_CMD_SCAN_ABORTED :
-					    NL80211_CMD_NEW_SCAN_RESULTS) < 0) {
+	if (nl80211_prep_scan_msg(msg, rdev, wdev, req, 0, 0, 0,
+				  req->info.aborted ? NL80211_CMD_SCAN_ABORTED :
+						      NL80211_CMD_NEW_SCAN_RESULTS) < 0) {
 		nlmsg_free(msg);
 		return NULL;
 	}

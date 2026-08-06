@@ -32,6 +32,132 @@
 #define IEEE80211_CHANNEL_TIME (HZ / 33)
 #define IEEE80211_PASSIVE_CHANNEL_TIME (HZ / 9)
 
+static bool
+ieee80211_scan_req_parallel_disjoint(const struct cfg80211_scan_request *a,
+				     const struct cfg80211_scan_request *b)
+{
+	u32 i, j;
+
+	if (!a || !b || !a->n_channels || !b->n_channels)
+		return false;
+
+	for (i = 0; i < a->n_channels; i++) {
+		for (j = 0; j < b->n_channels; j++) {
+			if (ieee80211_channel_equal(a->channels[i],
+						    b->channels[j])) {
+				wiphy_dbg(a->wiphy,
+					  "parallel scan: req %p and %p channel overlap on freq %d MHz\n",
+					  a, b, a->channels[i]->center_freq);
+				return false;
+			}
+		}
+	}
+
+	wiphy_dbg(a->wiphy, "parallel scan: req %p and %p are disjoint\n",
+		  a, b);
+
+	return true;
+}
+
+static struct ieee80211_parallel_scan_ctx *
+ieee80211_scan_get_parallel_ctx(struct ieee80211_local *local, u8 scan_id)
+{
+	u8 slot;
+
+	if (!scan_id)
+		return NULL;
+
+	for (slot = 0; slot < ARRAY_SIZE(local->parallel_scan_ctx); slot++) {
+		struct ieee80211_parallel_scan_ctx *ctx;
+
+		ctx = local->parallel_scan_ctx[slot];
+		if (ctx && ctx->scan_id == scan_id)
+			return ctx;
+	}
+
+	return NULL;
+}
+
+static void
+ieee80211_scan_free_parallel_ctx(struct ieee80211_local *local,
+				 struct ieee80211_parallel_scan_ctx *ctx)
+{
+	u8 slot;
+
+	if (!ctx)
+		return;
+
+	for (slot = 0; slot < ARRAY_SIZE(local->parallel_scan_ctx); slot++) {
+		if (local->parallel_scan_ctx[slot] != ctx)
+			continue;
+
+		wiphy_dbg(local->hw.wiphy,
+			  "parallel scan: freeing ctx %p (scan_id=%u) from slot %u\n",
+			  ctx, ctx->scan_id, slot);
+
+		local->parallel_scan_ctx[slot] = NULL;
+		local->parallel_scan_ctx_bitmap &= ~BIT(slot);
+		break;
+	}
+
+	if (ctx->req)
+		ctx->req->parallel_scan_id = 0;
+
+	kfree(ctx);
+}
+
+static struct ieee80211_parallel_scan_ctx *
+ieee80211_scan_alloc_parallel_ctx(struct ieee80211_local *local,
+				  struct ieee80211_sub_if_data *sdata,
+				  struct cfg80211_scan_request *req)
+{
+	struct ieee80211_parallel_scan_ctx *ctx, *iter;
+	u8 slot;
+	int i;
+
+	if (!(local->hw.wiphy->flags & WIPHY_FLAG_SUPPORTS_PARALLEL_HW_SCAN))
+		return NULL;
+
+	if (!req->parallel_hw_scan || !local->ops->hw_scan)
+		return NULL;
+
+	if (local->parallel_scan_ctx_bitmap ==
+	    GENMASK(CFG80211_MAX_PARALLEL_SCANS - 1, 0))
+		return NULL;
+
+	if (local->scan_req &&
+	    !ieee80211_scan_req_parallel_disjoint(local->scan_req, req))
+		return NULL;
+
+	for (i = 0; i < ARRAY_SIZE(local->parallel_scan_ctx); i++) {
+		iter = local->parallel_scan_ctx[i];
+		if (iter && !ieee80211_scan_req_parallel_disjoint(iter->req, req))
+			return NULL;
+	}
+
+	slot = __ffs(~local->parallel_scan_ctx_bitmap);
+
+	ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
+	if (!ctx)
+		return NULL;
+
+	ctx->req = req;
+	ctx->sdata = sdata;
+	ctx->scan_id = ++local->parallel_scan_next_id;
+	if (!ctx->scan_id)
+		ctx->scan_id = ++local->parallel_scan_next_id;
+
+	req->parallel_scan_id = ctx->scan_id;
+	local->parallel_scan_ctx[slot] = ctx;
+	local->parallel_scan_ctx_bitmap |= BIT(slot);
+
+	wiphy_dbg(local->hw.wiphy,
+		  "parallel scan: allocated ctx %p (req=%p, %u chans) to slot %u, scan_id=%u\n",
+		  ctx, req, req->n_channels, slot, ctx->scan_id);
+
+	return ctx;
+}
+
 void ieee80211_rx_bss_put(struct ieee80211_local *local,
 			  struct ieee80211_bss *bss)
 {
@@ -295,6 +421,17 @@ static bool ieee80211_scan_accept_presp(struct ieee80211_sub_if_data *sdata,
 	return false;
 }
 
+static bool ieee80211_scan_req_accept_presp(const struct cfg80211_scan_request *req,
+					    struct ieee80211_sub_if_data *sdata,
+					    struct ieee80211_channel *channel,
+					    const u8 *da)
+{
+	if (!req)
+		return false;
+
+	return ieee80211_scan_accept_presp(sdata, channel, req->flags, da);
+}
+
 void ieee80211_scan_rx(struct ieee80211_local *local, struct sk_buff *skb)
 {
 	struct ieee80211_rx_status *rx_status = IEEE80211_SKB_RXCB(skb);
@@ -346,7 +483,8 @@ void ieee80211_scan_rx(struct ieee80211_local *local, struct sk_buff *skb)
 		sdata1 = rcu_dereference(local->scan_sdata);
 		sdata2 = rcu_dereference(local->sched_scan_sdata);
 
-		if (likely(!sdata1 && !sdata2))
+		if (likely(!sdata1 && !sdata2 &&
+			   !READ_ONCE(local->parallel_scan_ctx_bitmap)))
 			return;
 
 		scan_req = rcu_dereference(local->scan_req);
@@ -366,8 +504,30 @@ void ieee80211_scan_rx(struct ieee80211_local *local, struct sk_buff *skb)
 						 mgmt->da) &&
 		    !ieee80211_scan_accept_presp(sdata2, channel,
 						 sched_scan_req_flags,
-						 mgmt->da))
-			return;
+						 mgmt->da)) {
+			u8 i;
+			bool accepted = false;
+
+			for (i = 0; i < ARRAY_SIZE(local->parallel_scan_ctx); i++) {
+				struct ieee80211_parallel_scan_ctx *ctx;
+
+				ctx = local->parallel_scan_ctx[i];
+				if (!ctx)
+					continue;
+
+				if (ieee80211_scan_req_accept_presp(ctx->req,
+								    ctx->sdata,
+								    channel,
+								    mgmt->da)) {
+					accepted = true;
+					break;
+				}
+			}
+
+			if (!accepted) {
+				return;
+			}
+		}
 	} else {
 		/* Beacons are expected only with broadcast address */
 		if (!is_broadcast_ether_addr(mgmt->da))
@@ -578,8 +738,45 @@ void ieee80211_scan_completed(struct ieee80211_hw *hw,
 			      struct cfg80211_scan_info *info)
 {
 	struct ieee80211_local *local = hw_to_local(hw);
+	struct ieee80211_parallel_scan_ctx *parallel_ctx = NULL;
 
 	trace_api_scan_completed(local, info->aborted);
+
+	if (info->scan_id) {
+		wiphy_dbg(local->hw.wiphy,
+			  "parallel scan: completion event with scan_id=%u\n",
+			  info->scan_id);
+		parallel_ctx = ieee80211_scan_get_parallel_ctx(local,
+							       info->scan_id);
+	}
+
+	if (parallel_ctx) {
+		wiphy_dbg(local->hw.wiphy,
+			  "parallel scan: matched completion scan_id=%u to ctx %p (req=%p)\n",
+			  info->scan_id, parallel_ctx, parallel_ctx->req);
+		memcpy(&parallel_ctx->scan_info, info, sizeof(*info));
+		parallel_ctx->scan_info.scan_id = parallel_ctx->scan_id;
+		parallel_ctx->scan_info.aborted = info->aborted ||
+						  parallel_ctx->cancelling;
+		cfg80211_scan_done(parallel_ctx->req, &parallel_ctx->scan_info);
+		if (parallel_ctx->hw_scan_req) {
+			atomic_sub(sizeof(*parallel_ctx->hw_scan_req) +
+				   parallel_ctx->req->n_channels *
+				   sizeof(parallel_ctx->req->channels[0]) +
+				   parallel_ctx->hw_scan_ies_bufsize,
+				   &local->memory_stats.malloc_size);
+			kfree(parallel_ctx->hw_scan_req);
+			parallel_ctx->hw_scan_req = NULL;
+		}
+		ieee80211_scan_free_parallel_ctx(local, parallel_ctx);
+		return;
+	}
+
+	if (info->scan_id) {
+		wiphy_warn(local->hw.wiphy,
+			   "parallel scan: received completion for unknown scan_id=%u\n",
+			   info->scan_id);
+	}
 
 	set_bit(SCAN_COMPLETED, &local->scanning);
 	if (info->aborted)
@@ -926,6 +1123,12 @@ static int __ieee80211_start_scan(struct ieee80211_sub_if_data *sdata,
 		local->hw_scan_req->req.scan_6ghz_params =
 			req->scan_6ghz_params;
 		local->hw_scan_req->req.scan_6ghz = req->scan_6ghz;
+		/* Initialise to 0 (normal scan) so the driver never sees a
+		 * stale garbage value from kmalloc and returns it as scan_id
+		 * in the completion event.
+		 */
+		local->hw_scan_req->req.parallel_scan_id =
+			req->parallel_scan_id;
 
 		/*
 		 * After allocating local->hw_scan_req, we must
@@ -1320,9 +1523,141 @@ out_complete:
 int ieee80211_request_scan(struct ieee80211_sub_if_data *sdata,
 			   struct cfg80211_scan_request *req)
 {
-	lockdep_assert_wiphy(sdata->local->hw.wiphy);
+	struct ieee80211_local *local = sdata->local;
+	struct ieee80211_parallel_scan_ctx *parallel_ctx;
+	int ret;
 
-	return __ieee80211_start_scan(sdata, req);
+	lockdep_assert_wiphy(local->hw.wiphy);
+
+	parallel_ctx = ieee80211_scan_alloc_parallel_ctx(local, sdata, req);
+	if (parallel_ctx) {
+		struct ieee80211_scan_request *hw_scan_req;
+		struct cfg80211_scan_request *saved_scan_req =
+			rcu_dereference_protected(local->scan_req,
+						  lockdep_is_held(&local->hw.wiphy->mtx));
+		struct ieee80211_scan_request *saved_hw_scan_req =
+						local->hw_scan_req;
+		int saved_hw_scan_band = local->hw_scan_band;
+		int i, n_bands = 0;
+		u8 bands_counted = 0;
+		u8 *ies;
+
+		wiphy_dbg(local->hw.wiphy,
+			  "parallel scan: request %p takes parallel path (ctx %p, scan_id=%u)\n",
+			  req, parallel_ctx, parallel_ctx->scan_id);
+
+		parallel_ctx->hw_scan_ies_bufsize = local->scan_ies_len + req->ie_len;
+
+		if (ieee80211_hw_check(&local->hw, SINGLE_SCAN_ON_ALL_BANDS)) {
+			for (i = 0; i < req->n_channels; i++) {
+				if (bands_counted & BIT(req->channels[i]->band))
+					continue;
+				bands_counted |= BIT(req->channels[i]->band);
+				n_bands++;
+			}
+
+			parallel_ctx->hw_scan_ies_bufsize *= n_bands;
+		} else {
+			__ieee80211_validate_scan_freqs(sdata, req);
+		}
+
+		hw_scan_req = kmalloc(struct_size(hw_scan_req, req.channels,
+						  req->n_channels) +
+				      sizeof(*req->chandef) +
+				      parallel_ctx->hw_scan_ies_bufsize,
+				      GFP_KERNEL);
+		if (!hw_scan_req) {
+			ieee80211_scan_free_parallel_ctx(local, parallel_ctx);
+			return -ENOMEM;
+		}
+
+		atomic_add(sizeof(*hw_scan_req) +
+			   req->n_channels * sizeof(req->channels[0]) +
+			   parallel_ctx->hw_scan_ies_bufsize,
+			   &local->memory_stats.malloc_size);
+
+		hw_scan_req->req.chandef = req->chandef;
+		hw_scan_req->req.ssids = req->ssids;
+		hw_scan_req->req.n_ssids = req->n_ssids;
+		hw_scan_req->req.n_channels = req->n_channels;
+
+		ies = (u8 *)hw_scan_req + sizeof(*hw_scan_req) +
+		      req->n_channels * sizeof(req->channels[0]);
+		hw_scan_req->req.ie = ies;
+		hw_scan_req->req.flags = req->flags;
+		eth_broadcast_addr(hw_scan_req->req.bssid);
+		hw_scan_req->req.duration = req->duration;
+		hw_scan_req->req.duration_mandatory = req->duration_mandatory;
+		hw_scan_req->req.tsf_report_link_id = req->tsf_report_link_id;
+		hw_scan_req->req.n_6ghz_params = req->n_6ghz_params;
+		hw_scan_req->req.scan_6ghz_params = req->scan_6ghz_params;
+		hw_scan_req->req.scan_6ghz = req->scan_6ghz;
+		hw_scan_req->req.parallel_scan_id = req->parallel_scan_id;
+
+		parallel_ctx->hw_scan_req = hw_scan_req;
+		parallel_ctx->hw_scan_band = 0;
+
+		/* ieee80211_prep_hw_scan() reads both local->hw_scan_req and
+		 * local->scan_req, so temporarily point both at the parallel
+		 * ctx's buffers.  Save and restore the originals so the normal
+		 * scan's state (scan_req, hw_scan_req, hw_scan_band) is not
+		 * disturbed.  Without this:
+		 *  - local->scan_req becomes NULL, so ieee80211_scan_rx() sees
+		 *    scan_req_flags=0 and rejects probe-responses directed to
+		 *    the random MAC used by the normal scan.
+		 *  - local->hw_scan_req becomes NULL, causing a memory leak and
+		 *    a WARN_ON(!local->scan_req) in __ieee80211_scan_completed().
+		 */
+		local->hw_scan_req = hw_scan_req;
+		local->hw_scan_band = 0;
+		rcu_assign_pointer(local->scan_req, req);
+		if (!ieee80211_prep_hw_scan(sdata)) {
+			rcu_assign_pointer(local->scan_req,
+					   saved_scan_req);
+			local->hw_scan_req = saved_hw_scan_req;
+			local->hw_scan_band = saved_hw_scan_band;
+			atomic_sub(sizeof(*hw_scan_req) +
+				   req->n_channels *
+				   sizeof(req->channels[0]) +
+				   parallel_ctx->hw_scan_ies_bufsize,
+				   &local->memory_stats.malloc_size);
+			kfree(hw_scan_req);
+			parallel_ctx->hw_scan_req = NULL;
+			ieee80211_scan_free_parallel_ctx(local,
+							 parallel_ctx);
+			return -EINVAL;
+		}
+		rcu_assign_pointer(local->scan_req, saved_scan_req);
+		local->hw_scan_req = saved_hw_scan_req;
+		local->hw_scan_band = saved_hw_scan_band;
+
+		ret = drv_hw_scan(local, sdata, hw_scan_req);
+		if (ret) {
+			atomic_sub(sizeof(*hw_scan_req) +
+				   req->n_channels * sizeof(req->channels[0]) +
+				   parallel_ctx->hw_scan_ies_bufsize,
+				   &local->memory_stats.malloc_size);
+			kfree(hw_scan_req);
+			parallel_ctx->hw_scan_req = NULL;
+			ieee80211_scan_free_parallel_ctx(local, parallel_ctx);
+		}
+
+		return ret;
+	}
+
+	ret = __ieee80211_start_scan(sdata, req);
+	if (ret) {
+		wiphy_dbg(local->hw.wiphy,
+			  "parallel scan: alloc failed, normal scan started (ret=%d)\n",
+			  ret);
+		if (parallel_ctx)
+			ieee80211_scan_free_parallel_ctx(local, parallel_ctx);
+	} else {
+		wiphy_dbg(local->hw.wiphy,
+			  "normal scan started for request %p\n", req);
+	}
+
+	return ret;
 }
 
 int ieee80211_request_ibss_scan(struct ieee80211_sub_if_data *sdata,
@@ -1397,6 +1732,8 @@ int ieee80211_request_ibss_scan(struct ieee80211_sub_if_data *sdata,
 
 void ieee80211_scan_cancel(struct ieee80211_local *local)
 {
+	u8 slot;
+
 	/* ensure a new scan cannot be queued */
 	lockdep_assert_wiphy(local->hw.wiphy);
 
@@ -1417,6 +1754,39 @@ void ieee80211_scan_cancel(struct ieee80211_local *local)
 	 * driver is still responsible for calling ieee80211_scan_completed()
 	 * after the scan was completed/aborted.
 	 */
+
+	for (slot = 0; slot < ARRAY_SIZE(local->parallel_scan_ctx); slot++) {
+		struct ieee80211_parallel_scan_ctx *ctx = local->parallel_scan_ctx[slot];
+
+		if (!ctx)
+			continue;
+
+		/*
+		 * Mark the context as cancelling so that when the driver calls
+		 * ieee80211_scan_completed() asynchronously (after the WMI
+		 * cancel event), ieee80211_scan_completed() can still find the
+		 * ctx via scan_id and route the completion correctly instead of
+		 * falling through to the normal-scan path (which would hit
+		 * WARN_ON(!local->scan_req) if the normal scan is already done).
+		 *
+		 * The ctx and hw_scan_req are freed in ieee80211_scan_completed()
+		 * once the driver confirms the abort.
+		 */
+		ctx->cancelling = true;
+		if (local->ops->cancel_hw_scan)
+			drv_cancel_hw_scan(local, ctx->sdata);
+	}
+
+	/*
+	 * cfg80211_scan_done() above only queued parallel_scan_done_wk.
+	 * That work calls dev_put() asynchronously, which would race with
+	 * unregister_netdevice() during rmmod (ieee80211_remove_interfaces
+	 * is called before wiphy_unregister flushes the work queue).
+	 * Run the work body synchronously here, while we still hold the
+	 * wiphy mutex, so that dev_put() is guaranteed to complete before
+	 * interface removal proceeds.
+	 */
+	cfg80211_parallel_scan_abort(local->hw.wiphy);
 
 	if (!local->scan_req)
 		return;

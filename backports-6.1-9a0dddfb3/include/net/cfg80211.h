@@ -3427,6 +3427,7 @@ struct cfg80211_scan_info {
 	u64 scan_start_tsf;
 	u8 tsf_bssid[ETH_ALEN] __aligned(2);
 	bool aborted;
+	u8 scan_id; /* parallel scan context ID; 0 = normal scan */
 };
 
 /**
@@ -3486,7 +3487,20 @@ struct cfg80211_scan_6ghz_params {
  * @bssid: BSSID to scan for (most commonly, the wildcard BSSID)
  * @tsf_report_link_id: for MLO, indicates the link ID of the BSS that should be
  *      used for TSF reporting. Can be set to -1 to indicate no preference.
+ * @parallel_hw_scan: opt-in request flag for prototype parallel HW scan
+ *	arbitration. When set, upper layers may allow coexistence with another
+ *	active parallel HW scan request on the same wiphy if the driver/wiphy
+ *	explicitly supports it and the requests are radio-disjoint.
+ * @parallel_scan_id: internal prototype context identifier assigned by
+ *	cfg80211/mac80211 for parallel HW scan arbitration.
  */
+/* Maximum number of parallel HW scan slots (excludes the normal scan
+ * tracked via rdev->scan_req, giving 5 total concurrent scans).
+ * Sized for the maximum number of disjoint frequency bands on a single
+ * wiphy: 2.4 GHz, 5 GHz-low, 5 GHz-high, 6 GHz.
+ */
+#define CFG80211_MAX_PARALLEL_SCANS	4
+
 struct cfg80211_scan_request {
 	struct cfg80211_ssid *ssids;
 	int n_ssids;
@@ -3518,6 +3532,8 @@ struct cfg80211_scan_request {
 	s8 tsf_report_link_id;
 	u8 hw_idx;
 	bool scan_with_freq_info;
+	bool parallel_hw_scan;
+	u8 parallel_scan_id;
 
 	/* keep last */
 	struct ieee80211_channel *channels[] __counted_by(n_channels);
@@ -6591,7 +6607,11 @@ struct cfg80211_ops {
  *	will transmit beacons for all bands at the same time (burst mode) if
  *	the beacon intervals are the same.
  * @WIPHY_FLAG_SUPPORTS_SMD: Flag attribute indicating that HW will support
- *      roaming within a seamless mobility domain (SMD).
+ *	roaming within a seamless mobility domain (SMD).
+ * @WIPHY_FLAG_SUPPORTS_PARALLEL_HW_SCAN: prototype opt-in capability for
+ *	allowing concurrent hardware scan contexts on one wiphy, subject to
+ *	upper-layer arbitration and radio-disjoint request placement.
+
  */
 enum wiphy_flags {
 	WIPHY_FLAG_SUPPORTS_EXT_KEK_KCK			= BIT(0),
@@ -6623,6 +6643,7 @@ enum wiphy_flags {
 	WIPHY_FLAG_SUPPORTS_CONCUR_MONITOR_N_OTHER_VIF	= BIT(26),
 	WIPHY_FLAG_SUPPORTS_BEACON_TX_SYNC              = BIT(27),
 	WIPHY_FLAG_SUPPORTS_SMD				= BIT(28),
+	WIPHY_FLAG_SUPPORTS_PARALLEL_HW_SCAN		= BIT(29),
 };
 
 /* SMD Prepare Request flags */
@@ -9050,6 +9071,23 @@ int reg_query_regdb_wmm(char *alpha2, int freq,
  */
 void cfg80211_scan_done(struct cfg80211_scan_request *request,
 			struct cfg80211_scan_info *info);
+
+/**
+ * cfg80211_parallel_scan_abort - synchronously complete all pending parallel
+ *   scan requests during teardown.
+ *
+ * @wiphy: the wiphy whose parallel scans should be aborted
+ *
+ * Must be called with the wiphy mutex held.  Cancels any queued
+ * parallel_scan_done_wk and runs its body inline so that dev_put() is
+ * guaranteed to happen before the caller returns (and therefore before
+ * unregister_netdevice() is reached during rmmod).
+ *
+ * Call this from the scan-cancel path during interface teardown, after
+ * cfg80211_scan_done() has been called for each parallel scan request,
+ * to ensure the matching dev_put() is not deferred past interface removal.
+ */
+void cfg80211_parallel_scan_abort(struct wiphy *wiphy);
 
 /**
  * cfg80211_sched_scan_results - notify that new scan results are available

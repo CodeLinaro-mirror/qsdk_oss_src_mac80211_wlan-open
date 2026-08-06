@@ -1828,6 +1828,23 @@ struct channel_awgn_info {
 	u32 chan_bw_interference_bitmap;
 };
 
+struct ieee80211_parallel_scan_ctx {
+	struct cfg80211_scan_request *req;
+	struct ieee80211_sub_if_data *sdata;
+	struct ieee80211_scan_request *hw_scan_req;
+	struct cfg80211_chan_def scan_chandef;
+	struct cfg80211_scan_info scan_info;
+	enum nl80211_band hw_scan_band;
+	int scan_channel_idx;
+	u8 scan_addr[ETH_ALEN];
+	u8 scan_id;
+	int hw_scan_ies_bufsize;
+	unsigned long scanning;
+	bool cancelling;
+	unsigned long leave_oper_channel_time;
+	enum mac80211_scan_state next_scan_state;
+};
+
 struct ieee80211_tasklet_data {
 	struct tasklet_struct tasklet;
 	struct ieee80211_local *local;
@@ -2023,6 +2040,11 @@ struct ieee80211_local {
 	enum mac80211_scan_state next_scan_state;
 	struct wiphy_delayed_work scan_work;
 	struct ieee80211_sub_if_data __rcu *scan_sdata;
+
+	struct ieee80211_parallel_scan_ctx
+		*parallel_scan_ctx[CFG80211_MAX_PARALLEL_SCANS];
+	u8 parallel_scan_ctx_bitmap;
+	u8 parallel_scan_next_id;
 
 	/* Temporary remain-on-channel for off-channel operations */
 	struct ieee80211_channel *tmp_channel;
