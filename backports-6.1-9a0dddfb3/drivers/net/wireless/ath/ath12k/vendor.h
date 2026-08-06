@@ -8130,11 +8130,23 @@ enum qca_wlan_vendor_attr_fse_cce_stats {
  * enum qca_wlan_vendor_attr_igmp_tid_override - Attributes for
  * %QCA_NL80211_VENDOR_SUBCMD_IGMP_TID_OVERRIDE
  *
- * This vendor subcommand configures the firmware-level IGMP/MLD TID override
- * on a per-radio (pdev) basis. When a non-zero value is set, the firmware
- * overrides the TID of all IGMP/MLD packets to that value, regardless of the
- * original TID mapping method (DSCP, PCP, or HLOS). Setting value=0 disables
- * the override.
+ * This vendor subcommand configures the IGMP/MLD TID override on a per-radio
+ * (pdev) basis. Userspace supplies an AC value (0-7); the driver passes it
+ * to the firmware via WMI_PDEV_PARAM_IGMPMLD_AC_OVERRIDE. The firmware then
+ * maps the AC to the appropriate TID and overrides the TID of all IGMP/MLD
+ * packets, regardless of the original TID mapping method (DSCP, PCP, or HLOS).
+ *
+ * WMM traffic class definitions:
+ *   WMM_AC_BE (Best Effort) = 0
+ *   WMM_AC_BK (Background)  = 1
+ *   WMM_AC_VI (Video)       = 2
+ *   WMM_AC_VO (Voice)       = 3
+ *
+ * Firmware AC-to-TID mapping (ac_to_tid_1_map[]):
+ *   AC 0 (WMM_AC_BE) -> TID 0
+ *   AC 1 (WMM_AC_BK) -> TID 1
+ *   AC 2 (WMM_AC_VI) -> TID 5
+ *   AC 3 (WMM_AC_VO) -> TID 6
  *
  * @QCA_WLAN_VENDOR_ATTR_IGMP_TID_OVERRIDE_INVALID: Invalid attribute.
  *
@@ -8145,9 +8157,9 @@ enum qca_wlan_vendor_attr_fse_cce_stats {
  *   Not needed for Non-MLO mode (each wiphy has exactly one radio).
  *
  * @QCA_WLAN_VENDOR_ATTR_IGMP_TID_OVERRIDE_VALUE: u32 attribute.
- *   Combined enable/TID value. Maps to WMI_PDEV_PARAM_IGMPMLD_AC_OVERRIDE.
- *   0     = disable override (use normal DSCP/PCP/HLOS TID mapping)
- *   1..7  = enable override with this TID value
+ *   AC value set by userspace. Passed to WMI_PDEV_PARAM_IGMPMLD_AC_OVERRIDE.
+ *   The firmware maps this AC value to the appropriate TID internally and
+ *   performs the actual TID override for IGMP/MLD packets.
  */
 enum qca_wlan_vendor_attr_igmp_tid_override {
 	QCA_WLAN_VENDOR_ATTR_IGMP_TID_OVERRIDE_INVALID  = 0,
