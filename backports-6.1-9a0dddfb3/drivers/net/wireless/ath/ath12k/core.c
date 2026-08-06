@@ -1569,6 +1569,8 @@ static int ath12k_core_pdev_init(struct ath12k_base *ab)
 		ath12k_cfr_init(ab);
 	}
 
+	ath12k_dp_mon_spl_pkt_cap_config(ab);
+
 	return 0;
 }
 
@@ -1693,12 +1695,13 @@ static void ath12k_core_dump_mem_profile_info(struct ath12k_base *ab)
 		    cfg->dp_params.rx_desc_count);
 
 	ath12k_info(ab,
-		    "mem_params: tx_mon : buf_sz=%u fill_lvl=%u dst_sz=%u num_ppdu=%u status_buf=%u\n",
+		    "mem_params: tx_mon : buf_sz=%u fill_lvl=%u dst_sz=%u num_ppdu=%u status_buf=%u spc_bitmap=%u\n",
 		    cfg->dp_params.tx_monitor_buf_ring_size,
 		    cfg->dp_params.tx_monitor_buf_ring_fill_lvl,
 		    cfg->dp_params.tx_monitor_dst_ring_size,
 		    cfg->dp_params.tx_monitor_num_ppdu_desc,
-		    cfg->dp_params.tx_monitor_num_status_buf);
+		    cfg->dp_params.tx_monitor_num_status_buf,
+		    cfg->dp_params.tx_monitor_spc_bitmap);
 
 	ath12k_info(ab,
 		    "mem_params: sta_single=%u sta_dbs=%u sta_dbs_sbs=%u\n",

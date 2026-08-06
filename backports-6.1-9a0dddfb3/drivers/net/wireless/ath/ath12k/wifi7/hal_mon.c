@@ -3780,10 +3780,9 @@ ath12k_wifi7_hal_mon_tx_parse_fw2sw(const void *tlv_data, u32 userid,
 				     HAL_TX_MON_FW2SW_INFO2_SCHEDULE_ID);
 
 		if (is_valid) {
-			if (pkt_id < 7)
-				status_info->dp_tx_pkt_cap_cookie[pkt_id]++;
-			else
-				status_info->dp_tx_pkt_cap_cookie[0]++;
+			status_info->spc_pkt_id =
+				pkt_id < ATH12K_DP_MON_TX_SPC_PKT_ID_MAX ? pkt_id : 0;
+			status_info->dp_tx_pkt_cap_cookie++;
 		}
 		break;
 	}

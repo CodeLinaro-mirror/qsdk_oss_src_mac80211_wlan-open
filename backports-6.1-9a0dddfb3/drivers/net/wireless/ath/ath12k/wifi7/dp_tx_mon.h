@@ -31,5 +31,6 @@ int
 ath12k_wifi7_dp_ext_mon_remove_wmi_tx_peers(struct ath12k_pdev_dp *dp_pdev,
 					    struct ath12k_dp_ext_mon_tx_peer_params
 					    *peer_param);
-
+u32
+ath12k_wifi7_dp_mon_tx_get_spc_bitmap(struct ath12k_base *ab);
 #endif

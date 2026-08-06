@@ -3357,6 +3357,9 @@ ath12k_dp_mon_tx_deliver_frame(struct ath12k_pdev_dp *dp_pdev,
 					 ppdu_info, status_info,
 					 contains_host_frames,
 					 is_response_frame, user_idx);
+
+	ath12k_dp_mon_tx_update_spl_pkt_cap_stats(dp_pdev, status_info);
+
 	/* If the extended-monitor consumer accepted the frame
 	 * (NOTIFY_OK/NOTIFY_STOP), free it instead of passing it up
 	 * the monitor netdev, to avoid delivering it twice. see --metadata
@@ -4466,6 +4469,61 @@ static int ath12k_dp_mon_tx_filter_cfg(const struct ath12k_dp_arch_mon_ops *mon_
 	return ret;
 }
 
+void
+ath12k_dp_mon_tx_update_spl_pkt_cap_stats(struct ath12k_pdev_dp *dp_pdev,
+					     struct hal_tx_mon_status_info *status_info)
+{
+	static const char * const pkt_names[] = {
+		"unknown", "ARP", "EAPOL", "DHCP", "DNS", "ICMP", "MGMT"
+	};
+	struct ath12k_pdev_tx_mon *tx_mon = dp_pdev->dp_mon_pdev->dp_pdev_tx_mon;
+	u8 pkt_id = status_info->spc_pkt_id;
+
+	tx_mon->pdev_tx_mon_stats.spl_pkt_cap_stats[pkt_id] +=
+					status_info->dp_tx_pkt_cap_cookie;
+	ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
+		   "tx_pkt_cap %s +%u (total %u)\n",
+		   pkt_names[pkt_id],
+		   status_info->dp_tx_pkt_cap_cookie,
+		   tx_mon->pdev_tx_mon_stats.spl_pkt_cap_stats[pkt_id]);
+}
+
+/**
+ * ath12k_dp_mon_spl_pkt_cap_config() - Send WMI special packet classify command
+ * @ab: ath12k base structure
+ *
+ * Sends WMI_SOC_TX_PACKET_CUSTOM_CLASSIFY_CMDID to firmware for each radio
+ * that has TX monitor enabled, so FW tags high-value protocol frames with a
+ * cookie in FW2SW MON TLVs before any VAP is created.
+ *
+ * Called from ath12k_core_pdev_init() and re-sent automatically after SSR.
+ */
+void ath12k_dp_mon_spl_pkt_cap_config(struct ath12k_base *ab)
+{
+	int i;
+
+	for (i = 0; i < ab->num_radios; i++) {
+		struct ath12k *ar = ab->pdevs[i].ar;
+		const struct ath12k_dp_arch_mon_ops *mon_ops;
+		u32 bitmap = 0;
+		int ret;
+
+		if (!ar || !ath12k_dp_tx_mon_feature_eval(ar->dp.dp))
+			continue;
+
+		mon_ops = ath12k_dp_mon_ops_get(ar->dp.dp);
+		if (mon_ops && mon_ops->mon_tx_get_spc_bitmap)
+			bitmap = mon_ops->mon_tx_get_spc_bitmap(ab);
+
+		ret = ath12k_wmi_tx_mon_pkt_cap_set_config(ar, bitmap);
+		if (ret)
+			ath12k_warn(ab,
+				    "radio%d: TX mon pkt cap WMI failed: %d\n",
+				    i, ret);
+	}
+}
+EXPORT_SYMBOL(ath12k_dp_mon_spl_pkt_cap_config);
+
 int ath12k_dp_mon_tx_config_full_monitor(struct ath12k *ar, bool set)
 {
 	struct ath12k_base *ab;
@@ -5167,6 +5225,8 @@ void ath12k_dp_mon_tx_prepare_filter(struct ath12k_dp *dp,
 
 		dst_tlv_filter->txmon_disable |= src_tlv_filter->txmon_disable;
 		dst_tlv_filter->pkt_buf_cnt_en |= src_tlv_filter->pkt_buf_cnt_en;
+		dst_tlv_filter->mac_addr_filter_en |=
+					src_tlv_filter->mac_addr_filter_en;
 		dst_tlv_filter->tx_mon_mgmt_pkt_dma_len |=
 					src_tlv_filter->tx_mon_mgmt_pkt_dma_len;
 		dst_tlv_filter->tx_mon_data_pkt_dma_len |=

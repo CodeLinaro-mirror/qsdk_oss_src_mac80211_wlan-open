@@ -22357,6 +22357,37 @@ int ath12k_wmi_vdev_set_tx_peer_filter_cmd(struct ath12k *ar,
 }
 EXPORT_SYMBOL(ath12k_wmi_vdev_set_tx_peer_filter_cmd);
 
+int ath12k_wmi_tx_mon_pkt_cap_set_config(struct ath12k *ar, u32 bitmap)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct wmi_tx_mon_pkt_cap_set_config_cmd *cmd;
+	struct sk_buff *skb;
+	int ret;
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_tx_mon_pkt_cap_set_config_cmd *)skb->data;
+	cmd->tlv_header =
+		ath12k_wmi_tlv_cmd_hdr(WMI_TAG_SOC_TX_PACKET_CUSTOM_CLASSIFY_CMD,
+				       sizeof(*cmd));
+	cmd->pkt_type_bitmap = cpu_to_le32(bitmap);
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_DP_MON_TX | ATH12K_DBG_WMI,
+		   "WMI tx mon pkt cap config bitmap 0x%x\n", bitmap);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_SOC_TX_PACKET_CUSTOM_CLASSIFY_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "failed to send WMI_SOC_TX_PACKET_CUSTOM_CLASSIFY_CMDID: %d\n",
+			    ret);
+		dev_kfree_skb(skb);
+	}
+
+	return ret;
+}
+
 static void *
 ath12k_populate_link_control_tlv(void *buf_ptr,
 				 struct ath12k_wmi_ttlm_peer_params *params)
