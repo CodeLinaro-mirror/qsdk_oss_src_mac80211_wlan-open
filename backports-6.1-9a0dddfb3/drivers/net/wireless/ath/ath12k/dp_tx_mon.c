@@ -3375,7 +3375,7 @@ ath12k_dp_mon_tx_deliver_frame(struct ath12k_pdev_dp *dp_pdev,
 		ath12k_dp_tx_mon_update_rtap_tlv_at_end(skb, &status.mon_info, ppdu_info);
 	}
 
-	ieee80211_tx_monitor_offload(hw, &status);
+	ieee80211_tx_monitor_offload_ni(hw, &status);
 }
 
 static
