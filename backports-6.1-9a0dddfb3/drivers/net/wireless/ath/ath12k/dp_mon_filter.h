@@ -51,6 +51,13 @@ enum dp_mon_tx_filter_srng_type {
 	DP_MON_TX_FILTER_SRNG_TYPE_MAX
 };
 
+#define DP_MON_RCC_TYPE_M_DIRECTED_FTM	BIT(0)
+#define DP_MON_RCC_TYPE_M_ALL_FTM_ACK	BIT(1)
+#define DP_MON_RCC_TYPE_M_NDPA_NDP_DIRECTED	BIT(2)
+#define DP_MON_RCC_TYPE_M_NDPA_NDP_ALL	BIT(3)
+#define DP_MON_RCC_TYPE_M_TA_RA_FILTER	BIT(4)
+#define DP_MON_RCC_TYPE_M_ALL_PACKET	BIT(5)
+
 enum dp_mon_filter_mode {
 	DP_MON_FILTER_STATS_MODE,
 	DP_MON_FILTER_MONITOR_MODE,
@@ -60,6 +67,7 @@ enum dp_mon_filter_mode {
 	DP_MON_FILTER_PKTLOG_CBF_MODE,
 	DP_MON_FILTER_EXT_MON_MODE,
 	DP_MON_FILTER_UNDECODED_METADATA_CAPTURE_MODE,
+	DP_MON_FILTER_CFR_RCC_MODE,
 	DP_MON_FILTER_MAX_MODE
 };
 
@@ -105,6 +113,9 @@ void ath12k_dp_mon_rx_nrp_config_filter(struct ath12k_pdev_dp *dp_pdev,
 					bool enable);
 void ath12k_dp_mon_rx_smart_mon_config_filter(struct ath12k_pdev_dp *dp_pdev,
 					      bool enable);
+void ath12k_dp_mon_rx_cfr_rcc_config_filter(struct ath12k_pdev_dp *dp_pdev,
+					    bool enable, u8 rcc_type);
+bool ath12k_dp_mon_get_rx_cfr_rcc_filter_valid(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_mon_rx_wmask_subscribe(void *ptr,
 				      struct htt_rx_ring_tlv_filter *tlv_filter);
 void ath12k_dp_tx_htt_rx_mgmt_flag0_fp_filter_set(u32 *ptr, u16 filter);
