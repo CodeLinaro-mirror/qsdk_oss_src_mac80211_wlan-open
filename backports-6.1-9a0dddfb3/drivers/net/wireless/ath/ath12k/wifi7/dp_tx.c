@@ -3843,7 +3843,7 @@ int ath12k_wifi7_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
 		return -EINVAL;
 	}
 
-	if (likely(ab->stats_disable))
+	if (likely(!(dp_pdev->dp_stats_mask & DP_ENABLE_STATS)))
 		/* only need buf_addr_info and info0 */
 		stat_size = 3 * sizeof(u32);
 	else
@@ -3869,7 +3869,7 @@ int ath12k_wifi7_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
 		if (!desc || !ath12k_wifi7_hal_tx_completion_process(desc, &tx_status))
 			continue;
 
-		if (likely(!ab->stats_disable))
+		if (likely(dp_pdev->dp_stats_mask & DP_ENABLE_STATS))
 			memcpy(((void *)tx_ring->tx_status) +
 			       (count * status_ring->entry_size),
 			       desc, stat_size);
