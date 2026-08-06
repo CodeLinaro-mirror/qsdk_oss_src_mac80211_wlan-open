@@ -3506,6 +3506,10 @@ static void ath12k_dp_aggr_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 					src_peer_stats->rx[i].msdu_part_of_amsdu;
 				dst_peer_stats->rx[i].mpdu_retry +=
 					src_peer_stats->rx[i].mpdu_retry;
+				dst_peer_stats->rx[i].sg.packets +=
+					src_peer_stats->rx[i].sg.packets;
+				dst_peer_stats->rx[i].sg.bytes +=
+					src_peer_stats->rx[i].sg.bytes;
 			}
 			if (ath12k_proto_stats_enabled(dp_pdev))
 				ath12k_dp_aggr_proto_peer_rx_stats(dst_peer_stats,
@@ -3715,6 +3719,10 @@ static void ath12k_dp_update_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 					src_peer_stats->rx[i].msdu_part_of_amsdu;
 				dst_peer_stats->rx[i].mpdu_retry =
 					src_peer_stats->rx[i].mpdu_retry;
+				dst_peer_stats->rx[i].sg.packets =
+					src_peer_stats->rx[i].sg.packets;
+				dst_peer_stats->rx[i].sg.bytes =
+					src_peer_stats->rx[i].sg.bytes;
 			}
 			if (ath12k_proto_stats_enabled(dp_pdev))
 				ath12k_dp_update_proto_peer_rx_stats(dst_peer_stats,
