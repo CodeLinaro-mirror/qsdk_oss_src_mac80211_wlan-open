@@ -12616,9 +12616,11 @@ ieee80211_smd_assoc_success_finalize(struct ieee80211_sub_if_data *sdata,
 		}
 	}
 
-	drv_uhr_link_reconfig(local, sdata, target_sta, NULL,
-			      IEEE80211_UHR_LINK_RECONFIG_DYNAMIC_CONTEXT,
-			      dyn_info);
+	dyn_info->tap_links_mask = (u16)BIT(target->primary_link_id);
+	dyn_info->changed = IEEE80211_UHR_CHANGED_DYNAMIC_CTX |
+			    IEEE80211_UHR_CHANGED_TERMINATION;
+
+	drv_uhr_link_reconfig(local, sdata, target_sta, NULL, dyn_info);
 	kfree(dyn_info);
 
 skip_dyn_info:
@@ -12960,9 +12962,8 @@ int ieee80211_smd_prep_activate(struct ieee80211_sub_if_data *sdata,
 		ifmgd->smd_transitioning_links |=
 			BIT(target->tap_to_sap_link[tap_id]);
 
-	ret = drv_uhr_link_reconfig(local, sdata, current_sta, target_sta,
-				    IEEE80211_UHR_LINK_RECONFIG_PREPARE_RESP,
-				    info);
+	info->changed = IEEE80211_UHR_CHANGED_PREPARE_RESP;
+	ret = drv_uhr_link_reconfig(local, sdata, current_sta, target_sta, info);
 	if (ret)
 		goto out_free_links;
 

@@ -558,7 +558,6 @@ int ath12k_mac_op_uhr_link_reconfig(struct ieee80211_hw *hw,
 				    struct ieee80211_vif *vif,
 				    struct ieee80211_sta *current_sta,
 				    struct ieee80211_sta *target_sta,
-				    enum ieee80211_uhr_link_reconfig_action action,
 				    struct ieee80211_uhr_link_reconfig_info *info);
 int ath12k_mac_op_smd_remap_links(struct ath12k_vif *ahvif,
 				  struct ath12k_sta *ahsta_target,
