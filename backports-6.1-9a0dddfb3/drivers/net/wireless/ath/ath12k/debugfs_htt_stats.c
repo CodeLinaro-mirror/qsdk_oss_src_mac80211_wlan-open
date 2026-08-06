@@ -15813,6 +15813,12 @@ static ssize_t ath12k_read_htt_stats_type(struct file *file,
 	size_t len;
 
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+
+	if (ar->ab->is_bypassed) {
+		wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+		return -ENETDOWN;
+	}
+
 	type = ar->debug.htt_stats.type;
 	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -15858,6 +15864,11 @@ static ssize_t ath12k_write_htt_stats_type(struct file *file,
 		return -EINVAL;
 
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+
+	if (ar->ab->is_bypassed) {
+		wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+		return -ENETDOWN;
+	}
 
 	ar->debug.htt_stats.type = type;
 	ar->debug.htt_stats.cfg_param[0] = cfg_param[0];
@@ -15950,8 +15961,9 @@ static int ath12k_open_htt_stats(struct inode *inode,
 		goto err_unlock;
 	}
 
-	if (ah->state != ATH12K_HW_STATE_ON &&
-	    ar->ab->fw_mode != ATH12K_FIRMWARE_MODE_FTM) {
+	if ((ah->state != ATH12K_HW_STATE_ON &&
+	     ar->ab->fw_mode != ATH12K_FIRMWARE_MODE_FTM) ||
+	     ar->ab->is_bypassed) {
 		ret = -ENETDOWN;
 		goto err_unlock;
 	}
@@ -16045,7 +16057,15 @@ static ssize_t ath12k_read_htt_stats_reset(struct file *file,
 	char buf[32];
 	size_t len;
 
+	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+
+	if (ar->ab->is_bypassed) {
+		wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+		return -ENETDOWN;
+	}
+
 	len = scnprintf(buf, sizeof(buf), "%u\n", ar->debug.htt_stats.reset);
+	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
 
 	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
 }
@@ -16069,6 +16089,12 @@ static ssize_t ath12k_write_htt_stats_reset(struct file *file,
 		return -E2BIG;
 
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+
+	if (ar->ab->is_bypassed) {
+		wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+		return -ENETDOWN;
+	}
+
 	cfg_params.cfg0 = HTT_STAT_DEFAULT_RESET_START_OFFSET;
 	param_pos = (type >> 5) + 1;
 
