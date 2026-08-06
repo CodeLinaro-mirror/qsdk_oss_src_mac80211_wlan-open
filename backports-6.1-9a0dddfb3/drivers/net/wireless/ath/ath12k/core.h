@@ -1231,7 +1231,6 @@ struct ath12k_vif {
 #ifdef CPTCFG_ATH12K_DEBUGFS
 	struct dentry *debugfs_primary_link;
 	struct dentry *debugfs_linkstats;
-	struct dentry *mld_stats;
 	struct dentry *debugfs_wmm_stats_vdev;
 	struct dentry *debugfs_reset_wmm_stats;
 	struct pcpu_netdev_tid_stats __percpu *tstats;
