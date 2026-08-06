@@ -1284,6 +1284,7 @@ static void ath12k_wifi8_dp_mon_h_flush_tlv(struct ath12k_pdev_dp *pdev_dp,
 
 	mon_stats->status_buf_free++;
 	page_frag_free(mon_buf);
+	status_desc->mon_buf = NULL;
 }
 
 static inline void
@@ -1980,15 +1981,17 @@ static void ath12k_wifi8_dp_mon_rx_drain_wq(struct ath12k_pdev_dp *dp_pdev)
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ath12k_dp_mon_ppdu_desc *ppdu_desc;
 	struct ath12k_dp_mon_status_desc *status_desc;
+	struct list_head local_list;
 	int desc_cnt;
 
-	spin_lock_bh(&dp_mon_pdev->ppdu_desc_lock);
-	list_splice_init(&dp_mon_pdev->ppdu_desc_used_list,
-			 &dp_mon_pdev->ppdu_desc_free_list);
+	INIT_LIST_HEAD(&local_list);
 
-	list_splice_init(&dp_mon_pdev->ppdu_desc_proc_list,
-			 &dp_mon_pdev->ppdu_desc_free_list);
-	list_for_each_entry(ppdu_desc, &dp_mon_pdev->ppdu_desc_free_list, list) {
+	spin_lock_bh(&dp_mon_pdev->ppdu_desc_lock);
+	list_splice_init(&dp_mon_pdev->ppdu_desc_used_list, &local_list);
+	list_splice_init(&dp_mon_pdev->ppdu_desc_proc_list, &local_list);
+	spin_unlock_bh(&dp_mon_pdev->ppdu_desc_lock);
+
+	list_for_each_entry(ppdu_desc, &local_list, list) {
 		for (desc_cnt = 0; desc_cnt < ppdu_desc->status_desc_cnt; desc_cnt++) {
 			status_desc = &ppdu_desc->status_desc[desc_cnt];
 			if (!status_desc->mon_buf)
@@ -1998,7 +2001,11 @@ static void ath12k_wifi8_dp_mon_rx_drain_wq(struct ath12k_pdev_dp *dp_pdev)
 						   DMA_FROM_DEVICE);
 			ath12k_wifi8_dp_mon_h_flush_tlv(dp_pdev, status_desc);
 		}
+		ath12k_dp_mon_reset_ppdu_desc(ppdu_desc);
 	}
+
+	spin_lock_bh(&dp_mon_pdev->ppdu_desc_lock);
+	list_splice_init(&local_list, &dp_mon_pdev->ppdu_desc_free_list);
 	spin_unlock_bh(&dp_mon_pdev->ppdu_desc_lock);
 }
 
