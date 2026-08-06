@@ -2934,6 +2934,23 @@ ath12k_wifi8_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 					     HAL_RX_PHYRX_RSSI_LEGACY_INFO_INFO0_RX_BW);
 		break;
 	}
+	case HAL_PHYRX_RSSI_LEGACY_PART2: {
+		u8 *part2 = (u8 *)tlv_data;
+		u8 *rssi_info_tlv = part2 +
+				HAL_PHYRX_RSSI_LEGACY_PART2_PREAMBLE_RSSI_INFO_OFFSET;
+		u32 need = HAL_PHYRX_RSSI_LEGACY_PART2_PREAMBLE_RSSI_INFO_OFFSET +
+			  RECEIVE_RSSI_INFO_RSSI_PRI20_CHAIN4_OFFSET + sizeof(u32);
+
+		if (tlv_len < need)
+			break;
+
+		HAL_RX_MON_UPDATE_PRI20_RSSI_PER_CHAIN(0, ppdu_info, rssi_info_tlv);
+		HAL_RX_MON_UPDATE_PRI20_RSSI_PER_CHAIN(1, ppdu_info, rssi_info_tlv);
+		HAL_RX_MON_UPDATE_PRI20_RSSI_PER_CHAIN(2, ppdu_info, rssi_info_tlv);
+		HAL_RX_MON_UPDATE_PRI20_RSSI_PER_CHAIN(3, ppdu_info, rssi_info_tlv);
+		HAL_RX_MON_UPDATE_PRI20_RSSI_PER_CHAIN(4, ppdu_info, rssi_info_tlv);
+		break;
+	}
 	case HAL_PHYRX_COMMON_USER_INFO: {
 		const struct hal_phyrx_common_user_info *cmn_usr_info = tlv_data;
 		struct hal_rx_radiotap_eht *eht = &ppdu_info->eht_info.eht;
