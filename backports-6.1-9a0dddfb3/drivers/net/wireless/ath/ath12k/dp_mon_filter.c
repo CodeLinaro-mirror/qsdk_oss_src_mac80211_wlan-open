@@ -262,6 +262,16 @@ ath12k_dp_mon_rx_setup_stats_filter(struct ath12k_dp *dp,
 	rx_tlv_filter->fp_data_filter = FILTER_DATA_NULL | FILTER_DATA_MCAST |
 					FILTER_DATA_UCAST;
 
+	rx_tlv_filter->enable_fpmo = 1;
+	rx_tlv_filter->fpmo_mgmt_filter = FILTER_MGMT_ALL;
+	rx_tlv_filter->fpmo_ctrl_filter = FILTER_CTRL_CTRLWRAP | FILTER_CTRL_BA_REQ |
+					  FILTER_CTRL_BA | FILTER_CTRL_PSPOLL |
+					  FILTER_CTRL_RTS | FILTER_CTRL_CTS |
+					  FILTER_CTRL_ACK | FILTER_CTRL_CFEND |
+					  FILTER_CTRL_CFEND_CFACK;
+	rx_tlv_filter->fpmo_data_filter = FILTER_DATA_NULL | FILTER_DATA_MCAST |
+					  FILTER_DATA_UCAST;
+
 	rx_tlv_filter->rx_mon_mpdu_start_wmask =
 		ath12k_hal_mon_rx_mpdu_start_wmask(dp->hal);
 	rx_tlv_filter->rx_mon_mpdu_end_wmask =

@@ -819,8 +819,21 @@ ath12k_wifi7_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 			pkt_config = &config->mo;
 		break;
 	case DP_MPDU_FILTER_CATEGORY_FP_MO:
-		if (config->fpmo_enabled)
+		if (config->fpmo_enabled) {
 			pkt_config = &config->fpmo;
+			/* When FPMO statistics are enabled and extended monitor filters
+			 * are ORed in, extra frame type/subtypes may be received;
+			 * explicitly filter out those unintended frames here.
+			 */
+			ret = ath12k_dp_ext_mon_subtype_check(pkt_config, type,
+							      sub_type, is_mcast);
+			if (unlikely(ret)) {
+				spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
+				ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON,
+					   "Filtered subtype %x\n", sub_type);
+				return -EINVAL;
+			}
+		}
 		break;
 	default:
 		break;
