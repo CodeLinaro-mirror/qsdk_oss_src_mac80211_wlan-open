@@ -1961,6 +1961,7 @@ struct ath12k {
 		bool roc_notify:1;
 		int roc_freq;
 		int scan_id;
+		u8 parallel_scan_id; /* mac80211 parallel scan context ID; 0 = normal */
 		struct wiphy_work vdev_clean_wk;
 		struct ath12k_link_vif *arvif;
 	} scan;

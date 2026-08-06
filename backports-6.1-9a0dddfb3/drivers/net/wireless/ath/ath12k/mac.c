@@ -10837,9 +10837,18 @@ static void ath12k_mac_scan_send_complete(struct ath12k *ar,
 	for_each_ar(ah, partner_ar, i)
 		if (partner_ar != ar &&
 		    partner_ar->scan.state == ATH12K_SCAN_RUNNING &&
-		    !partner_ar->scan.is_roc)
+		    !partner_ar->scan.is_roc &&
+		    partner_ar->scan.parallel_scan_id == ar->scan.parallel_scan_id) {
+			ath12k_dbg(ar->ab, ATH12K_DBG_SCAN,
+				   "scan_parallel: pdev %d done but pdev %d still RUNNING, deferring completion [%llu ms]\n",
+				   ar->pdev->pdev_id, partner_ar->pdev->pdev_id,
+				   ktime_to_ms(ktime_get()));
 			return;
+		}
 
+	ath12k_dbg(ar->ab, ATH12K_DBG_SCAN,
+		   "scan_parallel: all radios done, calling ieee80211_scan_completed [%llu ms]\n",
+		   ktime_to_ms(ktime_get()));
 	ieee80211_scan_completed(ah->hw, info);
 }
 
@@ -10878,12 +10887,14 @@ work_complete:
 				    ATH12K_SCAN_ABORTING) ||
 				    (ar->scan.state ==
 				    ATH12K_SCAN_STARTING)),
+			.scan_id = ar->scan.parallel_scan_id,
 		};
 
 		ath12k_mac_scan_send_complete(ar, &info);
 	}
 
 	ar->scan.scan_id = 0;
+	ar->scan.parallel_scan_id = 0;
 	ar->scan.state = ATH12K_SCAN_IDLE;
 	ar->scan_channel = NULL;
 	ar->scan.roc_freq = 0;
@@ -10915,6 +10926,10 @@ static int ath12k_start_scan(struct ath12k *ar,
 	if (ret)
 		return ret;
 
+	ath12k_dbg(ar->ab, ATH12K_DBG_SCAN,
+		   "scan_parallel: WMI_START_SCAN_CMDID sent to pdev %d, waiting for STARTED ack [%llu ms]\n",
+		   ar->pdev->pdev_id, ktime_to_ms(ktime_get()));
+
 	ret = wait_for_completion_timeout(&ar->scan.started, 1 * HZ);
 	if (ret == 0) {
 		/* FW assertion right after scan start can trigger WARN_ON.
@@ -10943,6 +10958,10 @@ static int ath12k_start_scan(struct ath12k *ar,
 		return -EINVAL;
 	}
 	spin_unlock_bh(&ar->data_lock);
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_SCAN,
+		   "scan_parallel: pdev %d scan STARTED ack received, returning to caller [%llu ms]\n",
+		   ar->pdev->pdev_id, ktime_to_ms(ktime_get()));
 
 	return 0;
 }
@@ -11561,6 +11580,7 @@ static int ath12k_mac_initiate_hw_scan(struct ieee80211_hw *hw,
 		ar->scan.state = ATH12K_SCAN_STARTING;
 		ar->scan.is_roc = false;
 		ar->scan.arvif = arvif;
+		ar->scan.parallel_scan_id = req->parallel_scan_id;
 		ret = 0;
 		break;
 	case ATH12K_SCAN_STARTING:
@@ -11778,11 +11798,23 @@ int ath12k_mac_op_hw_scan(struct ieee80211_hw *hw,
 		spin_unlock_bh(&ar->data_lock);
 
 		to_index = i;
+		ath12k_dbg(prev_ar->ab, ATH12K_DBG_SCAN,
+			   "scan_parallel: firing scan on pdev %d, channels[%d..%d], freq %u-%u MHz [%llu ms]\n",
+			   prev_ar->pdev->pdev_id, from_index, to_index - 1,
+			   hw_req->req.channels[from_index]->center_freq,
+			   hw_req->req.channels[to_index - 1]->center_freq,
+			   ktime_to_ms(ktime_get()));
 		ath12k_mac_initiate_hw_scan(hw, vif, hw_req, prev_ar,
 					    from_index, to_index);
 		from_index = to_index;
 		prev_ar = ar;
 	}
+	ath12k_dbg(prev_ar->ab, ATH12K_DBG_SCAN,
+		   "scan_parallel: firing scan on pdev %d, channels[%d..%d], freq %u-%u MHz [%llu ms]\n",
+		   prev_ar->pdev->pdev_id, from_index, i - 1,
+		   hw_req->req.channels[from_index]->center_freq,
+		   hw_req->req.channels[i - 1]->center_freq,
+		   ktime_to_ms(ktime_get()));
 	return ath12k_mac_initiate_hw_scan(hw, vif, hw_req, prev_ar, from_index, i);
 }
 EXPORT_SYMBOL(ath12k_mac_op_hw_scan);
@@ -11791,26 +11823,37 @@ void ath12k_mac_op_cancel_hw_scan(struct ieee80211_hw *hw,
 				  struct ieee80211_vif *vif)
 {
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
-	u16 link_id = ahvif->last_scan_link;
+	unsigned long scan_links = ahvif->links_map & ATH12K_SCAN_LINKS_MASK;
+	unsigned long link_id;
 	struct ath12k_link_vif *arvif;
 	struct ath12k *ar;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
-	arvif = wiphy_dereference(hw->wiphy, ahvif->link[link_id]);
-	/* For monitor vifs the vdev is always started; allow scan abort
-	 * regardless of is_started so that an in-progress scan can be
-	 * cancelled cleanly.
+	/*
+	 * For parallel scans, multiple scan links (one per radio) may be
+	 * active simultaneously.  Iterate all scan link IDs in
+	 * ATH12K_SCAN_LINKS_MASK rather than only last_scan_link so that
+	 * every in-progress radio scan is cancelled.
 	 */
-	if (!arvif || (arvif->is_started &&
-		       ahvif->vdev_type != WMI_VDEV_TYPE_MONITOR))
-		return;
+	for_each_set_bit(link_id, &scan_links, ATH12K_NUM_MAX_LINKS) {
+		arvif = wiphy_dereference(hw->wiphy, ahvif->link[link_id]);
+		/*
+		 * For monitor vifs the vdev is always started; allow scan abort
+		 * regardless of is_started so that an in-progress scan can be
+		 * cancelled cleanly.
+		 */
+		if (!arvif || !arvif->is_scan_vif ||
+		    (arvif->is_started && ahvif->vdev_type != WMI_VDEV_TYPE_MONITOR))
+			continue;
 
-	ar = arvif->ar;
+		ar = arvif->ar;
+		if (!ar || ar->scan.state == ATH12K_SCAN_IDLE)
+			continue;
 
-	ath12k_scan_abort(ar);
-
-	cancel_delayed_work_sync(&ar->scan.timeout);
+		ath12k_scan_abort(ar);
+		cancel_delayed_work_sync(&ar->scan.timeout);
+	}
 }
 EXPORT_SYMBOL(ath12k_mac_op_cancel_hw_scan);
 
@@ -22212,12 +22255,14 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 			if (!ar->scan.is_roc) {
 				struct cfg80211_scan_info info = {
 					.aborted = true,
+					.scan_id = ar->scan.parallel_scan_id,
 				};
 
 				ath12k_mac_scan_send_complete(ar, &info);
 			}
 
 			ar->scan.state = ATH12K_SCAN_IDLE;
+			ar->scan.parallel_scan_id = 0;
 			ar->scan_channel = NULL;
 			ar->scan.roc_freq = 0;
 			spin_unlock_bh(&ar->data_lock);
@@ -29850,6 +29895,12 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 	 * once WIPHY_FLAG_SUPPORTS_MLO is enabled.
 	 */
 	wiphy->flags |= WIPHY_FLAG_DISABLE_WEXT;
+
+	/* Conditionally enable parallel HW scan based on the "parallel_hw_scan"
+	 * INI key in global.ini.  The extension hook sets or clears
+	 * WIPHY_FLAG_SUPPORTS_PARALLEL_HW_SCAN on the wiphy accordingly.
+	 */
+	ath12k_mac_hw_register_extn(ah);
 
 	/* Copy over MLO related capabilities received from
 	 * WMI_SERVICE_READY_EXT2_EVENT if single_chip_mlo_supp is set.
