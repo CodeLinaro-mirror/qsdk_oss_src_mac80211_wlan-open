@@ -29766,8 +29766,7 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 
 	wiphy->interface_modes = ath12k_mac_get_ifmodes(ah);
 
-	if (ah->num_radio == 1 &&
-	    wiphy->bands[NL80211_BAND_2GHZ] &&
+	if (wiphy->bands[NL80211_BAND_2GHZ] &&
 	    wiphy->bands[NL80211_BAND_5GHZ] &&
 	    wiphy->bands[NL80211_BAND_6GHZ])
 		ieee80211_hw_set(hw, SINGLE_SCAN_ON_ALL_BANDS);
