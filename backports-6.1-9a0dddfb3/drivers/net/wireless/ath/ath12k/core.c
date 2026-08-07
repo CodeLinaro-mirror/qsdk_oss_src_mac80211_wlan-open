@@ -5309,11 +5309,19 @@ ath12k_get_connected_dev(struct ath12k_base *ab, int reg,
 		}
 
 		of_node_put(next_endpoint);
-		of_node_put(connected_dev);
+
+		if (!of_device_is_available(connected_dev)) {
+			ath12k_warn(ab, "Connected dev : %pOFP is not active\n",
+				    connected_dev);
+			of_node_put(connected_dev);
+			return NULL;
+		}
 
 		if (!include_bypassed_device ||
 		    !ath12k_core_check_is_bypassed(ab->ag, connected_dev))
 			return connected_dev;
+
+		of_node_put(connected_dev);
 
 	} while (connected_dev != ab_dev);
 
@@ -5357,6 +5365,14 @@ static int ath12k_core_get_wsi_info(struct ath12k_hw_group *ag,
 
 		next_wsi_dev = of_graph_get_port_parent(next_rx_endpoint);
 		if (!next_wsi_dev) {
+			ret = -ENODEV;
+			break;
+		}
+
+		if (!of_device_is_available(next_wsi_dev)) {
+			ath12k_warn(ab, "wsi peer node %pOFP is not available\n",
+				   next_wsi_dev);
+			ath12k_warn(ab, "Not able to form wsi group\n");
 			ret = -ENODEV;
 			break;
 		}
