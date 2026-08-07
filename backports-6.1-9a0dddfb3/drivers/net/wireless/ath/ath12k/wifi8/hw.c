@@ -1262,6 +1262,7 @@ static void ath12k_wifi8_mgmt_handler(struct ieee80211_hw *hw,
 	struct ath12k_mgmt_frame_stats *mgmt_stats = &ahvif->mgmt_stats;
 	struct ieee80211_sta *sta = control->sta;
 	struct ath12k_dp_vif *dp_vif = &ahvif->dp_vif;
+	u32 control_flags = info->control.flags;
 	struct ath12k *ar;
 	struct ieee80211_mgmt *mgmt = NULL;
 	u8 link_id = 0, ring_id = 0;
@@ -1329,6 +1330,14 @@ static void ath12k_wifi8_mgmt_handler(struct ieee80211_hw *hw,
 		adjusted_tsf = cpu_to_le64(0ULL - arvif->tbtt_offset);
 		memcpy(&mgmt->u.probe_resp.timestamp, &adjusted_tsf,
 		       sizeof(adjusted_tsf));
+	}
+
+	if ((control_flags & IEEE80211_TX_CTRL_MGMT_RATE_EXIST) &&
+	    info->control.rates[0].idx >= 0) {
+		if (ath12k_skb_rhash_insert(ar, skb,
+					    info->control.rates[0]))
+			ath12k_warn(ar->ab,
+				    "tx skb rhash entry creation failed\n");
 	}
 
 	frm_type = FIELD_GET(IEEE80211_FCTL_STYPE, hdr->frame_control);
