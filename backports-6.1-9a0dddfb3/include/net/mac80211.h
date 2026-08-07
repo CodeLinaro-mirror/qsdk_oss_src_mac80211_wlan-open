@@ -9086,6 +9086,25 @@ void ieee80211_tx_monitor_offload(struct ieee80211_hw *hw,
 				  struct ieee80211_tx_status *status);
 
 /**
+ * ieee80211_tx_monitor_offload_ni - h/w offloaded tx monitor callback
+ *				     (in process context)
+ *
+ * Like ieee80211_tx_monitor_offload() but can be called in process context
+ * (internally disables bottom halves).
+ *
+ * @hw: the hardware the frame was transmitted by
+ * @status: tx status information
+ */
+static inline void
+ieee80211_tx_monitor_offload_ni(struct ieee80211_hw *hw,
+				struct ieee80211_tx_status *status)
+{
+	local_bh_disable();
+	ieee80211_tx_monitor_offload(hw, status);
+	local_bh_enable();
+}
+
+/**
  * ieee80211_set_repurpose_link - Mark a link for repurposing
  * @vif: virtual interface
  * @link_id: link identifier
