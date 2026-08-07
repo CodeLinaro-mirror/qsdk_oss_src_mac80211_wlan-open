@@ -615,6 +615,42 @@ struct hal_rx_user_ctrl_frm_info {
 		 ndpa : 1;
 };
 
+/**
+ * struct hal_rx_ppdu_cfr_info - CFR metadata extracted from PPDU TLVs
+ * @bb_captured_channel: Channel capture was triggered and freeze TLV was sent
+ * @bb_captured_timeout: Capture condition met, but freeze TLV timed out
+ * @bb_captured_reason: Capture trigger reason from RXPCU PPDU END TLV
+ * @rx_location_info_valid: PHYRX_LOCATION RTT/CFR DMA pointer validity
+ * @chan_capture_status: Capture status reported by ucode
+ * @rtt_che_buffer_pointer_high8: High 8 bits of 40-bit RTT CHE buffer pointer
+ * @rtt_che_buffer_pointer_low32: Low 32 bits of 40-bit RTT CHE buffer pointer
+ * @rtt_cfo_measurement: Signed raw CFO value from PHYRX_LOCATION TLV
+ * @agc_gain_info0: Chain0/1 AGC gain information
+ * @agc_gain_info1: Chain2/3 AGC gain information
+ * @agc_gain_info2: Reserved for higher chains
+ * @agc_gain_info3: Reserved for higher chains
+ * @rx_start_ts: Rx start timestamp from PHYRX_LOCATION TLV
+ * @mcs_rate: MCS/rate indication from PHYRX_LOCATION TLV
+ * @gi_type: Guard interval indication from PHYRX_LOCATION TLV
+ */
+struct hal_rx_ppdu_cfr_info {
+	bool bb_captured_channel;
+	bool bb_captured_timeout;
+	u8 bb_captured_reason;
+	bool rx_location_info_valid;
+	u8 chan_capture_status;
+	u8 rtt_che_buffer_pointer_high8;
+	u32 rtt_che_buffer_pointer_low32;
+	s16 rtt_cfo_measurement;
+	u32 agc_gain_info0;
+	u32 agc_gain_info1;
+	u32 agc_gain_info2;
+	u32 agc_gain_info3;
+	u32 rx_start_ts;
+	u32 mcs_rate;
+	u32 gi_type;
+};
+
 struct hal_rx_mon_ppdu_info {
 	u16 ppdu_id;
 	u16 last_ppdu_id;
@@ -741,6 +777,7 @@ struct hal_rx_mon_ppdu_info {
 	u16 punctured_pattern;
 	u16 punc_bw;
 	struct hal_rx_user_ctrl_frm_info ctrl_frm_info[HAL_MAX_UL_MU_USERS];
+	struct hal_rx_ppdu_cfr_info cfr_info;
 	struct hal_mon_ppdu_info_extn ppdu_info_extn;
 	u8 ampdu_flag;
 	u8 band;
