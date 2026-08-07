@@ -2643,7 +2643,6 @@ ath12k_wifi7_dp_rx_flow_alloc_entry(struct ath12k_base *ab,
 	fse->flow_hash = flow_hash;
 	fse->flow_id = flow_idx;
 
-
 	return fse;
 }
 
@@ -2746,7 +2745,8 @@ int ath12k_wifi7_dp_rx_flow_delete_entry(struct ath12k_dp *dp,
 
 	/* Decrement number of valid entries in table */
 	fst->num_entries--;
-	fst->flows_per_reo[fse->reo_indication - 1]--;
+	if (fse->reo_indication)
+		fst->flows_per_reo[fse->reo_indication - 1]--;
 
 	ath12k_dbg(ab, ATH12K_DBG_DP_FST,
 		   "FST num_entries = %d", fst->num_entries);
@@ -2774,7 +2774,8 @@ int ath12k_wifi7_dp_rx_flow_delete_all_entries(struct ath12k_dp *dp)
 		fse->is_valid = false;
 
 		fst->num_entries--;
-		fst->flows_per_reo[fse->reo_indication - 1]--;
+		if (fse->reo_indication)
+			fst->flows_per_reo[fse->reo_indication - 1]--;
 	}
 
 	ath12k_dbg(ab, ATH12K_DBG_DP_FST,
@@ -2922,7 +2923,7 @@ int ath12k_wifi7_dp_rx_flow_fse_cache_operation(struct ath12k_base *ab,
 							  tuple_info);
 		if (ret) {
 			ath12k_err(partner_ab, "Unable to invalidate cache entry ret %d",
-					ret);
+				   ret);
 			return ret;
 		}
 	}
