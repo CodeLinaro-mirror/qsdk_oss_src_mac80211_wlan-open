@@ -14544,26 +14544,18 @@ static void ath12k_wmi_fw_stats_process(struct ath12k *ar,
 					struct ath12k_fw_stats *stats)
 {
 	struct ath12k_base *ab = ar->ab;
-	struct ath12k_pdev *pdev;
 	bool is_end = true;
 	size_t total_vdevs_started = 0;
-	int i;
 
 	if (stats->stats_id == WMI_REQUEST_VDEV_STAT) {
 		if (list_empty(&stats->vdevs)) {
 			ath12k_warn(ab, "empty vdev stats");
 			return;
 		}
-		/* FW sends all the active VDEV stats irrespective of PDEV,
-		 * hence limit until the count of all VDEVs started
+		/* FW sends VDEV stats only for the requested PDEV,
+		 * hence limit until the count of VDEVs started within this PDEV.
 		 */
-		rcu_read_lock();
-		for (i = 0; i < ab->num_radios; i++) {
-			pdev = rcu_dereference(ab->pdevs_active[i]);
-			if (pdev && pdev->ar)
-				total_vdevs_started += pdev->ar->num_started_vdevs;
-		}
-		rcu_read_unlock();
+		total_vdevs_started = ar->num_started_vdevs;
 
 		if (total_vdevs_started)
 			is_end = ((++ar->fw_stats.num_vdev_recvd) ==
@@ -14602,16 +14594,10 @@ static void ath12k_wmi_fw_stats_process(struct ath12k *ar,
 			ath12k_warn(ab, "empty vdev extd stats");
 			return;
 		}
-		/* FW sends all the active VDEV extd stats irrespective of PDEV,
-		 * hence limit until the count of all VDEVs started
+		/* FW sends VDEV extd stats only for the requested PDEV,
+		 * hence limit until the count of VDEVs started within this PDEV.
 		 */
-		rcu_read_lock();
-		for (i = 0; i < ab->num_radios; i++) {
-			pdev = rcu_dereference(ab->pdevs_active[i]);
-			if (pdev && pdev->ar)
-				total_vdevs_started += pdev->ar->num_started_vdevs;
-		}
-		rcu_read_unlock();
+		total_vdevs_started = ar->num_started_vdevs;
 
 		if (total_vdevs_started)
 			is_end = ((++ar->fw_stats.num_vdev_extd_recvd) ==
