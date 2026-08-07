@@ -4392,10 +4392,13 @@ int ath12k_dp_mon_tx_htt_src_ring_setup(struct ath12k_dp *dp)
 }
 
 static void
-ath12k_dp_ext_mon_tx_enable_post_rtap(struct ath12k_pdev_dp *dp_pdev, bool enable)
+ath12k_dp_ext_mon_tx_set_rtap_mode(struct ath12k_pdev_dp *dp_pdev, u8 meta_data)
 {
 	struct ieee80211_vif *mon_vif = NULL;
 	struct ath12k_link_vif *arvif;
+	bool enable = !!(meta_data & ATH12K_EXT_MON_METADATA_RTAP_HDR);
+	enum ieee80211_ext_mon_event_type_extn mode =
+		enable ? IEEE80211_EXT_MON_POST_RTAP : IEEE80211_EXT_MON_PRE_RTAP;
 
 	list_for_each_entry(arvif, &dp_pdev->ar->arvifs, list) {
 		if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR &&
@@ -4408,10 +4411,7 @@ ath12k_dp_ext_mon_tx_enable_post_rtap(struct ath12k_pdev_dp *dp_pdev, bool enabl
 		return;
 
 	ieee80211_set_ext_tx_monitor(mon_vif, enable);
-	if (enable)
-		ieee80211_set_ext_tx_mon_evt_typ(mon_vif, IEEE80211_EXT_MON_POST_RTAP);
-	else
-		ieee80211_set_ext_tx_mon_evt_typ(mon_vif, IEEE80211_EXT_MON_PRE_RTAP);
+	ieee80211_set_ext_tx_mon_evt_typ(mon_vif, mode);
 }
 
 static int ath12k_dp_tx_mon_reset_ext_mon_config(struct ath12k_pdev_dp *dp_pdev)
@@ -4435,7 +4435,7 @@ static int ath12k_dp_tx_mon_reset_ext_mon_config(struct ath12k_pdev_dp *dp_pdev)
 		memset(&tx_config->fpmo, 0, sizeof(tx_config->fpmo));
 	}
 	spin_unlock(&tx_ext_mon->tx_ext_mon_lock);
-	ath12k_dp_ext_mon_tx_enable_post_rtap(dp_pdev, false);
+	ath12k_dp_ext_mon_tx_set_rtap_mode(dp_pdev, 0);
 	ret = ath12k_dp_ext_mon_tx_remove_all_peers(dp_pdev);
 	return ret;
 }
@@ -6119,7 +6119,6 @@ static void ath12k_dp_ext_mon_tx_recover(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
 	struct ath12k_pdev_tx_mon *tx_mon = dp_mon_pdev->dp_pdev_tx_mon;
 	struct ath12k *ar = dp_pdev->ar;
-	bool rtap_enable;
 
 	if (old->enable) {
 		struct ath12k_ext_mon_filter_config restore = {
@@ -6129,8 +6128,7 @@ static void ath12k_dp_ext_mon_tx_recover(struct ath12k_pdev_dp *dp_pdev,
 			.target_peer   = old->fpmo,
 			.meta_data     = old->metadata,
 		};
-		rtap_enable = restore.meta_data & ATH12K_EXT_MON_METADATA_RTAP_HDR;
-		ath12k_dp_ext_mon_tx_enable_post_rtap(dp_pdev, rtap_enable);
+		ath12k_dp_ext_mon_tx_set_rtap_mode(dp_pdev, restore.meta_data);
 		if (!ath12k_dp_ext_mon_update_tx_config(dp_mon_pdev, &restore) &&
 		    !ath12k_dp_mon_tx_update_send_filter(dp_pdev, tx_mon, old_mode))
 			return;
@@ -6181,7 +6179,6 @@ int ath12k_dp_ext_mon_set_tx_filter(struct ath12k_pdev_dp *dp_pdev,
 	enum dp_mon_tx_filter_mode old_mode;
 	enum dp_mon_tx_filter_mode new_mode = DP_MON_TX_FULL_MONITOR;
 	int ret = 0;
-	bool rtap_enable = new_config->meta_data & ATH12K_EXT_MON_METADATA_RTAP_HDR;
 
 	if (unlikely(!dp_mon_pdev)) {
 		ath12k_warn(dp_pdev->dp->ab, "monitor pdev is null\n");
@@ -6270,8 +6267,7 @@ int ath12k_dp_ext_mon_set_tx_filter(struct ath12k_pdev_dp *dp_pdev,
 		return ret;
 	}
 
-	ath12k_dp_ext_mon_tx_enable_post_rtap(dp_pdev, rtap_enable);
-
+	ath12k_dp_ext_mon_tx_set_rtap_mode(dp_pdev, new_config->meta_data);
 	ret = ath12k_dp_ext_mon_reconfigure_tx_peers(dp_pdev, &old, new_config);
 	return ret;
 }
