@@ -3457,18 +3457,14 @@ int ath12k_wifi8_sdwf_reinject_handler(struct ath12k_pdev_dp *dp_pdev,
 }
 
 /*
- * ath12k_wifi8_dp_tx_exception_fw_buf_handler() - WAR for R-TQM completions
+ * ath12k_wifi8_dp_tx_exception_to_tx_comp() - Redirect TX exception buffer
+ * to the normal TX completion ring instead of freeing it directly.
  *
- * During target recovery, R-FW-owned buffers arrive in the TX exception ring
- * with a non-zero RBM in the 20-bit SW cookie (bits[19:18] != 0). Instead of
- * freeing them directly, the host sends a SW2TQM sync command to C-TQM so
- * TQM routes the completion to fw_tqm2sw_ring (HAL_TQM_HOST_STATUS_RING=1).
- *
- * Builds a minimal hal_tqm2sw_completion_ring descriptor from paddr/rbm/cookie
- * and delegates all field extraction and command building to the HAL layer via
- * ath12k_wifi8_hal_tqm_fw_buf_release_cmd_send().
+ * Buffers arriving in the TX exception ring are not freed here. A SW2TQM
+ * command is sent so C-TQM routes the completion to the normal TX completion
+ * ring.
  */
-int ath12k_wifi8_dp_tx_exception_fw_buf_handler(struct ath12k_dp *dp,
+int ath12k_wifi8_dp_tx_exception_to_tx_comp(struct ath12k_dp *dp,
 						dma_addr_t paddr,
 						u8 rbm,
 						u32 cookie)
@@ -3519,6 +3515,8 @@ int ath12k_wifi8_dp_tqm2sw_fw_handler(struct ath12k_dp *dp, int budget)
 	int count = 0;
 	int quota = budget;
 	int ret;
+	u8 link_id, chip_id, rbm;
+	u32 cookie;
 
 	if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags))
 		return 0;
@@ -3533,26 +3531,55 @@ int ath12k_wifi8_dp_tqm2sw_fw_handler(struct ath12k_dp *dp, int budget)
 		if (!desc)
 			break;
 
-		/*
-		 * Follow the ath12k_wifi8_dp_tqm_cmd_send pattern:
-		 * extract paddr/rbm/cookie from the completion descriptor,
-		 * populate fw_buf_release_params, and call the DP-level send
-		 * function which routes through ath12k_wifi8_hal_tqm_cmd_send()
-		 * → case HAL_TQM_FW_COMPLETION_BO →
-		 * ath12k_wifi8_hal_tqm_fw_buf_release_cmd().
-		 */
 		memset(&cmd, 0, sizeof(cmd));
 		cmd.fw_buf_release_params.paddr =
 			((u64)le32_get_bits(desc->buf_addr_info.info1,
 					    BUFFER_ADDR_INFO1_ADDR) << 32) |
 			le32_get_bits(desc->buf_addr_info.info0,
 				      BUFFER_ADDR_INFO0_ADDR);
-		cmd.fw_buf_release_params.rbm =
-			le32_get_bits(desc->buf_addr_info.info1,
-				      BUFFER_ADDR_INFO1_RET_BUF_MGR);
-		cmd.fw_buf_release_params.cookie =
-			le32_get_bits(desc->buf_addr_info.info1,
-				      BUFFER_ADDR_INFO1_SW_COOKIE);
+		cookie = le32_get_bits(desc->buf_addr_info.info1,
+				       BUFFER_ADDR_INFO1_SW_COOKIE);
+
+		/*
+		 * Derive the correct FW RBM from the cookie's link_id field
+		 * (ATH12K_DP_TX_FW_COOKIE_HW_LINK_ID field, bits [15:13]).
+		 * Extract link_id, look up chip_id (device_id) via hw_links[],
+		 * and map to the correct FW buffer manager for the owning chip.
+		 */
+		link_id = (u8)ATH12K_DP_TX_FW_COOKIE_HW_LINK_ID_GET(cookie);
+		if (link_id >= ATH12K_GROUP_MAX_RADIO) {
+			ath12k_warn(ab,
+				    "tqm2sw_fw: invalid link_id %u (max %u) cookie=0x%x\n",
+				    link_id, ATH12K_GROUP_MAX_RADIO, cookie);
+			continue;
+		}
+
+		chip_id = dp->dp_hw_grp->hw_links[link_id].device_id;
+		switch (chip_id) {
+		case 0:
+			rbm = HAL_RX_BUF_RBM_FW_CHIP0_BM;
+			break;
+		case 1:
+			rbm = HAL_RX_BUF_RBM_FW_CHIP1_BM;
+			break;
+		case 2:
+			rbm = HAL_RX_BUF_RBM_FW_CHIP2_BM;
+			break;
+		case 3:
+			rbm = HAL_RX_BUF_RBM_FW_CHIP3_BM;
+			break;
+		case 4:
+			rbm = HAL_RX_BUF_RBM_FW_CHIP4_BM;
+			break;
+		default:
+			ath12k_warn(ab,
+				    "tqm2sw_fw: unknown chip_id %u (link_id %u) cookie=0x%x\n",
+				    chip_id, link_id, cookie);
+			continue;
+		}
+
+		cmd.fw_buf_release_params.rbm    = rbm;
+		cmd.fw_buf_release_params.cookie = cookie;
 
 		ret = ath12k_wifi8_dp_tqm_cmd_send(ab, HAL_TQM_FW_COMPLETION_BO,
 						   &cmd, NULL, NULL);
@@ -4374,6 +4401,7 @@ int ath12k_wifi8_dp_tx_exception_handler(struct ath12k_dp *dp, int budget)
 	dma_addr_t paddr;
 	int ret;
 	bool tx_exception_error = false;
+	u8 rbm;
 
 	srng = &ab->hal.srng_list[dp_wifi8->tx_exception.ring_id];
 	spin_lock_bh(&srng->lock);
@@ -4417,18 +4445,10 @@ int ath12k_wifi8_dp_tx_exception_handler(struct ath12k_dp *dp, int budget)
 		}
 
 send_tqm2sw_fw_comp:
-		/*
-		 * For FW-owned buffers (cookie RBM != 0):
-		 * Do NOT free the buffer directly. Instead send a
-		 * SW2TQM command so TQM releases the buffer back to
-		 * the FW's buffer pool. The completion arrives on
-		 * fw_tqm2sw_ring via ath12k_wifi8_dp_fw_tqm2sw_handler().
-		 *
-		 * Release the SW TX descriptor slot regardless.
-		 */
-		ath12k_wifi8_dp_tx_exception_fw_buf_handler(dp, paddr,
-							    (u8)((desc_id >> 18) & 0x3),
-							    desc_id);
+		rbm = le32_get_bits(tx_exception_desc->buf_addr_info.info1,
+				    BUFFER_ADDR_INFO1_RET_BUF_MGR);
+		ath12k_wifi8_dp_tx_exception_to_tx_comp(dp, paddr,
+							rbm, desc_id);
 	}
 
 	ath12k_hal_srng_access_end(ab, srng);
