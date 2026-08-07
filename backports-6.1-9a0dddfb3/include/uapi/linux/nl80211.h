@@ -9586,6 +9586,9 @@ enum nl80211_qm_qos_attrs {
  *
  * @NL80211_QM_DESC_ATTR_TCLAS_MASK - Traffic Classifier Mask with bitmap
  * of parameters to be matched in an UL flow for DL prioritization
+ *
+ * @NL80211_QM_DESC_ATTR_DEDICATED_QUEUE - Flag requesting dedicated queueing
+ * for this descriptor
  */
 enum nl80211_qm_desc_attrs {
 	NL80211_QM_DESC_ATTR_INVALID,
@@ -9599,6 +9602,7 @@ enum nl80211_qm_desc_attrs {
 	NL80211_QM_DESC_ATTR_USER_PRIORITY_BITMAP,
 	NL80211_QM_DESC_ATTR_USER_PRIORITY_LIMIT,
 	NL80211_QM_DESC_ATTR_TCLAS_MASK,
+	NL80211_QM_DESC_ATTR_DEDICATED_QUEUE,
 
 	/* keep last */
 	__NL80211_QM_DESC_ATTR_LAST,

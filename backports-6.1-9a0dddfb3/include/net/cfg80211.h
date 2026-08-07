@@ -5431,6 +5431,11 @@ struct cfg80211_qm_qos_attributes {
  * @tclas_processing: TCLAS processing (match-all or match-any)
  * @is_qos_present: Indicates whether QoS attributes are present
  * @qos_attr: QoS attributes associated with the request
+ * @user_priority_bitmap: User priority bitmap
+ * @user_priority_limit: User priority limit
+ * @tclas_mask: TCLAS mask bitmap
+ * @dedicated_queue: If true, dedicated queueing is requested for this
+ *		     descriptor
  */
 
 struct cfg80211_qm_req_desc_data {
@@ -5446,6 +5451,7 @@ struct cfg80211_qm_req_desc_data {
 	u8 user_priority_bitmap;
 	u8 user_priority_limit;
 	u8 tclas_mask;
+	bool dedicated_queue;
 };
 
 /**
