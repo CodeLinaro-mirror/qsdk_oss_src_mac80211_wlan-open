@@ -7692,8 +7692,10 @@ static ssize_t ath12k_write_simulate_fw_crash(struct file *file,
 	struct ath12k_pdev *pdev;
 	struct ath12k *ar = NULL;
 	char buf[32] = {0};
-	int i, ret;
+	int i, j, ret;
 	ssize_t rc;
+	struct ath12k_base *cumac_ab = NULL;
+	struct ath12k *cumac_ar = NULL;
 
 	/* filter partial writes and invalid commands */
 	if (*ppos != 0 || count >= sizeof(buf) || count == 0)
@@ -7737,6 +7739,30 @@ static ssize_t ath12k_write_simulate_fw_crash(struct file *file,
 		ath12k_info(ab, "simulating firmware assert crash\n");
 		ret = ath12k_wmi_force_fw_hang_cmd(ar,
 						   ATH12K_WMI_FW_HANG_ASSERT_TYPE,
+						   ATH12K_WMI_FW_HANG_DELAY, false);
+	} else if (!strcmp(buf, "cumac_q6_bcr_assert")) {
+		for (i = 0; i < ag->num_devices; i++) {
+			cumac_ab = ag->ab[i];
+			if (!cumac_ab || cumac_ab->is_bypassed)
+				continue;
+			if (!cumac_ab->is_cumac_chip)
+				continue;
+			for (j = 0; j < cumac_ab->num_radios; j++) {
+				cumac_ar = cumac_ab->pdevs[j].ar;
+				if (cumac_ar)
+					break;
+			}
+			break;
+		}
+
+		if (!cumac_ar) {
+			ath12k_err(ab, "No CUMAC chip found in hw group\n");
+			return -ENODEV;
+		}
+
+		ath12k_info(cumac_ab, "simulating CUMAC Q6 BCR assert crash\n");
+		ret = ath12k_wmi_force_fw_hang_cmd(cumac_ar,
+						   ATH12K_WMI_Q6_BCR_ASSERT_TYPE,
 						   ATH12K_WMI_FW_HANG_DELAY, false);
 	} else {
 		return -EINVAL;
