@@ -1679,6 +1679,7 @@ static void ath12k_pci_shutdown(struct pci_dev *pdev)
 	struct ath12k_base *ab = pci_get_drvdata(pdev);
 	struct ath12k_pci *ab_pci = ath12k_pci_priv(ab);
 
+	set_bit(ATH12K_GROUP_FLAG_SHUTDOWN, &ab->ag->flags);
 	ath12k_pci_set_irq_affinity_hint(ab_pci, NULL);
 
 	if (ath12k_check_erp_power_down(ab->ag) &&
