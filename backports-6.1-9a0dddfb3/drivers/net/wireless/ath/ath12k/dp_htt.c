@@ -554,7 +554,7 @@ ath12k_dp_htt_process_usr_compltn_flush(struct ath12k_pdev_dp *dp_pdev,
 	/* No need to use these stats when SW is already
 	 * doing it on a per packet basis
 	 */
-	if (dp_pdev->dp_stats_mask & DP_ENABLE_STATS)
+	if (!ab->stats_disable)
 		return -EINTR;
 
 	ath12k_dp_ppdu_stats_flush_tlv_parse(ab, dp_pdev, msg, ppdu_info);
@@ -1812,7 +1812,7 @@ ath12k_dp_htt_ppdu_stats_update_tx_comp_stats(struct ath12k_pdev_dp *dp_pdev,
 	/* Update below stats when msdu update path is disabled, It is likely
 	 * the case when KPI is enabled
 	 */
-	if (dp_pdev->dp_stats_mask & DP_ENABLE_STATS)
+	if (!ab->stats_disable)
 		return;
 
 	for (i = 0; i < ppdu_info->ppdu_stats.common.num_users; i++) {

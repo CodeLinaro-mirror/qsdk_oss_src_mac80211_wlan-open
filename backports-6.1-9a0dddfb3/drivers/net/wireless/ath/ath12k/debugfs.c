@@ -1413,6 +1413,56 @@ static const struct file_operations fops_device_dp_stats = {
 	.llseek = default_llseek,
 };
 
+static ssize_t ath12k_write_stats_disable(struct file *file,
+					  const char __user *user_buf,
+					  size_t count, loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	struct ath12k_pdev *pdev;
+	u32 mask = 0;
+	int ret, i;
+	bool disable;
+	enum dp_mon_stats_mode mode = ATH12k_DP_MON_BASIC_STATS;
+
+	if (kstrtobool_from_user(user_buf, count, &disable))
+		return -EINVAL;
+
+	if (disable != ab->stats_disable) {
+		ab->stats_disable = disable;
+		ab->dp->stats_disable = disable;
+
+		for (i = 0; i < ab->num_radios; i++) {
+			pdev = &ab->pdevs[i];
+			if (pdev && pdev->ar) {
+				wiphy_lock(ath12k_ar_to_hw(pdev->ar)->wiphy);
+				ath12k_dp_mon_rx_stats_config(pdev->ar, !disable, mode);
+				ret = ath12k_dp_mon_rx_update_filter(pdev->ar);
+				if (ret)
+					ath12k_warn(ab, "Failed to configure monitor filters\n");
+				wiphy_unlock(ath12k_ar_to_hw(pdev->ar)->wiphy);
+
+				pdev->ar->ah->hw->perf_mode = disable;
+				if (!disable)
+					mask = HTT_PPDU_STATS_TAG_DEFAULT;
+
+				ath12k_dp_tx_htt_h2t_ppdu_stats_req(pdev->ar, mask);
+
+				ath12k_info(ab, "Monitor disable %u PPDU stats mask 0x%x",
+					    disable, mask);
+			}
+		}
+	}
+
+	ret = count;
+
+	return ret;
+}
+
+static const struct file_operations fops_soc_stats_disable = {
+	.open = simple_open,
+	.write = ath12k_write_stats_disable,
+};
+
 static ssize_t ath12k_write_block_radar(struct file *file,
 					const char __user *user_buf,
 					size_t count, loff_t *ppos)
@@ -6693,8 +6743,6 @@ static ssize_t ath12k_write_dp_stats_mask(struct file *file,
 	struct ath12k_hw *ah = file->private_data;
 	struct ath12k *ar;
 	u32 debug_mask;
-	u32 ppdu_mask;
-	bool stats_disable;
 	int i = 0, ret;
 	enum dp_mon_stats_mode mode = 0;
 	struct ath12k_link_vif *arvif;
@@ -6713,65 +6761,13 @@ static ssize_t ath12k_write_dp_stats_mask(struct file *file,
 		goto exit;
 	}
 
-	ath12k_dbg(ah->radio[0].ab, ATH12K_DBG_TELEMETRY,
-		   "dp_stats_mask write: debug_mask=0x%x num_radio=%d\n",
-		   debug_mask, ah->num_radio);
-
 	for (i = 0; i < ah->num_radio; i++) {
 		ar = &ah->radio[i];
 		if (ar) {
-			stats_disable = !(debug_mask & DP_ENABLE_STATS);
-
-			ath12k_dbg(ar->ab, ATH12K_DBG_TELEMETRY,
-				   "radio[%d] stats_disable=%d ab->stats_disable=%d\n",
-				   i, stats_disable, ar->ab->stats_disable);
-
-			if (stats_disable != ar->ab->stats_disable) {
-				mode = ATH12k_DP_MON_BASIC_STATS;
-				ath12k_dp_mon_rx_stats_config(ar, !stats_disable,
-							      mode);
-
-				ret = ath12k_dp_mon_rx_update_filter(ar);
-				if (ret)
-					ath12k_warn(ar->ab,
-						    "failed to configure basic stats monitor filters: %d\n",
-						    ret);
-
-				ppdu_mask = stats_disable ?
-					    0 : HTT_PPDU_STATS_TAG_DEFAULT;
-
-				ath12k_dp_tx_htt_h2t_ppdu_stats_req(ar,
-								    ppdu_mask);
-
-				/*
-				 * perf_mode is checked by mac80211 in
-				 * mesh configuration, stats_disable is
-				 * checked in ppeds
-				 */
-				ar->ah->hw->perf_mode = stats_disable;
-				ar->ab->stats_disable = stats_disable;
-				ar->ab->dp->stats_disable = stats_disable;
-
-				ath12k_dbg(ar->ab, ATH12K_DBG_TELEMETRY,
-					   "dp_stats_mask: perf_mode %d, Tx PPDU mask 0x%x Rx Mon mode : %u\n",
-					    ar->ah->hw->perf_mode, ppdu_mask,
-					    mode);
-
-			} else {
-				ath12k_dbg(ar->ab, ATH12K_DBG_TELEMETRY,
-					   "radio[%d] basic stats state unchanged, skipping...\n",
-					   i);
-			}
-
-			/* Handle extended RX stats */
 			mode = ATH12k_DP_MON_EXTD_STATS;
 			if (debug_mask & DP_ENABLE_EXT_RX_STATS) {
 				if (!ar->ab->hw_params->rxdma1_enable)
 					debug_mask &= ~DP_ENABLE_EXT_RX_STATS;
-
-				ath12k_dbg(ar->ab, ATH12K_DBG_TELEMETRY,
-					   "radio[%d] enabling ext RX stats : mode : %u\n",
-					   i, mode);
 
 				ath12k_dp_mon_rx_stats_config(ar, true, mode);
 
@@ -6783,11 +6779,6 @@ static ssize_t ath12k_write_dp_stats_mask(struct file *file,
 			} else {
 				ath12k_dp_mon_rx_stats_config(ar, false, mode);
 			}
-
-			ath12k_dbg(ar->ab, ATH12K_DBG_TELEMETRY,
-				   "radio[%d] dp_stats_mask updated: 0x%x -> 0x%x\n",
-				   i, ar->dp.dp_stats_mask, debug_mask);
-
 			ar->dp.dp_stats_mask = debug_mask;
 
 			/* Sync dp_vif->dp_features bit-7 with dp_stats_mask bit-0 */
@@ -6801,7 +6792,7 @@ static ssize_t ath12k_write_dp_stats_mask(struct file *file,
 				else
 					dp_vif->dp_features &= ~BIT(7);
 
-				ath12k_dbg(ar->ab, ATH12K_DBG_TELEMETRY,
+				ath12k_dbg(ar->ab, ATH12K_DBG_DP_TX,
 					   "dp_stats_mask 0x%x dp_features 0x%x\n",
 					   ar->dp.dp_stats_mask,
 					   dp_vif->dp_features);
@@ -8754,6 +8745,8 @@ void ath12k_debugfs_pdev_create(struct ath12k_base *ab) {
 			    &fops_umac_reset_stats);
 	debugfs_create_file("device_dp_stats", 0600, ab->debugfs_soc, ab,
 			    &fops_device_dp_stats);
+	debugfs_create_file("stats_disable", 0600, ab->debugfs_soc, ab,
+			    &fops_soc_stats_disable);
 	debugfs_create_file("device_mon_stats", 0600, ab->debugfs_soc, ab,
 			    &fops_device_mon_stats);
 	debugfs_create_file("dump_srng_stats", 0600, ab->debugfs_soc, ab,
