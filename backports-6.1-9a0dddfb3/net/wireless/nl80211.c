@@ -20805,6 +20805,9 @@ static int nl80211_parse_qm_tclas(struct nlattr *tb_qm_desc_entry[],
 		if (!tb_tclas)
 			return ret;
 
+		if (tclas_idx >= QM_MAX_TCLAS_ELEMENTS_PER_QM_DESCRIPTOR)
+			return -EINVAL;
+
 		ret = nl80211_parse_qm_tclas_elem(
 				tb_tclas, &qm_req_desc->tclas[tclas_idx]);
 		if (ret)
