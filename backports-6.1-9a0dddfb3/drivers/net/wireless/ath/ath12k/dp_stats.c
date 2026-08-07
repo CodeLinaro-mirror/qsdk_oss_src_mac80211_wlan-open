@@ -893,13 +893,6 @@ void ath12k_sdwf_update_peer_mcs_stats(struct ath12k_dp_qos_tx_stats *qos_tx,
 	mcs = ts->mcs;
 	pkt_type = ts->pkt_type;
 
-	if (pkt_type > HAL_TX_RATE_STATS_PKT_TYPE_11BE ||
-	    pkt_type == HAL_TX_RATE_STATS_PKT_TYPE_11BA)
-		return;
-
-	if (pkt_type == HAL_TX_RATE_STATS_PKT_TYPE_11BE)
-		pkt_type = DOT11_BE;
-
 	switch (pkt_type) {
 	case DOT11_A:
 		mcs = (mcs >= MAX_MCS_11A) ? (MAX_MCS - 1) : mcs;
