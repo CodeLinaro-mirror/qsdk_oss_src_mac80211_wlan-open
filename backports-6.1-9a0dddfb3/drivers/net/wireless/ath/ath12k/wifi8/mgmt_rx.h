@@ -50,7 +50,7 @@ void ath12k_wifi8_mgmt_extract_rx_desc_data(struct ath12k_mgmt *mgmt,
 					    struct hal_rx_desc *rx_desc,
 					    struct hal_rx_desc *ldesc)
 {
-	mgmt->hw_params->hal_ops->extract_rx_desc_data(rx_desc_data, rx_desc, ldesc);
+	mgmt->ab->hal.hal_ops->extract_rx_desc_data(rx_desc_data, rx_desc, ldesc);
 }
 
 void ath12k_wifi8_mgmt_rx_replenish_buffs(struct ath12k_mgmt *mgmt,
@@ -69,7 +69,7 @@ static inline
 u32 ath12k_wifi8_mgmt_rx_h_peer_meta_data(struct ath12k_mgmt *mgmt,
 					  struct hal_rx_desc *desc)
 {
-	return mgmt->hw_params->hal_ops->rx_h_peer_meta_data(desc);
+	return mgmt->ab->hal.hal_ops->rx_h_peer_meta_data(desc);
 }
 
 #endif

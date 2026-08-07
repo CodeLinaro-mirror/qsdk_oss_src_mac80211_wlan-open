@@ -220,27 +220,27 @@ void ath12k_wifi8_dp_extract_rx_desc_data(struct ath12k_dp *dp,
 					  struct hal_rx_desc *rx_desc,
 					  struct hal_rx_desc *ldesc)
 {
-	dp->hw_params->hal_ops->extract_rx_desc_data(rx_desc_data, rx_desc, ldesc);
+	dp->hal->hal_ops->extract_rx_desc_data(rx_desc_data, rx_desc, ldesc);
 }
 
 static inline u8 ath12k_wifi8_dp_rx_get_msdu_src_link(struct ath12k_dp *dp,
 						      struct hal_rx_desc *desc)
 {
-	return dp->hw_params->hal_ops->rx_desc_get_msdu_src_link_id(desc);
+	return dp->hal->hal_ops->rx_desc_get_msdu_src_link_id(desc);
 }
 
 static inline void ath12k_wifi8_dp_rx_desc_end_tlv_copy(struct ath12k_base *ab,
 							struct hal_rx_desc *fdesc,
 							struct hal_rx_desc *ldesc)
 {
-	ab->hw_params->hal_ops->rx_desc_copy_end_tlv(fdesc, ldesc);
+	ab->hal.hal_ops->rx_desc_copy_end_tlv(fdesc, ldesc);
 }
 
 static inline void ath12k_wifi8_dp_rxdesc_set_msdu_len(struct ath12k_base *ab,
 						       struct hal_rx_desc *desc,
 						       u16 len)
 {
-	ab->hw_params->hal_ops->rx_desc_set_msdu_len(desc, len);
+	ab->hal.hal_ops->rx_desc_set_msdu_len(desc, len);
 }
 
 static inline void ath12k_wifi8_dp_rx_desc_get_dot11_hdr(struct ath12k_dp *dp,
@@ -256,14 +256,14 @@ void ath12k_wifi8_dp_rx_desc_get_crypto_header(struct ath12k_base *ab,
 					       u8 *crypto_hdr,
 					       enum hal_encrypt_type enctype)
 {
-	ab->hw_params->hal_ops->rx_desc_get_crypto_header(desc, crypto_hdr,
+	ab->hal.hal_ops->rx_desc_get_crypto_header(desc, crypto_hdr,
 			enctype);
 }
 
 static inline u16 ath12k_wifi8_dp_rxdesc_get_mpdu_frame_ctrl(struct ath12k_base *ab,
 							     struct hal_rx_desc *desc)
 {
-	return ab->hw_params->hal_ops->rx_desc_get_mpdu_frame_ctl(desc);
+	return ab->hal.hal_ops->rx_desc_get_mpdu_frame_ctl(desc);
 }
 
 static inline bool ath12k_wifi8_dp_rx_h_more_frags(struct ath12k_base *ab,

@@ -1111,7 +1111,7 @@ void ath12k_wifi8_dp_rx_update_ppe_msdu_mark(struct ath12k_base *ab,
 	if (peer->ppe_vp_num <= 0)
 		return;
 
-	ab->hw_params->hal_ops->rx_desc_get_fse_info(rx_desc, rx_mpdu_info);
+	ab->hal.hal_ops->rx_desc_get_fse_info(rx_desc, rx_mpdu_info);
 	if (!rx_mpdu_info->flow_idx_timeout &&
 	    !rx_mpdu_info->flow_idx_invalid &&
 	    rx_mpdu_info->flow_info.flow_metadata &&
@@ -2381,15 +2381,11 @@ static int ath12k_wifi8_dp_rx_wbm_idle_buf_0_config_qcn9625(struct ath12k_base *
 	tlv_filter.offset_valid = true;
 	tlv_filter.rx_packet_offset = hal_rx_desc_sz;
 
-	tlv_filter.rx_mpdu_start_offset =
-		ath12k_wifi8_hal_rx_desc_get_mpdu_start_offset_qcn9625();
-	tlv_filter.rx_msdu_end_offset =
-		ath12k_wifi8_hal_rx_desc_get_msdu_end_offset_qcn9625();
+	tlv_filter.rx_mpdu_start_offset = ab->hal.rx_mpdu_start_offset;
+	tlv_filter.rx_msdu_end_offset = ab->hal.rx_msdu_end_offset;
 
-	tlv_filter.rx_mpdu_start_wmask =
-			ath12k_wifi8_hal_rx_mpdu_start_wmask_get_qcn9625();
-	tlv_filter.rx_msdu_end_wmask =
-			ath12k_wifi8_hal_rx_msdu_end_wmask_get_qcn9625();
+	tlv_filter.rx_mpdu_start_wmask = ab->hal.rx_mpdu_start_wmask;
+	tlv_filter.rx_msdu_end_wmask = ab->hal.rx_msdu_end_wmask;
 
 	tlv_filter.rdi_based_source_cfg =
 			ath12k_wifi8_hal_get_rdi_source_cfg(ab, SOURCE_RING_CTRL_SFE);
@@ -2438,15 +2434,11 @@ static int ath12k_wifi8_dp_rx_ppe2wbm_idle_buf_config_qcn9625(struct ath12k_base
 	tlv_filter.offset_valid = true;
 	tlv_filter.rx_packet_offset = hal_rx_desc_sz;
 
-	tlv_filter.rx_mpdu_start_offset =
-		ath12k_wifi8_hal_rx_desc_get_mpdu_start_offset_qcn9625();
-	tlv_filter.rx_msdu_end_offset =
-		ath12k_wifi8_hal_rx_desc_get_msdu_end_offset_qcn9625();
+	tlv_filter.rx_mpdu_start_offset = ab->hal.rx_mpdu_start_offset;
+	tlv_filter.rx_msdu_end_offset = ab->hal.rx_msdu_end_offset;
 
-	tlv_filter.rx_mpdu_start_wmask =
-		ath12k_wifi8_hal_rx_mpdu_start_wmask_get_qcn9625();
-	tlv_filter.rx_msdu_end_wmask =
-		ath12k_wifi8_hal_rx_msdu_end_wmask_get_qcn9625();
+	tlv_filter.rx_mpdu_start_wmask = ab->hal.rx_mpdu_start_wmask;
+	tlv_filter.rx_msdu_end_wmask = ab->hal.rx_msdu_end_wmask;
 
 	/* Source ring configuration for PPEDS */
 	tlv_filter.rdi_based_source_cfg |=
