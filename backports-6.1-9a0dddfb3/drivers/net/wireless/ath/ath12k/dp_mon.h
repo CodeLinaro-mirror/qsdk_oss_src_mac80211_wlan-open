@@ -457,6 +457,8 @@ struct dp_mon_tx_ppdu_info {
 	u32 num_mpdu_fcs_ok;
 	void *buffer_addr;
 	u32 buffer_length;
+	u32 frag_offset;
+	struct page *page;
 	bool msdu_continuation;
 	bool truncated;
 	bool has_buffer_data;
