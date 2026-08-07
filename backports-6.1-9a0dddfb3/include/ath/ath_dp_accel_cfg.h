@@ -70,6 +70,8 @@ struct ath_dp_ast_param {
  * struct ath_dp_metadata_param - wifi classifier metadata
  * @mlo_param: mlo metadata info
  * @sawf_param: sawf param
+ * @out_wifi_arch_info: output - Wi-Fi generation of the ops instance
+ *   that handled this request PPE_DS_WIFI_ARCH_MODE_WIFI7=7 by default
  */
 
 struct	ath_dp_metadata_param {
@@ -80,6 +82,7 @@ struct	ath_dp_metadata_param {
 	struct	mlo_param	mlo_param;
 	struct	sawf_param	sawf_param;
 	struct	ath_dp_ast_param ast_param;
+	uint8_t out_wifi_arch_info;
 };
 
 struct ath_ul_params {
