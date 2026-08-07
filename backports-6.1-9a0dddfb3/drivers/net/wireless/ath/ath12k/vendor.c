@@ -12307,7 +12307,6 @@ static int ath12k_vendor_offload_ssid_scheduling_config(struct ieee80211_hw *hw,
  *                                used by ath12k_vendor_atf_stats_dumpit.
  * @msg:          SKB being filled with netlink attributes.
  * @peers_data:   Outer nest attribute wrapping all per-peer entries.
- * @storage:      Pointer to the dumpit storage counter (counts peers emitted).
  * @j:            Running index used as the nest key for each peer entry.
  * @tailroom:     Remaining tailroom in @msg; updated after each peer entry.
  * @nested_range: Size of the last peer entry; used to track tailroom usage.
@@ -12316,7 +12315,6 @@ static int ath12k_vendor_offload_ssid_scheduling_config(struct ieee80211_hw *hw,
 struct ath12k_atf_dumpit_ctx {
 	struct sk_buff *msg;
 	struct nlattr *peers_data;
-	unsigned long *storage;
 	int j;
 	int tailroom;
 	int nested_range;
@@ -12383,7 +12381,6 @@ ath12k_vendor_atf_stats_dumpit_cb(struct ath12k_pdev_dp *dp_pdev,
 		return;
 	}
 
-	*ctx->storage += 1;
 	nest_end_length = nla_nest_end(msg, peer_data);
 	ctx->nested_range = nest_end_length - nest_start_length;
 	ctx->tailroom -= ctx->nested_range;
@@ -12435,6 +12432,15 @@ static int ath12k_vendor_atf_stats_dumpit(struct wiphy *wiphy,
 	if (!storage)
 		return -ENODATA;
 
+	/* nl80211_vendor_cmd_dump() calls dumpit() in a while(1) loop as long
+	 * as it returns a positive value. This function writes the complete
+	 * snapshot in one shot, so mark the session done (*storage = 1) before
+	 * returning msg->len. On the next call *storage is non-zero: return
+	 * -ENOENT to signal the loop to stop cleanly.
+	 */
+	if (*storage)
+		return -ENOENT;
+
 	peer_attr = nla_nest_start(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_STATS);
 	if (!peer_attr)
 		return -ENOBUFS;
@@ -12464,7 +12470,6 @@ static int ath12k_vendor_atf_stats_dumpit(struct wiphy *wiphy,
 
 	ctx.msg        = msg;
 	ctx.peers_data = peers_data;
-	ctx.storage    = storage;
 	ctx.tailroom   = skb_tailroom(msg);
 
 	ath12k_dp_link_peer_iterate_by_dp_pdev(&ar->dp,
@@ -12475,10 +12480,8 @@ static int ath12k_vendor_atf_stats_dumpit(struct wiphy *wiphy,
 
 	nla_nest_end(msg, peers_data);
 	nla_nest_end(msg, peer_attr);
-	if (*storage == ar->num_peers)
-		return msg->len;
-
-	return 0;
+	*storage = 1;
+	return msg->len;
 }
 
 static void
