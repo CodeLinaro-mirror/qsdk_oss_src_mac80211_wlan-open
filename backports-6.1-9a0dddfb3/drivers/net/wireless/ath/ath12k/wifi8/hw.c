@@ -30,6 +30,7 @@
 #include "hal_qcn9625.h"
 #include "mgmt_rx.h"
 #include "dp_peer.h"
+#include "dp_tx_queue.h"
 #include "../dp_mon.h"
 #include "qcn_extns/wifi8_dp_extn.h"
 #include "../cfr.h"
@@ -1507,6 +1508,56 @@ static void ath12k_wifi8_mac_op_sta_set_4addr(struct ieee80211_hw *hw,
 	}
 }
 
+static int ath12k_wifi8_smd_ensure_tx_tid_queues(struct ath12k_base *ab,
+						 struct ath12k_dp *dp,
+						 struct ath12k_dp_hw *dp_hw,
+						 const u8 *peer_addr, u8 tid)
+{
+	struct ath12k_dp_tx_queue_metadata tx_queue_params = {};
+	struct ath12k_dp_peer *dp_peer;
+	int ret = 0;
+
+	if (ATH12K_DEFAULT_TID_MAP & BIT(tid))
+		return 0;
+
+	/* peer_hash_lock is dropped before ath12k_peer_alloc_dynamic_queue()
+	 * since that acquires tx_q_lock internally.  The caller holds wiphy_lock
+	 * (asserted in ath12k_wifi8_mac_op_set_smd_ctx), which serialises peer
+	 * removal, so dp_peer remains valid across the lock gap.
+	 */
+	spin_lock_bh(&dp_hw->peer_hash_lock);
+	dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, peer_addr);
+	if (!dp_peer) {
+		spin_unlock_bh(&dp_hw->peer_hash_lock);
+		ath12k_warn(ab, "SMD DL alloc: peer %pM not found for tid %u\n",
+			    peer_addr, tid);
+		return -ENOENT;
+	}
+	spin_unlock_bh(&dp_hw->peer_hash_lock);
+
+	tx_queue_params.tidno = tid;
+	tx_queue_params.encap_type = dp_peer->tx_encap_type;
+
+	tx_queue_params.flow_type = HTT_TID_MSDUQ_NONUDP;
+	ret = ath12k_peer_alloc_dynamic_queue(dp->dp_hw_grp, dp_peer,
+					      &tx_queue_params);
+	if (ret) {
+		ath12k_err(ab,
+			   "SMD DL alloc: failed to alloc non-udp tx queue for peer %pM tid %u err %d\n",
+			   peer_addr, tid, ret);
+		return ret;
+	}
+
+	tx_queue_params.flow_type = HTT_TID_MSDUQ_UDP;
+	ret = ath12k_peer_alloc_dynamic_queue(dp->dp_hw_grp, dp_peer,
+					      &tx_queue_params);
+	if (ret)
+		ath12k_err(ab,
+			   "SMD DL alloc: failed to alloc udp tx queue for peer %pM tid %u err %d\n",
+			   peer_addr, tid, ret);
+	return ret;
+}
+
 static int ath12k_wifi8_mac_op_set_smd_ctx(struct ieee80211_hw *hw,
 					   struct ieee80211_vif *vif,
 					   struct ieee80211_sta *sta,
@@ -1597,17 +1648,40 @@ static int ath12k_wifi8_mac_op_set_smd_ctx(struct ieee80211_hw *hw,
 				 tid, tx_tid.ssn, ctx->pn_len,
 				 ctx->pn_len, tx_tid.pn_number, ba_buf_size);
 
-		/* for WMI smd roam config cmd */
-		ahsta->smd_info.sn[tid] = tx_tid.ssn + tx_tid.lsn_offset;
-		ahsta->smd_info.lsn_offset[tid] = tx_tid.lsn_offset;
-		ahsta->smd_info.tx_ba_buf_size[tid] = ba_buf_size;
+		/*
+		 * Skip TQM queue setup, TQM SN/PN update and WMI roam config
+		 * state for TIDs with no active BA session on the SAP
+		 * (ba_buf_size == 0).  There is no queue to seed and sending
+		 * zero ba_window_size to firmware for these TIDs is spurious.
+		 */
+		if (!ba_buf_size)
+			continue;
+
+		ret = ath12k_wifi8_smd_ensure_tx_tid_queues(ab, dp, dp_hw,
+							    sta->addr, tid);
+		if (ret) {
+			ath12k_err(ab,
+				   "Failed to ensure TX queues for SMD DL ctx peer %pM tid: %d err: %d",
+				   sta->addr, tid, ret);
+			continue;
+		}
 
 		ret = ath12k_dp_arch_peer_tx_tid_update_for_smd(dp, dp_hw, sta->addr,
 								&tx_tid);
-		if (ret)
+		if (ret) {
 			ath12k_err(ab,
 				   "Failed to set SMD DL ctx for %pM tid: %d err: %d",
 				   sta->addr, tid, ret);
+			continue;
+		}
+
+		/* for WMI smd roam config cmd — written only after TQM is
+		 * seeded so firmware receives state that reflects what TQM
+		 * was actually programmed with.
+		 */
+		ahsta->smd_info.sn[tid] = tx_tid.ssn + tx_tid.lsn_offset;
+		ahsta->smd_info.lsn_offset[tid] = tx_tid.lsn_offset;
+		ahsta->smd_info.tx_ba_buf_size[tid] = ba_buf_size;
 	}
 
 	/* Vendor context */
