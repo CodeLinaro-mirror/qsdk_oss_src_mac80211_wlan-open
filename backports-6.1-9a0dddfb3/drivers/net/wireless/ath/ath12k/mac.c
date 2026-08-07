@@ -32372,7 +32372,12 @@ static int ath12k_process_scs_add(struct ath12k *ar, struct ath12k_sta *ahsta,
 		}
 	}
 
-	ret = ath12k_dp_peer_scs_add(dp_peer, qm_id, qos_id);
+	ath12k_dbg(ar->ab, ATH12K_DBG_QOS,
+		   "SCS add: scs_id:%u dedicated_queue:%d",
+		   qm_id, qm_req->dedicated_queue);
+
+	ret = ath12k_dp_peer_scs_add(dp_peer, qm_id, qos_id,
+				     qm_req->dedicated_queue);
 	return ret;
 }
 

@@ -293,6 +293,7 @@ struct ath12k_msduq {
 
 struct ath12k_dl_scs {
 	u16 qos_id_msduq;
+	bool dedicated_queue;
 };
 
 struct ath12k_dp_peer_qos {
@@ -383,7 +384,7 @@ bool ath12k_dp_qos_stats_alloc(struct ath12k *ar,
 			       struct ieee80211_vif *vif,
 			       struct ath12k_dp_link_peer *peer);
 int ath12k_dp_peer_scs_add(struct ath12k_dp_peer *dp_peer, u8 qm_id,
-			   u16 qos_id);
+			   u16 qos_id, bool dedicated_queue);
 int ath12k_dp_peer_scs_del(struct ath12k_dp_peer *dp_peer, u8 qm_id,
 			   u16 *qos_id);
 int ath12k_dp_peer_scs_data(struct ath12k_dp *dp,
