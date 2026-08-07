@@ -4386,7 +4386,13 @@ static void ath12k_qmi_free_mlo_mem_chunk(struct ath12k_base *ab,
 			       mlo_chunk->paddr,
 			       DMA_ATTR_FORCE_CONTIGUOUS);
 #else
-		iounmap(mlo_chunk->v.ioaddr);
+		if (ab->mlo_mem_dev.rmem_inited)
+			dma_free_coherent(dev,
+					  mlo_chunk->size,
+					  mlo_chunk->v.ioaddr,
+					  mlo_chunk->paddr);
+		else
+			iounmap(mlo_chunk->v.ioaddr);
 #endif
 		mlo_chunk->v.ioaddr = NULL;
 	} else if (mlo_chunk->v.addr) {
@@ -4451,12 +4457,9 @@ void ath12k_qmi_free_target_mem_chunk(struct ath12k_base *ab)
 					ab->qmi.target_mem[i].v.ioaddr = NULL;
 				}
 #else
-				if ((ab->qmi.target_mem[i].type == AFC_REGION_TYPE &&
+				if (ab->qmi.target_mem[i].type == AFC_REGION_TYPE &&
 				     ab->hif.bus != ATH12K_BUS_HYBRID &&
-				     ab->qmi.target_mem[i].v.addr) ||
-				     (ab->qmi.target_mem[i].type ==
-				      MLO_GLOBAL_MEM_REGION_TYPE &&
-				      ab->mlo_mem_dev.rmem_inited)){
+				     ab->qmi.target_mem[i].v.addr) {
 					dma_free_coherent(dev,
 							  ab->qmi.target_mem[i].size,
 							  ab->qmi.target_mem[i].v.addr,
@@ -4536,7 +4539,7 @@ static int ath12k_qmi_alloc_chunk(struct ath12k_base *ab,
 	chunk->v.addr = dma_alloc_coherent(dev,
 					   chunk->size,
 					   &chunk->paddr,
-					   GFP_KERNEL | __GFP_NOWARN);
+					   GFP_KERNEL);
 	if (!chunk->v.addr) {
 		if (!ab->qmi_mem_dev.rmem_inited &&
 		    chunk->size > ATH12K_QMI_MAX_CHUNK_SIZE) {
@@ -5142,11 +5145,17 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab,
 						dma_alloc_coherent(dev,
 								   mlo_chunk->size,
 								   &mlo_chunk->paddr,
-								   GFP_KERNEL |
-								   __GFP_NOWARN);
+								   GFP_KERNEL);
 				} else {
 					mlo_chunk->v.ioaddr = ioremap(mlo_chunk->paddr,
 								      mlo_chunk->size);
+				}
+
+				if (!mlo_chunk->v.ioaddr) {
+					ath12k_err(ab, "MLO memory allocation failed\n");
+					mlo_chunk->paddr = 0;
+					ret = -ENOMEM;
+					goto out;
 				}
 				memset_io(mlo_chunk->v.ioaddr, 0, mlo_chunk->size);
 			}
