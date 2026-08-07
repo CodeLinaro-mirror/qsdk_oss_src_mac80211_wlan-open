@@ -92,7 +92,9 @@ int ath12k_wifi8_dp_tqm_cmd_send(struct ath12k_base *ab,
 	ab = dp->ab;
 	dp_wifi8 = ath12k_get_dp_wifi8(dp);
 
-	if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags))
+	if ((test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags) &&
+	     !test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags)) ||
+	    test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags))
 		return 0;
 
 	if (callback_fn) {
