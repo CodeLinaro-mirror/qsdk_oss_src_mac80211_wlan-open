@@ -10871,6 +10871,7 @@ enum wmi_filter_nrp_action {
 enum wmi_filter_nrp_type {
 	WMI_FILTER_NRP_TYPE_AP_BSSID     = 0x1,
 	WMI_FILTER_NRP_TYPE_STA_MACADDR  = 0x2,
+	WMI_FILTER_NRP_TYPE_RA_FILTERING = 0x3,
 };
 
 enum wmi_filter_nrp_flag {
@@ -10887,12 +10888,17 @@ struct wmi_vdev_set_neighbor_rx_cmd {
 	__le32 type;
 	__le32 flag;
 	__le32 bssid_idx;
+	struct ath12k_wmi_mac_addr_params mon_ra_addr_mask;
+	__le32 ra_filter_idx;
 } __packed;
 
 struct ath12k_set_neighbor_rx_params {
 	u32 vdev_id;
 	u32 action;
+	u8 type;
 	u8 nrp_addr[ETH_ALEN];
+	u8 ra_addr_mask[ETH_ALEN];
+	u8 ra_filter_idx;
 };
 
 enum wmi_peer_tx_filter_action {

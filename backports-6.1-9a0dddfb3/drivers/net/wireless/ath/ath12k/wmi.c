@@ -23615,14 +23615,35 @@ int ath12k_wmi_vdev_set_neighbor_rx_cmd(struct ath12k *ar,
 	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_VDEV_FILTER_NRP_CONFIG_CMD,
 						(sizeof(*cmd)));
 	cmd->vdev_id = cpu_to_le32(param->vdev_id);
-	cmd->action = cpu_to_le32(param->action);
-	cmd->type = WMI_FILTER_NRP_TYPE_STA_MACADDR;
 	cmd->bssid_idx = cpu_to_le32(1);
 	ether_addr_copy(cmd->macaddr.addr, param->nrp_addr);
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
-		   "WMI set nrp config vdev_id %d action %d nrp mac %pM\n",
-		   cmd->vdev_id, cmd->action, param->nrp_addr);
+	if (param->type == WMI_FILTER_NRP_TYPE_RA_FILTERING) {
+		cmd->type = cpu_to_le32(param->type);
+		if (param->ra_filter_idx > 3) {
+			ath12k_warn(ar->ab,
+				    "WMI set nrp config invalid ra_filter_idx %d\n",
+				    param->ra_filter_idx);
+			dev_kfree_skb(skb);
+			return -EINVAL;
+		}
+
+		cmd->ra_filter_idx = cpu_to_le32(param->ra_filter_idx);
+		if (param->ra_filter_idx == 3)
+			ether_addr_copy(cmd->mon_ra_addr_mask.addr,
+					param->ra_addr_mask);
+
+		ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+			   "WMI nrp config vdev_id %d type %d mac %pM idx %d mask %pM\n",
+			   param->vdev_id, param->type, param->nrp_addr,
+			   param->ra_filter_idx, param->ra_addr_mask);
+	} else {
+		cmd->action = cpu_to_le32(param->action);
+		cmd->type = cpu_to_le32(WMI_FILTER_NRP_TYPE_STA_MACADDR);
+		ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+			   "WMI set nrp config vdev_id %d action %d nrp mac %pM\n",
+			   param->vdev_id, param->action, param->nrp_addr);
+	}
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_VDEV_FILTER_NEIGHBOR_RX_PACKETS_CMDID);
 	if (ret) {
