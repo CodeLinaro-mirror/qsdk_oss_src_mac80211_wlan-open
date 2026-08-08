@@ -413,16 +413,26 @@ check_uhr:
 
 		npca = ieee80211_uhr_npca_info(uhr_oper);
 		if (npca) {
+			/*
+			 * Per IEEE P802.11bn/D1.5, this field carries the real
+			 * NPCA primary channel number, not an offset from the
+			 * BSS primary channel, so convert it to a frequency
+			 * before validating it against the chandef.
+			 */
 			int width = cfg80211_chandef_get_width(chandef);
-			u8 offs = le32_get_bits(npca->params,
-						IEEE80211_UHR_NPCA_PARAMS_PRIMARY_CHAN_OFFS);
+			u8 npca_chan = le32_get_bits(npca->params,
+						IEEE80211_UHR_NPCA_PARAMS_PRIMARY_CHAN);
 			u32 cf1 = chandef->center_freq1;
+			int npca_freq = ieee80211_channel_to_frequency(
+				npca_chan, chandef->chan->band);
 			bool pri_upper, npca_upper;
 
 			pri_upper = chandef->chan->center_freq > cf1;
-			npca_upper = 20 * offs >= width / 2;
+			npca_upper = npca_freq > (int)cf1;
 
-			if (20 * offs >= cfg80211_chandef_get_width(chandef) ||
+			if (!npca_freq ||
+			    npca_freq < (int)cf1 - width / 2 ||
+			    npca_freq >= (int)cf1 + width / 2 ||
 			    pri_upper == npca_upper) {
 				sdata_info(sdata,
 					   "AP UHR NPCA primary channel invalid, disabling UHR\n");

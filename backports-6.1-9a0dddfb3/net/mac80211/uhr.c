@@ -39,7 +39,7 @@ ieee80211_uhr_npca_elem_to_sta_uhr_npca_info(struct ieee80211_sub_if_data *sdata
 	const struct ieee80211_uhr_npca_info *npca;
 
 	memset(npca_info, 0, sizeof(*npca_info));
-	link_sta->pub->npca_offset = 0;
+	link_sta->pub->npca_primary_channel = 0;
 	link_sta->pub->npca_puncture_bitmap = 0;
 
 	uhr_cap = ieee80211_get_uhr_iftype_cap_vif(sband, &sdata->vif);
@@ -68,9 +68,9 @@ ieee80211_uhr_npca_elem_to_sta_uhr_npca_info(struct ieee80211_sub_if_data *sdata
 	npca_info->npca_moplen =
 		le32_get_bits(npca->params, IEEE80211_UHR_NPCA_PARAMS_MOPLEN);
 
-	link_sta->pub->npca_offset =
+	link_sta->pub->npca_primary_channel =
 		le32_get_bits(npca->params,
-			      IEEE80211_UHR_NPCA_PARAMS_PRIMARY_CHAN_OFFS);
+			      IEEE80211_UHR_NPCA_PARAMS_PRIMARY_CHAN);
 	if (npca->params &
 	    cpu_to_le32(IEEE80211_UHR_NPCA_PARAMS_DIS_SUBCH_BMAP_PRES))
 		link_sta->pub->npca_puncture_bitmap =
