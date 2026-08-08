@@ -658,16 +658,17 @@ struct hal_receive_user_info {
 } __packed;
 
 #define HAL_RX_MPDU_START_INFO0_ENCRYPT_TYP		GENMASK(5, 2)
-#define HAL_RX_MPDU_START_INFO1_FC_VALID		BIT(0)
-#define HAL_RX_MPDU_START_INFO1_ADDR2_VALID		BIT(3)
-#define HAL_RX_MPDU_START_INFO1_TO_DS			BIT(17)
-#define HAL_RX_MPDU_START_INFO1_MPDU_RETRY		BIT(19)
-#define HAL_RX_MPDU_START_INFO2_FILTER_CAT		GENMASK(1, 0)
-#define HAL_RX_MPDU_START_INFO2_SW_GRP_ID		GENMASK(8, 2)
-#define HAL_RX_MPDU_START_INFO3_DECAP_TYPE		GENMASK(11, 10)
-#define HAL_RX_MPDU_START_INFO3_RAW_MPDU		BIT(30)
-#define HAL_RX_MPDU_START_INFO4_MPDU_LEN		GENMASK(13, 0)
-#define HAL_RX_MPDU_START_INFO4_MCAST_BCAST		BIT(15)
+#define HAL_RX_MPDU_START_INFO1_RA_BASED_MD		BIT(0)
+#define HAL_RX_MPDU_START_INFO2_FC_VALID		BIT(0)
+#define HAL_RX_MPDU_START_INFO2_ADDR2_VALID		BIT(3)
+#define HAL_RX_MPDU_START_INFO2_TO_DS			BIT(17)
+#define HAL_RX_MPDU_START_INFO2_MPDU_RETRY		BIT(19)
+#define HAL_RX_MPDU_START_INFO3_FILTER_CAT		GENMASK(1, 0)
+#define HAL_RX_MPDU_START_INFO3_SW_GRP_ID		GENMASK(8, 2)
+#define HAL_RX_MPDU_START_INFO4_DECAP_TYPE		GENMASK(11, 10)
+#define HAL_RX_MPDU_START_INFO4_RAW_MPDU		BIT(30)
+#define HAL_RX_MPDU_START_INFO5_MPDU_LEN		GENMASK(13, 0)
+#define HAL_RX_MPDU_START_INFO5_MCAST_BCAST		BIT(15)
 
 /* The below hal_rx_mpdu_start structure is non-compact
  * structure for MPDU START TLV.
@@ -677,15 +678,16 @@ struct hal_rx_mpdu_start {
 	__le32 rsvd0;
 	__le32 rsvd1;
 	__le32 info0;
-	__le32 rsvd2[5];
+	__le32 rsvd2[4];
 	__le32 info1;
+	__le32 info2;
 	__le16 rsvd3;
 	__le16 sw_peer_id;
 	__le32 rsvd4;
-	__le16 info2;
+	__le16 info3;
 	__le16 phy_ppdu_id;
-	__le32 info3;
 	__le32 info4;
+	__le32 info5;
 	__le16 mpdu_frame_control_field;
 	__le16 rsvd5;
 	__le32 rsvd6;
@@ -778,6 +780,7 @@ struct hal_rx_ppdu_rtt_info {
 } __packed;
 
 #define MPDU_START_SELECT_INFO0_ENCYRPT_TYP                      BIT(1)
+#define MPDU_START_SELECT_INFO1_RA_BASED_MD                     BIT(3)
 #define MPDU_START_SELECT_INFO1_FC_ADDR2_DS_RETRY                BIT(4)
 #define MPDU_START_SELECT_INFO2                                  BIT(5)
 #define MPDU_START_SELECT_INFO3_INFO4                            BIT(6)
@@ -786,6 +789,7 @@ struct hal_rx_ppdu_rtt_info {
 
 #define RX_MON_MPDU_START_WMASK \
 		(MPDU_START_SELECT_INFO0_ENCYRPT_TYP |                \
+		 MPDU_START_SELECT_INFO1_RA_BASED_MD |               \
 		 MPDU_START_SELECT_INFO1_FC_ADDR2_DS_RETRY |          \
 		 MPDU_START_SELECT_INFO2 |                            \
 		 MPDU_START_SELECT_INFO3_INFO4 |                      \
@@ -793,16 +797,17 @@ struct hal_rx_ppdu_rtt_info {
 		 MPDU_START_SELECT_AD2)
 
 #define HAL_RX_MPDU_START_INFO0_ENCRYPT_TYP_CMPCT		GENMASK(5, 2)
-#define HAL_RX_MPDU_START_INFO1_FC_VALID_CMPCT			BIT(0)
-#define HAL_RX_MPDU_START_INFO1_ADDR2_VALID_CMPCT		BIT(3)
-#define HAL_RX_MPDU_START_INFO1_TO_DS_CMPCT			BIT(17)
-#define HAL_RX_MPDU_START_INFO1_MPDU_RETRY_CMPCT		BIT(19)
-#define HAL_RX_MPDU_START_INFO2_FILTER_CAT_CMPCT		GENMASK(1, 0)
-#define HAL_RX_MPDU_START_INFO2_SW_GRP_ID_CMPCT		GENMASK(8, 2)
-#define HAL_RX_MPDU_START_INFO3_DECAP_TYPE_CMPCT		GENMASK(11, 10)
-#define HAL_RX_MPDU_START_INFO3_RAW_MPDU_CMPCT			BIT(30)
-#define HAL_RX_MPDU_START_INFO4_MPDU_LEN_CMPCT			GENMASK(13, 0)
-#define HAL_RX_MPDU_START_INFO4_MCAST_BCAST_CMPCT		BIT(15)
+#define HAL_RX_MPDU_START_INFO1_RA_BASED_MD_CMPCT		BIT(0)
+#define HAL_RX_MPDU_START_INFO2_FC_VALID_CMPCT			BIT(0)
+#define HAL_RX_MPDU_START_INFO2_ADDR2_VALID_CMPCT		BIT(3)
+#define HAL_RX_MPDU_START_INFO2_TO_DS_CMPCT			BIT(17)
+#define HAL_RX_MPDU_START_INFO2_MPDU_RETRY_CMPCT		BIT(19)
+#define HAL_RX_MPDU_START_INFO3_FILTER_CAT_CMPCT		GENMASK(1, 0)
+#define HAL_RX_MPDU_START_INFO3_SW_GRP_ID_CMPCT		GENMASK(8, 2)
+#define HAL_RX_MPDU_START_INFO4_DECAP_TYPE_CMPCT		GENMASK(11, 10)
+#define HAL_RX_MPDU_START_INFO4_RAW_MPDU_CMPCT			BIT(30)
+#define HAL_RX_MPDU_START_INFO5_MPDU_LEN_CMPCT			GENMASK(13, 0)
+#define HAL_RX_MPDU_START_INFO5_MCAST_BCAST_CMPCT		BIT(15)
 
 /* The below hal_rx_mon_mpdu_start_compact structure is tied with the mask value
  * RX_MON_MPDU_START_WMASK. If the mask value changes the structure will also
@@ -813,18 +818,20 @@ struct hal_rx_ppdu_rtt_info {
 struct hal_rx_mon_mpdu_start_compact {
 	__le32 info0;
 	__le32 rsvd0;
+	__le32 rsvd1;
 	__le32 info1;
-	__le16 rsvd1;
+	__le32 info2;
+	__le16 rsvd2;
 	__le16 sw_peer_id;
-	__le32 rsvd2;
-	__le16 info2;
+	__le32 rsvd3;
+	__le16 info3;
 	__le16 phy_ppdu_id;
-	__le32 info3;
 	__le32 info4;
+	__le32 info5;
 	__le16 mpdu_frame_control_field;
-	__le16 rsvd3;
-	__le32 rsvd4;
-	__le16 rsvd5;
+	__le16 rsvd4;
+	__le32 rsvd5;
+	__le16 rsvd6;
 	__le16 mac_addr_ad2_15_0;
 	__le32 mac_addr_ad2_47_16;
 } __packed;
