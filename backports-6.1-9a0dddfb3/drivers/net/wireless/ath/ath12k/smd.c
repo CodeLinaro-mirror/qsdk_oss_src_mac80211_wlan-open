@@ -729,42 +729,22 @@ static int ath12k_uhr_abort_transition(struct ath12k_vif *ahvif,
 	return 0;
 }
 
-static inline enum smd_roam_config_cmd_type
-uhr_action_to_smd_cmd(enum ieee80211_uhr_link_reconfig_action action)
-{
-	switch (action) {
-	case IEEE80211_UHR_LINK_RECONFIG_PREPARE_REQ:
-		return SMD_ROAM_CONFIG_CMD_PREP_REQ;
-	case IEEE80211_UHR_LINK_RECONFIG_PREPARE_RESP:
-		return SMD_ROAM_CONFIG_CMD_PREP_RESP;
-	case IEEE80211_UHR_LINK_RECONFIG_EXECUTE_REQ:
-		return SMD_ROAM_CONFIG_CMD_EXEC_REQ;
-	case IEEE80211_UHR_LINK_RECONFIG_EXECUTE_RESP:
-		return SMD_ROAM_CONFIG_CMD_EXEC_RESP;
-	case IEEE80211_UHR_LINK_RECONFIG_DYNAMIC_CONTEXT:
-		return SMD_ROAM_CONFIG_CMD_DYNAMIC_CONTEXT;
-	case IEEE80211_UHR_LINK_RECONFIG_ABORT:
-		return SMD_ROAM_CONFIG_CMD_TERMINATION;
-	default:
-		WARN_ON(1);
-		return SMD_ROAM_CONFIG_CMD_PREP_REQ; /* fallback */
-	}
-}
-
 static void ath12k_mac_smd_roam_config(struct ieee80211_hw *hw,
 				      struct ath12k_vif *ahvif,
 				      struct ath12k_sta *ahsta,
 				      struct ath12k_sta *target_ahsta,
-				      enum ieee80211_uhr_link_reconfig_action action,
+				      enum smd_roam_config_cmd_type cmd_type,
 				      struct ieee80211_uhr_link_reconfig_info *info)
 {
 	struct ath12k_wmi_smd_roam_config_arg arg;
 	struct ath12k_link_vif *arvif;
+	struct ath12k_link_sta *arsta;
 	unsigned long valid_links;
-	int ret;
 	u32 sn_flags = 0;
 	u32 link_id;
 	u32 role;
+	int ret;
+	u8 tid;
 
 	lockdep_assert_wiphy(hw->wiphy);
 	role = (ahvif->vif->type == NL80211_IFTYPE_STATION) ?
@@ -774,8 +754,7 @@ static void ath12k_mac_smd_roam_config(struct ieee80211_hw *hw,
 		sn_flags |= BIT(0);
 	if (info->request_ul_sn_not_transferred)
 		sn_flags |= BIT(1);
-	ath12k_dbg(NULL, ATH12K_DBG_SMD, "smd roam_config sn_flags:0x%x\n",
-		   sn_flags);
+
 	valid_links = ahsta->links_map;
 	for_each_set_bit(link_id, &valid_links, IEEE80211_MLD_MAX_NUM_LINKS) {
 		arvif = wiphy_dereference(hw->wiphy, ahvif->link[link_id]);
@@ -783,14 +762,31 @@ static void ath12k_mac_smd_roam_config(struct ieee80211_hw *hw,
 			continue;
 		if (WARN_ON(!arvif->ar))
 			continue;
+		/* DYNAMIC_CTX with target_ahsta is handled in loop 2 below;
+		 * without target_ahsta (TERMINATION path), restrict to tap_links_mask.
+		 */
+		if (cmd_type == SMD_ROAM_CONFIG_CMD_DYNAMIC_CONTEXT) {
+			if (target_ahsta)
+				continue;
+			if (!(info->tap_links_mask & BIT(link_id)))
+				continue;
+		}
+
 		memset(&arg, 0, sizeof(arg));
 
 		arg.vdev_id       = arvif->vdev_id;
 		arg.role          = role;
 		arg.status        = SMD_ROAM_CONFIG_STATUS_SUCCESS;
-		arg.cmd_type      = uhr_action_to_smd_cmd(action);
+		arg.cmd_type      = cmd_type;
 		arg.flags         = sn_flags;
-		arg.dl_drain_time = info->dl_drain_time_tu;
+
+		if (cmd_type == SMD_ROAM_CONFIG_CMD_EXEC_RESP)
+			arg.dl_drain_time = (info->dl_drain_links_mask & BIT(link_id))
+					    ? info->dl_drain_time_tu : 0;
+		else if (cmd_type == SMD_ROAM_CONFIG_CMD_TERMINATION)
+			arg.dl_drain_time = 0;
+		else
+			arg.dl_drain_time = info->dl_drain_time_tu;
 
 		if (role == SMD_ROAM_CONFIG_ROLE_STA &&
 		    (info->transitioning_links & BIT(link_id)))
@@ -800,11 +796,7 @@ static void ath12k_mac_smd_roam_config(struct ieee80211_hw *hw,
 			arg.flags |= SMD_ROAM_CONFIG_FLAG_DISABLE_LINK;
 
 		if (ahsta) {
-			struct ath12k_link_sta *arsta =
-				wiphy_dereference(hw->wiphy,
-						  ahsta->link[link_id]);
-			u8 tid;
-
+			arsta = wiphy_dereference(hw->wiphy, ahsta->link[link_id]);
 			if (WARN_ON(!arsta))
 				continue;
 			ether_addr_copy(arg.peer_mac, arsta->addr);
@@ -818,9 +810,9 @@ static void ath12k_mac_smd_roam_config(struct ieee80211_hw *hw,
 			spin_unlock_bh(&ahsta->ba_lock);
 		}
 		ath12k_dbg(arvif->ar->ab, ATH12K_DBG_SMD,
-			   "smd: roam_config vdev=%u peer=%pM flags=0x%x dl_drain=%u\n",
+			   "smd: roam_config vdev=%u peer=%pM flags=0x%x dl_drain=%u sn_flags:0x%x\n",
 			   arg.vdev_id, arg.peer_mac, arg.flags,
-			   arg.dl_drain_time);
+			   arg.dl_drain_time, sn_flags);
 		ret = ath12k_wmi_send_smd_roam_config(arvif->ar, &arg);
 		if (ret) {
 			ath12k_warn(arvif->ar->ab,
@@ -829,42 +821,78 @@ static void ath12k_mac_smd_roam_config(struct ieee80211_hw *hw,
 		}
 	}
 
-	valid_links = target_ahsta ? target_ahsta->links_map : 0;
+	/* Loop 2: TAP partner links (target_ahsta side).
+	 *
+	 * Runs for PREP_RESP, EXEC_RESP, and DYNAMIC_CTX.
+	 *
+	 * PREP_RESP: roam_config must reach ALL radios — both SAP radios
+	 *   (loop 1, via ahsta) AND TAP-only radios that have no SAP peer
+	 *   (loop 2, via target_ahsta).  In a diff-links remap the new TAP
+	 *   radio has an arvif and arsta in target_ahsta but no entry in
+	 *   ahsta->links_map, so loop 1 misses it.  Send PREP_RESP to all
+	 *   target_ahsta links unconditionally (no tap_links_mask gate).
+	 *
+	 * EXEC_RESP: overlap partners whose SAP peer was remapped to the TAP
+	 *   peer during PREP are no longer reachable via ahsta.  Send with
+	 *   dl_drain=0 (tap_links_mask gates which links).
+	 *
+	 * DYNAMIC_CTX: TAP peer BA params notification (tap_links_mask gates).
+	 */
+	if (cmd_type != SMD_ROAM_CONFIG_CMD_PREP_RESP &&
+	    cmd_type != SMD_ROAM_CONFIG_CMD_EXEC_RESP &&
+	    cmd_type != SMD_ROAM_CONFIG_CMD_DYNAMIC_CONTEXT)
+		return;
+	if (!target_ahsta)
+		return;
+
+	valid_links = target_ahsta->links_map;
 	for_each_set_bit(link_id, &valid_links, IEEE80211_MLD_MAX_NUM_LINKS) {
+		/* PREP_RESP: send to all TAP radios (no tap_links_mask gate).
+		 * EXEC_RESP / DYNAMIC_CTX: restrict to tap_links_mask.
+		 */
+		if (cmd_type != SMD_ROAM_CONFIG_CMD_PREP_RESP &&
+		    !(info->tap_links_mask & BIT(link_id)))
+			continue;
+
 		arvif = wiphy_dereference(hw->wiphy, ahvif->link[link_id]);
+
 		if (!arvif || !arvif->is_created)
 			continue;
+
 		if (WARN_ON(!arvif->ar))
 			continue;
+
+		arsta = wiphy_dereference(hw->wiphy, target_ahsta->link[link_id]);
+		if (WARN_ON(!arsta))
+			continue;
+
 		memset(&arg, 0, sizeof(arg));
+		arg.vdev_id  = arvif->vdev_id;
+		arg.role     = role;
+		arg.status   = SMD_ROAM_CONFIG_STATUS_SUCCESS;
+		arg.cmd_type = cmd_type;
+		arg.flags    = sn_flags;
+		arg.dl_drain_time = 0; /* overlap partner never carries drain time */
+		ether_addr_copy(arg.peer_mac, arsta->addr);
 
-		arg.vdev_id       = arvif->vdev_id;
-		arg.role          = role;
-		arg.status        = SMD_ROAM_CONFIG_STATUS_SUCCESS;
-		arg.cmd_type      = uhr_action_to_smd_cmd(action);
-		arg.flags         = sn_flags;
-		arg.dl_drain_time = info->dl_drain_time_tu;
-
-		if (role == SMD_ROAM_CONFIG_ROLE_STA &&
-		    (info->transitioning_links & BIT(link_id)))
-			arg.flags |= BIT(2);
-
-
-		if (target_ahsta) {
-			struct ath12k_link_sta *arsta =
-				wiphy_dereference(hw->wiphy,
-						  target_ahsta->link[link_id]);
-
-			if (WARN_ON(!arsta))
-				continue;
-			ether_addr_copy(arg.peer_mac, arsta->addr);
+		spin_lock_bh(&target_ahsta->ba_lock);
+		for (tid = 0; tid < IEEE80211_MAX_NUM_TIDS; tid++) {
+			arg.peer_tid_info[tid].tx_buf_size =
+				target_ahsta->tx_ba_params[tid].buf_size;
+			arg.peer_tid_info[tid].rx_buf_size =
+				target_ahsta->rx_ba_params[tid].buf_size;
 		}
+		spin_unlock_bh(&target_ahsta->ba_lock);
+
+		ath12k_dbg(arvif->ar->ab, ATH12K_DBG_SMD,
+			   "smd: roam_config (tap-partner) cmd=%u vdev=%u peer=%pM radio=%u\n",
+			   cmd_type, arg.vdev_id, arg.peer_mac, arvif->ar->radio_idx);
+
 		ret = ath12k_wmi_send_smd_roam_config(arvif->ar, &arg);
-		if (ret) {
+		if (ret)
 			ath12k_warn(arvif->ar->ab,
-				    "failed SMD roam config on link %u (ret=%d)\n",
+				    "failed SMD roam_config tap-partner link %u (ret=%d)\n",
 				    link_id, ret);
-		}
 	}
 }
 
@@ -1238,7 +1266,6 @@ int ath12k_smd_uhr_link_reconfig(struct ieee80211_hw *hw,
 				    struct ieee80211_vif *vif,
 				    struct ieee80211_sta *current_sta,
 				    struct ieee80211_sta *target_sta,
-				    enum ieee80211_uhr_link_reconfig_action action,
 				    struct ieee80211_uhr_link_reconfig_info *info)
 {
 	struct ath12k_sta *target_ahsta =
@@ -1247,7 +1274,7 @@ int ath12k_smd_uhr_link_reconfig(struct ieee80211_hw *hw,
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
 	struct ath12k_link_vif *arvif;
 	struct ath12k *ar;
-	int ret;
+	int ret = 0;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
@@ -1261,75 +1288,89 @@ int ath12k_smd_uhr_link_reconfig(struct ieee80211_hw *hw,
 
 	ar = arvif->ar;
 
-	switch (action) {
-	case IEEE80211_UHR_LINK_RECONFIG_PREPARE_REQ:
-		break;
+	if (info->changed & IEEE80211_UHR_CHANGED_PREPARE_REQ)
+		; /* nothing to do at driver level for prep req */
 
-	case IEEE80211_UHR_LINK_RECONFIG_PREPARE_RESP:
+	if (info->changed & IEEE80211_UHR_CHANGED_PREPARE_RESP) {
 		ether_addr_copy(ahvif->smd.target_mld_addr, info->target_ap_mld_addr);
 		ath12k_mac_smd_roam_config(hw, ahvif, ahsta, target_ahsta,
-						 action, info);
+					   SMD_ROAM_CONFIG_CMD_PREP_RESP, info);
 		ret = ath12k_uhr_prepare_links(ahvif, current_sta, target_sta, info);
 		if (ret)
 			return ret;
-		break;
+	}
 
-	case IEEE80211_UHR_LINK_RECONFIG_EXECUTE_REQ:
+	if (info->changed & IEEE80211_UHR_CHANGED_EXECUTE_REQ) {
 		ath12k_mac_smd_roam_config(hw, ahvif, ahsta, target_ahsta,
-						 action, info);
-		break;
+					   SMD_ROAM_CONFIG_CMD_EXEC_REQ, info);
+	}
 
-	case IEEE80211_UHR_LINK_RECONFIG_EXECUTE_RESP:
+	if (info->changed & IEEE80211_UHR_CHANGED_EXECUTE_RESP) {
 		ath12k_mac_smd_roam_config(hw, ahvif, ahsta, target_ahsta,
-						 action, info);
+					   SMD_ROAM_CONFIG_CMD_EXEC_RESP, info);
 
-		return ath12k_uhr_execute_transition(ahvif, current_sta,
-						     target_sta, info);
+		ret = ath12k_uhr_execute_transition(ahvif, current_sta,
+						    target_sta, info);
+		if (ret)
+			return ret;
+	}
 
-	case IEEE80211_UHR_LINK_RECONFIG_DYNAMIC_CONTEXT:
-		if (info->request_ul_sn_not_transferred) {
-			ret = ath12k_dp_arch_peer_tx_tid_sn_reset(ar->ab->dp,
-								  &ahvif->ah->dp_hw,
-								  current_sta->addr);
-			if (ret)
-				ath12k_warn(ar->ab,
-					    "smd: dynamic_context tx_sn reset failed %pM (%d)\n",
-					    current_sta->addr, ret);
+	if (info->changed & IEEE80211_UHR_CHANGED_DYNAMIC_CTX) {
+		if (info->changed & IEEE80211_UHR_CHANGED_TERMINATION) {
+			/* Post state 4: SN resets apply before TERMINATION */
+			if (info->request_ul_sn_not_transferred) {
+				ret = ath12k_dp_arch_peer_tx_tid_sn_reset(ar->ab->dp,
+								&ahvif->ah->dp_hw,
+								current_sta->addr);
+				if (ret)
+					ath12k_warn(ar->ab,
+						    "smd: tx_sn reset failed %pM (%d)\n",
+						    current_sta->addr, ret);
+			}
+			if (info->request_dl_sn_not_transferred) {
+				ret = ath12k_dp_arch_peer_rx_tid_svld_reset(
+							ar->ab->dp,
+							&ahvif->ah->dp_hw,
+							current_sta->addr);
+				if (ret)
+					ath12k_warn(ar->ab,
+						    "smd: rx_svld reset failed %pM (%d)\n",
+						    current_sta->addr, ret);
+			}
 		}
+		/* Exec-resp DYNAMIC_CTX targets overlap TAP partners via
+		 * target_ahsta (loop 2).  At TERMINATION current_sta is already the
+		 * TAP sta, so target_ahsta is NULL and loop 1 (tap_links_mask) is used.
+		 */
+		if (info->changed & IEEE80211_UHR_CHANGED_TERMINATION)
+			ath12k_mac_smd_roam_config(hw, ahvif, ahsta, NULL,
+						   SMD_ROAM_CONFIG_CMD_DYNAMIC_CONTEXT,
+						   info);
+		else
+			ath12k_mac_smd_roam_config(hw, ahvif, ahsta, target_ahsta,
+						   SMD_ROAM_CONFIG_CMD_DYNAMIC_CONTEXT,
+						   info);
+	}
 
-		if (info->request_dl_sn_not_transferred) {
-			ret = ath12k_dp_arch_peer_rx_tid_svld_reset(ar->ab->dp,
-								    &ahvif->ah->dp_hw,
-								    current_sta->addr);
-			if (ret)
-				ath12k_warn(ar->ab,
-					    "smd: dynamic_context rx_svld reset failed %pM (%d)\n",
-					    current_sta->addr, ret);
-		}
-
+	if (info->changed & IEEE80211_UHR_CHANGED_TERMINATION) {
 		ath12k_mac_smd_roam_config(hw, ahvif, ahsta, NULL,
-						 action, info);
-
+					   SMD_ROAM_CONFIG_CMD_TERMINATION, info);
 		ahvif->smd.exec_in_progress = false;
 		if (ahvif->ah->ag && ahvif->ah->ag->dp_hw_grp)
 			ahvif->ah->ag->dp_hw_grp->smd_exec_in_progress = false;
 		eth_zero_addr(ahvif->smd.target_mld_addr);
 		ath12k_dbg(ar->ab, ATH12K_DBG_SMD,
-			   "smd: dynamic_context complete %pM\n",
+			   "smd: termination complete %pM\n",
 			   current_sta->addr);
-		return ret;
-
-	case IEEE80211_UHR_LINK_RECONFIG_ABORT:
-		return ath12k_uhr_abort_transition(ahvif, current_sta, target_sta, info);
-
-	case IEEE80211_UHR_LINK_RECONFIG_REMAP_LINKS:
-		return ath12k_smd_remap_links_op(ahvif, ahsta, info);
-
-	default:
-		return -EOPNOTSUPP;
 	}
 
-	return 0;
+	if (info->changed & IEEE80211_UHR_CHANGED_ABORT)
+		return ath12k_uhr_abort_transition(ahvif, current_sta, target_sta, info);
+
+	if (info->changed & IEEE80211_UHR_CHANGED_REMAP_LINKS)
+		return ath12k_smd_remap_links_op(ahvif, ahsta, info);
+
+	return ret;
 }
 
 int ath12k_smd_global_init(struct ath12k_base *ab)

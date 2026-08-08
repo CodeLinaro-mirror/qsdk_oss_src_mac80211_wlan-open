@@ -482,6 +482,7 @@ int ieee80211_smd_execute_transition(struct ieee80211_sub_if_data *sdata,
 	struct ieee80211_local *local = sdata->local;
 	struct ieee80211_uhr_link_reconfig_info *info;
 	struct sta_info *current_sta, *target_sta;
+	unsigned long prep_mask, link_id;
 	u16 transitioning_links;
 	int ret;
 
@@ -537,8 +538,49 @@ int ieee80211_smd_execute_transition(struct ieee80211_sub_if_data *sdata,
 	info->request_dl_sn_not_transferred = target->no_dl_sn;
 	info->request_ul_sn_not_transferred = target->no_ul_sn;
 
-	ret = drv_uhr_link_reconfig(local, sdata, current_sta, target_sta,
-				    IEEE80211_UHR_LINK_RECONFIG_EXECUTE_RESP, info);
+	/* DL drain applies only to the primary SAP link; other radios get 0. */
+	info->dl_drain_links_mask = BIT(info->primary_link_id);
+
+	/*
+	 * TAP partner links mask for early (exec-resp) DYNAMIC_CTX: prepared TAP
+	 * links mapped to an OVERLAP SAP radio (present in both SAP and TAP),
+	 * excluding the primary/DL-drain link.  These radios already have a live
+	 * peer, so firmware can take the dynamic context immediately.
+	 *
+	 * Excluded here (handled at TERMINATION instead):
+	 *   - primary/DL-drain link (info->primary_link_id)
+	 *   - upgrade slots (target->upgrade_sap_slots) — brand-new radios with no
+	 *     peer yet at exec-resp time.
+	 *
+	 * NOTE: do NOT gate on sdata->vif.active_links here.  For a diff-links
+	 * remap the overlap partner still sits in dormant_links at exec-resp time
+	 * (the link swap happens later in DL drain), so an active_links check
+	 * wrongly drops the very partner we need to notify.
+	 */
+	info->tap_links_mask = 0;
+	prep_mask = target->prepared_links_mask;
+	for_each_set_bit(link_id, &prep_mask, IEEE80211_MLD_MAX_NUM_LINKS) {
+		int sap_lid = target->tap_to_sap_link[link_id];
+
+		if (sap_lid < 0)
+			continue;
+		if (sap_lid == (int)info->primary_link_id)
+			continue; /* primary gets DYNAMIC_CTX at TERMINATION */
+		if (target->upgrade_sap_slots & BIT(sap_lid))
+			continue; /* upgrade radio has no peer yet; TERMINATION */
+		info->tap_links_mask |= BIT(sap_lid);
+	}
+
+	/*
+	 * Send DYNAMIC_CTX at exec resp time only for active TAP partner links
+	 * (non-primary).  If no such links exist (SLO, upgrade-only, or all
+	 * partners dormant), defer entirely to TERMINATION.
+	 */
+	info->changed = IEEE80211_UHR_CHANGED_EXECUTE_RESP;
+	if (info->tap_links_mask)
+		info->changed |= IEEE80211_UHR_CHANGED_DYNAMIC_CTX;
+
+	ret = drv_uhr_link_reconfig(local, sdata, current_sta, target_sta, info);
 	if (ret) {
 		sdata_info(sdata,
 			   "smd: exec drv_uhr_link_reconfig(EXECUTE) failed: %d\n",
@@ -797,9 +839,9 @@ static int __smd_dl_drain_remap(struct ieee80211_sub_if_data *sdata,
 	memcpy(remap_info->tap_to_sap_link, target->tap_to_sap_link,
 	       sizeof(remap_info->tap_to_sap_link));
 	remap_info->primary_link_id = (u8)primary_sap_link_id;
+	remap_info->changed = IEEE80211_UHR_CHANGED_REMAP_LINKS;
 	sdata_dbg(sdata, "smd: dl_drain remap links\n");
 	ret = drv_uhr_link_reconfig(local, sdata, target->target_sta, NULL,
-				    IEEE80211_UHR_LINK_RECONFIG_REMAP_LINKS,
 				    remap_info);
 	kfree(remap_info);
 	if (ret) {
@@ -1203,11 +1245,11 @@ void ieee80211_smd_prep_reset_target(struct ieee80211_sub_if_data *sdata,
 				info->transitioning_links = target->prepared_links_mask;
 				ether_addr_copy(info->target_ap_mld_addr,
 						target->target_mld_addr);
+				info->changed = IEEE80211_UHR_CHANGED_ABORT;
 
 				ret = drv_uhr_link_reconfig(local, sdata,
 						    current_sta,
 						    target->target_sta,
-						    IEEE80211_UHR_LINK_RECONFIG_ABORT,
 						    info);
 				if (ret)
 					sdata_info(sdata,

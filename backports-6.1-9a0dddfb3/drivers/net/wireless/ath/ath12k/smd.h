@@ -47,7 +47,6 @@ int ath12k_smd_uhr_link_reconfig(struct ieee80211_hw *hw,
 				 struct ieee80211_vif *vif,
 				 struct ieee80211_sta *current_sta,
 				 struct ieee80211_sta *target_sta,
-				 enum ieee80211_uhr_link_reconfig_action action,
 				 struct ieee80211_uhr_link_reconfig_info *info);
 int ath12k_smd_uhr_smd_update(struct ieee80211_hw *hw,
 			      struct ieee80211_vif *vif,

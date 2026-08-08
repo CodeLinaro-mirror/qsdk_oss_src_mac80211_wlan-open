@@ -2717,32 +2717,38 @@ enum ieee80211_sta_state {
 };
 
 /**
- * enum ieee80211_uhr_reconfig_action - UHR Link reconfiguration actions
+ * DOC: UHR link reconfiguration changed flags
  *
- * Actions for 802.11bn UHR link reconfiguration operations,
- * including SMD BSS Transition.
+ * These flags are set in &ieee80211_uhr_link_reconfig_info.changed to indicate
+ * which operations the driver should perform, analogous to BSS_CHANGED_* flags
+ * passed to @bss_info_changed.  Multiple bits may be set in one call.
  *
- * @IEEE80211_UHR_LINK_RECONFIG_PREPARE: Prepare partner links for transition.
- *	Called after ST Prepare Response SUCCESS.
- * @IEEE80211_UHR_LINK_RECONFIG_EXECUTE: Execute the BSS transition.
- *	Called after ST Execution Response SUCCESS.
- * @IEEE80211_UHR_LINK_RECONFIG_DYNAMIC_CONTEXT: Notify driver that all links
- *	have completed transition to the target AP MLD and the association
- *	context has been fully updated. Called after ieee80211_set_associated()
- *	and old STA teardown in the DL drain completion path. At this point
- *	current_sta is the newly-active (target) STA; target_sta is NULL.
- * @IEEE80211_UHR_LINK_RECONFIG_ABORT: Abort transition and rollback.
- *	Called on failure, timeout, or explicit abort.
+ * @IEEE80211_UHR_CHANGED_PREPARE_REQ: ST Prep Request sent.
+ * @IEEE80211_UHR_CHANGED_PREPARE_RESP: ST Prep Response received; driver
+ *	should park TIDs, allocate ext_ctx and prepare target link resources.
+ * @IEEE80211_UHR_CHANGED_EXECUTE_REQ: ST Exec Request sent.
+ * @IEEE80211_UHR_CHANGED_EXECUTE_RESP: ST Exec Response received; driver
+ *	should send roam_config EXEC per radio (using @dl_drain_links_mask to
+ *	differentiate the actual drain time from zero) and execute the
+ *	link transition.
+ * @IEEE80211_UHR_CHANGED_DYNAMIC_CTX: Driver should send dynamic_context WMI
+ *	command to TAP AP links identified by @tap_links_mask.  Set at exec
+ *	resp time (early, TAP links only) and again at post-state-4 (all TAP).
+ * @IEEE80211_UHR_CHANGED_REMAP_LINKS: Driver should remap ahvif/ahsta link
+ *	pointers according to @tap_to_sap_link[].
+ * @IEEE80211_UHR_CHANGED_ABORT: Transition aborted; driver should roll back.
+ * @IEEE80211_UHR_CHANGED_TERMINATION: Post-state-4 teardown; driver should
+ *	send WMI_SMD_ROAM_CONFIG_CMD_TERMINATION to all radios so firmware
+ *	transmits the UHR notification frame.
  */
-enum ieee80211_uhr_link_reconfig_action {
-	IEEE80211_UHR_LINK_RECONFIG_PREPARE_REQ,
-	IEEE80211_UHR_LINK_RECONFIG_PREPARE_RESP,
-	IEEE80211_UHR_LINK_RECONFIG_EXECUTE_REQ,
-	IEEE80211_UHR_LINK_RECONFIG_EXECUTE_RESP,
-	IEEE80211_UHR_LINK_RECONFIG_DYNAMIC_CONTEXT,
-	IEEE80211_UHR_LINK_RECONFIG_ABORT,
-	IEEE80211_UHR_LINK_RECONFIG_REMAP_LINKS,
-};
+#define IEEE80211_UHR_CHANGED_PREPARE_REQ	BIT(0)
+#define IEEE80211_UHR_CHANGED_PREPARE_RESP	BIT(1)
+#define IEEE80211_UHR_CHANGED_EXECUTE_REQ	BIT(2)
+#define IEEE80211_UHR_CHANGED_EXECUTE_RESP	BIT(3)
+#define IEEE80211_UHR_CHANGED_DYNAMIC_CTX	BIT(4)
+#define IEEE80211_UHR_CHANGED_REMAP_LINKS	BIT(5)
+#define IEEE80211_UHR_CHANGED_ABORT		BIT(6)
+#define IEEE80211_UHR_CHANGED_TERMINATION	BIT(7)
 
 /**
  * struct ieee80211_uhr_link_transfer_info - Per-link transfer parameters
@@ -2786,16 +2792,25 @@ struct ieee80211_uhr_link_transfer_info {
 
 /**
  * struct ieee80211_uhr_link_reconfig_info - UHR link reconfiguration parameters
+ * @changed: Bitmap of IEEE80211_UHR_CHANGED_* flags indicating which
+ *	operations the driver should perform for this call.
  * @transitioning_links: Bitmap of links being transitioned
  * @primary_link_id: Primary Link ID (preserved during prep)
  * @target_aid: AID for target AP MLD
  * @target_ap_mld_addr: Target AP MLD address
  * @dl_drain_time_tu: DL Drain period in TUs
+ * @tap_links_mask: Bitmap of TAP AP link IDs; used by DYNAMIC_CTX and
+ *	TERMINATION to restrict per-link WMI commands to TAP links only.
+ * @dl_drain_links_mask: Bitmap of links that carry the actual @dl_drain_time_tu;
+ *	links NOT in this mask should use drain time 0 in roam_config EXEC.
  * @links: Per-link configuration
  */
 struct ieee80211_uhr_link_reconfig_info {
+	u32 changed;
 	u16 target_aid;
 	u16 transitioning_links;
+	u16 tap_links_mask;
+	u16 dl_drain_links_mask;
 	u8 primary_link_id;
 	u8 target_ap_mld_addr[ETH_ALEN];
 	u32 dl_drain_time_tu;
@@ -2803,7 +2818,7 @@ struct ieee80211_uhr_link_reconfig_info {
 	bool request_ul_sn_not_transferred;
 
 	/*
-	 * REMAP_LINKS action: tap_to_sap_link[tap_lid] = sap_lid (-1 = unmapped).
+	 * REMAP_LINKS: tap_to_sap_link[tap_lid] = sap_lid (-1 = unmapped).
 	 * Driver swaps ahvif->link[] pointers so ahvif->link[tap_lid] points to
 	 * the arvif that was previously at ahvif->link[sap_lid].
 	 */
@@ -5238,21 +5253,13 @@ struct ieee80211_ppe_vp_ds_params {
  *	at each ECU phase boundary.
  *
  * @uhr_link_reconfig: Drive the UHR Link Reconfiguration state machine for
- *	an SMD BSS Transition. Called at each phase of the transition:
- *	@IEEE80211_UHR_LINK_RECONFIG_PREPARE_REQ — ST Prep Request sent;
- *	@IEEE80211_UHR_LINK_RECONFIG_PREPARE_RESP — ST Prep Response received,
- *	driver should allocate target vdev/peer resources;
- *	@IEEE80211_UHR_LINK_RECONFIG_EXECUTE_REQ — ST Exec Request sent;
- *	@IEEE80211_UHR_LINK_RECONFIG_EXECUTE_RESP — ST Exec Response received,
- *	driver should commit the link switch;
- *	@IEEE80211_UHR_LINK_RECONFIG_DYNAMIC_CONTEXT — post-transition context
- *	update (group key, dynamic BA parameters);
- *	@IEEE80211_UHR_LINK_RECONFIG_REMAP_LINKS — remap vdev link IDs from SAP
- *	to TAP space for diff-links transitions;
- *	@IEEE80211_UHR_LINK_RECONFIG_ABORT — transition aborted, driver should
- *	release any resources allocated at PREPARE_RESP time.
- *	@current_sta is the current (serving AP) peer; @target_sta is the
- *	target AP peer (NULL for ABORT). @info carries per-phase parameters.
+ *	an SMD BSS Transition. The operation(s) to perform are indicated by the
+ *	set bits in @info->changed (IEEE80211_UHR_CHANGED_* flags), analogous
+ *	to BSS_CHANGED_* in @bss_info_changed. Multiple bits may be set in a
+ *	single call. @current_sta is the current (serving AP) peer;
+ *	@target_sta is the target AP peer (NULL for TERMINATION/ABORT).
+ *	@info carries per-phase parameters including @tap_links_mask and
+ *	@dl_drain_links_mask for drain-aware EXEC_RESP handling.
  * @set_smd_ctx: Set the UHR SMD context for the non-AP MLD. This is used in
  *	the target AP MLD side to program dynamic context.
  */
@@ -5384,7 +5391,6 @@ struct ieee80211_ops {
 				 struct ieee80211_vif *vif,
 				 struct ieee80211_sta *current_sta,
 				 struct ieee80211_sta *target_sta,
-				 enum ieee80211_uhr_link_reconfig_action action,
 				 struct ieee80211_uhr_link_reconfig_info *info);
 	void (*sta_pre_rcu_remove)(struct ieee80211_hw *hw,
 				   struct ieee80211_vif *vif,

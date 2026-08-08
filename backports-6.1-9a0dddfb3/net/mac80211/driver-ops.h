@@ -641,7 +641,6 @@ drv_uhr_link_reconfig(struct ieee80211_local *local,
 		      struct ieee80211_sub_if_data *sdata,
 		      struct sta_info *current_sta,
 		      struct sta_info *target_sta,
-		      enum ieee80211_uhr_link_reconfig_action action,
 		      struct ieee80211_uhr_link_reconfig_info *info)
 {
 	int ret = -EOPNOTSUPP;
@@ -657,7 +656,7 @@ drv_uhr_link_reconfig(struct ieee80211_local *local,
 		ret = local->ops->uhr_link_reconfig(&local->hw, &sdata->vif,
 						    &current_sta->sta,
 						    target_sta ? &target_sta->sta : NULL,
-						    action, info);
+						    info);
 	/* trace: TODO add DEFINE_EVENT for drv_uhr_link_reconfig in trace.h */
 	trace_drv_return_int(local, ret);
 	return ret;

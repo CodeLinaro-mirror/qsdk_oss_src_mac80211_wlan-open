@@ -12217,7 +12217,7 @@ int ath12k_mac_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 	struct ath12k_sta *ahsta;
 	unsigned long links;
 	u8 link_id;
-	int ret;
+	int ret = 0;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
@@ -20040,11 +20040,10 @@ int ath12k_mac_op_uhr_link_reconfig(struct ieee80211_hw *hw,
 				    struct ieee80211_vif *vif,
 				    struct ieee80211_sta *current_sta,
 				    struct ieee80211_sta *target_sta,
-				    enum ieee80211_uhr_link_reconfig_action action,
 				    struct ieee80211_uhr_link_reconfig_info *info)
 {
 	return ath12k_smd_uhr_link_reconfig(hw, vif, current_sta, target_sta,
-					    action, info);
+					    info);
 }
 EXPORT_SYMBOL(ath12k_mac_op_uhr_link_reconfig);
 
