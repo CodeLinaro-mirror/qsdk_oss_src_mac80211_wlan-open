@@ -9,6 +9,8 @@
 #include <linux/workqueue.h>
 #include <linux/interrupt.h>
 
+#define ATH12K_WIFI8_DP_MON_RX_HDR_LEN		256
+
 struct workqueue_struct;
 
 int ath12k_wifi8_dp_mon_rx_dual_ring_setup_ppdu_desc(struct ath12k_pdev_dp *dp_pdev);
@@ -20,4 +22,7 @@ int ath12k_wifi8_dp_ext_mon_validate_request(struct ath12k_pdev_dp *dp_pdev,
 void ath12k_wifi8_htt_tx_mon_cfg_fill_extended_wmask(
 		struct htt_tx_mon_ring_selection_cfg_cmd *cmd,
 		const struct htt_tx_ring_tlv_filter *htt_tlv_filter);
+void
+ath12k_wifi8_dp_ext_mon_setup_rx_filter(struct htt_rx_ring_tlv_filter *tlv_filter,
+					const struct ath12k_dp_rx_ext_mon *rx_ext_mon);
 #endif

@@ -317,7 +317,8 @@ void ath12k_dp_mon_rx_prepare_filter(struct ath12k_dp *dp,
 			continue;
 
 		rx_mon_filter->valid = true;
-		if (mode == DP_MON_FILTER_MONITOR_MODE)
+		if (mode == DP_MON_FILTER_MONITOR_MODE ||
+				mode == DP_MON_FILTER_EXT_MON_MODE)
 			dst_tlv_filter->is_monitor_mode = true;
 
 		dst_tlv_filter->offset_valid |= src_tlv_filter->offset_valid;
@@ -734,6 +735,7 @@ ath12k_dp_ext_mon_setup_rx_filters(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_dp_rx_ext_mon *rx_ext_mon;
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
 	enum ath12k_ext_mon_frame_len max_short_pkt_len;
+	const struct ath12k_dp_arch_mon_ops *mon_ops = ath12k_dp_mon_ops_get(dp);
 	u32 rx_mon_tlv_filter_flags = HTT_RX_EXT_MON_FILTER_TLV_FLAGS;
 	bool mgmt_full_pkt, ctrl_full_pkt, data_full_pkt;
 
@@ -816,8 +818,7 @@ ath12k_dp_ext_mon_setup_rx_filters(struct ath12k_pdev_dp *dp_pdev,
 			tlv_filter->enable_fpmo_packet = 1;
 	}
 
-	if (rx_ext_mon->mo_enabled ||
-	    (rx_ext_mon->fp_enabled && tlv_filter->fp_ctrl_filter)) {
+	if (rx_ext_mon->mo_enabled) {
 		tlv_filter->enable_mo = 1;
 		tlv_filter->mo_mgmt_filter =
 			rx_ext_mon->mo.filter[ATH12K_EXT_MON_FRAME_MGMT];
@@ -932,6 +933,9 @@ ath12k_dp_ext_mon_setup_rx_filters(struct ath12k_pdev_dp *dp_pdev,
 		ath12k_hal_mon_rx_msdu_end_wmask(dp->hal);
 	tlv_filter->rx_mon_ppdu_end_usr_stats_wmask =
 		ath12k_hal_mon_rx_ppdu_end_usr_stats_wmask(dp->hal);
+
+	if (mon_ops && mon_ops->ext_mon_setup_rx_filter)
+		mon_ops->ext_mon_setup_rx_filter(tlv_filter, rx_ext_mon);
 
 	spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
 }

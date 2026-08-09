@@ -3139,11 +3139,14 @@ ath12k_dp_ext_mon_update_rx_config(struct ath12k_pdev_mon_dp *dp_mon_pdev,
 			ath12k_dp_ext_mon_is_mode_enabled(&new_config->target_neighbor);
 
 		curr_config->metadata = new_config->meta_data;
+		curr_config->short_pkt_en =
+				!!ath12k_ext_mon_get_max_shortpkt_len(curr_config);
 		curr_config->enable = true;
 	} else {
 		curr_config->enable = false;
 		curr_config->level = 0;
 		curr_config->metadata = 0;
+		curr_config->short_pkt_en = false;
 		curr_config->fp_enabled = false;
 		curr_config->mo_enabled = false;
 		curr_config->fpmo_enabled = false;
