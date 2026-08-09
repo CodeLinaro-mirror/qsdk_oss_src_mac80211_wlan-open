@@ -2090,16 +2090,6 @@ int ath12k_wifi8_dp_ext_mon_validate_request(struct ath12k_pdev_dp *dp_pdev,
 		return -EINVAL;
 	}
 
-	if (req->cmd_type == ATH12K_EXT_MON_CMD_TYPE_SET_FILTER &&
-	    !req->filter.disable) {
-		/* For wifi8, PPDU level is not supported yet. */
-		if (req->filter.level == ATH12K_EXT_MON_FILTER_LEVEL_PPDU) {
-			ath12k_warn(dp_pdev->dp,
-				    "PPDU level is not supported");
-			return -EINVAL;
-		}
-	}
-
 	if (req->cmd_type == ATH12K_EXT_MON_CMD_TYPE_SET_PEER) {
 		if (req->peer.action == ATH12K_EXT_MON_PEER_ACTION_ADD) {
 			for (i = 0; i < req->peer.count; i++) {
@@ -2217,4 +2207,7 @@ ath12k_wifi8_dp_ext_mon_setup_rx_filter(struct htt_rx_ring_tlv_filter *tlv_filte
 			tlv_filter->rx_mon_md_data_hdrlen =
 				rx_ext_mon->md.len[ATH12K_EXT_MON_FRAME_DATA];
 	}
+
+	if (rx_ext_mon->level == ATH12K_EXT_MON_FILTER_LEVEL_PPDU)
+		tlv_filter->rx_mon_enable_hdr_per_ppdu = 1;
 }
