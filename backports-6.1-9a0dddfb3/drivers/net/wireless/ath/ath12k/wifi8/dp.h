@@ -103,15 +103,13 @@ struct ath12k_wifi8_dp_stats {
 	struct ath12k_wifi8_rx_stats rx_stats;
 };
 
-#define ATH12K_DP_TX_CONGSTN_HISTORY_DURATION_SEC	60
+#define ATH12K_DP_TX_CONGSTN_HISTORY_COUNT	100
 
 /**
  * struct ath12k_wifi8_congstn_history_entry - single congestion recovery event record
  * @timestamp:         jiffies at the time of the handler invocation
  * @used_cnt:          tx_desc_used_cnt at the time of the invocation
  * @ppeds_used_cnt:    ppeds_tx_desc_used_cnt at the time of the invocation
- * @used_threshold:    congestion threshold configured
- * @ppeds_used_threshold:    congestion threshold for PPEDS configured
  * @total_active_msdu: total active MSDUs across all service categories
  * @target_drop:       number of MSDUs targeted for removal
  * @num_drop_flows:    number of flows selected for drop
@@ -120,10 +118,7 @@ struct ath12k_wifi8_dp_stats {
  * @drop_flows:        per-flow drop details (flow number, svc, drop count)
  */
 struct ath12k_wifi8_congstn_history_entry {
-	unsigned long timestamp;
 	u32 total_active_msdu;
-	u32 used_threshold;
-	u32 ppeds_used_threshold;
 	u32 target_drop;
 	u32 used_cnt;
 	u32 ppeds_used_cnt;
@@ -131,6 +126,9 @@ struct ath12k_wifi8_congstn_history_entry {
 	u8  svc_num_flows[HAL_TQM_SERVICE_CATEGORY_MAX];
 	u32 svc_total_msdu[HAL_TQM_SERVICE_CATEGORY_MAX];
 	struct ath12k_wifi8_flow_remove_entry drop_flows[HAL_TQM_MAX_SORTED_FLOW_ALL_SVC];
+
+	/* keep last */
+	unsigned long timestamp;
 };
 
 struct ath12k_wifi8_dp_congestion_control {
@@ -163,6 +161,7 @@ struct ath12k_wifi8_dp_congestion_control {
 	struct ath12k_wifi8_svc_remove_flows *drop;
 	struct ath12k_wifi8_dp_tx_flow_cost *entries;
 	/* circular history buffer for congestion recovery log (dynamically allocated) */
+	struct ath12k_wifi8_congstn_history_entry *cache_history;
 	struct ath12k_wifi8_congstn_history_entry *history;
 	u16 history_size;
 	/* next write index (wraps at ATH12K_DP_TX_CONGSTN_HISTORY_SIZE) */

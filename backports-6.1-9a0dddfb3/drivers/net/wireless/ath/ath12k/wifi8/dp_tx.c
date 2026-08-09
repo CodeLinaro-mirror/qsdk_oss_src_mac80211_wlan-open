@@ -5156,6 +5156,7 @@ void ath12k_wifi8_dp_tx_congestion_recovery_handler(struct timer_list *t)
 	struct ppe_ds_wlan_rxfill_ring_info info = { };
 #endif
 	struct ath12k_dp *dp = dp_hw_grp_wifi8->cumac_dp;
+	struct ath12k_wifi8_congstn_history_entry *hist_cur, *cache_hist;
 	struct ath12k_wifi8_svc_sorted_flows *svc_flows;
 	struct ath12k_wifi8_flow_entry *entry;
 	enum hal_tqm_service_category svc;
@@ -5282,32 +5283,48 @@ void ath12k_wifi8_dp_tx_congestion_recovery_handler(struct timer_list *t)
 skip_drop:
 	/* Store this congestion recovery event in the circular history buffer */
 	if (congstn->history && congstn->history_enable) {
-		struct ath12k_wifi8_congstn_history_entry *hist;
-		enum hal_tqm_service_category hsvc;
+		cache_hist = congstn->cache_history;
+		memset(cache_hist, 0, sizeof(*cache_hist));
 
-		spin_lock(&congstn->history_lock);
-		hist = &congstn->history[congstn->history_head];
+		cache_hist->total_active_msdu = total_active_msdu;
+		cache_hist->target_drop = total_drop;
+		cache_hist->used_cnt = used_cnt;
+		cache_hist->ppeds_used_cnt = ppeds_used_cnt;
+		cache_hist->num_drop_flows = drop->num_flows;
 
-		hist->timestamp = cur_jiffies;
-		hist->total_active_msdu = total_active_msdu;
-		hist->used_threshold = congstn->used_threshold;
-		hist->ppeds_used_threshold = congstn->ppeds_used_threshold;
-		hist->target_drop = total_drop;
-		hist->used_cnt = used_cnt;
-		hist->ppeds_used_cnt = ppeds_used_cnt;
-		hist->num_drop_flows = drop->num_flows;
-
-		for (hsvc = 0; hsvc < HAL_TQM_SERVICE_CATEGORY_MAX; hsvc++) {
-			hist->svc_num_flows[hsvc] = svc_data[hsvc].num_flows;
-			hist->svc_total_msdu[hsvc] = svc_data[hsvc].total_msdu_count;
+		for (svc = 0; svc < HAL_TQM_SERVICE_CATEGORY_MAX; svc++) {
+			cache_hist->svc_num_flows[svc] = svc_data[svc].num_flows;
+			cache_hist->svc_total_msdu[svc] = svc_data[svc].total_msdu_count;
 		}
 
-		memcpy(hist->drop_flows, drop->flows,
-		       drop->num_flows * sizeof(*drop->flows));
+		if (drop->num_flows)
+			memcpy(cache_hist->drop_flows, drop->flows,
+			       drop->num_flows * sizeof(*drop->flows));
+
+		spin_lock(&congstn->history_lock);
+
+		if (congstn->history_count) {
+			if (!congstn->history_head)
+				hist_cur = &congstn->history[congstn->history_size - 1];
+			else
+				hist_cur = &congstn->history[congstn->history_head - 1];
+
+			if (!memcmp(cache_hist,
+				    hist_cur,
+				    sizeof(*cache_hist) - sizeof(cache_hist->timestamp)))
+				goto skip_history_add;
+		}
+
+		hist_cur = &congstn->history[congstn->history_head];
+
+		memcpy(hist_cur, cache_hist, sizeof(*cache_hist));
+		hist_cur->timestamp = cur_jiffies;
 
 		congstn->history_head = (congstn->history_head + 1) %
 					congstn->history_size;
 		congstn->history_count++;
+
+skip_history_add:
 		spin_unlock(&congstn->history_lock);
 	}
 
@@ -5398,12 +5415,12 @@ int ath12k_wifi8_dp_tx_congestion_control_init(struct ath12k_dp *dp)
 		goto err_drop;
 
 	/* Allocate and initialize history circular buffer */
-	congstn->history_size = (ATH12K_DP_TX_CONGSTN_HISTORY_DURATION_SEC * 1000)
-				/ congstn->interval;
-	congstn->history = vcalloc(congstn->history_size, sizeof(*congstn->history));
+	congstn->history_size = ATH12K_DP_TX_CONGSTN_HISTORY_COUNT;
+	congstn->history = vcalloc(congstn->history_size + 1, sizeof(*congstn->history));
 	if (!congstn->history)
 		goto err_entries;
 
+	congstn->cache_history = congstn->history + congstn->history_size;
 	congstn->history_head = 0;
 	congstn->history_count = 0;
 	spin_lock_init(&congstn->history_lock);
@@ -5475,6 +5492,7 @@ void ath12k_wifi8_dp_tx_congestion_control_deinit(struct ath12k_dp *dp)
 
 	vfree(congstn->history);
 	congstn->history = NULL;
+	congstn->cache_history = NULL;
 
 	congstn->init = false;
 }
@@ -5696,7 +5714,7 @@ ssize_t ath12k_wifi8_dp_tx_dump_congestion_recovery_hist(struct ath12k_dp *dp,
 	struct ath12k_wifi8_congstn_history_entry *hist;
 	const struct ath12k_wifi8_flow_remove_entry *f;
 	enum hal_tqm_service_category svc;
-	u32 total, i, seq;
+	u32 total, i, seq, idx = 0;
 	u8 fi;
 	int len = 0;
 
@@ -5726,8 +5744,12 @@ ssize_t ath12k_wifi8_dp_tx_dump_congestion_recovery_hist(struct ath12k_dp *dp,
 		      congstn->history_size);
 
 	len += scnprintf(buf + len, size - len,
-			 "Congestion Recovery History (%u entries, %u total events, %u Max used):\n",
-			 total, congstn->history_count, congstn->max_used);
+			 "Congestion Recovery History timestamp %lu\n",
+			 jiffies);
+	len += scnprintf(buf + len, size - len,
+			 "(%u entries, %u total events, %u Max used, %u used threshold, %u ppds used threshold):\n",
+			 total, congstn->history_count, congstn->max_used,
+			 congstn->used_threshold, congstn->ppeds_used_threshold);
 
 	if (!total) {
 		len += scnprintf(buf + len, size - len, "  (no events recorded)\n");
@@ -5735,27 +5757,29 @@ ssize_t ath12k_wifi8_dp_tx_dump_congestion_recovery_hist(struct ath12k_dp *dp,
 	}
 
 	len += scnprintf(buf + len, size - len,
-			 "  seq  timestamp    used_cnt  ppeds_used_cnt  threshold  ppeds_threshold  total_msdu  target_drop  num_flows\n");
+			 "  seq  before(ms)   used_cnt  ppeds_used_cnt  total_msdu  target_drop  num_flows\n");
 
 	/* history_head points to the next write slot.
 	 * The last written (latest) entry is at (history_head - 1).
 	 * Iterate backwards from there to print latest first.
 	 */
-	for (i = 0; i < total; i++) {
-		u32 idx = (congstn->history_head - 1 - i + congstn->history_size) %
-			  congstn->history_size;
+	if (total) {
+		if (congstn->history_head)
+			idx = congstn->history_head - 1;
+		else
+			idx = congstn->history_size - 1;
+	}
 
+	for (i = 0; i < total; i++) {
 		hist = &congstn->history[idx];
 		seq = congstn->history_count - i;
 
 		len += scnprintf(buf + len, size - len,
-				 "  %-4u %-12lu %-9u %-15u %-10u %-16u %-11u %-12u %u\n",
+				 "  %-4u %-12u %-9u %-15u %-11u %-12u %u\n",
 				 seq,
-				 hist->timestamp,
+				 jiffies_to_msecs(jiffies - hist->timestamp),
 				 hist->used_cnt,
 				 hist->ppeds_used_cnt,
-				 hist->used_threshold,
-				 hist->ppeds_used_threshold,
 				 hist->total_active_msdu,
 				 hist->target_drop,
 				 hist->num_drop_flows);
@@ -5793,6 +5817,8 @@ ssize_t ath12k_wifi8_dp_tx_dump_congestion_recovery_hist(struct ath12k_dp *dp,
 
 		if (len >= size - 256)
 			break;
+
+		idx = idx ? idx - 1 : congstn->history_size - 1;
 	}
 
 unlock:
