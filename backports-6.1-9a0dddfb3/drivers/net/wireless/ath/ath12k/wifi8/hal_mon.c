@@ -2480,11 +2480,8 @@ ath12k_wifi8_hal_mon_rx_mpdu_start_info_get(const void *tlv_data, u32 userid,
 
 	ppdu_info->mpdu_info[user_id].raw_mpdu =
 		u32_get_bits(info[3], HAL_RX_MPDU_START_INFO3_RAW_MPDU);
-	if (ppdu_info->mpdu_info[user_id].raw_mpdu)
-		ppdu_info->mpdu_info[user_id].decap_type = DP_RX_DECAP_TYPE_RAW;
-	else
-		ppdu_info->mpdu_info[user_id].decap_type =
-			u32_get_bits(info[3], HAL_RX_MPDU_START_INFO3_DECAP_TYPE);
+	ppdu_info->mpdu_info[user_id].decap_type =
+		u32_get_bits(info[3], HAL_RX_MPDU_START_INFO3_DECAP_TYPE);
 
 	ppdu_info->mpdu_len += u32_get_bits(info[4],
 					    HAL_RX_MPDU_START_INFO4_MPDU_LEN);
@@ -2550,11 +2547,8 @@ ath12k_wifi8_hal_mon_rx_mpdu_start_info_get_compact(
 			     HAL_RX_MPDU_START_INFO1_FC_VALID_CMPCT);
 	ppdu_info->mpdu_info[user_id].raw_mpdu =
 		u32_get_bits(info[3], HAL_RX_MPDU_START_INFO3_RAW_MPDU_CMPCT);
-	if (ppdu_info->mpdu_info[user_id].raw_mpdu)
-		ppdu_info->mpdu_info[user_id].decap_type = DP_RX_DECAP_TYPE_RAW;
-	else
-		ppdu_info->mpdu_info[user_id].decap_type =
-			u32_get_bits(info[3], HAL_RX_MPDU_START_INFO3_DECAP_TYPE_CMPCT);
+	ppdu_info->mpdu_info[user_id].decap_type =
+		u32_get_bits(info[3], HAL_RX_MPDU_START_INFO3_DECAP_TYPE_CMPCT);
 
 	ppdu_info->mpdu_len += u32_get_bits(info[4],
 					    HAL_RX_MPDU_START_INFO4_MPDU_LEN_CMPCT);
@@ -2582,6 +2576,8 @@ ath12k_wifi8_hal_mon_rx_mpdu_start_info_get_compact(
 			ppdu_info->nrp_info.fc_valid;
 	ppdu_info->userstats[user_id].frame_control =
 			ppdu_info->nrp_info.frame_control;
+
+	ath12k_wifi8_hal_mon_rx_set_decap_type_raw_mode(ppdu_info);
 }
 
 void
