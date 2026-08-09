@@ -713,6 +713,13 @@ struct hal_rx_msdu_end {
 	__le32 rsvd4;
 } __packed;
 
+#define HAL_RX_MPDU_END_INFO0_FCS_ERR				BIT(19)
+struct hal_rx_mpdu_end {
+	__le32 rsvd0;
+	__le32 info0;
+	__le32 rsvd1[4];
+} __packed;
+
 #define HAL_RX_PPDU_END_DURATION_INFO0_RX_ANTENNA	GENMASK(23, 0)
 #define HAL_RX_PPDU_END_DURATION_INFO1_RX_PPDU_DURATION	GENMASK(23, 0)
 
