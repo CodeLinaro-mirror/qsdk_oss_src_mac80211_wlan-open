@@ -4788,6 +4788,7 @@ enum qca_vendor_radio_param {
 	 * Mirrors the qca-wifi OL_ATH_PARAM_MGMT_PDEV_STATS_TIMER knob.
 	 */
 	QCA_WLAN_VENDOR_RADIO_PARAM_PDEV_STATS_TIMER = 98,
+	QCA_WLAN_VENDOR_RADIO_PARAM_CHAN_COEX_DISABLE = 99,
 
 	/* Add new params above */
 	QCA_WLAN_VENDOR_RADIO_PARAM_LAST,
