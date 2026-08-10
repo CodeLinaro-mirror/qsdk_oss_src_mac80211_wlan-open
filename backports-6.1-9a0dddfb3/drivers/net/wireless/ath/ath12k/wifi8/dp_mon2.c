@@ -2172,24 +2172,33 @@ ath12k_wifi8_ext_mon_rx_validate_peer_req(struct ath12k_dp *dp,
 					  *peer_cfg)
 {
 	const struct ath12k_ext_mon_peer_info *peer = NULL;
+	int range_count = 0;
 	int i;
 
-	if (peer_cfg->action == ATH12K_EXT_MON_PEER_ACTION_ADD) {
-		for (i = 0; i < peer_cfg->count; i++) {
-			peer = &peer_cfg->peer_info[i];
-			/*
-			 * For wifi8, ra_addr is not supported in rx direction.
-			 * Reject any request with ra_addr set or a non-default bitmap.
-			 */
-			if (peer->ra_addr || peer->ta_info.bitmap !=
+	if (peer_cfg->action != ATH12K_EXT_MON_PEER_ACTION_ADD)
+		return 0;
+
+	for (i = 0; i < peer_cfg->count; i++) {
+		peer = &peer_cfg->peer_info[i];
+
+		if (!peer->ra_addr) {
+			if (peer->ta_info.bitmap !=
 					ATH12K_EXT_MON_DEFAULT_PEER_BITMAP) {
-				ath12k_warn(dp,
-					    "invalid ra_addr: %d or bitmap: %02x",
-					    peer->ra_addr, peer->ta_info.bitmap);
+				ath12k_warn(dp, "invalid bitmap: %02x",
+					    peer->ta_info.bitmap);
 				return -EINVAL;
+			}
+		} else {
+			if (!is_zero_ether_addr(peer->ra_info.ra_addr_mask)) {
+				range_count++;
+				if (range_count > 1) {
+					ath12k_warn(dp, "only one RA range peer allowed");
+					return -EINVAL;
+				}
 			}
 		}
 	}
+
 	return 0;
 }
 

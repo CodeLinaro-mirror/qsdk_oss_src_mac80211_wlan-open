@@ -16275,6 +16275,7 @@ ath12k_ext_mon_extract_peer_info(struct nlattr *peer_info_attr,
 {
 	int ret, rem, i = 0;
 	struct nlattr *attr;
+	struct ath12k_ext_mon_peer_info *peer_info;
 
 	nla_for_each_nested(attr, peer_info_attr, rem) {
 		struct nlattr *tb[QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_MAX + 1] = { 0 };
@@ -16288,9 +16289,10 @@ ath12k_ext_mon_extract_peer_info(struct nlattr *peer_info_attr,
 		if (ret)
 			return ret;
 
+		peer_info = &peer->peer_info[i];
 		if (tb[QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_MAC_ADDR] &&
 		    (nla_len(tb[QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_MAC_ADDR]) == ETH_ALEN))
-			nla_memcpy(peer->peer_info[i].mac_addr,
+			nla_memcpy(peer_info->mac_addr,
 				   tb[QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_MAC_ADDR],
 				   ETH_ALEN);
 		else {
@@ -16299,12 +16301,28 @@ ath12k_ext_mon_extract_peer_info(struct nlattr *peer_info_attr,
 		}
 
 		if (tb[QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_ADDR_IS_RA])
-			peer->peer_info[i].ra_addr = nla_get_flag(
+			peer_info->ra_addr = nla_get_flag(
 					tb[QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_ADDR_IS_RA]);
 
-		if (tb[QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_BITMAP])
-			peer->peer_info[i].ta_info.bitmap =
-				nla_get_u8(tb[QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_BITMAP]);
+		if (peer_info->ra_addr) {
+			struct nlattr *mask_attr =
+				tb[QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_RA_ADDR_MASK];
+
+			if (mask_attr && nla_len(mask_attr) == ETH_ALEN) {
+				nla_memcpy(peer_info->ra_info.ra_addr_mask,
+					   mask_attr, ETH_ALEN);
+				if (is_zero_ether_addr(peer_info->ra_info.ra_addr_mask)) {
+					ath12k_err(NULL, "Invalid RA Address mask\n");
+					return -EINVAL;
+				}
+			}
+		}
+
+		if (!peer_info->ra_addr) {
+			if (tb[QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_BITMAP])
+				peer_info->ta_info.bitmap = nla_get_u8(
+					tb[QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_BITMAP]);
+		}
 
 		i++;
 	}

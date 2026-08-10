@@ -2335,17 +2335,6 @@ int ath12k_wifi7_dp_ext_mon_validate_request(struct ath12k_pdev_dp *dp_pdev,
 		}
 	}
 
-	if (req->peer.action == ATH12K_EXT_MON_PEER_ACTION_ADD) {
-		for (i = 0; i < req->peer.count; i++) {
-			peer = &req->peer.peer_info[i];
-			if (peer->ta_info.bitmap != ATH12K_EXT_MON_DEFAULT_PEER_BITMAP) {
-				ath12k_warn(dp_pdev->dp, "invalid bitmap: %02x",
-					    peer->ta_info.bitmap);
-				return -EINVAL;
-			}
-		}
-	}
-
 	/* Monitor flags is not valid for RX direction */
 	if (req->filter.monitor_flags != ATH12K_EXT_MON_DEFAULT &&
 	    req->direction == QCA_VENDOR_EXT_MON_DIRECTION_RX) {
@@ -2384,6 +2373,27 @@ int ath12k_wifi7_dp_ext_mon_validate_request(struct ath12k_pdev_dp *dp_pdev,
 		ath12k_warn(dp_pdev->dp,
 			    "status_filter is not supported on wifi7\n");
 		return -EINVAL;
+	}
+
+	if (req->cmd_type == ATH12K_EXT_MON_CMD_TYPE_SET_PEER &&
+	    req->peer.action == ATH12K_EXT_MON_PEER_ACTION_ADD) {
+		for (i = 0; i < req->peer.count; i++) {
+			peer = &req->peer.peer_info[i];
+			if (peer->ra_addr) {
+				if (!is_zero_ether_addr(peer->ra_info.ra_addr_mask)) {
+					ath12k_warn(dp_pdev->dp,
+						    "RA addr mask unsupported on WiFi7");
+					return -EINVAL;
+				}
+			} else {
+				if (peer->ta_info.bitmap !=
+				    ATH12K_EXT_MON_DEFAULT_PEER_BITMAP) {
+					ath12k_warn(dp_pdev->dp, "invalid bitmap: %02x",
+						    peer->ta_info.bitmap);
+					return -EINVAL;
+				}
+			}
+		}
 	}
 
 	return 0;
