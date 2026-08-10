@@ -12816,6 +12816,10 @@ skip_mgmt_stats:
 			status->link_id = 0;
 
 		ab->dp->device_stats.rx_pkt_null_frame_handled++;
+		ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L0,
+			   "QoS NULL frame received for %pM state:%d\n",
+			   hdr->addr2,
+			   arsta ? arsta->ahsta->state : -1);
 		ieee80211_rx_napi(ar->ah->hw, pubsta, skb, NULL);
 		goto exit;
 	}
