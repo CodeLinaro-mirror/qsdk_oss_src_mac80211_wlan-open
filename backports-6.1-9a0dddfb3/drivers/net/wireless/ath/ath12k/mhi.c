@@ -306,7 +306,7 @@ int ath12k_mhi_register(struct ath12k_pci *ab_pci)
 #if LINUX_VERSION_IS_GEQ(6, 10, 0)
 	mhi_ctrl->standard_elf_image = ab->hw_params->fw.std_elf_img;
 #else
-	mhi_ctrl->tme_supported_image = true;
+	mhi_ctrl->tme_supported_image = ab->hw_params->fw.std_elf_img;
 #endif
 #endif
 	if (ab->hw_params->otp_board_id_register) {
@@ -368,6 +368,10 @@ int ath12k_mhi_register(struct ath12k_pci *ab_pci)
 	if (!test_bit(ATH12K_PCI_FLAG_MULTI_MSI_VECTORS, &ab_pci->flags))
 		mhi_ctrl->irq_flags = IRQF_SHARED | IRQF_NOBALANCING;
 
+#if defined(PLATFORM_SDX)
+	mhi_ctrl->iova_start = 0x00000000;
+	mhi_ctrl->iova_stop = 0xFFFFFFFF;
+#else
 	dev_node = of_find_node_by_type(NULL, "memory");
 	if (dev_node) {
 		while (of_address_to_resource(dev_node, idx, &memory) == 0) {
@@ -393,6 +397,7 @@ int ath12k_mhi_register(struct ath12k_pci *ab_pci)
 		mhi_ctrl->iova_start = 0;
 		mhi_ctrl->iova_stop = ab_pci->dma_mask;
 	}
+#endif
 
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 	mhi_ctrl->iova_stop = min(mhi_ctrl->iova_stop, (dma_addr_t)DMA_BIT_MASK(32));
