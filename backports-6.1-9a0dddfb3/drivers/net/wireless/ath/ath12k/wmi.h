@@ -10994,6 +10994,49 @@ struct wmi_cfr_capture_filter_cmd_fixed_param {
 	 */
 } __packed;
 
+#define WMI_AOA_MAX_GAIN_TABLE_IDX 8
+
+struct ath12k_wmi_enh_aoa_caps_arg {
+	u32 max_agc_gain_tbls;
+	u16 max_agc_gain_per_tbl_2g[WMI_AOA_MAX_GAIN_TABLE_IDX];
+	u16 max_agc_gain_per_tbl_5g[WMI_AOA_MAX_GAIN_TABLE_IDX];
+	u16 max_agc_gain_per_tbl_6g[WMI_AOA_MAX_GAIN_TABLE_IDX];
+	u8 max_bdf_entries_per_tbl[WMI_AOA_MAX_GAIN_TABLE_IDX];
+	bool valid;
+};
+
+#define WMI_AOA_BDF_NUM_GAIN_TBL_ELEMS_PER_WORD 4
+#define WMI_AOA_BDF_NUM_WORD_ENTRIES_FOR_MAX_NUM_AGC_TBL_IDX \
+	(WMI_AOA_MAX_GAIN_TABLE_IDX / WMI_AOA_BDF_NUM_GAIN_TBL_ELEMS_PER_WORD)
+
+struct ath12k_wmi_enhanced_aoa_caps_param {
+	/* Maximum number of Rx AGC gain tables supported */
+	__le32 max_agc_gain_tbls;
+	/* 1 byte is used to store bdf max number of elements in each gain tables */
+	__le32 max_bdf_gain_entries[WMI_AOA_BDF_NUM_WORD_ENTRIES_FOR_MAX_NUM_AGC_TBL_IDX];
+
+	/* This TLV is followed by TLV array - ath12k_wmi_enhanced_aoa_per_band_caps_param
+	 * containing band specific agc gain table information.
+	 */
+} __packed;
+
+enum ath12k_wmi_aoa_supported_bands {
+	WMI_AOA_2G = 0,
+	WMI_AOA_5G,
+	WMI_AOA_6G,
+};
+
+#define WMI_AOA_NUM_GAIN_TBL_ELEMS_PER_WORD 2
+#define WMI_AOA_NUM_WORD_ENTRIES_FOR_MAX_NUM_AGC_TBL_ELEMS \
+	(WMI_AOA_MAX_GAIN_TABLE_IDX / WMI_AOA_NUM_GAIN_TBL_ELEMS_PER_WORD)
+
+struct ath12k_wmi_enhanced_aoa_per_band_caps_param {
+	/* Band information - ath12k_wmi_aoa_supported_bands */
+	__le32 band_info;
+	/* 2 bytes are used to store agc max number of elements in each gain tables */
+	__le32 max_agc_gain[WMI_AOA_NUM_WORD_ENTRIES_FOR_MAX_NUM_AGC_TBL_ELEMS];
+} __packed;
+
 struct wmi_atf_ssid_grp_request_fixed_param {
 	__le32 tlv_header;
 	__le32 pdev_id;

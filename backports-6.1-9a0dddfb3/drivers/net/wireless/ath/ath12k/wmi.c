@@ -127,6 +127,7 @@ struct ath12k_wmi_svc_rdy_ext2_arg {
 struct ath12k_wmi_svc_rdy_ext2_parse {
 	struct ath12k_wmi_svc_rdy_ext2_arg arg;
 	struct ath12k_wmi_dma_ring_caps_parse dma_caps_parse;
+	struct ath12k_wmi_enh_aoa_caps_arg enh_aoa_caps;
 	bool dma_ring_cap_done;
 	bool spectral_bin_scaling_done;
 	bool mac_phy_caps_ext_done;
@@ -9576,6 +9577,101 @@ static int ath12k_wmi_tlv_twt_caps_params(struct ath12k_base *ab, u16 tag,
 	return 0;
 }
 
+static int
+ath12k_wmi_tlv_enhanced_aoa_caps_parse(struct ath12k_base *ab,
+				       u16 tag, u16 len,
+				       const void *ptr, void *data)
+{
+	struct ath12k_wmi_enh_aoa_caps_arg *aoa_cap = data;
+	const struct ath12k_wmi_enhanced_aoa_caps_param *caps = ptr;
+	u32 tbl_idx, word_idx, byte_idx;
+
+	if (tag != WMI_TAG_ENHANCED_AOA_CAPS_PARAM)
+		return -EPROTO;
+
+	aoa_cap->max_agc_gain_tbls = le32_to_cpu(caps->max_agc_gain_tbls);
+	if (aoa_cap->max_agc_gain_tbls > ATH12K_PSOC_MAX_NUM_AGC_GAIN_TBLS)
+		return -EINVAL;
+
+	for (tbl_idx = 0; tbl_idx < aoa_cap->max_agc_gain_tbls; tbl_idx++) {
+		word_idx = tbl_idx / WMI_AOA_BDF_NUM_GAIN_TBL_ELEMS_PER_WORD;
+		byte_idx = tbl_idx % WMI_AOA_BDF_NUM_GAIN_TBL_ELEMS_PER_WORD;
+		aoa_cap->max_bdf_entries_per_tbl[tbl_idx] =
+			(le32_to_cpu(caps->max_bdf_gain_entries[word_idx]) >>
+			 (byte_idx * 8)) & 0xFF;
+	}
+
+	return 0;
+}
+
+static int
+ath12k_wmi_tlv_enh_aoa_caps(struct ath12k_base *ab, u16 len,
+			    const void *ptr, void *data)
+{
+	return ath12k_wmi_tlv_iter(ab, ptr, len,
+				   ath12k_wmi_tlv_enhanced_aoa_caps_parse,
+				   data);
+}
+
+static int
+ath12k_wmi_tlv_enh_aoa_per_band_caps_parse(struct ath12k_base *ab,
+					   u16 tag, u16 len,
+					   const void *ptr,
+					   void *data)
+{
+	struct ath12k_wmi_enh_aoa_caps_arg *aoa_cap = data;
+	const struct ath12k_wmi_enhanced_aoa_per_band_caps_param *cap = ptr;
+	u16 *gain_array;
+	u32 tbl_idx, word_idx, elem_idx, band_info;
+
+	if (tag != WMI_TAG_ENHANCED_AOA_PER_BAND_CAPS_PARAM)
+		return -EPROTO;
+
+	band_info = le32_to_cpu(cap->band_info);
+	switch (band_info) {
+	case WMI_AOA_2G:
+		gain_array = aoa_cap->max_agc_gain_per_tbl_2g;
+		break;
+	case WMI_AOA_5G:
+		gain_array = aoa_cap->max_agc_gain_per_tbl_5g;
+		break;
+	case WMI_AOA_6G:
+		gain_array = aoa_cap->max_agc_gain_per_tbl_6g;
+		break;
+	default:
+		return 0;
+	}
+
+	for (tbl_idx = 0; tbl_idx < aoa_cap->max_agc_gain_tbls; tbl_idx++) {
+		word_idx = tbl_idx / WMI_AOA_NUM_GAIN_TBL_ELEMS_PER_WORD;
+		elem_idx = tbl_idx % WMI_AOA_NUM_GAIN_TBL_ELEMS_PER_WORD;
+		gain_array[tbl_idx] =
+			(le32_to_cpu(cap->max_agc_gain[word_idx]) >>
+			 (elem_idx * 16)) & 0xFFFF;
+	}
+
+	return 0;
+}
+
+static int
+ath12k_wmi_tlv_enh_aoa_per_band_caps(struct ath12k_base *ab,
+				     u16 len, const void *ptr,
+				     void *data)
+{
+	struct ath12k_wmi_enh_aoa_caps_arg *aoa_cap = data;
+	int ret;
+
+	ret = ath12k_wmi_tlv_iter(ab, ptr, len,
+				  ath12k_wmi_tlv_enh_aoa_per_band_caps_parse,
+				  data);
+	if (ret)
+		return ret;
+
+	aoa_cap->valid = true;
+
+	return 0;
+}
+
 static int ath12k_wmi_tlv_shared_cu_mem_config(struct ath12k_base *ab, u16 tag,
 					       u16 len, const void *ptr,
 					       void *data)
@@ -9799,14 +9895,16 @@ static int ath12k_wmi_svc_rdy_ext2_parse(struct ath12k_base *ab,
 			 */
 			parse->wmi_aux_dev_cap = true;
 		} else if (!parse->aoa_caps_exchange) {
-			/* TODO: This is a place-holder as WMI tag
-			 * before WMI_TAG_MAC_PHY_CAPABILITIES_EXT2
-			 */
+			ret = ath12k_wmi_tlv_enh_aoa_caps(ab, len, ptr,
+							  &parse->enh_aoa_caps);
+			if (ret)
+				return ret;
 			parse->aoa_caps_exchange = true;
 		} else if (!parse->aoa_per_band_caps) {
-			/* TODO: This is a place-holder as WMI tag
-			 * before WMI_TAG_MAC_PHY_CAPABILITIES_EXT2
-			 */
+			ret = ath12k_wmi_tlv_enh_aoa_per_band_caps(ab, len, ptr,
+								   &parse->enh_aoa_caps);
+			if (ret)
+				return ret;
 			parse->aoa_per_band_caps = true;
 		} else if (!parse->wmi_sar_flag_tlv_param) {
 			/* TODO: This is a place-holder as WMI tag
@@ -9879,6 +9977,7 @@ static int ath12k_service_ready_ext2_event(struct ath12k_base *ab,
 		goto err;
 	}
 
+	ab->enh_aoa_caps = svc_rdy_ext2.enh_aoa_caps;
 	complete(&ab->wmi_ab.service_ready);
 
 	return 0;

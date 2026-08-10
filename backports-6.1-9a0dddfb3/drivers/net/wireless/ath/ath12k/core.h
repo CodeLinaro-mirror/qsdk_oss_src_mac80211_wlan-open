@@ -3061,6 +3061,8 @@ struct ath12k_base {
 	u8 mapc_max_co_ap_peers;
 	u8 mapc_max_ctdma_peers;
 
+	struct ath12k_wmi_enh_aoa_caps_arg enh_aoa_caps;
+
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));
 };

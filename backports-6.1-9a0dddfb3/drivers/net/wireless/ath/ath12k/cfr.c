@@ -847,10 +847,69 @@ void ath12k_cfr_deinit(struct ath12k_base *ab)
 		}
 		spin_unlock_bh(&cfr->lut_lock);
 
+		kfree(cfr->enh_aoa_data.gain_stop_index_array);
+		cfr->enh_aoa_data.gain_stop_index_array = NULL;
+		kfree(cfr->enh_aoa_data.enh_phase_delta_array);
+		cfr->enh_aoa_data.enh_phase_delta_array = NULL;
 		ar->cfr.cfr_enabled = 0;
 		ath12k_cfr_debug_unregister(ar);
 		ath12k_cfr_ring_free(ar);
 	}
+}
+
+int ath12k_cfr_get_enhanced_aoa_caps(struct ath12k *ar)
+{
+	struct ath12k_cfr *cfr = &ar->cfr;
+	struct ath12k_wmi_enh_aoa_caps_arg *caps = &ar->ab->enh_aoa_caps;
+	struct cfr_enhanced_aoa_data *data = &cfr->enh_aoa_data;
+	u32 i, gain_tbl_sz;
+
+	cfr->is_enh_aoa_data = false;
+
+	if (caps->valid) {
+		if (caps->max_agc_gain_tbls > ATH12K_PSOC_MAX_NUM_AGC_GAIN_TBLS)
+			return -EINVAL;
+
+		data->max_agc_gain_tbls = caps->max_agc_gain_tbls;
+		gain_tbl_sz = sizeof(u16) * ATH12K_PSOC_MAX_NUM_AGC_GAIN_TBLS;
+		memcpy(data->max_agc_gain_per_tbl_2g, caps->max_agc_gain_per_tbl_2g,
+		       gain_tbl_sz);
+		memcpy(data->max_agc_gain_per_tbl_5g, caps->max_agc_gain_per_tbl_5g,
+		       gain_tbl_sz);
+		memcpy(data->max_agc_gain_per_tbl_6g, caps->max_agc_gain_per_tbl_6g,
+		       gain_tbl_sz);
+		memcpy(data->max_bdf_entries_per_tbl, caps->max_bdf_entries_per_tbl,
+		       sizeof(u8) * ATH12K_PSOC_MAX_NUM_AGC_GAIN_TBLS);
+
+		data->max_entries_all_table = 0;
+		data->start_ent[0] = 0;
+		for (i = 0; i < data->max_agc_gain_tbls; i++) {
+			data->max_entries_all_table += data->max_bdf_entries_per_tbl[i];
+			if ((i + 1) < data->max_agc_gain_tbls)
+				data->start_ent[i + 1] =
+					(data->max_bdf_entries_per_tbl[i] +
+					 data->start_ent[i]);
+		}
+
+		data->gain_stop_index_array = kzalloc(sizeof(u16) *
+						      data->max_entries_all_table *
+						      WMI_MAX_CHAINS, GFP_KERNEL);
+		if (!data->gain_stop_index_array)
+			return -ENOMEM;
+
+		data->enh_phase_delta_array = kzalloc(sizeof(u16) *
+						      data->max_entries_all_table *
+						      WMI_MAX_CHAINS, GFP_KERNEL);
+		if (!data->enh_phase_delta_array) {
+			kfree(data->gain_stop_index_array);
+			data->gain_stop_index_array = NULL;
+			return -ENOMEM;
+		}
+
+		cfr->is_enh_aoa_data = true;
+	}
+
+	return 0;
 }
 
 int ath12k_cfr_init(struct ath12k_base *ab)
@@ -880,7 +939,6 @@ int ath12k_cfr_init(struct ath12k_base *ab)
 		spin_lock_init(&cfr->rx_ring.idr_lock);
 		spin_lock_init(&cfr->lock);
 		spin_lock_init(&cfr->lut_lock);
-
 		num_lut_entries = min((u32)CFR_MAX_LUT_ENTRIES, db_cap.min_elem);
 
 		cfr->lut = kzalloc(num_lut_entries * sizeof(*lut), GFP_KERNEL);
@@ -902,6 +960,12 @@ int ath12k_cfr_init(struct ath12k_base *ab)
 		ret = ath12k_cfr_debug_register(ar);
 		if (ret) {
 			ath12k_warn(ab, "failed to register cfr for pdev %d\n", i);
+			goto deinit;
+		}
+
+		ret = ath12k_cfr_get_enhanced_aoa_caps(ar);
+		if (ret) {
+			ath12k_warn(ab, "Failed to get enhanced aoa caps");
 			goto deinit;
 		}
 	}
