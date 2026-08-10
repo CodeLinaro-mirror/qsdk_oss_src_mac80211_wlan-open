@@ -808,12 +808,7 @@ struct sta_info {
 	struct link_sta_info __rcu *link[IEEE80211_MLD_MAX_NUM_LINKS];
 	struct ieee80211_sta_removed_link_stats rem_link_stats;
 
-	atomic_t tx_drv_pkts;
-	atomic_t tx_netif_pkts;
-	atomic_t rx_drv_pkts;
-	atomic_t rx_netif_pkts;
 	/* Rx packets forwarded to bridge */
-	atomic_t rx_forwarded_pkts;
 
 	/* keep last! */
 	struct ieee80211_sta sta;

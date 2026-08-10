@@ -2403,6 +2403,7 @@ struct ieee80211_vif {
 	u32 mdbg;
 #endif
 	bool is_roc;
+
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));
 };
@@ -3139,6 +3140,13 @@ struct ieee80211_sta {
 	struct  cfg80211_peer_smd_params smd_params;
 
 	bool epp_peer;
+
+	/* mac80211 TX/RX flow counters - accessible from driver */
+	atomic_t tx_netif_pkts;
+	atomic_t tx_drv_pkts;
+	atomic_t rx_drv_pkts;
+	atomic_t rx_netif_pkts;
+	atomic_t rx_forwarded_pkts;
 
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));
