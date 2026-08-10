@@ -2415,6 +2415,15 @@ int ath12k_wifi7_dp_ext_mon_validate_request(struct ath12k_pdev_dp *dp_pdev,
 		return -EINVAL;
 	}
 
+	if (req->cmd_type == ATH12K_EXT_MON_CMD_TYPE_SET_FILTER) {
+		if (req->filter.all_peer.data_mpdu_tlv.tlv_configured ||
+		    req->filter.target_peer.data_mpdu_tlv.tlv_configured) {
+			ath12k_warn(dp_pdev->dp,
+				    "data MPDU TLV filter not supported on WiFi 7");
+			return -EINVAL;
+		}
+	}
+
 	return 0;
 }
 

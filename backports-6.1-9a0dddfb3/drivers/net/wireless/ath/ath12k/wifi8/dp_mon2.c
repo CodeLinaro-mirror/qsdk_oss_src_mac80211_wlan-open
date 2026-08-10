@@ -2087,12 +2087,57 @@ void ath12k_wifi8_dp_mon_rx_wq_deinit(struct ath12k_pdev_dp *dp_pdev, bool destr
 		destroy_workqueue(mon_pdev->rxmon_wq);
 }
 
+static int
+ath12k_wifi8_ext_mon_validate_pkt_data_mpdu_tlv(struct ath12k_dp *dp,
+						const struct
+						ath12k_ext_mon_pkt_config *pkt)
+{
+	const struct {
+		u32 filter_bit;
+		u8  mask;
+	} subtypes[] = {
+		{ FILTER_DATA_MCAST, pkt->data_mpdu_tlv.mcast       },
+		{ FILTER_DATA_UCAST, pkt->data_mpdu_tlv.ucast       },
+		{ FILTER_DATA_NULL,  pkt->data_mpdu_tlv.null_frm    },
+	};
+	u32 data_filter = pkt->filter[ATH12K_EXT_MON_FRAME_DATA];
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(subtypes); i++) {
+		bool in_filter = !!(data_filter & subtypes[i].filter_bit);
+
+		/* in_filter: subtype for which tlv subscription is configured is also
+		 * subscribed for Packet Delivery.
+		 * If subtype is in_filter: only mask 0xD (mpdu_start+mpdu_end+rx_header)
+		 * or 0xF (all four TLVs) allowed; as the other MPDU TLVs are needed
+		 * for packet construction.
+		 */
+		if (in_filter &&
+		    subtypes[i].mask != 0xD && subtypes[i].mask != 0xF) {
+			ath12k_warn(dp, "only mask 0xD/0xF allowed for mpdu_tlv stype %d",
+				    i);
+			return -EINVAL;
+		}
+		/* If subtype is not in_filter: BIT(3) (rx_header) must be unset.
+		 * As subtype is not subscribed for packet deliver, Rx Header is not
+		 * needed.
+		 */
+		if (!in_filter && (subtypes[i].mask & BIT(3))) {
+			ath12k_warn(dp, "rx_hdr not allowed for mpdu_tlv stype %d", i);
+			return -EINVAL;
+		}
+	}
+
+	return 0;
+}
+
 int ath12k_wifi8_dp_ext_mon_validate_request(struct ath12k_pdev_dp *dp_pdev,
 					     const struct ath12k_ext_mon_config *req)
 {
+	const struct ath12k_ext_mon_data_mpdu_tlv_config zero = {0};
 	struct ath12k_pdev_mon_dp *dp_mon_pdev;
 	const struct ath12k_ext_mon_peer_info *peer = NULL;
-	int i;
+	int i, ret;
 
 	dp_mon_pdev = dp_pdev->dp_mon_pdev;
 	if (!dp_mon_pdev) {
@@ -2115,6 +2160,30 @@ int ath12k_wifi8_dp_ext_mon_validate_request(struct ath12k_pdev_dp *dp_pdev,
 						    peer->ra_addr, peer->bitmap);
 					return -EINVAL;
 				}
+			}
+		}
+	}
+
+	if (req->cmd_type == ATH12K_EXT_MON_CMD_TYPE_SET_FILTER) {
+		if (req->filter.all_peer.data_mpdu_tlv.tlv_configured ||
+		    req->filter.target_peer.data_mpdu_tlv.tlv_configured) {
+			if (req->direction == QCA_VENDOR_EXT_MON_DIRECTION_TX) {
+				ath12k_warn(dp_pdev->dp,
+					    "data MPDU TLV filter not supported for TX");
+				return -EINVAL;
+			}
+
+			if (req->filter.all_peer.data_mpdu_tlv.tlv_configured) {
+				ret = ath12k_wifi8_ext_mon_validate_pkt_data_mpdu_tlv(
+						dp_pdev->dp, &req->filter.all_peer);
+				if (ret)
+					return ret;
+			}
+			if (req->filter.target_peer.data_mpdu_tlv.tlv_configured) {
+				ret = ath12k_wifi8_ext_mon_validate_pkt_data_mpdu_tlv(
+						dp_pdev->dp, &req->filter.target_peer);
+				if (ret)
+					return ret;
 			}
 		}
 	}
