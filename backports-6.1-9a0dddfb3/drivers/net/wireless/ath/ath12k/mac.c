@@ -28010,18 +28010,43 @@ EXPORT_SYMBOL(ath12k_mac_set_muedca_mode);
  * This function will set the IEEE80211_CHAN_DISABLED flag for channels
  * whose center frequency is outside the given frequency limits.
  */
+#define ATH12K_LOWER_6G_EDGE_FREQ 5935
+#define ATH12K_UPPER_6G_EDGE_FREQ 7115
+
 static void
-ath12k_disable_chans_outside_limit(struct ieee80211_channel *ch_lst,
+ath12k_disable_chans_outside_limit(struct ath12k *ar,
+				   struct ieee80211_channel *ch_lst,
 				   int num_chans, u32 freq_low, u32 freq_high)
 {
+	const bool enable_lower_6g_edge =
+		test_bit(WMI_SERVICE_ENABLE_LOWER_6G_EDGE_CH_SUPP,
+			 ar->ab->wmi_ab.svc_map);
+	const bool disable_upper_6g_edge =
+		test_bit(WMI_SERVICE_DISABLE_UPPER_6G_EDGE_CH_SUPP,
+			 ar->ab->wmi_ab.svc_map);
 	int i;
 
 	if (!ch_lst || num_chans == 0)
 		return;
 
 	for (i = 0; i < num_chans; i++) {
-		if (ch_lst[i].center_freq < freq_low ||
-		    ch_lst[i].center_freq > freq_high)
+		u32 freq = ch_lst[i].center_freq;
+
+		if (freq < freq_low || freq > freq_high)
+			ch_lst[i].flags |= IEEE80211_CHAN_DISABLED;
+
+		/* The FW capability bit is chip-wide, not per-radio. Skip
+		 * re-enabling the lower 6G edge if this radio's range does
+		 * not span it, so split-MLO radios don't claim channels they
+		 * don't own and collide during band merge.
+		 */
+		if (enable_lower_6g_edge && freq == ATH12K_LOWER_6G_EDGE_FREQ) {
+			if (freq_low <= ATH12K_LOWER_6G_EDGE_FREQ &&
+			    freq_high >= ATH12K_LOWER_6G_EDGE_FREQ)
+				ch_lst[i].flags &= ~IEEE80211_CHAN_DISABLED;
+		}
+
+		if (disable_upper_6g_edge && freq == ATH12K_UPPER_6G_EDGE_FREQ)
 			ch_lst[i].flags |= IEEE80211_CHAN_DISABLED;
 	}
 }
@@ -28223,6 +28248,28 @@ out:
 	return ret;
 }
 
+#define ATH12K_5_9_MIN_FREQ 5845
+#define ATH12K_5_9_MAX_FREQ 5885
+
+static void ath12k_mac_update_5_9_ch_list(struct ath12k *ar,
+					  struct ieee80211_supported_band *band)
+{
+	int i;
+
+	if (test_bit(WMI_TLV_SERVICE_5_9GHZ_SUPPORT, ar->ab->wmi_ab.svc_map))
+		return;
+
+	if (ar->ab->dfs_region != ATH12K_DFS_REG_FCC)
+		return;
+
+	for (i = 0; i < band->n_channels; i++) {
+		if (band->channels[i].center_freq >= ATH12K_5_9_MIN_FREQ &&
+		    band->channels[i].center_freq <= ATH12K_5_9_MAX_FREQ)
+			band->channels[i].flags |= IEEE80211_CHAN_DISABLED;
+	}
+}
+
+
 /**
  * ath12k_mac_update_ch_list - disable band chans outside the given frequency
  * @ar: pointer to ath12k structure
@@ -28243,82 +28290,8 @@ static void ath12k_mac_update_ch_list(struct ath12k *ar,
 	if (!(freq_low && freq_high))
 		return;
 
-	ath12k_disable_chans_outside_limit(band->channels, band->n_channels,
+	ath12k_disable_chans_outside_limit(ar, band->channels, band->n_channels,
 					   freq_low, freq_high);
-
-	if (band->band != NL80211_BAND_6GHZ)
-		return;
-
-	for (i = 0; i < NL80211_REG_NUM_POWER_MODES; i++) {
-		const struct ieee80211_6ghz_channel *chan_6g = band->chan_6g[i];
-
-		if (!chan_6g)
-			continue;
-
-		ath12k_disable_chans_outside_limit(chan_6g->channels, chan_6g->n_channels,
-						   freq_low, freq_high);
-	}
-}
-
-#define ATH12K_5_9_MIN_FREQ 5845
-#define ATH12K_5_9_MAX_FREQ 5885
-#define ATH12K_LOWER_6G_EDGE_FREQ 5935
-#define ATH12K_UPPER_6G_EDGE_FREQ 7115
-
-static void ath12k_mac_update_5_9_ch_list(struct ath12k *ar,
-					  struct ieee80211_supported_band *band)
-{
-	int i;
-
-	if (test_bit(WMI_TLV_SERVICE_5_9GHZ_SUPPORT, ar->ab->wmi_ab.svc_map))
-		return;
-
-	if (ar->ab->dfs_region != ATH12K_DFS_REG_FCC)
-		return;
-
-	for (i = 0; i < band->n_channels; i++) {
-		if (band->channels[i].center_freq >= ATH12K_5_9_MIN_FREQ &&
-		    band->channels[i].center_freq <= ATH12K_5_9_MAX_FREQ)
-			band->channels[i].flags |= IEEE80211_CHAN_DISABLED;
-	}
-}
-
-static void ath12k_mac_update_6g_edge_ch_list(struct ath12k *ar,
-					       struct ieee80211_channel *ch_lst,
-					       int num_chans)
-{
-	const bool enable_lower_6g_edge =
-		test_bit(WMI_SERVICE_ENABLE_LOWER_6G_EDGE_CH_SUPP,
-			 ar->ab->wmi_ab.svc_map);
-	const bool disable_upper_6g_edge =
-		test_bit(WMI_SERVICE_DISABLE_UPPER_6G_EDGE_CH_SUPP,
-			 ar->ab->wmi_ab.svc_map);
-	int i;
-
-	if (!ch_lst || !num_chans)
-		return;
-
-	if (!enable_lower_6g_edge && !disable_upper_6g_edge)
-		return;
-
-	for (i = 0; i < num_chans; i++) {
-		u32 freq = ch_lst[i].center_freq;
-
-		if (enable_lower_6g_edge && freq == ATH12K_LOWER_6G_EDGE_FREQ) {
-			ch_lst[i].flags &= ~IEEE80211_CHAN_DISABLED;
-			continue;
-		}
-
-		if (disable_upper_6g_edge && freq == ATH12K_UPPER_6G_EDGE_FREQ)
-			ch_lst[i].flags |= IEEE80211_CHAN_DISABLED;
-	}
-}
-
-static void ath12k_mac_update_host_disabled_ch_list(struct ath12k *ar,
-						    struct ieee80211_supported_band *band)
-{
-	int i;
-
 	ath12k_mac_update_5_9_ch_list(ar, band);
 
 	if (band->band != NL80211_BAND_6GHZ)
@@ -28330,8 +28303,9 @@ static void ath12k_mac_update_host_disabled_ch_list(struct ath12k *ar,
 		if (!chan_6g)
 			continue;
 
-		ath12k_mac_update_6g_edge_ch_list(ar, chan_6g->channels,
-						  chan_6g->n_channels);
+		ath12k_disable_chans_outside_limit(ar, chan_6g->channels,
+						   chan_6g->n_channels,
+						   freq_low, freq_high);
 	}
 }
 
@@ -28595,7 +28569,6 @@ static int ath12k_mac_setup_channels_rates_multiband(struct ath12k *ar,
 
 		ath12k_mac_update_ch_list(ar, band, reg_5g_low,
 					  reg_5g_high);
-		ath12k_mac_update_host_disabled_ch_list(ar, band);
 		ath12k_mac_update_freq_range(ar, freq_low, freq_high);
 
 		ar->num_channels +=
@@ -28702,7 +28675,6 @@ static int ath12k_mac_setup_channels_rates_multiband(struct ath12k *ar,
 
 		ath12k_mac_update_ch_list(ar, band, reg_6g_low,
 					  reg_6g_high);
-		ath12k_mac_update_host_disabled_ch_list(ar, band);
 		ath12k_mac_update_freq_range(ar, freq_low, freq_high);
 
 		ah->use_6ghz_regd = true;
@@ -28855,7 +28827,6 @@ static int ath12k_mac_setup_channels_rates(struct ath12k *ar,
 			ath12k_mac_update_ch_list(ar, band,
 						  reg_cap->low_5ghz_chan,
 						  reg_cap->high_5ghz_chan);
-			ath12k_mac_update_host_disabled_ch_list(ar, band);
 
 			ath12k_mac_update_freq_range(ar, freq_low, freq_high);
 
@@ -28943,7 +28914,6 @@ static int ath12k_mac_setup_channels_rates(struct ath12k *ar,
 			ath12k_mac_update_ch_list(ar, band,
 						  reg_cap->low_5ghz_chan,
 						  reg_cap->high_5ghz_chan);
-			ath12k_mac_update_host_disabled_ch_list(ar, band);
 
 			ath12k_mac_update_freq_range(ar, reg_cap->low_5ghz_chan,
 						     reg_cap->high_5ghz_chan);
