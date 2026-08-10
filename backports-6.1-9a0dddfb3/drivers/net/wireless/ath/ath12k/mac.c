@@ -20974,8 +20974,15 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 
 		if (arvif->link_id == ATH12K_DEFAULT_SCAN_LINK &&
 		    arvif->is_mlprobe_scan_vif) {
-			memcpy(link_addr, vif->addr, ETH_ALEN);
-			memcpy(arvif->bssid, vif->addr, ETH_ALEN);
+			/* Use a random link MAC for the scan VDEV. The MLD MAC
+			 * (vif->addr) is passed to FW separately via mld_addr in
+			 * WMI_TAG_MLO_VDEV_CREATE_PARAMS and is used to build the
+			 * ML IE in probe requests. Reusing vif->addr as the link
+			 * MAC aliases with the primary AP VDEV which also uses
+			 * vif->addr, causing a duplicate MAC assert in FW.
+			 */
+			eth_random_addr(link_addr);
+			memcpy(arvif->bssid, link_addr, ETH_ALEN);
 		} else if (arvif->link_id == ATH12K_DEFAULT_SCAN_LINK &&
 		    !is_zero_ether_addr(arvif->bssid)) {
 			memcpy(link_addr, arvif->bssid, ETH_ALEN);
