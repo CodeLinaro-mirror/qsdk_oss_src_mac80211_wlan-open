@@ -7937,11 +7937,13 @@ void ath12k_mac_op_vif_cfg_changed(struct ieee80211_hw *hw,
 				   u64 changed)
 {
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
+	struct ath12k_dp_peer_create_params params = {0};
 	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
 	unsigned long links = ahvif->links_map;
 	struct ieee80211_bss_conf *info;
 	struct ath12k_link_vif *arvif;
 	bool dp_assoc_done = false;
+	struct ieee80211_sta *sta;
 	struct ath12k *ar;
 	u8 link_id;
 	int ret;
@@ -7972,12 +7974,26 @@ void ath12k_mac_op_vif_cfg_changed(struct ieee80211_hw *hw,
 
 			if (vif->cfg.assoc) {
 				if (!dp_assoc_done) {
+					rcu_read_lock();
+					sta = ieee80211_find_sta(vif, vif->cfg.ap_addr);
+					if (!sta) {
+						ath12k_warn(ar->ab, "failed to find station entry");
+						rcu_read_unlock();
+						return;
+					}
+					params.sta = sta;
+					params.is_mlo = sta->mlo;
 					ret = ath12k_dp_arch_peer_assoc(ar->ab->dp,
 									&ah->dp_hw,
 									&ahvif->dp_vif,
-									vif->cfg.ap_addr);
-					if (ret)
+									vif->cfg.ap_addr,
+									&params);
+					rcu_read_unlock();
+					if (ret) {
+						ath12k_warn(ar->ab, "Unable to do dp peer assoc %pM %d\n",
+							    vif->cfg.ap_addr, ret);
 						return;
+					}
 					dp_assoc_done = true;
 				}
 				ath12k_bss_assoc(ar, arvif, info);
@@ -9710,7 +9726,9 @@ void ath12k_mac_bss_info_changed(struct ath12k *ar,
 	struct ath12k_wmi_vdev_up_params params = { 0 };
 	struct ieee80211_vif_cfg *vif_cfg = &vif->cfg;
 	struct ath12k_link_vif *tx_arvif = NULL;
+	struct ath12k_dp_peer_create_params dp_params = {0};
 	struct cfg80211_chan_def def;
+	struct ieee80211_sta *sta;
 	u32 param_id, param_value;
 	enum nl80211_band band;
 	u32 vdev_param;
@@ -10105,10 +10123,23 @@ skip_pending_cs_up:
 
 	if (changed & BSS_CHANGED_ASSOC) {
 		if (vif->cfg.assoc) {
-			ath12k_dp_arch_peer_assoc(ar->ab->dp, &ar->ah->dp_hw,
-						  &ahvif->dp_vif,
-						  vif->cfg.ap_addr);
-
+			rcu_read_lock();
+			sta = ieee80211_find_sta(vif, vif->cfg.ap_addr);
+			if (!sta) {
+				ath12k_warn(ar->ab, "failed to find station entry");
+				rcu_read_unlock();
+				return;
+			}
+			dp_params.sta = sta;
+			dp_params.is_mlo = sta->mlo;
+			ret = ath12k_dp_arch_peer_assoc(ar->ab->dp, &ar->ah->dp_hw,
+							&ahvif->dp_vif,
+							vif->cfg.ap_addr, &dp_params);
+			rcu_read_unlock();
+			if (ret)
+				ath12k_warn(ar->ab,
+					    "Unable to do dp peer assoc %pM %d\n",
+					    vif->cfg.ap_addr, ret);
 			ath12k_bss_assoc(ar, arvif, info);
 
 			ret = ath12k_dp_arch_get_peer_init_status(ar->ab->dp,
@@ -15496,10 +15527,13 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 	    vif->type == NL80211_IFTYPE_MESH_POINT ||
 	    vif->type == NL80211_IFTYPE_ADHOC)) {
 		arvif = wiphy_dereference(hw->wiphy, ahvif->link[link_id]);
+		dp_params.sta = sta;
+		dp_params.is_mlo = sta->mlo;
 		ret = ath12k_dp_arch_peer_assoc(arvif->ar->ab->dp,
 						&ah->dp_hw,
 						&ahvif->dp_vif,
-						sta->addr);
+						sta->addr,
+						&dp_params);
 		if (ret) {
 			ath12k_hw_warn(ah, "unable to do dp assoc for sta %pM ret = %d",
 				       sta->addr, ret);
@@ -20902,7 +20936,8 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		ret = ath12k_dp_arch_peer_assoc(ab->dp,
 						&ah->dp_hw,
 						&ahvif->dp_vif,
-						arvif->bssid);
+						arvif->bssid,
+						&params);
 		if (ret) {
 			ath12k_hw_warn(ah, "unable to do dp assoc for sta %pM ret= %d",
 				       arvif->bssid, ret);
