@@ -7735,101 +7735,6 @@ static const struct file_operations fops_simulate_fw_crash = {
 	.llseek = default_llseek,
 };
 
-static void ath12k_debug_multipd_wmi_pdev_set_param(struct ath12k_base *ab,
-						    const unsigned int value)
-{
-	struct ath12k_pdev *pdev;
-	struct ath12k *ar;
-	bool assert_userpd;
-	int i;
-
-	if (ab->hif.bus == ATH12K_BUS_PCI)
-		return;
-
-	for (i = 0; i < ab->num_radios; i++) {
-		pdev = &ab->pdevs[i];
-		ar = pdev->ar;
-
-		/* Set pdev param to let firmware know which pd to use for
-		 * sending fatal IRQ.
-		 * Non-MLO, fatal error comes from asserted radios's user pd
-		 * MLO, fatal error comes from asserted radio's root pd
-		 */
-		if (!ab->ag->mlo_capable) {
-			assert_userpd = true;
-		} else {
-			if (value == ATH12K_FW_RECOVERY_DISABLE)
-				assert_userpd = false;
-			else
-				assert_userpd = true;
-		}
-
-		ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_MPD_USERPD_SSR,
-					  assert_userpd, ar->pdev->pdev_id);
-	}
-}
-
-void ath12k_send_fw_hang_cmd(struct ath12k_base *ab,
-                            unsigned int value)
-{
-	struct ath12k_hw_group *ag = ab->ag;
-	enum wmi_fw_hang_recovery_mode_type recovery_mode;
-	int ret;
-	int i;
-
-	if (ath12k_hw_group_recovery_in_progress(ag)) {
-		ath12k_err(ab, "Recovery is in progress, try again once it's done\n");
-		return;
-	}
-
-	switch (value) {
-	case ATH12K_FW_RECOVERY_ENABLE_MODE1:
-		ath12k_info(ab, "Mode 1 Recovery is depricated, setting recovery as Mode 2\n");
-		fallthrough;
-	case ATH12K_FW_RECOVERY_ENABLE_MODE2:
-		if (test_bit(WMI_SERVICE_MLO_MODE2_RECOVERY_SUPPORTED, ab->wmi_ab.svc_map)) {
-			recovery_mode = ATH12K_WMI_FW_HANG_RECOVERY_MODE2;
-		} else {
-			ath12k_info(ab, "FW doesn't support Mode 2 fallback to Mode 0\n");
-			recovery_mode = ATH12K_WMI_FW_HANG_RECOVERY_MODE0;
-		}
-		break;
-	case ATH12K_FW_RECOVERY_ENABLE_AUTO:
-		recovery_mode = ATH12K_WMI_FW_HANG_RECOVERY_MODE0;
-		break;
-	default:
-		recovery_mode = ATH12K_WMI_DISABLE_FW_RECOVERY;
-		break;
-	}
-
-	for (i = 0; i < ag->num_devices; i++) {
-		ab = ag->ab[i];
-		if (ab->is_bypassed)
-			continue;
-		mutex_lock(&ab->core_lock);
-		ab->fw_recovery_support = value;
-		mutex_unlock(&ab->core_lock);
-
-		/*
-		 * TODO: Instead of checking recovery mode addr from
-		 * TLV, need to check WMI caps once the support is
-		 * added from FW.
-		 */
-		if (ag->mlo_capable && !ab->recovery_mode_address)
-			continue;
-
-		if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
-			continue;
-
-		ath12k_debug_multipd_wmi_pdev_set_param(ab, value);
-
-		ret = ath12k_wmi_force_fw_hang_cmd(ab->pdevs[0].ar, recovery_mode,
-						   ATH12K_WMI_FW_HANG_DELAY, false);
-		ath12k_info(ab, "setting FW assert mode [%d] ret [%d]\n", recovery_mode,
-			    ret);
-	}
-}
-
 static ssize_t ath12k_debug_write_fw_recovery(struct file *file,
 					      const char __user *user_buf,
 					      size_t count, loff_t *ppos)
@@ -7855,7 +7760,7 @@ static ssize_t ath12k_debug_write_fw_recovery(struct file *file,
 		goto exit;
 	}
 
-	ath12k_send_fw_hang_cmd(ab, value);
+	ath12k_core_send_fw_hang_cmd(ab, value);
 
 	ret = count;
 

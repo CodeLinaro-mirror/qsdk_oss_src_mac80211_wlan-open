@@ -168,6 +168,7 @@ static int ath12k_wifi7_wsi_bypass_add(struct ath12k_base *ab)
 const struct ath12k_cp_arch_ops ath12k_wifi7_cp_ops = {
 	.wsi_bypass_remove = ath12k_wifi7_wsi_bypass_remove,
 	.wsi_bypass_add    = ath12k_wifi7_wsi_bypass_add,
+	.en_ssr            = ath12k_core_send_fw_hang_cmd,
 };
 
 static int ath12k_wifi7_init(void)

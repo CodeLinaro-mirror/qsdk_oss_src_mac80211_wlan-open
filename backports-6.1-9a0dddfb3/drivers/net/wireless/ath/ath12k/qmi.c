@@ -7236,6 +7236,7 @@ static void ath12k_qmi_driver_event_work(struct work_struct *work)
 					      event_work);
 	struct ath12k_qmi_driver_event *event;
 	struct ath12k_base *ab = qmi->ab;
+	bool is_ready = false;
 	int ret;
 
 	spin_lock(&qmi->event_lock);
@@ -7294,11 +7295,17 @@ static void ath12k_qmi_driver_event_work(struct work_struct *work)
 						break;
 				}
 
-				ret = ath12k_core_qmi_firmware_ready(ab, NULL);
+				ret = ath12k_core_qmi_firmware_ready(ab, &is_ready);
 				if (!ret)
 					set_bit(ATH12K_FLAG_QMI_FW_READY_COMPLETE,
 						&ab->dev_flags);
+
+				if (ret || !is_ready)
+					break;
+
+				ath12k_core_en_ssr(ab, ATH12K_FW_RECOVERY_ENABLE_MODE2);
 			}
+
 			break;
 		case ATH12K_QMI_EVENT_HOST_CAP:
 			ret = ath12k_qmi_event_host_cap(qmi);

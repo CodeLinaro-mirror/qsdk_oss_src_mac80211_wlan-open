@@ -62,8 +62,6 @@ void ath12k_debugfs_unregister(struct ath12k *ar);
 void ath12k_hw_debugfs_register(struct ath12k_hw *ah);
 void ath12k_debugfs_pdev_destroy(struct ath12k_base *ab);
 void ath12k_debugfs_fw_stats_init(struct ath12k *ar);
-void ath12k_send_fw_hang_cmd(struct ath12k_base *ab,
-			     unsigned int value);
 
 static inline bool ath12k_debugfs_is_pktlog_peer_valid(struct ath12k *ar, u8 *addr)
 {

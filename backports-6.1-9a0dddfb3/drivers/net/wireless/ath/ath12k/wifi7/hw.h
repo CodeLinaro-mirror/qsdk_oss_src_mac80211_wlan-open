@@ -52,6 +52,7 @@
 
 struct ath12k_base;
 int ath12k_wifi7_hw_init(struct ath12k_base *ab);
+extern const struct ath12k_cp_arch_ops ath12k_wifi7_cp_ops;
 
 struct ath12k_cp_arch_ops;
 extern const struct ath12k_cp_arch_ops ath12k_wifi7_cp_ops;
