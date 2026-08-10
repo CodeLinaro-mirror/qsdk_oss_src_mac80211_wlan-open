@@ -765,6 +765,41 @@ static void __ath12k_dp_link_peer_unassign(struct ath12k *ar,
 					 link_vif->vdev_id, addr, ret);
 		}
 	}
+
+	dp_peer->teardown_link_peers[peer->hw_link_id] = NULL;
+}
+
+struct ath12k_dp_link_peer *
+ath12k_dp_link_peer_find_by_addr_post_rcu_remove(struct ath12k_dp_peer *dp_peer,
+						 const char *addr)
+{
+	struct ath12k_dp_link_peer *link_peer = NULL;
+	u8 i;
+
+	for (i = 0; i < ATH12K_DP_PEER_MAX_MLO_LINKS; i++) {
+		if (dp_peer->teardown_link_peers[i] &&
+		    ether_addr_equal(dp_peer->teardown_link_peers[i]->addr, addr)) {
+			link_peer = dp_peer->teardown_link_peers[i];
+			break;
+		}
+	}
+
+	return link_peer;
+}
+EXPORT_SYMBOL(ath12k_dp_link_peer_find_by_addr_post_rcu_remove);
+
+static struct ath12k_dp_link_peer *
+ath12k_dp_link_peer_find_by_link_id_post_rcu_remove(struct ath12k_dp_peer *dp_peer,
+						    u8 link_id)
+{
+	u8 hw_link_id;
+
+	hw_link_id = ath12k_dp_peer_convert_logical_to_hw_link_id(dp_peer, link_id);
+
+	if (hw_link_id < ATH12K_DP_PEER_MAX_MLO_LINKS)
+		return dp_peer->teardown_link_peers[hw_link_id];
+
+	return NULL;
 }
 
 void ath12k_dp_cp_link_peer_unassign(struct ath12k *ar,
@@ -772,6 +807,7 @@ void ath12k_dp_cp_link_peer_unassign(struct ath12k *ar,
 				     struct ath12k_sta *ahsta, u8 link_id,
 				     u8 *addr, bool update_bmap)
 {
+	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(ahsta);
 	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ath12k_dp_hw *dp_hw = &ar->ah->dp_hw;
@@ -805,24 +841,33 @@ void ath12k_dp_cp_link_peer_unassign(struct ath12k *ar,
 	 */
 	spin_lock_bh(&dp_hw->peer_hash_lock);
 
-	dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, ahsta->addr);
+	dp_peer = ath12k_dp_peer_find_by_addr_and_sta(dp_hw, ahsta->addr, sta);
 	if (!dp_peer) {
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		return;
 	}
 
+	pre_rcu_remove_done = dp_peer->pre_rcu_remove_done;
+
 	/*
 	 * Step 2: Find the link peer within dp_peer.
-	 * ath12k_dp_link_peer_find_by_mac_addr() walks dp_peer->link_peers[]
-	 * under rcu_read_lock(). sta_pre_rcu_remove() does NOT clear
-	 * link_peers[] — only dp_peer_list[] is cleared there — so this
-	 * lookup succeeds even after sta_pre_rcu_remove() has run.
 	 */
-	rcu_read_lock();
+	if (!pre_rcu_remove_done) {
+		rcu_read_lock();
+		peer = ath12k_dp_link_peer_find_by_logical_link_id(dp_peer, link_id);
+		if (!peer) {
+			rcu_read_unlock();
+			spin_unlock_bh(&dp_hw->peer_hash_lock);
+			return;
+		}
 
-	peer = ath12k_dp_link_peer_find_by_logical_link_id(dp_peer, link_id);
-	if (!peer) {
+		dp_peer->teardown_link_peers[peer->hw_link_id] = peer;
+
 		rcu_read_unlock();
+	}
+
+	peer = ath12k_dp_link_peer_find_by_link_id_post_rcu_remove(dp_peer, link_id);
+	if (!peer) {
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		return;
 	}
@@ -838,13 +883,6 @@ void ath12k_dp_cp_link_peer_unassign(struct ath12k *ar,
 	__ath12k_dp_link_peer_unassign(ar, dp, dp_hw, peer, dp_link_vif, addr);
 
 	spin_unlock_bh(&dp->dp_lock);
-	rcu_read_unlock();
-
-	/*
-	 * pre_rcu_remove mutate under wiphy->mtx
-	 * since this function is under wiphy lock reading this flag here is safe
-	 */
-	pre_rcu_remove_done = dp_peer->pre_rcu_remove_done;
 
 	spin_unlock_bh(&dp_hw->peer_hash_lock);
 
@@ -934,7 +972,7 @@ void ath12k_dp_link_peer_unassign(struct ath12k *ar, u8 vdev_id, u8 *addr,
 	spin_lock_bh(&dp_hw->peer_hash_lock);
 
 	if (sta)
-		dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, sta->addr);
+		dp_peer = ath12k_dp_peer_find_by_addr_and_sta(dp_hw, sta->addr, sta);
 	else
 		dp_peer = ath12k_dp_vdev_peer_find(dp_hw, addr, ar->hw_link_id);
 
@@ -943,19 +981,27 @@ void ath12k_dp_link_peer_unassign(struct ath12k *ar, u8 vdev_id, u8 *addr,
 		return;
 	}
 
+	pre_rcu_remove_done = dp_peer->pre_rcu_remove_done;
+
 	/*
 	 * Step 2: Find the link peer within dp_peer.
-	 *
-	 * ath12k_dp_link_peer_find_by_mac_addr() walks dp_peer->link_peers[]
-	 * under rcu_read_lock(). sta_pre_rcu_remove() does NOT clear
-	 * dp_peer->link_peers[] — only dp_peer_list[peer_id] is cleared there.
-	 * dp_peer->link_peers[] is cleared by __ath12k_dp_link_peer_unassign()
-	 * in Step 3 below, so this lookup succeeds even in the pre-RCU path.
 	 */
-	rcu_read_lock();
-	peer = ath12k_dp_link_peer_find_by_mac_addr(dp_peer, addr);
-	if (!peer) {
+	if (!pre_rcu_remove_done) {
+		rcu_read_lock();
+		peer = ath12k_dp_link_peer_find_by_mac_addr(dp_peer, addr);
+		if (!peer) {
+			rcu_read_unlock();
+			spin_unlock_bh(&dp_hw->peer_hash_lock);
+			return;
+		}
+
+		dp_peer->teardown_link_peers[peer->hw_link_id] = peer;
+
 		rcu_read_unlock();
+	}
+
+	peer = ath12k_dp_link_peer_find_by_addr_post_rcu_remove(dp_peer, addr);
+	if (!peer) {
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		return;
 	}
@@ -973,14 +1019,6 @@ void ath12k_dp_link_peer_unassign(struct ath12k *ar, u8 vdev_id, u8 *addr,
 	__ath12k_dp_link_peer_unassign(ar, dp, dp_hw, peer, link_vif, addr);
 
 	spin_unlock_bh(&dp->dp_lock);
-
-	rcu_read_unlock();
-
-	/*
-	 * pre_rcu_remove mutate under wiphy->mtx
-	 * since this function is under wiphy lock reading this flag here is safe
-	 */
-	pre_rcu_remove_done = dp_peer->pre_rcu_remove_done;
 
 	spin_unlock_bh(&dp_hw->peer_hash_lock);
 
@@ -2934,17 +2972,7 @@ void ath12k_dp_peer_pre_rcu_remove(struct ieee80211_hw *hw, struct ath12k_sta *a
 	lockdep_assert_wiphy(hw->wiphy);
 
 	/*
-	 * ── DP layer: clear dp_peer_list[] for all peer_id entries ──
-	 *
-	 * dp_peer_list[] is the global RCU lookup table used by the RX NAPI
-	 * fast path to reach dp_peer (and from there, ieee80211_sta).
-	 * Clearing all entries here, before synchronize_net(), ensures that
-	 * after synchronize_net() no RX NAPI reader can reach dp_peer.
-	 *
-	 * NOTE: dp_peer->link_peers[] is intentionally NOT cleared here.
-	 * ath12k_dp_link_peer_unassign() uses link_peers[] to locate the
-	 * link peer. Clearing it here would break that lookup.
-	 * link_peers[] is cleared by __ath12k_dp_link_peer_unassign().
+	 * ── DP layer: clear dp_peer_list[] and link_peers[] ──
 	 */
 	dp_peer = ath12k_sta_get_dp_peer_wiphy_locked(hw->wiphy, ahsta);
 	if (!dp_peer)
@@ -2964,6 +2992,9 @@ void ath12k_dp_peer_pre_rcu_remove(struct ieee80211_hw *hw, struct ath12k_sta *a
 		link_peer = wiphy_dereference(hw->wiphy, dp_peer->link_peers[i]);
 		if (!link_peer)
 			continue;
+
+		dp_peer->teardown_link_peers[i] = link_peer;
+		rcu_assign_pointer(dp_peer->link_peers[i], NULL);
 
 		if (link_peer->peer_id == ATH12K_MLO_PEER_ID_INVALID)
 			continue;
@@ -2986,4 +3017,80 @@ void ath12k_dp_peer_pre_rcu_remove(struct ieee80211_hw *hw, struct ath12k_sta *a
 	ath12k_dbg_level(NULL, ATH12K_DBG_PEER, ATH12K_DBG_L1,
 			 "%s: dp_peer=%pM done mlo=%d\n",
 			 __func__, dp_peer->addr, dp_peer->is_mlo);
+}
+
+void ath12k_dp_peer_cleanup_by_addr(struct ath12k *ar, int vdev_id,
+				    const u8 *addr, struct ieee80211_sta *sta)
+{
+	struct ath12k_dp_hw *dp_hw = &ar->ah->dp_hw;
+	struct ath12k_dp_peer *dp_peer;
+
+	spin_lock_bh(&dp_hw->peer_hash_lock);
+
+	dp_peer = ath12k_dp_peer_find_by_addr_and_sta(dp_hw, sta->addr, sta);
+
+	if (dp_peer)
+		ath12k_dp_peer_cleanup(ar, dp_peer, vdev_id, addr);
+
+	spin_unlock_bh(&dp_hw->peer_hash_lock);
+}
+
+void ath12k_dp_peer_unauthorize(struct ath12k *ar, struct ieee80211_sta *sta,
+				u8 link_id)
+{
+	struct ath12k_hw *ah = ath12k_ar_to_ah(ar);
+	struct ath12k_dp_hw *dp_hw = &ah->dp_hw;
+	struct ath12k_dp_link_peer *link_peer;
+	struct ath12k_dp_peer *dp_peer;
+	u8 hw_link_id;
+
+	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	spin_lock_bh(&dp_hw->peer_hash_lock);
+
+	dp_peer = ath12k_dp_peer_find_by_addr_and_sta(dp_hw, sta->addr, sta);
+	if (!dp_peer) {
+		spin_unlock_bh(&dp_hw->peer_hash_lock);
+		return;
+	}
+
+	dp_peer->is_authorized = false;
+
+	hw_link_id = ath12k_dp_peer_convert_logical_to_hw_link_id(dp_peer, link_id);
+	if (hw_link_id < ATH12K_DP_PEER_MAX_MLO_LINKS) {
+		link_peer = wiphy_dereference(ath12k_ar_to_hw(ar)->wiphy,
+					      dp_peer->link_peers[hw_link_id]);
+		if (!link_peer)
+			link_peer = dp_peer->teardown_link_peers[hw_link_id];
+		if (link_peer)
+			link_peer->is_authorized = false;
+	}
+
+	spin_unlock_bh(&dp_hw->peer_hash_lock);
+}
+
+int ath12k_dp_peer_clear_keys(struct ath12k *ar, struct ieee80211_sta *sta,
+			      union ath12k_config_param *key_params)
+{
+	struct ath12k_hw *ah = ath12k_ar_to_ah(ar);
+	struct ath12k_dp_hw *dp_hw = &ah->dp_hw;
+	struct ath12k_dp_peer *dp_peer;
+
+	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	spin_lock_bh(&dp_hw->peer_hash_lock);
+
+	dp_peer = ath12k_dp_peer_find_by_addr_and_sta(dp_hw, sta->addr, sta);
+	if (!dp_peer) {
+		spin_unlock_bh(&dp_hw->peer_hash_lock);
+		return -ENOENT;
+	}
+
+	ath12k_dp_peer_set_param_by_dp_peer(dp_peer,
+					    ATH12K_DP_PEER_CLEAR_KEYS_PARAM,
+					    key_params);
+
+	spin_unlock_bh(&dp_hw->peer_hash_lock);
+
+	return 0;
 }
