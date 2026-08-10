@@ -6360,11 +6360,16 @@ enum qca_vendor_extended_monitor_filter_level {
  * @QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN: Nested attribute.
  *     Defines the packet length configured for different frame types.
  *     See enum qca_vendor_attr_extended_monitor_pkt_config_len
+ *
+ * @QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_DATA_MPDU_TLV: Nested Attribute
+ *     Per-subtype data MPDU TLV subscription masks.
+ *     See enum qca_vendor_attr_extended_monitor_data_mpdu_tlv.
  */
 enum qca_vendor_attr_extended_monitor_packet_config {
 	QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_INVALID = 0,
 	QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER = 1,
 	QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN = 2,
+	QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_DATA_MPDU_TLV = 3,
 
 	/* keep last */
 	QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_AFTER_LAST,
@@ -6428,6 +6433,41 @@ enum qca_vendor_attr_extended_monitor_pkt_config_len {
 	QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN_AFTER_LAST,
 	QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN_MAX =
 		QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_vendor_attr_extended_monitor_data_mpdu_tlv - Nested attributes
+ * for per-data-subtype MPDU TLV subscription, used within
+ * %QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_DATA_MPDU_TLV.
+ *
+ * Each attribute carries a u8 bitmask selecting which MPDU-level TLVs
+ * the hardware writes to the status ring for frames of that data subtype:
+ *   BIT(0) - rx_mpdu_start TLV
+ *   BIT(1) - rx_msdu_end TLV
+ *   BIT(2) - rx_mpdu_end TLV
+ *   BIT(3) - rx_header TLV
+ * Only valid within %QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_ALL_PEER and
+ * %QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_TARGET_PEER categories.
+ *
+ * @QCA_VENDOR_ATTR_EXT_MON_DATA_MPDU_TLV_MCAST: u8 attribute.
+ *     TLV subscription mask for multicast data frames.
+ *
+ * @QCA_VENDOR_ATTR_EXT_MON_DATA_MPDU_TLV_UCAST: u8 attribute.
+ *     TLV subscription mask for unicast data frames.
+ *
+ * @QCA_VENDOR_ATTR_EXT_MON_DATA_MPDU_TLV_NULL: u8 attribute.
+ *     TLV subscription mask for null data frames.
+ */
+enum qca_vendor_attr_extended_monitor_data_mpdu_tlv {
+	QCA_VENDOR_ATTR_EXT_MON_DATA_MPDU_TLV_INVALID = 0,
+	QCA_VENDOR_ATTR_EXT_MON_DATA_MPDU_TLV_MCAST = 1,
+	QCA_VENDOR_ATTR_EXT_MON_DATA_MPDU_TLV_UCAST = 2,
+	QCA_VENDOR_ATTR_EXT_MON_DATA_MPDU_TLV_NULL = 3,
+
+	/* keep last */
+	QCA_VENDOR_ATTR_EXT_MON_DATA_MPDU_TLV_AFTER_LAST,
+	QCA_VENDOR_ATTR_EXT_MON_DATA_MPDU_TLV_MAX =
+		QCA_VENDOR_ATTR_EXT_MON_DATA_MPDU_TLV_AFTER_LAST - 1,
 };
 
 /**
