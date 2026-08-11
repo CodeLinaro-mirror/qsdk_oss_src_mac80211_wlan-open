@@ -537,7 +537,7 @@ int ieee80211_smd_execute_transition(struct ieee80211_sub_if_data *sdata,
 	info->dl_drain_time_tu = dl_drain_time_tu;
 	info->request_dl_sn_not_transferred = target->no_dl_sn;
 	info->request_ul_sn_not_transferred = target->no_ul_sn;
-	info->exec_path = target->exec_path;
+	info->is_exec_via_tap = target->exec_path;
 
 	/* DL drain applies only to the primary SAP link; other radios get 0. */
 	info->dl_drain_links_mask = BIT(info->primary_link_id);
