@@ -36,6 +36,7 @@ struct ath12k_tx_sw_metadata {
 	    rsvd1      : 2;
 	u8  flags      : 4,
 	    rsvd2      : 4;
+	u32 hw_enqueue_tstamp;
 } __packed __aligned(32);
 
 static_assert(sizeof(struct ath12k_tx_sw_metadata) == 32,
@@ -2150,6 +2151,18 @@ static void ath12k_wifi8_dp_tx_free_txbuf(struct ath12k_dp *dp,
 	rcu_read_unlock();
 }
 
+static u32 ath12k_wifi8_dp_tx_compute_hw_delay(struct hal_tx_status *ts)
+{
+	u32 hw_delay;
+
+	hw_delay = ts->delay_stats.hw.wifi_sched_latency;
+
+	if (hw_delay > HW_TX_DELAY_MAX)
+		return 0;
+
+	return hw_delay;
+}
+
 static void
 ath12k_wifi8_dp_tx_htt_tx_complete_buf(struct ath12k_dp *dp,
 				       struct sk_buff *msdu,
@@ -2170,6 +2183,9 @@ ath12k_wifi8_dp_tx_htt_tx_complete_buf(struct ath12k_dp *dp,
 	struct ieee80211_hdr *hdr;
 	size_t hdrlen;
 	enum ath12k_dp_eapol_key_type subtype;
+	u32 hw_enq_tstamp = 0;
+	u32 hw_delay = 0;
+	u8 ring_id;
 
 	ath12k_dp_tx_buffer_unmap(dp->dev, sw_metadata->paddr, sw_metadata->len,
 				  DMA_TO_DEVICE);
@@ -2255,14 +2271,28 @@ ath12k_wifi8_dp_tx_htt_tx_complete_buf(struct ath12k_dp *dp,
 		status.sta = ath12k_dp_peer_get_sta(dp_peer);
 	}
 
-	if ((unlikely(ath12k_dp_stats_enabled(dp_pdev))) &&
-	    (unlikely(ath12k_debugfs_is_qos_stats_enabled(dp_pdev->ar)))) {
-		u32 hw_delay = ts->delay_stats.hw.wifi_sched_latency;
+	if (unlikely(ath12k_dp_stats_enabled(dp_pdev))) {
+		if (unlikely(ath12k_debugfs_is_qos_stats_enabled(dp_pdev->ar))) {
+			hw_delay = ts->delay_stats.hw.wifi_sched_latency;
 
-		ath12k_qos_stats_update(dp_peer, ts->hw_link_id,
-					dp_pdev->ar, msdu, ts,
-					dp_pdev, msdu->tstamp,
-					hw_delay);
+			ath12k_qos_stats_update(dp_peer, ts->hw_link_id,
+						dp_pdev->ar, msdu, ts,
+						dp_pdev, msdu->tstamp,
+						hw_delay);
+		}
+
+		if (unlikely(ath12k_dp_latency_stats_enabled(dp_pdev))) {
+			hw_enq_tstamp = sw_metadata->hw_enqueue_tstamp;
+			hw_delay = ath12k_wifi8_dp_tx_compute_hw_delay(ts);
+			ring_id = tx_ring->tcl_data_ring_id;
+
+			ath12k_dp_tx_update_peer_latency_stats(dp_pdev,
+							       dp_peer,
+							       ts, ring_id,
+							       sw_metadata->skb,
+							       hw_enq_tstamp,
+							       hw_delay);
+		}
 	}
 
 	status.info = info;
@@ -2676,6 +2706,8 @@ static void ath12k_wifi8_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 	u32 msdu_len = msdu->len;
 	u8 tx_desc_flags = sw_metadata->flags;
 	u8 vow_tid = 0;
+	u32 hw_enq_tstamp = 0;
+	u32 hw_delay = 0;
 
 	if (WARN_ON_ONCE(ts->buf_rel_source != HAL_TQM_REL_SRC_MODULE_TQM)) {
 		/* Must not happen */
@@ -2729,12 +2761,25 @@ static void ath12k_wifi8_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 									  hw_link_id,
 									  msdu_len);
 			if (unlikely(ath12k_debugfs_is_qos_stats_enabled(ar))) {
-				u32 hw_delay = ts->delay_stats.hw.wifi_sched_latency;
+				hw_delay = ts->delay_stats.hw.wifi_sched_latency;
 
 				ath12k_qos_stats_update(peer, hw_link_id,
 							ar, msdu, ts,
 							dp_pdev, msdu->tstamp,
 							hw_delay);
+			}
+
+			if (unlikely(ath12k_dp_latency_stats_enabled(dp_pdev))) {
+				hw_enq_tstamp = sw_metadata->hw_enqueue_tstamp;
+				hw_delay =
+					ath12k_wifi8_dp_tx_compute_hw_delay(ts);
+
+				ath12k_dp_tx_update_peer_latency_stats(dp_pdev,
+								       peer, ts,
+								       ring,
+								       sw_metadata->skb,
+								       hw_enq_tstamp,
+								       hw_delay);
 			}
 
 			if (ath12k_tid_stats_enabled(dp_pdev)) {
@@ -3185,6 +3230,7 @@ int ath12k_wifi8_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 		sw_metadata->paddr = tx_desc->paddr;
 		sw_metadata->len = tx_desc->len;
 		sw_metadata->flags = tx_desc->flags;
+		sw_metadata->hw_enqueue_tstamp = tx_desc->hw_enqueue_tstamp;
 
 		if (unlikely(!(sw_metadata->flags & DP_TX_DESC_FLAG_FAST))) {
 			if (tx_desc->ext_kmem) {
