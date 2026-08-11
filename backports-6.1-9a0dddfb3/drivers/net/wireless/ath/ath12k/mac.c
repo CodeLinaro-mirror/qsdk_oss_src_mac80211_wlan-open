@@ -19912,12 +19912,6 @@ skip_state_check:
 	if (ath12k_check_erp_power_down(ag))
 		clear_bit(ATH12K_GROUP_FLAG_HIF_POWER_DOWN, &ag->flags);
 
-	for_each_ar(ah, ar, i) {
-		if (test_bit(ar->cfg_rx_chainmask,
-			     &ar->pdev->cap.adfs_chain_mask))
-			ath12k_vendor_send_agile_capable_event(ar);
-	}
-
 	return 0;
 
 fail_start:
