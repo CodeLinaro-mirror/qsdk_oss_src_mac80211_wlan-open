@@ -4897,15 +4897,17 @@ ath12k_wifi8_dp_tx_proceed_drop(struct ath12k_wifi8_dp_congestion_control *congs
 
 		if (!dp_peer) {
 			rcu_read_unlock();
-			ath12k_info(ab, "peer find failed for flow peer_id %d\n",
-				    peer_id);
+			ath12k_info(ab,
+				    "peer find failed for flow peer_id %d flow_type %d tid %d\n",
+				    peer_id, flow_type, tid_num);
 			continue;
 		}
 
 		tx_flow_info = ath12k_dp_get_tx_flow_info_from_peer(dp_peer);
 		if (!tx_flow_info) {
-			ath12k_info(ab, "invalid tx flow info peer %pM in proceed drop",
-				    dp_peer->addr);
+			ath12k_info(ab,
+				    "invalid tx flow info peer %pM peer_id %d flow_type %d tid %d in proceed drop",
+				    dp_peer->addr, peer_id, flow_type, tid_num);
 			rcu_read_unlock();
 			continue;
 		}
@@ -5120,6 +5122,17 @@ void ath12k_wifi8_dp_tx_congestion_recovery_handler(struct timer_list *t)
 
 	cur_jiffies = jiffies;
 
+	/* TQM sorted-flow registers are unreliable while this chip is mid
+	 * SSR (FW held in reset / PCIe or AHB path down). Reading them here
+	 * returns garbage that decodes to bogus peer_ids, causing an
+	 * unthrottled log flood on every 100ms tick that can starve the
+	 * console/RCU long enough to trip a stall panic. Skip this tick
+	 * entirely and just keep the timer alive so it resumes normal
+	 * operation as soon as recovery completes.
+	 */
+	if (test_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags))
+		goto out;
+
 	ath12k_wifi8_dp_tx_get_desc_used_cnt(dp_hw_grp_wifi8->dp_hw_grp,
 					     &used_cnt,
 					     &ppeds_used_cnt);
@@ -5131,13 +5144,13 @@ void ath12k_wifi8_dp_tx_congestion_recovery_handler(struct timer_list *t)
 #endif
 	if (used_cnt <= congstn->used_threshold &&
 	    ppeds_used_cnt <= congstn->ppeds_used_threshold)
-		goto out;
+		goto skip_history;
 
 	if (!svc_data)
-		goto out;
+		goto skip_history;
 
 	if (!drop)
-		goto out;
+		goto skip_history;
 
 	memset(drop, 0, sizeof(*drop));
 	memset(svc_data, 0, HAL_TQM_SERVICE_CATEGORY_MAX * sizeof(*svc_data));
@@ -5253,7 +5266,7 @@ skip_drop:
 
 	congstn->last_drop_jiffies = cur_jiffies;
 
-out:
+skip_history:
 	if (used_cnt + ppeds_used_cnt > congstn->max_used)
 		congstn->max_used = used_cnt + ppeds_used_cnt;
 
@@ -5263,6 +5276,7 @@ out:
 		ath12k_wifi8_dp_tx_restore_flow_limit(dp_hw_grp_wifi8, cur_jiffies);
 	}
 
+out:
 	congstn->last_jiffies = cur_jiffies;
 	if (congstn->start)
 		mod_timer(&dp_hw_grp_wifi8->congstn.timer,
