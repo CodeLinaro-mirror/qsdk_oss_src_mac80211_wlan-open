@@ -187,6 +187,7 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_OEM_DATA = 182,
 	QCA_NL80211_VENDOR_SUBCMD_GET_STA_INFO = 186,
 	QCA_NL80211_VENDOR_SUBCMD_RM_GENERIC = 206,
+	QCA_NL80211_VENDOR_SUBCMD_PASN = 215,
 	QCA_NL80211_VENDOR_SUBCMD_SCS_RULE_CONFIG = 218,
 	QCA_NL80211_VENDOR_SUBCMD_AFC_EVENT = 222,
 	QCA_NL80211_VENDOR_SUBCMD_AFC_RESPONSE = 223,
@@ -439,6 +440,7 @@ enum qca_nl80211_vendor_events {
 	QCA_NL80211_VENDOR_SUBCMD_WLAN_NFCAL_POWER_EVENT_INDEX = 24,
 	QCA_NL80211_VENDOR_SUBCMD_RF_PATH_MODE_INDEX = 25,
 	QCA_NL80211_VENDOR_SUBCMD_SCAN_RADIO_CHAN_STATS_INDEX = 26,
+	QCA_NL80211_VENDOR_SUBCMD_PASN_EVENT_INDEX = 27,
 };
 
 /**
@@ -5220,6 +5222,80 @@ enum qca_wlan_vendor_attr_scs_rule_config {
 };
 
 /**
+ * enum qca_wlan_vendor_pasn_action - Action values for QCA_WLAN_VENDOR_ATTR_PASN_ACTION.
+ *
+ * @QCA_WLAN_VENDOR_PASN_ACTION_AUTH: Request hostapd to run PASN
+ *	authentication for the listed peers.
+ * @QCA_WLAN_VENDOR_PASN_ACTION_DELETE_SECURE_RANGING_CONTEXT: Notify
+ *	hostapd that the secure ranging context for the listed peers should
+ *	be torn down.
+ */
+enum qca_wlan_vendor_pasn_action {
+	QCA_WLAN_VENDOR_PASN_ACTION_AUTH,
+	QCA_WLAN_VENDOR_PASN_ACTION_DELETE_SECURE_RANGING_CONTEXT,
+};
+
+/**
+ * enum qca_wlan_vendor_attr_pasn_peer - Attributes for a single PASN peer
+ *	entry nested inside %QCA_WLAN_VENDOR_ATTR_PASN_PEERS.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_PASN_PEER_SRC_ADDR: Local MAC address (6 bytes).
+ * @QCA_WLAN_VENDOR_ATTR_PASN_PEER_MAC_ADDR: Remote peer MAC address (6 bytes).
+ * @QCA_WLAN_VENDOR_ATTR_PASN_PEER_LTF_KEYSEED_REQUIRED: Flag; present if
+ *	the initiator requires an LTF key seed for secure LTF.
+ * @QCA_WLAN_VENDOR_ATTR_PASN_PEER_STATUS_SUCCESS: Flag; present if PASN
+ *	authentication succeeded for this peer.
+ * @QCA_WLAN_VENDOR_ATTR_PASN_PEER_AKM: u32 AKM suite selector.
+ * @QCA_WLAN_VENDOR_ATTR_PASN_PEER_CIPHER: u32 pairwise cipher suite selector.
+ * @QCA_WLAN_VENDOR_ATTR_PASN_PEER_PASSWORD: Binary; passphrase for SAE.
+ * @QCA_WLAN_VENDOR_ATTR_PASN_PEER_PMKID: 16-byte PMKID.
+ * @QCA_WLAN_VENDOR_ATTR_PASN_PEER_COMEBACK_AFTER: u16; time in TUs after
+ *	which the initiator should retry when PASN is deferred.
+ * @QCA_WLAN_VENDOR_ATTR_PASN_PEER_COOKIE: Binary; opaque cookie for
+ *	anti-clogging during SAE-based PASN.
+ */
+enum qca_wlan_vendor_attr_pasn_peer {
+	QCA_WLAN_VENDOR_ATTR_PASN_PEER_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_PASN_PEER_SRC_ADDR = 1,
+	QCA_WLAN_VENDOR_ATTR_PASN_PEER_MAC_ADDR = 2,
+	QCA_WLAN_VENDOR_ATTR_PASN_PEER_LTF_KEYSEED_REQUIRED = 3,
+	QCA_WLAN_VENDOR_ATTR_PASN_PEER_STATUS_SUCCESS = 4,
+	QCA_WLAN_VENDOR_ATTR_PASN_PEER_AKM = 5,
+	QCA_WLAN_VENDOR_ATTR_PASN_PEER_CIPHER = 6,
+	QCA_WLAN_VENDOR_ATTR_PASN_PEER_PASSWORD = 7,
+	QCA_WLAN_VENDOR_ATTR_PASN_PEER_PMKID = 8,
+	QCA_WLAN_VENDOR_ATTR_PASN_PEER_COMEBACK_AFTER = 9,
+	QCA_WLAN_VENDOR_ATTR_PASN_PEER_COOKIE = 10,
+
+	/* keep last */
+	QCA_WLAN_VENDOR_ATTR_PASN_PEER_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_PASN_PEER_MAX =
+		QCA_WLAN_VENDOR_ATTR_PASN_PEER_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_wlan_vendor_attr_pasn - Top-level attributes for
+ *	%QCA_NL80211_VENDOR_SUBCMD_PASN and the corresponding vendor event.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_PASN_ACTION: u32 from &enum qca_wlan_vendor_pasn_action.
+ * @QCA_WLAN_VENDOR_ATTR_PASN_PEERS: Nested array of peer entries; each entry
+ *	uses attributes from &enum qca_wlan_vendor_attr_pasn_peer.
+ * @QCA_WLAN_VENDOR_ATTR_PASN_LINK_ID: u8 MLD link ID. Present for MLO APs;
+ *	absent for non-MLO.
+ */
+enum qca_wlan_vendor_attr_pasn {
+	QCA_WLAN_VENDOR_ATTR_PASN_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_PASN_ACTION = 1,
+	QCA_WLAN_VENDOR_ATTR_PASN_PEERS = 2,
+	QCA_WLAN_VENDOR_ATTR_PASN_LINK_ID = 3,
+
+	/* keep last */
+	QCA_WLAN_VENDOR_ATTR_PASN_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_PASN_MAX =
+		QCA_WLAN_VENDOR_ATTR_PASN_AFTER_LAST - 1,
+};
+
+/**
  * enum qca_vendor_wlan_home_offchan_tx_rx_func_type - function types
  *
  * This enum defines the function/command types used with attribute
@@ -7506,6 +7582,10 @@ enum qca_wlan_vendor_cfr_stop_reason {
 	QCA_WLAN_VENDOR_CFR_STOP_REASON_LINK_RECONFIG = 9,
 	QCA_WLAN_VENDOR_CFR_STOP_REASON_RECOVERY = 10,
 };
+
+int ath12k_vendor_send_pasn_event(struct wiphy *wiphy, struct wireless_dev *wdev,
+				  u8 link_id, u32 action, const u8 *src_addr,
+				  const u8 *peer_addr, bool ltf_keyseed_required);
 
 /**
  * enum qca_wlan_vendor_peer_cfr_capture_attr - Used by the vendor command

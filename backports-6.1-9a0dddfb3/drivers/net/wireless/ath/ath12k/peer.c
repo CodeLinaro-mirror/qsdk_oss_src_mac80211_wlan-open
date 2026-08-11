@@ -757,8 +757,8 @@ static int ath12k_wait_for_peer_created(struct ath12k *ar, int vdev_id, const u8
 	return ath12k_wait_for_peer_common(ar, vdev_id, addr, true);
 }
 
-static int ath12k_wait_for_peer_create_done(struct ath12k *ar, u32 vdev_id,
-					    const u8 *addr)
+int ath12k_wait_for_peer_create_done(struct ath12k *ar, u32 vdev_id,
+				     const u8 *addr)
 {
 	int ret;
 	unsigned long time_left;

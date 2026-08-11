@@ -881,12 +881,24 @@ struct ath12k_uhr_cu_info {
 
 #define ATH12K_FLAG_BEACON_RECEIVED     0
 
+struct ath12k_rtt_pasn_peer {
+	struct list_head list;
+	u8 src_addr[ETH_ALEN];
+	u8 peer_addr[ETH_ALEN];
+	bool ltf_keyseed_required;
+	u8 security_mode;
+	u8 flags;
+};
+
 /**
  * struct ath12k_rtt_context - per-link RTT/PASN state.
  * Embedded in ath12k_link_vif.
  */
 struct ath12k_rtt_context {
 	u32 rtt_responder_role;
+	struct list_head pasn_peer_list;
+	spinlock_t pasn_peer_lock; /* protects pasn_peer_list */
+	struct wiphy_work pasn_fw_peer_create_work;
 };
 
 /**

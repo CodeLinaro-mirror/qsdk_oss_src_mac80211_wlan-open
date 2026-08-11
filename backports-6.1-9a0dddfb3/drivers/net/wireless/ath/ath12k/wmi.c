@@ -20401,6 +20401,12 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 	case WMI_VDEV_TSF_REPORT_EVENTID:
 		ath12k_vdev_tsf_report_event(ab, skb);
 		break;
+	case WMI_RTT_PASN_PEER_CREATE_REQ_EVENTID:
+		ath12k_wmi_rtt_pasn_peer_create_req_event(ab, skb);
+		break;
+	case WMI_RTT_PASN_PEER_DELETE_EVENTID:
+		ath12k_wmi_rtt_pasn_peer_delete_event(ab, skb);
+		break;
 	case WMI_GPIO_INPUT_EVENTID:
 		ath12k_wmi_gpio_input_event(ab, skb);
 		break;
@@ -23585,6 +23591,354 @@ ath12k_wmi_delete_all_peer_resp_pull(struct ath12k_base *ab,
 
 	kfree(tb);
 	return 0;
+}
+
+int ath12k_wmi_send_rtt_pasn_deauth(struct ath12k *ar, const u8 *peer_mac)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct ath12k_wmi_rtt_pasn_deauth_cmd *cmd;
+	struct sk_buff *skb;
+	int ret;
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (void *)skb->data;
+	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_RTT_PASN_DEAUTH_CMD_FIXED_PARAM,
+						 sizeof(*cmd));
+	ether_addr_copy(cmd->peer_mac_addr.addr, peer_mac);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_RTT_PASN_DEAUTH_CMD);
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to send RTT PASN deauth: %d\n", ret);
+		dev_kfree_skb(skb);
+	}
+
+	return ret;
+}
+
+static int ath12k_wmi_rtt_pasn_tlv_iter(struct ath12k_base *ab, u16 tag,
+					u16 len, const void *ptr,
+					void *data)
+{
+	struct ath12k_wmi_rtt_pasn_tlv_parse *p = data;
+
+	if (tag == p->fixed_tag) {
+		if (len < p->fixed_min_len)
+			return -EINVAL;
+		p->fixed = ptr;
+	} else if (tag == WMI_TAG_ARRAY_STRUCT) {
+		p->peers = ptr;
+		p->peers_len = len;
+	}
+
+	return 0;
+}
+
+/**
+ * ath12k_wmi_rtt_pasn_peer_create_req_event() - Handle WMI PASN peer create request.
+ * @ab: ath12k base device.
+ * @skb: WMI event skb containing WMI_RTT_PASN_PEER_CREATE_REQ_EVENTID TLVs.
+ *
+ * Parses the fixed header and per-peer array, records each peer in the SW
+ * tracking list, and queues pasn_fw_peer_create_work to create the FW peer
+ * outside softirq context.
+ */
+void ath12k_wmi_rtt_pasn_peer_create_req_event(struct ath12k_base *ab,
+					       struct sk_buff *skb)
+{
+	struct ath12k_wmi_rtt_pasn_tlv_parse parse = {
+		.fixed_tag = WMI_TAG_RTT_PASN_PEER_CREATE_REQ_EVENT_FIXED_PARAM,
+		.fixed_min_len = sizeof(struct ath12k_wmi_rtt_pasn_peer_create_req_event),
+	};
+	const struct ath12k_wmi_rtt_pasn_peer_create_req_param *peer;
+	struct ath12k_link_vif *arvif;
+	u32 vdev_id;
+	u16 offset;
+	int ret;
+
+	ath12k_dbg(ab, ATH12K_DBG_RTT,
+		   "RTT PASN create event: skb->len=%u\n", skb->len);
+
+	ret = ath12k_wmi_tlv_iter(ab, skb->data, skb->len,
+				  ath12k_wmi_rtt_pasn_tlv_iter, &parse);
+	if (ret || !parse.fixed || !parse.peers) {
+		ath12k_warn(ab,
+			    "failed to parse RTT PASN peer create event: ret=%d fixed=%p peers=%p\n",
+			    ret, parse.fixed, parse.peers);
+		return;
+	}
+
+	ath12k_dbg(ab, ATH12K_DBG_RTT,
+		   "RTT PASN create: peers_len=%u sizeof(peer)=%zu\n",
+		   parse.peers_len, sizeof(*peer));
+
+	if (parse.peers_len % sizeof(*peer)) {
+		ath12k_warn(ab,
+			    "invalid RTT PASN peer create array length %u (sizeof(peer)=%zu)\n",
+			    parse.peers_len, sizeof(*peer));
+		return;
+	}
+
+	const struct ath12k_wmi_rtt_pasn_peer_create_req_event *fixed_create =
+		(const struct ath12k_wmi_rtt_pasn_peer_create_req_event *)parse.fixed;
+	vdev_id = le32_to_cpu(fixed_create->vdev_id);
+
+	ath12k_dbg(ab, ATH12K_DBG_RTT,
+		   "RTT PASN create: vdev_id=%u\n", vdev_id);
+
+	rcu_read_lock();
+	arvif = ath12k_mac_get_arvif_by_vdev_id(ab, vdev_id);
+	if (!arvif) {
+		rcu_read_unlock();
+		ath12k_warn(ab, "invalid vdev id %u in RTT PASN peer create event\n",
+			    vdev_id);
+		return;
+	}
+
+	ath12k_dbg(ab, ATH12K_DBG_RTT,
+		   "RTT PASN create: arvif=%p ar=%p link_id=%u num_peers=%u\n",
+		   arvif, arvif->ar, arvif->link_id, arvif->num_peers);
+
+	for (offset = 0; offset < parse.peers_len; offset += sizeof(*peer)) {
+		u32 control_flag;
+		u8 security_mode;
+		bool ltf_required;
+
+		peer = (const void *)((const u8 *)parse.peers + offset);
+		control_flag = le32_to_cpu(peer->control_flag);
+		security_mode = control_flag & ATH12K_WMI_RTT_PASN_SECURITY_MODE_MASK;
+		ltf_required = !!(control_flag &
+				  ATH12K_WMI_RTT_PASN_LTF_KEYSEED_REQUIRED);
+
+		ath12k_dbg(ab, ATH12K_DBG_RTT,
+			   "RTT PASN create peer[%u]: self=%pM dest=%pM ctrl=0x%x sec=%u ltf=%d akm=%u cipher=%u\n",
+			   offset / (u32)sizeof(*peer),
+			   peer->self_mac_addr.addr, peer->dest_mac_addr.addr,
+			   control_flag, security_mode, ltf_required,
+			   le32_to_cpu(peer->akm), le32_to_cpu(peer->cipher_suite));
+
+		ret = ath12k_pasn_peer_create_or_update(arvif,
+							peer->self_mac_addr.addr,
+							peer->dest_mac_addr.addr,
+							ltf_required, security_mode);
+		if (ret) {
+			ath12k_warn(ab, "failed to track PASN peer %pM: %d\n",
+				    peer->dest_mac_addr.addr, ret);
+			continue;
+		}
+
+		/* FW peer creation requires wiphy_lock so queue a work item.
+		 * The vendor auth event to hostapd is sent from within the work
+		 * handler, AFTER FW confirms the peer — guaranteeing the peer
+		 * exists in FW before PASN auth frames can arrive.
+		 */
+		wiphy_work_queue(ath12k_ar_to_hw(arvif->ar)->wiphy,
+				 &arvif->rtt_ctx.pasn_fw_peer_create_work);
+
+		ath12k_dbg(ab, ATH12K_DBG_RTT,
+			   "RTT PASN create peer[%u]: FW peer create work queued for %pM vdev=%u\n",
+			   offset / (u32)sizeof(*peer),
+			   peer->dest_mac_addr.addr, arvif->vdev_id);
+	}
+
+	ath12k_dbg(ab, ATH12K_DBG_RTT,
+		   "RTT PASN create event done: vdev_id=%u\n", vdev_id);
+	rcu_read_unlock();
+}
+
+static void
+ath12k_wmi_pasn_notify_delete(struct ath12k_link_vif *arvif,
+			      const struct ath12k_wmi_rtt_pasn_peer_delete_param *peer,
+			      u32 peer_idx)
+{
+	int ret;
+
+	ath12k_dbg(arvif->ar->ab, ATH12K_DBG_RTT,
+		   "RTT PASN delete peer[%u]: peer=%pM ctrl=0x%x\n",
+		   peer_idx, peer->peer_mac_addr.addr,
+		   le32_to_cpu(peer->control_flag));
+
+	ret = ath12k_vendor_send_pasn_event(
+			ath12k_ar_to_hw(arvif->ar)->wiphy,
+			ieee80211_vif_to_wdev(arvif->ahvif->vif),
+			arvif->link_id,
+			QCA_WLAN_VENDOR_PASN_ACTION_DELETE_SECURE_RANGING_CONTEXT,
+			NULL, peer->peer_mac_addr.addr,
+			false);
+	if (ret)
+		ath12k_warn(arvif->ar->ab,
+			    "failed to send PASN delete vendor event %pM: %d\n",
+			    peer->peer_mac_addr.addr, ret);
+	else
+		ath12k_dbg(arvif->ar->ab, ATH12K_DBG_RTT,
+			   "RTT PASN delete peer[%u]: vendor event sent %pM\n",
+			   peer_idx, peer->peer_mac_addr.addr);
+}
+
+/**
+ * ath12k_wmi_rtt_pasn_peer_delete_event() - Handle WMI PASN peer delete event.
+ * @ab: ath12k base device.
+ * @skb: WMI event skb containing WMI_RTT_PASN_PEER_DELETE_EVENTID TLVs.
+ *
+ * Parses the event and sends a QCA_WLAN_VENDOR_PASN_ACTION_DELETE_SECURE_RANGING_CONTEXT
+ * vendor event to hostapd for each peer so it can clean up the secure
+ * ranging context.
+ */
+void ath12k_wmi_rtt_pasn_peer_delete_event(struct ath12k_base *ab,
+					   struct sk_buff *skb)
+{
+	struct ath12k_wmi_rtt_pasn_tlv_parse parse = {
+		.fixed_tag = WMI_TAG_RTT_PASN_PEER_DELETE_EVENT_FIXED_PARAM,
+		.fixed_min_len = sizeof(struct ath12k_wmi_rtt_pasn_peer_delete_event),
+	};
+	const struct ath12k_wmi_rtt_pasn_peer_delete_param *peer;
+	struct ath12k_link_vif *arvif;
+	u32 vdev_id;
+	u16 offset;
+	int ret;
+
+	ath12k_dbg(ab, ATH12K_DBG_RTT,
+		   "RTT PASN delete event: skb->len=%u\n", skb->len);
+
+	ret = ath12k_wmi_tlv_iter(ab, skb->data, skb->len,
+				  ath12k_wmi_rtt_pasn_tlv_iter, &parse);
+	if (ret || !parse.fixed || !parse.peers) {
+		ath12k_warn(ab,
+			    "failed to parse RTT PASN peer delete event: ret=%d fixed=%p peers=%p\n",
+			    ret, parse.fixed, parse.peers);
+		return;
+	}
+
+	ath12k_dbg(ab, ATH12K_DBG_RTT,
+		   "RTT PASN delete: peers_len=%u sizeof(peer)=%zu\n",
+		   parse.peers_len, sizeof(*peer));
+
+	if (parse.peers_len % sizeof(*peer)) {
+		ath12k_warn(ab,
+			    "invalid RTT PASN peer delete array length %u (sizeof(peer)=%zu)\n",
+			    parse.peers_len, sizeof(*peer));
+		return;
+	}
+
+	const struct ath12k_wmi_rtt_pasn_peer_delete_event *fixed_del =
+		(const struct ath12k_wmi_rtt_pasn_peer_delete_event *)parse.fixed;
+	vdev_id = le32_to_cpu(fixed_del->vdev_id);
+
+	ath12k_dbg(ab, ATH12K_DBG_RTT,
+		   "RTT PASN delete: vdev_id=%u\n", vdev_id);
+
+	rcu_read_lock();
+	arvif = ath12k_mac_get_arvif_by_vdev_id(ab, vdev_id);
+	if (!arvif) {
+		rcu_read_unlock();
+		ath12k_warn(ab, "invalid vdev id %u in RTT PASN peer delete event\n",
+			    vdev_id);
+		return;
+	}
+
+	ath12k_dbg(ab, ATH12K_DBG_RTT,
+		   "RTT PASN delete: arvif=%p ar=%p link_id=%u\n",
+		   arvif, arvif->ar, arvif->link_id);
+
+	for (offset = 0; offset < parse.peers_len; offset += sizeof(*peer)) {
+		peer = (const void *)((const u8 *)parse.peers + offset);
+		ath12k_wmi_pasn_notify_delete(arvif, peer,
+					      offset / (u32)sizeof(*peer));
+	}
+
+	ath12k_dbg(ab, ATH12K_DBG_RTT,
+		   "RTT PASN delete event done: vdev_id=%u\n", vdev_id);
+	rcu_read_unlock();
+}
+
+int ath12k_wmi_pasn_peer_delete_all(struct ath12k_link_vif *arvif)
+{
+	struct ath12k *ar = arvif->ar;
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct wmi_peer_delete_all_cmd *cmd;
+	struct sk_buff *skb;
+	int ret;
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_peer_delete_all_cmd *)skb->data;
+	cmd->tlv_header =
+		ath12k_wmi_tlv_cmd_hdr(WMI_TAG_VDEV_DELETE_ALL_PEER_FIXED_PARAMS,
+				       sizeof(*cmd));
+	cmd->vdev_id = cpu_to_le32(arvif->vdev_id);
+	cmd->peer_type_bitmap = cpu_to_le32(BIT(WMI_PEER_TYPE_PASN));
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_RTT,
+		   "RTT PASN delete_all: WMI vdev_id=%u", arvif->vdev_id);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_VDEV_DELETE_ALL_PEER_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "failed to submit WMI PASN peer delete all vdev_id=%u: %d",
+			    arvif->vdev_id, ret);
+		dev_kfree_skb(skb);
+	}
+
+	return ret;
+}
+
+/**
+ * ath12k_wmi_send_pasn_auth_status() - Send PASN authentication status to firmware.
+ * @ar: ath12k radio.
+ * @arg: authentication result including peer/source MAC, AKM, cipher, and
+ *	optional comeback timeout.
+ *
+ * Builds and sends WMI_RTT_PASN_AUTH_STATUS_CMD with a single
+ * WMI_TAG_RTT_PASN_AUTH_STATUS_PARAM TLV. Called after hostapd reports
+ * the PASN authentication result via QCA_NL80211_VENDOR_SUBCMD_PASN.
+ *
+ * Returns 0 on success or a negative errno on failure.
+ */
+int
+ath12k_wmi_send_pasn_auth_status(struct ath12k *ar,
+				 const struct ath12k_wmi_rtt_pasn_auth_status_arg *arg)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct ath12k_wmi_rtt_pasn_auth_status_cmd *cmd;
+	struct ath12k_wmi_rtt_pasn_auth_status_param *param;
+	struct wmi_tlv *tlv;
+	struct sk_buff *skb;
+	int len, ret;
+
+	len = sizeof(*cmd) + TLV_HDR_SIZE + sizeof(*param);
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (void *)skb->data;
+	cmd->tlv_header =
+		ath12k_wmi_tlv_cmd_hdr(WMI_TAG_RTT_PASN_AUTH_STATUS_CMD_FIXED_PARAM,
+				       sizeof(*cmd));
+
+	tlv = (struct wmi_tlv *)(skb->data + sizeof(*cmd));
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, sizeof(*param));
+	param = (void *)tlv->value;
+	param->tlv_header =
+		ath12k_wmi_tlv_cmd_hdr(WMI_TAG_RTT_PASN_AUTH_STATUS_PARAM,
+				       sizeof(*param));
+	ether_addr_copy(param->peer_mac_addr.addr, arg->peer_mac);
+	param->status = cpu_to_le32(arg->status);
+	ether_addr_copy(param->source_mac_addr.addr, arg->source_mac);
+	param->akm = cpu_to_le32(arg->akm);
+	param->cipher_suite = cpu_to_le32(arg->cipher);
+	param->timeout_value = cpu_to_le32(arg->comeback_after);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_RTT_PASN_AUTH_STATUS_CMD);
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to send RTT PASN auth status: %d\n", ret);
+		dev_kfree_skb(skb);
+	}
+
+	return ret;
 }
 
 static void

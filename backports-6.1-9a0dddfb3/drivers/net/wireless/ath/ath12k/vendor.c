@@ -9770,6 +9770,94 @@ ath12k_vendor_set_rtt_responder_role(struct wireless_dev *wdev,
 	return 0;
 }
 
+/**
+ * ath12k_vendor_send_pasn_event() - Send a QCA PASN vendor event to userspace.
+ * @wiphy: wiphy of the AP interface.
+ * @wdev: wireless device of the AP interface.
+ * @link_id: MLD link ID, or 0 for non-MLO.
+ * @action: QCA_WLAN_VENDOR_PASN_ACTION_AUTH or
+ *          QCA_WLAN_VENDOR_PASN_ACTION_DELETE_SECURE_RANGING_CONTEXT.
+ * @src_addr: local MAC address for this PASN session, or NULL.
+ * @peer_addr: remote MAC address of the PASN peer.
+ * @ltf_keyseed_required: true if the initiator requires an LTF key seed.
+ *
+ * Builds and delivers a QCA_NL80211_VENDOR_SUBCMD_PASN vendor event carrying
+ * one peer entry. Used to request PASN authentication from hostapd (AUTH
+ * action) or to notify hostapd that the secure ranging context should be
+ * removed (DELETE action).
+ *
+ * Returns 0 on success or a negative errno on failure.
+ */
+int ath12k_vendor_send_pasn_event(struct wiphy *wiphy, struct wireless_dev *wdev,
+				  u8 link_id, u32 action, const u8 *src_addr,
+				  const u8 *peer_addr, bool ltf_keyseed_required)
+{
+	struct nlattr *peers;
+	struct nlattr *peer;
+	struct sk_buff *skb;
+	int ret;
+
+	if (!wiphy || !wdev || !peer_addr)
+		return -EINVAL;
+
+	skb = cfg80211_vendor_event_alloc(wiphy, wdev, NLMSG_DEFAULT_SIZE,
+					  QCA_NL80211_VENDOR_SUBCMD_PASN_EVENT_INDEX,
+					  GFP_ATOMIC);
+	if (!skb)
+		return -ENOMEM;
+
+	ret = nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_PASN_ACTION, action);
+	if (ret)
+		goto nla_fail;
+
+	ret = nla_put_u8(skb, QCA_WLAN_VENDOR_ATTR_PASN_LINK_ID, link_id);
+	if (ret)
+		goto nla_fail;
+
+	peers = nla_nest_start(skb, QCA_WLAN_VENDOR_ATTR_PASN_PEERS);
+	if (!peers) {
+		ret = -EMSGSIZE;
+		goto nla_fail;
+	}
+
+	peer = nla_nest_start(skb, 0);
+	if (!peer) {
+		ret = -EMSGSIZE;
+		goto nla_fail;
+	}
+
+	if (src_addr) {
+		ret = nla_put(skb, QCA_WLAN_VENDOR_ATTR_PASN_PEER_SRC_ADDR,
+			      ETH_ALEN, src_addr);
+		if (ret)
+			goto nla_fail;
+	}
+
+	ret = nla_put(skb, QCA_WLAN_VENDOR_ATTR_PASN_PEER_MAC_ADDR,
+		      ETH_ALEN, peer_addr);
+	if (ret)
+		goto nla_fail;
+
+	if (ltf_keyseed_required) {
+		ret = nla_put_flag(skb,
+				   QCA_WLAN_VENDOR_ATTR_PASN_PEER_LTF_KEYSEED_REQUIRED);
+		if (ret)
+			goto nla_fail;
+	}
+
+	nla_nest_end(skb, peer);
+	nla_nest_end(skb, peers);
+	cfg80211_vendor_event(skb, GFP_ATOMIC);
+	return 0;
+
+nla_fail:
+	ath12k_err(NULL,
+		   "failed to build PASN vendor event action %u for peer %pM ret %d\n",
+		   action, peer_addr, ret);
+	kfree_skb(skb);
+	return ret;
+}
+
 static int ath12k_vendor_wlan_telemetry_wiphy_getstats(struct wiphy *wiphy,
 						       struct wireless_dev *wdev,
 						       const void *data,
@@ -16921,6 +17009,223 @@ static int ath12k_vendor_green_ap_handler(struct wiphy *wiphy,
 	return 0;
 }
 
+static const struct nla_policy
+ath12k_vendor_pasn_peer_policy[QCA_WLAN_VENDOR_ATTR_PASN_PEER_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_PASN_PEER_SRC_ADDR] =
+		NLA_POLICY_EXACT_LEN_WARN(ETH_ALEN),
+	[QCA_WLAN_VENDOR_ATTR_PASN_PEER_MAC_ADDR] =
+		NLA_POLICY_EXACT_LEN_WARN(ETH_ALEN),
+	[QCA_WLAN_VENDOR_ATTR_PASN_PEER_LTF_KEYSEED_REQUIRED] = { .type = NLA_FLAG },
+	[QCA_WLAN_VENDOR_ATTR_PASN_PEER_STATUS_SUCCESS] = { .type = NLA_FLAG },
+	[QCA_WLAN_VENDOR_ATTR_PASN_PEER_AKM] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_PASN_PEER_CIPHER] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_PASN_PEER_PASSWORD] = { .type = NLA_BINARY },
+	[QCA_WLAN_VENDOR_ATTR_PASN_PEER_PMKID] =
+		NLA_POLICY_EXACT_LEN_WARN(WLAN_PMKID_LEN),
+	[QCA_WLAN_VENDOR_ATTR_PASN_PEER_COMEBACK_AFTER] = { .type = NLA_U16 },
+	[QCA_WLAN_VENDOR_ATTR_PASN_PEER_COOKIE] = { .type = NLA_BINARY },
+};
+
+static int ath12k_vendor_parse_pasn_peer(struct nlattr *peer_attr,
+					 struct nlattr **peer)
+{
+	int ret;
+
+	ret = nla_parse_nested(peer, QCA_WLAN_VENDOR_ATTR_PASN_PEER_MAX,
+			       peer_attr, ath12k_vendor_pasn_peer_policy, NULL);
+	if (ret)
+		return ret;
+
+	if (!peer[QCA_WLAN_VENDOR_ATTR_PASN_PEER_MAC_ADDR])
+		return -EINVAL;
+
+	return 0;
+}
+
+/**
+ * ath12k_pasn_arvif_from_wdev() - Resolve ath12k_link_vif from wdev + link_id.
+ * @wdev: wireless device from nl80211 callback.
+ * @link_id: link_id from vendor attr, or INVALID_LINK_ID.
+ *
+ * For non-MLO (link_id == INVALID_LINK_ID) iterate links_map to find the
+ * active arvif rather than using deflink (link_id=0 placeholder which does
+ * not match the active scan-link vdev at ATH12K_DEFAULT_SCAN_LINK=15).
+ *
+ * Returns the arvif on success, NULL on lookup failure.
+ */
+static struct ath12k_link_vif *
+ath12k_pasn_arvif_from_wdev(struct wireless_dev *wdev, u8 link_id)
+{
+	struct ieee80211_vif *vif = wdev_to_ieee80211_vif(wdev);
+	struct ath12k_vif *ahvif;
+	unsigned long links;
+	u8 lid;
+
+	if (!vif)
+		return NULL;
+	ahvif = ath12k_vif_to_ahvif(vif);
+	if (!ahvif)
+		return NULL;
+
+	if (link_id != INVALID_LINK_ID)
+		return ath12k_get_arvif_from_link_id(ahvif, link_id);
+
+	/* Non-MLO: find the started arvif in links_map.
+	 * deflink.link_id == 0 is a placeholder and may not match the
+	 * active scan-link vdev (link_id = ATH12K_DEFAULT_SCAN_LINK).
+	 */
+	links = ahvif->links_map;
+	for_each_set_bit(lid, &links, ATH12K_NUM_MAX_LINKS) {
+		struct ath12k_link_vif *a =
+			wiphy_dereference(ahvif->ah->hw->wiphy, ahvif->link[lid]);
+		if (a && a->ar && a->is_started)
+			return a;
+	}
+	return NULL;
+}
+
+static const struct nla_policy
+ath12k_vendor_pasn_policy[QCA_WLAN_VENDOR_ATTR_PASN_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_PASN_ACTION] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_PASN_PEERS] = { .type = NLA_NESTED },
+	[QCA_WLAN_VENDOR_ATTR_PASN_LINK_ID] = { .type = NLA_U8 },
+};
+
+static int ath12k_vendor_pasn_delete_peer(struct ath12k_link_vif *arvif,
+					  const u8 *peer_addr)
+{
+	int ret;
+
+	ret = ath12k_wmi_send_rtt_pasn_deauth(arvif->ar, peer_addr);
+	if (ret)
+		ath12k_warn(arvif->ar->ab,
+			    "PASN: deauth failed for %pM: %d\n",
+			    peer_addr, ret);
+	ath12k_pasn_peer_delete(arvif, peer_addr);
+	return ret;
+}
+
+static int ath12k_vendor_pasn_auth_peer(struct ath12k_link_vif *arvif,
+					struct nlattr *peer[])
+{
+	struct ath12k_wmi_rtt_pasn_auth_status_arg arg = {};
+	const u8 *peer_addr;
+
+	peer_addr = nla_data(peer[QCA_WLAN_VENDOR_ATTR_PASN_PEER_MAC_ADDR]);
+
+	if (peer[QCA_WLAN_VENDOR_ATTR_PASN_PEER_SRC_ADDR])
+		ether_addr_copy(arg.source_mac,
+				nla_data(peer[QCA_WLAN_VENDOR_ATTR_PASN_PEER_SRC_ADDR]));
+	else
+		ether_addr_copy(arg.source_mac, arvif->bssid);
+
+	ether_addr_copy(arg.peer_mac, peer_addr);
+	arg.status = peer[QCA_WLAN_VENDOR_ATTR_PASN_PEER_STATUS_SUCCESS] ? 0 : 1;
+
+	if (peer[QCA_WLAN_VENDOR_ATTR_PASN_PEER_AKM])
+		arg.akm = nla_get_u32(peer[QCA_WLAN_VENDOR_ATTR_PASN_PEER_AKM]);
+
+	if (peer[QCA_WLAN_VENDOR_ATTR_PASN_PEER_CIPHER])
+		arg.cipher = nla_get_u32(peer[QCA_WLAN_VENDOR_ATTR_PASN_PEER_CIPHER]);
+
+	if (peer[QCA_WLAN_VENDOR_ATTR_PASN_PEER_COMEBACK_AFTER])
+		arg.comeback_after = nla_get_u16(
+			peer[QCA_WLAN_VENDOR_ATTR_PASN_PEER_COMEBACK_AFTER]);
+
+	ath12k_pasn_peer_set_auth_status(arvif, arg.source_mac,
+					 arg.peer_mac, !arg.status);
+	if (ath12k_pasn_peer_auth_status_sent(arvif, arg.peer_mac))
+		return 0;
+
+	ath12k_pasn_peer_set_auth_status_sent(arvif, arg.peer_mac);
+
+	return ath12k_wmi_send_pasn_auth_status(arvif->ar, &arg);
+}
+
+/**
+ * ath12k_vendor_pasn_cmd() - Handle QCA_NL80211_VENDOR_SUBCMD_PASN from hostapd.
+ * @wiphy: wiphy of the AP interface.
+ * @wdev: wireless device of the AP interface.
+ * @data: netlink attribute data.
+ * @data_len: length of @data.
+ *
+ * Processes PASN authentication results or DELETE actions from hostapd.
+ * For each peer in the nested peer list, sends
+ * WMI_RTT_PASN_AUTH_STATUS_CMD to firmware on auth success, or sends
+ * WMI_RTT_PASN_DEAUTH_CMD and removes the SW tracking entry on DELETE.
+ *
+ * Returns 0 on success or a negative errno on failure.
+ */
+static int ath12k_vendor_pasn_cmd(struct wiphy *wiphy,
+				  struct wireless_dev *wdev,
+				  const void *data, int data_len)
+{
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_PASN_MAX + 1];
+	struct nlattr *peer[QCA_WLAN_VENDOR_ATTR_PASN_PEER_MAX + 1];
+	struct ath12k_link_vif *arvif;
+	struct nlattr *peer_attr;
+	u32 action = QCA_WLAN_VENDOR_PASN_ACTION_AUTH;
+	u8 link_id = INVALID_LINK_ID;
+	int rem, ret = 0;
+
+	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_PASN_MAX, data, data_len,
+			ath12k_vendor_pasn_policy, NULL);
+	if (ret)
+		return ret;
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_PASN_ACTION]) {
+		action = nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_PASN_ACTION]);
+		if (action > QCA_WLAN_VENDOR_PASN_ACTION_DELETE_SECURE_RANGING_CONTEXT)
+			return -EINVAL;
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_PASN_LINK_ID]) {
+		link_id = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_PASN_LINK_ID]);
+		if (!is_valid_link_id(link_id) || link_id >= ATH12K_NUM_MAX_LINKS)
+			return -EINVAL;
+	}
+
+	arvif = ath12k_pasn_arvif_from_wdev(wdev, link_id);
+	if (!arvif || !arvif->ar)
+		return -ENOLINK;
+
+	if (!tb[QCA_WLAN_VENDOR_ATTR_PASN_PEERS])
+		return -EINVAL;
+
+	/* Process all peers; continue on per-peer errors so FW receives
+	 * status for all peers, not just those before the first failure.
+	 */
+	nla_for_each_nested(peer_attr, tb[QCA_WLAN_VENDOR_ATTR_PASN_PEERS], rem) {
+		const u8 *peer_addr;
+		int peer_ret;
+
+		peer_ret = ath12k_vendor_parse_pasn_peer(peer_attr, peer);
+		if (peer_ret) {
+			ath12k_warn(arvif->ar->ab,
+				    "PASN: failed to parse peer attr: %d\n",
+				    peer_ret);
+			ret = peer_ret;
+			continue;
+		}
+
+		peer_addr = nla_data(peer[QCA_WLAN_VENDOR_ATTR_PASN_PEER_MAC_ADDR]);
+		if (is_zero_ether_addr(peer_addr)) {
+			ret = -EINVAL;
+			continue;
+		}
+
+		if (action == QCA_WLAN_VENDOR_PASN_ACTION_DELETE_SECURE_RANGING_CONTEXT)
+			peer_ret = ath12k_vendor_pasn_delete_peer(arvif, peer_addr);
+		else
+			peer_ret = ath12k_vendor_pasn_auth_peer(arvif, peer);
+
+		if (peer_ret)
+			ret = peer_ret;
+	}
+
+	return ret;
+}
+
 static int ath12k_vendor_rf_path_mode_handler(struct wiphy *wiphy,
 					      struct wireless_dev *wdev,
 					      const void *data, int data_len)
@@ -17423,6 +17728,14 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 	},
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_PASN,
+		.doit = ath12k_vendor_pasn_cmd,
+		.policy = ath12k_vendor_pasn_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_PASN_MAX,
+		.flags = WIPHY_VENDOR_CMD_NEED_WDEV,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
 		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_RX_PKT_PROTOCOL_TAG,
 		.doit = ath12k_dp_rx_update_pdev_protocol_tag,
 		.policy = ath12k_rx_pkt_protocol_tag_policy,
@@ -17894,6 +18207,10 @@ static const struct nl80211_vendor_cmd_info ath12k_vendor_events[] = {
 	[QCA_NL80211_VENDOR_SUBCMD_SCAN_RADIO_CHAN_STATS_INDEX] = {
 		.vendor_id = QCA_NL80211_VENDOR_ID,
 		.subcmd = QCA_NL80211_VENDOR_SUBCMD_SCAN_RADIO_CHAN_STATS,
+	},
+	[QCA_NL80211_VENDOR_SUBCMD_PASN_EVENT_INDEX] = {
+		.vendor_id = QCA_NL80211_VENDOR_ID,
+		.subcmd = QCA_NL80211_VENDOR_SUBCMD_PASN,
 	},
 };
 
