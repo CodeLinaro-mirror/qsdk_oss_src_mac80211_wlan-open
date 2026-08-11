@@ -16704,6 +16704,7 @@ ath12k_ext_mon_get_peer_info_attr_len(void)
 	payload = ath12k_ext_mon_get_snr_info_attr_len();
 	len += nla_total_size(payload);
 
+	len += nla_total_size(ETH_ALEN);
 	return len;
 }
 
@@ -16991,13 +16992,20 @@ ath12k_ext_mon_put_peer_info(struct sk_buff *skb, int idx,
 	    nla_put_flag(skb, QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_ADDR_IS_RA))
 		goto err;
 
-	if (nla_put_u8(skb, QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_BITMAP,
-		       peer_info->ta_info.bitmap))
-		goto err;
+	if (!peer_info->ra_addr) {
+		if (nla_put_u8(skb, QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_BITMAP,
+					peer_info->ta_info.bitmap))
+			goto err;
 
-	ret = ath12k_ext_mon_put_snr_info(skb, &peer_info->ta_info.snr_info);
-	if (ret)
-		goto err;
+		ret = ath12k_ext_mon_put_snr_info(skb, &peer_info->ta_info.snr_info);
+		if (ret)
+			goto err;
+	} else {
+		if (!is_zero_ether_addr(peer_info->ra_info.ra_addr_mask) &&
+		    nla_put(skb, QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_RA_ADDR_MASK,
+			    ETH_ALEN, peer_info->ra_info.ra_addr_mask))
+			goto err;
+	}
 
 	nla_nest_end(skb, attr);
 	return 0;
