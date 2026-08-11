@@ -4531,15 +4531,24 @@ void ath12k_dp_mon_spl_pkt_cap_config(struct ath12k_base *ab)
 		if (!ar || !ath12k_dp_tx_mon_feature_eval(ar->dp.dp))
 			continue;
 
+		if (!ar->dp.dp_mon_pdev || !ar->dp.dp_mon_pdev->dp_pdev_tx_mon)
+			continue;
+
 		mon_ops = ath12k_dp_mon_ops_get(ar->dp.dp);
 		if (mon_ops && mon_ops->mon_tx_handle_spc_bitmap)
 			bitmap = mon_ops->mon_tx_handle_spc_bitmap(ab);
 
 		ret = ath12k_wmi_tx_mon_pkt_cap_set_config(ar, bitmap);
-		if (ret)
+		if (ret) {
 			ath12k_warn(ab,
 				    "radio%d: TX mon pkt cap WMI failed: %d\n",
 				    i, ret);
+		} else {
+			struct ath12k_pdev_tx_mon *tx_mon =
+				ar->dp.dp_mon_pdev->dp_pdev_tx_mon;
+
+			tx_mon->pdev_tx_mon_stats.spc_bitmap = bitmap;
+		}
 	}
 }
 EXPORT_SYMBOL(ath12k_dp_mon_spl_pkt_cap_config);
