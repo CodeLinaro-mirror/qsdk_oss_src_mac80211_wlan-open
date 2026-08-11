@@ -114,15 +114,15 @@ enum {
  */
 enum {
 	CUMAC_HW_POST_RESET_START,
+	CUMAC_HW_POST_RESET_ENABLE_TQM,
 	CUMAC_HW_POST_RESET_CLEAR_INTERRUPTS,
+	CUMAC_HW_POST_RESET_ENABLE_SAM,
 	CUMAC_HW_POST_RESET_ENABLE_WBM,
 	CUMAC_HW_POST_RESET_ENABLE_REO,
 	CUMAC_HW_POST_RESET_UNPAUSE_GLOBAL_WSI,
 	CUMAC_HW_POST_RESET_UNHALT_MLO_DOORBELLS,
 	CUMAC_HW_POST_RESET_ENABLE_RXDMA_PREFETCH,
 	CUMAC_HW_POST_RESET_UNHALT_TCL,
-	CUMAC_HW_POST_RESET_ENABLE_TQM,
-	CUMAC_HW_POST_RESET_ENABLE_SAM,
 	CUMAC_HW_POST_RESET_END,
 	CUMAC_HW_POST_RESET_MAX,
 };
@@ -138,6 +138,30 @@ struct ath12k_cumac_hw_reset_timestamps {
 	u64 cumac_hw_reset_ts[CUMAC_HW_RESET_MAX];
 	u64 cumac_hw_post_reset_ts[CUMAC_HW_POST_RESET_MAX];
 };
+
+/**
+ * struct ath12k_cumac_hw_reset_errors - CUMAC HW reset idle-check failure stats
+ *
+ * Stores error/idle check failure stats
+ */
+struct ath12k_cumac_hw_reset_errors {
+	u32 pmac_idle_fail;
+	u32 dmac_idle_fail;
+	u32 umac_idle_fail;
+	u32 wsi_idle_fail;
+	u32 hwsch_flush_fail;
+	u32 pmac_rx_flush_fail;
+	u32 rxdma_flush_fail;
+	u32 tcl_idle_fail;
+	u32 sam_idle_fail;
+	u32 tqm_prefetch_idle_fail;
+	u32 tqm_sm_idle_fail;
+	u32 mlo_ring_idle_fail;
+	u32 ring_idle_fail;
+};
+
+#define ATH12K_CUMAC_RESET_ERR_INC(ab, field) \
+	((ath12k_get_hal_wifi8(&(ab)->hal)->reset_errors.field)++)
 
 /**
  * typedef cumac_hw_reset_fn - Function pointer type for reset step handlers
