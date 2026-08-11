@@ -34,7 +34,8 @@ ath12k_wifi8-y += core.o \
 
 ath12k_wifi8-$(CPTCFG_QCN_EXTN) +=  qcn_extns/wifi8_hw_extn.o \
 				    qcn_extns/mgmt_rx_extn.o \
-                                    qcn_extns/dp_rx_extn.o
+                                    qcn_extns/dp_rx_extn.o \
+                                    qcn_extns/dp_mon2_extn.o
 
 ath12k_wifi8-$(CPTCFG_ATH12K_PPE_DS_SUPPORT) += ppeds.o
 ath12k_wifi8-$(CPTCFG_QCN_EXTN_MESH_SUPPORT) += qcn_extns/mesh-extn.o

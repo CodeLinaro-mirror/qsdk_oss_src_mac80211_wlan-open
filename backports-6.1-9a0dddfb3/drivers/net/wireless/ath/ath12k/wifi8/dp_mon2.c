@@ -19,6 +19,10 @@
 #include "../ath12k_notif.h"
 #include "../telemetry_agent_if.h"
 
+#ifdef CPTCFG_QCN_EXTN
+#include "qcn_extns/dp_mon2_extn.h"
+#endif
+
 const struct ath12k_dp_arch_mon_ops ath12k_wifi8_dp_arch_mon_dual_ring_ops = {
 	.rx_srng_setup = ath12k_dp_mon_rx_srng_setup,
 	.rx_srng_cleanup = ath12k_dp_mon_rx_srng_cleanup,
@@ -54,14 +58,18 @@ const struct ath12k_dp_arch_mon_ops ath12k_wifi8_dp_arch_mon_dual_ring_ops = {
 	.ext_mon_alloc = ath12k_dp_ext_mon_alloc,
 	.ext_mon_free = ath12k_dp_ext_mon_free,
 	.ext_mon_set_rx_filter = ath12k_dp_ext_mon_set_rx_filter,
-
-	.htt_rx_phy_err_filter_cfg = NULL,
-	.rx_undecoded_metadata_config_filter = NULL,
-	.rx_undecoded_metadata_reset_filter = NULL,
-	.rx_undecoded_metadata_capture_set = NULL,
-	.rx_undecoded_phy_err_mask_set = NULL,
 	.ext_mon_setup_rx_filter = ath12k_wifi8_dp_ext_mon_setup_rx_filter,
-
+#ifdef CPTCFG_QCN_EXTN
+	.htt_rx_phy_err_filter_cfg = ath12k_wifi8_dp_mon_rx_htt_phy_err_filter_cfg,
+	.rx_undecoded_metadata_config_filter =
+		ath12k_wifi8_dp_mon_rx_undecoded_metadata_config_filter,
+	.rx_undecoded_metadata_reset_filter =
+		ath12k_wifi8_dp_mon_rx_undecoded_metadata_reset_filter,
+	.rx_undecoded_metadata_capture_set =
+		ath12k_wifi8_dp_mon_rx_undecoded_metadata_capture_set,
+	.rx_undecoded_phy_err_mask_set =
+		ath12k_wifi8_dp_mon_rx_undecoded_phy_err_mask_set,
+#endif
 	/* Below are TxMonitor Ops */
 	/* At Device Init/Exit */
 	.mon_tx_srng_alloc_setup = ath12k_dp_mon_tx_srng_alloc_setup,
@@ -111,6 +119,9 @@ ath12k_wifi8_dp_mon_rx_memset_ppdu_info(struct ath12k_pdev_dp *pdev_dp,
 
 	memset(ppdu_info, 0, sizeof(*ppdu_info));
 	ppdu_info->peer_id = HAL_INVALID_PEERID;
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_wifi8_dp_mon_rx_prepare_ppdu_info(pdev_dp, ppdu_info);
+#endif
 
 	/* Re-initialize all queues */
 	for (i = 0; i < HAL_MAX_UL_MU_USERS; i++)
@@ -1727,6 +1738,9 @@ ath12k_wifi8_dp_mon_rx_process_ppdu(struct work_struct *work)
 	spin_unlock_bh(&dp_mon_pdev->ppdu_desc_lock);
 
 	list_for_each_entry(ppdu_desc, &local_list, list) {
+#ifdef CPTCFG_QCN_EXTN
+		ath12k_wifi8_dp_mon_rx_prepare_ppdu_info(pdev_dp, ppdu_info);
+#endif
 		for (desc_cnt = 0; desc_cnt < ppdu_desc->status_desc_cnt; desc_cnt++) {
 			status_desc = &ppdu_desc->status_desc[desc_cnt];
 			if (!status_desc->mon_buf)
@@ -1756,6 +1770,12 @@ ath12k_wifi8_dp_mon_rx_process_ppdu(struct work_struct *work)
 			}
 
 			ath12k_wifi8_dp_mon_update_scan_radio_stats(pdev_dp, ppdu_info);
+#ifdef CPTCFG_QCN_EXTN
+			if (ath12k_wifi8_dp_rx_mon_check_phyrx_abort(pdev_dp,
+								     ppdu_info))
+				ath12k_wifi8_dp_rx_ppdu_undecoded_metadata(pdev_dp,
+									   ppdu_info);
+#endif
 
 			filter_category =
 				ppdu_info->userstats[ppdu_info->user_id].filter_category;
