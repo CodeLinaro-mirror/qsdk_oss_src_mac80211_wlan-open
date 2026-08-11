@@ -59,6 +59,7 @@ const struct ath12k_dp_arch_mon_ops ath12k_wifi8_dp_arch_mon_dual_ring_ops = {
 	.ext_mon_free = ath12k_dp_ext_mon_free,
 	.ext_mon_set_rx_filter = ath12k_dp_ext_mon_set_rx_filter,
 	.ext_mon_setup_rx_filter = ath12k_wifi8_dp_ext_mon_setup_rx_filter,
+	.ext_mon_handle_rx_peer = ath12k_wifi8_ext_mon_handle_rx_peer,
 #ifdef CPTCFG_QCN_EXTN
 	.htt_rx_phy_err_filter_cfg = ath12k_wifi8_dp_mon_rx_htt_phy_err_filter_cfg,
 	.rx_undecoded_metadata_config_filter =
@@ -70,6 +71,7 @@ const struct ath12k_dp_arch_mon_ops ath12k_wifi8_dp_arch_mon_dual_ring_ops = {
 	.rx_undecoded_phy_err_mask_set =
 		ath12k_wifi8_dp_mon_rx_undecoded_phy_err_mask_set,
 #endif
+
 	/* Below are TxMonitor Ops */
 	/* At Device Init/Exit */
 	.mon_tx_srng_alloc_setup = ath12k_dp_mon_tx_srng_alloc_setup,
@@ -2254,6 +2256,178 @@ ath12k_wifi8_ext_mon_rx_validate_peer_req(struct ath12k_dp *dp,
 		}
 	}
 
+	return 0;
+}
+
+static int
+ath12k_wifi8_ext_mon_ra_slot_find(const struct ath12k_dp_rx_ext_mon *rx_ext_mon,
+				  const struct ath12k_ext_mon_peer_info *peer_req,
+				  const struct list_head *peers_to_wmi)
+{
+	const int range_slot = ATH12K_WIFI8_DP_MON_MAX_RA_PEERS - 1;
+	struct ath12k_dp_ext_mon_peer *peer;
+	struct ath12k_ext_mon_wmi_entry *staged;
+	bool slot_used[ATH12K_WIFI8_DP_MON_MAX_RA_PEERS] = {};
+	int i;
+
+	list_for_each_entry(peer, &rx_ext_mon->peer_list, list) {
+		if (peer->peer_info.ra_addr)
+			slot_used[peer->peer_info.ra_info.ra_filter_idx] = true;
+	}
+	list_for_each_entry(staged, peers_to_wmi, list) {
+		if (staged->peer && staged->peer->peer_info.ra_addr)
+			slot_used[staged->peer->peer_info.ra_info.ra_filter_idx] = true;
+	}
+
+	if (!is_zero_ether_addr(peer_req->ra_info.ra_addr_mask))
+		return slot_used[range_slot] ? -ENOSPC : range_slot;
+
+	for (i = 0; i < range_slot; i++) {
+		if (!slot_used[i])
+			return i;
+	}
+	return -ENOSPC;
+}
+
+static int
+ath12k_wifi8_ext_mon_add_range_ra_peer(struct ath12k_pdev_dp *dp_pdev,
+				       const struct ath12k_ext_mon_peer_info *peer_req,
+				       struct ath12k_ext_mon_wmi_entry *entry,
+				       const struct list_head *peers_to_wmi)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct ath12k_dp_rx_ext_mon *rx_ext_mon = dp_mon_pdev->rx_ext_mon_config;
+	const int range_slot = ATH12K_WIFI8_DP_MON_MAX_RA_PEERS - 1;
+	struct ath12k_dp_ext_mon_peer *peer;
+	int ra_idx;
+
+	lockdep_assert_held(&dp_mon_pdev->rx_ext_mon_lock);
+
+	/* Check for in-place mask update on an existing range peer. */
+	list_for_each_entry(peer, &rx_ext_mon->peer_list, list) {
+		if (!peer->peer_info.ra_addr ||
+		    !ether_addr_equal(peer->peer_info.mac_addr, peer_req->mac_addr) ||
+		    peer->peer_info.ra_info.ra_filter_idx != range_slot)
+			continue;
+
+		ether_addr_copy(peer->peer_info.ra_info.ra_addr_mask,
+				peer_req->ra_info.ra_addr_mask);
+		entry->param.ra_filter_idx = range_slot;
+		ether_addr_copy(entry->param.ra_addr_mask,
+				peer_req->ra_info.ra_addr_mask);
+		entry->peer = NULL;
+
+		return 0;
+	}
+
+	/* No existing range peer — allocate new. */
+	ra_idx = ath12k_wifi8_ext_mon_ra_slot_find(rx_ext_mon, peer_req, peers_to_wmi);
+	if (ra_idx < 0) {
+		ath12k_warn(dp_pdev->dp, "no RA slot available for %pM: %d\n",
+			    peer_req->mac_addr, ra_idx);
+		return ra_idx;
+	}
+
+	peer = kzalloc(sizeof(*peer), GFP_ATOMIC);
+	if (!peer)
+		return -ENOMEM;
+
+	memcpy(&peer->peer_info, peer_req, sizeof(*peer_req));
+	peer->peer_info.ra_info.ra_filter_idx = range_slot;
+	entry->param.ra_filter_idx = range_slot;
+	ether_addr_copy(entry->param.ra_addr_mask, peer_req->ra_info.ra_addr_mask);
+	entry->peer = peer;
+
+	return 0;
+}
+
+static int
+ath12k_wifi8_ext_mon_add_ra_peer(struct ath12k_pdev_dp *dp_pdev,
+				 const struct ath12k_ext_mon_peer_info *peer_req,
+				 struct ath12k_ext_mon_wmi_entry *entry,
+				 const struct list_head *peers_to_wmi)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct ath12k_dp_rx_ext_mon *rx_ext_mon = dp_mon_pdev->rx_ext_mon_config;
+	struct ath12k_dp_ext_mon_peer *peer;
+	int ra_idx;
+
+	lockdep_assert_held(&dp_mon_pdev->rx_ext_mon_lock);
+
+	entry->param.type = WMI_FILTER_NRP_TYPE_RA_FILTERING;
+	ether_addr_copy(entry->param.nrp_addr, peer_req->mac_addr);
+
+	if (!is_zero_ether_addr(peer_req->ra_info.ra_addr_mask))
+		return ath12k_wifi8_ext_mon_add_range_ra_peer(dp_pdev, peer_req,
+							      entry, peers_to_wmi);
+
+	ra_idx = ath12k_wifi8_ext_mon_ra_slot_find(rx_ext_mon, peer_req, peers_to_wmi);
+	if (ra_idx < 0) {
+		ath12k_warn(dp_pdev->dp, "no RA slot available for %pM: %d\n",
+			    peer_req->mac_addr, ra_idx);
+		return ra_idx;
+	}
+
+	peer = kzalloc(sizeof(*peer), GFP_ATOMIC);
+	if (!peer)
+		return -ENOMEM;
+
+	memcpy(&peer->peer_info, peer_req, sizeof(*peer_req));
+	peer->peer_info.ra_info.ra_filter_idx = ra_idx;
+	entry->param.ra_filter_idx = ra_idx;
+	entry->peer = peer;
+
+	return 0;
+}
+
+int
+ath12k_wifi8_ext_mon_handle_rx_peer(struct ath12k_pdev_dp *dp_pdev,
+				    const struct ath12k_ext_mon_peer_info *peer_req,
+				    enum ath12k_ext_mon_peer_action action, u32 vdev_id,
+				    struct list_head *peers_to_wmi,
+				    struct ath12k_ext_mon_wmi_entry *entry,
+				    struct ath12k_dp_ext_mon_peer *peer)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	const int range_slot = ATH12K_WIFI8_DP_MON_MAX_RA_PEERS - 1;
+
+	lockdep_assert_held(&dp_mon_pdev->rx_ext_mon_lock);
+
+	entry->param.vdev_id = vdev_id;
+
+	if (action == ATH12K_EXT_MON_PEER_ACTION_ADD) {
+		if (peer_req->ra_addr) {
+			int ret = ath12k_wifi8_ext_mon_add_ra_peer(dp_pdev, peer_req,
+								   entry, peers_to_wmi);
+			if (ret)
+				return ret;
+		} else {
+			struct ath12k_dp_ext_mon_peer *new_peer;
+
+			new_peer = kzalloc(sizeof(*new_peer), GFP_ATOMIC);
+			if (!new_peer)
+				return -ENOMEM;
+
+			memcpy(&new_peer->peer_info, peer_req, sizeof(*peer_req));
+			entry->param.action = WMI_FILTER_NRP_ACTION_ADD;
+			ether_addr_copy(entry->param.nrp_addr, peer_req->mac_addr);
+			entry->peer = new_peer;
+		}
+	} else {
+		entry->peer = peer;
+		if (peer_req->ra_addr) {
+			entry->param.type = WMI_FILTER_NRP_TYPE_RA_FILTERING;
+			entry->param.ra_filter_idx =
+				peer->peer_info.ra_info.ra_filter_idx;
+			if (entry->param.ra_filter_idx == range_slot)
+				eth_broadcast_addr(entry->param.ra_addr_mask);
+		} else {
+			entry->param.action = WMI_FILTER_NRP_ACTION_REMOVE;
+			ether_addr_copy(entry->param.nrp_addr, peer_req->mac_addr);
+		}
+	}
+
+	list_add_tail(&entry->list, peers_to_wmi);
 	return 0;
 }
 

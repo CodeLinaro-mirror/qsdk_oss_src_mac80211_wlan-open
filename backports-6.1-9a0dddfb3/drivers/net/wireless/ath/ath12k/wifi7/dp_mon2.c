@@ -70,6 +70,8 @@ const struct ath12k_dp_arch_mon_ops ath12k_wifi7_dp_arch_mon_dual_ring_ops = {
 	.ext_mon_free = ath12k_dp_ext_mon_free,
 	.ext_mon_setup_rx_filter = ath12k_wifi7_dp_ext_mon_setup_rx_filter,
 	.ext_mon_set_rx_filter = ath12k_dp_ext_mon_set_rx_filter,
+	.ext_mon_handle_rx_peer = ath12k_wifi7_ext_mon_handle_rx_peer,
+
 	/* Below are TxMonitor Ops */
 	/* At Device Init/Exit */
 	.mon_tx_srng_alloc_setup = ath12k_dp_mon_tx_srng_alloc_setup,
@@ -2323,6 +2325,52 @@ void ath12k_dp_mon_rx_wq_deinit(struct ath12k_pdev_dp *dp_pdev, bool destroy)
 
 	if (destroy)
 		destroy_workqueue(mon_pdev->rxmon_wq);
+}
+
+int
+ath12k_wifi7_ext_mon_handle_rx_peer(struct ath12k_pdev_dp *dp_pdev,
+				    const struct ath12k_ext_mon_peer_info *peer_info,
+				    enum ath12k_ext_mon_peer_action action, u32 vdev_id,
+				    struct list_head *peers_to_wmi,
+				    struct ath12k_ext_mon_wmi_entry *entry,
+				    struct ath12k_dp_ext_mon_peer *peer)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	int ret = 0;
+
+	lockdep_assert_held(&dp_mon_pdev->rx_ext_mon_lock);
+
+	if (action == ATH12K_EXT_MON_PEER_ACTION_ADD) {
+		struct ath12k_dp_ext_mon_peer *new_peer;
+
+		new_peer = kzalloc(sizeof(*new_peer), GFP_ATOMIC);
+		if (!new_peer)
+			return -ENOMEM;
+
+		memcpy(&new_peer->peer_info, peer_info, sizeof(*peer_info));
+		entry->peer = new_peer;
+
+		/* WiFi 7 RA: no WMI needed, leave param zeroed.
+		 * dp_mon.c dispatch loop skips WMI on this condition; commit loop
+		 * handles peer_list insertion and counts uniformly.
+		 */
+		if (!peer_info->ra_addr) {
+			entry->param.vdev_id = vdev_id;
+			entry->param.action  = WMI_FILTER_NRP_ACTION_ADD;
+			ether_addr_copy(entry->param.nrp_addr, peer_info->mac_addr);
+		}
+	} else {
+		entry->peer = peer;
+		/* WiFi 7 RA: no WMI needed, leave param zeroed. */
+		if (!peer_info->ra_addr) {
+			entry->param.vdev_id = vdev_id;
+			entry->param.action  = WMI_FILTER_NRP_ACTION_REMOVE;
+			ether_addr_copy(entry->param.nrp_addr, peer_info->mac_addr);
+		}
+	}
+
+	list_add_tail(&entry->list, peers_to_wmi);
+	return ret;
 }
 
 int ath12k_wifi7_dp_ext_mon_validate_request(struct ath12k_pdev_dp *dp_pdev,

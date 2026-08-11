@@ -161,6 +161,10 @@ struct ath12k_ext_mon_pkt_config;
 struct ath12k_dp_rx_ext_mon;
 struct ath12k_dp_tx_ext_mon_config;
 struct ath12k_ext_mon_filter_config;
+enum ath12k_ext_mon_peer_action;
+struct ath12k_ext_mon_wmi_entry;
+struct ath12k_dp_ext_mon_peer;
+struct ath12k_ext_mon_peer_info;
 
 struct ath12k_dp_mon_pad_params {
 	u32 frag_size;
@@ -291,7 +295,12 @@ struct ath12k_dp_arch_mon_ops {
 	int (*ext_mon_set_rx_filter)
 	     (struct ath12k_pdev_dp *dp_pdev,
 	      const struct ath12k_ext_mon_filter_config *new_config);
-
+	int (*ext_mon_handle_rx_peer)(struct ath12k_pdev_dp *dp_pdev,
+				      const struct ath12k_ext_mon_peer_info *peer_info,
+				      enum ath12k_ext_mon_peer_action action, u32 vdev_id,
+				      struct list_head *peers_to_wmi,
+				      struct ath12k_ext_mon_wmi_entry *entry,
+				      struct ath12k_dp_ext_mon_peer *peer);
 	/* Below are TxMonitor ops */
 	int (*mon_tx_srng_alloc_setup)(struct ath12k_dp *dp);
 	void (*mon_tx_srng_cleanup)(struct ath12k_dp *dp);
@@ -1082,6 +1091,12 @@ struct ath12k_ext_mon_config {
 struct ath12k_dp_ext_mon_peer {
 	struct ath12k_ext_mon_peer_info peer_info;
 	struct list_head list;
+};
+
+struct ath12k_ext_mon_wmi_entry {
+	struct list_head list;
+	struct ath12k_set_neighbor_rx_params param;
+	struct ath12k_dp_ext_mon_peer *peer;
 };
 
 struct ath12k_dp_rx_ext_mon {
