@@ -334,7 +334,11 @@ const struct ce_attr ath12k_wifi8_host_ce_config_qcn9625[] = {
 		.flags = CE_ATTR_FLAGS,
 		.src_nentries = 0,
 		.src_sz_max = 2048,
+#if defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
+		.dest_nentries = 128,
+#else
 		.dest_nentries = 512,
+#endif
 		.recv_cb = ath12k_dp_htt_htc_t2h_msg_handler,
 	},
 
@@ -403,6 +407,16 @@ const struct ce_attr ath12k_wifi8_host_ce_config_qcn9625[] = {
 		.dest_nentries = 0,
 	},
 
+#if defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
+	/* CE14: target->host dbg log */
+	{
+		.flags = CE_ATTR_FLAGS,
+		.src_nentries = 0,
+		.src_sz_max = 0,
+		.dest_nentries = 0,
+	},
+
+#else
 	/* CE14: target->host dbg log */
 	{
 		.flags = CE_ATTR_FLAGS,
@@ -411,6 +425,7 @@ const struct ce_attr ath12k_wifi8_host_ce_config_qcn9625[] = {
 		.dest_nentries = 128,
 		.recv_cb = ath12k_htc_rx_completion_handler,
 	},
+#endif
 
 	/* CE15: host->target MSDU/MPDUQ */
 	{
