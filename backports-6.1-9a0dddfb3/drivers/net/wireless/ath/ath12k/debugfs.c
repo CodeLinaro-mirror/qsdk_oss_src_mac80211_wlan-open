@@ -7925,6 +7925,27 @@ static ssize_t ath12k_debug_read_fw_recovery(struct file *file,
 	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
 }
 
+static ssize_t ath12k_debug_read_recovery_in_progress(struct file *file,
+						       char __user *user_buf,
+						       size_t count, loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	char buf[8];
+	size_t len;
+
+	len = scnprintf(buf, sizeof(buf), "%u\n",
+			ath12k_hw_group_recovery_in_progress(ab->ag));
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static const struct file_operations fops_recovery_in_progress = {
+	.read = ath12k_debug_read_recovery_in_progress,
+	.open = simple_open,
+};
+
+
+
 static const struct file_operations fops_fw_recovery = {
 	.read = ath12k_debug_read_fw_recovery,
 	.write = ath12k_debug_write_fw_recovery,
@@ -8755,6 +8776,8 @@ void ath12k_debugfs_pdev_create(struct ath12k_base *ab) {
 			    &fops_simulate_fw_crash);
 	debugfs_create_file("set_fw_recovery", 0600, ab->debugfs_soc, ab,
 			    &fops_fw_recovery);
+	debugfs_create_file("recovery_in_progress", 0400, ab->debugfs_soc, ab,
+			    &fops_recovery_in_progress);
 
 #ifdef CPTCFG_ATH12K_POWER_OPTIMIZATION
 	debugfs_create_file("dbs_power_reduction", 0600, ab->debugfs_soc, ab,
