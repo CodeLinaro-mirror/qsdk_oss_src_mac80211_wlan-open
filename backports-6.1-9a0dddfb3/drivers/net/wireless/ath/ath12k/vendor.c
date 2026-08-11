@@ -17084,6 +17084,108 @@ ath12k_pasn_arvif_from_wdev(struct wireless_dev *wdev, u8 link_id)
 	return NULL;
 }
 
+static const struct nla_policy ath12k_vendor_secure_ranging_ctx_policy
+		[QCA_WLAN_VENDOR_ATTR_SECURE_RANGING_CTX_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_SECURE_RANGING_CTX_ACTION] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SECURE_RANGING_CTX_SRC_ADDR] =
+		NLA_POLICY_EXACT_LEN_WARN(ETH_ALEN),
+	[QCA_WLAN_VENDOR_ATTR_SECURE_RANGING_CTX_PEER_MAC_ADDR] =
+		NLA_POLICY_EXACT_LEN_WARN(ETH_ALEN),
+	[QCA_WLAN_VENDOR_ATTR_SECURE_RANGING_CTX_SHA_TYPE] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SECURE_RANGING_CTX_TK] = {
+		.type = NLA_BINARY, .len = WMI_MAX_KEY_LEN },
+	[QCA_WLAN_VENDOR_ATTR_SECURE_RANGING_CTX_CIPHER] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SECURE_RANGING_CTX_LTF_KEYSEED] = {
+		.type = NLA_BINARY, .len = ATH12K_SECURE_RANGING_LTF_KEYSEED_MAX_LEN },
+	[QCA_WLAN_VENDOR_ATTR_SECURE_RANGING_CTX_LINK_ID] = { .type = NLA_U8 },
+};
+
+static int ath12k_vendor_secure_ranging_ctx_cmd(struct wiphy *wiphy,
+						struct wireless_dev *wdev,
+						const void *data, int data_len)
+{
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_SECURE_RANGING_CTX_MAX + 1];
+	struct ath12k_wmi_ltf_keyseed_arg arg;
+	struct ath12k_link_vif *arvif;
+	const u8 *src_addr = NULL;
+	const u8 *peer_addr;
+	u8 link_id = INVALID_LINK_ID;
+	u32 action;
+	int ret;
+
+	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_SECURE_RANGING_CTX_MAX,
+			data, data_len, ath12k_vendor_secure_ranging_ctx_policy,
+			NULL);
+	if (ret)
+		return ret;
+
+	if (!tb[QCA_WLAN_VENDOR_ATTR_SECURE_RANGING_CTX_ACTION] ||
+	    !tb[QCA_WLAN_VENDOR_ATTR_SECURE_RANGING_CTX_PEER_MAC_ADDR])
+		return -EINVAL;
+
+	peer_addr = nla_data(tb[QCA_WLAN_VENDOR_ATTR_SECURE_RANGING_CTX_PEER_MAC_ADDR]);
+	if (is_zero_ether_addr(peer_addr))
+		return -EINVAL;
+	if (tb[QCA_WLAN_VENDOR_ATTR_SECURE_RANGING_CTX_SRC_ADDR])
+		src_addr = nla_data(tb[QCA_WLAN_VENDOR_ATTR_SECURE_RANGING_CTX_SRC_ADDR]);
+
+	action = nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_SECURE_RANGING_CTX_ACTION]);
+	if (action > QCA_WLAN_VENDOR_SECURE_RANGING_CTX_ACTION_DELETE)
+		return -EINVAL;
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_SECURE_RANGING_CTX_LINK_ID]) {
+		link_id = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_SECURE_RANGING_CTX_LINK_ID]);
+		if (!is_valid_link_id(link_id) || link_id >= ATH12K_NUM_MAX_LINKS)
+			return -EINVAL;
+	}
+
+	arvif = ath12k_pasn_arvif_from_wdev(wdev, link_id);
+	if (!arvif || !arvif->ar)
+		return -ENOLINK;
+
+	if (action == QCA_WLAN_VENDOR_SECURE_RANGING_CTX_ACTION_DELETE) {
+		ret = ath12k_wmi_send_rtt_pasn_deauth(arvif->ar, peer_addr);
+		if (ret)
+			return ret;
+		ath12k_pasn_fw_peer_delete(arvif, peer_addr);
+		ath12k_pasn_peer_delete(arvif, peer_addr);
+		return 0;
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_SECURE_RANGING_CTX_TK]) {
+		ret = ath12k_vendor_install_secure_ranging_tk(arvif, tb);
+		if (ret)
+			return ret;
+		/* SECURE_CTX only after TK is actually installed. */
+		ath12k_pasn_peer_set_secure_ctx(arvif, src_addr, peer_addr, true);
+	}
+
+	if (!tb[QCA_WLAN_VENDOR_ATTR_SECURE_RANGING_CTX_LTF_KEYSEED])
+		return 0;
+
+	if (!tb[QCA_WLAN_VENDOR_ATTR_SECURE_RANGING_CTX_SHA_TYPE])
+		return -EINVAL;
+
+	memset(&arg, 0, sizeof(arg));
+	arg.vdev_id = arvif->vdev_id;
+	ether_addr_copy(arg.peer_mac, peer_addr);
+	if (tb[QCA_WLAN_VENDOR_ATTR_SECURE_RANGING_CTX_CIPHER])
+		arg.rsn_authmode =
+			nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_SECURE_RANGING_CTX_CIPHER]);
+	arg.keyseed = nla_data(tb[QCA_WLAN_VENDOR_ATTR_SECURE_RANGING_CTX_LTF_KEYSEED]);
+	arg.keyseed_len =
+		nla_len(tb[QCA_WLAN_VENDOR_ATTR_SECURE_RANGING_CTX_LTF_KEYSEED]);
+	if (!arg.keyseed_len)
+		return -EINVAL;
+
+	ret = ath12k_wmi_send_ltf_key_seed(arvif->ar, &arg);
+	if (ret)
+		return ret;
+	ath12k_pasn_peer_set_ltf_keyseed(arvif, peer_addr, true);
+
+	return 0;
+}
+
 static const struct nla_policy
 ath12k_vendor_pasn_policy[QCA_WLAN_VENDOR_ATTR_PASN_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_PASN_ACTION] = { .type = NLA_U32 },
@@ -17542,6 +17644,14 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.policy = ath12k_vendor_home_offchan_tx_rx_policy,
 		.maxattr = QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_MAX,
 		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_SECURE_RANGING_CONTEXT,
+		.doit = ath12k_vendor_secure_ranging_ctx_cmd,
+		.policy = ath12k_vendor_secure_ranging_ctx_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_SECURE_RANGING_CTX_MAX,
+		.flags = WIPHY_VENDOR_CMD_NEED_WDEV,
 	},
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
