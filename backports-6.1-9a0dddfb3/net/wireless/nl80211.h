@@ -37,7 +37,8 @@ void nl80211_notify_iface(struct cfg80211_registered_device *rdev,
 void nl80211_send_scan_start(struct cfg80211_registered_device *rdev,
 			     struct wireless_dev *wdev);
 struct sk_buff *nl80211_build_scan_msg(struct cfg80211_registered_device *rdev,
-				       struct wireless_dev *wdev, bool aborted);
+				       struct wireless_dev *wdev,
+				       struct cfg80211_scan_request *req);
 void nl80211_send_scan_msg(struct cfg80211_registered_device *rdev,
 			   struct sk_buff *msg);
 void nl80211_send_sched_scan(struct cfg80211_sched_scan_request *req, u32 cmd);

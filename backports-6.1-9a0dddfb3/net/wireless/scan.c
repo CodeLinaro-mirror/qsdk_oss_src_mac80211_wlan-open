@@ -1211,7 +1211,7 @@ void ___cfg80211_scan_done(struct cfg80211_registered_device *rdev,
 		spin_unlock_bh(&rdev->bss_lock);
 	}
 
-	msg = nl80211_build_scan_msg(rdev, wdev, request->info.aborted);
+	msg = nl80211_build_scan_msg(rdev, wdev, request);
 
 #ifdef CPTCFG_CFG80211_WEXT
 	if (wdev->netdev && !request->info.aborted) {
@@ -1221,6 +1221,10 @@ void ___cfg80211_scan_done(struct cfg80211_registered_device *rdev,
 	}
 #endif
 
+	wiphy_dbg(&rdev->wiphy,
+		  "normal scan done work: dev_put(%s) refcnt_before=%d\n",
+		  wdev->netdev ? wdev->netdev->name : "<none>",
+		  wdev->netdev ? netdev_refcnt_read(wdev->netdev) : -1);
 	dev_put(wdev->netdev);
 
 	kfree(rdev->int_scan_req);
@@ -1240,14 +1244,148 @@ void __cfg80211_scan_done(struct wiphy *wiphy, struct wiphy_work *wk)
 	___cfg80211_scan_done(wiphy_to_rdev(wiphy), true);
 }
 
+/**
+ * cfg80211_parallel_scan_abort - synchronously complete all pending parallel
+ *   scan requests during teardown.
+ *
+ * Must be called with the wiphy mutex held.  Cancels any queued
+ * parallel_scan_done_wk and runs its body inline so that dev_put() is
+ * guaranteed to happen before the caller returns (and therefore before
+ * unregister_netdevice() is reached during rmmod).
+ */
+void cfg80211_parallel_scan_abort(struct wiphy *wiphy)
+{
+	struct cfg80211_registered_device *rdev = wiphy_to_rdev(wiphy);
+	int slot;
+
+	lockdep_assert_held(&rdev->wiphy.mtx);
+
+	/* Cancel any work that was queued but has not run yet. */
+	wiphy_work_cancel(wiphy, &rdev->parallel_scan_done_wk);
+
+	/*
+	 * Run the completion body synchronously for every notified request so
+	 * that dev_put() is called before the caller proceeds to remove
+	 * interfaces (which calls unregister_netdevice).
+	 */
+	for (slot = 0; slot < ARRAY_SIZE(rdev->parallel_scan_reqs); slot++) {
+		struct cfg80211_scan_request *req = rdev->parallel_scan_reqs[slot];
+		struct wireless_dev *wdev;
+		struct sk_buff *msg;
+
+		if (!req || !req->notified)
+			continue;
+
+		wdev = req->wdev;
+
+		if (wdev->netdev)
+			cfg80211_sme_scan_done(wdev->netdev);
+
+		if (!req->info.aborted &&
+		    req->flags & NL80211_SCAN_FLAG_FLUSH) {
+			spin_lock_bh(&rdev->bss_lock);
+			__cfg80211_bss_expire(rdev, req->scan_start);
+			spin_unlock_bh(&rdev->bss_lock);
+		}
+
+		msg = nl80211_build_scan_msg(rdev, wdev, req);
+
+		dev_put(wdev->netdev);
+
+		rdev->parallel_scan_reqs[slot] = NULL;
+		kfree(req);
+
+		nl80211_send_scan_msg(rdev, msg);
+	}
+}
+EXPORT_SYMBOL(cfg80211_parallel_scan_abort);
+
+void cfg80211_parallel_scan_done_work(struct wiphy *wiphy,
+				      struct wiphy_work *wk)
+{
+	struct cfg80211_registered_device *rdev =
+		container_of(wk, struct cfg80211_registered_device,
+			     parallel_scan_done_wk);
+	int slot;
+
+	lockdep_assert_held(&rdev->wiphy.mtx);
+
+	for (slot = 0; slot < ARRAY_SIZE(rdev->parallel_scan_reqs); slot++) {
+		struct cfg80211_scan_request *req = rdev->parallel_scan_reqs[slot];
+		struct wireless_dev *wdev;
+		struct sk_buff *msg;
+
+		if (!req || !req->notified)
+			continue;
+
+		wdev = req->wdev;
+
+		wiphy_dbg(wiphy,
+			  "parallel scan done work: slot=%d req=%p notified=%d netdev=%s refcnt=%d aborted=%d\n",
+			  slot, req, req->notified,
+			  wdev->netdev ? wdev->netdev->name : "<none>",
+			  wdev->netdev ? netdev_refcnt_read(wdev->netdev) : -1,
+			  req->info.aborted);
+
+		if (wdev->netdev)
+			cfg80211_sme_scan_done(wdev->netdev);
+
+		if (!req->info.aborted &&
+		    req->flags & NL80211_SCAN_FLAG_FLUSH) {
+			spin_lock_bh(&rdev->bss_lock);
+			__cfg80211_bss_expire(rdev, req->scan_start);
+			spin_unlock_bh(&rdev->bss_lock);
+		}
+
+		msg = nl80211_build_scan_msg(rdev, wdev, req);
+
+		wiphy_dbg(wiphy,
+			  "parallel scan done work: dev_put(%s) refcnt_before=%d\n",
+			  wdev->netdev ? wdev->netdev->name : "<none>",
+			  wdev->netdev ? netdev_refcnt_read(wdev->netdev) : -1);
+		dev_put(wdev->netdev);
+
+		rdev->parallel_scan_reqs[slot] = NULL;
+		kfree(req);
+
+		nl80211_send_scan_msg(rdev, msg);
+	}
+}
+
 void cfg80211_scan_done(struct cfg80211_scan_request *request,
 			struct cfg80211_scan_info *info)
 {
+	struct cfg80211_registered_device *rdev = wiphy_to_rdev(request->wiphy);
 	struct cfg80211_scan_info old_info = request->info;
+	int slot;
 
 	trace_cfg80211_scan_done(request, info);
-	WARN_ON(request != wiphy_to_rdev(request->wiphy)->scan_req &&
-		request != wiphy_to_rdev(request->wiphy)->int_scan_req);
+
+	/* Check if this is a parallel scan request tracked outside scan_req */
+	for (slot = 0; slot < ARRAY_SIZE(rdev->parallel_scan_reqs); slot++) {
+		if (rdev->parallel_scan_reqs[slot] == request) {
+			request->info = *info;
+			request->notified = true;
+			wiphy_dbg(request->wiphy,
+				  "parallel scan done: queuing work slot=%d req=%p scan_id=%u netdev=%s refcnt=%d aborted=%d\n",
+				  slot, request, info->scan_id,
+				  request->wdev && request->wdev->netdev ?
+					request->wdev->netdev->name : "<none>",
+				  request->wdev && request->wdev->netdev ?
+					netdev_refcnt_read(request->wdev->netdev) : -1,
+				  info->aborted);
+			wiphy_work_queue(request->wiphy,
+					 &rdev->parallel_scan_done_wk);
+			return;
+		}
+	}
+
+	wiphy_dbg(request->wiphy,
+		  "normal scan done: queueing work request=%p scan_id=%u netdev=%s aborted=%d rdev->scan_req=%p rdev->int_scan_req=%p\n",
+		  request, info->scan_id,
+		  request->wdev && request->wdev->netdev ?
+			request->wdev->netdev->name : "<none>",
+		  info->aborted, rdev->scan_req, rdev->int_scan_req);
 
 	request->info = *info;
 
@@ -1263,8 +1401,7 @@ void cfg80211_scan_done(struct cfg80211_scan_request *request,
 	}
 
 	request->notified = true;
-	wiphy_work_queue(request->wiphy,
-			 &wiphy_to_rdev(request->wiphy)->scan_done_wk);
+	wiphy_work_queue(request->wiphy, &rdev->scan_done_wk);
 }
 EXPORT_SYMBOL(cfg80211_scan_done);
 
