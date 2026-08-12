@@ -16,7 +16,9 @@
 #include "dp.h"
 #include "hal.h"
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/ipa/dp_ipa.h"
+#endif /* CPTCFG_QCN_EXTN */
 #endif
 
 #define WCN7850_DEVICE_ID		0x1107

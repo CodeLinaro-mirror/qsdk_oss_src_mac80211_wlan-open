@@ -32,7 +32,9 @@
 #include "dp_peer.h"
 #include "dp_tx_queue.h"
 #include "../dp_mon.h"
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/wifi8_dp_extn.h"
+#endif /* CPTCFG_QCN_EXTN */
 #include "../cfr.h"
 
 /*
