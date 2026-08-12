@@ -17154,6 +17154,9 @@ static int ath12k_wmi_tpc_stats_copy_buffer(struct ath12k_base *ab,
 		}
 		break;
 	case ATH12K_TPC_STATS_RATES_EVENT2:
+		/* EHT target powers; UHR target powers are identical so the
+		 * display path also uses this buffer for UHR preambles.
+		 */
 		if (len3 > len)
 			return -ENOBUFS;
 

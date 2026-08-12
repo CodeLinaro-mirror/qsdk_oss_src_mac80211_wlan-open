@@ -182,6 +182,7 @@ struct dentry *ath12k_debugfs_erp_create(void);
 #define HE_EXTRA_MCS_SUPPORT			GENMASK(31, 16)
 #define ATH12K_NSS_1				1
 #define ATH12K_NSS_4				4
+#define ATH12K_NSS_5				5
 #define ATH12K_NSS_8				8
 #define ATH12K_HW_NSS(_rcode)			(((_rcode) >> 5) & 0x7)
 #define TPC_STATS_WAIT_TIME			(1 * HZ)
@@ -249,6 +250,20 @@ enum wmi_tpc_pream_bw {
 	WMI_TPC_PREAM_EHT240,
 	WMI_TPC_PREAM_EHT280,
 	WMI_TPC_PREAM_EHT320,
+	/* UHR preambles: FW sends one shared EHT/UHR rates array;
+	 * host indexes into rates_array2 identically to EHT.
+	 */
+	WMI_TPC_PREAM_UHR20,
+	WMI_TPC_PREAM_UHR40,
+	WMI_TPC_PREAM_UHR60,
+	WMI_TPC_PREAM_UHR80,
+	WMI_TPC_PREAM_UHR120,
+	WMI_TPC_PREAM_UHR140,
+	WMI_TPC_PREAM_UHR160,
+	WMI_TPC_PREAM_UHR200,
+	WMI_TPC_PREAM_UHR240,
+	WMI_TPC_PREAM_UHR280,
+	WMI_TPC_PREAM_UHR320,
 	WMI_TPC_PREAM_MAX
 };
 
