@@ -12,7 +12,9 @@
 #include "wmi.h"
 #include "smd.h"
 
+#ifdef CPTCFG_QCN_EXTN
 #include "../../net/mac80211/qcn_extns/cmn_extn.h"
+#endif /* CPTCFG_QCN_EXTN */
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 extern unsigned int ath12k_ppe_ds_enabled;
