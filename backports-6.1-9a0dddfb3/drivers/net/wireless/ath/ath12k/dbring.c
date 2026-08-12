@@ -9,8 +9,6 @@
 #include "hal.h"
 #include "cfr.h"
 
-#define ATH12K_DB_MAGIC_VALUE 0xdeadbeaf
-
 int ath12k_dbring_validate_buffer(struct ath12k *ar, void *buffer, u32 size)
 {
 	u32 *temp;
@@ -233,6 +231,102 @@ int ath12k_dbring_buf_setup(struct ath12k *ar,
 	ret = ath12k_dbring_fill_bufs(ar, ring, db_cap->id, GFP_ATOMIC);
 
 	return ret;
+}
+
+  /**
+   * ath12k_dbring_reset() - Reset DMA ring to clean state for new scan
+   * @ar: ath12k radio instance
+   * @ring: Direct buffer ring to reset
+   *
+   * Resets the DMA ring to a known clean state before starting a new spectral
+   * scan, ensuring firmware sees a full ring regardless of previous scan state.
+   * This is required for agile spectral scans to prevent the firmware from
+   * computing zero available ring entries when Head Pointer has wrapped to zero.
+   *
+   * The function performs three operations:
+   * 1. Resets both Head Pointer (HP) and Tail Pointer (TP) to position 0 in
+   *    both host software state and firmware-visible shadow registers.
+   * 2. Re-populates all ring descriptors using existing pre-allocated DMA
+   *    buffers from the IDR database (no new memory allocation).
+   * 3. Updates the HP shadow register to reflect the full ring size.
+   *
+   * All buffers are reused from boot-time allocation; no memory is allocated
+   * or freed. The ring memory itself is not zeroed to avoid corrupting any
+   * in-flight firmware DMA writes that may still be completing after the
+   * preceding scan stop commands.
+   *
+   * Context: Called from spectral scan start path under wiphy lock.
+   *          Takes srng->lock and ring->idr_lock internally.
+   *
+   * Return: 0 on success
+   */
+int ath12k_dbring_reset(struct ath12k *ar, struct ath12k_dbring *ring)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct hal_srng *srng;
+	struct ath12k_dbring_element *buff;
+	void *ptr_unaligned, *ptr_aligned;
+	void *desc;
+	u32 cookie;
+	int buf_id;
+
+	srng = &ab->hal.srng_list[ring->refill_srng.ring_id];
+
+	spin_lock_bh(&srng->lock);
+
+	/* Reset HP/TP to 0 in both host software state and shadow registers.
+	 * After a completed scan HP==TP==X for some arbitrary X.  When FW
+	 * processes the subsequent wmi_cfg_setup it resets its internal TP=0
+	 * but reads HP=X from the shadow register, giving it only X entries —
+	 * or zero if HP wrapped to 0.  Resetting both to 0 ensures FW always
+	 * sees a full ring.
+	 * Do NOT memset the ring memory: after CLEAR+DISABLE, FW may still
+	 * have outstanding DMA writes in-flight to ring descriptors.  Zeroing
+	 * the shared memory corrupts those writes and causes FW to silently
+	 * reject subsequent scan requests (no sscan_fw_param response).
+	 */
+	srng->u.src_ring.hp = 0;
+	srng->u.src_ring.cached_tp = 0;
+	if (srng->u.src_ring.tp_addr)
+		*srng->u.src_ring.tp_addr = 0;
+	if (srng->u.src_ring.hp_addr)
+		*srng->u.src_ring.hp_addr = 0;
+
+	/* Re-populate SRNG descriptors from existing IDR entries without any
+	 * memory allocation.  All buffers are already DMA-mapped; we just
+	 * re-enqueue them starting from HP=0.  Lock order: srng->lock held;
+	 * idr_lock nests inside this on par with ath12k_dbring_fill_bufs.
+	 */
+	spin_lock_bh(&ring->idr_lock);
+	idr_for_each_entry(&ring->bufs_idr, buff, buf_id) {
+		ptr_unaligned = buff->payload;
+		ptr_aligned = PTR_ALIGN(ptr_unaligned, ring->buf_align);
+		ath12k_dbring_fill_magic_value(ar, ptr_aligned, ring->buf_sz);
+#ifndef CONFIG_IO_COHERENCY
+		dma_sync_single_for_device(ab->dev, buff->paddr,
+					   ring->buf_sz, DMA_FROM_DEVICE);
+#endif
+		cookie = u32_encode_bits(ar->pdev_idx,
+					 DP_RXDMA_BUF_COOKIE_PDEV_ID) |
+			 u32_encode_bits(buf_id, DP_RXDMA_BUF_COOKIE_BUF_ID);
+
+		desc = (void *)(srng->ring_base_vaddr + srng->u.src_ring.hp);
+		ath12k_hal_rx_buf_addr_info_set(desc, buff->paddr, cookie, 0);
+
+		srng->u.src_ring.hp = (srng->u.src_ring.hp + srng->entry_size) %
+				       srng->ring_size;
+	}
+	spin_unlock_bh(&ring->idr_lock);
+
+	/* Flush the updated HP to the shadow register so FW reads the
+	 * correct value when it processes the subsequent wmi_cfg_setup.
+	 */
+	if (srng->u.src_ring.hp_addr)
+		*srng->u.src_ring.hp_addr = srng->u.src_ring.hp;
+
+	spin_unlock_bh(&srng->lock);
+
+	return 0;
 }
 
 int ath12k_dbring_srng_setup(struct ath12k *ar, struct ath12k_dbring *ring,

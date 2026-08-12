@@ -181,42 +181,6 @@ static u8 ath12k_spectral_get_detector_from_scan_mode(struct ath12k *ar,
 	}
 }
 
-/**
- * ath12k_spectral_nl_bw_to_wmi() - Convert nl80211_chan_width to WMI channel width
- * @nl_bw: nl80211_chan_width value stored as u8 in spectral params
- *
- * Maps the nl80211 channel width enum to the WMI_PEER_CHWIDTH_* values
- * used in the spectral scan WMI configure command's scan_chan_width field.
- *
- * Return: WMI channel width value (WMI_PEER_CHWIDTH_*)
- */
-static u32 ath12k_spectral_nl_bw_to_wmi(u8 nl_bw)
-{
-	u32 wmi_bw;
-
-	switch (nl_bw) {
-	case NL80211_CHAN_WIDTH_40:
-		wmi_bw = WMI_PEER_CHWIDTH_40MHZ;
-		break;
-	case NL80211_CHAN_WIDTH_80:
-		wmi_bw = WMI_PEER_CHWIDTH_80MHZ;
-		break;
-	case NL80211_CHAN_WIDTH_160:
-		wmi_bw = WMI_PEER_CHWIDTH_160MHZ;
-		break;
-	case NL80211_CHAN_WIDTH_320:
-		wmi_bw = WMI_PEER_CHWIDTH_320MHZ;
-		break;
-	case NL80211_CHAN_WIDTH_20_NOHT:
-	case NL80211_CHAN_WIDTH_20:
-	default:
-		wmi_bw = WMI_PEER_CHWIDTH_20MHZ;
-		break;
-	}
-
-	return wmi_bw;
-}
-
 bool ath12k_spectral_is_agile_capable(struct ath12k *ar)
 {
 	struct ath12k_pdev_cap *cap;
@@ -471,6 +435,7 @@ static void ath12k_spectral_update_chwidth(struct ath12k *ar,
 	ar->spectral.ch_width     = wmi_bw;
 	ar->spectral.sscan_bw     = wmi_bw;
 	ar->spectral.pri20_freq   = chandef->chan->center_freq;
+	ar->spectral.oper_cfreq1  = chandef->center_freq1;
 	ar->spectral.sscan_cfreq1 = chandef->center_freq1;
 	ar->spectral.sscan_cfreq2 = chandef->center_freq2;
 	spin_unlock_bh(&ar->spectral.lock);
@@ -517,12 +482,88 @@ int ath12k_spectral_start_scan(struct ath12k *ar)
 		return -ENODEV;
 	}
 
-	/* If no SESSION_INFO_SUPPORT in FW, seed it from the vdev's current chandef
-	 * so FFT reports still carry a valid width.
+	/* Always seed home channel info from the vdev channel before scan
+	 * starts so FFT samples have the correct operating channel BW and
+	 * center frequency.  When the firmware supports SESSION_INFO, it
+	 * sends updated agile scan params (sscan_cfreq1/2, sscan_bw) via
+	 * WMI_PDEV_SSCAN_FW_PARAM_EVENTID after the FFT samples, so
+	 * ch_width and oper_cfreq1 must be set here and not overwritten
+	 * by that event.
 	 */
-	if (!test_bit(WMI_TLV_SERVICE_SPECTRAL_SESSION_INFO_SUPPORT,
-		      ar->ab->wmi_ab.svc_map))
-		ath12k_spectral_update_chwidth(ar, arvif);
+	ath12k_spectral_update_chwidth(ar, arvif);
+
+	/* For agile mode, perform a full DMA ring reset before sending
+	 * wmi_cfg_setup.  After a normal scan, the SRNG HP pointer is at an
+	 * arbitrary offset X.  When FW processes a new wmi_cfg_setup it resets
+	 * its internal TP=0 but reads HP=X from the shadow register.  If X==0
+	 * (HP wrapped) FW computes 0 available entries and produces no DMA
+	 * output.  Resetting HP/TP shadow registers to 0 and refilling the
+	 * ring ensures FW always sees a full ring after wmi_cfg_setup on N->A.
+	 *
+	 * For A->A rapid-fire: after CLEAR+DISABLE the FW agile engine takes
+	 * some time to drain and return DMA buffers.  If we send wmi_cfg_setup
+	 * while the engine is still active, FW silently ignores it and never
+	 * sends sscan_fw_param, producing 0 samples.  Poll num_free (which reads
+	 * FW's TP from shadow memory) until FW has returned a meaningful fraction
+	 * of ring buffers, confirming the agile engine has stopped.
+	 */
+	if (ar->spectral.mode == SPECTRAL_SCAN_MODE_AGILE) {
+		struct ath12k_dbring *dbr = &ar->spectral.rx_ring;
+		struct hal_srng *srng =
+			&ar->ab->hal.srng_list[dbr->refill_srng.ring_id];
+
+		/* Drain poll: wait for FW to return DMA buffers before sending
+		 * wmi_cfg_setup.  Required for both A->A and N->A transitions:
+		 * after CLEAR+DISABLE the FW spectral engine (agile or normal)
+		 * takes time to drain its pipeline and return buffers.  Sending
+		 * wmi_cfg_setup while it is still draining causes FW to silently
+		 * ignore it (no sscan_fw_param event, zero samples).
+		 * Only skipped on first-ever agile scan (boot->A, no prev mode).
+		 *
+		 * Early-exit threshold: bufs_max - 1 (ring fully returned).
+		 * Otherwise wait the full 500ms - num_free reaching a partial
+		 * value (for ex: 64/255) does NOT guarantee the FW engine has fully
+		 * stopped draining.
+		 */
+		if (ar->spectral.agile_drain_needed) {
+			unsigned long deadline = jiffies + msecs_to_jiffies(500);
+			int num_free_now;
+			u32 hp, tp;
+
+			spin_lock_bh(&srng->lock);
+			num_free_now = ath12k_hal_srng_src_num_free(ar->ab, srng,
+								    true);
+			hp = srng->u.src_ring.hp;
+			tp = srng->u.src_ring.cached_tp;
+			spin_unlock_bh(&srng->lock);
+
+			/* Wait until num_free > 0 (tp < hp, FW returned at least
+			 * one buffer) OR tp >= hp (FW consumed all buffers).
+			 */
+			while (num_free_now == 0 && tp < hp &&
+			       time_before(jiffies, deadline)) {
+				usleep_range(5000, 10000);
+				spin_lock_bh(&srng->lock);
+				num_free_now = ath12k_hal_srng_src_num_free(ar->ab,
+									    srng,
+									    true);
+				hp = srng->u.src_ring.hp;
+				tp = srng->u.src_ring.cached_tp;
+				spin_unlock_bh(&srng->lock);
+			}
+			spin_lock_bh(&ar->spectral.lock);
+			ar->spectral.agile_drain_needed = false;
+			spin_unlock_bh(&ar->spectral.lock);
+		}
+
+		ret = ath12k_dbring_reset(ar, &ar->spectral.rx_ring);
+		if (ret)
+			return ret;
+		ret = ath12k_dbring_wmi_cfg_setup(ar, &ar->spectral.rx_ring,
+						  WMI_DIRECT_BUF_SPECTRAL);
+		if (ret)
+			return ret;
+	}
 
 	/* Clear any stale trigger state in firmware. */
 	ret = ath12k_wmi_vdev_spectral_enable(ar, arvif->vdev_id,
@@ -549,6 +590,7 @@ int ath12k_spectral_start_scan(struct ath12k *ar)
 	ar->spectral.last_fft_timestamp[smode] = 0;
 	ar->spectral.timestamp_war_offset[smode] = 0;
 	ar->spectral.samples_done = 0;   /* reset per-scan counter */
+	ar->spectral.timeout_received_count = 0;
 	ar->spectral.scan_active = true;
 	/* Cache vdev_id so timeout_work can send CLEAR+DISABLE without
 	 * needing wiphy_lock or walking ar->arvifs from workqueue context.
@@ -560,11 +602,15 @@ int ath12k_spectral_start_scan(struct ath12k *ar)
 	 * scan_count FFT reports within this window we send a TIMEOUT event
 	 * with the partial count.
 	 */
-	if (ar->spectral.params.completion_timeout_us > 0)
+	if (ar->spectral.params[ar->spectral.mode].completion_timeout_us > 0) {
+		u64 timeout_ns =
+		(u64)ar->spectral.params[ar->spectral.mode].completion_timeout_us *
+				NSEC_PER_USEC;
+
 		hrtimer_start(&ar->spectral.scan_completion_timer,
-			      ns_to_ktime((u64)ar->spectral.params.completion_timeout_us *
-					  NSEC_PER_USEC),
+			      ns_to_ktime(timeout_ns),
 			      HRTIMER_MODE_REL_SOFT);
+	}
 
 	return 0;
 }
@@ -572,7 +618,7 @@ int ath12k_spectral_start_scan(struct ath12k *ar)
 int ath12k_spectral_stop_scan(struct ath12k *ar)
 {
 	struct ath12k_link_vif *arvif;
-	bool clear_agile_params;
+	enum spectral_scan_mode prev_mode;
 	int ret;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
@@ -590,36 +636,35 @@ int ath12k_spectral_stop_scan(struct ath12k *ar)
 			    "spectral stop_scan: no active vdev on pdev %u\n",
 			    ar->pdev_idx);
 
-		/* Clean up agile state only — normal mode has no cached
-		 * params to clear. If this is a deinit path the spectral
-		 * struct is freed immediately after this return, so leaving
-		 * mode/scan_active unchanged for normal mode is safe.
-		 */
+		/* Clean up agile DMA-cached state. No WMI possible (no vdev). */
 		spin_lock_bh(&ar->spectral.lock);
-		clear_agile_params =
-			ar->spectral.mode == SPECTRAL_SCAN_MODE_AGILE;
-		spin_unlock_bh(&ar->spectral.lock);
-		if (clear_agile_params)
+		if (ar->spectral.mode == SPECTRAL_SCAN_MODE_AGILE)
 			ath12k_spectral_rollback_agile(ar);
+		spin_unlock_bh(&ar->spectral.lock);
 
 		return -ENODEV;
 	}
 	spin_lock_bh(&ar->spectral.lock);
-	clear_agile_params =
-		ar->spectral.mode == SPECTRAL_SCAN_MODE_AGILE;
-	ar->spectral.mode = SPECTRAL_SCAN_MODE_INVALID;
+	prev_mode = ar->spectral.mode;
 	ar->spectral.scan_active = false;
 	ar->spectral.last_fft_timestamp[SPECTRAL_SCAN_MODE_NORMAL] = 0;
 	ar->spectral.timestamp_war_offset[SPECTRAL_SCAN_MODE_NORMAL] = 0;
 	ar->spectral.samples_done = 0;
-	if (clear_agile_params) {
-		ar->spectral.params.frequency = 0;
-		ar->spectral.params.frequency2 = 0;
-		ar->spectral.params.bandwidth = 0;
+	/* Also clear firmware-cached agile detector state */
+	if (prev_mode == SPECTRAL_SCAN_MODE_AGILE) {
+		ar->spectral.sscan_cfreq1 = 0;
+		ar->spectral.sscan_cfreq2 = 0;
+		ar->spectral.sscan_bw = 0;
+		ar->spectral.start_freq = 0;
+		ar->spectral.end_freq = 0;
 	}
+	/* Do NOT set mode = INVALID yet — the CLEAR+DISABLE WMI command below
+	 * derives scan_mode from ar->spectral.mode.  If we clear mode before
+	 * sending the command, firmware receives scan_mode=NORMAL even when
+	 * stopping an AGILE scan and silently ignores the stop, leaving the
+	 * agile detector alive.  Set INVALID only after the WMI is sent.
+	 */
 	spin_unlock_bh(&ar->spectral.lock);
-
-	ath12k_spectral_reset_buffer(ar);
 
 	/* Cancel after dropping the spectral lock — the hrtimer cb takes the
 	 * same lock, so cancelling while holding it would deadlock.
@@ -627,33 +672,66 @@ int ath12k_spectral_stop_scan(struct ath12k *ar)
 	hrtimer_cancel(&ar->spectral.scan_completion_timer);
 
 	ret = ath12k_wmi_vdev_spectral_enable(ar, arvif->vdev_id,
-					      ATH12K_WMI_SPECTRAL_TRIGGER_CMD_CLEAR,
-					      ATH12K_WMI_SPECTRAL_ENABLE_CMD_DISABLE);
-	if (ret)
+						ATH12K_WMI_SPECTRAL_TRIGGER_CMD_CLEAR,
+					ATH12K_WMI_SPECTRAL_ENABLE_CMD_IGNORE);
+	if (!ret)
+		ret = ath12k_wmi_vdev_spectral_enable(ar, arvif->vdev_id,
+						ATH12K_WMI_SPECTRAL_TRIGGER_CMD_IGNORE,
+						ATH12K_WMI_SPECTRAL_ENABLE_CMD_DISABLE);
+	/* Keep mode=prev_mode — do NOT reset to INVALID. */
+	if (ret) {
 		ath12k_warn(ar->ab,
 			    "failed to disable spectral scan on vdev %d: %d\n",
 			    arvif->vdev_id, ret);
+		return ret;
+	}
+
+	/* After stopping an agile scan, send configure(cf1=0) to clear the
+	 * agile detector frequency in firmware. Without this, firmware keeps
+	 * the agile detector configured at the last scanned frequency, which
+	 * interferes with subsequent normal and agile scans (A→N and A→A).
+	 * This mirrors what the prop driver does in target_if_sops_stop_spectral_scan().
+	 * scan_mode is still AGILE here (mode not yet reset to INVALID).
+	 */
+	if (prev_mode == SPECTRAL_SCAN_MODE_AGILE) {
+		struct ath12k_wmi_vdev_spectral_conf_arg zero = { 0 };
+
+		zero.vdev_id           = arvif->vdev_id;
+		zero.scan_mode         = ATH12K_WMI_SPECTRAL_SCAN_MODE_AGILE;
+		zero.scan_center_freq1 = 0;
+		zero.scan_center_freq2 = 0;
+		zero.scan_chan_width    = 0;
+		ret = ath12k_wmi_vdev_spectral_conf(ar, &zero);
+	}
 	return ret;
 }
 
 void ath12k_spectral_rollback_agile(struct ath12k *ar)
 {
+	/* State-only cleanup. This function is called from
+	 * softirq context (dbring buffer release handler / tasklet)
+	 * The zero-cf configure WMI to clear firmware's agile detector state
+	 * is sent from stop_scan() in process context instead.
+	 */
 	spin_lock_bh(&ar->spectral.lock);
-	ar->spectral.mode = SPECTRAL_SCAN_MODE_INVALID;
 	ar->spectral.scan_active = false;
-	ar->spectral.params.frequency = 0;
-	ar->spectral.params.frequency2 = 0;
-	ar->spectral.params.bandwidth = 0;
+	ar->spectral.sscan_cfreq1 = 0;
+	ar->spectral.sscan_cfreq2 = 0;
+	ar->spectral.sscan_bw = 0;
+	ar->spectral.start_freq = 0;
+	ar->spectral.end_freq = 0;
 	spin_unlock_bh(&ar->spectral.lock);
+
 }
 
 int ath12k_spectral_configure_scan_params(struct ath12k *ar,
 					  enum spectral_scan_mode mode)
 {
 	struct ath12k_wmi_vdev_spectral_conf_arg param = { 0 };
-	struct ath12k_spectral_params *p = &ar->spectral.params;
+	struct ath12k_spectral_params *p = &ar->spectral.params[mode];
 	struct ath12k_link_vif *arvif;
-	int ret;
+	enum spectral_scan_mode prev_mode;
+	int ret = 0;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -670,30 +748,67 @@ int ath12k_spectral_configure_scan_params(struct ath12k *ar,
 		return -ENODEV;
 	}
 	spin_lock_bh(&ar->spectral.lock);
+	prev_mode = ar->spectral.mode;
 	ar->spectral.mode = mode;
-	/* configure always sends CLEAR+DISABLE to firmware, which terminates
-	 * any running scan. Clear scan_active so start_scan can re-trigger.
-	 */
 	ar->spectral.scan_active = false;
 	spin_unlock_bh(&ar->spectral.lock);
 
-	/* Cancel any pending timeout from a previous scan.  Without this the
-	 * old hrtimer fires after its short timeout and the already-queued
-	 * timeout work sees scan_active=true for the new scan and stops it
-	 * prematurely.
-	 */
 	hrtimer_cancel(&ar->spectral.scan_completion_timer);
 	cancel_work_sync(&ar->spectral.scan_timeout_work);
+	cancel_work_sync(&ar->spectral.agile_dma_rebind_work);
 
 	ar->spectral.samples_done = 0;
 
-	/* Reset firmware trigger state before pushing a new configuration.
-	 * This is required even though we are not yet enabling the scan —
-	 * a prior scan may have left the vdev's trigger state active.
+	if (prev_mode != SPECTRAL_SCAN_MODE_INVALID) {
+		spin_lock_bh(&ar->spectral.lock);
+		ar->spectral.mode = prev_mode;
+		spin_unlock_bh(&ar->spectral.lock);
+		ret = ath12k_wmi_vdev_spectral_enable(ar, arvif->vdev_id,
+						ATH12K_WMI_SPECTRAL_TRIGGER_CMD_CLEAR,
+						ATH12K_WMI_SPECTRAL_ENABLE_CMD_IGNORE);
+		if (!ret)
+			ret = ath12k_wmi_vdev_spectral_enable(ar, arvif->vdev_id,
+						ATH12K_WMI_SPECTRAL_TRIGGER_CMD_IGNORE,
+						ATH12K_WMI_SPECTRAL_ENABLE_CMD_DISABLE);
+		/* When transitioning from NORMAL to AGILE, FW's normal-mode
+		 * detector does not cleanly release after CLEAR+DISABLE alone.
+		 * Send a zero-count wmi_spectral_conf(normal) as an explicit
+		 * teardown command so FW transitions its normal engine to idle
+		 * before we send the agile config.  Without this, FW ignores
+		 * the subsequent wmi_spectral_conf(agile) and never fires
+		 * sscan_fw_param (0 samples).
+		 */
+		if (!ret && mode == SPECTRAL_SCAN_MODE_AGILE &&
+		    prev_mode == SPECTRAL_SCAN_MODE_NORMAL) {
+			struct ath12k_wmi_vdev_spectral_conf_arg zero = { 0 };
+
+			zero.vdev_id    = arvif->vdev_id;
+			zero.scan_count = 0;
+			zero.scan_mode  = ATH12K_WMI_SPECTRAL_SCAN_MODE_NORMAL;
+			ret = ath12k_wmi_vdev_spectral_conf(ar, &zero);
+			ret = 0; /* non-fatal: proceed to agile conf regardless */
+		}
+
+		/* Give FW time to drain the previous spectral engine before
+		 * sending the new wmi_spectral_conf(agile).
+		 */
+		if (!ret && mode == SPECTRAL_SCAN_MODE_AGILE)
+			msleep(50);
+	}
+
+	/* Set the new mode */
+	spin_lock_bh(&ar->spectral.lock);
+	ar->spectral.mode = mode;
+	/* If we just sent CLEAR+DISABLE for any running scan and the next mode
+	 * is AGILE, mark that start_scan needs to wait for FW to drain before
+	 * sending wmi_cfg_setup.  This covers both A->A and N->A: after
+	 * CLEAR+DISABLE the FW engine (normal or agile) takes time to drain its
+	 * DMA pipeline; sending wmi_cfg_setup too soon causes FW to silently
+	 * reject it (no sscan_fw_param, zero samples).
 	 */
-	ret = ath12k_wmi_vdev_spectral_enable(ar, arvif->vdev_id,
-					      ATH12K_WMI_SPECTRAL_TRIGGER_CMD_CLEAR,
-					      ATH12K_WMI_SPECTRAL_ENABLE_CMD_DISABLE);
+	if (prev_mode != SPECTRAL_SCAN_MODE_INVALID && mode == SPECTRAL_SCAN_MODE_AGILE)
+		ar->spectral.agile_drain_needed = true;
+	spin_unlock_bh(&ar->spectral.lock);
 	if (ret) {
 		ath12k_warn(ar->ab, "failed to clear spectral scan config: %d\n",
 			    ret);
@@ -701,7 +816,7 @@ int ath12k_spectral_configure_scan_params(struct ath12k *ar,
 			ath12k_spectral_rollback_agile(ar);
 		} else {
 			spin_lock_bh(&ar->spectral.lock);
-			ar->spectral.mode = SPECTRAL_SCAN_MODE_INVALID;
+			ar->spectral.mode = prev_mode;
 			spin_unlock_bh(&ar->spectral.lock);
 		}
 		return ret;
@@ -734,31 +849,21 @@ int ath12k_spectral_configure_scan_params(struct ath12k *ar,
 	 * channel (FW ignores them when scan_mode == NORMAL).
 	 */
 	if (mode == SPECTRAL_SCAN_MODE_AGILE) {
+		int wmi_bw;
 		param.scan_mode         = ATH12K_WMI_SPECTRAL_SCAN_MODE_AGILE;
 		param.scan_center_freq1 = p->frequency;
 		param.scan_center_freq2 = p->frequency2;
-		param.scan_chan_width    = ath12k_spectral_nl_bw_to_wmi(p->bandwidth);
-		/* scan_chan_freq: primary 20 MHz operating channel frequency.
-		 * Required for agile mode so FW can identify which chains are
-		 * committed to the primary scan and which are free for the
-		 * agile detector. Without this FW silently falls back to
-		 * normal mode (smode=0 in WMI_PDEV_SSCAN_FW_PARAM_EVENTID).
-		 * Use ath12k_mac_vif_link_chan() with arvif->link_id so MLO
-		 * correctly picks the link this vdev is operating on instead
-		 * of blindly indexing link[0] which may be a different band.
-		 */
-		{
-			struct cfg80211_chan_def def;
-
-			if (!ath12k_mac_vif_link_chan(arvif->ahvif->vif,
-						      arvif->link_id, &def) &&
-			    def.chan)
-				param.scan_chan_freq = def.chan->center_freq;
+		wmi_bw = ath12k_spectral_nl80211_bw_to_wmi_chwidth(p->bandwidth);
+		if (wmi_bw < 0) {
+			ath12k_warn(ar->ab,
+				    "spectral: unsupported agile BW %u\n",
+				    p->bandwidth);
+			return -EINVAL;
 		}
-		ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
-			   "spectral configure: AGILE mode cf1=%u cf2=%u bw=%u (wmi_bw=%u) chan_freq=%u\n",
-			   p->frequency, p->frequency2, p->bandwidth,
-			   param.scan_chan_width, param.scan_chan_freq);
+		param.scan_chan_width = wmi_bw;
+		/* scan_chan_freq: always 0 for agile mode — firmware does not
+		 * use this field for agile and silently drops DMA if it is set.
+		 */
 	} else {
 		param.scan_mode         = ATH12K_WMI_SPECTRAL_SCAN_MODE_NORMAL;
 		param.scan_center_freq1 = 0;
@@ -1056,8 +1161,11 @@ static int ath12k_spectral_fill_fft_sample(struct ath12k *ar,
 	fft_sample->signature = __cpu_to_be32(ATH12K_SPECTRAL_SIGNATURE);
 	fft_sample->pri_freq = __cpu_to_be32(ar->spectral.pri20_freq);
 	fft_sample->target_reset_count = __cpu_to_be32(ar->spectral.target_reset_count);
-	/* operating channel center frequencies — always from summary meta */
-	fft_sample->cfreq1 = __cpu_to_be32(meta_freq1);
+	/* Home channel center frequency - use the value saved at scan start.
+	 * cfreq2 is not changed as it is only relevant for 80+80 mode
+	 * which is not supported on currently.
+	 */
+	fft_sample->cfreq1 = __cpu_to_be32(ar->spectral.oper_cfreq1);
 	fft_sample->cfreq2 = __cpu_to_be32(meta_freq2);
 	/* agile scan center frequencies */
 	fft_sample->sscan_cfreq1 = __cpu_to_be32(cfreq1);
@@ -1065,7 +1173,19 @@ static int ath12k_spectral_fill_fft_sample(struct ath12k *ar,
 	fft_sample->bin_pwr_count = __cpu_to_be32(num_bins);
 
 	center_freq = cfreq1;
-	half_bw = ath12k_spectral_chwidth_to_mhz(summary->meta.ch_width) / 2;
+	/* Use configured scan BW for agile, home channel BW for normal.
+	 * firmware sends wrong BW in meta.ch_width for agile scans.
+	 */
+	if (ar->spectral.params[ar->spectral.mode].bandwidth) {
+		int nl_bw = ar->spectral.params[ar->spectral.mode].bandwidth;
+		int wmi_bw = ath12k_spectral_nl80211_bw_to_wmi_chwidth(nl_bw);
+
+		half_bw = wmi_bw >= 0 ?
+			  ath12k_spectral_chwidth_to_mhz(wmi_bw) / 2 :
+			  ath12k_spectral_chwidth_to_mhz(ar->spectral.ch_width) / 2;
+	} else {
+		half_bw = ath12k_spectral_chwidth_to_mhz(ar->spectral.ch_width) / 2;
+	}
 	start_freq = center_freq - half_bw;
 	end_freq = center_freq + half_bw;
 
@@ -1100,12 +1220,14 @@ static int ath12k_spectral_fill_fft_sample(struct ath12k *ar,
 	fft_sample->detector_info.blanking_status = summary->blanking_status;
 	fft_sample->spectral_mode =
 		ath12k_spectral_get_scan_mode_from_detector(ar, search->detector_id);
-	/* operating_bw: home channel BW tracked in ar->spectral.ch_width */
+	/* Home channel BW saved at scan start from the vdev channel */
 	fft_sample->operating_bw =
 		ath12k_spectral_chwidth_to_nl(ar->spectral.ch_width);
-	/* sscan_bw: agile scan BW from the FFT report summary metadata */
+	/* Scan BW - use the configured value for agile, home channel BW for normal */
 	fft_sample->sscan_bw =
-		ath12k_spectral_chwidth_to_nl(summary->meta.ch_width);
+		ar->spectral.params[ar->spectral.mode].bandwidth ?
+		ar->spectral.params[ar->spectral.mode].bandwidth :
+		ath12k_spectral_chwidth_to_nl(ar->spectral.ch_width);
 	fft_sample->fft_width = ATH12K_SPECTRAL_BIN_SIZE;
 	memcpy(fft_sample->macaddr, ar->mac_addr, sizeof(fft_sample->macaddr));
 	ath12k_dbg(ab, ATH12K_DBG_SPECTRAL, "spectral fft: ar->mac_addr=%pM\n",
@@ -1113,11 +1235,11 @@ static int ath12k_spectral_fill_fft_sample(struct ath12k *ar,
 
 	ath12k_spectral_parse_fft(fft_sample->data, fft_report->bins, num_bins,
 				  ab->hw_params->spectral.fft_bin_sz,
-				  ar->spectral.params.scan_pwr_format);
+				  ar->spectral.params[ar->spectral.mode].scan_pwr_format);
 
 	ath12k_dbg(ab, ATH12K_DBG_SPECTRAL,
 		   "spectral fft bins: num_bins=%d fft_size=%u\n", num_bins,
-		   ar->spectral.params.scan_fft_size);
+		   ar->spectral.params[ar->spectral.mode].scan_fft_size);
 	if (ath12k_debug_mask & ATH12K_DBG_SPECTRAL)
 		print_hex_dump(KERN_DEBUG, "fft bins: ", DUMP_PREFIX_OFFSET, 16, 1,
 			       fft_sample->data, num_bins, false);
@@ -1208,7 +1330,7 @@ int ath12k_spectral_process_fft(struct ath12k *ar,
 
 	total_bins = bin_len / ab->hw_params->spectral.fft_bin_sz;
 	num_bins = ath12k_spectral_get_bin_count_after_len_adj(
-			ar, bin_len, ar->spectral.params.scan_rpt_mode,
+			ar, bin_len, ar->spectral.params[ar->spectral.mode].scan_rpt_mode,
 			&fft_bin_size);
 
 	ath12k_dbg(ab, ATH12K_DBG_SPECTRAL,
@@ -1220,7 +1342,8 @@ int ath12k_spectral_process_fft(struct ath12k *ar,
 		   tlv_len, tlv_len + sizeof(*tlv),
 		   bin_len, fft_bin_size, num_bins);
 
-	if (ar->spectral.params.scan_rpt_mode != ATH12K_SPECTRAL_RPT_MODE_1 &&
+	if (ar->spectral.params[ar->spectral.mode].scan_rpt_mode !=
+	    ATH12K_SPECTRAL_RPT_MODE_1 &&
 	    (num_bins < ATH12K_SPECTRAL_ATH12K_MIN_IB_BINS ||
 	     num_bins > ATH12K_SPECTRAL_ATH12K_MAX_IB_BINS(ab) ||
 	     !is_power_of_2(num_bins))) {
@@ -1276,8 +1399,7 @@ int ath12k_spectral_process_fft(struct ath12k *ar,
 	if (smode >= SPECTRAL_SCAN_MODE_MAX) {
 		ath12k_warn(ab, "invalid spectral mode %u\n", smode);
 		return -EINVAL;
-	}
-	ret = ath12k_spectral_get_adjusted_timestamp(ar, search.timestamp,
+	}	ret = ath12k_spectral_get_adjusted_timestamp(ar, search.timestamp,
 						     summary->meta.reset_delay, smode,
 						     &search.adjusted_timestamp,
 						     &search.last_raw_timestamp,
@@ -1293,6 +1415,9 @@ int ath12k_spectral_process_fft(struct ath12k *ar,
 
 	chan_width = ar->spectral.ch_width;
 
+	/* Use per-mode params so normal and agile fft_size are independent */
+	struct ath12k_spectral_params *p = &ar->spectral.params[smode];
+
 	switch (chan_width) {
 	case WMI_PEER_CHWIDTH_20MHZ:
 		for (i = 0; i < spectral_cap.num_fft_size_caps_entry; i++) {
@@ -1302,7 +1427,7 @@ int ath12k_spectral_process_fft(struct ath12k *ar,
 				if (!(supported_flags & 1)) {
 					ath12k_warn(ab,
 						    "Spectral fft size %d not supported",
-						    ar->spectral.params.scan_fft_size);
+						    p->scan_fft_size);
 					return -EINVAL;
 				}
 				break;
@@ -1319,11 +1444,11 @@ int ath12k_spectral_process_fft(struct ath12k *ar,
 				if (!(supported_flags & 1)) {
 					ath12k_warn(ab,
 						    "Spectral fft size %d not supported",
-						    ar->spectral.params.scan_fft_size);
+						    p->scan_fft_size);
 					return -EINVAL;
 				} else {
 					num_bins <<= 1;
-					ar->spectral.params.scan_fft_size = 8;
+					p->scan_fft_size = 8;
 				}
 				break;
 			}
@@ -1339,11 +1464,11 @@ int ath12k_spectral_process_fft(struct ath12k *ar,
 				if (!(supported_flags & 1)) {
 					ath12k_warn(ab,
 						    "Spectral fft size %d not supported",
-						    ar->spectral.params.scan_fft_size);
+						    p->scan_fft_size);
 					return -EINVAL;
 				} else {
 					num_bins <<= 2;
-					ar->spectral.params.scan_fft_size = 9;
+					p->scan_fft_size = 9;
 				}
 				break;
 			}
@@ -1359,10 +1484,10 @@ int ath12k_spectral_process_fft(struct ath12k *ar,
 				if (!(supported_flags & 1)) {
 					ath12k_warn(ab,
 						    "Spectral fft size %d not supported",
-						    ar->spectral.params.scan_fft_size);
+						    p->scan_fft_size);
 					return -EINVAL;
 				} else {
-					ar->spectral.params.scan_fft_size = 9;
+					p->scan_fft_size = 9;
 					num_bins <<= 2;
 				}
 				break;
@@ -1381,10 +1506,10 @@ int ath12k_spectral_process_fft(struct ath12k *ar,
 				if (!(supported_flags & 1)) {
 					ath12k_warn(ab,
 						    "Spectral fft size %d not supported",
-						    ar->spectral.params.scan_fft_size);
+						    p->scan_fft_size);
 					return -EINVAL;
 				} else {
-					ar->spectral.params.scan_fft_size = 9;
+					p->scan_fft_size = 9;
 					num_bins <<= 2;
 				}
 				break;
@@ -1442,6 +1567,18 @@ static int ath12k_spectral_process_data(struct ath12k *ar,
 	data = param->data;
 	data_len = param->data_sz;
 	i = 0;
+
+	/* Stale post-scan DMA buffers arrive after CLEAR+DISABLE while the
+	 * next scan's dbring_reset has already refilled the ring with magic.
+	 * Valid spectral TLV always starts with sign=0xFA in bits[31:24];
+	 * 0xdeadbeaf (0xDE...) can never be a valid TLV header, so discard
+	 * silently to avoid spurious TLV parse errors.
+	 */
+	if (data_len >= 4 &&
+	    le32_to_cpu(*(__le32 *)data) == ATH12K_DB_MAGIC_VALUE) {
+		ret = 0;
+		goto err;
+	}
 
 	ath12k_dbg(ab, ATH12K_DBG_SPECTRAL,
 		   "spectral process data: data_len=%u ch_width=%u pri20_freq=%u cfreq1=%u\n",
@@ -1561,8 +1698,9 @@ static int ath12k_spectral_process_data(struct ath12k *ar,
 					    i);
 				goto err;
 			}
-			if (ar->spectral.params.scan_count > 0 &&
-			    ++ar->spectral.samples_done >= ar->spectral.params.scan_count)
+			if (ar->spectral.params[ar->spectral.mode].scan_count > 0 &&
+			    ++ar->spectral.samples_done >=
+			    ar->spectral.params[ar->spectral.mode].scan_count)
 				send_complete = true;
 			quit = true;
 			break;
@@ -1601,6 +1739,10 @@ unlock:
 		if (ar->spectral.mode == SPECTRAL_SCAN_MODE_AGILE) {
 			ath12k_spectral_rollback_agile(ar);
 		} else {
+			/* Keep mode=NORMAL and do NOT reset to INVALID.
+			 * The next configure_scan_params() uses prev_mode to send
+			 * CLEAR+DISABLE in the correct mode to firmware.
+			 */
 			spin_lock_bh(&ar->spectral.lock);
 			ar->spectral.scan_active = false;
 			spin_unlock_bh(&ar->spectral.lock);
@@ -1683,6 +1825,9 @@ int ath12k_spectral_send_complete_event(struct ath12k *ar,
 	ar->spectral.scan_active = false;
 	spin_unlock_bh(&ar->spectral.lock);
 
+	if (ar->spectral.rfs_scan)
+		relay_flush(ar->spectral.rfs_scan);
+
 	int evid = QCA_NL80211_VENDOR_SUBCMD_SPECTRAL_SCAN_COMPLETE_INDEX;
 
 	skb = cfg80211_vendor_event_alloc(ah->hw->wiphy, NULL,
@@ -1703,6 +1848,22 @@ int ath12k_spectral_send_complete_event(struct ath12k *ar,
 	return 0;
 }
 
+/* Process-context worker: re-binds the DMA ring to firmware after it has
+ * acknowledged the agile scan config via WMI_PDEV_SSCAN_FW_PARAM_EVENTID.
+ * Must run from process context because ath12k_dbring_wmi_cfg_setup calls
+ * ath12k_wmi_cmd_send which may sleep.
+ */
+static void ath12k_spectral_agile_dma_rebind_work(struct work_struct *work)
+{
+	struct ath12k_spectral *sp =
+		container_of(work, struct ath12k_spectral, agile_dma_rebind_work);
+	struct ath12k *ar = container_of(sp, struct ath12k, spectral);
+	int ret;
+
+	ret = ath12k_dbring_wmi_cfg_setup(ar, &sp->rx_ring,
+					  WMI_DIRECT_BUF_SPECTRAL);
+}
+
 /* Process-context worker: runs when the hrtimer expires. The hrtimer
  * itself runs in softirq and cannot issue WMI commands or sleep.
  *
@@ -1711,9 +1872,7 @@ int ath12k_spectral_send_complete_event(struct ath12k *ar,
  * held by the nl80211 vendor-command dispatch path (e.g. while hostapd
  * or spectraltool is processing a vendor command).  The vdev_id needed
  * to send CLEAR+DISABLE is cached in sp->active_vdev_id at scan-start
- * (under sp->lock) so we never need to walk ar->arvifs here. This does
- * not pin vdev lifetime; if teardown wins the race, firmware may reject
- * the stale vdev_id and the error is logged below.
+ * (under sp->lock) so we never need to walk ar->arvifs here.
  */
 static void ath12k_spectral_timeout_work(struct work_struct *work)
 {
@@ -1735,14 +1894,23 @@ static void ath12k_spectral_timeout_work(struct work_struct *work)
 		spin_unlock_bh(&sp->lock);
 		return;
 	}
+
 	received = sp->timeout_received_count;
 	vdev_id  = sp->active_vdev_id;
 	prev_mode = sp->mode;
-	sp->mode = SPECTRAL_SCAN_MODE_INVALID;
+	/* Do NOT clear sp->mode yet — ath12k_wmi_vdev_spectral_enable() reads
+	 * ar->spectral.mode (== sp->mode) to derive the scan_mode field in the
+	 * WMI command.  If we set mode=INVALID before calling it, firmware gets
+	 * scan_mode=NORMAL even when timing out an AGILE scan, so the agile
+	 * detector is never properly torn down.  Set INVALID after the WMI call.
+	 */
 	if (prev_mode == SPECTRAL_SCAN_MODE_AGILE) {
-		sp->params.frequency  = 0;
-		sp->params.frequency2 = 0;
-		sp->params.bandwidth  = 0;
+		/* Clear firmware-cached agile detector state */
+		sp->sscan_cfreq1 = 0;
+		sp->sscan_cfreq2 = 0;
+		sp->sscan_bw = 0;
+		sp->start_freq = 0;
+		sp->end_freq = 0;
 	}
 	sp->scan_active = false;
 	spin_unlock_bh(&sp->lock);
@@ -1751,16 +1919,18 @@ static void ath12k_spectral_timeout_work(struct work_struct *work)
 	 * No wiphy_lock needed — see function comment above.
 	 */
 	ret = ath12k_wmi_vdev_spectral_enable(ar, vdev_id,
-					      ATH12K_WMI_SPECTRAL_TRIGGER_CMD_CLEAR,
-					      ATH12K_WMI_SPECTRAL_ENABLE_CMD_DISABLE);
+				ATH12K_WMI_SPECTRAL_TRIGGER_CMD_CLEAR,
+				ATH12K_WMI_SPECTRAL_ENABLE_CMD_IGNORE);
+	if (!ret)
+		ret = ath12k_wmi_vdev_spectral_enable(ar, vdev_id,
+						ATH12K_WMI_SPECTRAL_TRIGGER_CMD_IGNORE,
+						ATH12K_WMI_SPECTRAL_ENABLE_CMD_DISABLE);
+	/* Keep mode=prev_mode - do NOT reset to INVALID. */
 	if (ret)
 		ath12k_warn(ar->ab,
 			    "failed to disable spectral scan on vdev %d after timeout: %d\n",
 			    vdev_id, ret);
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
-		   "spectral scan timeout: vdev_id=%u mode=%u received=%u/%u\n",
-		   vdev_id, prev_mode, received, sp->params.scan_count);
 
 	ath12k_spectral_send_complete_event(ar,
 		QCA_WLAN_VENDOR_SPECTRAL_SCAN_COMPLETE_STATUS_TIMEOUT,
@@ -1838,6 +2008,7 @@ void ath12k_spectral_deinit(struct ath12k_base *ab)
 		 */
 		hrtimer_cancel(&sp->scan_completion_timer);
 		cancel_work_sync(&sp->scan_timeout_work);
+		cancel_work_sync(&sp->agile_dma_rebind_work);
 
 		if (ar->spectral.mode < SPECTRAL_SCAN_MODE_MAX) {
 			wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
@@ -1971,6 +2142,8 @@ int ath12k_spectral_init(struct ath12k_base *ab)
 		sp->scan_completion_timer.function = ath12k_spectral_scan_timeout;
 #endif
 		INIT_WORK(&sp->scan_timeout_work, ath12k_spectral_timeout_work);
+		INIT_WORK(&sp->agile_dma_rebind_work,
+			  ath12k_spectral_agile_dma_rebind_work);
 
 		ret = ath12k_spectral_ring_alloc(ar, &db_cap);
 		if (ret) {
@@ -1982,26 +2155,42 @@ int ath12k_spectral_init(struct ath12k_base *ab)
 		spin_lock_bh(&sp->lock);
 
 		sp->mode = SPECTRAL_SCAN_MODE_INVALID;
-		sp->params.scan_count          = ATH12K_WMI_SPECTRAL_COUNT_DEFAULT;
-		sp->params.scan_period         = ATH12K_WMI_SPECTRAL_PERIOD_DEFAULT;
-		sp->params.scan_priority       = ATH12K_WMI_SPECTRAL_PRIORITY_DEFAULT;
-		sp->params.scan_fft_size       = ATH12K_WMI_SPECTRAL_FFT_SIZE_DEFAULT;
-		sp->params.scan_gc_ena         = ATH12K_WMI_SPECTRAL_GC_ENA_DEFAULT;
-		sp->params.scan_restart_ena    = ATH12K_WMI_SPECTRAL_RESTART_ENA_DEFAULT;
-		sp->params.scan_noise_floor_ref =
-			ATH12K_WMI_SPECTRAL_NOISE_FLOOR_REF_DEFAULT;
-		sp->params.scan_init_delay     = ATH12K_WMI_SPECTRAL_INIT_DELAY_DEFAULT;
-		sp->params.scan_nb_tone_thr    = ATH12K_WMI_SPECTRAL_NB_TONE_THR_DEFAULT;
-		sp->params.scan_str_bin_thr    = ATH12K_WMI_SPECTRAL_STR_BIN_THR_DEFAULT;
-		sp->params.scan_wb_rpt_mode    = ATH12K_WMI_SPECTRAL_WB_RPT_MODE_DEFAULT;
-		sp->params.scan_rssi_rpt_mode = ATH12K_WMI_SPECTRAL_RSSI_RPT_MODE_DEFAULT;
-		sp->params.scan_rssi_thr       = ATH12K_WMI_SPECTRAL_RSSI_THR_DEFAULT;
-		sp->params.scan_pwr_format     = ATH12K_WMI_SPECTRAL_PWR_FORMAT_DEFAULT;
-		sp->params.scan_rpt_mode       = ATH12K_WMI_SPECTRAL_RPT_MODE_DEFAULT;
-		sp->params.scan_bin_scale      = ATH12K_WMI_SPECTRAL_BIN_SCALE_DEFAULT;
-		sp->params.scan_dbm_adj        = ATH12K_WMI_SPECTRAL_DBM_ADJ_DEFAULT;
-		sp->params.scan_chn_mask       = ar->cfg_rx_chainmask ?
-			ar->cfg_rx_chainmask : ATH12K_WMI_SPECTRAL_CHN_MASK_DEFAULT;
+
+		for (int m = 0; m < SPECTRAL_SCAN_MODE_MAX; m++) {
+			sp->params[m].scan_count = ATH12K_WMI_SPECTRAL_COUNT_DEFAULT;
+			sp->params[m].scan_period = ATH12K_WMI_SPECTRAL_PERIOD_DEFAULT;
+			sp->params[m].scan_priority =
+				ATH12K_WMI_SPECTRAL_PRIORITY_DEFAULT;
+			sp->params[m].scan_fft_size =
+				ATH12K_WMI_SPECTRAL_FFT_SIZE_DEFAULT;
+			sp->params[m].scan_gc_ena = ATH12K_WMI_SPECTRAL_GC_ENA_DEFAULT;
+			sp->params[m].scan_restart_ena =
+				ATH12K_WMI_SPECTRAL_RESTART_ENA_DEFAULT;
+			sp->params[m].scan_noise_floor_ref =
+				ATH12K_WMI_SPECTRAL_NOISE_FLOOR_REF_DEFAULT;
+			sp->params[m].scan_init_delay =
+				ATH12K_WMI_SPECTRAL_INIT_DELAY_DEFAULT;
+			sp->params[m].scan_nb_tone_thr =
+				ATH12K_WMI_SPECTRAL_NB_TONE_THR_DEFAULT;
+			sp->params[m].scan_str_bin_thr =
+				ATH12K_WMI_SPECTRAL_STR_BIN_THR_DEFAULT;
+			sp->params[m].scan_wb_rpt_mode =
+				ATH12K_WMI_SPECTRAL_WB_RPT_MODE_DEFAULT;
+			sp->params[m].scan_rssi_rpt_mode =
+				ATH12K_WMI_SPECTRAL_RSSI_RPT_MODE_DEFAULT;
+			sp->params[m].scan_rssi_thr =
+				ATH12K_WMI_SPECTRAL_RSSI_THR_DEFAULT;
+			sp->params[m].scan_pwr_format =
+				ATH12K_WMI_SPECTRAL_PWR_FORMAT_DEFAULT;
+			sp->params[m].scan_rpt_mode =
+				ATH12K_WMI_SPECTRAL_RPT_MODE_DEFAULT;
+			sp->params[m].scan_bin_scale =
+				ATH12K_WMI_SPECTRAL_BIN_SCALE_DEFAULT;
+			sp->params[m].scan_dbm_adj = ATH12K_WMI_SPECTRAL_DBM_ADJ_DEFAULT;
+			sp->params[m].scan_chn_mask = ar->cfg_rx_chainmask ?
+				ar->cfg_rx_chainmask :
+				ATH12K_WMI_SPECTRAL_CHN_MASK_DEFAULT;
+		}
 		sp->dbr_buff_debug = false;
 		ath12k_spectral_timestamp_war_init(ar);
 		sp->enabled = true;

@@ -111,7 +111,7 @@ struct ath12k_spectral {
 	spinlock_t lock;
 	struct rchan *rfs_scan;	/* relay(fs) channel for spectral scan */
 	enum spectral_scan_mode mode;
-	struct ath12k_spectral_params     params;
+	struct ath12k_spectral_params     params[SPECTRAL_SCAN_MODE_MAX];
 	struct ath12k_spectral_diag_stats diag;
 	bool dbr_buff_debug;
 	u32 prev_tstamp[ATH12K_SPECTRAL_NUM_DETECTORS];
@@ -152,6 +152,16 @@ struct ath12k_spectral {
 	u32 active_vdev_id;
 	/* runs ath12k_spectral_send_complete_event from process context */
 	struct work_struct scan_timeout_work;
+	/* deferred DMA ring re-bind for agile mode: scheduled from the
+	 * sscan_fw_param softirq handler (which cannot sleep) so that
+	 * ath12k_dbring_wmi_cfg_setup runs from process context.
+	 */
+	struct work_struct agile_dma_rebind_work;
+	/* Set when CLEAR+DISABLE is sent for a running agile scan, cleared
+	 * after start_scan polls for FW drain.  Prevents wmi_cfg_setup from
+	 * racing the FW agile engine on A->A rapid-fire transitions.
+	 */
+	bool agile_drain_needed;
 	/* per-BW fft_size caps + scalar mins/maxs, populated at probe */
 	struct ath12k_spectral_param_min_max param_min_max;
 };
