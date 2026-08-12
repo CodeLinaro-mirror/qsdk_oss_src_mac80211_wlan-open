@@ -2215,6 +2215,9 @@ static void ath12k_htt_t2h_ppdu_id_fmt_handler(struct ath12k_dp *dp,
 	u8 valid, bits, offset;
 	struct ath12k_htt_ppdu_id_fmt_info *msg;
 
+	if (skb->len < sizeof(struct ath12k_htt_ppdu_id_fmt_info))
+		return;
+
 	msg = (struct ath12k_htt_ppdu_id_fmt_info *)skb->data;
 	valid = le32_get_bits(msg->link_id, HTT_PPDU_ID_FMT_VALID_BITS);
 	bits = le32_get_bits(msg->link_id, HTT_PPDU_ID_FMT_GET_BITS);
