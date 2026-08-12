@@ -14003,6 +14003,13 @@ static void ath12k_sta_set_4addr_wk(struct wiphy *wiphy, struct wiphy_work *wk)
 		ath12k_dbg_level(ar->ab, ATH12K_DBG_PEER, ATH12K_DBG_L0,
 				 "setting USE_4ADDR for peer %pM\n", arsta->addr);
 
+		/* TODO: Temporary debug log to investigate a non-ideal scenario;
+		 * will be removed after issue resolution
+		 */
+		if (ahsta->state < IEEE80211_STA_ASSOC)
+			ath12k_warn(ar->ab, "setting USE_4ADDR for peer %pM state:%d\n",
+				    arsta->addr, ahsta->state);
+
 		if (!arvif->set_wds_vdev_param) {
 			ath12k_wmi_set_peer_param(ar, arsta->addr,
 						  arvif->vdev_id,
