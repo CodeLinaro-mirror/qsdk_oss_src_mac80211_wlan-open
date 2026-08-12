@@ -373,8 +373,9 @@ void ath12k_wifi8_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
 	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset;
 	struct ath12k_hw_group *ag = ab->ag;
 	struct ath12k_base *cumac_ab;
+	struct ath12k_base *partner_ab;
 	unsigned long end;
-	int ret;
+	int i, ret;
 
 	if (!ag)
 		return;
@@ -415,7 +416,12 @@ void ath12k_wifi8_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
 	ath12k_q_post_reset_task(cumac_ab, ath12k_wifi8_dp_wbm_idle_init);
 	ath12k_q_post_reset_task(cumac_ab, ath12k_wifi8_dp_rx_mgmt_init);
 	ath12k_q_post_reset_task(cumac_ab, ath12k_wifi8_clean_pending_ast_entries);
-	ath12k_q_post_reset_task(cumac_ab, ath12k_dp_tid_cleanup);
+	for (i = 0; i < ag->num_devices; i++) {
+		partner_ab = ag->ab[i];
+		if (!partner_ab)
+			continue;
+		ath12k_q_post_reset_task(partner_ab, ath12k_dp_tid_cleanup);
+	}
 	/* Telemetry UMAC setup must run after ring setup tasks are queued. */
 	ath12k_q_post_reset_task(cumac_ab,
 				 ath12k_wifi8_dp_telemetry_umac_setup_wrapper);
