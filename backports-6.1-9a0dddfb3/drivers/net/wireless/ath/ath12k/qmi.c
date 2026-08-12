@@ -4804,14 +4804,6 @@ err:
 
 	mutex_unlock(&ag->mutex);
 
-	/* The firmware will attempt to request memory in smaller chunks
-	 * on the next try. However, the current caller should be notified
-	 * that this instance of request parsing was successful.
-	 * Therefore, return 0 only.
-	 */
-	if (ret == -EAGAIN)
-		ret = 0;
-
 	return ret;
 }
 
@@ -6955,7 +6947,7 @@ static void ath12k_qmi_msg_mem_request_cb(struct qmi_handle *qmi_hdl,
 		ret = req_mem_seg_count;
 	} else {
 		ret = ath12k_qmi_alloc_target_mem_chunk(ab, req_mem, req_mem_seg_count);
-		if (ret != req_mem_seg_count) {
+		if (ret != -EAGAIN && ret != req_mem_seg_count) {
 			ath12k_warn(ab, "qmi failed to alloc target memory: %d\n",
 				    ret);
 			kfree(event_data);
