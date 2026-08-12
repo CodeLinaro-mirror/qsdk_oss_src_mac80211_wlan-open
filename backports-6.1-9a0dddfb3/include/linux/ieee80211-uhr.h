@@ -455,4 +455,48 @@ ieee80211_uhr_param_upd_size_ok(const u8 *data, size_t len)
 	return (const u8 *)tuple == end;
 }
 
+/**
+ * ieee80211_uhr_param_upd_npca() - find NPCA mode tuple in UHR Parameters
+ * Update element
+ * @upd:    pointer to the parsed ieee80211_uhr_param_upd (countdown byte)
+ * @upd_len: total length of the element body (including countdown byte)
+ *
+ * Iterates the Mode Tuple List and returns the ieee80211_uhr_npca_info pointer
+ * for the first enabled NPCA tuple (Mode ID == 1, Mode Enable == 1), or NULL
+ * if no such tuple is present.
+ */
+static inline const struct ieee80211_uhr_npca_info *
+ieee80211_uhr_param_upd_npca(const struct ieee80211_uhr_param_upd *upd,
+			     size_t upd_len)
+{
+	const struct ieee80211_uhr_mode_tuple *tuple;
+	const u8 *end;
+	size_t tuple_data_len;
+
+	if (upd_len < sizeof(*upd))
+		return NULL;
+
+	tuple_data_len = upd_len - sizeof(*upd);
+	end = (const u8 *)upd->variable + tuple_data_len;
+
+	ieee80211_uhr_for_each_mode_tuple(tuple, upd->variable, tuple_data_len) {
+		u8 mode_id = tuple->mode_ctrl & IEEE80211_UHR_PARAM_UPD_MODE_ID;
+		bool enabled = !!(tuple->mode_ctrl & IEEE80211_UHR_PARAM_UPD_MODE_ENABLE);
+		int sz;
+
+		if (mode_id != IEEE80211_UHR_MODE_ID_NPCA || !enabled)
+			continue;
+
+		sz = ieee80211_uhr_mode_tuple_size(tuple, end);
+		if (sz < (int)(sizeof(*tuple) + sizeof(struct ieee80211_uhr_npca_info)))
+			return NULL;
+
+		return (const struct ieee80211_uhr_npca_info *)
+			((const u8 *)tuple + sizeof(*tuple));
+	}
+
+	return NULL;
+}
+
+
 #endif /* LINUX_IEEE80211_UHR_H */
