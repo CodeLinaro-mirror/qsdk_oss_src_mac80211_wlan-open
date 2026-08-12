@@ -3633,22 +3633,26 @@ static ssize_t ath12k_dump_fst_dump_table(struct file *file,
 static const struct file_operations fops_fse = {
 	.open = simple_open,
 	.write = ath12k_fse_ops_write,
+	.owner = THIS_MODULE,
 };
 
 static const struct file_operations fops_fst_core_mask = {
 	.open = simple_open,
 	.read = ath12k_read_fst_core_mask,
 	.write = ath12k_write_fst_core_mask,
+	.owner = THIS_MODULE,
 };
 
 static const struct file_operations fops_fst_dp_stats = {
 	.open = simple_open,
 	.read = ath12k_dump_fst_flow_stats,
+	.owner = THIS_MODULE,
 };
 
 static const struct file_operations fops_fst_dump_table = {
 	.open = simple_open,
 	.read = ath12k_dump_fst_dump_table,
+	.owner = THIS_MODULE,
 };
 
 void ath12k_fst_debugfs_init(struct ath12k_base *ab)
