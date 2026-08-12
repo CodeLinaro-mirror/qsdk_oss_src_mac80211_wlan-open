@@ -249,6 +249,7 @@ struct ath12k_cp_arch_ops {
 	void (*cu_notify)(struct ath12k *ar, struct ath12k_link_vif *arvif);
 	int (*wsi_bypass_remove)(struct ath12k_base *ab);
 	int (*wsi_bypass_add)(struct ath12k_base *ab);
+	void (*en_ssr)(struct ath12k_base *ab, unsigned int value);
 };
 
 
