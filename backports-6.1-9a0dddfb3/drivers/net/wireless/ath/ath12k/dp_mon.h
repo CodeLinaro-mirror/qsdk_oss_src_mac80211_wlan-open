@@ -101,7 +101,15 @@
 
 #define ATH12K_DP_MON_STATUS_BUF   (ab->mem_params.dp_params.dp_mon_status_buf)
 
+#ifndef CPTCFG_QCN_EXTN
 #define ATH12K_EXT_MON_MAX_PEERS	16
+#define ATH12K_EXT_MON_NUM_PEERS(ab)	((void)(ab), ATH12K_EXT_MON_MAX_PEERS)
+#else
+#define ATH12K_EXT_MON_MAX_PEERS	ATH12K_DP_EXT_MON_NUM_PEER_MAX
+#define ATH12K_EXT_MON_NUM_PEERS(ab)	ath12k_cfg_get(ab, \
+	ATH12K_CFG_DP_EXT_MON_NUM_PEER)
+#endif
+
 #define ATH12K_EXT_MON_FILTER_ALL	0xFFFFU
 
 #define ATH12K_EXT_MON_METADATA_RTAP_HDR	BIT(0)
@@ -1982,7 +1990,8 @@ ath12k_dp_get_avg_snr(u8 snr, u8 avg_snr)
 }
 
 static inline void
-ath12k_dp_get_ext_mon_peers(struct list_head *peer_list,
+ath12k_dp_get_ext_mon_peers(struct ath12k_pdev_dp *dp_pdev,
+			    struct list_head *peer_list,
 			    struct ath12k_ext_mon_config *resp,
 			    spinlock_t *lock)
 {
@@ -1991,10 +2000,11 @@ ath12k_dp_get_ext_mon_peers(struct list_head *peer_list,
 
 	lockdep_assert_held(lock);
 	list_for_each_entry(peer, peer_list, list) {
-		if (count >= ATH12K_EXT_MON_MAX_PEERS) {
+		if (count >=
+			ATH12K_EXT_MON_NUM_PEERS(dp_pdev->dp->ab)) {
 			ath12k_err(NULL,
 				   "Number of peers exceeded max limit: %d",
-				   ATH12K_EXT_MON_MAX_PEERS);
+				   ATH12K_EXT_MON_NUM_PEERS(dp_pdev->dp->ab));
 			break;
 		}
 

@@ -3311,11 +3311,13 @@ ath12k_dp_ext_mon_add_rx_peers(struct ath12k_pdev_dp *dp_pdev,
 		return -EINVAL;
 	}
 
-	if (rx_ext_mon->peer_count + peer_config->count > ATH12K_EXT_MON_MAX_PEERS) {
+	if (rx_ext_mon->peer_count + peer_config->count >
+	    ATH12K_EXT_MON_NUM_PEERS(dp_pdev->dp->ab)) {
 		spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
 		ath12k_warn(dp_pdev->dp,
 			    "adding %u peers would exceed max %d (current: %u)\n",
-			    peer_config->count, ATH12K_EXT_MON_MAX_PEERS,
+			    peer_config->count,
+			    ATH12K_EXT_MON_NUM_PEERS(dp_pdev->dp->ab),
 			    rx_ext_mon->peer_count);
 		return -EINVAL;
 	}
@@ -3651,7 +3653,8 @@ ath12k_dp_ext_mon_get_rx_peer(struct ath12k_pdev_dp *dp_pdev,
 		return -EINVAL;
 	}
 
-	ath12k_dp_get_ext_mon_peers(&rx_ext_mon->peer_list, resp,
+	ath12k_dp_get_ext_mon_peers(dp_pdev,
+				    &rx_ext_mon->peer_list, resp,
 				    &dp_mon_pdev->rx_ext_mon_lock);
 	spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
 

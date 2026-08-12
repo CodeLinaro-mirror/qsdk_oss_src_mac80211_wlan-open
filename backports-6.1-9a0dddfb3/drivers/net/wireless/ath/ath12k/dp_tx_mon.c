@@ -4302,14 +4302,20 @@ ath12k_dp_ext_mon_tx_remove_all_peers(struct ath12k_pdev_dp *dp_pdev)
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
 	struct ath12k_pdev_tx_mon *tx_mon;
 	int ret = 0;
-	struct ath12k_ext_mon_peer_config peer_config;
+	struct ath12k_ext_mon_peer_config *peer_config;
+
+	peer_config = kzalloc(sizeof(*peer_config), GFP_KERNEL);
+	if (!peer_config)
+		return -ENOMEM;
 
 	tx_mon = dp_mon_pdev->dp_pdev_tx_mon;
-	peer_config.count = 1;
-	eth_zero_addr(peer_config.peer_info[0].mac_addr);
+	peer_config->count = 1;
+	eth_zero_addr(peer_config->peer_info[0].mac_addr);
 
 	ret = ath12k_dp_ext_mon_remove_tx_peers(dp_pdev, !tx_mon->tx_mon_teardown,
-						&peer_config);
+						peer_config);
+
+	kfree(peer_config);
 
 	return ret;
 }
@@ -6004,7 +6010,8 @@ ath12k_dp_ext_mon_get_tx_peer(struct ath12k_pdev_dp *dp_pdev,
 		return -EINVAL;
 	}
 
-	ath12k_dp_get_ext_mon_peers(&tx_ext_mon->peer_list, resp,
+	ath12k_dp_get_ext_mon_peers(dp_pdev,
+				    &tx_ext_mon->peer_list, resp,
 				    &tx_mon->tx_ext_mon.tx_ext_mon_lock);
 	spin_unlock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
 
@@ -6143,7 +6150,7 @@ ath12k_dp_ext_mon_reconfigure_tx_peers(struct ath12k_pdev_dp *dp_pdev,
 				       *new_config)
 {
 	int ret = 0;
-	struct ath12k_ext_mon_peer_config peer_config;
+	struct ath12k_ext_mon_peer_config *peer_config;
 	u8 old_filter_mode = (old->fp_enabled << 1) | old->fpmo_enabled;
 	bool fp_enabled =
 		ath12k_dp_ext_mon_is_mode_enabled(&new_config->all_peer);
@@ -6154,11 +6161,21 @@ ath12k_dp_ext_mon_reconfigure_tx_peers(struct ath12k_pdev_dp *dp_pdev,
 	if (old_filter_mode == new_filter_mode)
 		return 0;
 
-	peer_config.count = old->peer_count;
+	peer_config = kzalloc(sizeof(*peer_config), GFP_KERNEL);
+	if (!peer_config)
+		return -ENOMEM;
+
+	peer_config->count = old->peer_count;
 	ret = ath12k_dp_ext_mon_tx_remove_all_peers(dp_pdev);
-	if (ret)
+	if (ret) {
+		kfree(peer_config);
 		return ret;
-	ret = ath12k_dp_ext_mon_add_tx_peers(dp_pdev, true, &peer_config);
+	}
+
+	ret = ath12k_dp_ext_mon_add_tx_peers(dp_pdev, true, peer_config);
+
+	kfree(peer_config);
+
 	return ret;
 }
 

@@ -15172,20 +15172,29 @@ ath12k_ext_mon_handle_request(struct wiphy *wiphy,
 {
 	struct sk_buff *skb;
 	int resp_len = 0;
-	struct ath12k_ext_mon_config resp = {0};
+	struct ath12k_ext_mon_config *resp;
 	int ret;
 
-	ath12k_dp_ext_mon_process_request(dp_pdev, req, &resp);
-
-	resp_len = ath12k_ext_mon_calculate_resp_len(req, &resp);
-	skb = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, resp_len);
-	if (!skb)
+	resp = vzalloc(sizeof(*resp));
+	if (!resp)
 		return -ENOMEM;
 
-	ret = ath12k_ext_mon_put_response(skb, req, &resp);
-	if (ret)
-		goto nla_put_failure;
+	ath12k_dp_ext_mon_process_request(dp_pdev, req, resp);
 
+	resp_len = ath12k_ext_mon_calculate_resp_len(req, resp);
+	skb = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, resp_len);
+	if (!skb) {
+		vfree(resp);
+		return -ENOMEM;
+	}
+
+	ret = ath12k_ext_mon_put_response(skb, req, resp);
+	if (ret) {
+		vfree(resp);
+		goto nla_put_failure;
+	}
+
+	vfree(resp);
 	return cfg80211_vendor_cmd_reply(skb);
 
 nla_put_failure:
@@ -15200,7 +15209,7 @@ ath12k_vendor_extended_monitor_handler(struct wiphy *wiphy,
 				       int data_len)
 {
 	struct nlattr *tb[QCA_VENDOR_ATTR_EXT_MON_MAX + 1];
-	struct ath12k_ext_mon_config req = {0};
+	struct ath12k_ext_mon_config *req;
 	struct ath12k *ar = NULL;
 	struct ath12k_vif *ahvif = NULL;
 	int ret;
@@ -15229,18 +15238,25 @@ ath12k_vendor_extended_monitor_handler(struct wiphy *wiphy,
 		return ret;
 	}
 
-	ret = ath12k_ext_mon_parse_request(tb, &req);
+	req = vzalloc(sizeof(*req));
+	if (!req)
+		return -ENOMEM;
+
+	ret = ath12k_ext_mon_parse_request(tb, req);
 	if (ret) {
+		vfree(req);
 		ath12k_err(NULL, "error parsing ext mon user input: %d\n", ret);
 		return ret;
 	}
 
-	ret = ath12k_ext_mon_handle_request(wiphy, &ar->dp, &req);
+	ret = ath12k_ext_mon_handle_request(wiphy, &ar->dp, req);
 	if (ret) {
+		vfree(req);
 		ath12k_err(NULL, "error in handling ext mon request: %d\n", ret);
 		return ret;
 	}
 
+	vfree(req);
 	return 0;
 }
 
