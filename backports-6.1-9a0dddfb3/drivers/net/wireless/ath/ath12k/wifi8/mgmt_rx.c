@@ -28,7 +28,9 @@ void ath12k_wifi8_srng_hw_mgmt_rings_disable(struct ath12k_base *ab)
 
 	ath12k_mgmt_srng_hw_disable(ab, &mgmt_wifi8->reo_dst_rx_ring);
 	ath12k_mgmt_srng_hw_disable(ab, &mgmt_wifi8->reo_dst_rx_err_ring);
+#ifdef CPTCFG_QCN_EXTN
 	ath12k_mgmt_srng_hw_disable_extn(ab);
+#endif /* CPTCFG_QCN_EXTN */
 }
 
 void ath12k_wifi8_mgmt_rx_replenish_buffs(struct ath12k_mgmt *mgmt,

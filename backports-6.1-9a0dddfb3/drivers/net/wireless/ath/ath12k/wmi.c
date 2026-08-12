@@ -35,7 +35,9 @@
 #endif
 #include "erp.h"
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/ipa/dp_ipa.h"
+#endif /* CPTCFG_QCN_EXTN */
 #endif
 #include "smd.h"
 
@@ -1487,7 +1489,9 @@ int ath12k_wmi_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 		if (is_cfr)
 			params->tx_param_dword1 |= WMI_TX_PARAMS_DWORD1_CFR_CAPTURE;
 
+#ifdef CPTCFG_QCN_EXTN
 		ath12k_wmi_prepare_tx_params_extn(skb_cb, params);
+#endif /* CPTCFG_QCN_EXTN */
 	}
 
 	ptr += sizeof(struct wmi_mgmt_send_params);
@@ -1635,7 +1639,9 @@ int ath12k_wmi_offchan_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 	tlv->header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_TX_SEND_PARAMS,
 					     sizeof(struct wmi_mgmt_send_params));
 
+#ifdef CPTCFG_QCN_EXTN
 	ath12k_wmi_prepare_tx_params_extn(ATH12K_SKB_CB(frame), ptr);
+#endif /* CPTCFG_QCN_EXTN */
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_OFFCHAN_DATA_TX_SEND_CMDID);
 
@@ -5426,7 +5432,9 @@ int ath12k_wmi_send_scan_start_cmd(struct ath12k *ar,
 		arg->scan_f_higher_mcs_nac_scan = true;
 	spin_unlock_bh(&dp->dp_lock);
 
+#ifdef CPTCFG_QCN_EXTN
 	ath12k_wmi_offchan_txrx_update_scan_params_extn(ar, arg);
+#endif /* CPTCFG_QCN_EXTN */
 
 	ath12k_wmi_copy_scan_event_cntrl_flags(cmd, arg);
 
@@ -11489,7 +11497,11 @@ skip_mgmt_stats:
 	 * skb_cb via info.
 	 */
 	if (ATH12K_IS_CUSTOM_PKT(skb_cb)) {
+#ifdef CPTCFG_QCN_EXTN
 		ath12k_custom_tx_free_extn(msdu, status);
+#else
+		dev_kfree_skb_any(msdu);
+#endif /* CPTCFG_QCN_EXTN */
 		goto skip_tx_status;
 	}
 
@@ -11591,10 +11603,15 @@ static void wmi_process_offchan_tx_comp(struct ath12k *ar, u32 desc_id,
 	if (!(info->flags & IEEE80211_TX_CTL_NO_ACK) && !status)
 		info->flags |= IEEE80211_TX_STAT_ACK;
 
-	if (!ATH12K_IS_CUSTOM_PKT(skb_cb))
+	if (!ATH12K_IS_CUSTOM_PKT(skb_cb)) {
 		ieee80211_tx_status_irqsafe(ar->ah->hw, msdu);
-	else
+	} else {
+#ifdef CPTCFG_QCN_EXTN
 		ath12k_custom_tx_free_extn(msdu, status);
+#else
+		dev_kfree_skb_any(msdu);
+#endif /* CPTCFG_QCN_EXTN */
+	}
 }
 
 static int ath12k_pull_offchan_tx_compl_param_tlv(struct ath12k_base *ab,
@@ -13273,7 +13290,9 @@ static void ath12k_scan_event(struct ath12k_base *ab, struct sk_buff *skb)
 		break;
 	}
 
+#ifdef CPTCFG_QCN_EXTN
 	ath12k_update_offchan_ts_extn(ar, scan_ev.event_type);
+#endif /* CPTCFG_QCN_EXTN */
 
 	spin_unlock_bh(&ar->data_lock);
 
@@ -15541,7 +15560,9 @@ ath12k_wmi_dcs_interference_event(struct ath12k_base *ab,
 
 	switch (interference_type) {
 	case WMI_DCS_CW_INTF:
+#ifdef CPTCFG_QCN_EXTN
 		ath12k_wmi_dcs_cw_interference_event_extn(ab, skb, pdev_id);
+#endif /* CPTCFG_QCN_EXTN */
 		break;
 	case WMI_DCS_WLAN_INTF:
 #ifdef CPTCFG_QCN_EXTN
@@ -15555,7 +15576,9 @@ ath12k_wmi_dcs_interference_event(struct ath12k_base *ab,
 		ath12k_wmi_dcs_awgn_interference_event(ab, skb, pdev_id);
 		break;
 	case WMI_DCS_OBSS_INTF:
+#ifdef CPTCFG_QCN_EXTN
 		ath12k_wmi_dcs_obss_interference_event_extn(ab, skb, pdev_id);
+#endif /* CPTCFG_QCN_EXTN */
 		break;
 	default:
 		ath12k_warn(ab,
@@ -18639,7 +18662,9 @@ static void ath12k_wmi_peer_migration_event(struct ath12k_base *ab,
 			}
 		}
 
+#ifdef CPTCFG_QCN_EXTN
 		ath12k_wmi_peer_migration_event_extn(arvif->ahvif);
+#endif /* CPTCFG_QCN_EXTN */
 
 		/* Global peer id in case of WiFi-8 */
 		if (!(hw_ops && hw_ops->dp_peer_migration))
@@ -20301,8 +20326,10 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 		ath12k_wmi_mapc_peer_setup_status_event(ab, skb);
 		break;
 	default:
+#ifdef CPTCFG_QCN_EXTN
 		if (!ath12k_wmi_op_rx_extn(id, ab, skb))
 			break;
+#endif /* CPTCFG_QCN_EXTN */
 
 		ath12k_dbg_level(ab, ATH12K_DBG_WMI, ATH12K_DBG_L1,
 				 "Unknown eventid: 0x%x\n", id);
