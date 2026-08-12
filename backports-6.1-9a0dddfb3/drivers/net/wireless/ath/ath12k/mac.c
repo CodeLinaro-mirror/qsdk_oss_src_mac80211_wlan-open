@@ -27354,6 +27354,9 @@ void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 
 	arsta = &ahsta->deflink;
 
+	if (arsta->link_id == ATH12K_INVALID_LINK_ID)
+		return;
+
 	ar = ath12k_get_ar_by_vif(hw, vif, arsta->link_id);
 	if (!ar)
 		return;
