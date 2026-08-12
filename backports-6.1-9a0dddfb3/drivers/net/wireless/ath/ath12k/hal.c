@@ -1421,3 +1421,8 @@ ssize_t ath12k_debugfs_hal_dump_srng_stats(struct ath12k_base *ab, char *buf, in
 
 	return len;
 }
+
+void ath12k_hal_set_low_threshold(struct hal_srng *srng, u32 low_threshold)
+{
+	srng->u.src_ring.low_threshold = low_threshold * srng->entry_size;
+}
