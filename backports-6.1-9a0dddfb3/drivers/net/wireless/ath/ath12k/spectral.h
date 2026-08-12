@@ -142,8 +142,14 @@ struct ath12k_spectral {
 	 * FFT reports within params.completion_timeout_us.
 	 */
 	struct hrtimer scan_completion_timer;
-	/* received-count snapshot saved by the hrtimer cb for the worker */
+	/* snapshot of samples_done saved by the hrtimer cb for the worker;
+	 * worker compares current samples_done against this to detect stall.
+	 */
 	u32 timeout_received_count;
+	/* samples_done from the previous worker invocation; if equal to
+	 * timeout_received_count on next firing, firmware has genuinely stalled.
+	 */
+	u32 timeout_prev_count;
 	/* vdev_id cached at scan-start (under ->lock); used by timeout_work
 	 * to send CLEAR+DISABLE without needing wiphy_lock - calling
 	 * wiphy_lock() from the workqueue deadlocks when wiphy->mtx is
