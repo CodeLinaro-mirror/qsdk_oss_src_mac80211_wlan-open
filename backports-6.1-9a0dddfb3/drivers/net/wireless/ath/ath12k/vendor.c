@@ -11777,12 +11777,13 @@ static int ath12k_vendor_atf_offload_ssid_group_config(struct ath12k *ar,
 			return -EINVAL;
 		}
 
-		group_info = &ar->atf_table.group_info[i++];
 		if (i >= ATH12K_ATF_MAX_GROUPS) {
 			ath12k_warn(ar->ab, "ATF: Too many groups, maximum allowed is %d",
 				    ATH12K_ATF_MAX_GROUPS);
 			return -EINVAL;
 		}
+		group_info = &ar->atf_table.group_info[i];
+		i++;
 
 		group_info->group_id =
 			(u32)nla_get_u8(group[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_INDEX]);
@@ -12477,12 +12478,15 @@ static int ath12k_vendor_atf_stats_dumpit(struct wiphy *wiphy,
 				    ar->dp.stats.atf_airtime.rx_airtime_consumption[2]) ||
 			nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_RADIO_RX_VI_AIRTIME,
 				    ar->dp.stats.atf_airtime.rx_airtime_consumption[3])) {
+		nla_nest_cancel(msg, peer_attr);
 		return -ENOBUFS;
 	}
 
 	peers_data = nla_nest_start(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_STATS);
-	if (!peers_data)
+	if (!peers_data) {
+		nla_nest_cancel(msg, peer_attr);
 		return -ENOBUFS;
+	}
 
 	ctx.msg        = msg;
 	ctx.peers_data = peers_data;
@@ -12492,8 +12496,11 @@ static int ath12k_vendor_atf_stats_dumpit(struct wiphy *wiphy,
 	ath12k_dp_link_peer_iterate_by_dp_pdev(&ar->dp,
 					       ath12k_vendor_atf_stats_dumpit_cb,
 					       &ctx);
-	if (ctx.ret)
+	if (ctx.ret) {
+		nla_nest_cancel(msg, peers_data);
+		nla_nest_cancel(msg, peer_attr);
 		return ctx.ret;
+	}
 
 	nla_nest_end(msg, peers_data);
 	nla_nest_end(msg, peer_attr);
@@ -12671,6 +12678,8 @@ ath12k_vendor_atf_offload_config_handler(struct wiphy *wiphy,
 	if (tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_STATS_TIMEOUT]) {
 		ar->atf_stats_timeout =
 			nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_STATS_TIMEOUT]);
+		if (!ar->atf_stats_enable)
+			return -EINVAL;
 		ath12k_atf_offload_set_atf_stats_timeout(ar);
 		return 0;
 	}
@@ -13535,6 +13544,9 @@ int ath12k_vendor_put_ar_link_mac_addr(struct sk_buff *vendor_event,
 				       struct ath12k *ar)
 {
 	struct ath12k_link_vif *arvif = ath12k_vendor_get_non_scan_arvif(ar);
+
+	if (!arvif)
+		return -EINVAL;
 
 	if (nla_put(vendor_event,
 		    QCA_WLAN_VENDOR_ATTR_LINK_MAC,
