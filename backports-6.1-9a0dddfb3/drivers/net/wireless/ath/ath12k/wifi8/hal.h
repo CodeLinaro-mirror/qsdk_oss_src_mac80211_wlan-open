@@ -69,6 +69,7 @@ extern const struct ath12k_hw_hal_params ath12k_wifi8_hw_hal_params_qcn9625;
 struct ath12k_hal_wifi8 {
 	const struct ath12k_hal_reset_rings *reset_rings;
 	struct ath12k_cumac_hw_reset_timestamps ssr_ts;
+	struct ath12k_cumac_hw_reset_errors reset_errors;
 };
 
 static inline struct ath12k_hal_wifi8 *ath12k_get_hal_wifi8(struct ath12k_hal *hal)

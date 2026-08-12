@@ -392,7 +392,7 @@ void ath12k_wifi8_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
 	    !cumac_ab->skip_cumac_hw_reset) {
 		ret = ath12k_cumac_hw_reset(cumac_ab);
 		if (ret) {
-			ath12k_err(ab, "CUMAC HW post reset failed");
+			ath12k_err(ab, "CUMAC HW reset failed");
 			return;
 		}
 	}
@@ -688,19 +688,19 @@ static int ath12k_check_umac_reset_prerequisites(struct ath12k_base *ab, u32 arg
 	ret = ath12k_check_pmac_idle(ab);
 	if (ret) {
 		ath12k_err(ab, "pmac idle check failed");
-		return ret;
+		ATH12K_CUMAC_RESET_ERR_INC(ab, pmac_idle_fail);
 	}
 
 	ret = ath12k_check_dmac_idle(ab);
 	if (ret) {
 		ath12k_err(ab, "dmac idle check failed");
-		return ret;
+		ATH12K_CUMAC_RESET_ERR_INC(ab, dmac_idle_fail);
 	}
 
 	ret = ath12k_check_mxi_idle(ab, HAL_SEQ_WCSS_UMAC_MXI_REG);
 	if (ret) {
 		ath12k_err(ab, "umxi idle check failed");
-		return ret;
+		ATH12K_CUMAC_RESET_ERR_INC(ab, umac_idle_fail);
 	}
 
 	return 0;
@@ -756,6 +756,7 @@ static int ath12k_pause_global_wsi(struct ath12k_base *ab, u32 pause)
 				    HAL_SEQ_WCSS_MAC_WSIB_REG + HAL_MAC_WSIB_IDLE_STATUS,
 				    ath12k_hif_read32(ab, HAL_SEQ_WCSS_MAC_WSIB_REG +
 						      HAL_MAC_WSIB_IDLE_STATUS));
+			ATH12K_CUMAC_RESET_ERR_INC(ab, wsi_idle_fail);
 			/* Read the value of CFG and write back after WSI reset */
 			value = ath12k_hif_read32(ab, HAL_SEQ_WCSS_MAC_WSIB_REG +
 						  HAL_MAC_WSIB_CFG);
@@ -799,6 +800,7 @@ static int ath12k_pmac_tx_flush(struct ath12k_base *ab, int pmac_hwsch_base,
 			   pmac_hwsch_base + HAL_PMAC_HWSCH_FLUSH_STATUS,
 			   ath12k_hif_read32(ab, pmac_hwsch_base +
 					     HAL_PMAC_HWSCH_FLUSH_STATUS));
+		ATH12K_CUMAC_RESET_ERR_INC(ab, hwsch_flush_fail);
 		return ret;
 	}
 
@@ -874,6 +876,7 @@ static int ath12k_pmac_rx_flush(struct ath12k_base *ab, int pmac_rxpcu_base, int
 			   pmac_rxpcu_base + HAL_PMAC_RXPCU_RX_FLUSH_CTRL,
 			   ath12k_hif_read32(ab, pmac_rxpcu_base +
 					     HAL_PMAC_RXPCU_RX_FLUSH_CTRL));
+		ATH12K_CUMAC_RESET_ERR_INC(ab, pmac_rx_flush_fail);
 		return ret;
 	}
 
@@ -884,6 +887,7 @@ static int ath12k_pmac_rx_flush(struct ath12k_base *ab, int pmac_rxpcu_base, int
 		ath12k_err(ab, "rxdma flush failed at address 0x%x value 0x%x\n",
 			   HAL_SEQ_WCSS_DMAC_DMCMN_REG + isr,
 			   ath12k_hif_read32(ab, HAL_SEQ_WCSS_DMAC_DMCMN_REG + isr));
+		ATH12K_CUMAC_RESET_ERR_INC(ab, rxdma_flush_fail);
 		return ret;
 	}
 
@@ -1054,6 +1058,7 @@ static int ath12k_tcl_idle_check(struct ath12k_base *ab)
 			return 0;
 		ath12k_err(ab, "TCL is idle but HALT_STAT mismatch (expected:0x%lx got:0x%x)",
 			   HAL_TCL_RING_HALT_STAT_MASK, halt_stat);
+		ATH12K_CUMAC_RESET_ERR_INC(ab, tcl_idle_fail);
 		return -EINVAL;
 	}
 
@@ -1061,11 +1066,13 @@ static int ath12k_tcl_idle_check(struct ath12k_base *ab)
 	if (halt_stat == HAL_TCL_RING_HALT_STAT_MASK) {
 		ath12k_err(ab, "TCL HALT_STAT set but TCL not idle (halt_stat:0x%x)",
 			   halt_stat);
+		ATH12K_CUMAC_RESET_ERR_INC(ab, tcl_idle_fail);
 		return -EINVAL;
 	}
 
 	ath12k_err(ab, "TCL not idle and HALT_STAT not set (halt_stat:0x%x)",
 		   halt_stat);
+	ATH12K_CUMAC_RESET_ERR_INC(ab, tcl_idle_fail);
 	/* TODO: Check ARB WAIT state for the rings */
 	return 0;
 }
@@ -1108,6 +1115,7 @@ static int ath12k_sam_idle_check(struct ath12k_base *ab)
 			   HAL_SEQ_WCSS_UMAC_UMCMN_REG + HAL_UMCMN_R0_IDLE_SIGNAL,
 			   ath12k_hif_read32(ab, HAL_SEQ_WCSS_UMAC_UMCMN_REG +
 					     HAL_UMCMN_R0_IDLE_SIGNAL));
+		ATH12K_CUMAC_RESET_ERR_INC(ab, sam_idle_fail);
 		return -EINVAL;
 	}
 
@@ -1313,56 +1321,15 @@ static int ath12k_tqm_idle_check(struct ath12k_base *ab)
 	ret = ath12k_is_tqm_prefetch_idle(ab);
 	if (ret) {
 		ath12k_err(ab, "TQM prefetch is busy");
+		ATH12K_CUMAC_RESET_ERR_INC(ab, tqm_prefetch_idle_fail);
 		return ret;
 	}
 
 	ret = ath12k_is_tqm_sm_idle(ab);
 	if (ret) {
 		ath12k_err(ab, "TQM state machine is not idle");
+		ATH12K_CUMAC_RESET_ERR_INC(ab, tqm_sm_idle_fail);
 		return ret;
-	}
-
-	return 0;
-}
-
-static int ath12k_reo_idle_check(struct ath12k_base *ab)
-{
-	int ret;
-
-	ret = ath12k_hif_poll32(ab, HAL_SEQ_WCSS_UMAC_REO_REG +	HAL_REO_SM_ALL_IDLE,
-				HAL_REO_SM_ALL_IDLE_VALUE, HAL_REO_SM_ALL_IDLE_MASK,
-				HAL_MAC_IDLE_CHECK_DELAY_USEC,
-				HAL_MAC_IDLE_CHECK_TIMEOUT_USEC);
-	if (ret) {
-		ath12k_err(ab, "REO state machine all idle check failed at address 0x%x value 0x%x",
-			   HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO_SM_ALL_IDLE,
-			   ath12k_hif_read32(ab, HAL_SEQ_WCSS_UMAC_REO_REG +
-					     HAL_REO_SM_ALL_IDLE));
-		return -EINVAL;
-	}
-
-	ret = ath12k_hif_poll32(ab, HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO_IDLE_STATES_IX0,
-				HAL_REO_IDLE_STATES_VALUE, HAL_REO_IDLE_STATES_MASK,
-				HAL_MAC_IDLE_CHECK_DELAY_USEC,
-				HAL_MAC_IDLE_CHECK_TIMEOUT_USEC);
-	if (ret) {
-		ath12k_err(ab, "REO idle states IX0 check failed at address 0x%x value 0x%x",
-			   HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO_IDLE_STATES_IX0,
-			   ath12k_hif_read32(ab, HAL_SEQ_WCSS_UMAC_REO_REG +
-					     HAL_REO_IDLE_STATES_IX0));
-		return -EINVAL;
-	}
-
-	ret = ath12k_hif_poll32(ab, HAL_SEQ_WCSS_UMAC_REO_REG +	HAL_REO_IDLE_STATES_IX1,
-				HAL_REO_IDLE_STATES_VALUE, HAL_REO_IDLE_STATES_MASK,
-				HAL_MAC_IDLE_CHECK_DELAY_USEC,
-				HAL_MAC_IDLE_CHECK_TIMEOUT_USEC);
-	if (ret) {
-		ath12k_err(ab, "REO idle states IX1 check failed at address 0x%x value 0x%x",
-			   HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO_IDLE_STATES_IX1,
-			   ath12k_hif_read32(ab, HAL_SEQ_WCSS_UMAC_REO_REG +
-					     HAL_REO_IDLE_STATES_IX1));
-		return -EINVAL;
 	}
 
 	return 0;
@@ -1409,18 +1376,8 @@ static int ath12k_enable_wbm(struct ath12k_base *ab, u32 enable)
 
 static int ath12k_enable_reo(struct ath12k_base *ab, u32 enable)
 {
-	int ret;
-
 	ath12k_hif_rmw32(ab, HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO1_GEN_ENABLE,
 			 HAL_REO_ENABLE_MASK, enable);
-
-	if (!enable) {
-		ret = ath12k_reo_idle_check(ab);
-		if (ret) {
-			ath12k_err(ab, "REO idle check failed");
-			return ret;
-		}
-	}
 
 	return 0;
 }
@@ -1640,12 +1597,18 @@ static int ath12k_clear_pending_interrupts(struct ath12k_base *ab, u32 arg)
 static int ath12k_umac_ring_enable(struct ath12k_base *ab, u32 enable)
 {
 	int i, ret;
+	u32 val;
 
 	struct ath12k_hal_wifi8 *hal_wifi8 = ath12k_get_hal_wifi8(&ab->hal);
 	const struct ath12k_hal_reset_rings *reset_rings;
 
 	for (i = 0; i < HAL_RESET_RING_TYPE_MAX; i++) {
 		reset_rings = &hal_wifi8->reset_rings[i];
+
+		/* If LSB is not programmed, skip enable and disable of the ring */
+		val = ath12k_hif_read32(ab, reset_rings->srng_misc_reg - 16);
+		if (!val)
+			continue;
 
 		if (reset_rings->consumer_prefetch_timer)
 			ath12k_hif_write32(ab, reset_rings->consumer_prefetch_timer,
@@ -1662,6 +1625,8 @@ static int ath12k_umac_ring_enable(struct ath12k_base *ab, u32 enable)
 				if (ret) {
 					ath12k_err(ab, "MLO %d ring idle check failed",
 						   i);
+					ATH12K_CUMAC_RESET_ERR_INC(ab,
+								   mlo_ring_idle_fail);
 					return -EINVAL;
 				}
 			}
@@ -1669,6 +1634,7 @@ static int ath12k_umac_ring_enable(struct ath12k_base *ab, u32 enable)
 			ret = ath12k_ring_idle_check(ab, i, reset_rings);
 			if (ret) {
 				ath12k_err(ab, "%d ring idle check failed", i);
+				ATH12K_CUMAC_RESET_ERR_INC(ab, ring_idle_fail);
 				return -EINVAL;
 			}
 		}
@@ -1681,6 +1647,7 @@ static int ath12k_umac_ring_enable(struct ath12k_base *ab, u32 enable)
 static int ath12k_umac_ring_reset(struct ath12k_base *ab)
 {
 	int i, ret;
+	u32 val;
 
 	struct ath12k_hal_wifi8 *hal_wifi8 = ath12k_get_hal_wifi8(&ab->hal);
 	const struct ath12k_hal_reset_rings *reset_rings;
@@ -1688,10 +1655,16 @@ static int ath12k_umac_ring_reset(struct ath12k_base *ab)
 	for (i = 0; i < HAL_RESET_RING_TYPE_MAX; i++) {
 		reset_rings = &hal_wifi8->reset_rings[i];
 
+		/* If LSB is not programmed, skip reset of the ring */
+		val = ath12k_hif_read32(ab, reset_rings->srng_misc_reg - 16);
+		if (!val)
+			continue;
+
 		if (reset_rings->consumer_producer_mlo) {
 			ret = ath12k_mlo_ring_idle_check(ab, i, reset_rings);
 			if (ret) {
 				ath12k_err(ab, "MLO %d ring idle check failed", i);
+				ATH12K_CUMAC_RESET_ERR_INC(ab, mlo_ring_idle_fail);
 				return -EINVAL;
 			}
 			ath12k_hif_write32(ab, reset_rings->mlo_doorbell_press, 0);
@@ -1699,6 +1672,7 @@ static int ath12k_umac_ring_reset(struct ath12k_base *ab)
 			ret = ath12k_ring_idle_check(ab, i, reset_rings);
 			if (ret) {
 				ath12k_err(ab, "%d ring idle check failed", i);
+				ATH12K_CUMAC_RESET_ERR_INC(ab, ring_idle_fail);
 				return -EINVAL;
 			}
 		}
@@ -1736,15 +1710,15 @@ static int ath12k_umac_apply_soft_reset(struct ath12k_base *ab, u32 arg)
 	soft_reset_val |= HAL_UMAC_UMRCM_SOFTRESET_VALUE;
 	ath12k_hif_write32(ab, HAL_UMAC_UMRCM_SOFTRESET, soft_reset_val);
 
-	ret = ath12k_enable_tqm(ab, 0);
-	if (ret) {
-		ath12k_err(ab, "RESET: Enable TQM during soft reset failed\n");
-		return ret;
-	}
-
 	ret = ath12k_pause_tqm(ab, 0);
 	if (ret) {
 		ath12k_err(ab, "RESET: Unpause TQM during soft reset failed\n");
+		return ret;
+	}
+
+	ret = ath12k_enable_tqm(ab, 0);
+	if (ret) {
+		ath12k_err(ab, "RESET: Enable TQM during soft reset failed\n");
 		return ret;
 	}
 
@@ -1929,6 +1903,11 @@ static const struct cumac_hw_reset_step post_reset_steps[] = {
 		0,
 		"CUMAC HW Post-reset start"
 	},
+	[CUMAC_HW_POST_RESET_ENABLE_TQM] = {
+		ath12k_enable_tqm,
+		1,
+		"CUMAC HW Enable TQM"
+	},
 	[CUMAC_HW_POST_RESET_CLEAR_INTERRUPTS] = {
 		ath12k_clear_pending_interrupts,
 		0,
@@ -1968,11 +1947,6 @@ static const struct cumac_hw_reset_step post_reset_steps[] = {
 		ath12k_halt_tcl,
 		0,
 		"CUMAC HW Unhalt TCL"
-	},
-	[CUMAC_HW_POST_RESET_ENABLE_TQM] = {
-		ath12k_enable_tqm,
-		1,
-		"CUMAC HW Enable TQM"
 	},
 	[CUMAC_HW_POST_RESET_END] = {
 		ath12k_dummy_step,
