@@ -16128,9 +16128,19 @@ static int ath12k_vendor_spectral_scan_start(struct wiphy *wiphy,
 			int idx      = ath12k_spectral_resolve_bw_idx(ar, tb);
 			const u16 *hw_fft_max =
 				ar->ab->hw_params->spectral.fft_size_max;
-			u32 fft_max  = (idx >= 0)
-				       ? ar->spectral.param_min_max.fft_size_max[idx]
-				       : hw_fft_max[ATH12K_SPECTRAL_BW_320MHZ];
+			u32 fft_max;
+
+			if (idx >= 0) {
+				fft_max = ar->spectral.param_min_max.fft_size_max[idx];
+			} else {
+				int bw;
+
+				fft_max = 0;
+				for (bw = 0; bw < ATH12K_SPECTRAL_NUM_BW_SLOTS; bw++) {
+					if (hw_fft_max[bw] > fft_max)
+						fft_max = hw_fft_max[bw];
+				}
+			}
 
 			if (v < fft_min || v > fft_max) {
 				ath12k_warn(ar->ab,
