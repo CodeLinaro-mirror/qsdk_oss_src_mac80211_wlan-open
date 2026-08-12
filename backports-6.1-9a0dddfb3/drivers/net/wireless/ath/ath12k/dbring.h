@@ -14,6 +14,15 @@
 
 #define ATH12K_DB_MAGIC_VALUE 0xdeadbeaf
 
+/* Minimum free slots to keep in the spectral DMA ring after dbring_reset.
+ * Firmware releases buffers in batches; keeping enough free slots ensures
+ * all concurrent bufs_replenish calls in a batch succeed without losing IDR
+ * entries. Set to 32 to absorb stale DMA drain from the previous scan that
+ * arrives between dbring_reset and the next scan start, keeping num_free > 0
+ * at the drain poll so consecutive agile scans work reliably.
+ */
+#define ATH12K_SPECTRAL_DBRING_FREE_SLOTS 32
+
 struct ath12k_dbring_element {
 	dma_addr_t paddr;
 	u8 payload[];
