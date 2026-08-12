@@ -1532,14 +1532,17 @@ ath12k_ppdu_per_user_stats_phy_tx_time_update(struct ath12k_base *ab,
 		phy_tx_time_us = (phy_ppdu_tx_time_us *
 				  user->nss * user->ru_tones) / ru_nss_width_sum;
 
-	if (tx_ppdu_stats)
-		DP_STATS_INCR(tx_ppdu_stats, tx_ppdu_duration, phy_tx_time_us);
-
 	peer->tx_duration += phy_tx_time_us;
 	tid = user->rate.tid_num;
 	ac = ath12k_tid_to_ac(tid);
 	stats = &peer->peer_stats.dp_mon_stats;
 	stats->mon_stats.tx_airtime_consumption[ac].consumption += phy_tx_time_us;
+
+	if (tx_ppdu_stats) {
+		DP_STATS_INCR(tx_ppdu_stats, tx_ppdu_duration, phy_tx_time_us);
+		DP_STATS_INCR(tx_ppdu_stats, tx_dur_ac[ac], phy_tx_time_us);
+	}
+
 	ath12k_dbg(ab, ATH12K_DBG_DP_HTT, "ppdu info id: %d tid: %d htt frame type: %d  ppdu frame type: %d time: %d nss: %d tones: %d sum [nss: %d tone: %d consum: %d]\n",
 		   ppdu_info->ppdu_id, user->rate.tid_num, ppdu_info->htt_frame_type,
 		   ppdu_info->frame_type, phy_ppdu_tx_time_us, user->nss,
@@ -1599,13 +1602,15 @@ void ath12k_htt_update_peer_telemetry_stats(struct ath12k_pdev_dp *dp_pdev,
 {
 	struct ath12k_base *ab = dp_pdev->ar->ab;
 	struct ath12k_dp_link_peer *peer;
-	struct htt_ppdu_stats *ppdu_stats = &ppdu_info->ppdu_stats;
+	struct htt_ppdu_stats *ppdu_stats;
 	struct htt_ppdu_user_stats *user_stats = NULL;
 	u32 tlv_bitmap;
 	u8 uid;
 
 	if (!ppdu_info)
 		return;
+
+	ppdu_stats = &ppdu_info->ppdu_stats;
 
 	if (ppdu_info->frame_type != HTT_STATS_PPDU_FTYPE_DATA)
 		return;

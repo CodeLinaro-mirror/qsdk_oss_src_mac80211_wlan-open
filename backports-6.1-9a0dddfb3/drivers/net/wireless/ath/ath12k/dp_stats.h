@@ -554,6 +554,7 @@ struct ath12k_htt_tx_ppdu_stats {
 	struct pkt_type mu_bn_ppdu_cnt[TXRX_TYPE_MU_MAX];
 	u16 tx_ratecode;
 	u8 tx_pwr;
+	u64 tx_dur_ac[WME_NUM_AC];
 };
 
 #define MAX_PUNCTURED_MODE 5
@@ -1379,6 +1380,7 @@ struct ath12k_dp_link_peer_rx_signal_stats {
  * @num_mpdus: Total number of MPDUs received.
  * @num_ppdus: Total number of PPDUs received.
  * @rx_duration: Total RX duration in microseconds.
+ * @rx_duration_ac: RX duration in microseconds, per WME AC.
  * @gi_count: MSDU counts per guard interval (indexed by HAL_RX_GI_MAX).
  * @nss_count: MSDU counts per spatial stream (indexed by HAL_RX_MAX_NSS).
  * @bw_count: MSDU counts per channel bandwidth (indexed by HAL_RX_BW_MAX).
@@ -1416,6 +1418,7 @@ struct ath12k_dp_link_peer_rx_signal_stats {
 struct ath12k_rx_ppdu_stats {
 	/* Basic Stats */
 	u64 rx_duration;
+	u64 rx_duration_ac[WME_NUM_AC];
 	u64 wme_ac_type_bytes[WME_NUM_AC];
 	struct ath12k_dp_link_peer_rx_signal_stats signal_stats;
 
