@@ -360,6 +360,7 @@ ath12k_dp_htt_process_stats_common_tlv(const u32 *tlv_desc,
 	case HTT_STATS_FTYPE_SGEN_MU_BAR:
 	case HTT_STATS_FTYPE_SGEN_BAR:
 	case HTT_STATS_FTYPE_SGEN_BE_MU_BAR:
+	case HTT_STATS_FTYPE_SGEN_BN_MU_BAR:
 		ppdu_info->frame_type = HTT_STATS_PPDU_FTYPE_BAR;
 		break;
 	default:
@@ -845,7 +846,8 @@ ath12k_update_tx_ppdu_ru_mpdu_tried(struct ath12k *ar,
 	if ((ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_MU_OFDMA ||
 	     ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_MU_MIMO_OFDMA) &&
 	    (txrate->flags & RATE_INFO_FLAGS_HE_MCS ||
-	     txrate->flags & RATE_INFO_FLAGS_EHT_MCS)) {
+	     txrate->flags & RATE_INFO_FLAGS_EHT_MCS ||
+	     txrate->flags & RATE_INFO_FLAGS_UHR_MCS)) {
 		int ru_loc_idx;
 
 		if (txrate->flags & RATE_INFO_FLAGS_HE_MCS)
@@ -874,7 +876,8 @@ ath12k_dp_update_tx_ppdu_ru_num_mpdu(struct ath12k *ar,
 	if ((ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_MU_OFDMA ||
 	     ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_MU_MIMO_OFDMA) &&
 	    (txrate->flags & RATE_INFO_FLAGS_HE_MCS ||
-	     txrate->flags & RATE_INFO_FLAGS_EHT_MCS)) {
+	     txrate->flags & RATE_INFO_FLAGS_EHT_MCS ||
+	     txrate->flags & RATE_INFO_FLAGS_UHR_MCS)) {
 		int ru_loc_idx;
 
 		if (txrate->flags & RATE_INFO_FLAGS_HE_MCS)

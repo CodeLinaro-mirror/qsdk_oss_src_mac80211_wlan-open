@@ -169,7 +169,8 @@ ath12k_debugfs_sta_update_success(struct ath12k_dp_link_peer *peer,
 	if ((ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_MU_OFDMA ||
 	    ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_MU_MIMO_OFDMA) &&
 	    (txrate->flags & RATE_INFO_FLAGS_HE_MCS ||
-	    txrate->flags & RATE_INFO_FLAGS_EHT_MCS)) {
+	    txrate->flags & RATE_INFO_FLAGS_EHT_MCS ||
+	    txrate->flags & RATE_INFO_FLAGS_UHR_MCS)) {
 		int ru_loc_idx;
 
 		if (txrate->flags & RATE_INFO_FLAGS_HE_MCS)
@@ -288,7 +289,8 @@ ath12k_debugfs_sta_update_retry(struct ath12k_dp_link_peer *peer,
 	if ((ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_MU_OFDMA ||
 	    ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_MU_MIMO_OFDMA) &&
 	    (txrate->flags & RATE_INFO_FLAGS_HE_MCS ||
-	    txrate->flags & RATE_INFO_FLAGS_EHT_MCS)) {
+	    txrate->flags & RATE_INFO_FLAGS_EHT_MCS ||
+	    txrate->flags & RATE_INFO_FLAGS_UHR_MCS)) {
 		int ru_loc_idx;
 
 		if (txrate->flags & RATE_INFO_FLAGS_HE_MCS)
@@ -363,7 +365,8 @@ ath12k_debugfs_sta_update_failure(struct ath12k_dp_link_peer *peer,
 	if ((ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_MU_OFDMA ||
 	    ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_MU_MIMO_OFDMA) &&
 	    (txrate->flags & RATE_INFO_FLAGS_HE_MCS ||
-	    txrate->flags & RATE_INFO_FLAGS_EHT_MCS)) {
+	    txrate->flags & RATE_INFO_FLAGS_EHT_MCS ||
+	    txrate->flags & RATE_INFO_FLAGS_UHR_MCS)) {
 		int ru_loc_idx;
 
 		if (txrate->flags & RATE_INFO_FLAGS_HE_MCS)
@@ -394,6 +397,7 @@ ath12k_debugfs_sta_update_misc(struct ath12k_dp_link_peer *peer,
 	tx_stats->tx_duration += peer_stats->duration;
 	tx_stats->ru_start = peer_stats->ru_start;
 	tx_stats->ru_tones = peer_stats->ru_tones;
+
 	if (peer_stats->mu_grpid < MAX_MU_GROUP_ID &&
 	    tx_stats->ppdu_type != HTT_PPDU_STATS_PPDU_TYPE_SU) {
 		if (peer_stats->mu_grpid & (MAX_MU_GROUP_ID - 1))
