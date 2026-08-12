@@ -60,6 +60,25 @@ MODULE_PARM_DESC(ppe_vp_accel, "module param to enable PPE; 1-enable, 0-disable"
 
 static void ieee80211_iface_work(struct wiphy *wiphy, struct wiphy_work *work);
 
+static int ieee80211_get_6ghz_max_txpower(struct ieee80211_link_data *link,
+				      struct ieee80211_chanctx_conf *chanctx_conf)
+{
+	enum nl80211_regulatory_power_modes m;
+	struct ieee80211_channel *c;
+	int max_pwr = S8_MIN;
+
+	for (m = NL80211_REG_AP_LPI; m <= NL80211_REG_AP_VLP; m++) {
+		c = ieee80211_get_6g_channel_khz(
+			link->sdata->local->hw.wiphy,
+			MHZ_TO_KHZ(chanctx_conf->def.chan->center_freq),
+			m);
+		if (c && !(c->flags & IEEE80211_CHAN_DISABLED))
+			max_pwr = max(max_pwr, (int)c->max_power);
+	}
+
+	return max_pwr;
+}
+
 bool __ieee80211_recalc_txpower(struct ieee80211_link_data *link,
 				unsigned int link_id)
 {
@@ -74,6 +93,12 @@ bool __ieee80211_recalc_txpower(struct ieee80211_link_data *link,
 	}
 
 	power = ieee80211_chandef_max_power(&chanctx_conf->def);
+	if (chanctx_conf->def.chan->band == NL80211_BAND_6GHZ) {
+		int max_pwr = ieee80211_get_6ghz_max_txpower(link, chanctx_conf);
+
+		if (max_pwr != S8_MIN)
+			power = max_pwr;
+	}
 	rcu_read_unlock();
 
 	if (link->user_power_level != IEEE80211_UNSET_POWER_LEVEL)
