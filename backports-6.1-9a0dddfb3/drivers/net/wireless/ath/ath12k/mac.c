@@ -12494,9 +12494,14 @@ enum wmi_phy_mode ath12k_mac_get_phymode(struct ath12k *ar,
 					 enum nl80211_band band,
 					 enum nl80211_chan_width width)
 {
-	if (ath12k_scan_radio_supported(ar->pdev))
-		return ath12k_ax_phymodes[band][width];
-	else
+	if (ath12k_scan_radio_supported(ar->pdev)) {
+		if (test_bit(WMI_TLV_SERVICE_11BN, ar->ab->wmi_ab.svc_map))
+			return ath12k_phymodes_uhr[band][width];
+		else if (test_bit(WMI_TLV_SERVICE_11BE, ar->ab->wmi_ab.svc_map))
+			return ath12k_phymodes_eht[band][width];
+		else
+			return ath12k_ax_phymodes[band][width];
+	} else
 		return ath12k_phymodes[band][width];
 }
 
