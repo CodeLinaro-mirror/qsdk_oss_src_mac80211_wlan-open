@@ -714,6 +714,7 @@ enum ath12k_dbg_htt_tlv_tag {
 	HTT_STATS_DFS_IPC_RING_TAG			= 265,
 	HTT_STATS_PHY_DPD_DEBUG_V1_TAG                  = 266,
 	HTT_STATS_PHY_TPC_DEBUG_V1_TAG                  = 267,
+	HTT_STATS_PHY_NF_SUBBAND_TAG			= 268,
 	HTT_STATS_MAX_TAG,
 };
 
@@ -4108,6 +4109,34 @@ struct ath12k_htt_phy_stats_tlv {
 			    rsvd:24;
 		};
 	};
+} __packed;
+
+/* Publishes only the per-20MHz subband runtime NF and BDF NF values, separate from the
+ * default struct ath12k_htt_phy_stats_tlv above.
+ */
+
+#define ATH12K_HTT_STATS_MAX_20MHZ_SUBBANDS  16
+#define ATH12K_HTT_PHY_NF_SUBBAND_INVALID    1
+
+enum ath12k_htt_phy_stats_subtype {
+	ATH12K_HTT_PHY_STATS_SUBTYPE_DEFAULT,
+	ATH12K_HTT_PHY_STATS_SUBTYPE_NF_SUBBAND,
+};
+
+struct ath12k_htt_phy_nf_subband_tlv {
+	/* num_subbands: active 20 MHz subband count for current channel BW.
+	 *   20 MHz -> 1, 40 MHz -> 2, 80 MHz -> 4, 160 MHz -> 8, 320 MHz -> 16.
+	 * nf_runtime_subband[chain][0..num_subbands-1] holds valid dBm values.
+	 * Inactive entries are set to ATH12K_HTT_PHY_NF_SUBBAND_INVALID, matching
+	 * the existing sentinel used for unpopulated entries in nf_chain[]/
+	 * runtime_nf_chain[] of struct ath12k_htt_phy_stats_tlv.
+	 */
+	__le32 num_subbands;
+	a_sle32 nf_runtime_subband[ATH12K_HTT_STATS_MAX_CHAINS]
+				   [ATH12K_HTT_STATS_MAX_20MHZ_SUBBANDS];
+	/* per chain, per 20MHz subband BDF (calibration-loaded) NF in dBm */
+	a_sle32 nf_bdf_subband[ATH12K_HTT_STATS_MAX_CHAINS]
+			       [ATH12K_HTT_STATS_MAX_20MHZ_SUBBANDS];
 } __packed;
 
 struct ath12k_htt_phy_counters_tlv {

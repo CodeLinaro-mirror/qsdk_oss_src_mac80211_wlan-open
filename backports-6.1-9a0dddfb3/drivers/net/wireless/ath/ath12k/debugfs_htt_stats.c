@@ -8255,6 +8255,50 @@ ath12k_htt_print_phy_stats_tlv(const void *tag_buf, u16 tag_len,
 }
 
 static void
+ath12k_htt_print_phy_nf_subband_tlv(const void *tag_buf, u16 tag_len,
+				     struct debug_htt_stats_req *stats_req)
+{
+	const struct ath12k_htt_phy_nf_subband_tlv *htt_stats_buf = tag_buf;
+	u32 len = stats_req->buf_len;
+	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE;
+	u8 *buf = stats_req->buf, i, s;
+
+	if (tag_len < sizeof(*htt_stats_buf))
+		return;
+
+	len += scnprintf(buf + len, buf_len - len, "HTT_PHY_NF_SUBBAND_TLV:\n");
+	len += scnprintf(buf + len, buf_len - len, "num_subbands = %u\n",
+			  le32_to_cpu(htt_stats_buf->num_subbands));
+	for (i = 0; i < ATH12K_HTT_STATS_MAX_CHAINS; i++) {
+		len += scnprintf(buf + len, buf_len - len,
+				"runtime_nf_per_chain_per_subband_in_dbm[%u] = ", i);
+		for (s = 0; s < ATH12K_HTT_STATS_MAX_20MHZ_SUBBANDS; s++) {
+			s32 val = a_sle32_to_cpu(htt_stats_buf->nf_runtime_subband[i][s]);
+
+			len += scnprintf(buf + len, buf_len - len, " %2u:%4d,", s, val);
+		}
+		len--;
+		len += scnprintf(buf + len, buf_len - len, "\n");
+	}
+
+	len += scnprintf(buf + len, buf_len - len, "\n");
+
+	for (i = 0; i < ATH12K_HTT_STATS_MAX_CHAINS; i++) {
+		len += scnprintf(buf + len, buf_len - len,
+				"bdf_nf_per_chain_per_subband_in_dbm[%u] = ", i);
+		for (s = 0; s < ATH12K_HTT_STATS_MAX_20MHZ_SUBBANDS; s++) {
+			s32 val = a_sle32_to_cpu(htt_stats_buf->nf_bdf_subband[i][s]);
+
+			len += scnprintf(buf + len, buf_len - len, " %2u:%4d,", s, val);
+		}
+		len--;
+		len += scnprintf(buf + len, buf_len - len, "\n");
+	}
+
+	stats_req->buf_len = len;
+}
+
+static void
 ath12k_htt_print_phy_counters_tlv(const void *tag_buf, u16 tag_len,
 				  struct debug_htt_stats_req *stats_req)
 {
@@ -15736,6 +15780,10 @@ static int ath12k_dbg_htt_ext_stats_parse(struct ath12k_base *ab,
 
 	case HTT_STATS_RX_PDEV_UL_MUMIMO_TRIG_BN_STATS_TAG:
 		ath12k_htt_print_ul_mumimo_trig_bn_stats(tag_buf, len, stats_req);
+		break;
+
+	case HTT_STATS_PHY_NF_SUBBAND_TAG:
+		ath12k_htt_print_phy_nf_subband_tlv(tag_buf, len, stats_req);
 		break;
 	default:
 		break;
