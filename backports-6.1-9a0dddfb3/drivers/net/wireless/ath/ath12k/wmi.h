@@ -11055,6 +11055,66 @@ struct ath12k_wmi_enhanced_aoa_per_band_caps_param {
 	__le32 max_agc_gain[WMI_AOA_NUM_WORD_ENTRIES_FOR_MAX_NUM_AGC_TBL_ELEMS];
 } __packed;
 
+#define WMI_AOA_MAX_SUPPORTED_CHAINS GENMASK(15, 0)
+#define WMI_AOA_SUPPORTED_CHAINMASK GENMASK(31, 16)
+
+struct ath12k_wmi_pdev_enhanced_aoa_phasedelta_evt_fixed_param {
+	/* Current Operating Channel Frequency in MHz */
+	__le32 freq;
+	/* pdev id */
+	__le32 pdev_id;
+	/* chain_info:
+	 * B0 -- B15 : Max number of chains supported
+	 * B16 --B31 : Data shared for chainmask - indicates the chains to which
+	 *	the data shared.
+	 */
+	__le32 chain_info;
+	/* XBAR configuration to get RF2BB/BB2RF chain mapping */
+	__le32 xbar_config;
+	/* IBF cal values:
+	 * Used for final AoA calculation
+	 * [AoAPhase =  ( PhaseDeltaValue + IBFcalValue )   %   1024]
+	 */
+	__le32 per_chain_ibf_cal_val[WMI_MAX_CHAINS];
+	/* This TLV is followed by TLV arrays containing
+	 * different types of data header and data buffer TLVs:
+	 * 1. ath12k_wmi_enhanced_aoa_gain_phase_data_hdr: This TLV contains the
+	 * array of structure fields which indicate the type and format of data
+	 * carried in the following data buffer TLV.
+	 * 2. data_buf[] - Data buffer TLV. TLV header contains the total buffer size.
+	 * Data buffer contains the phase_delta_array[Chains][GainEntries] in
+	 * absolute phase values ranging 0-1024 and gain_delta_array[Chains][GainEntries]
+	 * are gain index values.
+	 */
+} __packed;
+
+#define WMI_AOA_DATA_TYPE GENMASK(7, 0)
+#define WMI_AOA_NUM_ENTRIES GENMASK(15, 8)
+
+enum ath12k_wmi_aoa_event_data_type {
+	WMI_PHASE_DELTA_ARRAY = 0,
+	WMI_GAIN_GROUP_STOP_ARRAY = 1,
+};
+
+struct ath12k_wmi_enhanced_aoa_gain_phase_data_hdr {
+	/* data_info:
+	 * Data follows the LSB first and MSB second order in a 32bit word bit mapping:
+	 * B0 -- B7  : Data type.
+	 *	If data is Phase delta values - Data type is 0x0
+	 *	group stop gain index values - Data type is 0x1
+	 * B8 -- B15 : Total number of data entries in uint32
+	 */
+	__le32 data_info;
+} __packed;
+
+struct ath12k_wmi_enhanced_aoa_phasedelta_parse {
+	struct ath12k_wmi_pdev_enhanced_aoa_phasedelta_evt_fixed_param fixed_param;
+	const struct ath12k_wmi_enhanced_aoa_gain_phase_data_hdr *data_hdr;
+	u32 num_data_hdr;
+	const __le32 *data_buf;
+	u32 data_buf_len;
+};
+
 struct wmi_atf_ssid_grp_request_fixed_param {
 	__le32 tlv_header;
 	__le32 pdev_id;

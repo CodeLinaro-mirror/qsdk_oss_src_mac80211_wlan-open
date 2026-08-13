@@ -857,6 +857,95 @@ void ath12k_cfr_deinit(struct ath12k_base *ab)
 	}
 }
 
+static void
+ath12k_wmi_enhanced_aoa_unpack_hdr(struct ath12k_cfr *cfr,
+				   struct cfr_enhanced_aoa_data *aoa,
+				   struct ath12k_wmi_enhanced_aoa_phasedelta_parse *parse,
+				   u32 chain_u16_offset)
+{
+	u32 max_dst_ent = aoa->max_entries_all_table * aoa->max_aoa_chains;
+	u32 max_src_words = parse->data_buf_len / sizeof(__le32);
+	u32 phase_pos = chain_u16_offset;
+	u32 gain_pos = chain_u16_offset;
+	u32 src_word_idx = 0;
+	u32 i;
+
+	for (i = 0; i < parse->num_data_hdr; i++) {
+		u32 data_info = __le32_to_cpu(parse->data_hdr[i].data_info);
+		u32 data_type = u32_get_bits(data_info, WMI_AOA_DATA_TYPE);
+		u32 num_entries = u32_get_bits(data_info, WMI_AOA_NUM_ENTRIES);
+		u16 *dst = NULL;
+		u32 dst_pos = 0;
+		u32 word_off;
+
+		if (data_type == WMI_PHASE_DELTA_ARRAY) {
+			dst = aoa->enh_phase_delta_array;
+			dst_pos = phase_pos;
+		} else if (data_type == WMI_GAIN_GROUP_STOP_ARRAY) {
+			dst = aoa->gain_stop_index_array;
+			dst_pos = gain_pos;
+		}
+
+		if (dst) {
+			for (word_off = 0;
+			     word_off < num_entries &&
+			     src_word_idx + word_off < max_src_words &&
+			     dst_pos + word_off * 2 + 1 < max_dst_ent;
+			     word_off++) {
+				u32 word = le32_to_cpu(parse->data_buf[src_word_idx +
+									word_off]);
+
+				dst[dst_pos + word_off * 2] = (u16)word;
+				dst[dst_pos + word_off * 2 + 1] = (u16)(word >> 16);
+			}
+		}
+
+		if (data_type == WMI_PHASE_DELTA_ARRAY)
+			phase_pos += num_entries * 2;
+		else if (data_type == WMI_GAIN_GROUP_STOP_ARRAY)
+			gain_pos += num_entries * 2;
+
+		src_word_idx += num_entries;
+	}
+}
+
+void
+ath12k_wmi_cfr_handle_aoa_data(struct ath12k *ar,
+			       struct ath12k_wmi_enhanced_aoa_phasedelta_parse *parse)
+{
+	struct ath12k_cfr *cfr;
+	struct cfr_enhanced_aoa_data *aoa;
+	u32 chain_info, max_chains, data_for_chainmask, chain_u16_offset;
+
+	cfr = &ar->cfr;
+	aoa = &cfr->enh_aoa_data;
+
+	if (!cfr->is_enh_aoa_data) {
+		ath12k_warn(ar->ab, "AoA phase delta event received without service caps");
+		return;
+	}
+
+	chain_info = __le32_to_cpu(parse->fixed_param.chain_info);
+	max_chains = u32_get_bits(chain_info, WMI_AOA_MAX_SUPPORTED_CHAINS);
+
+	if (max_chains > WMI_MAX_CHAINS) {
+		ath12k_warn(ar->ab, "Invalid AOA max chains");
+		return;
+	}
+	aoa->max_aoa_chains = max_chains;
+	aoa->freq = __le32_to_cpu(parse->fixed_param.freq);
+	aoa->xbar_config = __le32_to_cpu(parse->fixed_param.xbar_config);
+	for (int i = 0; i < WMI_MAX_CHAINS; i++)
+		aoa->ibf_cal_val[i] =
+			__le32_to_cpu(parse->fixed_param.per_chain_ibf_cal_val[i]);
+
+	data_for_chainmask = u32_get_bits(chain_info, WMI_AOA_SUPPORTED_CHAINMASK);
+	chain_u16_offset = (data_for_chainmask ?
+			    aoa->max_entries_all_table * __ffs(data_for_chainmask) : 0);
+
+	ath12k_wmi_enhanced_aoa_unpack_hdr(cfr, aoa, parse, chain_u16_offset);
+}
+
 int ath12k_cfr_get_enhanced_aoa_caps(struct ath12k *ar)
 {
 	struct ath12k_cfr *cfr = &ar->cfr;
