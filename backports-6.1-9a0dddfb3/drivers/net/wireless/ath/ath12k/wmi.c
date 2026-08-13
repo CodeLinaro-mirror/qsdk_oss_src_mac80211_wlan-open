@@ -4718,6 +4718,11 @@ int ath12k_wmi_send_peer_assoc_cmd(struct ath12k *ar,
 	if (arg->ml.ml_reconfig)
 		ml_params->ml_reconfig = 1;
 
+	if (arg->ml.ml_recovery_reconfig)
+		ml_params->ml_recovery_reconfig = 1;
+
+	ml_params->new_master_ll_id = cpu_to_le32(arg->ml.new_master_ll_id);
+
 	eml_cap = arg->ml.eml_cap;
 	if (u16_get_bits(eml_cap, IEEE80211_EML_CAP_EMLSR_SUPP)) {
 		/* Padding delay */

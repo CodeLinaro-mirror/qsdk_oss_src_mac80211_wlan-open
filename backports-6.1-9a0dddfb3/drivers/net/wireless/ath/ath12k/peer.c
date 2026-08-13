@@ -1039,6 +1039,35 @@ int ath12k_peer_mlo_link_peers_delete(struct ath12k_vif *ahvif,
 		if (ret)
 			err_ret = ret;
 
+		/* In Mode 3 recovery, after link_remove (mlo_link_del) but before
+		 * a successful link_readd, the asserted chip FW has no peer record.
+		 * If the peer is torn down in this window (readd failure or explicit
+		 * disconnect), WMI peer delete is skipped (RECOVERY flag) and FW
+		 * therefore never sends HTT_T2H_GLOBAL_PEER_ID_UNMAP.  Without that
+		 * event, ath12k_dp_peer_cleanup_indication() is never called, leaving
+		 * TQM queues for the asserted link undrained.  Manually invoke it here.
+		 */
+		if (sta->mlo &&
+		    ahsta->recov.asserted_peer_pending &&
+		    ar->ab == ar->ab->ag->assert_ab) {
+			struct ath12k_dp_peer *dp_peer;
+
+			spin_lock_bh(&ar->ah->dp_hw.peer_hash_lock);
+			dp_peer = ath12k_dp_peer_find_by_addr(&ar->ah->dp_hw,
+							      arsta->addr);
+			spin_unlock_bh(&ar->ah->dp_hw.peer_hash_lock);
+
+			if (dp_peer) {
+				ath12k_info(ar->ab,
+					    "mode3: htt_unmap_manual: dp_peer found peer_id=%u hw_link=%u\n",
+					    dp_peer->peer_id,
+					    ahsta->recov.asserted_hw_link_id);
+				ath12k_dp_arch_peer_drv_cleanup_indication(
+					ath12k_ab_to_dp(ar->ab), dp_peer->peer_id,
+					ahsta->recov.asserted_hw_link_id);
+			}
+		}
+
 		ar->num_peers--;
 
 		/*
@@ -1074,10 +1103,11 @@ void ath12k_mac_peer_disassoc(struct ath12k_base *ab, struct ieee80211_sta *sta,
 		 * will be triggerred when umac reset is happening
 		 */
 		ahsta->low_ack_sent = true;
-		/* Track peers marked for deletion during Mode 2 recovery
+		/* Track peers marked for deletion during Mode 2/3 recovery
 		 * to send mlo_hw_link_id_bitmap only for them.
 		 */
-		if (ag && ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2)
+		if (ag && (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2 ||
+			   ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE3))
 			ahsta->peer_delete_send_mlo_hw_bitmap = true;
 	}
 }

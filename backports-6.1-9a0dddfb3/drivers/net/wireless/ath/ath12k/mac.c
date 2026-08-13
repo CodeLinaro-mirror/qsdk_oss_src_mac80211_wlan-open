@@ -5395,6 +5395,36 @@ static void ath12k_peer_assoc_h_eht(struct ath12k *ar,
 		arg->enable_mcs15 = link_conf->enable_mcs15;
 }
 
+void ath12k_mode3_set_dp_recovery_flag(struct ath12k_base *ab,
+				       struct ath12k_link_sta *arsta,
+				       bool set)
+{
+	struct ath12k_sta *ahsta = arsta->ahsta;
+
+	if (!arsta->arvif || !arsta->arvif->ar)
+		return;
+
+	/* Track at ahsta level so the teardown path knows to manually call
+	 * dp_peer_cleanup_indication() if the peer is deleted before link add
+	 * completes (FW on the asserted chip will not send the HTT event).
+	 */
+	if (set) {
+		ahsta->recov.asserted_peer_pending = true;
+		ahsta->recov.asserted_hw_link_id =
+			arsta->arvif->ar->pdev->hw_link_id;
+		ath12k_info(ab,
+			    "mode3: set_dp_recovery_flag: SET peer %pM link_id=%u hw_link=%u asserted_peer_pending=true - manual HTT unmap needed on disconnect\n",
+			    arsta->addr, arsta->link_id,
+			    ahsta->recov.asserted_hw_link_id);
+	} else {
+		ath12k_info(ab,
+			    "mode3: set_dp_recovery_flag: CLEAR peer %pM link_id=%u (Phase5 success) asserted_peer_pending=false\n",
+			    arsta->addr, arsta->link_id);
+		ahsta->recov.asserted_peer_pending = false;
+		ahsta->recov.asserted_hw_link_id = 0xFF;
+	}
+}
+
 static void ath12k_peer_assoc_h_mlo(struct ath12k_link_sta *arsta,
 				    struct ath12k_wmi_peer_assoc_arg *arg)
 {
@@ -5437,11 +5467,17 @@ static void ath12k_peer_assoc_h_mlo(struct ath12k_link_sta *arsta,
 	ml->eml_cap = sta->eml_cap;
 	links = ahsta->links_map;
 
-	if (sta->reconf.removed_links & BIT(arsta->link_id))
+	if ((sta->reconf.removed_links | ahsta->recov.removed_links) &
+	    BIT(arsta->link_id))
 		ml->ml_reconfig = ml->mlo_link_del = true;
 
-	if (sta->reconf.added_links & BIT(arsta->link_id))
+	if ((sta->reconf.added_links | ahsta->recov.added_links) & BIT(arsta->link_id))
 		ml->ml_reconfig = ml->mlo_link_add = true;
+
+	if (ahsta->recov.removed_links || ahsta->recov.added_links) {
+		ml->ml_recovery_reconfig = true;
+		ml->new_master_ll_id = ahsta->recov.new_primary_hwlink_id;
+	}
 
 	rcu_read_lock();
 
@@ -5471,9 +5507,11 @@ static void ath12k_peer_assoc_h_mlo(struct ath12k_link_sta *arsta,
 		ml->partner_info[i].logical_link_idx_valid = true;
 		ml->partner_info[i].logical_link_idx = arsta_p->link_idx;
 		ml->partner_info[i].ieee_link_id = arsta_p->link_id;
-		if (sta->reconf.removed_links & BIT(arsta_p->link_id))
+		if ((sta->reconf.removed_links | ahsta->recov.removed_links) &
+		    BIT(arsta_p->link_id))
 			ml->ml_reconfig = ml->partner_info[i].mlo_link_del = true;
-		if (sta->reconf.added_links & BIT(arsta_p->link_id))
+		if ((sta->reconf.added_links | ahsta->recov.added_links) &
+		    BIT(arsta_p->link_id))
 			ml->ml_reconfig = ml->partner_info[i].mlo_link_add = true;
 
 		ath12k_dbg_level(arvif->ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
@@ -7941,6 +7979,107 @@ ath12k_mac_populate_ttlm_params(struct ath12k_link_vif *arvif,
 			       sizeof(params->ie[i].ttlm.hw_link_map_tid));
 		}
 	}
+
+	return 0;
+}
+
+/*
+ * Build T2LM params for Mode3 recovery: map all TIDs to surviving (non-asserted)
+ * links only. Returns -ENOENT if no asserted link found for this VIF.
+ */
+int ath12k_mac_populate_recovery_t2lm_params(
+		struct ath12k_link_vif *arvif,
+		struct ath12k_base *assert_ab,
+		struct ath12k_wmi_tid_to_link_map_ap_params *params,
+		bool set)
+{
+	struct ath12k_vif *ahvif = arvif->ahvif;
+	struct ieee80211_vif *vif = ahvif->vif;
+	struct ath12k_link_vif *arv;
+	u8 asserted_link_id = 0xFF;
+	u16 surviving_links = 0;
+	u16 hw_link_map = 0;
+	unsigned long links;
+	struct ath12k *ar;
+	u8 link_id;
+	int j;
+
+	if (!vif->valid_links)
+		return -ENOENT;
+
+	/*
+	 * Build the asserted and surviving link bitmaps.
+	 * Repurposed links are permanently excluded from the active link map
+	 * in both set and clear paths — they are no longer part of this MLD.
+	 *
+	 * set=true  (Phase 2 — asserted link down):
+	 *   active_links = surviving non-repurposed links only
+	 *   disabled     = asserted + repurposed
+	 *
+	 * set=false (Phase 5 — asserted link back):
+	 *   active_links = all non-repurposed links (asserted re-included)
+	 *   disabled     = repurposed only
+	 */
+	links = vif->valid_links;
+	for_each_set_bit(link_id, &links, ATH12K_NUM_MAX_LINKS) {
+		arv = rcu_dereference(ahvif->link[link_id]);
+		if (!arv || !arv->ar)
+			continue;
+		if (arv->ar->ab == assert_ab)
+			asserted_link_id = link_id;
+		else if (!(ahvif->repurposed_links & BIT(link_id)))
+			surviving_links |= BIT(link_id);
+	}
+
+	if (asserted_link_id == 0xFF || !surviving_links)
+		return -ENOENT;
+
+	ar = arvif->ar;
+	memset(params, 0, sizeof(*params));
+	params->pdev_id       = ar->pdev->pdev_id;
+	params->vdev_id       = arvif->vdev_id;
+	params->hw_link_id    = ar->hw_link_id;
+	params->num_ttlm_info = 1;
+
+	params->ie[0].ttlm.direction               = ATH12K_WMI_TTLM_BIDI_DIRECTION;
+	params->ie[0].ttlm.default_link_mapping    = false;
+	params->ie[0].ttlm.mapping_switch_time_present  = 1;
+	params->ie[0].ttlm.mapping_switch_time          = 100;
+	params->ie[0].ttlm.expected_duration_present = 1;
+	if (set) {
+		/* Phase 2: steer all TIDs to surviving links; asserted link disabled */
+		params->ie[0].ttlm.expected_duration = 0xFFFFFF;
+
+		ath12k_mac_get_hw_link_map(vif, surviving_links, &hw_link_map);
+		for (j = 0; j < TTLM_MAX_NUM_TIDS; j++) {
+			params->ie[0].ttlm.ieee_link_map_tid[j] = surviving_links;
+			params->ie[0].ttlm.hw_link_map_tid[j]   = hw_link_map;
+		}
+
+		params->ie[0].disabled_link_bitmap =
+			BIT(asserted_link_id) |
+			(ahvif->repurposed_links &
+			 vif->valid_links);
+	} else {
+		u16 active_links;
+
+		/* Phase 5: restore asserted link; repurposed links still excluded */
+		params->ie[0].ttlm.expected_duration = 100;
+		active_links = surviving_links | BIT(asserted_link_id);
+
+		ath12k_mac_get_hw_link_map(vif, active_links, &hw_link_map);
+		for (j = 0; j < TTLM_MAX_NUM_TIDS; j++) {
+			params->ie[0].ttlm.ieee_link_map_tid[j] = active_links;
+			params->ie[0].ttlm.hw_link_map_tid[j]   = hw_link_map;
+		}
+
+		params->ie[0].disabled_link_bitmap =
+				ahvif->repurposed_links & vif->valid_links;
+	}
+
+	ath12k_mac_get_hw_link_map(vif, params->ie[0].disabled_link_bitmap,
+				   &hw_link_map);
+	params->ie[0].disabled_link_bitmap = hw_link_map;
 
 	return 0;
 }
@@ -11916,11 +12055,11 @@ void ath12k_mac_op_cancel_hw_scan(struct ieee80211_hw *hw,
 }
 EXPORT_SYMBOL(ath12k_mac_op_cancel_hw_scan);
 
-static int ath12k_install_key(struct ath12k_link_vif *arvif,
-			      struct ieee80211_key_conf *key,
-			      enum set_key_cmd cmd,
-			      const u8 *macaddr, u32 flags,
-			      struct ath12k_vif *vlan_ahvif)
+int ath12k_install_key(struct ath12k_link_vif *arvif,
+		       struct ieee80211_key_conf *key,
+		       enum set_key_cmd cmd,
+		       const u8 *macaddr, u32 flags,
+		       struct ath12k_vif *vlan_ahvif)
 {
 	int ret;
 	struct ath12k *ar = arvif->ar;
@@ -14221,9 +14360,9 @@ static int ath12k_mac_station_unauthorize(struct ath12k *ar,
 	return 0;
 }
 
-static int ath12k_mac_station_authorize(struct ath12k *ar,
-					struct ath12k_link_vif *arvif,
-					struct ath12k_link_sta *arsta)
+int ath12k_mac_station_authorize(struct ath12k *ar,
+				 struct ath12k_link_vif *arvif,
+				 struct ath12k_link_sta *arsta)
 {
 	struct ath12k_vif *ahvif;
 	struct ath12k_dp_vif *dp_vif = NULL;
@@ -15289,6 +15428,31 @@ static int ath12k_mac_handle_link_sta_state(struct ieee80211_hw *hw,
 					    arsta->addr);
 				goto exit;
 			}
+
+			if (vif->type == NL80211_IFTYPE_AP) {
+				struct ath12k_sta *ahsta = arsta->ahsta;
+
+				if (ahsta->is_mlo) {
+					u32 freq = arvif->chanctx.def.chan ?
+						   arvif->chanctx.def.chan->center_freq :
+						   0;
+
+					ath12k_dbg(ar->ab, ATH12K_DBG_MODE1_RECOVERY,
+						    "peer %pM assoc link_id %u freq %u MHz hw link id - %d - %s%s\n",
+						    arsta->addr, arsta->link_id,
+						    freq, ar->pdev->hw_link_id,
+						    arsta->link_id ==
+						    ahsta->primary_link_id ?
+						    " [primary]" : "",
+						    arsta->link_id ==
+						    ahsta->assoc_link_id ?
+						    " [assoc]" : "");
+				} else {
+					ath12k_dbg(ar->ab, ATH12K_DBG_MODE1_RECOVERY,
+						    "peer %pM assoc non-MLO\n",
+						    arsta->addr);
+				}
+			}
 		}
 
 		/* Do an early prefetch of PN for group keys(GTK/BIGTK)
@@ -15920,6 +16084,8 @@ ml_station_remove:
 		if (sta->mlo) {
 			ath12k_mac_ml_station_remove(ahvif, ahsta);
 			cancel_work_sync(&ahsta->migration_wk);
+			ahsta->recov.asserted_peer_pending = false;
+			ahsta->recov.asserted_hw_link_id   = 0xFF;
 		} else {
 			link_id = ffs(ahsta->links_map) - 1;
 			if (is_recovery && link_id >= 0) {
@@ -17099,6 +17265,30 @@ skip_pri_link_selection:
 	return 0;
 }
 EXPORT_SYMBOL(ath12k_mac_op_change_sta_links);
+
+void ath12k_mac_migrate_assoc_link(struct ath12k_sta *ahsta, u8 new_link_id)
+{
+	struct ath12k_link_sta *new_arsta;
+	struct ath12k_vif *ahvif = ahsta->ahvif;
+	struct ieee80211_hw *hw = ahvif->ah->hw;
+	struct ieee80211_sta *sta;
+	struct ath12k_link_vif *new_arvif;
+	struct ath12k *new_ar;
+
+	lockdep_assert_wiphy(hw->wiphy);
+
+	new_arsta = wiphy_dereference(hw->wiphy, ahsta->link[new_link_id]);
+	new_arvif = wiphy_dereference(hw->wiphy, ahvif->link[new_link_id]);
+	if (!new_arsta || !new_arvif || !new_arvif->ar)
+		return;
+
+	new_ar = new_arvif->ar;
+
+	ahsta->assoc_link_id = new_link_id;
+
+	sta = ath12k_ahsta_to_sta(ahsta);
+	ath12k_dp_arch_assoc_link_update(new_ar->ab->dp, ahvif->ah, sta);
+}
 
 void ath12k_mac_op_set_dscp_tid(struct ieee80211_hw *hw,
 				struct ieee80211_vif *vif,

@@ -700,6 +700,9 @@ struct ath12k_dp_arch_ops {
 	void (*dp_link_peer_unassign_id)(struct ath12k_dp *dp,  struct ath12k *ar,
 					 struct ath12k_dp_link_peer *peer);
 	void (*peer_cleanup_indication)(struct ath12k_dp *dp, struct sk_buff *skb);
+	void (*peer_drv_cleanup_indication)(struct ath12k_dp *dp,
+					    u16 peer_id,
+					    u8 hw_link_id);
 	int (*dp_ppeds_tx_completion_handler)(struct ath12k_base *ab, int budget);
 	void (*dp_link_peer_assoc)(struct ath12k_dp_hw *dp_hw, struct ath12k_dp *dp,
 				   u8 *addr, u32 hw_link_id);
@@ -1470,6 +1473,16 @@ static inline void ath12k_dp_arch_peer_cleanup_indication(struct ath12k_dp *dp,
 {
 	if (dp->arch_ops->peer_cleanup_indication)
 		dp->arch_ops->peer_cleanup_indication(dp, skb);
+}
+
+static inline void
+ath12k_dp_arch_peer_drv_cleanup_indication(struct ath12k_dp *dp,
+					   u16 peer_id,
+					   u8 hw_link_id)
+{
+	if (dp->arch_ops->peer_drv_cleanup_indication)
+		dp->arch_ops->peer_drv_cleanup_indication(dp, peer_id,
+							  hw_link_id);
 }
 
 static inline void ath12k_dp_arch_link_peer_assoc(struct ath12k_dp *dp,

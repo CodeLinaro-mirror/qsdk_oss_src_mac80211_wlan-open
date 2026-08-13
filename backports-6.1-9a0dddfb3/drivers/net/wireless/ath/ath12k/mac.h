@@ -374,6 +374,20 @@ void ath12k_mac_get_any_chanctx_conf_iter(struct ieee80211_hw *hw,
 					  void *data);
 int ath12k_mac_mlo_teardown_with_umac_reset(struct ath12k_base *ab,
 					    enum wmi_mlo_tear_down_reason_code_type reason_code);
+int ath12k_mac_populate_recovery_t2lm_params(struct ath12k_link_vif *arvif,
+				struct ath12k_base *assert_ab,
+				struct ath12k_wmi_tid_to_link_map_ap_params *params,
+				bool set);
+void ath12k_mode3_set_dp_recovery_flag(struct ath12k_base *ab,
+				       struct ath12k_link_sta *arsta,
+				       bool set);
+void ath12k_mac_migrate_assoc_link(struct ath12k_sta *ahsta, u8 new_link_id);
+int ath12k_install_key(struct ath12k_link_vif *arvif, struct ieee80211_key_conf *key,
+		       enum set_key_cmd cmd, const u8 *macaddr, u32 flags,
+		       struct ath12k_vif *vlan_ahvif);
+int ath12k_mac_station_authorize(struct ath12k *ar,
+				 struct ath12k_link_vif *arvif,
+				 struct ath12k_link_sta *arsta);
 enum nl80211_he_gi ath12k_mac_he_gi_to_nl80211_he_gi(u8 sgi);
 u16 ath12k_mac_he_convert_tones_to_ru_tones(u16 tones);
 enum nl80211_eht_ru_alloc ath12k_mac_eht_ru_tones_to_nl80211_eht_ru_alloc(u16 ru_tones);
