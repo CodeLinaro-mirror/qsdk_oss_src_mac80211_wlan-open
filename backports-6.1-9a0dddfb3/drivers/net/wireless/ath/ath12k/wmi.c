@@ -17073,6 +17073,7 @@ static void ath12k_wmi_ctrl_path_stats_event(struct ath12k_base *ab, struct sk_b
 		ath12k_warn(ab, "failed to parse wmi_ctrl_path_stats tlv: %d\n", ret);
 		if (!param.ar)
 			return;
+		ar = param.ar;
 		goto free;
 	}
 
