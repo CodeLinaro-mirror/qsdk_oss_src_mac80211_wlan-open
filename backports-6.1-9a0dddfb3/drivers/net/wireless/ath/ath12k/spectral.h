@@ -168,6 +168,11 @@ struct ath12k_spectral {
 	 * racing the FW agile engine on A->A rapid-fire transitions.
 	 */
 	bool agile_drain_needed;
+	/* Number of IDR entries written into the ring by the last
+	 * dbring_reset() call. Used by ath12k_dbring_topup() on A->N
+	 * transition to fill only the slots that dbring_reset() skipped.
+	 */
+	int agile_ring_filled;
 	/* per-BW fft_size caps + scalar mins/maxs, populated at probe */
 	struct ath12k_spectral_param_min_max param_min_max;
 };

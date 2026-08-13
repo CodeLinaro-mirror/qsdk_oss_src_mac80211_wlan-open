@@ -18248,6 +18248,13 @@ ath12k_wmi_pdev_sscan_fw_param_event(struct ath12k_base *ab,
 			   start_sec80, end_sec80 - start_sec80 + 1,
 			   start_5mhz,  end_5mhz  - start_5mhz  + 1);
 	}
+	/* NOTE: do NOT schedule agile_dma_rebind_work here. The ring was
+	 * already reset and wmi_cfg_setup sent in start_scan() before TRIGGER.
+	 * Sending a second wmi_cfg_setup after FW has already started consuming
+	 * ring slots (sscan_fw_param fires mid-scan) resets FW's internal TP,
+	 * causing it to lose exactly 1 slot per scan — producing the IDR pool
+	 * shrinkage observed (drain_start: 249→248→247→...).
+	 */
 #endif
 
 }

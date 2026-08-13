@@ -233,34 +233,35 @@ int ath12k_dbring_buf_setup(struct ath12k *ar,
 	return ret;
 }
 
-  /**
-   * ath12k_dbring_reset() - Reset DMA ring to clean state for new scan
-   * @ar: ath12k radio instance
-   * @ring: Direct buffer ring to reset
-   *
-   * Resets the DMA ring to a known clean state before starting a new spectral
-   * scan, ensuring firmware sees a full ring regardless of previous scan state.
-   * This is required for agile spectral scans to prevent the firmware from
-   * computing zero available ring entries when Head Pointer has wrapped to zero.
-   *
-   * The function performs three operations:
-   * 1. Resets both Head Pointer (HP) and Tail Pointer (TP) to position 0 in
-   *    both host software state and firmware-visible shadow registers.
-   * 2. Re-populates all ring descriptors using existing pre-allocated DMA
-   *    buffers from the IDR database (no new memory allocation).
-   * 3. Updates the HP shadow register to reflect the full ring size.
-   *
-   * All buffers are reused from boot-time allocation; no memory is allocated
-   * or freed. The ring memory itself is not zeroed to avoid corrupting any
-   * in-flight firmware DMA writes that may still be completing after the
-   * preceding scan stop commands.
-   *
-   * Context: Called from spectral scan start path under wiphy lock.
-   *          Takes srng->lock and ring->idr_lock internally.
-   *
-   * Return: 0 on success
-   */
-int ath12k_dbring_reset(struct ath12k *ar, struct ath12k_dbring *ring)
+/**
+ * ath12k_dbring_reset() - Reset DMA ring to clean state for new scan
+ * @ar: ath12k radio instance
+ * @ring: Direct buffer ring to reset
+ *
+ * Resets the DMA ring to a known clean state before starting a new spectral
+ * scan, ensuring firmware sees a full ring regardless of previous scan state.
+ * This is required for agile spectral scans to prevent the firmware from
+ * computing zero available ring entries when Head Pointer has wrapped to zero.
+ *
+ * The function performs three operations:
+ * 1. Resets both Head Pointer (HP) and Tail Pointer (TP) to position 0 in
+ *    both host software state and firmware-visible shadow registers.
+ * 2. Re-populates all ring descriptors using existing pre-allocated DMA
+ *    buffers from the IDR database (no new memory allocation).
+ * 3. Updates the HP shadow register to reflect the full ring size.
+ *
+ * All buffers are reused from boot-time allocation; no memory is allocated
+ * or freed. The ring memory itself is not zeroed to avoid corrupting any
+ * in-flight firmware DMA writes that may still be completing after the
+ * preceding scan stop commands.
+ *
+ * Context: Called from spectral scan start path under wiphy lock.
+ *          Takes srng->lock and ring->idr_lock internally.
+ *
+ * Return: 0 on success
+ */
+int ath12k_dbring_reset(struct ath12k *ar, struct ath12k_dbring *ring,
+			int *filled_elems)
 {
 	struct ath12k_base *ab = ar->ab;
 	struct hal_srng *srng;
@@ -308,7 +309,7 @@ int ath12k_dbring_reset(struct ath12k *ar, struct ath12k_dbring *ring)
 		 * all batch replenish calls succeed.
 		 */
 		if (ath12k_hal_srng_src_num_free(ab, srng, false) <=
-		    ATH12K_SPECTRAL_DBRING_FREE_SLOTS)
+		    ATH12K_SPECTRAL_DBRING_FREE_SLOTS(ring->bufs_max))
 			break;
 
 		ptr_unaligned = buff->payload;
@@ -336,9 +337,83 @@ int ath12k_dbring_reset(struct ath12k *ar, struct ath12k_dbring *ring)
 	if (srng->u.src_ring.hp_addr)
 		*srng->u.src_ring.hp_addr = srng->u.src_ring.hp;
 
+	/* Return actual number of filled descriptors. HP starts at 0 in this
+	 * function and advances linearly without wrapping (the loop breaks before
+	 * the ring is full), so integer division is exact: filled = HP / entry_size.
+	 */
+	if (filled_elems)
+		*filled_elems = srng->u.src_ring.hp / srng->entry_size;
+
 	spin_unlock_bh(&srng->lock);
 
 	return 0;
+}
+
+/**
+ * ath12k_dbring_topup() - Re-enqueue IDR buffers skipped by dbring_reset()
+ * @ar: ath12k radio instance
+ * @ring: Direct buffer ring to top up
+ *
+ * After dbring_reset(), ATH12K_SPECTRAL_DBRING_FREE_SLOTS ring slots are
+ * intentionally left empty. When switching from AGILE to NORMAL mode, normal
+ * scan inherits this reduced ring and runs out of slots mid-scan causing
+ * sample drops. This function fills only the empty slots by iterating IDR
+ * entries that were skipped by dbring_reset() - identified by buf_id index
+ * being >= the number already filled. No allocation, no DMA remapping.
+ * Only called on A->N transition.
+ */
+void ath12k_dbring_topup(struct ath12k *ar, struct ath12k_dbring *ring,
+			 int already_filled)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct hal_srng *srng;
+	struct ath12k_dbring_element *buff;
+	void *ptr_unaligned, *ptr_aligned;
+	void *desc;
+	u32 cookie;
+	int buf_id;
+	int skipped = 0;
+
+	srng = &ab->hal.srng_list[ring->refill_srng.ring_id];
+
+	spin_lock_bh(&srng->lock);
+	spin_lock_bh(&ring->idr_lock);
+
+	idr_for_each_entry(&ring->bufs_idr, buff, buf_id) {
+		/* Skip the first already_filled entries - they are already
+		 * written into ring descriptors by dbring_reset().
+		 */
+		if (skipped < already_filled) {
+			skipped++;
+			continue;
+		}
+
+		if (ath12k_hal_srng_src_num_free(ab, srng, false) <= 1)
+			break;
+
+		ptr_unaligned = buff->payload;
+		ptr_aligned = PTR_ALIGN(ptr_unaligned, ring->buf_align);
+		ath12k_dbring_fill_magic_value(ar, ptr_aligned, ring->buf_sz);
+#ifndef CONFIG_IO_COHERENCY
+		dma_sync_single_for_device(ab->dev, buff->paddr,
+					   ring->buf_sz, DMA_FROM_DEVICE);
+#endif
+		cookie = u32_encode_bits(ar->pdev_idx,
+					 DP_RXDMA_BUF_COOKIE_PDEV_ID) |
+			 u32_encode_bits(buf_id, DP_RXDMA_BUF_COOKIE_BUF_ID);
+
+		desc = (void *)(srng->ring_base_vaddr + srng->u.src_ring.hp);
+		ath12k_hal_rx_buf_addr_info_set(desc, buff->paddr, cookie, 0);
+
+		srng->u.src_ring.hp = (srng->u.src_ring.hp + srng->entry_size) %
+				       srng->ring_size;
+	}
+
+	if (srng->u.src_ring.hp_addr)
+		*srng->u.src_ring.hp_addr = srng->u.src_ring.hp;
+
+	spin_unlock_bh(&ring->idr_lock);
+	spin_unlock_bh(&srng->lock);
 }
 
 int ath12k_dbring_srng_setup(struct ath12k *ar, struct ath12k_dbring *ring,
@@ -500,7 +575,8 @@ int ath12k_dbring_buffer_release_event(struct ath12k_base *ab,
 		spin_unlock_bh(&ring->idr_lock);
 
 		memset(buff, 0, size);
-		ath12k_dbring_bufs_replenish(ar, ring, buff, module_id, GFP_ATOMIC);
+		ath12k_dbring_bufs_replenish(ar, ring, buff,
+					     module_id, GFP_ATOMIC);
 	}
 
 	spin_unlock_bh(&srng->lock);
