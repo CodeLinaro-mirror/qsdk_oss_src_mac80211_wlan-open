@@ -1893,35 +1893,10 @@ static void ath12k_dp_qos_link_stats_alloc(struct ath12k_dp_link_peer *link_peer
 			GFP_ATOMIC);
 }
 
-static void ath12k_dp_tx_stats_alloc(struct ath12k_dp_link_peer *link_peer,
-				     struct ath12k_pdev_dp *dp_pdev)
-{
-	if (ath12k_extd_tx_stats_enabled(dp_pdev) &&
-	    !link_peer->peer_stats.tx_stats)
-		link_peer->peer_stats.tx_stats =
-			kzalloc(sizeof(*link_peer->peer_stats.tx_stats),
-				GFP_ATOMIC);
-}
-
 static void ath12k_dp_tx_stats_free(struct ath12k_dp_link_peer *link_peer)
 {
 	kfree(link_peer->peer_stats.tx_stats);
 	link_peer->peer_stats.tx_stats = NULL;
-}
-
-static void ath12k_dp_tx_ppdu_stats_alloc(struct ath12k_dp_link_peer *link_peer,
-					  struct ath12k_pdev_dp *dp_pdev)
-{
-	if (ath12k_htt_tx_ppdu_stats_enabled(dp_pdev) &&
-	    !link_peer->peer_stats.tx_ppdu_stats) {
-		link_peer->peer_stats.tx_ppdu_stats =
-			kzalloc(sizeof(*link_peer->peer_stats.tx_ppdu_stats),
-				GFP_ATOMIC);
-		if (link_peer->peer_stats.tx_ppdu_stats) {
-			link_peer->peer_stats.tx_ppdu_stats->avg_ack_rssi = INVALID_RSSI;
-			link_peer->peer_stats.tx_ppdu_stats->avg_tx_rate  = INVALID_RATE;
-		}
-	}
 }
 
 static void ath12k_dp_tx_ppdu_stats_free(struct ath12k_dp_link_peer *link_peer)
@@ -1944,14 +1919,6 @@ int ath12k_dp_peer_link_stats_alloc(struct ath12k_dp_link_peer *link_peer,
 
 	peer_stats = &link_peer->peer_stats;
 
-	if (ath12k_extd_rx_stats_enabled(dp_pdev) &&
-	    !peer_stats->rx_stats) {
-		peer_stats->rx_stats = kzalloc(sizeof(*peer_stats->rx_stats),
-					       GFP_ATOMIC);
-		if (!peer_stats->rx_stats)
-			return -ENOMEM;
-	}
-
 	if (ath12k_dp_hw_peer_stats_enabled(dp_pdev) &&
 	    !peer_stats->hw_link_stats) {
 		peer_stats->hw_link_stats =
@@ -1961,7 +1928,6 @@ int ath12k_dp_peer_link_stats_alloc(struct ath12k_dp_link_peer *link_peer,
 			ath12k_err(NULL,
 				   "failed to alloc hw_stats for link peer %pM\n",
 				   link_peer->addr);
-			kfree(peer_stats->rx_stats);
 			return -ENOMEM;
 		}
 	}
@@ -1972,9 +1938,9 @@ int ath12k_dp_peer_link_stats_alloc(struct ath12k_dp_link_peer *link_peer,
 			kzalloc(sizeof(*link_peer->peer_stats.rx_stats),
 				GFP_ATOMIC);
 		if (!link_peer->peer_stats.rx_stats) {
-			ath12k_warn(dp_pdev->ar->ab,
-				    "failed to alloc rx_stats for link peer %pM\n",
-				    link_peer->addr);
+			ath12k_err(NULL,
+				   "failed to alloc rx_stats for link peer %pM\n",
+				   link_peer->addr);
 			return -ENOMEM;
 		}
 	}
@@ -1985,25 +1951,51 @@ int ath12k_dp_peer_link_stats_alloc(struct ath12k_dp_link_peer *link_peer,
 			kzalloc(sizeof(*link_peer->peer_stats.rx_ppdu_stats),
 				GFP_ATOMIC);
 		if (!link_peer->peer_stats.rx_ppdu_stats) {
-			ath12k_warn(dp_pdev->ar->ab,
-				    "failed to alloc rx_ppdu_stats for link peer %pM\n",
-				    link_peer->addr);
+			ath12k_err(NULL,
+				   "failed to alloc rx_ppdu_stats for link peer %pM\n",
+				   link_peer->addr);
 			return -ENOMEM;
 		}
+	}
+
+	if (ath12k_extd_tx_stats_enabled(dp_pdev) &&
+	    !link_peer->peer_stats.tx_stats) {
+		link_peer->peer_stats.tx_stats =
+			kzalloc(sizeof(*link_peer->peer_stats.tx_stats),
+				GFP_ATOMIC);
+		if (!link_peer->peer_stats.tx_stats) {
+			ath12k_err(NULL,
+				   "failed to alloc tx_stats for link peer %pM\n",
+				   link_peer->addr);
+			return -ENOMEM;
+		}
+	}
+
+	if (ath12k_htt_tx_ppdu_stats_enabled(dp_pdev) &&
+	    !link_peer->peer_stats.tx_ppdu_stats) {
+		link_peer->peer_stats.tx_ppdu_stats =
+			kzalloc(sizeof(*link_peer->peer_stats.tx_ppdu_stats),
+				GFP_ATOMIC);
+		if (!link_peer->peer_stats.tx_ppdu_stats) {
+			ath12k_err(NULL,
+				   "failed to alloc tx_ppdu_stats for link peer %pM\n",
+				   link_peer->addr);
+			return -ENOMEM;
+		}
+		link_peer->peer_stats.tx_ppdu_stats->avg_ack_rssi = INVALID_RSSI;
+		link_peer->peer_stats.tx_ppdu_stats->avg_tx_rate  = INVALID_RATE;
 	}
 
 	if (dp_pdev && (dp_pdev->dp_stats_mask & DP_ENABLE_QOS_STATS)) {
 		ath12k_dp_qos_link_stats_alloc(link_peer);
 
 		if (!peer_stats->link_qos_stats) {
-			kfree(peer_stats->rx_stats);
-			kfree(peer_stats->hw_link_stats);
+			ath12k_err(NULL,
+				   "failed to alloc link_qos_stats for link peer %pM\n",
+				   link_peer->addr);
 			return -ENOMEM;
 		}
 	}
-
-	ath12k_dp_tx_stats_alloc(link_peer, dp_pdev);
-	ath12k_dp_tx_ppdu_stats_alloc(link_peer, dp_pdev);
 
 	return 0;
 }
