@@ -12,7 +12,9 @@
 #ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/ini.h"
 #endif
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/ath12k_cmn_extn.h"
+#endif /* CPTCFG_QCN_EXTN */
 
 struct ath12k_mgmt;
 
