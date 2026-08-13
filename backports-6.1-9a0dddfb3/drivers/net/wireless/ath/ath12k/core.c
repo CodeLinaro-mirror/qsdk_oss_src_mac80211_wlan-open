@@ -2950,6 +2950,7 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 	int ret, i;
 	struct ath12k_base *partner_ab;
 	bool hw_grp_ready = false;
+	bool irq_enabled[ATH12K_MAX_SOCS] = {0};
 
 	ret = ath12k_core_start_firmware(ab, ab->fw_mode);
 	if (ret) {
@@ -3057,8 +3058,10 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 			    !partner_ab->recovery_start)
 				continue;
 
-			if (!test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags))
+			if (!test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags)) {
 				ath12k_hif_irq_enable(partner_ab);
+				irq_enabled[i] = true;
+			}
 
 			ret = ath12k_dp_rxdma_ring_sel_config(partner_ab);
 			if (ret) {
@@ -3117,6 +3120,9 @@ err_core_stop:
 		ab = ag->ab[i];
 		if (!ab || ab->is_bypassed)
 			continue;
+
+		if (irq_enabled[i])
+			ath12k_hif_irq_disable(ab);
 
 		mutex_lock(&ab->core_lock);
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
