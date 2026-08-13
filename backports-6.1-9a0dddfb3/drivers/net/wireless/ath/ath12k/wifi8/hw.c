@@ -803,7 +803,6 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.ce_count = 16,
 		.target_ce_config = ath12k_wifi8_target_ce_config_wlan_qcn9625,
 		.target_ce_count = 13,
-		/* TODO: CP: update CE maps and definitions later when available */
 		.svc_to_ce_map =
 			ath12k_wifi8_target_service_to_ce_map_wlan_qcn9625,
 		.svc_to_ce_map_len = 21,
@@ -874,8 +873,13 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.support_fse = true,
 		.cumac_support = true,
 		.cumac_chip_priority = 1,
+		.tqm_status_war = false,
 		.support_umcmn_interrupts = UMCMN_INTERRUPT_ENABLE,
+#ifdef PLATFORM_SDX
+		.alloc_cacheable_memory = false,
+#else
 		.alloc_cacheable_memory = true,
+#endif
 		.spectral = {
 			.fft_sz = 7,
 			.fft_bin_sz = 1,
@@ -887,9 +891,9 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 			.fft_size_max = {
 				[ATH12K_SPECTRAL_BW_20MHZ]  = 9,
 				[ATH12K_SPECTRAL_BW_40MHZ]  = 10,
-				[ATH12K_SPECTRAL_BW_80MHZ]  = 10,
-				[ATH12K_SPECTRAL_BW_160MHZ] = 10,
-				[ATH12K_SPECTRAL_BW_320MHZ] = 10,
+				[ATH12K_SPECTRAL_BW_80MHZ]  = 11,
+				[ATH12K_SPECTRAL_BW_160MHZ] = 11,
+				[ATH12K_SPECTRAL_BW_320MHZ] = 11,
 			},
 			.fragment_160mhz = true,
 			.supports_320mhz = true,
@@ -917,6 +921,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.board_magic = "QCA-ATH12K-BOARD",
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
 		.peer_del_all_support = true,
+		.tqm2sw_fw_war = false,
 	},
 };
 
