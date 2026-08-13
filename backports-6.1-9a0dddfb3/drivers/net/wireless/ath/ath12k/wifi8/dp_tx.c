@@ -4099,6 +4099,7 @@ int ath12k_wifi8_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
 						  list_no_skb_count);
 	return (count + list_no_skb_count);
 }
+#endif /* CPTCFG_ATH12K_PPE_DS_SUPPORT */
 
 #define INDEX_LOOKUP_OVERRIDE_ENABLED 1
 #define HLOS_TID_OVERWRITE_ENABLED 1
@@ -4504,7 +4505,6 @@ send_tqm2sw_fw_comp:
 
 	return quota - budget;
 }
-#endif
 
 int ath12k_wifi8_dp_tx_process_sam_status(struct ath12k_dp *dp, int budget)
 {

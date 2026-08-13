@@ -126,20 +126,14 @@ int ath12k_wifi8_dp_tx_ring_init(struct ath12k_base *ab);
 void ath12k_wifi8_dp_tx_ring_cleanup(struct ath12k_base *ab);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 int ath12k_wifi8_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget);
-int ath12k_wifi8_dp_tx_exception_handler(struct ath12k_dp *dp, int budget);
 #else
 static inline int
 ath12k_wifi8_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
 {
 	return 0;
 }
-
-static inline int
-ath12k_wifi8_dp_tx_exception_handler(struct ath12k_dp *dp, int budget)
-{
-	return 0;
-}
 #endif
+int ath12k_wifi8_dp_tx_exception_handler(struct ath12k_dp *dp, int budget);
 
 /*
  * ath12k_wifi8_dp_tx_exception_to_tx_comp() - Redirect TX exception buffer
