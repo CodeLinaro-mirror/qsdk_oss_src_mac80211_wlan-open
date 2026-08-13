@@ -974,4 +974,6 @@ struct ath12k_netstats_iter_ctx {
 
 bool ath12k_mac_mgmt_need_smd_sta_session_ctx(struct sk_buff *skb);
 
+struct ieee80211_chanctx_conf*
+ath12k_mac_get_ctx_for_bridge_recovery(struct ath12k *ar);
 #endif

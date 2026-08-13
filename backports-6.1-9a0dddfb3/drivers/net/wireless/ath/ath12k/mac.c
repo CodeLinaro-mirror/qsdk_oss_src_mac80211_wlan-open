@@ -25413,6 +25413,22 @@ static inline struct ath12k *ath12k_mac_get_ar(struct ath12k_hw *ah,
 	return NULL;
 }
 
+struct ieee80211_chanctx_conf*
+ath12k_mac_get_ctx_for_bridge_recovery(struct ath12k *ar)
+{
+	struct ath12k_link_vif *arvif = NULL;
+
+	if (!ar)
+		return NULL;
+
+	list_for_each_entry(arvif, &ar->arvifs, list) {
+		if (arvif && !(ATH12K_SCAN_LINKS_MASK & BIT(arvif->link_id)) &&
+		    arvif->chanctx.def.chan)
+			return &arvif->chanctx;
+	}
+	return NULL;
+}
+
 static struct ieee80211_chanctx_conf *ath12k_mac_get_ctx_for_bridge(struct ath12k_hw *ah, u8 link_idx)
 {
 	struct ath12k *ar;
@@ -25709,7 +25725,15 @@ static int ath12k_mac_create_and_start_bridge(struct ieee80211_hw *hw,
 				if (arvif->chanctx.def.chan)
 					bridge_ctx = &arvif->chanctx;
 				else
-					bridge_ctx = NULL;
+					bridge_ctx =
+					ath12k_mac_get_ctx_for_bridge_recovery(arvif->ar);
+
+				ath12k_dbg(arvif->ar->ab, ATH12K_DBG_MAC,
+					   "[radio_idx : %u] Recovery bridge chanctx link_id=%u addr=%pM freq %d\n",
+					   arvif->ar->radio_idx, arvif->link_id,
+					   arvif->addr,
+					   bridge_ctx ?
+					   bridge_ctx->def.chan->center_freq : 0);
 
 				ret = ath12k_mac_assign_vif_chanctx_handle(hw, vif, NULL, bridge_ctx, arvif->link_id, arvif->ar->hw_link_id);
 				if (ret) {

@@ -4409,6 +4409,7 @@ int ath12k_recovery_reconfig(struct ath12k_base *ab)
 	struct ath12k_base *partner_ab;
 	struct ath12k_hw *ah = ath12k_ag_to_ah(ag, 0);
 	struct ieee80211_key_conf *key;
+	struct ieee80211_chanctx_conf *bridge_ctx = NULL;
 	int i, j, key_idx;
 	int ret = -EINVAL;
 	bool is_bridge_vdev;
@@ -4445,6 +4446,19 @@ int ath12k_recovery_reconfig(struct ath12k_base *ab)
 
 			if (is_bridge_vdev) {
 				link = NULL;
+				if (!arvif->chanctx.def.chan) {
+					bridge_ctx =
+					ath12k_mac_get_ctx_for_bridge_recovery(arvif->ar);
+					ath12k_dbg(arvif->ar->ab, ATH12K_DBG_MAC,
+						   "[radio_idx : %u] bridge recovery chanctx link_id=%u addr=%pM freq %d\n",
+						   arvif->ar->radio_idx, arvif->link_id,
+						   arvif->addr,
+						   bridge_ctx ?
+						   bridge_ctx->def.chan->center_freq : 0);
+					if (bridge_ctx)
+						memcpy(&arvif->chanctx, bridge_ctx,
+						       sizeof(*bridge_ctx));
+				}
 			} else {
 				rcu_read_lock();
 				link = rcu_dereference(ahvif->vif->link_conf[arvif->link_id]);
