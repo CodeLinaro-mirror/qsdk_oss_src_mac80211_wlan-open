@@ -1482,6 +1482,10 @@ struct ath12k_hal {
 	int num_shadow_reg_configured;
 
 	u32 hal_desc_sz;
+	u32 rx_mpdu_start_offset;
+	u32 rx_msdu_end_offset;
+	u32 rx_msdu_end_wmask;
+	u16 rx_mpdu_start_wmask;
 
 	const struct ath12k_hal_tcl_to_cmp_rbm_map *tcl_to_cmp_rbm_map;
 	const struct ath12k_hal_rdi_mapping *rdi_mapping;

@@ -51,6 +51,14 @@ extern const struct hal_mon_ops hal_qcn9625_mon_ops_base;
 void ath12k_wifi8_hal_qcn9625_hw20_mon_ops_init(struct ath12k_hal *hal);
 void ath12k_wifi8_hal_qcn9625_hw10_mon_ops_init(struct ath12k_hal *hal);
 
+extern struct hal_ops hal_qcn9625_v1_ops;
+void ath12k_wifi8_hal_init_v1_ops(void);
+u32 ath12k_wifi8_hal_get_rx_desc_size_qcn9625_v1(void);
+u16 ath12k_wifi8_hal_rx_mpdu_start_wmask_get_qcn9625_v1(void);
+u32 ath12k_wifi8_hal_rx_msdu_end_wmask_get_qcn9625_v1(void);
+u32 ath12k_wifi8_hal_rx_desc_get_mpdu_start_offset_qcn9625_v1(void);
+u32 ath12k_wifi8_hal_rx_desc_get_msdu_end_offset_qcn9625_v1(void);
+
 /* HAL init/deinit and core config — shared between HW1.0 and HW2.0 ops tables */
 int ath12k_wifi8_hal_init_qcn9625(struct ath12k_hal *hal, u8 hw_version);
 void ath12k_wifi8_hal_deinit_qcn9625(struct ath12k_hal *hal);

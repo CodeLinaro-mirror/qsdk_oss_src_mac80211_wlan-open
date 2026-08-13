@@ -1565,13 +1565,37 @@ int ath12k_wifi8_hal_init_qcn9625(struct ath12k_hal *hal, u8 hw_version)
 {
 	struct ath12k_hal_wifi8 *hal_wifi8;
 
+
 	switch (hw_version) {
 	case ATH12K_HW_QCN9625_HW10:
 	case ATH12K_HW_QCN9589_HW10:
+		ath12k_wifi8_hal_init_v1_ops();
+		hal->regs = &qcn9625_regs;
+		hal->hal_params = &ath12k_wifi8_hw_hal_params_qcn9625;
+		hal->hal_ops = &hal_qcn9625_v1_ops;
+		hal->hal_desc_sz = ath12k_wifi8_hal_get_rx_desc_size_qcn9625_v1();
+		hal->rx_mpdu_start_offset =
+			ath12k_wifi8_hal_rx_desc_get_mpdu_start_offset_qcn9625_v1();
+		hal->rx_msdu_end_offset =
+			ath12k_wifi8_hal_rx_desc_get_msdu_end_offset_qcn9625_v1();
+		hal->rx_mpdu_start_wmask =
+				ath12k_wifi8_hal_rx_mpdu_start_wmask_get_qcn9625_v1();
+		hal->rx_msdu_end_wmask =
+				ath12k_wifi8_hal_rx_msdu_end_wmask_get_qcn9625_v1();
+		break;
 	case ATH12K_HW_QCN9625_HW20:
 		hal->regs = &qcn9625_regs;
 		hal->hal_params = &ath12k_wifi8_hw_hal_params_qcn9625;
 		hal->hal_ops = &hal_qcn9625_ops;
+		hal->hal_desc_sz = ath12k_wifi8_hal_get_rx_desc_size_qcn9625();
+		hal->rx_mpdu_start_offset =
+			ath12k_wifi8_hal_rx_desc_get_mpdu_start_offset_qcn9625();
+		hal->rx_msdu_end_offset =
+			ath12k_wifi8_hal_rx_desc_get_msdu_end_offset_qcn9625();
+		hal->rx_mpdu_start_wmask =
+				ath12k_wifi8_hal_rx_mpdu_start_wmask_get_qcn9625();
+		hal->rx_msdu_end_wmask =
+				ath12k_wifi8_hal_rx_msdu_end_wmask_get_qcn9625();
 		break;
 	default:
 		return -EINVAL;
@@ -1579,7 +1603,6 @@ int ath12k_wifi8_hal_init_qcn9625(struct ath12k_hal *hal, u8 hw_version)
 
 	hal->tcl_to_cmp_rbm_map = ath12k_wifi8_hal_tcl_to_cmp_rbm_map_qcn9625;
 	hal->rdi_mapping = ath12k_wifi8_hal_rdi_mapping_qcn9625;
-	hal->hal_desc_sz = ath12k_wifi8_hal_get_rx_desc_size_qcn9625();
 	hal_wifi8 = kzalloc(sizeof(*hal_wifi8), GFP_KERNEL);
 	if (!hal_wifi8)
 		return -ENOMEM;
