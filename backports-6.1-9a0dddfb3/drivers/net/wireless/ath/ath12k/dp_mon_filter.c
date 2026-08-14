@@ -235,6 +235,21 @@ void ath12k_dp_mon_rx_display_filters(struct ath12k_dp *dp,
 			   tlv_filter->fpmo_packet_data_filter);
 		ath12k_dbg(ab, ATH12K_DBG_DATA, "rx_mon_enable_hdr_per_ppdu: %d",
 			   tlv_filter->rx_mon_enable_hdr_per_ppdu);
+		ath12k_dbg(ab, ATH12K_DBG_DATA,
+			   "fp_fpmo_data_mpdu_filter_in_en: %d",
+			   tlv_filter->fp_fpmo_data_mpdu_filter_in_en);
+		ath12k_dbg(ab, ATH12K_DBG_DATA,
+			   "fp_data_mpdu_tlv_filter0: 0x%x",
+			   tlv_filter->fp_data_mpdu_tlv_filter0);
+		ath12k_dbg(ab, ATH12K_DBG_DATA,
+			   "fpmo_data_mpdu_tlv_filter0: 0x%x",
+			   tlv_filter->fpmo_data_mpdu_tlv_filter0);
+		ath12k_dbg(ab, ATH12K_DBG_DATA,
+			   "fp_data_mpdu_tlv_filter1: 0x%x",
+			   tlv_filter->fp_data_mpdu_tlv_filter1);
+		ath12k_dbg(ab, ATH12K_DBG_DATA,
+			   "fpmo_data_mpdu_tlv_filter1: 0x%x",
+			   tlv_filter->fpmo_data_mpdu_tlv_filter1);
 	}
 }
 EXPORT_SYMBOL(ath12k_dp_mon_rx_display_filters);
@@ -444,6 +459,16 @@ void ath12k_dp_mon_rx_prepare_filter(struct ath12k_dp *dp,
 					src_tlv_filter->phy_err_mask_cont;
 		dst_tlv_filter->phy_err_filter_valid |=
 					src_tlv_filter->phy_err_filter_valid;
+		dst_tlv_filter->fp_fpmo_data_mpdu_filter_in_en |=
+					src_tlv_filter->fp_fpmo_data_mpdu_filter_in_en;
+		dst_tlv_filter->fp_data_mpdu_tlv_filter0 |=
+					src_tlv_filter->fp_data_mpdu_tlv_filter0;
+		dst_tlv_filter->fpmo_data_mpdu_tlv_filter0 |=
+					src_tlv_filter->fpmo_data_mpdu_tlv_filter0;
+		dst_tlv_filter->fp_data_mpdu_tlv_filter1 |=
+					src_tlv_filter->fp_data_mpdu_tlv_filter1;
+		dst_tlv_filter->fpmo_data_mpdu_tlv_filter1 |=
+					src_tlv_filter->fpmo_data_mpdu_tlv_filter1;
 
 		ath12k_dbg(ab, ATH12K_DBG_DATA, "Updated Rx filters for mode: %d", mode);
 		ath12k_dp_mon_rx_display_filters(dp, mode, rx_mon_filter);
