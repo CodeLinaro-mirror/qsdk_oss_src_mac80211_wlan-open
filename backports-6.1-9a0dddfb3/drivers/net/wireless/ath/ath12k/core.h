@@ -1212,8 +1212,8 @@ struct ath12k_vif {
 	 * Used to propagate the current configuration into a newly initialised
 	 * arvif during link creation.
 	 */
-	enum ath12k_green_ap_mode ap_ps_on[IEEE80211_MLD_MAX_NUM_LINKS];
-	u32 ps_timeout[IEEE80211_MLD_MAX_NUM_LINKS];
+	enum ath12k_green_ap_mode ap_ps_on[ATH12K_NUM_MAX_LINKS];
+	u32 ps_timeout[ATH12K_NUM_MAX_LINKS];
 	/* Per-radio Green AP config indexed by stable hardware radio index
 	 * (ar->hw_link_id).  Written on SET and on link removal so that the
 	 * configuration survives ML link teardown and re-add, where the
