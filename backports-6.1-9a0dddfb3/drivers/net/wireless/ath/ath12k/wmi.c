@@ -12695,7 +12695,7 @@ static bool ath12k_bcast_probe_rl_check(struct ath12k *ar, const u8 *sa)
 {
 	struct ath12k_bcast_probe_rl_entry *entry;
 	struct ath12k_bcast_probe_rl_entry *oldest = NULL;
-	unsigned long window = msecs_to_jiffies(ATH12K_BCAST_PROBE_RL_WINDOW_MS);
+	unsigned long window = msecs_to_jiffies(ar->bcast_probe_rl_window_ms);
 	u64 key = ether_addr_to_u64(sa);
 	int bkt;
 
@@ -12713,7 +12713,7 @@ static bool ath12k_bcast_probe_rl_check(struct ath12k *ar, const u8 *sa)
 	}
 
 	/* No entry yet: check table cap before allocating. */
-	if (ar->bcast_probe_rl_entries >= ATH12K_BCAST_PROBE_RL_MAX_ENTRIES) {
+	if (ar->bcast_probe_rl_entries >= ar->bcast_probe_rl_max_entries) {
 		/* Table full: evict the oldest entry (smallest last_seen)
 		 * and reuse it for this new STA. This keeps rate-limiting
 		 * effective when many transient STAs fill the table.

@@ -2141,7 +2141,9 @@ void ath12k_bcast_probe_rl_init(struct ath12k *ar)
 {
 	lockdep_assert_held(&ar->data_lock);
 	hash_init(ar->bcast_probe_rl);
-	ar->bcast_probe_rl_entries = 0;
+	ar->bcast_probe_rl_entries    = 0;
+	ar->bcast_probe_rl_max_entries = ATH12K_BCAST_PROBE_RL_MAX_ENTRIES;
+	ar->bcast_probe_rl_window_ms   = ATH12K_BCAST_PROBE_RL_WINDOW_MS;
 }
 
 /**
