@@ -236,6 +236,15 @@ static const struct nla_policy
 ath12k_vendor_ext_mon_pkt_config_policy[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_MAX + 1] = {
 	[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER] = {.type = NLA_NESTED},
 	[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN] = {.type = NLA_NESTED},
+	[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_DATA_MPDU_TLV] = {.type = NLA_NESTED},
+};
+
+static const struct nla_policy
+ath12k_vendor_ext_mon_data_mpdu_tlv_policy[
+	QCA_VENDOR_ATTR_EXT_MON_DATA_MPDU_TLV_MAX + 1] = {
+	[QCA_VENDOR_ATTR_EXT_MON_DATA_MPDU_TLV_MCAST] = {.type = NLA_U8},
+	[QCA_VENDOR_ATTR_EXT_MON_DATA_MPDU_TLV_UCAST] = {.type = NLA_U8},
+	[QCA_VENDOR_ATTR_EXT_MON_DATA_MPDU_TLV_NULL]  = {.type = NLA_U8},
 };
 
 static const struct nla_policy
