@@ -3398,9 +3398,6 @@ int ath12k_dp_ext_mon_tx_filter_frame(struct ath12k_pdev_dp *dp_pdev,
 	if (!tx_ext_mon->enable)
 		return 0;
 
-	if (tx_ext_mon->monitor_flags == ATH12K_EXT_MON_PKT_CAP)
-		return 0;
-
 	// TODO: Optimise this to trim this before processing
 	if (tx_ext_mon->level == ATH12K_EXT_MON_FILTER_LEVEL_PPDU &&
 		mpdu_count > 1)
