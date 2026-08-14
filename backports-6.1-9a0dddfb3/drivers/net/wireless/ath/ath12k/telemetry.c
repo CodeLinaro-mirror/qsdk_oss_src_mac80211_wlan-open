@@ -11,6 +11,7 @@
 #include "telemetry_agent_if.h"
 #include "../telemetry_agent_wifi_driver_if.h"
 #include "debugfs_htt_stats.h"
+#include <linux/vmalloc.h>
 
 #define MIN_THERSHOLD_PERCENTAGE 0
 #define MAX_THERSHOLD_PERCENTAGE 100
