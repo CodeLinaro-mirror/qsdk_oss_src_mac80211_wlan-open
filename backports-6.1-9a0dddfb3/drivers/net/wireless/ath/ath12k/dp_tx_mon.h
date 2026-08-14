@@ -348,6 +348,7 @@ ath12k_dp_mon_tx_setup_mon_mode_filter(struct ath12k_dp *dp,
 void ath12k_dp_mon_tx_update_buf_ownership_stats(struct ath12k_dp *dp);
 int ath12k_dp_ext_mon_tx_alloc(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_ext_mon_tx_free(struct ath12k_pdev_dp *dp_pdev);
+void ath12k_dp_mon_tx_ssr_restart_pdev(struct ath12k_pdev_dp *dp_pdev);
 int
 ath12k_dp_ext_mon_get_tx_filter(struct ath12k_pdev_dp *dp_pdev,
 				struct ath12k_ext_mon_config *resp);

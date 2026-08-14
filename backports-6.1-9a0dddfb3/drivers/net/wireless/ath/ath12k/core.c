@@ -3453,6 +3453,12 @@ static void ath12k_core_mlo_hw_queues_stop(struct ath12k_hw_group *ag)
 	}
 }
 
+/**
+ * ath12k_core_radio_cleanup() - Per-radio SSR teardown.
+ * @ar: per-radio ath12k context
+ *
+ * Clears per-radio state before firmware recovery.
+ */
 void ath12k_core_radio_cleanup(struct ath12k *ar)
 {
 	ath12k_mac_drain_tx(ar);

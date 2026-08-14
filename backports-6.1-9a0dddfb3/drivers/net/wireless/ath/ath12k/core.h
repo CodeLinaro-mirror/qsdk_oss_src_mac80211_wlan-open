@@ -2115,6 +2115,7 @@ struct ath12k {
 	bool monitor_vdev_created:1;
 	bool monitor_started:1;
 	bool nlo_enabled:1;
+	bool is_tx_monitor_enabled_on_ssr:1;
 	/* Add new boolean variable here. */
 
 	/* Protected by wiphy::mtx lock. */

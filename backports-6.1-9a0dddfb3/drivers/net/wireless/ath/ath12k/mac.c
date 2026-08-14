@@ -2064,6 +2064,10 @@ int ath12k_mac_monitor_start(struct ath12k *ar)
 	if (ar->monitor_started)
 		return 0;
 
+	if (ar->is_tx_monitor_enabled_on_ssr &&
+	    ath12k_dp_tx_mon_feature_eval(ar->dp.dp))
+		ath12k_dp_mon_tx_ssr_restart_pdev(&ar->dp);
+
 	arg.ar = ar;
 	arg.chanctx_conf = NULL;
 	ieee80211_iter_chan_contexts_atomic(ath12k_ar_to_hw(ar),
