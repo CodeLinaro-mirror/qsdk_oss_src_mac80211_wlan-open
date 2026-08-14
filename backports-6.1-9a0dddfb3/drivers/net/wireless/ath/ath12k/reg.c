@@ -403,6 +403,13 @@ static void ath12k_regd_update_freq_range(struct ath12k *ar)
 
 		freq_high = min(reg_cap->high_5ghz_chan, reg_freq_6g.end_freq);
 		ath12k_mac_update_freq_range(ar, freq_low, freq_high);
+
+		if (!ar->freq_range.start_freq && !ar->freq_range.end_freq) {
+			freq_low  = reg_cap->low_5ghz_chan;
+			freq_high = reg_cap->high_5ghz_chan;
+			if (freq_low && freq_high)
+				ath12k_mac_update_freq_range(ar, freq_low, freq_high);
+		}
 	}
 
 	spin_unlock_bh(&ar->data_lock);
