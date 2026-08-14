@@ -29555,7 +29555,8 @@ static int ath12k_mac_setup_register(struct ath12k *ar,
 					ar->tt_level_configs[level].pout_reduction_db =
 						tt_level_configs[ATH12K_IPA_IPQ5424_THERMAL_LEVEL][level].pout_reduction_db;
 			}
-		} else if (ar->ab->hw_params->hw_rev == ATH12K_HW_QCN9625_HW10) {
+		} else if ((ar->ab->hw_params->hw_rev == ATH12K_HW_QCN9625_HW10) ||
+			    (ar->ab->hw_params->hw_rev == ATH12K_HW_QCN9625_HW20)) {
 			tt_qcn9625 = tt_level_configs[ATH12K_IPA_QCN9625_THERMAL_LEVEL];
 			for (level = 0; level < ENHANCED_THERMAL_LEVELS; level++) {
 				tt_config = &tt_qcn9625[level];
@@ -29608,7 +29609,8 @@ static int ath12k_mac_setup_register(struct ath12k *ar,
 					ar->tt_level_configs[level].pout_reduction_db =
 						tt_level_configs[ATH12K_XFRM_IPQ5424_THERMAL_LEVEL][level].pout_reduction_db;
 			}
-		} else if (ar->ab->hw_params->hw_rev == ATH12K_HW_QCN9625_HW10) {
+		} else if ((ar->ab->hw_params->hw_rev == ATH12K_HW_QCN9625_HW10) ||
+			    (ar->ab->hw_params->hw_rev == ATH12K_HW_QCN9625_HW20)) {
 			tt_qcn9625 = tt_level_configs[ATH12K_XFRM_QCN9625_THERMAL_LEVEL];
 			for (level = 0; level < ENHANCED_THERMAL_LEVELS; level++) {
 				tt_config = &tt_qcn9625[level];
