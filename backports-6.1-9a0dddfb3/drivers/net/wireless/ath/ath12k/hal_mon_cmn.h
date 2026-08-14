@@ -1048,7 +1048,8 @@ struct hal_tx_mon_status_info {
 	u8  addr2[ETH_ALEN];
 	u8  addr3[ETH_ALEN];
 	u8  addr4[ETH_ALEN];
-	u8  dp_tx_pkt_cap_cookie[8];
+	u8  dp_tx_pkt_cap_cookie;
+	u8  spc_pkt_id;
 };
 
 struct hal_mon_tx_usig_cmn {

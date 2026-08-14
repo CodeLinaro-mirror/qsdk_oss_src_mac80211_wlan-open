@@ -5441,12 +5441,9 @@ ath12k_wifi8_hal_mon_tx_parse_fw2sw(const void *tlv_data, u32 userid,
 			u32_get_bits(info[2],
 				     HAL_TX_MON_FW2SW_INFO2_SCHEDULE_ID);
 
-		if (is_valid) {
-			if (pkt_id < 7)
-				status_info->dp_tx_pkt_cap_cookie[pkt_id]++;
-			else
-				status_info->dp_tx_pkt_cap_cookie[0]++;
-		}
+		if (is_valid)
+			status_info->dp_tx_pkt_cap_cookie++;
+
 		break;
 	}
 

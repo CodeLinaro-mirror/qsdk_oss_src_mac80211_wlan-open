@@ -361,3 +361,13 @@ ath12k_wifi7_dp_ext_mon_remove_wmi_tx_peers(struct ath12k_pdev_dp *dp_pdev,
 	}
 	return ret;
 }
+
+u32
+ath12k_wifi7_dp_mon_tx_get_spc_bitmap(struct ath12k_base *ab)
+{
+	u32 bitmap = DP_TX_MON_SPC_BITMAP(ab);
+
+	if (!bitmap || bitmap > ATH12K_EXT_MON_PKT_CAP_ALL_PROTOS)
+		bitmap = ATH12K_EXT_MON_PKT_CAP_ALL_PROTOS;
+	return bitmap;
+}

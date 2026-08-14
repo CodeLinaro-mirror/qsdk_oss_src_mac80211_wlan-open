@@ -721,6 +721,7 @@ enum wmi_tlv_cmd_id {
 	WMI_PEER_RX_PN_REQUEST_CMDID,
 	WMI_PEER_TX_FILTER_CMDID,
 	WMI_PEER_FLUSH_POLICY_CMDID,
+	WMI_SOC_TX_PACKET_CUSTOM_CLASSIFY_CMDID = 0x32006,
 	WMI_PEER_SCHED_MODE_DISABLE_CMDID,
 	WMI_PEER_BULK_SET_CMDID,
 	WMI_PEER_MULTIPLE_REORDER_QUEUE_SETUP_CMDID,
@@ -2638,6 +2639,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_PEER_UHR_OMP_NPCA_PARAMS,
 	WMI_TAG_ANOMALY_REPORT_HDR = 0x588,
 	WMI_TAG_ANOMALY_ENTRY = 0x589,
+	WMI_TAG_SOC_TX_PACKET_CUSTOM_CLASSIFY_CMD = 0x4DA,
 	WMI_TAG_PEER_SET_MAPC_PARAMS_CMD_FIXED_PARAM = 0x0594,
 	WMI_TAG_MAPC_CMN_PARAMS = 0x0595,
 	WMI_TAG_MAPC_COTDMA_PARAMS = 0x0596, /* deprecated, reserved */
@@ -10695,6 +10697,11 @@ struct ath12k_set_tx_peer_filter_params {
 	u32 action;
 };
 
+struct wmi_tx_mon_pkt_cap_set_config_cmd {
+	__le32 tlv_header;
+	__le32 pkt_type_bitmap;
+} __packed;
+
 enum ath12k_wmi_frame_tx_status {
 	WMI_FRAME_TX_STATUS_OK,
 	WMI_FRAME_TX_STATUS_XRETRY,
@@ -11786,4 +11793,5 @@ int ath12k_wmi_send_pdev_get_nfcal_power_cmd(struct ath12k *ar);
 int ath12k_wmi_multi_vdev_set_param(struct ath12k *ar,
 				    const struct ath12k_mbssid_info *mbssid_info,
 				    u32 param_id, u32 param_value);
+int ath12k_wmi_tx_mon_pkt_cap_set_config(struct ath12k *ar, u32 bitmap);
 #endif

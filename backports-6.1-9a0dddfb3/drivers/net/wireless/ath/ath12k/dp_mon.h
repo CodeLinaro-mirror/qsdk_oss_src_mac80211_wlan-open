@@ -35,6 +35,8 @@
 	((ab)->mem_params.dp_params.tx_monitor_num_ppdu_desc)
 #define DP_TX_MON_NUM_STATUS_BUF(ab) \
 	((ab)->mem_params.dp_params.tx_monitor_num_status_buf)
+#define DP_TX_MON_SPC_BITMAP(ab) \
+	((ab)->mem_params.dp_params.tx_monitor_spc_bitmap)
 
 #ifndef CPTCFG_QCN_EXTN
 
@@ -121,6 +123,7 @@
 	 ATH12K_EXT_MON_METADATA_OFFCHAN_PKT)
 
 #define ATH12K_EXT_MON_DEFAULT_PEER_BITMAP	0xFF
+#define ATH12K_EXT_MON_PKT_CAP_ALL_PROTOS	0x3F
 
 #define ATH12K_FC0_TYPE_SHIFT		2
 #define ATH12K_FC0_SUBTYPE_SHIFT	4
@@ -289,6 +292,7 @@ struct ath12k_dp_arch_mon_ops {
 				struct ath12k_dp_ext_mon_tx_peer_params *peer_param);
 	int (*ext_mon_remove_wmi_tx_peers)(struct ath12k_pdev_dp *dp_pdev,
 				struct ath12k_dp_ext_mon_tx_peer_params *peer_param);
+	u32 (*mon_tx_get_spc_bitmap)(struct ath12k_base *ab);
 };
 
 /**

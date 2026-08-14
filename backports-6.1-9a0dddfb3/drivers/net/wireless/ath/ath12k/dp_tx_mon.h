@@ -18,6 +18,8 @@
 
 #define ATH12K_BA_DURATION_US  32
 
+#define ATH12K_DP_MON_TX_SPC_PKT_ID_MAX	7
+
 #define ATH12K_DP_MON_TX_BA_BITMAP_BYTES(sz) \
 	(ATH12K_DP_MON_TX_BA_BITMAP_BASE_SZ << (sz))
 
@@ -203,6 +205,8 @@ struct ath12k_pdev_tx_mon_stats {
 	/* HAL related statistics */
 	u32 ring_extract_failed;
 	u32 get_num_users_failed;
+	/* bitmap: 0=unknown 1=ARP 2=EAPOL 3=DHCP 4=DNS 5=ICMP 6=MGMT */
+	u32 spl_pkt_cap_stats[ATH12K_DP_MON_TX_SPC_PKT_ID_MAX];
 };
 
 /**
@@ -319,6 +323,9 @@ int ath12k_dp_mon_tx_htt_dst_ring_setup(struct ath12k_pdev_dp *dp_pdev, u32 mac_
 int ath12k_dp_mon_tx_monitor_start_stop(struct ath12k *ar, bool state);
 void ath12k_dp_mon_tx_filter_free(struct ath12k_pdev_dp *dp_pdev);
 bool ath12k_dp_tx_mon_feature_eval(struct ath12k_dp *dp);
+void ath12k_dp_mon_tx_update_spl_pkt_cap_stats(struct ath12k_pdev_dp *dp_pdev,
+					    struct hal_tx_mon_status_info *status_info);
+void ath12k_dp_mon_spl_pkt_cap_config(struct ath12k_base *ab);
 int ath12k_dp_mon_tx_srng_alloc(struct ath12k_dp *dp);
 int ath12k_dp_mon_tx_srng_init(struct ath12k_dp *dp);
 void ath12k_dp_mon_tx_htt_src_ring_cleanup(struct ath12k_dp *dp);
