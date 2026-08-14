@@ -2220,6 +2220,12 @@ static int ieee80211_update_ap(struct wiphy *wiphy, struct net_device *dev,
 		changed |= BSS_CHANGED_AP_PS;
 	}
 
+	if (params->dtim_period &&
+	    params->dtim_period != link_conf->dtim_period) {
+		link_conf->dtim_period = params->dtim_period;
+		changed |= BSS_CHANGED_BEACON_INFO;
+	}
+
 	if (beacon->he_bss_color_valid &&
 	    beacon->he_bss_color.enabled != link_conf->he_bss_color.enabled) {
 		link_conf->he_bss_color.enabled = beacon->he_bss_color.enabled;
