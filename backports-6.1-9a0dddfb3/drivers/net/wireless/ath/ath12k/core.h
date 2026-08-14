@@ -2457,6 +2457,7 @@ struct ath12k_stats_work_context {
 #define ATH12K_REPORT_LOW_ACK_NUM_PKT   ATH12K_REPORT_LOW_ACK_ALL
 #define ATH12K_IS_UMAC_RESET_IN_PROGRESS        BIT(0)
 #define ATH12K_IS_UMAC_RESET_TYPE_RECOVERY	BIT(1)
+#define ATH12K_IS_UMAC_RESET_FB_IN_PROGRESS	BIT(2)
 
 /* Forward declaration for task structure */
 struct ath12k_umac_reset_task;

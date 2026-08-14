@@ -646,6 +646,28 @@ int ath12k_umac_reset_notify_target(struct ath12k_base *ab, int tx_event)
 	return 0;
 }
 
+static bool ath12k_dp_umac_reset_fallback_needed(struct ath12k_base *ab)
+{
+	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ag->mlo_umac_reset;
+	bool fb_needed = false;
+
+	if (!ab->hw_params->support_umac_reset)
+		return fb_needed;
+
+	spin_lock_bh(&mlo_umac_reset->lock);
+
+	if ((mlo_umac_reset->umac_reset_info & ATH12K_IS_UMAC_RESET_IN_PROGRESS) &&
+	    !(mlo_umac_reset->umac_reset_info & ATH12K_IS_UMAC_RESET_FB_IN_PROGRESS)) {
+		mlo_umac_reset->umac_reset_info |= ATH12K_IS_UMAC_RESET_FB_IN_PROGRESS;
+		fb_needed = true;
+	}
+
+	spin_unlock_bh(&mlo_umac_reset->lock);
+
+	return fb_needed;
+}
+
 bool ath12k_dp_umac_reset_in_progress(struct ath12k_base *ab)
 {
 	struct ath12k_hw_group *ag = ab->ag;
@@ -1419,7 +1441,9 @@ static void ath12k_umac_reset_cleanup_from_state(struct ath12k_base *ab,
 						 enum ath12k_umac_reset_state state)
 {
 	struct ath12k_hw_group *ag = ab->ag;
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	struct dp_ppe_ds_idxs idx;
+#endif
 
 	ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET,
 		   "Performing fallback cleanup from state: %s\n",
@@ -1439,9 +1463,12 @@ static void ath12k_umac_reset_cleanup_from_state(struct ath12k_base *ab,
 		/* A dummy registration is needed to avoid breaking
 		 * the state machine at the DS module
 		 */
-		if (ab->dp->ppe.ppe_ops &&
-			ab->dp->ppe.ppe_ops->ath12k_ppeds_register_soc)
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+		if (test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags) ||
+		    (ab->dp->ppe.ppe_ops &&
+		     (ab->dp->ppe.ppe_ops->ath12k_ppeds_register_soc)))
 			ab->dp->ppe.ppe_ops->ath12k_ppeds_register_soc(ab->dp, &idx);
+#endif
 		ath12k_umac_reset_restore_irqs(ab, state);
 		break;
 
@@ -1611,7 +1638,7 @@ void ath12k_umac_reset_fallback_cleanup(struct ath12k_base *ab)
 	struct ath12k_hw_group *ag = ab->ag;
 	int i;
 
-	if (!ath12k_dp_umac_reset_in_progress(ab))
+	if (!ath12k_dp_umac_reset_fallback_needed(ab))
 		return;
 
 	for (i = 0; i < ag->num_devices; i++) {
