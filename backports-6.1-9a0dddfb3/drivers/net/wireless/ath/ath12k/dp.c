@@ -5200,13 +5200,9 @@ int ath12k_dp_alloc_proto_stats_peer(struct ath12k_dp_peer *dp_peer)
 				       GFP_ATOMIC);
 
 		if (!stats->proto)
-			goto err_peer_cleanup;
+			return -ENOMEM;
 	}
 	return 0;
-
-err_peer_cleanup:
-	ath12k_dp_free_proto_stats_peer(dp_peer);
-	return -ENOMEM;
 }
 EXPORT_SYMBOL(ath12k_dp_alloc_proto_stats_peer);
 
