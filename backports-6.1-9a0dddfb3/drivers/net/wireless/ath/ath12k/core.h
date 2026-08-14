@@ -752,8 +752,6 @@ struct ath12k_vap_cfg {
 	u32 ampdu_aggr_size;
 	u32 amsdu_aggr_size;
 	u32 ba_bufsize;
-	u32 tx_encap_type;
-	u32 rx_decap_type;
 	u32 protection_mode;
 	u32 bw_nss_rate;
 	u32 chwidth;
