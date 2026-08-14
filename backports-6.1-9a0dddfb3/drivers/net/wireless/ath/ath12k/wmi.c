@@ -795,6 +795,7 @@ static int ath12k_pull_svc_ready_ext(struct ath12k_wmi_pdev *wmi_handle,
 				     const void *ptr,
 				     struct ath12k_wmi_service_ext_arg *arg)
 {
+	struct ath12k_base *ab = wmi_handle->wmi_ab->ab;
 	const struct wmi_service_ready_ext_event *ev = ptr;
 	int i;
 
@@ -814,6 +815,9 @@ static int ath12k_pull_svc_ready_ext(struct ath12k_wmi_pdev *wmi_handle,
 	for (i = 0; i < WMI_MAX_NUM_SS; i++)
 		arg->ppet.ppet16_ppet8_ru3_ru0[i] =
 			le32_to_cpu(ev->ppet.ppet16_ppet8_ru3_ru0[i]);
+
+	ath12k_dbg(ab, ATH12K_DBG_WMI, "wmi svc rdy ext hdl_version %u\n",
+		   le32_get_bits(ev->fw_build_vers_ext, WMI_HDL_VERSION));
 
 	return 0;
 }
