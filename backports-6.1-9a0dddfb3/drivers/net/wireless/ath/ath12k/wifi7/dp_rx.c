@@ -1140,29 +1140,30 @@ ath12k_wifi7_dp_process_reo_rx_packets(struct ath12k_dp *dp,
 			prefetch(&vaddr[128]);
 		}
 
-		if (likely(peer->rx_decap_type ==
-			   DP_RX_DECAP_TYPE_ETHERNET2_DIX)) {
-			if (unlikely(ath12k_dp_stats_enabled(dp_pdev))) {
-				if (ath12k_proto_stats_enabled(dp_pdev))
-					ath12k_dp_rx_update_protocol_stats(peer,
-						hw_link_id, msdu,
-						RX_SENT_TO_STACK, ring_id);
+		if (unlikely(ath12k_dp_stats_enabled(dp_pdev))) {
+			if (ath12k_proto_stats_enabled(dp_pdev) &&
+			    peer->rx_decap_type == DP_RX_DECAP_TYPE_ETHERNET2_DIX)
+				ath12k_dp_rx_update_protocol_stats(peer,
+					hw_link_id, msdu,
+					RX_SENT_TO_STACK, ring_id);
 
-				if (ath12k_dp_vow_stats_enabled(dp_pdev)) {
-					u8 da_is_mcbc = rx_msdu_info->da_is_mcbc;
+			if (ath12k_dp_vow_stats_enabled(dp_pdev)) {
+				u8 da_is_mcbc = rx_msdu_info->da_is_mcbc;
 
-					ath12k_dp_rx_update_vow_delay_stats(dp_pdev, stats,
-									    msdu,
-									    da_is_mcbc,
-									    tid,
-									    tid_rx_stats_ring);
-				}
-
-				if (is_delay_enabled)
-					ath12k_dp_rx_update_delay_stats(peer, msdu,
-									tid, ring_id);
+				ath12k_dp_rx_update_vow_delay_stats(dp_pdev, stats,
+								    msdu,
+								    da_is_mcbc,
+								    tid,
+								    tid_rx_stats_ring);
 			}
 
+			if (is_delay_enabled)
+				ath12k_dp_rx_update_delay_stats(peer, msdu,
+								tid, ring_id);
+		}
+
+		if (likely(peer->rx_decap_type ==
+			   DP_RX_DECAP_TYPE_ETHERNET2_DIX)) {
 			ath12k_wifi7_deliver_ethernet_frame(dp_pdev, spd_desc_l,
 							    peer, &rx_status,
 							    napi, stats,
