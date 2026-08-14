@@ -1258,6 +1258,9 @@ ath12k_pull_reg_cap_svc_rdy_ext(struct ath12k_wmi_pdev *wmi_handle,
 	param->high_2ghz_chan = le32_to_cpu(ext_reg_cap->high_2ghz_chan);
 	param->low_5ghz_chan = le32_to_cpu(ext_reg_cap->low_5ghz_chan);
 	param->high_5ghz_chan = le32_to_cpu(ext_reg_cap->high_5ghz_chan);
+	ath12k_info(wmi_handle->wmi_ab->ab, "%s: low_2ghz_chan : %u high_2ghz_chan : %u low_5ghz_chan : %u high_5ghz_chan : %u\n",
+		    __func__, param->low_2ghz_chan, param->high_2ghz_chan,
+		    param->low_5ghz_chan, param->high_5ghz_chan);
 
 	return 0;
 }

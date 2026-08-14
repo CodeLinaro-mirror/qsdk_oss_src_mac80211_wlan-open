@@ -2231,7 +2231,10 @@ struct ath12k {
 
 	int monitor_vdev_id;
 
+	/* freq_range changes when the regulatory domain changes. */
 	struct wiphy_radio_freq_range freq_range;
+	/* hw_freq_range remains constant regardless of the regulatory domain. */
+	struct wiphy_radio_freq_range hw_freq_range;
 	u32 num_channels;
 
 	struct completion fw_stats_complete;
