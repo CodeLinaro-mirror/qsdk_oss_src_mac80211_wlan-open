@@ -573,10 +573,12 @@ void ath12k_wifi8_hal_tqm_fw_buf_release_cmd(struct ath12k_base *ab,
 	u8 rbm            = cmd->fw_buf_release_params.rbm;
 	u32 cookie        = cmd->fw_buf_release_params.cookie;
 
-	tlv->tl = le64_encode_bits(637, HAL_TLV_HDR_TAG) |
-		  le64_encode_bits(sizeof(*desc), HAL_TLV_HDR_LEN);
+	tlv->tl = le64_encode_bits(HAL_TQM_FW_COMPLETION_BO, HAL_TLV_HDR_TAG) |
+		  le64_encode_bits(sizeof(*desc), HAL_TLV_HDR_LEN) |
+		  le64_encode_bits(ab->pdevs[0].hw_link_id, HAL_TLV_64_HDR_SRC_LINK_ID);
 
 	desc = (struct hal_tqm2sw_completion_ring *)tlv->value;
+	memset(desc, 0, sizeof(*desc));
 
 	/*
 	 * Fill buffer_addr_info fields so TQM/WBM returns the buffer to the
