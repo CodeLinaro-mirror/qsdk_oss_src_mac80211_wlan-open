@@ -2286,66 +2286,6 @@ static const struct file_operations fops_reset_rx_stats = {
 	.llseek = default_llseek,
 };
 
-static ssize_t
-ath12k_dbg_sta_read_rx_retries(struct file *file, char __user *user_buf,
-			       size_t count, loff_t *ppos)
-{
-	struct ieee80211_link_sta *link_sta = file->private_data;
-	struct ieee80211_sta *sta = link_sta->sta;
-	u8 link_id = link_sta->link_id;
-	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
-	struct ath12k_hw *ah = ahsta->ahvif->ah;
-	struct ath12k_link_sta *arsta;
-	struct ath12k *ar;
-	struct ath12k_dp_link_peer *link_peer;
-	struct ath12k_dp_peer *dp_peer = NULL;
-	char buf[32];
-	size_t len = 0;
-	ssize_t ret = -ENOENT;
-
-	wiphy_lock(ah->hw->wiphy);
-
-	if (!(BIT(link_id) & ahsta->links_map))
-		goto unlock;
-
-	arsta = wiphy_dereference(ah->hw->wiphy, ahsta->link[link_id]);
-	if (!arsta || !arsta->arvif || !arsta->arvif->ar)
-		goto unlock;
-
-	ar = arsta->arvif->ar;
-	if (!ar)
-		goto unlock;
-
-	dp_peer = ath12k_sta_get_dp_peer_wiphy_locked(ah->hw->wiphy, ahsta);
-	if (!dp_peer)
-		goto unlock;
-
-	if (ar->hw_link_id >= ATH12K_DP_PEER_MAX_MLO_LINKS) {
-		ret = -ENOENT;
-		goto unlock;
-	}
-
-	rcu_read_lock();
-	link_peer = ath12k_dp_link_peer_find_by_hw_link_id(dp_peer, ar->hw_link_id);
-	if (!link_peer)
-		goto unlock_rcu;
-
-	len = scnprintf(buf, sizeof(buf), "%u\n", link_peer->peer_stats.rx_retries);
-unlock_rcu:
-	rcu_read_unlock();
-	if (len)
-		ret = simple_read_from_buffer(user_buf, count, ppos, buf, len);
-unlock:
-	wiphy_unlock(ah->hw->wiphy);
-	return ret;
-}
-
-static const struct file_operations fops_rx_retries = {
-	.read = ath12k_dbg_sta_read_rx_retries,
-	.open = simple_open,
-	.owner = THIS_MODULE,
-	.llseek = default_llseek,
-};
 
 void ath12k_debugfs_link_sta_op_add(struct ieee80211_hw *hw,
 				    struct ieee80211_vif *vif,
@@ -2386,8 +2326,6 @@ void ath12k_debugfs_link_sta_op_add(struct ieee80211_hw *hw,
 		debugfs_create_file("htt_peer_stats_reset", 0600, dir, link_sta,
 				    &fops_htt_peer_stats_reset);
 
-	debugfs_create_file("rx_mpdu_retries", 0400, dir, link_sta,
-			    &fops_rx_retries);
 
 	debugfs_create_file("qos_msduq", 0400, dir, link_sta->sta,
 			    &fops_qos_msduq);
