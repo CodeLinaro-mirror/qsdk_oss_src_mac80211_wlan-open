@@ -7758,6 +7758,12 @@ enum nl80211_ext_feature_index {
 	NL80211_EXT_FEATURE_EPPKE,
 	NL80211_EXT_FEATURE_ASSOC_FRAME_ENCRYPTION,
 
+	/* Parallel hardware scan: driver supports concurrent hw_scan contexts
+	 * on different radios simultaneously.  Enabled via the
+	 * "parallel_hw_scan" INI key in global.ini.
+	 */
+	NL80211_EXT_FEATURE_PARALLEL_HW_SCAN,
+
 	/* add new features before the definition below */
 	NUM_NL80211_EXT_FEATURES,
 	MAX_NL80211_EXT_FEATURES = NUM_NL80211_EXT_FEATURES - 1
