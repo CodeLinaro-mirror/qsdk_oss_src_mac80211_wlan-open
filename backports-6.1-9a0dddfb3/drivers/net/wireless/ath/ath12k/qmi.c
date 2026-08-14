@@ -7408,10 +7408,13 @@ void ath12k_qmi_deinit_service(struct ath12k_base *ab)
 	destroy_workqueue(ab->qmi.event_wq);
 	ath12k_qmi_m3_free(ab);
 	ath12k_qmi_ext_fw_bin_clear(ab);
-
-	/* Free all persistent chunks that were parked across recovery and
-	 * cold-boot power cycles instead of being freed immediately.
+	/* Park active persist chunks into the pool first, then free the
+	 * entire pool. This order matters: free_target_mem_chunk() parks
+	 * persist chunks into persist_mem[] instead of freeing them, so
+	 * the pool must be freed afterwards or those chunks leak on unload.
 	 */
+	ath12k_qmi_free_resource(ab);
+
 	dev = ab->qmi_mem_dev.rmem_inited ? &ab->qmi_mem_dev.dev : ab->dev;
 	for (i = 0; i < ab->qmi.persist_mem_count; i++) {
 		if (!ab->qmi.persist_mem[i].v.addr)
@@ -7423,8 +7426,6 @@ void ath12k_qmi_deinit_service(struct ath12k_base *ab)
 		ab->qmi.persist_mem[i].v.addr = NULL;
 	}
 	ab->qmi.persist_mem_count = 0;
-
-	ath12k_qmi_free_resource(ab);
 	ab->qmi.ab = NULL;
 }
 
