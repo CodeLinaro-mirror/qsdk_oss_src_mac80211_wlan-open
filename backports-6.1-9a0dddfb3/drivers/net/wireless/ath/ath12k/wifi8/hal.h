@@ -1809,7 +1809,10 @@ struct rx_tlv_info_1 {
 	    is_decrypted		: 1,
 	    mesh_ctrl_present		: 1,
 	    pkt_type			: 4,
-	    bw				: 3;
+	    bw				: 3,
+	    encrypt_info_valid		: 1,
+	    mpdu_frame_control_valid	: 1,
+	    encrypted			: 1;
 };
 
 struct hal_rx_spd_data {

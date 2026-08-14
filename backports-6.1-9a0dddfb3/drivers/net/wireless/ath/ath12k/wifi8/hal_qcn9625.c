@@ -1222,6 +1222,16 @@ void ath12k_wifi8_hal_extract_rx_spd_data_qcn9625(struct hal_rx_spd_data *rx_inf
 	rx_info->tlv_info.nss =
 		hweight8(ath12k_wifi8_hal_rx_h_nss_qcn9625(rx_desc));
 	rx_info->tlv_info.sgi = ath12k_wifi8_hal_rx_h_sgi_qcn9625(rx_desc);
+	rx_info->tlv_info.is_decrypted =
+		ath12k_wifi8_hal_rx_h_is_decrypted_qcn9625(rx_desc);
+	rx_info->tlv_info.encrypt_info_valid =
+		ath12k_wifi8_hal_encrypt_valid_qcn9625(rx_desc);
+	rx_info->tlv_info.mpdu_frame_control_valid =
+		!!(le32_get_bits(rx_desc->u.qcn9625_compact.mpdu_start.info2,
+				 RX_MPDU_INFO_INFO2_MPDU_FRAME_CONTROL_VALID));
+	rx_info->tlv_info.encrypted =
+		!!(le32_get_bits(rx_desc->u.qcn9625_compact.mpdu_start.info2,
+				 RX_MPDU_INFO_INFO2_ENCRYPTED));
 	rx_info->cce_metadata =
 		__le16_to_cpu(rx_desc->u.qcn9625_compact.msdu_end.cce_metadata);
 	rx_info->cce_match =
