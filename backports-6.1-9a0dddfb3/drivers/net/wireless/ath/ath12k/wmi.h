@@ -10982,6 +10982,18 @@ struct wmi_cfr_capture_filter_cmd_fixed_param {
 	 */
 	__le32 capture_count;
 
+	/* unassoc_capture_config:
+	 * Bit 0:    Enable unassociated capture mode
+	 * Bits 31:1 Reserved
+	 */
+	__le32 unassoc_capture_config;
+
+	/* Target channel frequency in MHz */
+	__le32 unassoc_channel_mhz;
+
+	/* Target channel phy_mode */
+	__le32 unassoc_phy_mode; /* WLAN_PHY_MODE */
+
 	/* A variable-length TLV array of wmi_cfr_filter_group_config will
 	 * follow this fixed_param TLV
 	 * wmi_cfr_filter_group_config filter_group_config[];
