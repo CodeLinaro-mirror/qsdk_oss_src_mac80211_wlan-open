@@ -105,7 +105,9 @@ void ath12k_get_ingress_mlo_dev_info(struct net_device *ndev,
 	struct  ath12k_base *ab;
 	struct  ieee80211_vif *vif;
 	u8 node_id = ATH12k_DS_NODE_ID_INVALID;
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	md_param->out_wifi_arch_info = PPE_DS_WIFI_ARCH_MODE_WIFI7;
+#endif
 
 	vif = wdev_to_ieee80211_vif_vlan(wdev, false);
 
