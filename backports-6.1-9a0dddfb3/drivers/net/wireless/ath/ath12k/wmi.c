@@ -12674,6 +12674,78 @@ static void ath12k_update_assoc_fail_stats(struct ath12k *ar,
 	spin_unlock_bh(&ar->data_lock);
 }
 
+/**
+ * ath12k_bcast_probe_rl_check() - Rate-limit broadcast probe requests per STA.
+ *
+ * Called with ar->data_lock held (BH disabled).
+ *
+ * Looks up the source MAC address (@sa) in the per-radio rate-limit table.
+ * If an entry exists and was last seen within ATH12K_BCAST_PROBE_RL_WINDOW_MS,
+ * returns true (caller should drop the frame).  Otherwise inserts or refreshes
+ * the entry and returns false (caller should forward the frame).
+ *
+ * On allocation failure the frame is always forwarded (fail-open).
+ *
+ * @ar: radio instance
+ * @sa: source MAC address from the probe request (hdr->addr2)
+ *
+ * Returns: true if the frame should be dropped, false if it should be forwarded.
+ */
+static bool ath12k_bcast_probe_rl_check(struct ath12k *ar, const u8 *sa)
+{
+	struct ath12k_bcast_probe_rl_entry *entry;
+	struct ath12k_bcast_probe_rl_entry *oldest = NULL;
+	unsigned long window = msecs_to_jiffies(ATH12K_BCAST_PROBE_RL_WINDOW_MS);
+	u64 key = ether_addr_to_u64(sa);
+	int bkt;
+
+	lockdep_assert_held(&ar->data_lock);
+
+	hash_for_each_possible(ar->bcast_probe_rl, entry, hnode, key) {
+		if (!ether_addr_equal(entry->addr, sa))
+			continue;
+		/* Entry found: check if still within the suppress window. */
+		if (time_before(jiffies, entry->last_seen + window))
+			return true;
+		/* Window expired: refresh timestamp and forward. */
+		entry->last_seen = jiffies;
+		return false;
+	}
+
+	/* No entry yet: check table cap before allocating. */
+	if (ar->bcast_probe_rl_entries >= ATH12K_BCAST_PROBE_RL_MAX_ENTRIES) {
+		/* Table full: evict the oldest entry (smallest last_seen)
+		 * and reuse it for this new STA. This keeps rate-limiting
+		 * effective when many transient STAs fill the table.
+		 * O(n) scan is acceptable -- only runs when table is full.
+		 */
+		hash_for_each(ar->bcast_probe_rl, bkt, entry, hnode) {
+			if (!oldest ||
+			    time_before(entry->last_seen, oldest->last_seen))
+				oldest = entry;
+		}
+
+		if (oldest) {
+			hash_del(&oldest->hnode);
+			ether_addr_copy(oldest->addr, sa);
+			oldest->last_seen = jiffies;
+			hash_add(ar->bcast_probe_rl, &oldest->hnode, key);
+			/* count unchanged: one evicted, one inserted */
+		}
+		return false;
+	}
+
+	entry = kmalloc(sizeof(*entry), GFP_ATOMIC);
+	if (!entry)
+		return false;	/* fail-open: forward on alloc failure */
+
+	ether_addr_copy(entry->addr, sa);
+	entry->last_seen = jiffies;
+	hash_add(ar->bcast_probe_rl, &entry->hnode, key);
+	ar->bcast_probe_rl_entries++;
+	return false;
+}
+
 /* Note: called under rcu_read_lock() */
 static void ath12k_update_peer_tx_ba_params(struct ath12k *ar,
 					    struct ieee80211_vif *vif,
@@ -12894,6 +12966,13 @@ static void ath12k_mgmt_rx_event(struct ath12k_base *ab, struct sk_buff *skb)
 				 */
 				spin_lock_bh(&ar->data_lock);
 				ar->dp.stats.telemetry_stats.rx_probe_req_bc++;
+				if (ar->bcast_probe_rl_enabled &&
+				    ath12k_bcast_probe_rl_check(ar, hdr->addr2)) {
+					ar->dp.stats.telemetry_stats.rx_bc_prb_req_drop++;
+					spin_unlock_bh(&ar->data_lock);
+					dev_kfree_skb(skb);
+					goto exit;
+				}
 				spin_unlock_bh(&ar->data_lock);
 			} else {
 				/* Count directed (unicast) probe requests

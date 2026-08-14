@@ -2129,6 +2129,43 @@ int ath12k_get_peer_telemetry_stats(struct ath12k_vif *ahvif,
 	return ret;
 }
 
+/**
+ * ath12k_bcast_probe_rl_init() - Initialise the broadcast probe request
+ *                                rate-limit hash table for a radio.
+ * @ar: radio instance
+ *
+ * Must be called with ar->data_lock held: resets bcast_probe_rl_entries,
+ * which is a lock-protected field.
+ */
+void ath12k_bcast_probe_rl_init(struct ath12k *ar)
+{
+	lockdep_assert_held(&ar->data_lock);
+	hash_init(ar->bcast_probe_rl);
+	ar->bcast_probe_rl_entries = 0;
+}
+
+/**
+ * ath12k_bcast_probe_rl_flush() - Free all entries in the broadcast probe
+ *                                 request rate-limit table.
+ * @ar: radio instance
+ *
+ * Must be called with ar->data_lock held.
+ */
+void ath12k_bcast_probe_rl_flush(struct ath12k *ar)
+{
+	struct ath12k_bcast_probe_rl_entry *entry;
+	struct hlist_node *tmp;
+	int bkt;
+
+	lockdep_assert_held(&ar->data_lock);
+
+	hash_for_each_safe(ar->bcast_probe_rl, bkt, tmp, entry, hnode) {
+		hash_del(&entry->hnode);
+		kfree(entry);
+	}
+	ar->bcast_probe_rl_entries = 0;
+}
+
 void ath12k_sta_update_primary_link(struct wiphy *wiphy,
 				    struct ath12k_sta *ahsta, u8 link_id)
 {

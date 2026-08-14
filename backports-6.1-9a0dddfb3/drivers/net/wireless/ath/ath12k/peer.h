@@ -215,4 +215,6 @@ struct ath12k_link_sta *ath12k_link_sta_find_by_vdev_id(struct ath12k *ar,
 							u32 vdev_id);
 void ath12k_sta_update_primary_link(struct wiphy *wiphy,
 				    struct ath12k_sta *ahsta, u8 link_id);
+void ath12k_bcast_probe_rl_init(struct ath12k *ar);
+void ath12k_bcast_probe_rl_flush(struct ath12k *ar);
 #endif /* _PEER_H_ */
