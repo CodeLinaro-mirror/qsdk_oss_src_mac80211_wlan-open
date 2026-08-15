@@ -25551,6 +25551,7 @@ ath12k_mac_stop_bridge_vdevs(struct ieee80211_hw *hw,
 	struct ath12k_vif *ahvif;
 	struct ath12k_link_vif *arvif;
 	unsigned long links, skip_links;
+	struct ath12k_hw_group *ag;
 	int ret;
 	u8 link_id;
 	unsigned int num_vdev;
@@ -25568,9 +25569,13 @@ ath12k_mac_stop_bridge_vdevs(struct ieee80211_hw *hw,
 		return;
 
 	ahvif = (void *)vif->drv_priv;
+	ag = ahvif->ah->ag;
 
 	links = ahvif->links_map;
-	skip_links = ATH12K_SCAN_LINKS_MASK | ahvif->repurposed_links;
+	if (ag->wsi_remap_in_progress)
+		skip_links = ATH12K_SKIP_BRIDGE_LINKS_MASK;
+	else
+		skip_links = ATH12K_SCAN_LINKS_MASK | ahvif->repurposed_links;
 	num_vdev = hweight16(ahvif->links_map & ~BIT(IEEE80211_MLD_MAX_NUM_LINKS)) -
 		   hweight16(ahvif->repurposed_links & ~BIT(IEEE80211_MLD_MAX_NUM_LINKS));
 
@@ -25620,6 +25625,10 @@ ath12k_mac_stop_bridge_vdevs(struct ieee80211_hw *hw,
 		if (arvif->is_started)
 			ath12k_mac_unassign_vif_chanctx_handle(hw, vif, NULL, NULL,
 							       link_id);
+		if (ag->wsi_remap_in_progress) {
+			ath12k_mac_remove_link_interface(ahvif->ah->hw, arvif);
+			ath12k_mac_unassign_link_vif(arvif);
+		}
 	}
 }
 
@@ -32969,43 +32978,7 @@ void ath12k_mac_remove_bridge_vdevs_iter(void *data, u8 *mac,
 					 struct ieee80211_vif *vif)
 {
 	struct ath12k_hw *ah = data;
-	struct ath12k_vif *ahvif;
-	struct ath12k_link_vif *arvif;
-	u8 link_id = ATH12K_BRIDGE_LINK_MIN;
-	unsigned long links;
-	int ret;
-
-	if (!vif->valid_links)
-		return;
-
-	if (vif->type != NL80211_IFTYPE_AP) {
-		ath12k_err(NULL, "Cannot delete B.Vdev other than AP interface\n");
-		return;
-	}
-	ahvif = ath12k_vif_to_ahvif(vif);
-
-	links = ahvif->links_map;
-	for_each_set_bit_from(link_id, &links, ATH12K_NUM_MAX_LINKS) {
-		rcu_read_lock();
-		arvif = rcu_dereference(ahvif->link[link_id]);
-		rcu_read_unlock();
-		if (!arvif) {
-			ath12k_err(NULL,
-				   "unable to determine the assigned link vif on link id %d\n",
-				   link_id);
-			continue;
-		}
-		ret = ath12k_wmi_vdev_down(arvif->ar, arvif->vdev_id);
-		if (ret) {
-			ath12k_warn(arvif->ar->ab, "failed to down vdev_id %i: %d\n",
-				    arvif->vdev_id, ret);
-			continue;
-		}
-		arvif->is_up = false;
-		ath12k_mac_unassign_vif_chanctx_handle(ah->hw, vif, NULL, NULL, link_id);
-		ath12k_mac_remove_link_interface(ah->hw, arvif);
-		ath12k_mac_unassign_link_vif(arvif);
-	}
+	ath12k_mac_stop_bridge_vdevs(ah->hw, vif);
 	ath12k_info(NULL, "Bypass: Bridge vdevs removed for MLD %pM\n", vif->addr);
 }
 
