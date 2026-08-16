@@ -34,6 +34,7 @@
 #include "me.h"
 #include "peer.h"
 #include <linux/vmalloc.h>
+#include "ranging.h"
 
 static const struct nla_policy
 ath12k_wifi_config_policy[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1] = {
@@ -9700,6 +9701,75 @@ static int ath12k_wifi_stats_reply_setup_schedule(struct ath12k_telemetry_comman
 	return 0;
 }
 
+static int
+ath12k_vendor_set_rtt_responder_role(struct wireless_dev *wdev,
+				     struct ath12k_wifi_generic_params *params)
+{
+	struct ieee80211_vif *vif;
+	struct ath12k_link_vif *arvif;
+	struct ath12k_vif *ahvif;
+	struct ath12k *ar;
+	u32 supported_role;
+	u32 role;
+	u8 link_id;
+	int ret;
+
+	if (!wdev || !params)
+		return -EINVAL;
+
+	vif = wdev_to_ieee80211_vif(wdev);
+	if (!vif)
+		return -EINVAL;
+
+	if (vif->type != NL80211_IFTYPE_AP)
+		return -EOPNOTSUPP;
+
+	role = params->value;
+	if (role && role & ~ATH12K_RTT_RESPONDER_ROLE_MASK)
+		return -EINVAL;
+
+	ahvif = ath12k_vif_to_ahvif(vif);
+	if (!ahvif)
+		return -EINVAL;
+
+	if (params->link_id != INVALID_LINK_ID) {
+		link_id = params->link_id;
+		if (link_id >= ATH12K_NUM_MAX_LINKS ||
+		    !(ahvif->links_map & BIT(link_id)))
+			return -EINVAL;
+	} else {
+		link_id = 0;
+	}
+
+	arvif = ath12k_get_arvif_from_link_id(ahvif, link_id);
+	if (!arvif || !arvif->ar)
+		return -EINVAL;
+
+	ar = arvif->ar;
+	supported_role = ath12k_supported_rtt_responder_roles(ar->ab);
+	role &= supported_role;
+	if (!role)
+		return -EOPNOTSUPP;
+
+	ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
+		WMI_VDEV_PARAM_ENABLE_DISABLE_RTT_RESPONDER_ROLE,
+		role);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "failed to set RTT responder role 0x%x on vdev %i: %d\n",
+			    role, arvif->vdev_id, ret);
+		return ret;
+	}
+
+	arvif->rtt_ctx.rtt_responder_role = role;
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_CFG,
+		   "set RTT responder role 0x%x supported 0x%x vdev %i link %u\n",
+		   role, supported_role, arvif->vdev_id, link_id);
+
+	return 0;
+}
+
 static int ath12k_vendor_wlan_telemetry_wiphy_getstats(struct wiphy *wiphy,
 						       struct wireless_dev *wdev,
 						       const void *data,
@@ -9911,6 +9981,14 @@ static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 			ret = ath12k_vendor_iface_mode_config(wdev, &wifi_params);
 			if (ret)
 				return ret;
+			break;
+		case QCA_WLAN_VENDOR_WIFI_PARAM_RTT_RESPONDER_ROLE:
+			ret = ath12k_vendor_set_rtt_responder_role(wdev, &wifi_params);
+			if (ret) {
+				ath12k_dbg(NULL, ATH12K_DBG_CFG,
+					   "failed to set RTT responder role: %d\n", ret);
+				return ret;
+			}
 			break;
 		default:
 #ifdef CPTCFG_QCN_EXTN

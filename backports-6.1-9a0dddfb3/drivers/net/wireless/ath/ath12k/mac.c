@@ -50,6 +50,7 @@
 #include "qcn_extns/ipa/dp_ipa_pub.h"
 #endif /* CPTCFG_QCN_EXTN */
 #include "mgmt_rx.h"
+#include "ranging.h"
 
 #define CHAN2G(_channel, _freq, _flags) { \
 	.band                   = NL80211_BAND_2GHZ, \
@@ -26998,6 +26999,9 @@ ath12k_mac_reconfig_complete(struct ieee80211_hw *hw,
 		ath12k_vendor_send_event(ab,
 					 QCA_NL80211_VENDOR_FW_RECOVERY_EVENT_RECOVERY_DONE);
 
+		/* Re-apply RTT responder role after FW recovery */
+		ath12k_rtt_reconfig_responder_role(ar);
+
 #ifdef CPTCFG_QCN_EXTN
 		/* Re-config extn parameters after recovery */
 		ath12k_extn_reconfig_extn_params(ar);
@@ -29550,6 +29554,7 @@ static void ath12k_mac_hw_unregister(struct ath12k_hw *ah)
 	for_each_ar(ah, ar, i)
 		ath12k_mac_cleanup_unregister(ar);
 
+	ath12k_mac_cleanup_iftype_11az_ranging(ah);
 	ath12k_mac_cleanup_iface_combinations(ah);
 	kfree(ah->hw->wiphy->addresses);
 
@@ -30072,6 +30077,12 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 
 	wiphy->iftype_ext_capab = ath12k_iftypes_ext_capa;
 	wiphy->num_iftype_ext_capab = ARRAY_SIZE(ath12k_iftypes_ext_capa);
+	ret = ath12k_mac_setup_iftype_11az_ranging(ah);
+	if (ret) {
+		ath12k_err(ab, "failed to setup 11az ranging ext capabilities: %d\n",
+			   ret);
+		goto err_cleanup_if_combs;
+	}
 
 	wiphy->mbssid_max_interfaces = mbssid_max_interfaces;
 	wiphy->ema_max_profile_periodicity = TARGET_EMA_MAX_PROFILE_PERIOD;
@@ -30123,6 +30134,8 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 		if (ar->ab->hw_params->ftm_responder)
 			wiphy_ext_feature_set(wiphy,
 					      NL80211_EXT_FEATURE_ENABLE_FTM_RESPONDER);
+
+		ath12k_mac_set_ranging_ext_features(wiphy, ar);
 
 		if (test_bit(WMI_TLV_SERVICE_SCAN_PHYMODE_SUPPORT, ar->ab->wmi_ab.svc_map))
 			ieee80211_hw_set(hw, SUPPORTS_EXT_REMAIN_ON_CHAN);
@@ -30319,6 +30332,7 @@ err_unregister_hw:
 	ieee80211_unregister_hw(hw);
 
 err_cleanup_if_combs:
+	ath12k_mac_cleanup_iftype_11az_ranging(ah);
 	ath12k_mac_cleanup_iface_combinations(ah);
 
 err_complete_cleanup_unregister:

@@ -881,6 +881,25 @@ struct ath12k_uhr_cu_info {
 
 #define ATH12K_FLAG_BEACON_RECEIVED     0
 
+/**
+ * struct ath12k_rtt_context - per-link RTT/PASN state.
+ * Embedded in ath12k_link_vif.
+ */
+struct ath12k_rtt_context {
+	u32 rtt_responder_role;
+};
+
+/**
+ * struct ath12k_rtt_capab - per-radio RTT extended capability state.
+ * Embedded in struct ath12k.
+ */
+struct ath12k_rtt_capab {
+	const struct wiphy_iftype_ext_capab *rtt_iftype_ext_capab_orig;
+	unsigned int rtt_num_iftype_ext_capab_orig;
+	struct wiphy_iftype_ext_capab *rtt_iftype_ext_capab;
+	u8 *rtt_ap_ext_capab;
+};
+
 struct ath12k_link_vif {
 	u32 vdev_id;
 	u32 beacon_interval;
@@ -1013,6 +1032,7 @@ struct ath12k_link_vif {
 	struct ath12k_mbssid_info *mbssid_info;
 
 	struct ath12k_smd_params smd_params;
+	struct ath12k_rtt_context rtt_ctx;
 	struct ath12k_link_vif_extn arvif_extn;
 	bool secured_bss;
 };
@@ -2237,6 +2257,7 @@ struct ath12k {
 #ifdef CPTCFG_QCN_EXTN
 	struct ath12k_extn ar_extn;
 #endif /* CPTCFG_QCN_EXTN */
+	struct ath12k_rtt_capab rtt_capab;
 	struct completion delete_all_peer_done;
 	struct wmi_vdev_host_tsf_arg tsf_report;
 	struct completion tsf_report_done;
