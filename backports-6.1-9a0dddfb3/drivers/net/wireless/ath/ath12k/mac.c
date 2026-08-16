@@ -1782,6 +1782,15 @@ static void ath12k_mac_dec_num_stations(struct ath12k_link_vif *arvif,
 
 	ar->num_stations--;
 
+	if (ahsta->is_mlo && !(arsta && arsta->is_bridge_peer)) {
+		if (arvif->num_ml_peers > 0)
+			arvif->num_ml_peers--;
+		ath12k_dbg(ar->ab, ATH12K_DBG_PEER | ATH12K_DBG_WSI_BYPASS,
+			   "MLO sta removed %pM ar[%u] arvif_num_ml_peers=%u mlo_peer_count=%u\n",
+			   sta->addr, ar->radio_idx,
+			   arvif->num_ml_peers, ar->ab->ag->mlo_peer_count);
+	}
+
 	if (arsta && arsta->is_multistream) {
 		if (ar->num_stations_multistream)
 			ar->num_stations_multistream--;
@@ -2274,6 +2283,11 @@ int ath12k_mac_vdev_stop(struct ath12k_link_vif *arvif)
 
 	if (arvif->num_peers &&
 	    arvif->ahvif->vdev_type != WMI_VDEV_TYPE_STA) {
+		arvif->num_ml_peers_del_all = arvif->num_ml_peers;
+		ath12k_dbg(ar->ab, ATH12K_DBG_PEER | ATH12K_DBG_WSI_BYPASS,
+			   "peer del all vdev %u ar[%u] num_ml_peers=%u num_ml_peers_del_all=%u\n",
+			   arvif->vdev_id, ar->radio_idx,
+			   arvif->num_ml_peers, arvif->num_ml_peers_del_all);
 		ret = ath12k_wmi_peer_delete_all(arvif);
 		if (ret) {
 			ath12k_warn(ar->ab, "[radio_idx : %u] failed to submit peer delete all for vdev_id:%d\n",
@@ -2297,6 +2311,7 @@ int ath12k_mac_vdev_stop(struct ath12k_link_vif *arvif)
 		 * through peer delete all or through peer cleanup.
 		 */
 		arvif->num_peers = 0;
+		arvif->num_ml_peers = 0;
 	}
 
 	rcu_read_lock();
@@ -6763,6 +6778,7 @@ static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 	}
 	arvif->num_stations = 0;
 	arvif->num_peers = 0;
+	arvif->num_ml_peers = 0;
 	arvif->splitphy_ds_bank_id = DP_INVALID_BANK_ID;
 	arvif->tpc_ie_eirp = INT_MIN;
 
@@ -15947,11 +15963,6 @@ ml_station_remove:
 		spin_unlock_bh(&ag->ahsta_lock);
 	}
 
-	if (ag->wsi_remap_in_progress && !ah->num_ml_peers) {
-		ath12k_dbg(NULL, ATH12K_DBG_WSI_BYPASS,
-			   "Bypass: Completing peer cleanup timer\n");
-		complete(&ag->peer_cleanup_complete);
-	}
 	ret = 0;
 
 peer_delete:
@@ -32656,7 +32667,6 @@ int ath12k_mac_dynamic_wsi_remap(struct ath12k_base *ab)
 	struct ath12k_pdev *pdev;
 	struct wiphy *wiphy;
 	long time_left;
-	u32 num_ml_peers;
 	int idx, ret = 0;
 	bool skip_legacy;
 	u8 active_num_devices;
@@ -32677,6 +32687,8 @@ int ath12k_mac_dynamic_wsi_remap(struct ath12k_base *ab)
 	 * operation. Ensure to cleanup the legacy clients for the device
 	 * which is bypassed.
 	 */
+	reinit_completion(&ag->peer_cleanup_complete);
+
 	wiphy_lock(wiphy);
 	for (idx = 0; idx < ag->num_devices; idx++) {
 		partner_ab = ag->ab[idx];
@@ -32691,27 +32703,25 @@ int ath12k_mac_dynamic_wsi_remap(struct ath12k_base *ab)
 
 		ath12k_mac_wsi_remap_peer_cleanup(partner_ab, skip_legacy);
 	}
-	num_ml_peers = ah->num_ml_peers;
 	wiphy_unlock(wiphy);
 
-	/* Start a wait timer to ensure all ML peers are cleaned up
-	 * before proceeding with the UMAC reset. This is necessary to
-	 * avoid disrupting inter-device communication in the firmware.
-	 * Skipping this may lead to peer delete timeouts on the host,
-	 * followed by a firmware assert.
+	/* Wait for all MLO peer delete responses from firmware before
+	 * proceeding with the UMAC reset.
 	 */
-	if (num_ml_peers) {
-		reinit_completion(&ag->peer_cleanup_complete);
+	if (ag->mlo_peer_count) {
+		ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS,
+			   "Bypass: waiting for ML peer cleanup, mlo_peer_count=%u\n",
+			   ag->mlo_peer_count);
 		time_left = wait_for_completion_timeout(&ag->peer_cleanup_complete,
 				msecs_to_jiffies(ag->wsi_peer_clean_timeout));
-
-		ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS,
-			   "Bypass: Waiting for ML peer cleanup\n");
 		if (!time_left) {
 			ath12k_err(ab, "peer cleanup didn't get completed within %lld ms, pending peers %d\n",
 				   ag->wsi_peer_clean_timeout, ah->num_ml_peers);
 			return -ETIMEDOUT;
 		}
+	} else {
+		ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS,
+			   "Bypass: no MLO peers, skipping peer cleanup wait\n");
 	}
 
 	/* Cleanup all the ar workqueues, make it to complete/default

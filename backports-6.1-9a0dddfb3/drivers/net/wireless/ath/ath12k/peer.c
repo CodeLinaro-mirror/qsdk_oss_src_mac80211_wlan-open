@@ -300,6 +300,30 @@ void ath12k_peer_del_tracker_remove(struct ath12k_pdev *pdev, u32 vdev_id, const
 	}
 }
 
+/* Check if a peer in the deletion tracker is an MLO peer (has a non-zero
+ * MLD MAC address).  Must be called before ath12k_peer_del_tracker_remove()
+ * since the entry is freed during removal.
+ */
+bool ath12k_peer_del_tracker_is_mlo(struct ath12k_pdev *pdev, u32 vdev_id,
+				    const u8 *addr)
+{
+	struct ath12k_peer_del_tracker *tracker = pdev->peer_del_tracker;
+	struct ath12k_peer_del_entry *entry;
+	bool is_mlo = false;
+
+	if (!tracker)
+		return false;
+
+	spin_lock_bh(&tracker->lock);
+	entry = rhashtable_lookup_fast(&tracker->peer_del_hash, addr,
+				       tracker->hash_params);
+	if (entry && entry->vdev_id == vdev_id)
+		is_mlo = !is_zero_ether_addr(entry->mld_addr);
+	spin_unlock_bh(&tracker->lock);
+
+	return is_mlo;
+}
+
 /* Check if a peer is in the deletion tracking hash.
  * Returns -EEXIST if found, 0 if not found.
  */
@@ -575,6 +599,7 @@ void ath12k_peer_cleanup(struct ath12k *ar, u32 vdev_id)
 		.vdev_id = vdev_id,
 		.num_ml_peers = 0,
 	};
+	struct ath12k_link_vif *arvif = NULL;
 	struct ath12k_base *ab = ar->ab;
 	int count;
 
@@ -586,6 +611,20 @@ void ath12k_peer_cleanup(struct ath12k *ar, u32 vdev_id)
 	if (count > 0) {
 		ar->num_peers -= count;
 		ar->num_ml_peers -= ctx.num_ml_peers;
+		if (ctx.num_ml_peers) {
+			struct ath12k_hw_group *ag = ab->ag;
+
+			ag->mlo_peer_count -= ctx.num_ml_peers;
+			ath12k_dbg(ab, ATH12K_DBG_PEER | ATH12K_DBG_WSI_BYPASS,
+				   "stale MLO peer cleanup ar[%u] num_ml_peers=%u mlo_peer_count=%u\n",
+				   ar->radio_idx, ar->num_ml_peers, ag->mlo_peer_count);
+			if (!ag->mlo_peer_count)
+				complete(&ag->peer_cleanup_complete);
+		}
+		arvif = ath12k_mac_get_arvif(ar, vdev_id);
+		if (arvif)
+			arvif->num_ml_peers_del_all = 0;
+
 		ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L0,
 				 "cleaned up %d stale peers from vdev_id %d\n",
 				 count, vdev_id);
@@ -920,8 +959,26 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 
 	if (sta && sta->mlo) {
 		/* Count one ML peer per radio for real link peers */
-		if (!arg->mlo_bridge_peer)
+		if (!arg->mlo_bridge_peer) {
 			ar->num_ml_peers++;
+			/* Increment the per-VAP MLO peer count for AP-mode vdevs
+			 * only.  STA-mode vdevs (repeater upstream connection) are
+			 * excluded because their peers are deleted via individual
+			 * peer-delete responses, not peer_delete_all, so they must
+			 * not be included in the del-all snapshot.
+			 */
+			if (arvif->ahvif->vdev_type != WMI_VDEV_TYPE_STA)
+				arvif->num_ml_peers++;
+			/* mlo_peer_count tracks all MLO peers (AP + STA) since
+			 * every MLO peer gets an individual peer-delete response.
+			 */
+			ar->ab->ag->mlo_peer_count++;
+			ath12k_dbg(ar->ab, ATH12K_DBG_PEER | ATH12K_DBG_WSI_BYPASS,
+				   "MLO peer created %pM ar[%u] arvif_num_ml_peers=%u mlo_peer_count=%u\n",
+				   arg->peer_addr, ar->radio_idx,
+				   arvif->num_ml_peers,
+				   ar->ab->ag->mlo_peer_count);
+		}
 	}
 
 	return ret;
