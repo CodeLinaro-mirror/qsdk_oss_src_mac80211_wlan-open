@@ -823,6 +823,8 @@ enum wmi_tlv_cmd_id {
 	WMI_WOW_SET_ACTION_WAKE_UP_CMDID,
 	WMI_RTT_MEASREQ_CMDID = WMI_TLV_CMD(WMI_GRP_RTT),
 	WMI_RTT_TSF_CMDID,
+	WMI_RTT_PASN_AUTH_STATUS_CMD,
+	WMI_RTT_PASN_DEAUTH_CMD,
 	WMI_VDEV_SPECTRAL_SCAN_CONFIGURE_CMDID = WMI_TLV_CMD(WMI_GRP_SPECTRAL),
 	WMI_VDEV_SPECTRAL_SCAN_ENABLE_CMDID,
 	WMI_REQUEST_STATS_CMDID = WMI_TLV_CMD(WMI_GRP_STATS),
@@ -1178,6 +1180,8 @@ enum wmi_tlv_event_id {
 	WMI_RTT_MEASUREMENT_REPORT_EVENTID = WMI_TLV_CMD(WMI_GRP_RTT),
 	WMI_TSF_MEASUREMENT_REPORT_EVENTID,
 	WMI_RTT_ERROR_REPORT_EVENTID,
+	WMI_RTT_PASN_PEER_CREATE_REQ_EVENTID,
+	WMI_RTT_PASN_PEER_DELETE_EVENTID,
 	WMI_STATS_EXT_EVENTID = WMI_TLV_CMD(WMI_GRP_STATS),
 	WMI_IFACE_LINK_STATS_EVENTID,
 	WMI_PEER_LINK_STATS_EVENTID,
@@ -2541,6 +2545,14 @@ enum wmi_tlv_tag {
 	WMI_TAG_SPECTRAL_FFT_SIZE_CAPABILITIES,
 	WMI_TAG_PDEV_SSCAN_CHAN_INFO = 0x417,
 	WMI_TAG_PDEV_SSCAN_PER_DETECTOR_INFO,
+	WMI_TAG_VDEV_SET_LTF_KEY_SEED_CMD_FIXED_PARAM = 0x41b,
+	WMI_TAG_RTT_PASN_PEER_CREATE_REQ_EVENT_FIXED_PARAM = 0x41c,
+	WMI_TAG_RTT_PASN_PEER_CREATE_REQ_PARAM = 0x41d,
+	WMI_TAG_RTT_PASN_AUTH_STATUS_CMD_FIXED_PARAM = 0x41e,
+	WMI_TAG_RTT_PASN_AUTH_STATUS_PARAM = 0x41f,
+	WMI_TAG_RTT_PASN_PEER_DELETE_EVENT_FIXED_PARAM = 0x420,
+	WMI_TAG_RTT_PASN_PEER_DELETE_PARAM = 0x421,
+	WMI_TAG_RTT_PASN_DEAUTH_CMD_FIXED_PARAM = 0x422,
 	WMI_TAG_REG_CHAN_PRIORITY = 0x426,
 	WMI_TAG_RSSI_DBM_CONVERSION_PARAMS_INFO_FIXED_PARAM = 0x427,
 	WMI_TAG_RSSI_DBM_CONVERSION_PARAMS_INFO,
@@ -4632,6 +4644,7 @@ enum wmi_peer_type {
 	WMI_PEER_TYPE_DEFAULT = 0,
 	WMI_PEER_TYPE_BSS = 1,
 	WMI_PEER_TYPE_TDLS = 2,
+	WMI_PEER_TYPE_PASN = 6,
 	WMI_PEER_TYPE_MLO_BRIDGE = 7,
 	WMI_PEER_TYPE_MAPC = 8,
 };
@@ -11165,6 +11178,75 @@ struct wmi_energy_mgmt_pcie_lpm_cmd {
 	__le32 config;
 } __packed;
 
+struct ath12k_wmi_mac_addr_params_rtt {
+	u8 addr[ETH_ALEN];
+	u8 padding[2];
+} __packed;
+
+struct ath12k_wmi_rtt_pasn_peer_create_req_event {
+	__le32 vdev_id;
+} __packed;
+
+struct ath12k_wmi_rtt_pasn_peer_create_req_param {
+	__le32 tlv_header;
+	struct ath12k_wmi_mac_addr_params_rtt self_mac_addr;
+	struct ath12k_wmi_mac_addr_params_rtt dest_mac_addr;
+	__le32 control_flag;
+	__le32 akm;
+	__le32 cipher_suite;
+	u8 pmk_id[WLAN_PMKID_LEN];
+	__le32 passphrase_len;
+	u8 passphrase[64];
+	__le32 cookie_len;
+} __packed;
+
+struct ath12k_wmi_rtt_pasn_deauth_cmd {
+	__le32 tlv_header;
+	struct ath12k_wmi_mac_addr_params_rtt peer_mac_addr;
+} __packed;
+
+struct ath12k_wmi_rtt_pasn_auth_status_cmd {
+	__le32 tlv_header;
+} __packed;
+
+struct ath12k_wmi_rtt_pasn_auth_status_param {
+	__le32 tlv_header;
+	struct ath12k_wmi_mac_addr_params_rtt peer_mac_addr;
+	__le32 status;
+	struct ath12k_wmi_mac_addr_params_rtt source_mac_addr;
+	__le32 akm;
+	__le32 cipher_suite;
+	__le32 timeout_value;
+	__le32 cookie_len;
+} __packed;
+
+struct ath12k_wmi_rtt_pasn_auth_status_arg {
+	u8 source_mac[ETH_ALEN];
+	u8 peer_mac[ETH_ALEN];
+	u32 status;
+	u32 akm;
+	u32 cipher;
+	u32 comeback_after;
+};
+
+struct ath12k_wmi_rtt_pasn_peer_delete_event {
+	__le32 vdev_id;
+} __packed;
+
+struct ath12k_wmi_rtt_pasn_peer_delete_param {
+	__le32 tlv_header;
+	struct ath12k_wmi_mac_addr_params_rtt peer_mac_addr;
+	__le32 control_flag;
+} __packed;
+
+struct ath12k_wmi_rtt_pasn_tlv_parse {
+	u16 fixed_tag;
+	size_t fixed_min_len;
+	const void *fixed;
+	const void *peers;
+	u16 peers_len;
+};
+
 enum wmi_dcvs_config_type {
 	/* Enable clock and voltage scaling */
 	WMI_DCVS_ENABLE,
@@ -11734,6 +11816,15 @@ int ath12k_wmi_send_vdev_set_tpc_power(struct ath12k *ar,
 				       struct ath12k_reg_tpc_power_info *param);
 int ath12k_wmi_send_vdev_get_tpc_ie_power(struct ath12k *ar, u32 vdev_id,
 					  u32 mgmt_rate);
+void ath12k_wmi_rtt_pasn_peer_create_req_event(struct ath12k_base *ab,
+					       struct sk_buff *skb);
+void ath12k_wmi_rtt_pasn_peer_delete_event(struct ath12k_base *ab,
+					   struct sk_buff *skb);
+int ath12k_wmi_send_rtt_pasn_deauth(struct ath12k *ar, const u8 *peer_mac);
+int ath12k_wmi_pasn_peer_delete_all(struct ath12k_link_vif *arvif);
+int
+ath12k_wmi_send_pasn_auth_status(struct ath12k *ar,
+				 const struct ath12k_wmi_rtt_pasn_auth_status_arg *arg);
 int ath12k_wmi_dl_qos_profile_create(struct ath12k_base *ab,
 				     struct ath12k_qos_params *param,
 				     u8 qos_profile_id);

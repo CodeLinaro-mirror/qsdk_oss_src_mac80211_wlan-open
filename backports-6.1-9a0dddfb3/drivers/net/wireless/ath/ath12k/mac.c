@@ -6797,6 +6797,8 @@ static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 
 	arvif->bcast_rate_configured = false;
 
+	ath12k_rtt_init_link_vif(arvif);
+
 	wiphy_work_init(&arvif->set_dscp_tid_work,
 			ath12k_set_dscp_tid_work);
 
@@ -7079,6 +7081,7 @@ static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 	}
 
 	ath12k_mac_deinit_arvif_extn(arvif);
+	ath12k_rtt_deinit_link_vif(arvif);
 	ath12k_mac_remove_link_interface_extn(arvif);
 	ath12k_debugfs_remove_interface(arvif);
 	ret = ath12k_mac_vdev_delete(ar, arvif);
@@ -21430,6 +21433,7 @@ err_dp_peer_del:
 
 err_vdev_del:
 	ath12k_wmi_vdev_delete(ar, arvif->vdev_id);
+	ath12k_rtt_deinit_link_vif(arvif);
 	ath12k_mac_deinit_arvif_extn(arvif);
 	ath12k_debugfs_remove_interface(arvif);
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR) {
