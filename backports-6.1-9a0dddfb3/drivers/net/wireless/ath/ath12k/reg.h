@@ -640,6 +640,20 @@ void ath12k_reg_update_cached_country_regdomain(struct ath12k_base *ab,
 						 u32 domain_code_6g_super_id);
 int ath12k_reg_get_num_chans_in_band(struct ath12k *ar,
 				     struct ieee80211_supported_band *band);
+/**
+ * ath12k_reg_get_fallback_regd() - find a usable regulatory domain
+ * @ab: ath12k base
+ * @pdev_id: preferred pdev index
+ *
+ * Prefer new_regd[pdev_id], then default_regd[pdev_id], then any available
+ * regdomain in @ab. This covers early set_cactimeout calls before firmware
+ * sends WMI_REG_CHAN_LIST_CC_EXT_EVENT and split 5G-low/5G-high setups where
+ * firmware may only populate the primary pdev regdomain.
+ *
+ * Return: regdomain on success, NULL if none is available.
+ */
+struct ieee80211_regdomain *
+ath12k_reg_get_fallback_regd(struct ath12k_base *ab, u8 pdev_id);
 
 /**
  * ath12k_reg_process_afc_power_event() - Process the AFC power event
