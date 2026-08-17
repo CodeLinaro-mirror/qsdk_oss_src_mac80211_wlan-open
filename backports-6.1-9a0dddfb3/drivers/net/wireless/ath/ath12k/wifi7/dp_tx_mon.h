@@ -40,11 +40,11 @@ enum ath12k_dp_tx_ext_mon_peer_filter {
 	ATH12K_DP_TX_EXT_MON_ALL_PEER_FILTER,
 	ATH12K_DP_TX_EXT_MON_SW_PEER_FILTER,
 	ATH12K_DP_TX_EXT_MON_SPC_PEER_FILTER,
-	ATH12K_DP_TX_EXT_MON_SW_PEER_FILTER_MAX,
+	ATH12K_DP_TX_EXT_MON_PEER_FILTER_MAX,
 };
 
-int ath12k_wifi7_dp_ext_mon_filter(struct sk_buff *mpdu,
-				   struct ath12k_dp_tx_ext_mon_config *tx_ext_mon);
+u8 ath12k_wifi7_get_ext_mon_peer_filter_mode_locked(struct ath12k_pdev_dp *dp_pdev);
+int ath12k_wifi7_dp_ext_mon_filter(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *mpdu);
 int ath12k_wifi7_dp_mon_tx_config_filter(struct ath12k_pdev_dp *dp_pdev,
 					 bool enable);
 int

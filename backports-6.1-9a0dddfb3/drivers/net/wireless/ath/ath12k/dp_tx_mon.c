@@ -3353,6 +3353,7 @@ ath12k_dp_mon_tx_deliver_frame(struct ath12k_pdev_dp *dp_pdev,
 	ext_mon_ret = ath12k_dp_mon_tx_ext_mon_deliver(dp_pdev, skb);
 	if (ext_mon_ret == NOTIFY_OK || ext_mon_ret == NOTIFY_STOP) {
 		dev_kfree_skb(skb);
+		ATH12K_TX_MON_STAT_INC(dp_pdev, custom_call_back_delivered);
 		return;
 	}
 
@@ -3394,7 +3395,7 @@ int ath12k_dp_ext_mon_tx_filter_frame(struct ath12k_pdev_dp *dp_pdev,
 
 	mon_ops = ath12k_dp_mon_ops_get(dp_pdev->dp);
 	if (mon_ops && mon_ops->ext_mon_filter) {
-		ret = mon_ops->ext_mon_filter(mpdu, tx_ext_mon);
+		ret = mon_ops->ext_mon_filter(dp_pdev, mpdu);
 		if (ret)
 			return ret;
 	}
@@ -3499,6 +3500,7 @@ ath12k_dp_mon_tx_deliver_single_ppdu(struct ath12k_pdev_dp *dp_pdev,
 	while ((mpdu = skb_dequeue(mpdu_q))) {
 		if (ath12k_dp_ext_mon_tx_frame_is_filtered(dp_pdev, mpdu,
 							   ++mpdu_count)) {
+			ATH12K_TX_MON_STAT_INC(dp_pdev, frames_drop_in_sw);
 			dev_kfree_skb_any(mpdu);
 			continue;
 		}
@@ -3508,6 +3510,7 @@ ath12k_dp_mon_tx_deliver_single_ppdu(struct ath12k_pdev_dp *dp_pdev,
 					       contains_host_frames,
 					       false, user_idx);
 		delivered++;
+		ATH12K_TX_MON_STAT_INC(dp_pdev, total_frames_delivered);
 	}
 
 	if ((user_idx == 0) && resp_skb) {
@@ -3516,6 +3519,7 @@ ath12k_dp_mon_tx_deliver_single_ppdu(struct ath12k_pdev_dp *dp_pdev,
 					       contains_host_frames,
 					       true, user_idx);
 		delivered++;
+		ATH12K_TX_MON_STAT_INC(dp_pdev, total_frames_delivered);
 
 		kfree(rx_ppdu_info);
 	}
