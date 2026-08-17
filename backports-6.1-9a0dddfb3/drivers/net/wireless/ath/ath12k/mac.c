@@ -21498,7 +21498,9 @@ err_dp_peer_del:
 err_vdev_del:
 	ath12k_wmi_vdev_delete(ar, arvif->vdev_id);
 	ath12k_rtt_deinit_link_vif(arvif);
+#ifdef CPTCFG_QCN_EXTN
 	ath12k_mac_deinit_arvif_extn(arvif);
+#endif /* CPTCFG_QCN_EXTN */
 	ath12k_debugfs_remove_interface(arvif);
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR) {
 		ar->monitor_vdev_created = false;
@@ -30089,7 +30091,9 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 	 * INI key in global.ini.  The extension hook sets or clears
 	 * WIPHY_FLAG_SUPPORTS_PARALLEL_HW_SCAN on the wiphy accordingly.
 	 */
+#ifdef CPTCFG_QCN_EXTN
 	ath12k_mac_hw_register_extn(ah);
+#endif /* CPTCFG_QCN_EXTN */
 
 	/* Copy over MLO related capabilities received from
 	 * WMI_SERVICE_READY_EXT2_EVENT if single_chip_mlo_supp is set.

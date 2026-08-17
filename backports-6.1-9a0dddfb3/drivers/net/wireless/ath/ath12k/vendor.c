@@ -14129,6 +14129,7 @@ static int ath12k_vendor_me_dump(struct wiphy *wiphy,
 	if (!me_db)
 		return -ENOENT;
 
+#ifdef CPTCFG_QCN_EXTN
 	switch (nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_ME_STATS_PRINT_TYPE])) {
 	case IEEE80211_ME_STATS_PRINT_INFO:
 		ret = ath12k_me_info_print_extn(me_db, dp_vif);
@@ -14139,6 +14140,9 @@ static int ath12k_vendor_me_dump(struct wiphy *wiphy,
 	default:
 		ret = -EINVAL;
 	}
+#else
+	ret = -EOPNOTSUPP;
+#endif /* CPTCFG_QCN_EXTN */
 
 	ath12k_me_db_put(me_db);
 	return ret;
@@ -17165,6 +17169,7 @@ ath12k_pasn_arvif_from_wdev(struct wireless_dev *wdev, u8 link_id)
 	return NULL;
 }
 
+#ifdef CPTCFG_QCN_EXTN
 static const struct nla_policy ath12k_vendor_secure_ranging_ctx_policy
 		[QCA_WLAN_VENDOR_ATTR_SECURE_RANGING_CTX_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_SECURE_RANGING_CTX_ACTION] = { .type = NLA_U32 },
@@ -17266,6 +17271,7 @@ static int ath12k_vendor_secure_ranging_ctx_cmd(struct wiphy *wiphy,
 
 	return 0;
 }
+#endif /* CPTCFG_QCN_EXTN */
 
 static const struct nla_policy
 ath12k_vendor_pasn_policy[QCA_WLAN_VENDOR_ATTR_PASN_MAX + 1] = {

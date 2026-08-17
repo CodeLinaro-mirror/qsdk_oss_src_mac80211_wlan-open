@@ -9354,7 +9354,9 @@ void ath12k_debugfs_add_interface(struct ath12k_link_vif *arvif)
 							    arvif,
 							    &ath12k_power_save_gtx);
 
+#ifdef CPTCFG_QCN_EXTN
 	ath12k_gpr_debugfs_register_extn(arvif, vif->link_debugfs[link_id]);
+#endif /* CPTCFG_QCN_EXTN */
 
 	/* Note: Add new AP mode only debugfs file before "ap_and_sta_debugfs_file" label.
 	 * Add new debugfs file for both AP and STA mode after the "ap_and_sta_debugfs_file"

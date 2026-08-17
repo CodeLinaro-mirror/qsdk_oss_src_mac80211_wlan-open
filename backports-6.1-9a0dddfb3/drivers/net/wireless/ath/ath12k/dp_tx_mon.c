@@ -3267,6 +3267,7 @@ ath12k_dp_mon_tx_fill_rate_status(struct ath12k_pdev_dp *dp_pdev,
 int ath12k_dp_mon_tx_ext_mon_deliver(struct ath12k_pdev_dp *dp_pdev,
 				     struct sk_buff *mpdu)
 {
+#ifdef CPTCFG_QCN_EXTN
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
 	struct ath12k_pdev_tx_mon *tx_mon;
 	struct ath12k_dp_tx_ext_mon *tx_ext_mon;
@@ -3305,6 +3306,9 @@ int ath12k_dp_mon_tx_ext_mon_deliver(struct ath12k_pdev_dp *dp_pdev,
 	ret = ieee80211_ext_mon_tx_notifier_call_extn_nc(IEEE80211_EXT_MON_PRE_RTAP,
 							 &event);
 	return ret;
+#else
+	return NOTIFY_DONE;
+#endif /* CPTCFG_QCN_EXTN */
 }
 /**
  * ath12k_dp_mon_tx_deliver_frame() - Helper to deliver single frame to monitor stack
@@ -4394,6 +4398,7 @@ int ath12k_dp_mon_tx_htt_src_ring_setup(struct ath12k_dp *dp)
 static void
 ath12k_dp_ext_mon_tx_set_rtap_mode(struct ath12k_pdev_dp *dp_pdev, u8 meta_data)
 {
+#ifdef CPTCFG_QCN_EXTN
 	struct ieee80211_vif *mon_vif = NULL;
 	struct ath12k_link_vif *arvif;
 	bool enable = !!(meta_data & ATH12K_EXT_MON_METADATA_RTAP_HDR);
@@ -4412,6 +4417,7 @@ ath12k_dp_ext_mon_tx_set_rtap_mode(struct ath12k_pdev_dp *dp_pdev, u8 meta_data)
 
 	ieee80211_set_ext_tx_monitor(mon_vif, enable);
 	ieee80211_set_ext_tx_mon_evt_typ(mon_vif, mode);
+#endif /* CPTCFG_QCN_EXTN */
 }
 
 static int ath12k_dp_tx_mon_reset_ext_mon_config(struct ath12k_pdev_dp *dp_pdev)

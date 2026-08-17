@@ -1313,8 +1313,10 @@ int ath12k_dp_mon_pdev_init(struct ath12k_pdev_dp *dp_pdev)
 	if (mon_ops && mon_ops->mon_pdev_alloc)
 		ret = mon_ops->mon_pdev_alloc(dp_pdev);
 
+#ifdef CPTCFG_QCN_EXTN
 	if (ath12k_dp_mon_pdev_tlv_logger_init(dp_pdev))
 		ath12k_warn(dp, "failed to init TLV logger for mon pdev\n");
+#endif /* CPTCFG_QCN_EXTN */
 
 	return ret;
 }
@@ -1331,7 +1333,9 @@ void ath12k_dp_mon_pdev_deinit(struct ath12k_pdev_dp *dp_pdev)
 	dp = dp_pdev->dp;
 	mon_ops = ath12k_dp_mon_ops_get(dp);
 
+#ifdef CPTCFG_QCN_EXTN
 	ath12k_dp_mon_pdev_tlv_logger_deinit(dp_pdev);
+#endif /* CPTCFG_QCN_EXTN */
 
 	if (mon_ops && mon_ops->mon_pdev_free)
 		mon_ops->mon_pdev_free(dp_pdev);

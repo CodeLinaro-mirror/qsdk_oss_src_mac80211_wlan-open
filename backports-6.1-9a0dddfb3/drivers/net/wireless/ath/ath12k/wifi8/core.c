@@ -16,10 +16,10 @@
 #include "../hal.h"
 #include "../hif.h"
 #include "../qmi.h"
+#include "../vendor_services.h"
 #ifdef CPTCFG_QCN_EXTN
 #include "../qcn_extns/ini.h"
-#include "../vendor_services.h"
-#endif
+#endif /* CPTCFG_QCN_EXTN */
 
 static int pci_err;
 static struct dma_pool *ath12k_cu_mem_pool;
