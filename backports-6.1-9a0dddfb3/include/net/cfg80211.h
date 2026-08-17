@@ -6267,6 +6267,11 @@ struct cfg80211_ops {
 	void	(*bootup_cac_handle_ap)(struct wiphy *wiphy,
 					struct net_device *dev,
 					struct cfg80211_ap_settings *settings);
+	int	(*get_best_scan_radio_power_mode)(struct wiphy *wiphy,
+						  struct net_device *dev,
+						  u32 freq,
+						  u32 center_freq,
+						  u16 bw);
 #endif /* CPTCFG_QCN_EXTN */
 	int	(*update_ap)(struct wiphy *wiphy, struct net_device *dev,
 			     struct cfg80211_ap_settings *settings);

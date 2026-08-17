@@ -2177,6 +2177,20 @@ static void ieee80211_bootup_cac_handle_ap(struct wiphy *wiphy,
 					      params->residual_cac_ms,
 					      params->skip_cac);
 }
+
+static int ieee80211_get_best_scan_radio_power_mode(struct wiphy *wiphy,
+						    struct net_device *dev,
+						    u32 freq,
+						    u32 center_freq,
+						    u16 bw)
+{
+	struct ieee80211_local *local = wiphy_priv(wiphy);
+	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+
+	return ieee80211_get_scan_radio_best_6ghz_pm_extn(local, &sdata->vif,
+							  freq, center_freq,
+							  bw);
+}
 #endif /* CPTCFG_QCN_EXTN */
 
 static int ieee80211_update_ap(struct wiphy *wiphy, struct net_device *dev,
@@ -7708,6 +7722,7 @@ const struct cfg80211_ops mac80211_config_ops = {
 	.start_ap = ieee80211_start_ap,
 #ifdef CPTCFG_QCN_EXTN
 	.bootup_cac_handle_ap = ieee80211_bootup_cac_handle_ap,
+	.get_best_scan_radio_power_mode = ieee80211_get_best_scan_radio_power_mode,
 #endif /* CPTCFG_QCN_EXTN */
 	.update_ap = ieee80211_update_ap,
 	.stop_ap = ieee80211_stop_ap,

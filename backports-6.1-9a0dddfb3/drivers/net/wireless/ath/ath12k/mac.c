@@ -943,8 +943,6 @@ static u8 ath12k_parse_mpdudensity(u8 mpdudensity)
 
 static u16
 ath12k_mac_get_6g_start_frequency(struct cfg80211_chan_def *chan_def);
-static s8 ath12k_mac_get_afc_eirp_power(struct ath12k *ar, u32 freq,
-					u16 center_freq, u16 bw);
 static void ath12k_mac_get_eirp_power(struct ath12k *ar,
 				      u16 *start_freq,
 				      u16 *center_freq,
@@ -13362,10 +13360,10 @@ fail:
 	return afc_eirp_pwr;
 }
 
-static s8 ath12k_mac_get_afc_eirp_power(struct ath12k *ar,
-					u32 freq,
-					u16 center_freq,
-					u16 bw)
+s8 ath12k_mac_get_afc_eirp_power(struct ath12k *ar,
+				 u32 freq,
+				 u16 center_freq,
+				 u16 bw)
 {
 	struct ath12k_afc_sp_reg_info *power_info;
 	s8 afc_eirp_pwr = ATH12K_MAX_TX_POWER;
@@ -13394,6 +13392,7 @@ static s8 ath12k_mac_get_afc_eirp_power(struct ath12k *ar,
 
 	return afc_eirp_pwr;
 }
+EXPORT_SYMBOL_GPL(ath12k_mac_get_afc_eirp_power);
 
 static void ath12k_mac_get_eirp_power(struct ath12k *ar,
 				      u16 *start_freq,
