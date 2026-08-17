@@ -2153,6 +2153,53 @@ enum hal_tx_latency_resolution {
 
 #define HAL_RX_PEER_STATS_BAND_INDEX_MSB		BIT(31)
 
+/* stream stats registers */
+#define HAL_TX_STREAM_STATS_CONFIG_CTRL			0xF10224
+
+#define HAL_TX_STREAM_STATS_BAND_CFG_BASE		0xF10228
+#define HAL_TX_STREAM_STATS_BAND_CFG(n)	\
+	(HAL_TX_STREAM_STATS_BAND_CFG_BASE + 0x4 * (n))
+#define HAL_TX_STREAM_STATS_BAND_CFG_FIELD_WIDTH	10
+#define HAL_TX_STREAM_STATS_BAND_CFG_IDX_MAX		640
+
+#define HAL_TX_STREAM_ID_VALID_PER_REG			32
+#define HAL_TX_STREAM_ID_VALID_CFG_BASE			0xF10470
+#define HAL_TX_STREAM_ID_VALID_CFG(n)	\
+	(HAL_TX_STREAM_ID_VALID_CFG_BASE + 0x4 * (n))
+
+#define HAL_TX_STREAM_RATE_STATS_WINDOW_CFG_BASE	0xF10024
+#define HAL_TX_STREAM_RATE_STATS_WINDOW_CFG(n) \
+	(HAL_TX_STREAM_RATE_STATS_WINDOW_CFG_BASE + 0x4 * (n))
+#define HAL_TX_STREAM_RATE_STATS_WINDOW_FIELD_WIDTH	12
+
+#define HAL_TX_STREAM_LATENCY_STATS_WINDOW_CFG_BASE	0xF10258
+#define HAL_TX_STREAM_LATENCY_STATS_WINDOW_CFG(n) \
+	(HAL_TX_STREAM_LATENCY_STATS_WINDOW_CFG_BASE + 0x4 * (n))
+#define HAL_TX_STREAM_LATENCY_STATS_WINDOW_FIELD_WIDTH	12
+
+#define HAL_RX_STREAM_STATS_CONFIG_CTRL			0xF2621C
+
+#define HAL_RX_STREAM_STATS_BAND_CFG_BASE		0xF26220
+#define HAL_RX_STREAM_STATS_BAND_CFG(n)	\
+	(HAL_RX_STREAM_STATS_BAND_CFG_BASE + 0x4 * (n))
+#define HAL_RX_STREAM_STATS_BAND_CFG_FIELD_WIDTH	10
+#define HAL_RX_STREAM_STATS_BAND_CFG_IDX_MAX		640
+
+#define HAL_RX_STREAM_ID_VALID_CFG_BASE			0xF26434
+#define HAL_RX_STREAM_ID_VALID_CFG(n)	\
+	(HAL_RX_STREAM_ID_VALID_CFG_BASE + 0x4 * (n))
+#define HAL_RX_STREAM_ID_VALID_PER_REG			32
+
+#define HAL_RX_STREAM_RATE_STATS_WINDOW_CFG_BASE	0xF2601C
+#define HAL_RX_STREAM_RATE_STATS_WINDOW_CFG(n) \
+	(HAL_RX_STREAM_RATE_STATS_WINDOW_CFG_BASE + 0x4 * (n))
+#define HAL_RX_STREAM_RATE_STATS_WINDOW_FIELD_WIDTH	12
+
+#define HAL_RX_STREAM_LATENCY_STATS_WINDOW_CFG_BASE	0xF26228
+#define HAL_RX_STREAM_LATENCY_STATS_WINDOW_CFG(n) \
+	(HAL_RX_STREAM_LATENCY_STATS_WINDOW_CFG_BASE + 0x4 * (n))
+#define HAL_RX_STREAM_LATENCY_STATS_WINDOW_FIELD_WIDTH	12
+
 void ath12k_wifi8_hal_ce_dst_setup(struct ath12k_base *ab,
 				   struct hal_srng *srng, int ring_num);
 void ath12k_wifi8_hal_srng_dst_hw_init(struct ath12k_base *ab,
@@ -2363,5 +2410,32 @@ static inline bool ath12k_wifi8_hal_is_reo_nonqos_mgmt_tid(u8 tid)
 		tid == HAL_MGMT_BCAST_TID ||
 		tid == HAL_MGMT_SENSING_TID);
 }
+
+void ath12k_wifi8_hal_tasc_stream_reset(struct ath12k_base *ab);
+void ath12k_wifi8_hal_tasc_tx_stream_stats_band_cfg(struct ath12k_base *ab,
+						    u8 stream_id,
+						    u8 band_valid, u16 band_ids[]);
+void ath12k_wifi8_hal_tasc_tx_stream_rate_win_size_cfg(struct ath12k_base *ab,
+						       u8 stream_id,
+						       u16 window_size);
+void ath12k_wifi8_hal_tasc_tx_stream_latency_win_size_cfg(struct ath12k_base *ab,
+							  u8 stream_id,
+							  u16 window_size);
+void ath12k_wifi8_hal_tasc_tx_stream_id_valid_cfg(struct ath12k_base *ab,
+						  u8 stream_id, bool valid);
+void ath12k_wifi8_hal_tasc_tx_stream_clear_stats(struct ath12k_base *ab, u8 stream_id);
+
+void ath12k_wifi8_hal_tasc_rx_stream_clear_stats(struct ath12k_base *ab, u8 stream_id);
+void ath12k_wifi8_hal_tasc_rx_stream_id_valid_cfg(struct ath12k_base *ab,
+						  u8 stream_id, bool valid);
+void ath12k_wifi8_hal_tasc_rx_stream_latency_win_size_cfg(struct ath12k_base *ab,
+							  u8 stream_id,
+							  u16 window_size);
+void ath12k_wifi8_hal_tasc_rx_stream_rate_win_size_cfg(struct ath12k_base *ab,
+						       u8 stream_id,
+						       u16 window_size);
+void ath12k_wifi8_hal_tasc_rx_stream_stats_band_cfg(struct ath12k_base *ab,
+						    u8 stream_id,
+						    u8 band_valid, u16 band_ids[]);
 
 #endif
