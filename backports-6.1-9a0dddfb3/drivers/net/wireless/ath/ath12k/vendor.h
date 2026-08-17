@@ -4748,7 +4748,7 @@ enum qca_vendor_radio_param {
 	 * Setting to 0 disables the timer.  Default: 1000 ms.
 	 * Mirrors the qca-wifi OL_ATH_PARAM_MGMT_PDEV_STATS_TIMER knob.
 	 */
-	QCA_WLAN_VENDOR_RADIO_PARAM_PDEV_STATS_TIMER = 97,
+	QCA_WLAN_VENDOR_RADIO_PARAM_PDEV_STATS_TIMER = 98,
 
 	/* Add new params above */
 	QCA_WLAN_VENDOR_RADIO_PARAM_LAST,
