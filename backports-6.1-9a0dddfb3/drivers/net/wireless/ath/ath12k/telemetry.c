@@ -413,7 +413,8 @@ int ath12k_telemetry_get_phy_nf(struct ath12k *ar)
 	struct debug_htt_stats_req *stats_req;
 	int ret;
 
-	if (!ab->ag || test_bit(ATH12K_GROUP_FLAG_HIF_POWER_DOWN, &ab->ag->flags) ||
+	if (!ab->ag || ab->is_bypassed ||
+	    test_bit(ATH12K_GROUP_FLAG_HIF_POWER_DOWN, &ab->ag->flags) ||
 	    test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags))
 		return -ESHUTDOWN;
 
