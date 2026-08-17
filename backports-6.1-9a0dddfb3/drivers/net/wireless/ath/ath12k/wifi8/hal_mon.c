@@ -106,9 +106,6 @@ ath12k_wifi8_hal_mon_populate_mu_user_info(struct hal_rx_mon_ppdu_info *ppdu_inf
 		ppdu_info->udp_msdu_count;
 	rx_user_status->other_msdu_count =
 		ppdu_info->other_msdu_count;
-	rx_user_status->frame_control = ppdu_info->frame_control;
-	rx_user_status->frame_control_info_valid =
-		ppdu_info->frame_control_info_valid;
 	rx_user_status->data_sequence_control_info_valid =
 		ppdu_info->data_sequence_control_info_valid;
 	rx_user_status->first_data_seq_ctrl =

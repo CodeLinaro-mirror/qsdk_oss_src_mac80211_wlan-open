@@ -1588,6 +1588,47 @@ ath12k_wifi8_dp_mon_rx_h_drop_tlv(struct ath12k_pdev_dp *pdev_dp,
 	}
 }
 
+static inline void
+ath12k_wifi8_dp_mon_update_scan_radio_stats(struct ath12k_pdev_dp *pdev_dp,
+					    struct hal_rx_mon_ppdu_info *ppdu_info)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev;
+	struct ath12k_dp_rx_scan_radio_stats *stats;
+	u32 num_users, user;
+
+	dp_mon_pdev = pdev_dp->dp_mon_pdev;
+	if (!dp_mon_pdev || !ppdu_info)
+		return;
+
+	if (!ath12k_scan_radio_supported(pdev_dp->ar->pdev))
+		return;
+
+	stats = &dp_mon_pdev->scan_radio.rx_scan_radio_stats;
+
+	num_users = ppdu_info->num_users;
+	for (user = 0; user < num_users; user++) {
+		struct hal_rx_user_status *rx_user_status =
+			&ppdu_info->userstats[user];
+
+		stats->rx_ok_pkts += rx_user_status->mpdu_cnt_fcs_ok;
+		stats->rx_ok_bytes += rx_user_status->mpdu_ok_byte_count;
+		stats->rx_err_pkts += rx_user_status->mpdu_cnt_fcs_err;
+		stats->rx_err_bytes += rx_user_status->mpdu_err_byte_count;
+
+		if (rx_user_status->frame_control_info_valid) {
+			u16 fc = rx_user_status->frame_control;
+			u8 type = (fc & IEEE80211_FCTL_FTYPE) >> ATH12K_FC0_TYPE_SHIFT;
+
+			if (type == (IEEE80211_FTYPE_MGMT >> ATH12K_FC0_TYPE_SHIFT))
+				stats->rx_mgmt_pkts++;
+			else if (type == (IEEE80211_FTYPE_CTL >> ATH12K_FC0_TYPE_SHIFT))
+				stats->rx_ctrl_pkts++;
+			else
+				stats->rx_data_pkts++;
+		}
+	}
+}
+
 static void
 ath12k_wifi8_dp_mon_rx_process_ppdu(struct work_struct *work)
 {
@@ -1641,6 +1682,8 @@ ath12k_wifi8_dp_mon_rx_process_ppdu(struct work_struct *work)
 				mon_stats->status_buf_free++;
 				continue;
 			}
+
+			ath12k_wifi8_dp_mon_update_scan_radio_stats(pdev_dp, ppdu_info);
 
 			filter_category =
 				ppdu_info->userstats[ppdu_info->userid].filter_category;
