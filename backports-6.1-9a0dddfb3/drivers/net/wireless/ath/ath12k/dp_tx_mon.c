@@ -2412,7 +2412,8 @@ ath12k_dp_tx_mon_add_rtap_eht_tlv(struct ieee80211_radiotap_tlv *tlv,
 	     i < ARRAY_SIZE(rx_status->eht_info.eht.data); i++)
 		eht->data[i] = cpu_to_le32(rx_status->eht_info.eht.data[i]);
 
-	for (user = 0; user < rx_status->eht_info.num_user_info; user++)
+	for (user = 0; user < ARRAY_SIZE(rx_status->eht_info.user_info) &&
+	     user < rx_status->eht_info.num_user_info; user++)
 		put_unaligned_le32(cpu_to_le32(rx_status->eht_info.user_info[user]),
 				   &eht->user_info[user]);
 
