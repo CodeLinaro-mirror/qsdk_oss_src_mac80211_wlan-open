@@ -5526,6 +5526,11 @@ __ieee80211_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 		link_conf->csa_active = true;
 	}
 
+	if (link_conf->npca.enabled) {
+		link_conf->npca.enabled = false;
+		changed |= BSS_CHANGED_NPCA;
+	}
+
 	/*
 	 * Batch CSA: defer beacon installation and driver notification until
 	 * all AP VIFs on this chanctx have submitted their CSA request (or a
