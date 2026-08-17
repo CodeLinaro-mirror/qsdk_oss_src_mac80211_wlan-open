@@ -11247,6 +11247,22 @@ struct ath12k_wmi_rtt_pasn_tlv_parse {
 	u16 peers_len;
 };
 
+struct ath12k_wmi_vdev_set_ltf_key_seed_cmd {
+	__le32 tlv_header;
+	__le32 vdev_id;
+	struct ath12k_wmi_mac_addr_params_rtt peer_macaddr;
+	__le32 rsn_authmode;
+	__le32 key_seed_len;
+} __packed;
+
+struct ath12k_wmi_ltf_keyseed_arg {
+	u32 vdev_id;
+	u8 peer_mac[ETH_ALEN];
+	u32 rsn_authmode;
+	const u8 *keyseed;
+	u32 keyseed_len;
+};
+
 enum wmi_dcvs_config_type {
 	/* Enable clock and voltage scaling */
 	WMI_DCVS_ENABLE,
@@ -11822,6 +11838,10 @@ void ath12k_wmi_rtt_pasn_peer_delete_event(struct ath12k_base *ab,
 					   struct sk_buff *skb);
 int ath12k_wmi_send_rtt_pasn_deauth(struct ath12k *ar, const u8 *peer_mac);
 int ath12k_wmi_pasn_peer_delete_all(struct ath12k_link_vif *arvif);
+int ath12k_vendor_install_secure_ranging_tk(struct ath12k_link_vif *arvif,
+					    struct nlattr **tb);
+int ath12k_wmi_send_ltf_key_seed(struct ath12k *ar,
+				 struct ath12k_wmi_ltf_keyseed_arg *arg);
 int
 ath12k_wmi_send_pasn_auth_status(struct ath12k *ar,
 				 const struct ath12k_wmi_rtt_pasn_auth_status_arg *arg);

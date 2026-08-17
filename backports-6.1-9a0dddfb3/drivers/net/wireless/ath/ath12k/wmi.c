@@ -23593,6 +23593,62 @@ ath12k_wmi_delete_all_peer_resp_pull(struct ath12k_base *ab,
 	return 0;
 }
 
+/**
+ * ath12k_wmi_send_ltf_key_seed() - Program the LTF key seed into firmware.
+ * @ar: ath12k radio.
+ * @arg: keyseed parameters including vdev_id, peer MAC, RSN authmode,
+ *	and the key seed bytes.
+ *
+ * Sends WMI_VDEV_SET_LTF_KEY_SEED_CMDID with the keyseed TLV appended.
+ * Called after successful PASN authentication to enable secure LTF.
+ *
+ * Returns 0 on success or a negative errno on failure.
+ */
+int ath12k_wmi_send_ltf_key_seed(struct ath12k *ar,
+				 struct ath12k_wmi_ltf_keyseed_arg *arg)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct ath12k_wmi_vdev_set_ltf_key_seed_cmd *cmd;
+	struct wmi_tlv *tlv;
+	struct sk_buff *skb;
+	int keyseed_len_aligned;
+	int len, ret;
+
+	keyseed_len_aligned = roundup(arg->keyseed_len, 4);
+	len = sizeof(*cmd) + TLV_HDR_SIZE + keyseed_len_aligned;
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (void *)skb->data;
+	cmd->tlv_header =
+		ath12k_wmi_tlv_cmd_hdr(WMI_TAG_VDEV_SET_LTF_KEY_SEED_CMD_FIXED_PARAM,
+				       sizeof(*cmd));
+	cmd->vdev_id = cpu_to_le32(arg->vdev_id);
+	ether_addr_copy(cmd->peer_macaddr.addr, arg->peer_mac);
+	cmd->rsn_authmode = cpu_to_le32(arg->rsn_authmode);
+	cmd->key_seed_len = cpu_to_le32(arg->keyseed_len);
+
+	tlv = (struct wmi_tlv *)(skb->data + sizeof(*cmd));
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_BYTE, keyseed_len_aligned);
+	memcpy(tlv->value, arg->keyseed, arg->keyseed_len);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_VDEV_SET_LTF_KEY_SEED_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to send VDEV set LTF keyseed: %d\n", ret);
+		dev_kfree_skb(skb);
+	}
+
+	return ret;
+}
+
+/**
+ * ath12k_wmi_send_rtt_pasn_deauth() - Send WMI_RTT_PASN_DEAUTH_CMD to firmware.
+ * @ar: ath12k radio.
+ * @peer_mac: MAC address of the PASN peer to deauthenticate.
+ *
+ * Returns 0 on success or a negative errno on failure.
+ */
 int ath12k_wmi_send_rtt_pasn_deauth(struct ath12k *ar, const u8 *peer_mac)
 {
 	struct ath12k_wmi_pdev *wmi = ar->wmi;
@@ -24058,6 +24114,76 @@ int ath12k_wmi_vdev_rate_mask(struct ath12k *ar, struct wmi_vdev_ratemask_arg *a
 	}
 
 	return 0;
+}
+
+static int ath12k_vendor_secure_ranging_cipher_to_wmi(u32 cipher,
+						      u32 *wmi_cipher)
+{
+	switch (cipher) {
+	case WLAN_CIPHER_SUITE_CCMP:
+	case WLAN_CIPHER_SUITE_CCMP_256:
+		*wmi_cipher = WMI_CIPHER_AES_CCM;
+		return 0;
+	case WLAN_CIPHER_SUITE_TKIP:
+		*wmi_cipher = WMI_CIPHER_TKIP;
+		return 0;
+	case WLAN_CIPHER_SUITE_GCMP:
+	case WLAN_CIPHER_SUITE_GCMP_256:
+		*wmi_cipher = WMI_CIPHER_AES_GCM;
+		return 0;
+	default:
+		return -EOPNOTSUPP;
+	}
+}
+
+int ath12k_vendor_install_secure_ranging_tk(struct ath12k_link_vif *arvif,
+					    struct nlattr **tb)
+{
+	struct wmi_vdev_install_key_arg arg = {};
+	struct ath12k *ar = arvif->ar;
+	u32 cipher;
+	int ret;
+
+	if (!tb[QCA_WLAN_VENDOR_ATTR_SECURE_RANGING_CTX_TK] ||
+	    !tb[QCA_WLAN_VENDOR_ATTR_SECURE_RANGING_CTX_CIPHER] ||
+	    !tb[QCA_WLAN_VENDOR_ATTR_SECURE_RANGING_CTX_PEER_MAC_ADDR])
+		return -EINVAL;
+
+	/* When hardware crypto is disabled the driver operates in pure SW
+	 * encryption mode and does not program keys into firmware.  Skip TK
+	 * installation and return success so the PASN flow completes normally;
+	 * ranging will proceed without FW-level frame protection.
+	 */
+	if (test_bit(ATH12K_GROUP_FLAG_HW_CRYPTO_DISABLED, &ar->ab->ag->flags))
+		return 0;
+
+	arg.key_len = nla_len(tb[QCA_WLAN_VENDOR_ATTR_SECURE_RANGING_CTX_TK]);
+	if (!arg.key_len || arg.key_len > WMI_MAX_KEY_LEN)
+		return -EINVAL;
+
+	ret = ath12k_vendor_secure_ranging_cipher_to_wmi(
+			nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_SECURE_RANGING_CTX_CIPHER]),
+			&cipher);
+	if (ret)
+		return ret;
+
+	arg.vdev_id = arvif->vdev_id;
+	arg.macaddr = nla_data(tb[QCA_WLAN_VENDOR_ATTR_SECURE_RANGING_CTX_PEER_MAC_ADDR]);
+	arg.key_idx = 0;
+	arg.key_flags = WMI_KEY_PAIRWISE;
+	arg.key_cipher = cipher;
+	arg.key_data = nla_data(tb[QCA_WLAN_VENDOR_ATTR_SECURE_RANGING_CTX_TK]);
+
+	reinit_completion(&ar->install_key_done);
+
+	ret = ath12k_wmi_vdev_install_key(ar, &arg);
+	if (ret)
+		return ret;
+
+	if (!wait_for_completion_timeout(&ar->install_key_done, HZ))
+		return -ETIMEDOUT;
+
+	return ar->install_key_status ? -EINVAL : 0;
 }
 
 int ath12k_wmi_send_cumac_config(struct ath12k *ar,

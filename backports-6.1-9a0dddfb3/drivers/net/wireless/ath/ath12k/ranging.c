@@ -690,3 +690,49 @@ void ath12k_rtt_reconfig_responder_role(struct ath12k *ar)
 				   role, arvif->vdev_id, arvif->link_id);
 	}
 }
+
+/**
+ * ath12k_pasn_peer_set_secure_ctx() - Update the secure-context-installed
+ *	flag for a PASN peer.
+ * @arvif: link vif owning the PASN peer list.
+ * @src_addr: local MAC address for the session, or NULL to keep existing.
+ * @peer_addr: remote peer MAC address.
+ * @installed: true if the TK has been installed, false to clear.
+ */
+void ath12k_pasn_peer_set_secure_ctx(struct ath12k_link_vif *arvif,
+				     const u8 *src_addr, const u8 *peer_addr,
+				     bool installed)
+{
+	struct ath12k_rtt_pasn_peer *peer;
+
+	if (!peer_addr)
+		return;
+
+	spin_lock_bh(&arvif->rtt_ctx.pasn_peer_lock);
+	peer = ath12k_pasn_peer_find(arvif, peer_addr);
+	if (peer) {
+		if (src_addr)
+			ether_addr_copy(peer->src_addr, src_addr);
+		if (installed)
+			peer->flags |= ATH12K_PASN_F_SECURE_CTX;
+		else
+			peer->flags &= ~ATH12K_PASN_F_SECURE_CTX;
+	}
+	spin_unlock_bh(&arvif->rtt_ctx.pasn_peer_lock);
+}
+
+/**
+ * ath12k_pasn_peer_set_ltf_keyseed() - Update the LTF-keyseed-installed
+ *	flag for a PASN peer.
+ * @arvif: link vif owning the PASN peer list.
+ * @peer_addr: remote peer MAC address.
+ * @installed: true if the LTF key seed has been installed, false to clear.
+ */
+void ath12k_pasn_peer_set_ltf_keyseed(struct ath12k_link_vif *arvif,
+				       const u8 *peer_addr, bool installed)
+{
+	u8 mask = installed ? ATH12K_PASN_F_LTF_KEYSEED : 0;
+	u8 clr  = installed ? 0 : ATH12K_PASN_F_LTF_KEYSEED;
+
+	ath12k_pasn_peer_update_flags(arvif, peer_addr, mask, clr);
+}

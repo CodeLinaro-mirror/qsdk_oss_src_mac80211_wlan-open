@@ -70,4 +70,10 @@ int ath12k_pasn_peer_create_or_update(struct ath12k_link_vif *arvif,
 				      const u8 *src_addr, const u8 *peer_addr,
 				      bool ltf_keyseed_required, u8 security_mode);
 
+void ath12k_pasn_peer_set_secure_ctx(struct ath12k_link_vif *arvif,
+				     const u8 *src_addr, const u8 *peer_addr,
+				     bool installed);
+void ath12k_pasn_peer_set_ltf_keyseed(struct ath12k_link_vif *arvif,
+				      const u8 *peer_addr, bool installed);
+
 #endif /* ATH12K_RANGING_H */
