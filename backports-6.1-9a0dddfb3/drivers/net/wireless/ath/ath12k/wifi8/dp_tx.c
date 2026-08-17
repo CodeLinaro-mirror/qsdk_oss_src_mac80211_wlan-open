@@ -3121,6 +3121,7 @@ int ath12k_wifi8_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 #ifndef CONFIG_IO_COHERENCY
 	int valid_entries;
 	struct ath12k_wifi8_tx_status_entry *tx_status_entry_next;
+	struct sk_buff *skb;
 #endif
 	int orig_budget = budget;
 	struct ath12k_skb_cb *skb_cb;
@@ -3157,7 +3158,7 @@ int ath12k_wifi8_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 	if (valid_entries > budget)
 		valid_entries = budget;
 
-	ath12k_hal_srng_dst_invalidate_entry(dp, status_ring, valid_entries);
+	ath12k_dp_srng_dst_invalidate_entries(dp, status_ring, valid_entries);
 #endif
 
 	INIT_LIST_HEAD(&desc_free_list);
@@ -3346,10 +3347,8 @@ int ath12k_wifi8_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 				ATH12K_TX_BUFFER_UNMAP(dp->dev, sw_metadata->paddr,
 						       sw_metadata->len,
 						       DMA_TO_DEVICE);
-#ifndef CONFIG_IO_COHERENCY
-				__skb_queue_head(&free_list_head, sw_metadata->skb);
-#else
 				__skb_queue_tail(&free_list_head, sw_metadata->skb);
+#ifdef CONFIG_IO_COHERENCY
 				prefetch((uint8_t *)sw_metadata->skb + 64);
 				prefetch((uint8_t *)sw_metadata->skb + 128);
 				prefetch((uint8_t *)sw_metadata->skb + 192);
@@ -3390,6 +3389,13 @@ int ath12k_wifi8_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 		}
 	}
 
+#ifndef CONFIG_IO_COHERENCY
+	skb_queue_walk(&free_list_head, skb) {
+		prefetch((uint8_t *)skb + 64);
+		prefetch((uint8_t *)skb + 128);
+		prefetch((uint8_t *)skb + 192);
+	}
+#endif
 	dp->device_stats.tx_comp_stats[ring_id].tx_completed += tx_completed;
 
 	for (idx = 0; idx < HAL_WBM_REL_SRC_MODULE_MAX; idx++)
