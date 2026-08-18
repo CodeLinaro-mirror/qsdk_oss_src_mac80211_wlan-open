@@ -33,6 +33,14 @@ static int ___cfg80211_stop_ap(struct cfg80211_registered_device *rdev,
 
 	if (!wdev->links[link_id].ap.beacon_interval) {
 		wdev->links[link_id].ap.ssid_len = 0;
+		/*
+		 * AP never beaconed (bootup CAC case: beacon_interval==0).
+		 * Clear the chandef so cfg80211_off_channel_oper_allowed() does
+		 * not see the stale DFS channel on this link and block subsequent
+		 * scans with -EBUSY.
+		 */
+		memset(&wdev->links[link_id].ap.chandef, 0,
+		       sizeof(wdev->links[link_id].ap.chandef));
 		if (hweight16(wdev->valid_links) <= 1) {
 			wdev->conn_owner_nlportid = 0;
 			wdev->u.ap.ssid_len = 0;
