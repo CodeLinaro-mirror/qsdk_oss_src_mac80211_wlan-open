@@ -15918,6 +15918,17 @@ static ssize_t ath12k_write_htt_stats_type(struct file *file,
 		return -ENETDOWN;
 	}
 
+	/* If type is non-zero, another writer is active (echo done but
+	 * cat not yet done). Return -EBUSY — caller must retry after
+	 * resets type back to 0.
+	 */
+	if (ar->debug.htt_stats.type != ATH12K_DBG_HTT_EXT_STATS_RESET) {
+		ath12k_warn(ar->ab,
+			   "another htt_stats_type write in progress, type:%d radio:%u\n",
+			   ar->debug.htt_stats.type, ar->radio_idx);
+		wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+		return -EBUSY;
+	}
 	ar->debug.htt_stats.type = type;
 	ar->debug.htt_stats.cfg_param[0] = cfg_param[0];
 	ar->debug.htt_stats.cfg_param[1] = cfg_param[1];
@@ -16051,6 +16062,10 @@ static int ath12k_open_htt_stats(struct inode *inode,
 
 	file->private_data = stats_req;
 
+	/* Reset type to 0 immediately after snapshot so the next writer
+	 * can proceed as soon as open() is called.
+	 */
+	ar->debug.htt_stats.type = ATH12K_DBG_HTT_EXT_STATS_RESET;
 	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
 
 	return 0;
@@ -16058,6 +16073,7 @@ out:
 	vfree(stats_req);
 	ar->debug.htt_stats.stats_req = NULL;
 err_unlock:
+	ar->debug.htt_stats.type = ATH12K_DBG_HTT_EXT_STATS_RESET;
 	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
 
 	return ret;
