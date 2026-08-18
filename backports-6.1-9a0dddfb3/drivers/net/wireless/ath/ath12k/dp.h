@@ -17,7 +17,9 @@
 #include "dp_stats.h"
 #include "dp_htt_logger.h"
 #include "dp_ext_desc.h"
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/ini.h"
+#endif /* CPTCFG_QCN_EXTN */
 
 #define DP_TX_MONITOR			(ab->mem_params.tx_monitor_support)
 #define DP_PPE_WBM2SW_RING_SIZE		(ab->mem_params.dp_params.ppe_wbm2sw_ring_size)
@@ -2056,6 +2058,7 @@ dma_addr_t ath12k_dp_tx_buffer_map(struct ath12k_dp *dp,
 	return dma_addr;
 }
 
+#ifdef CPTCFG_QCN_EXTN
 static inline
 void ath12k_dp_tx_buffer_unmap(struct ath12k_dp *dp,
 			       struct ath12k_tx_desc_info *tx_sw_desc)
@@ -2063,6 +2066,7 @@ void ath12k_dp_tx_buffer_unmap(struct ath12k_dp *dp,
 	dma_unmap_single(dp->dev, tx_sw_desc->paddr,
 			 tx_sw_desc->length, DMA_TO_DEVICE);
 }
+#endif /* CPTCFG_QCN_EXTN */
 
 static inline void ath12k_dsb(void)
 {

@@ -8,7 +8,9 @@
 #define ATH12K_DP_TX_WIFI7_H
 
 #include "../dp.h"
+#ifdef CPTCFG_QCN_EXTN
 #include "../qcn_extns/mesh_util.h"
+#endif /* CPTCFG_QCN_EXTN */
 
 #define DP_TX_SFE_BUFFER_SIZE		256
 
