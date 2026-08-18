@@ -1063,7 +1063,8 @@ ath12k_wifi8_dp_peer_assoc_smd_transition(struct ath12k_dp *dp,
 }
 
 int ath12k_wifi8_dp_peer_assoc(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
-			       struct ath12k_dp_vif *dp_vif, u8 *addr)
+			       struct ath12k_dp_vif *dp_vif, u8 *addr,
+			       struct ath12k_dp_peer_create_params *params)
 {
 	struct ath12k_ast_entry_config_params ast_param = {0};
 	struct ath12k_dp_hw_group_wifi8 *dp_hw_group_wifi8;
@@ -1090,10 +1091,14 @@ int ath12k_wifi8_dp_peer_assoc(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 	int j;
 
 	spin_lock_bh(&dp_hw->peer_hash_lock);
-	dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, addr);
+	if (!params->is_vdev_peer)
+		dp_peer = ath12k_dp_peer_find_by_addr_and_sta(dp_hw, addr, params->sta);
+	else
+		dp_peer = ath12k_dp_vdev_peer_check(dp_hw, addr, params->hw_link_id);
 
 	if (!dp_peer) {
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
+		ath12k_err(NULL, "Unable to find dp_peer during assoc %pM\n", addr);
 		return -ENOENT;
 	}
 

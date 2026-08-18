@@ -429,6 +429,7 @@ static int ath12k_uhr_prepare_links(struct ath12k_vif *ahvif,
 				    struct ieee80211_sta *target_sta,
 				    struct ieee80211_uhr_link_reconfig_info *info)
 {
+	struct ath12k_dp_peer_create_params params = {0};
 	struct ieee80211_hw *hw = ahvif->ah->hw;
 	struct ath12k_sta *target_ahsta;
 	struct ath12k_sta *current_ahsta = NULL;
@@ -529,10 +530,13 @@ static int ath12k_uhr_prepare_links(struct ath12k_vif *ahvif,
 				first_ar = primary_arvif->ar;
 
 			if (first_ar && info->transitioning_links) {
+				params.sta = target_sta;
+				params.is_mlo = target_sta->mlo;
 				ret = ath12k_dp_arch_peer_assoc(first_ar->ab->dp,
 								&first_ar->ah->dp_hw,
 								&ahvif->dp_vif,
-								info->target_ap_mld_addr);
+								info->target_ap_mld_addr,
+								&params);
 				if (ret)
 					ath12k_hw_warn(ahvif->ah,
 						       "smd prep: dp_peer_assoc failed for %pM: %d\n",
