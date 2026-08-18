@@ -913,6 +913,15 @@ static int __smd_dl_drain_remap(struct ieee80211_sub_if_data *sdata,
 		ieee80211_link_debugfs_add(&nl->data);
 	}
 
+	for_each_set_bit(tap_link_id, (unsigned long *)&prepared_mask,
+			 IEEE80211_MLD_MAX_NUM_LINKS) {
+
+		if (tap_link_id == (unsigned int)primary_id)
+			continue;
+
+		target->new_links[tap_link_id] = NULL;
+	}
+
 	sdata_dbg(sdata, "smd: dl_drain remap sta links\n");
 	ieee80211_smd_remap_sta_links(target->target_sta, target->tap_to_sap_link);
 
@@ -928,6 +937,8 @@ static int __smd_dl_drain_remap(struct ieee80211_sub_if_data *sdata,
 			   ret);
 		return ret;
 	}
+
+	target->new_links[primary_id] = NULL;
 
 	sdata->vif.active_links  = target->tap_prepared_mask;
 	sdata->vif.dormant_links = 0;
