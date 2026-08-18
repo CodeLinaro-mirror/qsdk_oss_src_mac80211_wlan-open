@@ -8068,6 +8068,15 @@ void ath12k_core_en_ssr(struct ath12k_base *ab, unsigned int value)
 	ab->hw_params->cp_arch_ops->en_ssr(ab, value);
 }
 
+bool ath12k_core_bridge_link_allowed(struct ath12k_base *ab)
+{
+	if (!ab->hw_params->cp_arch_ops ||
+	    !ab->hw_params->cp_arch_ops->bridge_link_allowed)
+		return true;
+
+	return ab->hw_params->cp_arch_ops->bridge_link_allowed();
+}
+
 int ath12k_core_cu_mem_alloc(struct ath12k *ar, struct ath12k_link_vif *arvif)
 {
 	struct ath12k_base *ab = ar->ab;

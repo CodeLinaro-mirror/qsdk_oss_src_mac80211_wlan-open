@@ -3809,5 +3809,6 @@ int ath12k_core_wsi_mlo_teardown_umac_reset(struct ath12k_base *ab);
 void ath12k_core_send_fw_hang_cmd(struct ath12k_base *ab, unsigned int value);
 void ath12k_core_en_ssr(struct ath12k_base *ab, unsigned int value);
 void ath12k_recovery_skip_partner_dump_collection(struct ath12k_base *ab);
+bool ath12k_core_bridge_link_allowed(struct ath12k_base *ab);
 
 #endif /* _CORE_H_ */
