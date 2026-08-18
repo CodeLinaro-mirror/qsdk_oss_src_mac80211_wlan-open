@@ -33,6 +33,7 @@
 #include "dp_tx_queue.h"
 #include "../dp_mon.h"
 #ifdef CPTCFG_QCN_EXTN
+#include "../qcn_extns/ath12k_cmn_extn.h"
 #include "qcn_extns/wifi8_dp_extn.h"
 #include "../qcn_extns/ipa/dp_ipa_pub.h"
 #include "../qcn_extns/vendor_extn.h"

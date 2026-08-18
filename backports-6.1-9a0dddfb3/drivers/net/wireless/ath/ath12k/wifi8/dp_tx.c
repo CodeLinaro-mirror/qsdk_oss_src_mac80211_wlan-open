@@ -24,6 +24,9 @@
 #include <linux/vmalloc.h>
 #include "../ppe_public.h"
 #include "ppeds.h"
+#ifdef CPTCFG_QCN_EXTN
+#include "../qcn_extns/ath12k_cmn_extn.h"
+#endif /* CPTCFG_QCN_EXTN */
 
 #define ATH12K_HW_MAX_ACTIVE_QUEUES	3
 
@@ -1063,6 +1066,14 @@ ath12k_wifi8_dp_tx_process_features(struct ath12k_dp_vif *dp_vif,
 	if (likely(ath12k_dp_feature_enabled(dp_vif, DP_FEATURE_NONE)))
 		return DP_TX_FEATURE_SUCCESS;
 
+#ifdef CPTCFG_QCN_EXTN
+	if (ath12k_dp_feature_enabled(dp_vif, DP_FEATURE_EXTAP)) {
+		struct ath12k_vif *ahvif = container_of(dp_vif,
+						       struct ath12k_vif, dp_vif);
+
+		ath12k_extap_tx(ahvif, skb);
+	}
+#endif
 	/* Process SW encrpt feature */
 	if (DP_SKB_FEATURE_ENABLED(skb_ctrl->features, DP_FEATURE_SW_ENCRPT)) {
 		ret = ath12k_wifi8_dp_mac_encrypt_handler(msdu_info);

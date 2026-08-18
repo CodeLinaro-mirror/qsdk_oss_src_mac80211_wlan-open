@@ -22960,6 +22960,13 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 			   "ME Database deinitialized\n");
 	}
 
+#ifdef CPTCFG_QCN_EXTN
+	if (vif->type == NL80211_IFTYPE_STATION)
+		if (static_branch_unlikely(&extap_enabled))
+			if (ath12k_vif_has_extap(ahvif))
+				ath12k_extap_deinit(ahvif);
+#endif
+
 	vif->driver_flags &= ~(IEEE80211_VIF_SUPPORTS_CQM_RSSI |
 			       IEEE80211_VIF_SUPPORTS_UAPSD);
 

@@ -181,6 +181,7 @@ static inline void ath12k_dmb(void)
 #define DP_FEATURE_STATS                 BIT(7)
 #define DP_FEATURE_ME                    BIT(8)
 #define DP_FEATURE_SG                    BIT(9)
+#define DP_FEATURE_EXTAP                 BIT(10)
 
 /*
  * DP_SKB_* flags stored in skb control block (cb)
