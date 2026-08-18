@@ -626,6 +626,8 @@ struct ath12k_tx_smd_ctx_per_tid {
 /* DP arch ops to communicate from common module
  * to arch specific module
  */
+struct ath12k_dump_segment;
+
 struct ath12k_dp_arch_ops {
 	int (*dp_op_device_init)(struct ath12k_dp *dp);
 	void (*dp_op_device_deinit)(struct ath12k_dp *dp);
@@ -812,6 +814,9 @@ struct ath12k_dp_arch_ops {
 	int (*peer_rx_tid_svld_reset)(struct ath12k_base *ab,
 				      struct ath12k_dp_hw *dp_hw,
 				      const u8 *peer_addr);
+	int (*get_coredump_seg_count)(struct ath12k_dp *dp);
+	int (*get_coredump_segs)(struct ath12k_dp *dp,
+				 struct ath12k_dump_segment *seg_arr, int max_segs);
 };
 
 struct ath12k_bp_stats {
@@ -1802,6 +1807,24 @@ static inline int ath12k_dp_qos_queue_setup(struct ath12k_dp *dp,
 		return dp->arch_ops->dp_qos_queue_setup(dp_hw_grp, dp_peer,
 							msduq, qos_id);
 	return -EOPNOTSUPP;
+}
+
+static inline int ath12k_dp_arch_get_coredump_seg_count(struct ath12k_dp *dp)
+{
+	if (dp->arch_ops->get_coredump_seg_count)
+		return dp->arch_ops->get_coredump_seg_count(dp);
+
+	return 0;
+}
+
+static inline int ath12k_dp_arch_get_coredump_segs(struct ath12k_dp *dp,
+						   struct ath12k_dump_segment *seg_arr,
+						   int max_segs)
+{
+	if (dp->arch_ops->get_coredump_segs)
+		return dp->arch_ops->get_coredump_segs(dp, seg_arr, max_segs);
+
+	return 0;
 }
 
 int ath12k_dp_htt_connect(struct ath12k_dp *dp);
