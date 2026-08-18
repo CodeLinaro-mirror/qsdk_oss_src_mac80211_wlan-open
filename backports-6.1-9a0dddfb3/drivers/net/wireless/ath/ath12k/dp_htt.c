@@ -448,6 +448,7 @@ ath12k_dp_htt_process_usr_compltn_ack_ba_stats(const u32 *tlv_desc,
 	user_stats->peer_id = peer_id;
 	user_stats->is_valid_peer_id = true;
 	ppdu_info->ppdu_id = HTT_PPDU_STATS_GET_PPDU_ID(ppdu_id);
+	ppdu_info->ack_ba_done++;
 	memcpy(&user_stats->ack_ba, tlv_desc,
 	       sizeof(struct htt_ppdu_stats_usr_cmpltn_ack_ba_status));
 
@@ -1089,7 +1090,6 @@ ath12k_update_extd_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 	if (!(tlv_bitmap & BIT(HTT_PPDU_STATS_TAG_USR_COMPLTN_ACK_BA_STATUS)))
 		return;
 
-	ppdu_info->ack_ba_done++;
 	usr_stats->processed_tlv_bitmap |=
 		BIT(HTT_PPDU_STATS_TAG_USR_COMPLTN_ACK_BA_STATUS);
 
