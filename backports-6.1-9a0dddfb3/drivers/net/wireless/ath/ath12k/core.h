@@ -1988,6 +1988,28 @@ struct ath12k_rf_path_ctx {
 	bool supported;
 };
 
+/**
+ * struct ath12k_tx_mon_ssr_stats - per-radio TX monitor SSR recovery counters
+ * @restart_attempts: TX monitor restart attempts during SSR recovery
+ * @restart_success: successful TX monitor restarts during SSR recovery
+ * @restart_no_pool: restarts skipped because the descriptor pool was not ready
+ * @restart_fail: TX monitor restart failures during SSR recovery
+ * @work_cancel: txmon work cancellation attempts during SSR recovery
+ * @mon_desc_flushed: monitor descriptors flushed from tx_mon_desc_work_list
+ * @ppdu_desc_drained: PPDU descriptors drained from used/proc lists during SSR
+ * @status_desc_drained: status descriptors drained from PPDU descriptors during SSR
+ */
+struct ath12k_tx_mon_ssr_stats {
+	u32 restart_attempts;
+	u32 restart_success;
+	u32 restart_no_pool;
+	u32 restart_fail;
+	u32 work_cancel;
+	u32 mon_desc_flushed;
+	u32 ppdu_desc_drained;
+	u32 status_desc_drained;
+};
+
 struct ath12k {
 	struct ath12k_base *ab;
 	u8 pdev_idx;
@@ -2150,6 +2172,7 @@ struct ath12k {
 	bool nlo_enabled:1;
 	bool is_tx_monitor_enabled_on_ssr:1;
 	/* Add new boolean variable here. */
+	struct ath12k_tx_mon_ssr_stats tx_mon_ssr_stats;
 
 	/* Protected by wiphy::mtx lock. */
 	u32 vdev_id_11d_scan;
