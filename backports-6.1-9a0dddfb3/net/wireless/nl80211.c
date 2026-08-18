@@ -12596,7 +12596,9 @@ static int nl80211_trigger_scan(struct sk_buff *skb, struct genl_info *info)
 
  out_free:
 	if (parallel_scan)
-		rdev->scan_req = saved_scan_req; /* NULL if no prior normal scan */
+		rdev->scan_req = saved_scan_req;
+	else
+		rdev->scan_req = NULL;
 	kfree(request);
 
 	return err;
