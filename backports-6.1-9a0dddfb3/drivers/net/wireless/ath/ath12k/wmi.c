@@ -2838,6 +2838,7 @@ int ath12k_wmi_send_peer_set_mapc_params_cmd(struct ath12k *ar,
 	skb_len += TLV_HDR_SIZE; /* always 0-element stub to preserve slot position */
 	skb_len += TLV_HDR_SIZE + (has_profile ? sizeof(*profile) : 0);
 	skb_len += TLV_HDR_SIZE; /* always 0-element stub to preserve slot position */
+	skb_len += TLV_HDR_SIZE; /* always 0-element stub to preserve slot position */
 	skb_len += 3 * TLV_HDR_SIZE; /* Co-SR, Co-BF, Co-rTWT: always 0-element stubs */
 
 	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, skb_len);
@@ -2894,6 +2895,11 @@ int ath12k_wmi_send_peer_set_mapc_params_cmd(struct ath12k *ar,
 			cpu_to_le32(arg->disable_subchannel_bitmap);
 		ptr += sizeof(*profile);
 	}
+
+	/* always 0-element stub — preserves FW TLV slot position*/
+	tlv = ptr;
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, 0);
+	ptr += TLV_HDR_SIZE;
 
 	/* always 0-element stub — preserves FW TLV slot position*/
 	tlv = ptr;
