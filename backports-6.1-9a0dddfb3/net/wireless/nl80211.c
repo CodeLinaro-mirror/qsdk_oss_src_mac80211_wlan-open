@@ -25205,6 +25205,26 @@ static int nl80211_send_mgmt_ttlm_expec_dur_update_len(struct wireless_dev *wdev
 	return len;
 }
 
+static void nl80211_clear_sent_ttlm_expec_dur(struct wireless_dev *wdev)
+{
+	bool pending = false;
+	int link_id;
+
+	spin_lock_bh(&wdev->ttlm_expec_dur_lock);
+	for_each_valid_link(wdev, link_id) {
+		if (wdev->links[link_id].ttlm_expec_dur &&
+		    wdev->links[link_id].ttlm_expec_dur_sent_gen ==
+		    wdev->links[link_id].ttlm_expec_dur_gen)
+			wdev->links[link_id].ttlm_expec_dur = 0;
+
+		wdev->links[link_id].ttlm_expec_dur_sent_gen = 0;
+		if (wdev->links[link_id].ttlm_expec_dur)
+			pending = true;
+	}
+	wdev->ttlm_expec_dur_update_flag = pending;
+	spin_unlock_bh(&wdev->ttlm_expec_dur_lock);
+}
+
 static int nl80211_send_mgmt_ttlm_expec_dur_update(struct sk_buff *msg,
 						   struct wireless_dev *wdev)
 {
@@ -25248,11 +25268,15 @@ static int nl80211_send_mgmt_ttlm_expec_dur_update(struct sk_buff *msg,
 		for_each_valid_link(tmp_wdev, link_id) {
 			u32 expec_dur;
 
-			if (!tmp_wdev->links[link_id].ttlm_expec_dur)
+			spin_lock_bh(&tmp_wdev->ttlm_expec_dur_lock);
+			expec_dur = tmp_wdev->links[link_id].ttlm_expec_dur;
+			if (expec_dur)
+				tmp_wdev->links[link_id].ttlm_expec_dur_sent_gen =
+					tmp_wdev->links[link_id].ttlm_expec_dur_gen;
+			spin_unlock_bh(&tmp_wdev->ttlm_expec_dur_lock);
+			if (!expec_dur)
 				continue;
 
-			expec_dur = tmp_wdev->links[link_id].ttlm_expec_dur;
-			tmp_wdev->links[link_id].ttlm_expec_dur = 0;
 			link = nla_nest_start(msg, ++j);
 			if (!link)
 				goto nla_fail_link_list;
@@ -25294,6 +25318,7 @@ int nl80211_send_mgmt(struct cfg80211_registered_device *rdev,
 	void *hdr;
 	int cu_len = 0, link_removal_update_len = 0, ttlm_expec_dur_update_len = 0;
 	int st_roaming_data_len = 0;
+	int err;
 
 	if (info->critical_update)
 		cu_len = nl80211_send_mgmt_critical_update_len(wdev);
@@ -25360,7 +25385,6 @@ int nl80211_send_mgmt(struct cfg80211_registered_device *rdev,
 	if (info->ttlm_expec_dur_update) {
 		if (nl80211_send_mgmt_ttlm_expec_dur_update(msg, wdev))
 			goto nla_put_failure;
-		wdev->ttlm_expec_dur_update_flag = 0;
 	}
 
 	if (st_roaming_data_len &&
@@ -25369,7 +25393,26 @@ int nl80211_send_mgmt(struct cfg80211_registered_device *rdev,
 
 	genlmsg_end(msg, hdr);
 
-	return genlmsg_unicast(wiphy_net(&rdev->wiphy), msg, nlportid);
+	err = genlmsg_unicast(wiphy_net(&rdev->wiphy), msg, nlportid);
+	if (err)
+		return err;
+
+	/*
+	 * Message delivered successfully. Clear only the values that
+	 * were encoded in this message, preserving newer updates.
+	 */
+	if (info->ttlm_expec_dur_update) {
+		struct wireless_dev *tmp_wdev;
+
+		list_for_each_entry(tmp_wdev, &rdev->wiphy.wdev_list, list) {
+			if (!tmp_wdev->valid_links)
+				continue;
+
+			nl80211_clear_sent_ttlm_expec_dur(tmp_wdev);
+		}
+	}
+
+	return 0;
 
  nla_put_failure:
 	nlmsg_free(msg);
