@@ -2048,6 +2048,7 @@ static inline void ath12k_dsb(void)
 	 */
 }
 
+static inline
 struct sk_buff *ath12k_dp_alloc_skb(int size)
 {
 	return dev_alloc_skb(size);
