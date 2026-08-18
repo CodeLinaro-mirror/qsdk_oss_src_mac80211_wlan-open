@@ -13568,6 +13568,30 @@ int ath12k_vendor_put_ar_nss_chains(struct sk_buff *vendor_event,
 	return 0;
 }
 
+int ath12k_vendor_put_ar_wireless_mode(struct sk_buff *vendor_event,
+				       struct ath12k *ar)
+{
+	struct ieee80211_chanctx_conf *ctx;
+	struct ath12k_link_vif *arvif;
+	enum wmi_phy_mode phymode;
+
+	ctx = ath12k_mac_get_first_active_arvif_chanctx(ar);
+	if (!ctx)
+		return -1;
+
+	arvif = container_of(ctx, struct ath12k_link_vif, chanctx);
+	phymode = arvif->ahvif->dp_vif.dp_link_vif[arvif->link_id].phymode;
+
+	if (nla_put_string(vendor_event, QCA_WLAN_VENDOR_ATTR_LINK_WIRELESS_MODE,
+			   ath12k_mac_phymode_str(phymode))) {
+		ath12k_err(ar->ab, "failed to put wireless mode for hw link id %u soc %d",
+			   ar->pdev->hw_link_id, ath12k_get_ab_device_id(ar->ab));
+		return -1;
+	}
+
+	return 0;
+}
+
 int ath12k_vendor_put_ab_soc_id(struct sk_buff *vendor_event,
 				struct ath12k_base *ab)
 {

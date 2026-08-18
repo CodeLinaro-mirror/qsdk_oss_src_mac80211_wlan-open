@@ -875,6 +875,7 @@ ath12k_mac_op_get_6ghz_dev_deployment_type(struct ieee80211_hw *hw);
 int ath12k_mac_get_chan_width(enum nl80211_chan_width ch_width);
 struct ieee80211_chanctx_conf *
 	ath12k_mac_get_first_active_arvif_chanctx(struct ath12k *ar);
+const char *ath12k_mac_phymode_str(enum wmi_phy_mode mode);
 struct ieee80211_link_sta *ath12k_mac_get_link_sta(struct ath12k_link_sta *arsta);
 struct ieee80211_link_sta *ath12k_mac_inherit_radio_cap(struct ath12k *ar,
 							struct ath12k_link_sta *arsta);

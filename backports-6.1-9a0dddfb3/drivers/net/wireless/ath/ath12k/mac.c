@@ -383,7 +383,7 @@ ath12k_mac_get_sp_client_power_for_connecting_ap(
 					struct ieee80211_chanctx_conf *ctx,
 					s8 *max_eirp_arr,
 					u8 num_pwr_levels);
-static const char *ath12k_mac_phymode_str(enum wmi_phy_mode mode)
+const char *ath12k_mac_phymode_str(enum wmi_phy_mode mode)
 {
 	switch (mode) {
 	case MODE_11A:
@@ -24933,17 +24933,20 @@ ath12k_mac_assign_vif_chanctx_handle(struct ieee80211_hw *hw,
 	if (ctx) {
 		memcpy(&arvif->chanctx, ctx, sizeof(*ctx));
 
-		if (ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
-			ath12k_vendor_link_state_update(ar->pdev_idx, ab, arvif,
-						ATH12K_VENDOR_LINK_STATE_ASSIGNED);
-		}
-
 		ret = ath12k_mac_vdev_start(arvif, ctx);
 		if (ret) {
 			ath12k_warn(ab, "failed to start vdev %i addr %pM on freq %d: %d\n",
 				    arvif->vdev_id, vif->addr,
 				    ctx->def.chan->center_freq, ret);
 			goto out;
+		}
+
+		/* Notify after vdev start so dp_link_vif->phymode is
+		 * already populated when the vendor app reads it.
+		 */
+		if (ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
+			ath12k_vendor_link_state_update(ar->pdev_idx, ab, arvif,
+						ATH12K_VENDOR_LINK_STATE_ASSIGNED);
 		}
 	} else {
 		memset(&arvif->chanctx, 0, sizeof(*ctx));
