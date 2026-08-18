@@ -22674,7 +22674,7 @@ int ath12k_wmi_tx_mon_pkt_cap_set_config(struct ath12k *ar, u32 bitmap)
 	cmd->tlv_header =
 		ath12k_wmi_tlv_cmd_hdr(WMI_TAG_SOC_TX_PACKET_CUSTOM_CLASSIFY_CMD,
 				       sizeof(*cmd));
-	cmd->pkt_type_bitmap = cpu_to_le32(bitmap);
+	cmd->pkt_type_bitmap = cpu_to_le32(bitmap << 1);
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_DP_MON_TX | ATH12K_DBG_WMI,
 		   "WMI tx mon pkt cap config bitmap 0x%x\n", bitmap);
