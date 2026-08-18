@@ -20,14 +20,43 @@ struct ath12k_mgmt;
 
 #define MGMT_RX_BUFFER_SIZE                2048
 
-#define MGMT_REO_DST_RING_SIZE             1024
-#define MGMT_REO_EXCEPTION_RING_SIZE       1024
-#define MGMT_WBM_IDLE_BUF_RING_SIZE        2048
-#define MGMT_REFILL_RING_SIZE              MGMT_WBM_IDLE_BUF_RING_SIZE
+/* Global variables set at init time based on chip count.
+ * Ring sizes follow desc_count so that pool and ring are always in sync.
+ */
+extern u32 ath12k_mgmt_num_desc;
+extern u16 ath12k_mgmt_num_rx_desc_blocks;
+extern u32 ath12k_mgmt_desc_per_chip;
+extern u32 ath12k_mgmt_wm_high;
+extern u32 ath12k_mgmt_wm_low;
 
-#define MGMT_RX_DESC_COUNT                 2048
-#define MGMT_RX_DESC_BLOCK_SIZE            512
-#define NUM_MGMT_RX_DESC_BLOCKS            (MGMT_RX_DESC_COUNT / MGMT_RX_DESC_BLOCK_SIZE)
+/* Ring sizes derive from ath12k_mgmt_num_desc.
+ * Watermark high is configured in words and capped at the per-chip
+ * descriptor count converted to words.
+ * Watermark diff is fixed in words.
+ */
+#ifdef CPTCFG_QCN_EXTN
+#define ATH12K_MGMT_CFG_GET(cfg)	ath12k_cfg_get(ab, ATH12K_CFG_MGMT_##cfg)
+
+#define MGMT_WBM_HIGH_WATERMARK		ATH12K_MGMT_CFG_GET(WBM_HIGH_WATERMARK)
+#else
+#define MGMT_WBM_HIGH_WATERMARK		1024
+#endif
+#define MGMT_WBM_BUFFER_TO_WORDS(buffers)	((buffers) * 2)
+#define MGMT_WBM_WORDS_TO_BUFFER(words)		((words) / 2)
+#define MGMT_WBM_LOW_WATERMARK_DIFF	32
+#define MGMT_REO_DST_RING_SIZE		ath12k_mgmt_num_desc
+#define MGMT_REO_EXCEPTION_RING_SIZE	ath12k_mgmt_num_desc
+#define MGMT_WBM_IDLE_BUF_RING_SIZE	ath12k_mgmt_num_desc
+#define MGMT_REFILL_RING_SIZE		MGMT_WBM_IDLE_BUF_RING_SIZE
+
+/* Number of mgmt Rx REO descriptors per chip.
+ * Total pool = MGMT_RX_DESC_COUNT_PER_CHIP * (num_devices + 1).
+ */
+#ifdef CPTCFG_QCN_EXTN
+#define MGMT_RX_DESC_COUNT_PER_CHIP	ATH12K_MGMT_CFG_GET(RX_DESC_COUNT_PER_CHIP)
+#else
+#define MGMT_RX_DESC_COUNT_PER_CHIP	512
+#endif
 
 /* Descriptor hierarchy:
  * +--------+        +-------+-------+-----+-------+
@@ -128,7 +157,7 @@ struct ath12k_mgmt {
 	bool init_done;
 
 	/* Rx buffer descriptors for mgmt */
-	struct ath12k_rx_desc_info *rx_desc_baddr[NUM_MGMT_RX_DESC_BLOCKS];
+	struct ath12k_rx_desc_info **rx_desc_baddr;
 
 	/* protects rx descriptors for arch-specific rx_refill_ring */
 	spinlock_t rx_desc_lock;

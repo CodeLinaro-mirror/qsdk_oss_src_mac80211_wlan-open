@@ -8,6 +8,21 @@
 #include "hal.h"
 #include "debug.h"
 
+u32 ath12k_mgmt_num_desc;
+EXPORT_SYMBOL(ath12k_mgmt_num_desc);
+
+u16 ath12k_mgmt_num_rx_desc_blocks;
+EXPORT_SYMBOL(ath12k_mgmt_num_rx_desc_blocks);
+
+u32 ath12k_mgmt_desc_per_chip;
+EXPORT_SYMBOL(ath12k_mgmt_desc_per_chip);
+
+u32 ath12k_mgmt_wm_high;
+EXPORT_SYMBOL(ath12k_mgmt_wm_high);
+
+u32 ath12k_mgmt_wm_low;
+EXPORT_SYMBOL(ath12k_mgmt_wm_low);
+
 void ath12k_mgmt_irq_grp_setup(struct ath12k_mgmt *mgmt)
 {
 	int i;
@@ -242,9 +257,9 @@ struct ath12k_rx_desc_info *ath12k_mgmt_get_rx_desc_from_cookie(struct ath12k_mg
 	block = u32_get_bits(cookie, MGMT_RX_DESC_BLOCK_MASK);
 	slot = u32_get_bits(cookie, MGMT_RX_DESC_SLOT_MASK);
 
-	if (block >= NUM_MGMT_RX_DESC_BLOCKS ||
+	if (block >= ath12k_mgmt_num_rx_desc_blocks ||
 	    !mgmt->rx_desc_baddr[block] ||
-	    slot >= MGMT_RX_DESC_BLOCK_SIZE)
+	    slot >= ath12k_mgmt_desc_per_chip)
 		return NULL;
 
 	return &mgmt->rx_desc_baddr[block][slot];
@@ -255,16 +270,26 @@ int ath12k_mgmt_rx_desc_init(struct ath12k_base *ab)
 {
 	struct ath12k_mgmt *mgmt = ab->mgmt;
 	struct ath12k_rx_desc_info *rx_descs;
+	u32 desc_per_chip = MGMT_RX_DESC_COUNT_PER_CHIP;
+	u32 desc_count;
+	u16 num_blocks;
 	u16 i, j;
+
+	desc_count = desc_per_chip * (ab->ag->num_devices + 1);
+	num_blocks = desc_count / desc_per_chip;
 
 	spin_lock_init(&mgmt->rx_desc_lock);
 	INIT_LIST_HEAD(&mgmt->rx_desc_free_list);
 
+	mgmt->rx_desc_baddr = kcalloc(num_blocks, sizeof(*mgmt->rx_desc_baddr),
+				      GFP_KERNEL);
+	if (!mgmt->rx_desc_baddr)
+		return -ENOMEM;
+
 	spin_lock_bh(&mgmt->rx_desc_lock);
 
-	for (i = 0; i < NUM_MGMT_RX_DESC_BLOCKS; i++) {
-		rx_descs = kcalloc(MGMT_RX_DESC_BLOCK_SIZE, sizeof(*rx_descs),
-				   GFP_ATOMIC);
+	for (i = 0; i < num_blocks; i++) {
+		rx_descs = kcalloc(desc_per_chip, sizeof(*rx_descs), GFP_ATOMIC);
 		if (!rx_descs) {
 			spin_unlock_bh(&mgmt->rx_desc_lock);
 			/* Clean up previously allocated descriptors */
@@ -273,12 +298,14 @@ int ath12k_mgmt_rx_desc_init(struct ath12k_base *ab)
 				kfree(mgmt->rx_desc_baddr[i]);
 				mgmt->rx_desc_baddr[i] = NULL;
 			}
+			kfree(mgmt->rx_desc_baddr);
+			mgmt->rx_desc_baddr = NULL;
 			return -ENOMEM;
 		}
 
 		mgmt->rx_desc_baddr[i] = &rx_descs[0];
 
-		for (j = 0; j < MGMT_RX_DESC_BLOCK_SIZE; j++) {
+		for (j = 0; j < desc_per_chip; j++) {
 			rx_descs[j].cookie = ath12k_mgmt_gen_rx_desc_cookie(i, j);
 			rx_descs[j].magic = ATH12K_MGMT_RX_DESC_MAGIC;
 			rx_descs[j].device_id = ab->device_id;
@@ -288,7 +315,15 @@ int ath12k_mgmt_rx_desc_init(struct ath12k_base *ab)
 		}
 	}
 
+	/* Set globals only after all blocks are successfully allocated */
+	ath12k_mgmt_num_rx_desc_blocks = num_blocks;
+	ath12k_mgmt_num_desc = desc_count;
+	ath12k_mgmt_desc_per_chip = desc_per_chip;
+
 	spin_unlock_bh(&mgmt->rx_desc_lock);
+
+	ath12k_info(ab, "mgmt rx desc init: count=%u blocks=%u block_size=%u num_devices=%u\n",
+		   desc_count, num_blocks, desc_per_chip, ab->ag->num_devices);
 
 	return 0;
 }
@@ -307,12 +342,12 @@ void ath12k_mgmt_rx_desc_cleanup(struct ath12k_base *ab)
 
 	spin_lock_bh(&mgmt->rx_desc_lock);
 
-	for (i = 0; i < NUM_MGMT_RX_DESC_BLOCKS; i++) {
+	for (i = 0; i < ath12k_mgmt_num_rx_desc_blocks; i++) {
 		desc_info = mgmt->rx_desc_baddr[i];
 		if (!desc_info)
 			continue;
 
-		for (j = 0; j < MGMT_RX_DESC_BLOCK_SIZE; j++) {
+		for (j = 0; j < ath12k_mgmt_desc_per_chip; j++) {
 			if (!desc_info[j].in_use)
 				continue;
 
@@ -341,6 +376,11 @@ void ath12k_mgmt_rx_desc_cleanup(struct ath12k_base *ab)
 
 	if (!list_empty(&used_list))
 		ath12k_mgmt_rx_replenish_buffs(ab->mgmt, &used_list, true);
+
+	if (!in_umac_reset) {
+		kfree(mgmt->rx_desc_baddr);
+		mgmt->rx_desc_baddr = NULL;
+	}
 }
 EXPORT_SYMBOL(ath12k_mgmt_rx_desc_cleanup);
 
