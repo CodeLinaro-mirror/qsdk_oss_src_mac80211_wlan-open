@@ -17703,6 +17703,13 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 	},
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_WLAN_RTT_BLOB,
+		.doit = ath12k_vendor_rtt_blob,
+		.policy = ath12k_rtt_blob_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_RTT_BLOB_MAX,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
 		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_WLAN_STA_MAX_PWR_TABLE,
 		.doit = ath12k_vendor_sta_max_pwr_table,
 		.policy = ath12k_sta_max_pwr_table_policy,

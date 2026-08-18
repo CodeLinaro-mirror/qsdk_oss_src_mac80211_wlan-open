@@ -608,6 +608,7 @@ enum wmi_tlv_cmd_id {
 	WMI_PDEV_SET_RF_PATH_CMDID = 0x4050,
 	WMI_PDEV_WSI_STATS_INFO_CMDID = 0x4051,
 	WMI_PDEV_SET_CUMAC_CHIP_CMDID = 0x405D,
+	WMI_PDEV_DOWNLOAD_RTT_BLOB_CMDID = 0x405F,
 	WMI_VDEV_CREATE_CMDID = WMI_TLV_CMD(WMI_GRP_VDEV),
 	WMI_VDEV_DELETE_CMDID,
 	WMI_VDEV_START_REQUEST_CMDID,
@@ -2651,6 +2652,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_PEER_UHR_OMP_NPCA_PARAMS,
 	WMI_TAG_ANOMALY_REPORT_HDR = 0x588,
 	WMI_TAG_ANOMALY_ENTRY = 0x589,
+	WMI_TAG_PDEV_DOWNLOAD_RTT_BLOB_CMD = 0x5B8,
 	WMI_TAG_SOC_TX_PACKET_CUSTOM_CLASSIFY_CMD = 0x4DA,
 	WMI_TAG_PEER_SET_MAPC_PARAMS_CMD_FIXED_PARAM = 0x0594,
 	WMI_TAG_MAPC_CMN_PARAMS = 0x0595,
@@ -11139,6 +11141,23 @@ struct wmi_pdev_set_ctl_table_cmd_fixed_param {
 		__le32 pdev_id;
 	};
 	__le32 ctl_len;
+} __packed;
+
+/**
+ * struct wmi_pdev_download_rtt_blob_cmd_fixed_param - WMI command to download
+ * the RTT blob to firmware for a PDEV.
+ * @tlv_header: TLV tag equals WMI_TAG_PDEV_DOWNLOAD_RTT_BLOB_CMD; len is
+ *   sizeof(*cmd) - TLV_HDR_SIZE.
+ * @pdev_id: PDEV identifier. See macros starting with WMI_PDEV_ID_.
+ * @rtt_len: Length in bytes of the RTT blob fragment (including fragment header).
+ *
+ * Followed by TLV: A_UINT32 rtt_info[]; variable-length array holding the
+ * RTT blob fragment data (length rounded up to word boundary).
+ */
+struct wmi_pdev_download_rtt_blob_cmd_fixed_param {
+	__le32 tlv_header;
+	__le32 pdev_id;
+	__le32 rtt_len;
 } __packed;
 
 enum wmi_pcie_gen_lane_config_type {
