@@ -1197,6 +1197,7 @@ static void add_common_files(struct ieee80211_sub_if_data *sdata)
 	    sdata->vif.type != NL80211_IFTYPE_NAN)
 		DEBUGFS_ADD(aqm);
 
+#ifdef CPTCFG_QCN_EXTN
 	/* BIGTK (Beacon Integrity Group Temporal Key) get/set entries */
 	ieee80211_debugfs_bigtk_add(sdata);
 
@@ -1211,6 +1212,7 @@ static void add_common_files(struct ieee80211_sub_if_data *sdata)
 
 	/* CIGTK (Control Integrity Group Temporal Key) get/set entries */
 	ieee80211_debugfs_cigtk_add(sdata);
+#endif /* CPTCFG_QCN_EXTN */
 
 }
 

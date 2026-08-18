@@ -2357,7 +2357,9 @@ int ath12k_mac_vdev_stop(struct ath12k_link_vif *arvif)
 				 "[radio_idx : %u] CAC Stopped for vdev %d\n",
 				 ar->radio_idx, arvif->vdev_id);
 	}
+#ifdef CPTCFG_QCN_EXTN
 	ath12k_dp_ipa_vif_notify(arvif, false, false);
+#endif /* CPTCFG_QCN_EXTN */
 
 	return 0;
 err:
@@ -6782,9 +6784,11 @@ static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 		ahvif->ps_timeout[_link_id] = ATH12K_GREEN_AP_PS_TIMEOUT_DEFAULT;
 	arvif->vap_cfg.ap_ps_on = ahvif->ap_ps_on[_link_id];
 	arvif->vap_cfg.ps_timeout = ahvif->ps_timeout[_link_id];
+#ifdef CPTCFG_QCN_EXTN
 	arvif->vap_cfg.he_ar_gi_ltf = IEEE80211_HE_AR_DEFAULT_LTF_SGI_COMBINATION;
 	arvif->vap_cfg.he_ar_ldpc = IEEE80211_HE_AR_LDPC_DEFAULT;
 	arvif->vap_cfg.he_rtsthrshld = IEEE80211_HEOP_RTS_THRESHOLD_DISABLED;
+#endif /* CPTCFG_QCN_EXTN */
 
 	init_completion(&arvif->wmi_migration_event_resp);
 	INIT_WORK(&arvif->wmi_migration_cmd_work,
@@ -7080,9 +7084,12 @@ static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 		}
 	}
 
+#ifdef CPTCFG_QCN_EXTN
 	ath12k_mac_deinit_arvif_extn(arvif);
 	ath12k_rtt_deinit_link_vif(arvif);
 	ath12k_mac_remove_link_interface_extn(arvif);
+#endif /* CPTCFG_QCN_EXTN */
+
 	ath12k_debugfs_remove_interface(arvif);
 	ret = ath12k_mac_vdev_delete(ar, arvif);
 	if (ret)
@@ -19002,15 +19009,14 @@ static void ath12k_mgmt_over_wmi_tx_drop(struct ath12k *ar, struct sk_buff *skb)
 
 	ath12k_skb_rhash_remove(ar, skb);
 
-	if (!ATH12K_IS_CUSTOM_PKT(ATH12K_SKB_CB(skb))) {
-		ieee80211_free_txskb(ar->ah->hw, skb);
-	} else {
 #ifdef CPTCFG_QCN_EXTN
+	if (!ATH12K_IS_CUSTOM_PKT(ATH12K_SKB_CB(skb)))
+		ieee80211_free_txskb(ar->ah->hw, skb);
+	else
 		ath12k_custom_tx_free_extn(skb, 1);
 #else
-		dev_kfree_skb_any(skb);
+	ieee80211_free_txskb(ar->ah->hw, skb);
 #endif /* CPTCFG_QCN_EXTN */
-	}
 
 	if (num_mgmt < 0)
 		WARN_ON_ONCE(1);
@@ -23538,7 +23544,9 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA)
 		ar->dp.stats.telemetry_stats.sta_vap_exist = 1;
 
+#ifdef CPTCFG_QCN_EXTN
 	ath12k_dp_ipa_vif_notify(arvif, restart, true);
+#endif /* CPTCFG_QCN_EXTN */
 
 	return 0;
 }
@@ -27000,8 +27008,10 @@ ath12k_mac_reconfig_complete(struct ieee80211_hw *hw,
 
 		ath12k_erp_handle_ssr(ar);
 		/* Send vendor event to notify userspace about fw recovery completion */
+#ifdef CPTCFG_QCN_EXTN
 		ath12k_vendor_send_event(ab,
 					 QCA_NL80211_VENDOR_FW_RECOVERY_EVENT_RECOVERY_DONE);
+#endif /* CPTCFG_QCN_EXTN */
 
 		/* Re-apply RTT responder role after FW recovery */
 		ath12k_rtt_reconfig_responder_role(ar);
