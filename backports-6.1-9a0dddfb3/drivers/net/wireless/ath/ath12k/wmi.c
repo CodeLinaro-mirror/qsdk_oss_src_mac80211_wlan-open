@@ -15234,7 +15234,14 @@ ath12k_wmi_process_csa_switch_count_event(struct ath12k_base *ab,
 			continue;
 		}
 
+#ifdef CPTCFG_QCN_EXTN
+		if (ahvif->vif->type == NL80211_IFTYPE_AP && !arvif->is_started)
+			continue;
+
+		if (!conf->csa_active)
+#else
 		if (!arvif->is_up || !conf->csa_active)
+#endif
 			continue;
 
 		/* Finish CSA when counter reaches zero */
