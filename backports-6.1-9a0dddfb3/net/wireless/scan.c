@@ -77,6 +77,7 @@ MODULE_PARM_DESC(bss_entries_limit,
                  "limit to number of scan BSS entries (per wiphy, default 1000)");
 
 #define IEEE80211_SCAN_RESULT_EXPIRE	(30 * HZ)
+#define IEEE80211_WEAK_SIGNAL_MBM	(-8000)
 
 VISIBLE_IF_CFG80211_KUNIT void
 cfg80211_extract_smd_info(struct cfg80211_bss *bss,
@@ -2388,6 +2389,28 @@ cfg80211_inform_single_bss_data(struct wiphy *wiphy,
 						   drv_data->chan);
 	if (!channel)
 		return NULL;
+
+	/*
+	 * When no channel information is available in the frame body, prefer
+	 * the channel from an existing strong BSS entry for the same BSSID
+	 * over a weak adjacent-channel reception.
+	 */
+	if (wiphy->signal_type == CFG80211_SIGNAL_TYPE_MBM &&
+	    cfg80211_get_ies_channel_number(data->ie, data->ielen,
+					    channel->band) < 0 &&
+	    drv_data->signal < IEEE80211_WEAK_SIGNAL_MBM) {
+		struct cfg80211_bss *existing;
+
+		existing = cfg80211_get_bss(wiphy, NULL, data->bssid,
+					    NULL, 0, IEEE80211_BSS_TYPE_ANY,
+					    IEEE80211_PRIVACY_ANY);
+		if (existing) {
+			if (existing->channel != channel &&
+			    existing->signal >= IEEE80211_WEAK_SIGNAL_MBM)
+				channel = existing->channel;
+			cfg80211_put_bss(wiphy, existing);
+		}
+	}
 
 	if (channel->band == NL80211_BAND_6GHZ &&
 	    !cfg80211_6ghz_power_type_valid(data->ie, data->ielen,
