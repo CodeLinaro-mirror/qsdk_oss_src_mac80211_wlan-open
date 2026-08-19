@@ -623,7 +623,8 @@ int ath12k_umac_reset_notify_target(struct ath12k_base *ab, int tx_event)
 
 		if (partner_ab->is_bypassed ||
 		    (test_bit(ATH12K_FLAG_RECOVERY, &partner_ab->dev_flags) &&
-		     !test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &partner_ab->dev_flags)))
+		     !test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &partner_ab->dev_flags)) ||
+		    test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &partner_ab->dev_flags))
 			continue;
 
 		if (partner_ab->wsi_remap_state == ATH12K_WSI_BYPASS_ADD_DEVICE &&
