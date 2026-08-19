@@ -21663,11 +21663,19 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	else
 		ar->num_created_vdevs++;
 	arvif->is_created = true;
+	spin_lock_bh(&ar->data_lock);
+	if (ar->created_vdev_map & (1LL << arvif->vdev_id))
+		ath12k_err(ab, "vdev_id %d already set in the created vdev map = 0x%llx\n",
+			   arvif->vdev_id, ar->created_vdev_map);
+	else
+		ar->created_vdev_map |= 1LL << arvif->vdev_id;
+	spin_unlock_bh(&ar->data_lock);
 
 	dbg_lvl = (ahvif->vdev_type == WMI_VDEV_TYPE_STA) ? ATH12K_DBG_L1 : ATH12K_DBG_L0;
 	ath12k_dbg_level(ab, ATH12K_DBG_MAC, dbg_lvl,
-			 "[radio_idx : %u] vdev addr %pM bssid: %pM created, vdev_id %d\n",
-			 ar->radio_idx, arvif->addr, arvif->bssid, arvif->vdev_id);
+			 "[radio_idx : %u] vdev addr %pM bssid: %pM created, vdev_id %d created vdev map = 0x%llx\n",
+			 ar->radio_idx, arvif->addr, arvif->bssid, arvif->vdev_id,
+			 ar->created_vdev_map);
 	ar->allocated_vdev_map |= 1LL << arvif->vdev_id;
 
 	spin_lock_bh(&ar->data_lock);
@@ -21941,6 +21949,11 @@ err_vdev_del:
 	} else {
 		WARN_ON(!ar->num_created_vdevs);
 		ar->num_created_vdevs--;
+	}
+	if (arvif->is_created) {
+		spin_lock_bh(&ar->data_lock);
+		ar->created_vdev_map &= ~(1LL << arvif->vdev_id);
+		spin_unlock_bh(&ar->data_lock);
 	}
 	arvif->is_created = false;
 	arvif->ar = NULL;
@@ -22735,6 +22748,11 @@ err_vdev_del:
 	}
 
 	/* TODO: recal traffic pause state based on the available vdevs */
+	if (arvif->is_created) {
+		spin_lock_bh(&ar->data_lock);
+		ar->created_vdev_map &= ~(1LL << arvif->vdev_id);
+		spin_unlock_bh(&ar->data_lock);
+	}
 	arvif->is_created = false;
 	arvif->is_scan_vif = false;
 	arvif->is_mlprobe_scan_vif = false;
@@ -30976,6 +30994,9 @@ static int ath12k_mac_setup(struct ath12k *ar)
 	spin_lock_init(&ar->data_lock);
 	spin_lock_init(&ar->dp.ppdu_list_lock);
 	spin_lock_init(&ar->arsta_lock);
+	ath12k_dbg(ab, ATH12K_DBG_MAC,
+		   "arvifs list for radio hw_link_id %d initialized\n",
+		   ar->hw_link_id);
 	INIT_LIST_HEAD(&ar->arvifs);
 	spin_lock_bh(&ar->data_lock);
 	ath12k_bcast_probe_rl_init(ar);
