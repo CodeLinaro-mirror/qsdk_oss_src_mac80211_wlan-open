@@ -2857,6 +2857,23 @@ void ieee80211_smd_dl_drain_complete_irqsafe(struct ieee80211_vif *vif,
 					     const u8 *target_mld_addr);
 
 /**
+ * ieee80211_get_smd_ctx_done - Deliver async get_smd_ctx result to cfg80211/nl80211
+ * @vif: virtual interface
+ * @sta_addr: non-AP MLD address the context was collected for
+ * @st_info: SMD BSS Transition Info (@st_info->ctx==NULL if collection failed)
+ *
+ * Called by the driver from BH/softirq context after the async
+ * NL80211_CMD_GET_SMD_CTX collection completes. mac80211 forwards the
+ * result to cfg80211 which finds the pending nl80211 request and sends
+ * the unicast reply to hostapd.
+ *
+ * Context: Any context. No locks required. Does not acquire wiphy mutex.
+ */
+void ieee80211_get_smd_ctx_done(struct ieee80211_vif *vif,
+				const u8 *sta_addr,
+				struct cfg80211_smd_transition_info *st_info);
+
+/**
  * enum ieee80211_sta_rx_bandwidth - station RX bandwidth
  * @IEEE80211_STA_RX_BW_20: station can only receive 20 MHz
  * @IEEE80211_STA_RX_BW_40: station can receive up to 40 MHz
@@ -5262,6 +5279,11 @@ struct ieee80211_ppe_vp_ds_params {
  *	@dl_drain_links_mask for drain-aware EXEC_RESP handling.
  * @set_smd_ctx: Set the UHR SMD context for the non-AP MLD. This is used in
  *	the target AP MLD side to program dynamic context.
+ * @get_smd_ctx: Get the UHR SMD context for the non-AP MLD. This is used in
+ *	the current AP MLD side on behalf of the target AP MLD to collect dynamic
+ *	context, when the non-AP MLD sends ST Execute frame directly to the target.
+ *	This op shall post the request to the driver and the response will be sent
+ *	later asynchronously. An immediate response may also be sent as a reply.
  */
 struct ieee80211_ops {
 	void (*tx)(struct ieee80211_hw *hw,
@@ -5736,6 +5758,9 @@ struct ieee80211_ops {
 			       u8 muedca_mode);
 #endif /* CPTCFG_QCN_EXTN */
 	int (*set_smd_ctx)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+			   struct ieee80211_sta *sta,
+			   struct cfg80211_smd_transition_info *st_info);
+	int (*get_smd_ctx)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 			   struct ieee80211_sta *sta,
 			   struct cfg80211_smd_transition_info *st_info);
 };

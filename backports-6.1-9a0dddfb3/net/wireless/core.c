@@ -1471,6 +1471,19 @@ static void _cfg80211_unregister_wdev(struct wireless_dev *wdev,
 				bgr->wdev = NULL;
 		}
 	}
+
+	if (wdev->iftype == NL80211_IFTYPE_AP) {
+		struct cfg80211_smd_get_ctx_pending *pending, *tmp;
+
+		spin_lock_bh(&wdev->smd_get_ctx_lock);
+		list_for_each_entry_safe(pending, tmp,
+					 &wdev->smd_get_ctx_pending_list, list) {
+			list_del(&pending->list);
+			kfree(pending);
+		}
+		spin_unlock_bh(&wdev->smd_get_ctx_lock);
+	}
+
 	wdev->connected = false;
 }
 
@@ -1590,6 +1603,8 @@ void cfg80211_init_wdev(struct wireless_dev *wdev)
 	spin_lock_init(&wdev->pmsr_lock);
 	spin_lock_init(&wdev->ttlm_expec_dur_lock);
 	INIT_WORK(&wdev->pmsr_free_wk, cfg80211_pmsr_free_wk);
+	spin_lock_init(&wdev->smd_get_ctx_lock);
+	INIT_LIST_HEAD(&wdev->smd_get_ctx_pending_list);
 
 #ifdef CPTCFG_CFG80211_WEXT
 #ifdef CPTCFG_WIRELESS_EXT

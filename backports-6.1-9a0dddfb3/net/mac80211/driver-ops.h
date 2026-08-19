@@ -2130,4 +2130,17 @@ static inline int drv_set_smd_ctx(struct ieee80211_local *local,
 	return local->ops->set_smd_ctx(&local->hw, &sdata->vif, sta, st_info);
 }
 
+static inline int drv_get_smd_ctx(struct ieee80211_local *local,
+				  struct ieee80211_sub_if_data *sdata,
+				  struct ieee80211_sta *sta,
+				  struct cfg80211_smd_transition_info *st_info)
+{
+	if (!sdata || !local->ops->get_smd_ctx)
+		return -EOPNOTSUPP;
+
+	lockdep_assert_wiphy(local->hw.wiphy);
+
+	return local->ops->get_smd_ctx(&local->hw, &sdata->vif, sta, st_info);
+}
+
 #endif /* __MAC80211_DRIVER_OPS */
