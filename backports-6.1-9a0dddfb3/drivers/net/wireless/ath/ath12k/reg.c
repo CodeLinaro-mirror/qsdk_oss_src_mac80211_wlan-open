@@ -443,6 +443,16 @@ ath12k_reg_notifier(struct wiphy *wiphy, struct regulatory_request *request)
 				break;
 			}
 		}
+
+#ifdef CPTCFG_QCN_EXTN
+		for_each_ar(ah, ar, i) {
+			if (ar->ar_extn.afc_pwr_scan_radio_update_pending) {
+				ar->ar_extn.afc_pwr_scan_radio_update_pending = false;
+				wiphy_work_queue(ath12k_ar_to_hw(ar)->wiphy,
+					 &ar->ar_extn.change_scan_vap_pwr_mode_work);
+			}
+		}
+#endif
 		return;
 	}
 
@@ -1915,6 +1925,9 @@ static int ath12k_handle_invalid_afc_payload(struct ath12k *ar)
 	ah->regd_updated = false;
 	regd->band_mask = BIT(NL80211_BAND_6GHZ);
 	queue_work(ab->workqueue, &ar->regd_update_work);
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_afc_scan_radio_update_extn(ar, false);
+#endif
 	return ret;
 }
 
@@ -3165,6 +3178,9 @@ int ath12k_reg_process_afc_power_event(struct ath12k *ar,
 		goto end;
 	}
 
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_afc_scan_radio_update_extn(ar, true);
+#endif
 	spin_unlock_bh(&ar->data_lock);
 	spin_unlock_bh(&ah->afc_lock);
 
@@ -4305,8 +4321,8 @@ int ath12k_process_expiry_event(struct ath12k *ar)
 	case REG_AFC_EXPIRY_EVENT_SWITCH_TO_LPI:
 	case REG_AFC_EXPIRY_EVENT_STOP_TX:
 		spin_lock_bh(&ar->ah->afc_lock);
-		ret = ath12k_handle_invalid_afc_payload(ar);
 		spin_lock_bh(&ar->data_lock);
+		ret = ath12k_handle_invalid_afc_payload(ar);
 		ath12k_free_afc_power_event_info(afc);
 		spin_unlock_bh(&ar->data_lock);
 		spin_unlock_bh(&ar->ah->afc_lock);

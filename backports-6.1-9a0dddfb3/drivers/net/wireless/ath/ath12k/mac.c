@@ -21097,6 +21097,10 @@ void ath12k_mac_stop(struct ath12k *ar)
 	cancel_work_sync(&ar->regd_update_work);
 	cancel_work_sync(&ar->reg_set_previous_country);
 	cancel_work_sync(&ar->change_6g_txpow_sta_mode_work);
+#ifdef CPTCFG_QCN_EXTN
+	wiphy_work_cancel(ath12k_ar_to_hw(ar)->wiphy,
+			  &ar->ar_extn.change_scan_vap_pwr_mode_work);
+#endif
 	cancel_work_sync(&ar->mvr_ch_switch_notify_work);
 	cancel_work_sync(&ar->ab->rfkill_work);
 	cancel_work_sync(&ar->ab->update_11d_work);
@@ -30629,6 +30633,8 @@ static void ath12k_mac_hw_unregister(struct ath12k_hw *ah)
 		ath12k_debugfs_unregister(ar);
 #ifdef CPTCFG_QCN_EXTN
 		ath12k_sysfs_cleanup_extn(ar);
+		wiphy_work_cancel(hw->wiphy,
+				  &ar->ar_extn.change_scan_vap_pwr_mode_work);
 #endif /* CPTCFG_QCN_EXTN */
 	}
 
