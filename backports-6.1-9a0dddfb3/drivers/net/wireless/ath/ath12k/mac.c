@@ -6751,24 +6751,53 @@ static void ath12k_uhr_cu_notify_work(struct wiphy *wiphy,
 						uhr_cu_notify_work);
 	struct ath12k_uhr_cu_info *ecu = &arvif->uhr_ecu;
 
-	if (!arvif->ar || !arvif->uhr_ecu.started)
+	if (!arvif->ar || !ecu->started)
 		return;
 
-	if (arvif->is_created) {
-		if ((ecu->mode_present & BIT(IEEE80211_UHR_MODE_ID_NPCA)) &&
-		    (ecu->cu_state ==  NL80211_CU_STATE_ADV_NOTIFICATION_END))
+	if (!arvif->is_created)
+		return;
+
+	/* Process each pending CU state in protocol order.  set_bit() in
+	 * the WMI event handler and test_and_clear_bit() here are both
+	 * atomic, so no additional locking is needed.  The work item may
+	 * be coalesced by wiphy_work_queue() when events arrive faster
+	 * than the work runs; using one bit per state ensures no
+	 * transition is silently dropped.
+	 */
+	if (test_and_clear_bit(NL80211_CU_STATE_STARTED,
+			       ecu->pending_states))
+		ieee80211_cu_notify(arvif->ar->ah->hw, arvif->ahvif->vif,
+			    arvif->link_id, NL80211_CU_STATE_STARTED);
+
+	if (test_and_clear_bit(NL80211_CU_STATE_ADV_NOTIFICATION_END,
+			       ecu->pending_states)) {
+		if (ecu->mode_present & BIT(IEEE80211_UHR_MODE_ID_NPCA))
 			ieee80211_update_npca_configs(arvif->ahvif->vif,
 						      arvif->link_id,
 						      ecu->npca_freq,
 						      ecu->npca_puncture_bitmap);
-
 		ieee80211_cu_notify(arvif->ar->ah->hw, arvif->ahvif->vif,
-				    arvif->link_id, arvif->uhr_ecu.cu_state);
-
-		if (ecu->cu_state == NL80211_CU_STATE_ECU_END ||
-		    ecu->cu_state == NL80211_CU_STATE_ABORT)
-			memset(&arvif->uhr_ecu, 0, sizeof(arvif->uhr_ecu));
+				    arvif->link_id,
+				    NL80211_CU_STATE_ADV_NOTIFICATION_END);
 	}
+
+	if (test_and_clear_bit(NL80211_CU_STATE_POST_NOTIFICATION_END,
+			       ecu->pending_states))
+		ieee80211_cu_notify(arvif->ar->ah->hw, arvif->ahvif->vif,
+				    arvif->link_id,
+				    NL80211_CU_STATE_POST_NOTIFICATION_END);
+
+	if (test_and_clear_bit(NL80211_CU_STATE_ECU_END, ecu->pending_states)) {
+		ieee80211_cu_notify(arvif->ar->ah->hw, arvif->ahvif->vif,
+				    arvif->link_id, NL80211_CU_STATE_ECU_END);
+	} else if (test_and_clear_bit(NL80211_CU_STATE_ABORT,
+				      ecu->pending_states)) {
+		ieee80211_cu_notify(arvif->ar->ah->hw, arvif->ahvif->vif,
+				    arvif->link_id, NL80211_CU_STATE_ABORT);
+	} else {
+		return;
+	}
+	memset(ecu, 0, sizeof(*ecu));
 }
 
 static void ath12k_mac_init_arvif_rssi(struct ath12k_link_vif *arvif)
@@ -33578,7 +33607,7 @@ void ath12k_mac_handle_pdev_uhr_cu_event(struct ath12k_base *ab,
 			   "pdev %u uhr cu vdev %u state %u -> nl80211 cu_state %u\n",
 			   pdev_id, vdev_id, state, cu_state);
 
-		arvif->uhr_ecu.cu_state = cu_state;
+		set_bit(cu_state, arvif->uhr_ecu.pending_states);
 		wiphy_work_queue(arvif->ar->ah->hw->wiphy,
 				 &arvif->uhr_cu_notify_work);
 	}

@@ -876,7 +876,8 @@ struct ath12k_smd_params {
 
 struct ath12k_uhr_cu_info {
 	bool started;
-	enum nl80211_cu_state cu_state;
+	/* bitmap of enum nl80211_cu_state; sized to hold all defined values */
+	DECLARE_BITMAP(pending_states, NUM_NL80211_CU_STATES);
 	u32 mode_present;
 	u32 npca_freq;
 	u16 npca_puncture_bitmap;
