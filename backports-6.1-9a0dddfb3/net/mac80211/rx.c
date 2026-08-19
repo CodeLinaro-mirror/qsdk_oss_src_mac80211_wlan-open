@@ -2915,7 +2915,7 @@ bool ieee80211_is_our_addr(struct ieee80211_sub_if_data *sdata,
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 	struct sta_info *sta;
 
-	if (sdata->wdev.vap_submode == IEEE80211_EXTN_VAP_SUBMODE_MESH) {
+	if (IEEE80211_EXTN_VAP_IS_MESH_MODE(sdata->wdev.vap_submode)) {
 		sta = sta_info_get_bss(sdata, addr);
 		if (sta)
 			return true;
@@ -5267,7 +5267,7 @@ static bool ieee80211_accept_frame(struct ieee80211_rx_data *rx)
 	case NL80211_IFTYPE_AP_VLAN:
 	case NL80211_IFTYPE_AP:
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
-		if (sdata->wdev.vap_submode == IEEE80211_EXTN_VAP_SUBMODE_MESH && bssid)
+		if (IEEE80211_EXTN_VAP_IS_MESH_MODE(sdata->wdev.vap_submode) && bssid)
 			return ieee80211_is_our_addr(sdata, bssid, &rx->link_id);
 #endif /* CPTCFG_QCN_EXTN_MESH_SUPPORT */
 

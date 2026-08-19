@@ -527,7 +527,7 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 	if (vif->type == NL80211_IFTYPE_AP) {
 		dp_peer->is_reset_mcbc = true;
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
-		if (ahvif->vap_submode == QCA_WLAN_VENDOR_VAP_SUBMODE_MESH)
+		if (QCA_WLAN_VENDOR_VAP_IS_MESH_MODE(ahvif->vap_submode))
 			dp_peer->is_mmesh_peer = true;
 #endif
 	} else if (vif->type == NL80211_IFTYPE_MESH_POINT) {

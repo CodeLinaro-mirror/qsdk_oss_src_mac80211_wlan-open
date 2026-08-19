@@ -5393,7 +5393,7 @@ netdev_tx_t __ieee80211_subif_start_xmit_8023(struct sk_buff *skb,
 	}
 
 	/* Adjust the skb->data to point to the actual payload after the meta header*/
-	if (wdev->vap_submode == IEEE80211_EXTN_VAP_SUBMODE_MESH) {
+	if (IEEE80211_EXTN_VAP_IS_MESH_MODE(wdev->vap_submode)) {
 		if (!mmeshsim) {
 			skb_pull(skb, vif->mhdr_len);
 		}

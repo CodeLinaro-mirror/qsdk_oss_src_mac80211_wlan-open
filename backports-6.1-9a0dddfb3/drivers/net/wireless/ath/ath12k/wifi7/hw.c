@@ -1782,7 +1782,7 @@ void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 	}
 
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
-	if (ahvif->vap_submode == QCA_WLAN_VENDOR_VAP_SUBMODE_MESH) {
+	if (QCA_WLAN_VENDOR_VAP_IS_MESH_MODE(ahvif->vap_submode)) {
 		ret = ath12k_dp_mmesh_tx(hw, ar->ab,  arvif, vlan_vif, skb, sta,
 					 &skb_ctrl, is_eth, link_id, is_mcast,
 					 &htt_mesh, &info_tx, qos_nw_delay);

@@ -1627,6 +1627,9 @@ enum qca_wlan_vendor_attr_reg_params_update {
  * @QCA_WLAN_VENDOR_VAP_SUBMODE_MESH: VAP operates in mesh mode for mesh networking.
  * @QCA_WLAN_VENDOR_VAP_SUBMODE_SCAN: VAP operates in scan mode, typically for
  *     off-channel scanning / scan radio specific operations.
+ * @QCA_WLAN_VENDOR_VAP_SUBMODE_ETH_OFFLOAD_MESH: Vap operates in ETH offload mode
+ *	mesh.
+ * @QCA_WLAN_VENDOR_VAP_SUBMODE_RAW_MODE_MESH: Vap operates in raw mode mesh.
  *
  * @QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_AFTER_LAST: Internal marker for the end of
  *     valid submode attributes. Not to be used directly.
@@ -1637,11 +1640,18 @@ enum qca_wlan_vendor_vap_submode_type {
 	QCA_WLAN_VENDOR_VAP_SUBMODE_NONE = 0,
 	QCA_WLAN_VENDOR_VAP_SUBMODE_MESH = 1,
 	QCA_WLAN_VENDOR_VAP_SUBMODE_SCAN = 2,
+	QCA_WLAN_VENDOR_VAP_SUBMODE_ETH_OFFLOAD_MESH = 3,
+	QCA_WLAN_VENDOR_VAP_SUBMODE_RAW_MODE_MESH = 4,
 
 	QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_MAX =
 	QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_AFTER_LAST - 1,
 };
+
+#define QCA_WLAN_VENDOR_VAP_IS_MESH_MODE(submode) \
+	((submode) == QCA_WLAN_VENDOR_VAP_SUBMODE_MESH || \
+	 (submode) == QCA_WLAN_VENDOR_VAP_SUBMODE_ETH_OFFLOAD_MESH ||\
+	 (submode) == QCA_WLAN_VENDOR_VAP_SUBMODE_RAW_MODE_MESH)
 
 enum qca_wlan_vendor_attr_config {
 	QCA_WLAN_VENDOR_ATTR_CONFIG_INVALID = 0,

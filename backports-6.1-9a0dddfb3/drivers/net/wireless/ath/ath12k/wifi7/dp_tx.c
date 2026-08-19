@@ -1823,7 +1823,7 @@ skip_assign_buffer:
 
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 	 tx_desc->mmesh = (ahvif &&
-			  (ahvif->vap_submode == QCA_WLAN_VENDOR_VAP_SUBMODE_MESH));
+			  (QCA_WLAN_VENDOR_VAP_IS_MESH_MODE(ahvif->vap_submode)));
 	 /* mmesh uses msdu ext desc to program rates to
 	  * firmware
 	  */
@@ -1932,7 +1932,7 @@ ath12k_wifi7_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
 
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 	 tx_desc->mmesh = (ahvif &&
-			  (ahvif->vap_submode == QCA_WLAN_VENDOR_VAP_SUBMODE_MESH));
+			  (QCA_WLAN_VENDOR_VAP_IS_MESH_MODE(ahvif->vap_submode)));
 	 /* mmesh uses msdu ext desc to program rates to
 	  * firmware
 	  */
