@@ -1117,6 +1117,7 @@ static void ath12k_wifi8_dp_link_vif_configure(struct ath12k_dp *dp,
 		return;
 
 	if (optype == ATH12K_DP_OP_INIT) {
+		dp_link_vif->ab = dp->ab;
 		dp_link_vif->vdev_id = arvif->vdev_id;
 		dp_link_vif->lmac_id = ar->lmac_id;
 		dp_link_vif->pdev_idx = ar->pdev_idx;

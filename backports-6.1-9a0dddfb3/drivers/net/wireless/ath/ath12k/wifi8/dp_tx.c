@@ -1768,6 +1768,7 @@ void ath12k_wifi8_ucast_handler(struct ath12k_dp_vif *dp_vif, u8 link_id,
 	struct ath12k_dp_link_vif *dp_link_vif = &dp_vif->dp_link_vif[link_id];
 	struct ath12k_pdev_dp *dp_pdev = NULL;
 	struct ath12k_dp *central_dp = NULL;
+	struct ath12k_base *ab;
 	struct ath12k_tx_desc_info *tx_desc = NULL;
 	enum ath12k_dp_tx_enq_error drop_reason = DP_TX_ENQ_DROP_MISC;
 	struct ath12k_dp_tx_msdu_info msdu_info = {0};
@@ -1778,8 +1779,12 @@ void ath12k_wifi8_ucast_handler(struct ath12k_dp_vif *dp_vif, u8 link_id,
 	u32 len = skb->len;
 	u8 tid = skb->priority & IEEE80211_QOS_CTL_TID_MASK;
 
+	ab = dp_link_vif->ab;
+	if (!ab)
+		goto fail;
+
 	/* Get DP pdev */
-	dp_pdev = ath12k_dp_to_dp_pdev(arvif->ar->ab->dp, dp_link_vif->pdev_idx);
+	dp_pdev = ath12k_dp_to_dp_pdev(ab->dp, dp_link_vif->pdev_idx);
 	if (!dp_pdev) {
 		drop_reason = DP_TX_ENQ_DROP_INV_PDEV;
 		goto fail;
@@ -1983,6 +1988,7 @@ void ath12k_wifi8_mcbc_handler(struct ath12k_dp_vif *dp_vif, u8 link_id,
 		struct ath12k_link_vif *arvif =
 			rcu_dereference(ahvif->link[link_id]);
 		struct ath12k *ar = NULL;
+		struct ath12k_base *ab = NULL;
 
 		if (!arvif || !arvif->is_up) {
 			DP_STATS_INC(dp_vif,
@@ -1992,6 +1998,8 @@ void ath12k_wifi8_mcbc_handler(struct ath12k_dp_vif *dp_vif, u8 link_id,
 		}
 
 		ar = arvif->ar;
+		if (!ar)
+			goto next;
 
 		/* For MLO multicast, skip links with no associated stations */
 		if (ath12k_wifi8_is_mpsk_enabled(ahvif) &&
@@ -2020,7 +2028,11 @@ void ath12k_wifi8_mcbc_handler(struct ath12k_dp_vif *dp_vif, u8 link_id,
 			goto next;
 		}
 
-		dp_pdev = ath12k_dp_to_dp_pdev(ar->ab->dp,
+		ab = dp_link_vif->ab;
+		if (!ab)
+			goto next;
+
+		dp_pdev = ath12k_dp_to_dp_pdev(ab->dp,
 					       dp_link_vif->pdev_idx);
 
 		if (!dp_pdev) {

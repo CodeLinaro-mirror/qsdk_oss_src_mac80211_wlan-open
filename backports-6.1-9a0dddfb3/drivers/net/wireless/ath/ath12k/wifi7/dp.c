@@ -487,6 +487,7 @@ static void ath12k_wifi7_dp_link_vif_configure(struct ath12k_dp *dp,
 		ath12k_mac_vif_unref(dp, ahvif->vif);
 		return;
 	} else if (optype == ATH12K_DP_OP_INIT) {
+		dp_link_vif->ab = ab;
 		dp_link_vif->vdev_id = arvif->vdev_id;
 		dp_link_vif->lmac_id = ar->lmac_id;
 		dp_link_vif->pdev_idx = ar->pdev_idx;

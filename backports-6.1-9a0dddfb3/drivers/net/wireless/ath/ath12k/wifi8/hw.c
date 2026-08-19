@@ -1376,6 +1376,7 @@ static void ath12k_wifi8_mac_op_tx(struct ieee80211_hw *hw,
 	bool htt_mesh;
 	int ret;
 	struct ath12k_dp_peer *dp_peer = NULL;
+	struct ath12k *ar = NULL;
 
 	/* Check queue stop.*/
 	if (unlikely(ah->queue_stop)) {
@@ -1440,7 +1441,15 @@ static void ath12k_wifi8_mac_op_tx(struct ieee80211_hw *hw,
 
 	/* Get link virtual interface.*/
 	arvif = rcu_dereference(ahvif->link[link_id]);
-	if (!arvif || !arvif->ar) {
+	if (!arvif) {
+		ath12k_mac_ieee80211_free_txskb(hw, skb, NULL, sta, dp_vif,
+						DP_TX_ENQ_DROP_INV_ARVIF,
+						0, false);
+		return;
+	}
+
+	ar = arvif->ar;
+	if (!ar) {
 		ath12k_mac_ieee80211_free_txskb(hw, skb, NULL, sta, dp_vif,
 						DP_TX_ENQ_DROP_INV_ARVIF,
 						0, false);
@@ -1448,7 +1457,7 @@ static void ath12k_wifi8_mac_op_tx(struct ieee80211_hw *hw,
 	}
 
 	/* Setup SKB control block */
-	skb_cb->u.ar = arvif->ar;
+	skb_cb->u.ar = ar;
 	skb_cb->link_id = link_id;
 	skb_cb->vif = vif;
 
