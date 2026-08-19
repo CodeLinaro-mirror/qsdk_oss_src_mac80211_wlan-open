@@ -644,8 +644,8 @@ void ath12k_wifi7_dp_tx_hal_tcl_desc_update(struct hal_tcl_data_cmd *hal_tcl_des
  *   - hwtx_delay: HW transmit delay (TQM enqueue -> TX completion), derived
  *                 from hardware timestamps in the WBM completion ring entry
  *                 via ath12k_sdwf_compute_hw_delay().
- *   - intfrm_delay: updated at enqueue time in
- *                   ath12k_wifi7_dp_tx_delay_pre_enqueue().
+ *   - intfrm_delay: timestamp updated at enqueue time but delay is calulated
+ *                   in this function
  *
  * Return: void
  */
@@ -659,6 +659,8 @@ ath12k_wifi7_dp_tx_update_delay_stats(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_tid_tx_stats *tid_tx;
 	u32 sw_delay, hw_delay;
 	u32 entry_tstamp;
+	u32 intfrm_delay;
+	u64 ingress_ts;
 	u8 vow_tid;
 
 	vow_tid = ath12k_vow_tid_validate(ts->tid);
@@ -679,6 +681,18 @@ ath12k_wifi7_dp_tx_update_delay_stats(struct ath12k_pdev_dp *dp_pdev,
 	if (hw_delay <= HW_TX_DELAY_MAX)
 		ath12k_dp_update_hist_stats(&tid_tx->hwtx_delay,
 					    hw_delay / USEC_PER_MSEC);
+
+	if (skb->tstamp) {
+		ingress_ts = ktime_to_ms(skb->tstamp);
+
+		if (dp_pdev->prev_tx_enq_tstamp &&
+		    ingress_ts > dp_pdev->prev_tx_enq_tstamp) {
+			intfrm_delay = (u32)(ingress_ts - dp_pdev->prev_tx_enq_tstamp);
+			ath12k_dp_update_hist_stats(&tid_tx->intfrm_delay,
+						    intfrm_delay);
+		}
+		dp_pdev->prev_tx_enq_tstamp = ingress_ts;
+	}
 }
 
 /**
