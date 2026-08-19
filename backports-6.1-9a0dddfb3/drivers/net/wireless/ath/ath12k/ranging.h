@@ -56,6 +56,8 @@ ath12k_pasn_peer_find(struct ath12k_link_vif *arvif, const u8 *peer_addr);
 u8 ath12k_pasn_peer_update_flags(struct ath12k_link_vif *arvif,
 				 const u8 *peer_addr,
 				 u8 set_mask, u8 clr_mask);
+bool ath12k_pasn_peer_is_fw_created(struct ath12k_link_vif *arvif,
+				    const u8 *peer_addr);
 void ath12k_pasn_peer_delete(struct ath12k_link_vif *arvif,
 			     const u8 *peer_addr);
 void ath12k_pasn_peer_set_auth_status(struct ath12k_link_vif *arvif,

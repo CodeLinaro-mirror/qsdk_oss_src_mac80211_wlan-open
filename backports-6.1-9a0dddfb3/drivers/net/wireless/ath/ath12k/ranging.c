@@ -268,8 +268,8 @@ u8 ath12k_pasn_peer_update_flags(struct ath12k_link_vif *arvif,
 	return result;
 }
 
-static bool ath12k_pasn_peer_fw_created(struct ath12k_link_vif *arvif,
-					const u8 *peer_addr)
+bool ath12k_pasn_peer_is_fw_created(struct ath12k_link_vif *arvif,
+				    const u8 *peer_addr)
 {
 	return !!(ath12k_pasn_peer_update_flags(arvif, peer_addr, 0, 0) &
 		  ATH12K_PASN_F_FW_CREATED);
@@ -345,7 +345,7 @@ static int ath12k_pasn_fw_peer_create(struct ath12k_link_vif *arvif,
 		   "RTT PASN fw_peer_create: peer=%pM vdev=%u\n",
 		   peer_addr, arvif->vdev_id);
 
-	if (ath12k_pasn_peer_fw_created(arvif, peer_addr)) {
+	if (ath12k_pasn_peer_is_fw_created(arvif, peer_addr)) {
 		ath12k_dbg(ar->ab, ATH12K_DBG_RTT,
 			   "RTT PASN fw_peer_create: %pM already FW-created, skip\n",
 			   peer_addr);
@@ -394,12 +394,12 @@ static int ath12k_pasn_fw_peer_create(struct ath12k_link_vif *arvif,
 		   "RTT PASN fw_peer_create: FW confirmed peer %pM vdev=%u\n",
 		   peer_addr, arvif->vdev_id);
 
-	arvif->num_peers++;
-	ath12k_pasn_peer_update_flags(arvif, peer_addr, ATH12K_PASN_F_FW_CREATED, 0);
+	ath12k_pasn_peer_update_flags(arvif, peer_addr,
+				      ATH12K_PASN_F_FW_CREATED, 0);
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_RTT,
-		   "RTT PASN fw_peer_create: done %pM vdev=%u num_peers=%u\n",
-		   peer_addr, arvif->vdev_id, arvif->num_peers);
+		   "RTT PASN fw_peer_create: done %pM vdev=%u\n",
+		   peer_addr, arvif->vdev_id);
 
 	return 0;
 }
@@ -410,7 +410,7 @@ static int ath12k_pasn_fw_peer_create(struct ath12k_link_vif *arvif,
  * @peer_addr: remote peer MAC address.
  *
  * Skips WMI peer delete during firmware recovery (crash flush).
- * Clears ATH12K_PASN_F_FW_CREATED and decrements num_peers.
+ * Clears ATH12K_PASN_F_FW_CREATED.
  *
  * Returns 0 on success or a negative errno on failure.
  */
@@ -425,9 +425,7 @@ int ath12k_pasn_fw_peer_delete(struct ath12k_link_vif *arvif,
 	ath12k_dbg(ar->ab, ATH12K_DBG_RTT,
 		   "RTT PASN fw_peer_delete: peer=%pM\n", peer_addr);
 
-	if (!peer_addr ||
-	    !(ath12k_pasn_peer_update_flags(arvif, peer_addr, 0, 0) &
-		ATH12K_PASN_F_FW_CREATED)) {
+	if (!peer_addr || !ath12k_pasn_peer_is_fw_created(arvif, peer_addr)) {
 		ath12k_dbg(ar->ab, ATH12K_DBG_RTT,
 			   "RTT PASN fw_peer_delete: %pM not FW-created, skip\n",
 			   peer_addr);
@@ -440,24 +438,45 @@ int ath12k_pasn_fw_peer_delete(struct ath12k_link_vif *arvif,
 		   test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags));
 
 	if (!test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)) {
-		ret = ath12k_peer_delete(ar, arvif->vdev_id, (u8 *)peer_addr,
-					 false, 0, false, NULL);
-		if (ret)
+		if (ar->pdev->peer_del_tracker) {
+			ret = ath12k_peer_del_tracker_add(ar->pdev, arvif->vdev_id,
+							  peer_addr, NULL);
+			if (ret) {
+				ath12k_warn(ar->ab,
+					    "failed to track RTT PASN peer delete %pM vdev %u: %d\n",
+					    peer_addr, arvif->vdev_id, ret);
+				return ret;
+			}
+		}
+
+		ret = ath12k_wmi_send_peer_delete_cmd(ar, peer_addr,
+						      arvif->vdev_id, 0, false);
+		if (ret) {
 			ath12k_warn(ar->ab,
 				    "failed to delete RTT PASN fw peer %pM vdev %u: %d\n",
 				    peer_addr, arvif->vdev_id, ret);
-		else
-			ath12k_dbg(ar->ab, ATH12K_DBG_RTT,
-				   "RTT PASN fw_peer_delete: WMI delete sent %pM vdev=%u\n",
-				   peer_addr, arvif->vdev_id);
+			if (ar->pdev->peer_del_tracker)
+				ath12k_peer_del_tracker_remove(ar->pdev, arvif->vdev_id,
+							       peer_addr);
+			/*
+			 * WMI delete failed — leave FW_CREATED set so
+			 * ath12k_rtt_pasn_peer_delete_all() can still
+			 * issue WMI_VDEV_DELETE_ALL_PEER_CMDID on vif teardown
+			 * and avoid leaving an orphaned PASN peer in firmware.
+			 */
+			return ret;
+		}
+		ath12k_dbg(ar->ab, ATH12K_DBG_RTT,
+			   "RTT PASN fw_peer_delete: WMI delete sent %pM vdev=%u\n",
+			   peer_addr, arvif->vdev_id);
 	}
 
-	ath12k_pasn_peer_update_flags(arvif, peer_addr, 0, ATH12K_PASN_F_FW_CREATED);
-	arvif->num_peers--;
+	ath12k_pasn_peer_update_flags(arvif, peer_addr,
+				      0, ATH12K_PASN_F_FW_CREATED);
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_RTT,
-		   "RTT PASN fw_peer_delete: done %pM vdev=%u num_peers=%u\n",
-		   peer_addr, arvif->vdev_id, arvif->num_peers);
+		   "RTT PASN fw_peer_delete: done %pM vdev=%u\n",
+		   peer_addr, arvif->vdev_id);
 	return ret;
 }
 
@@ -596,9 +615,23 @@ void ath12k_pasn_peers_cleanup(struct ath12k_link_vif *arvif)
 static void ath12k_rtt_pasn_peer_delete_all(struct ath12k_link_vif *arvif)
 {
 	struct ath12k *ar = arvif->ar;
+	struct ath12k_rtt_pasn_peer *peer;
+	bool pasn_fw_peer_found = false;
 	int ret;
 
-	if (!arvif->num_peers) {
+	spin_lock_bh(&arvif->rtt_ctx.pasn_peer_lock);
+	list_for_each_entry(peer, &arvif->rtt_ctx.pasn_peer_list, list) {
+		if (peer->flags & ATH12K_PASN_F_FW_CREATED) {
+			pasn_fw_peer_found = true;
+			break;
+		}
+	}
+	spin_unlock_bh(&arvif->rtt_ctx.pasn_peer_lock);
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_RTT,
+		   "RTT PASN delete_all: arvif=%p vdev=%u pasn_fw_peer_found=%d\n",
+		   arvif, arvif->vdev_id, pasn_fw_peer_found);
+	if (!pasn_fw_peer_found) {
 		ath12k_dbg(ar->ab, ATH12K_DBG_RTT,
 			   "RTT PASN delete_all: no peers on vdev=%u, skip\n",
 			   arvif->vdev_id);
