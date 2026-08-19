@@ -5446,6 +5446,33 @@ static void ieee80211_csa_batch_enqueue(struct ieee80211_local *local,
 	ctx->csa_batch_queued = true;
 }
 
+#ifdef CPTCFG_QCN_EXTN
+/* Mark reserve ready for Non-Beaconing co-assigned AP links.
+ * Hostapd skips NL80211_CMD_CHANNEL_SWITCH for these so they
+ * never get a reservation.
+ */
+void ieee80211_mark_reserve_ready(struct ieee80211_chanctx *chanctx,
+				  struct ieee80211_chan_req *chanreq,
+				  struct ieee80211_link_data *link_data)
+{
+	struct ieee80211_link_data *co_link;
+
+	list_for_each_entry(co_link, &chanctx->assigned_links, assigned_chanctx_list) {
+		if (co_link != link_data && !co_link->reserved_chanctx &&
+		    co_link->sdata->vif.type == NL80211_IFTYPE_AP &&
+		    co_link->sdata->wdev.non_beacon_bss) {
+			if (!ieee80211_link_reserve_chanctx(co_link, chanreq,
+							    chanctx->mode, false))
+				/* Set reserved_ready — that satisfies the
+				 * n_ready==n_reserved check so the switch proceeds
+				 * when other BSS finalize.
+				 */
+				co_link->reserved_ready = true;
+		}
+	}
+}
+#endif
+
 static int
 __ieee80211_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 			   struct cfg80211_csa_settings *params)
@@ -5559,6 +5586,10 @@ __ieee80211_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 					     params->radar_required);
 	if (err)
 		goto out;
+
+#ifdef CPTCFG_QCN_EXTN
+	ieee80211_mark_reserve_ready(chanctx, &chanreq, link_data);
+#endif /* CPTCFG_QCN_EXTN */
 
 	/* The monitor reservation is handled by ieee80211_set_monitor_channel()
 	 * when hostapd sends NL80211_CMD_SET_CHANNEL for the monitor interface.
