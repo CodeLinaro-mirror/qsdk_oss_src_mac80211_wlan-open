@@ -6,6 +6,7 @@
 
 #include <linux/inet.h>
 #include "core.h"
+#include "mac.h"
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 #include "qcn_extns/ipa/dp_ipa.h"
 #endif
@@ -33,6 +34,7 @@
 #define CHRIP_ID	BIT(2)
 #define OFFSET		GENMASK(10,3)
 #define DETECTOR_ID	GENMASK(12,11)
+#define OFFSET_SIGN	BIT(13)
 #define FHSS		BIT(14)
 
 static ssize_t ath12k_read_sensitivity_level(struct file *file,
@@ -1360,12 +1362,96 @@ exit:
 	return ret;
 }
 
+static inline bool ath12k_is_320mhz_offset_invalid(s32 freq_offset)
+{
+	return ((freq_offset < -ATH12K_CHWIDTH_160) ||
+		(freq_offset > ATH12K_CHWIDTH_80));
+}
+
+static inline bool ath12k_is_below320mhz_offset_invalid(s32 freq_offset,
+							u16 ch_width)
+{
+	u16 half_bw = ch_width / 2;
+
+	return ((freq_offset < -half_bw) || (freq_offset > half_bw));
+}
+
+static bool ath12k_is_target_freq_non_dfs(struct ath12k_base *ab,
+					  struct wiphy *wiphy,
+					  u32 center_freq1, s32 freq_offset)
+{
+	u32 target_freq = center_freq1 + freq_offset;
+	/* freq_offset may land between 20 MHz channel boundaries; round to the
+	 * nearest channel center so ieee80211_get_channel() finds a valid entry.
+	 */
+	u32 chan_center = DIV_ROUND_CLOSEST(target_freq, 20) * 20;
+	struct ieee80211_channel *chan = ieee80211_get_channel(wiphy, chan_center);
+
+	if (!chan || !(chan->flags & IEEE80211_CHAN_RADAR)) {
+		ath12k_warn(ab,
+			    "dfs_simulate_radar: %u MHz is not DFS-required, ignoring\n",
+			    target_freq);
+		return true;
+	}
+
+	return false;
+}
+
+static bool ath12k_is_offset_invalid_for_bw(struct ath12k *ar,
+					    s32 freq_offset)
+{
+	struct ieee80211_chanctx_conf *ctx = NULL;
+	struct ath12k_link_vif *arvif;
+	u16 ch_width = 0;
+
+	list_for_each_entry(arvif, &ar->arvifs, list) {
+		u32 vdev_type;
+
+		if (!arvif->chanctx.def.chan)
+			continue;
+
+		vdev_type = arvif->ahvif->vdev_type;
+		if (vdev_type != WMI_VDEV_TYPE_AP)
+			continue;
+
+		ctx = &arvif->chanctx;
+		break;
+	}
+
+	if (!ctx) {
+		ath12k_warn(ar->ab, "ctx is NULL");
+		return false;
+	}
+
+	ch_width = ath12k_mac_get_chan_width(ctx->def.width);
+
+	if (ch_width != ATH12K_CHWIDTH_320 &&
+	    ath12k_is_target_freq_non_dfs(ar->ab, ath12k_ar_to_hw(ar)->wiphy,
+					  ctx->def.center_freq1, freq_offset))
+		return true;
+
+	switch (ch_width) {
+	case ATH12K_CHWIDTH_320:
+		return ath12k_is_320mhz_offset_invalid(freq_offset);
+	case ATH12K_CHWIDTH_160:
+	case ATH12K_CHWIDTH_80:
+	case ATH12K_CHWIDTH_40:
+	case ATH12K_CHWIDTH_20:
+		return ath12k_is_below320mhz_offset_invalid(freq_offset,
+				ch_width);
+	default:
+		ath12k_warn(ar->ab, "Invalid channel width: %d", ch_width);
+		return true;
+	}
+}
+
 static ssize_t ath12k_write_simulate_radar(struct file *file,
 					   const char __user *user_buf,
 					   size_t count, loff_t *ppos)
 {
 	u8 agile = 0, segment = 0, radar_type = 0, chirp = 0, fhss = 0;
 	struct ath12k *ar = file->private_data;
+	bool is_fw_bangradar_320_supp = false;
 	char buf[64] = {0}, *token, *sptr;
 	u32 radar_params;
 	int offset = 0;
@@ -1403,6 +1489,9 @@ static ssize_t ath12k_write_simulate_radar(struct file *file,
 	if (kstrtoint(token, 10, &offset))
 		return -EINVAL;
 
+	if (ath12k_is_offset_invalid_for_bw(ar, offset))
+		return -EINVAL;
+
 	token = strsep(&sptr, " ");
 	if (!token)
 		return -EINVAL;
@@ -1422,12 +1511,23 @@ send_cmd:
 		chirp = 1;
 	if (radar_type == 2)
 		fhss = 1;
+	if (test_bit(WMI_TLV_SERVICE_BANG_RADAR_320_SUPPORT,
+			ar->ab->wmi_ab.svc_map))
+		is_fw_bangradar_320_supp = true;
 
 	radar_params = u32_encode_bits(segment, SEGMENT_ID) |
 		       u32_encode_bits(chirp, CHRIP_ID) |
 		       u32_encode_bits(offset, OFFSET) |
 		       u32_encode_bits(agile, DETECTOR_ID) |
-		       u32_encode_bits(fhss, FHSS);
+		       u32_encode_bits(fhss, FHSS) |
+		       u32_encode_bits(offset, OFFSET);
+
+	/*
+	 * The 320 MHz offset ranges from -160 to 80.
+	 * Only the negative offsets needs sign bit indication
+	 */
+	if (is_fw_bangradar_320_supp && offset < 0)
+		radar_params |= OFFSET_SIGN;
 
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
 	ret = ath12k_wmi_simulate_radar(ar, radar_params);
