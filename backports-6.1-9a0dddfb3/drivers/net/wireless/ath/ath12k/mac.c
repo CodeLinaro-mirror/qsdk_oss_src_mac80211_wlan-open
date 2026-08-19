@@ -32233,7 +32233,7 @@ void ath12k_mac_op_get_netstats(struct ieee80211_hw *hw,
 		if (!arvif || !arvif->is_created)
 			continue;
 		ar = arvif->ar;
-		if (!ar->ab || !ar->ab->dp)
+		if (!ar || !ar->ab || !ar->ab->dp)
 			continue;
 
 		if (!is_ap_vlan) {
