@@ -1250,8 +1250,8 @@ ath12k_dp_rx_ppeds_fse_add_flow_entry(struct ppe_drv_fse_rule_info *ppe_flow_inf
 
 	/* TODO: protect ag->ab[] by spin lock */
 	/* NOTE: ag->ab[0] can be any arbitirary ab but first ab is used to cover non-MLO */
-	if (!ab) {
-		pr_warn("FSE flow rule addition failed ab = NULL \n");
+	if (!ab || ab->is_bypassed) {
+		pr_warn("FSE flow rule addition failed ab = NULL or ab is bypassed\n");
 		return false;
 	}
 

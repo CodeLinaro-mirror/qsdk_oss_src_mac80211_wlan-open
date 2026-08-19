@@ -2921,8 +2921,14 @@ int ath12k_wifi7_dp_rx_flow_fse_cache_operation(struct ath12k_base *ab,
 		if (!partner_ab || partner_ab->is_bypassed)
 			continue;
 
-		/* Skip sending HTT command when recovery in progress */
-		if (test_bit(ATH12K_FLAG_RECOVERY, &partner_ab->dev_flags))
+		/* Skip sending HTT command during recovery, crash flush, or
+		 * when CE pipes are not yet initialized. Accessing an
+		 * uninitialized CE source ring causes a NULL dereference in
+		 * __ath12k_hal_srng_access_begin via the HTT CE send path.
+		 */
+		if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &partner_ab->dev_flags) ||
+		    test_bit(ATH12K_FLAG_RECOVERY, &partner_ab->dev_flags) ||
+		    !partner_ab->ce_pipe_init_done)
 			continue;
 
 		ret = ath12k_dp_htt_rx_flow_fse_operation(partner_ab,
