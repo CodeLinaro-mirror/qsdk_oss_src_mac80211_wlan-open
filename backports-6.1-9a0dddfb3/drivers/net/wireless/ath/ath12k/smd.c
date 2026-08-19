@@ -1387,23 +1387,27 @@ void ath12k_smd_global_deinit(void)
 	ath12k_smd_ctx_wq_deinit();
 }
 
+/* Note: callers must hold rcu_read_lock and @smd_info->smd_lock */
 static int ath12k_smd_post_sta_session_ctx_req(struct ath12k_vif *ahvif,
+					       struct ath12k_link_vif *arvif,
 					       struct ath12k_smd_ctx_req *req,
 					       struct ath12k_smd_info *smd_info)
 {
 	struct ath12k_dp_hw *dp_hw = &ahvif->ah->dp_hw;
 	struct ath12k_ba_session_params *dl_ba;
 	struct ath12k_dp_smd_ctx dp_ctx = {};
-	struct ath12k_link_vif *arvif;
 	struct ath12k_sta *ahsta;
 	struct ath12k_dp *dp;
 	bool dl_sn_transfer;
+	int ret;
 	u8 tid;
+
+	lockdep_assert(rcu_read_lock_held());
+	lockdep_assert_held(&smd_info->smd_lock);
 
 	if (req->state != SMD_CTX_INIT && req->state != SMD_CTX_WAITING)
 		return -EINVAL;
 
-	arvif = &ahvif->deflink;
 	dp = arvif->ar->ab->dp;
 	ahsta = container_of(smd_info, struct ath12k_sta, smd_info);
 
@@ -1444,9 +1448,31 @@ static int ath12k_smd_post_sta_session_ctx_req(struct ath12k_vif *ahvif,
 		spin_unlock_bh(&ahsta->ba_lock);
 	}
 
-	return ath12k_dp_arch_dp_peer_fetch_smd_ctx(dp, dp_hw, &dp_ctx,
-						    ath12k_smd_ctx_hw_rx_tid_cb,
-						    ath12k_smd_ctx_hw_tx_tid_cb);
+	ret = ath12k_dp_arch_dp_peer_fetch_smd_ctx(dp, dp_hw, &dp_ctx,
+						   ath12k_smd_ctx_hw_rx_tid_cb,
+						   ath12k_smd_ctx_hw_tx_tid_cb);
+	if (ret) {
+		smd_info->ctx_inflight = false;
+		smd_info->current_req = NULL;
+	}
+
+	return ret;
+}
+
+static int ath12k_smd_reuse_sta_session_prep_ctx(struct ath12k_smd_info *smd_info,
+						 struct ath12k_smd_ctx_req *req)
+{
+	lockdep_assert_held(&smd_info->smd_lock);
+
+	if (smd_info->latest_ctx_valid &&
+	    ktime_us_delta(req->enqueued_ts, smd_info->latest_ctx_ts) <=
+	    ATH12K_SMD_CTX_REUSE_THRESHOLD) {
+		req->state = SMD_CTX_COMPLETE;
+		memcpy(&req->ctx, &smd_info->latest_ctx, sizeof(req->ctx));
+		return 0;
+	}
+
+	return -ETIME;
 }
 
 void ath12k_smd_ctx_collector_work(struct work_struct *work)
@@ -1455,22 +1481,25 @@ void ath12k_smd_ctx_collector_work(struct work_struct *work)
 		container_of(work, struct ath12k_smd_info, ctx_wk);
 	struct ath12k_sta *ahsta =
 		container_of(smd_info, struct ath12k_sta, smd_info);
-	struct wiphy *wiphy = ahsta->ahvif->ah->hw->wiphy;
 	struct ath12k_smd_ctx_req *req;
+	struct ath12k_link_vif *arvif;
 
 	for (;;) {
-		/* lock per-request to enable callers to submit new requests */
-		spin_lock_bh(&smd_info->ctx_list_lock);
+		guard(rcu)();
 
-		if (smd_info->teardown) {
-			spin_unlock_bh(&smd_info->ctx_list_lock);
+		/* lock per-request to enable callers to submit new requests */
+		spin_lock_bh(&smd_info->smd_lock);
+
+		if (smd_info->torndown) {
+			/* we are already cleaning up */
+			spin_unlock_bh(&smd_info->smd_lock);
 			break;
 		}
 
 		req = list_first_entry_or_null(&smd_info->ctx_list,
 					       struct ath12k_smd_ctx_req, list);
 		if (!req) {
-			spin_unlock_bh(&smd_info->ctx_list_lock);
+			spin_unlock_bh(&smd_info->smd_lock);
 			break;
 		}
 
@@ -1482,18 +1511,18 @@ void ath12k_smd_ctx_collector_work(struct work_struct *work)
 			if (req->mmpdu)
 				dev_kfree_skb_any(req->mmpdu);
 			spin_unlock_bh(&req->lock);
-			spin_unlock_bh(&smd_info->ctx_list_lock);
+			spin_unlock_bh(&smd_info->smd_lock);
 			kfree(req);
 			continue;
 		}
 
 		if (smd_info->ctx_inflight) {
-			WARN(req->state != SMD_CTX_INIT,
+			WARN(req->state != SMD_CTX_INIT && req->state != SMD_CTX_WAITING,
 			     "Context req state is %u but context is inflight",
 			     req->state);
 			req->state = SMD_CTX_WAITING;
 			spin_unlock_bh(&req->lock);
-			spin_unlock_bh(&smd_info->ctx_list_lock);
+			spin_unlock_bh(&smd_info->smd_lock);
 			break;
 		}
 
@@ -1505,46 +1534,40 @@ void ath12k_smd_ctx_collector_work(struct work_struct *work)
 			if (req->mmpdu)
 				dev_kfree_skb_any(req->mmpdu);
 			spin_unlock_bh(&req->lock);
-			spin_unlock_bh(&smd_info->ctx_list_lock);
+			spin_unlock_bh(&smd_info->smd_lock);
 			kfree(req);
 			continue;
 		}
-
-		smd_info->ctx_inflight = false;
 
 		/* Copy cached context for ST Preparation if it is within the threshold */
 		if (req->type == IEEE80211_UHR_LINK_RECONF_TYPE_ST_PREP &&
-		    smd_info->latest_ctx_valid &&
-		    ktime_us_delta(req->enqueued_ts, smd_info->latest_ctx_ts) <=
-		    ATH12K_SMD_CTX_REUSE_THRESHOLD) {
+		    !ath12k_smd_reuse_sta_session_prep_ctx(smd_info, req)) {
 			ath12k_dbg(NULL, ATH12K_DBG_SMD,
 				   "Using cached ST Prep context for %pM",
 				   req->sta_addr);
-			req->state = SMD_CTX_COMPLETE;
-			memcpy(&req->ctx, &smd_info->latest_ctx, sizeof(req->ctx));
 			req->handler(smd_info, req);
-			spin_unlock_bh(&req->lock);
-			spin_unlock_bh(&smd_info->ctx_list_lock);
+			/* handler released req->lock and smd_lock */
 			kfree(req);
 			continue;
 		}
 
-		spin_unlock_bh(&req->lock);
-		spin_unlock_bh(&smd_info->ctx_list_lock);
+		arvif = rcu_dereference(ahsta->ahvif->link[ahsta->assoc_link_id]);
+		if (!arvif || !arvif->ar) {
+			ath12k_err(NULL, "No arvif for %pM to post context request",
+				   req->sta_addr);
+			req->handler(smd_info, req);
+			/* handler released req->lock and smd_lock */
+			kfree(req);
+			continue;
+		}
 
-		/* wiphy_lock serializes against sta teardown and protects
-		 * ahvif->deflink.ar access inside ath12k_smd_post_sta_session_ctx_req().
-		 */
-		wiphy_lock(wiphy);
-		spin_lock_bh(&req->lock);
-
-		if (ath12k_smd_post_sta_session_ctx_req(ahsta->ahvif, req, smd_info)) {
+		if (ath12k_smd_post_sta_session_ctx_req(ahsta->ahvif, arvif, req,
+							smd_info)) {
 			ath12k_err(NULL, "Failed to post context request for %pM",
 				   req->sta_addr);
 			/* do not transition to COMPLETE state */
 			req->handler(smd_info, req);
-			spin_unlock_bh(&req->lock);
-			wiphy_unlock(wiphy);
+			/* handler released req->lock and smd_lock */
 			kfree(req);
 			continue;
 		}
@@ -1557,7 +1580,7 @@ void ath12k_smd_ctx_collector_work(struct work_struct *work)
 			   IEEE80211_MAX_NUM_TIDS, req->ctx.ul.valid_tid_bmap);
 
 		spin_unlock_bh(&req->lock);
-		wiphy_unlock(wiphy);
+		spin_unlock_bh(&smd_info->smd_lock);
 		break;
 	}
 }
@@ -1571,12 +1594,15 @@ int ath12k_smd_collect_sta_session_ctx(struct ath12k *ar, struct sk_buff *mmpdu)
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_smd_ctx_req *req;
 	u8 uhr_reconf_type, st_control;
+	struct ath12k_link_vif *arvif;
 	struct ath12k_link_sta *arsta;
 	const u8 *buf, *st_params_ie;
 	bool security_hdr_stripped;
 	struct ieee80211_sta *sta;
 	struct ath12k_sta *ahsta;
 	int ret;
+
+	lockdep_assert(rcu_read_lock_held());
 
 	buf = (const u8 *)&mgmt->u.action;
 	security_hdr_stripped = (status->flag & RX_FLAG_IV_STRIPPED);
@@ -1600,24 +1626,35 @@ int ath12k_smd_collect_sta_session_ctx(struct ath12k *ar, struct sk_buff *mmpdu)
 	}
 
 	ahsta = arsta->ahsta;
+	/* arsta_lock protected the hash walk and the arsta->ahsta dereference
+	 * above. Station lifetime from here is covered by rcu_read_lock() held
+	 * by the caller; no further arsta_lock access is needed.
+	 */
+	spin_unlock_bh(&ar->arsta_lock);
 	sta = ath12k_ahsta_to_sta(ahsta);
 
 	if (!sta->smd_params.smd_enabled) {
 		ath12k_err(ab, "ST %s frame from non-SMD STA %pM",
 			   ath12k_uhr_reconf_type_str(uhr_reconf_type), sta->addr);
-		spin_unlock_bh(&ar->arsta_lock);
 		return -EINVAL;
 	}
 
-	if (ahsta->state != IEEE80211_STA_AUTHORIZED) {
+	if (READ_ONCE(ahsta->state) != IEEE80211_STA_AUTHORIZED) {
 		ath12k_dbg(ab, ATH12K_DBG_SMD,
 			   "SMD STA %pM not in AUTHORIZED state, skip context collection",
 			   sta->addr);
-		spin_unlock_bh(&ar->arsta_lock);
 		return -EOPNOTSUPP;
 	}
 
 	smd_info = &ahsta->smd_info;
+
+	spin_lock_bh(&smd_info->smd_lock);
+
+	if (smd_info->torndown) {
+		/* we are already cleaning up, so return without context collection */
+		spin_unlock_bh(&smd_info->smd_lock);
+		return -ESHUTDOWN;
+	}
 
 	if (uhr_reconf_type == IEEE80211_UHR_LINK_RECONF_TYPE_ST_EXEC) {
 		st_control = smd_info->st_control;
@@ -1637,7 +1674,7 @@ int ath12k_smd_collect_sta_session_ctx(struct ath12k *ar, struct sk_buff *mmpdu)
 				   "Failed to find ST %s Parameters element for %pM",
 				   ath12k_uhr_reconf_type_str(uhr_reconf_type),
 				   sta->addr);
-			spin_unlock_bh(&ar->arsta_lock);
+			spin_unlock_bh(&smd_info->smd_lock);
 			return -EINVAL;
 		}
 
@@ -1645,25 +1682,31 @@ int ath12k_smd_collect_sta_session_ctx(struct ath12k *ar, struct sk_buff *mmpdu)
 	}
 	smd_info->st_control = st_control;
 
-	if (uhr_reconf_type == IEEE80211_UHR_LINK_RECONF_TYPE_ST_PREP &&
-	    smd_info->latest_ctx_valid &&
-	    ktime_us_delta(ktime_get(), smd_info->latest_ctx_ts) <=
-	    ATH12K_SMD_CTX_REUSE_THRESHOLD) {
-		struct ath12k_smd_ctx_req *_req __free(kfree) =
-			kzalloc(sizeof(*_req), GFP_ATOMIC);
+	req = kzalloc(sizeof(*req), GFP_ATOMIC);
+	if (!req) {
+		spin_unlock_bh(&smd_info->smd_lock);
+		return -ENOMEM;
+	}
 
-		if (!_req) {
-			spin_unlock_bh(&ar->arsta_lock);
-			return -ENOMEM;
-		}
+	spin_lock_init(&req->lock);
+	req->mmpdu = mmpdu;
+	req->state = SMD_CTX_INIT;
+	req->type = uhr_reconf_type;
+	req->handler = ath12k_smd_update_ctx_to_stack;
+	req->enqueued_ts = ktime_get();
+	memcpy(req->sta_addr, sta->addr, ETH_ALEN);
 
+	if (req->type == IEEE80211_UHR_LINK_RECONF_TYPE_ST_PREP &&
+	    !ath12k_smd_reuse_sta_session_prep_ctx(smd_info, req)) {
 		ath12k_dbg(ab, ATH12K_DBG_SMD, "Using cached ST Prep context for %pM",
 			   sta->addr);
-		_req->state = SMD_CTX_COMPLETE;
-		memcpy(&_req->ctx, &smd_info->latest_ctx, sizeof(_req->ctx));
-		_req->mmpdu = mmpdu;
-		ath12k_smd_update_ctx_to_stack(smd_info, _req);
-		spin_unlock_bh(&ar->arsta_lock);
+		/* arsta_lock was released after ahsta was extracted from the hash.
+		 * smd_lock is still held; handler drops both locks before rx_ni().
+		 */
+		spin_lock_bh(&req->lock);
+		req->handler(smd_info, req);
+		/* handler released req->lock and smd_lock */
+		kfree(req);
 		return 0;
 	}
 
@@ -1681,7 +1724,7 @@ int ath12k_smd_collect_sta_session_ctx(struct ath12k *ar, struct sk_buff *mmpdu)
 	/* Prep phase collects only vendor context whereas Exec phase collects
 	 * data context for TIDs 0-7 and vendor context.
 	 */
-	if (uhr_reconf_type == IEEE80211_UHR_LINK_RECONF_TYPE_ST_PREP) {
+	if (req->type == IEEE80211_UHR_LINK_RECONF_TYPE_ST_PREP) {
 		valid_dl_tid_bmap = 0;
 		valid_ul_tid_bmap = 0;
 	} else {
@@ -1689,19 +1732,6 @@ int ath12k_smd_collect_sta_session_ctx(struct ath12k *ar, struct sk_buff *mmpdu)
 		valid_ul_tid_bmap = 0xff;
 	}
 
-	req = kzalloc(sizeof(*req), GFP_ATOMIC);
-	if (!req) {
-		spin_unlock_bh(&ar->arsta_lock);
-		return -ENOMEM;
-	}
-
-	spin_lock_init(&req->lock);
-	req->mmpdu = mmpdu;
-	req->state = SMD_CTX_INIT;
-	req->type = uhr_reconf_type;
-	req->handler = ath12k_smd_update_ctx_to_stack;
-	req->enqueued_ts = ktime_get();
-	memcpy(req->sta_addr, sta->addr, ETH_ALEN);
 	bitmap_write(req->ctx.dl.valid_tid_bmap, valid_dl_tid_bmap,
 		     0, IEEE80211_MAX_NUM_TIDS);
 	bitmap_write(req->ctx.ul.valid_tid_bmap, valid_ul_tid_bmap,
@@ -1713,31 +1743,34 @@ int ath12k_smd_collect_sta_session_ctx(struct ath12k *ar, struct sk_buff *mmpdu)
 	 * the workqueue to wait it out.
 	 */
 	if (smd_info->ctx_inflight) {
-		spin_lock_bh(&smd_info->ctx_list_lock);
 		list_add_tail(&req->list, &smd_info->ctx_list);
-		spin_unlock_bh(&smd_info->ctx_list_lock);
-
 		ath12k_smd_ctx_queue_work(&smd_info->ctx_wk);
-		spin_unlock_bh(&ar->arsta_lock);
+		spin_unlock_bh(&smd_info->smd_lock);
 		return 0;
 	}
 
 	/* pull the context directly, otherwise */
-	ret = ath12k_smd_post_sta_session_ctx_req(ahsta->ahvif, req, smd_info);
+
+	arvif = rcu_dereference(ahsta->ahvif->link[ahsta->assoc_link_id]);
+	if (!arvif || !arvif->ar) {
+		spin_unlock_bh(&smd_info->smd_lock);
+		kfree(req);
+		return -ENOLINK;
+	}
+
+	ret = ath12k_smd_post_sta_session_ctx_req(ahsta->ahvif, arvif, req, smd_info);
 
 	ath12k_dbg(ab, ATH12K_DBG_SMD,
-		   "Posted context request (0x%*pb) for %pM (%d), data dl_tids=0x%*pb ul_tids=0x%*pb",
+		   "Posted context request (0x%*pb) for %pM (ret: %d), data dl_tids=0x%*pb ul_tids=0x%*pb",
 		   ATH12K_SMD_CTX_NUM_VALID_CTX, req->ctx.valid_ctx_bmap,
 		   sta->addr, ret,
 		   IEEE80211_MAX_NUM_TIDS, req->ctx.dl.valid_tid_bmap,
 		   IEEE80211_MAX_NUM_TIDS, req->ctx.ul.valid_tid_bmap);
 
-	if (ret) {
-		smd_info->current_req = NULL;
+	if (ret)
 		kfree(req);
-	}
 
-	spin_unlock_bh(&ar->arsta_lock);
+	spin_unlock_bh(&smd_info->smd_lock);
 	return ret;
 }
 EXPORT_SYMBOL(ath12k_smd_collect_sta_session_ctx);
@@ -1987,20 +2020,23 @@ static void ath12k_smd_ctx_to_ieee80211_ctx(struct ath12k_smd_ctx *ctx,
 void ath12k_smd_update_ctx_to_stack(struct ath12k_smd_info *smd_info,
 				    struct ath12k_smd_ctx_req *req)
 {
-	struct ath12k_sta *ahsta = container_of(smd_info, struct ath12k_sta, smd_info);
 	struct ieee80211_smd_ctx *i80211_ctx = NULL;
-	struct sk_buff *mmpdu = req->mmpdu;
 	struct wireless_skb_ext *ctx_ext;
-	struct ath12k_base *ab;
+	struct ath12k_sta *ahsta;
+	struct sk_buff *mmpdu;
 
-	ab = ahsta->ahvif->deflink.ar->ab;
+	lockdep_assert_held(&smd_info->smd_lock);
+	lockdep_assert_held(&req->lock);
+
+	ahsta = container_of(smd_info, struct ath12k_sta, smd_info);
+	mmpdu = req->mmpdu;
 
 	if (req->state != SMD_CTX_COMPLETE)
 		goto deliver;
 
 	ctx_ext = skb_ext_add(mmpdu, SKB_EXT_WIRELESS);
 	if (!ctx_ext) {
-		ath12k_err(ab, "Failed to attach skb_ext for SMD ctx");
+		ath12k_err(NULL, "Failed to attach skb_ext for SMD ctx");
 		goto deliver;
 	}
 
@@ -2010,6 +2046,9 @@ void ath12k_smd_update_ctx_to_stack(struct ath12k_smd_info *smd_info,
 	ath12k_smd_ctx_to_ieee80211_ctx(&req->ctx, i80211_ctx);
 
 deliver:
+	spin_unlock_bh(&req->lock);
+	spin_unlock_bh(&smd_info->smd_lock);
+
 	rcu_read_lock();
 	ieee80211_rx_ni(ahsta->ahvif->ah->hw, mmpdu);
 	rcu_read_unlock();
@@ -2018,16 +2057,14 @@ deliver:
 		kfree(i80211_ctx->drv_ctx);
 }
 
-static void ath12k_smd_ctx_hw_completion(struct ath12k_smd_info *smd_info,
+static bool ath12k_smd_ctx_hw_completion(struct ath12k_smd_info *smd_info,
 					 struct ath12k_smd_ctx_req *req,
 					 bool tx, u8 tid)
 {
 	/* MGMT TID cb() is agreed to be the last TID cb() */
 	if ((tx && tid != ATH12K_SMD_TX_MGMT_TID) ||
 	    (!tx && tid != ATH12K_SMD_RX_MGMT_TID))
-		return;
-
-	spin_lock_bh(&req->lock);
+		return false;
 
 	if (tx) {
 		req->tx_done = true;
@@ -2039,22 +2076,25 @@ static void ath12k_smd_ctx_hw_completion(struct ath12k_smd_info *smd_info,
 			   req->ctx.ul.completed_tid_bmap, IEEE80211_MAX_NUM_TIDS);
 	}
 
-	if (!req->tx_done || !req->rx_done) {
-		spin_unlock_bh(&req->lock);
-		return;
-	}
+	if (!req->tx_done || !req->rx_done)
+		return false;
 
 	req->state = SMD_CTX_COMPLETE;
+
 	smd_info->latest_ctx_ts = ktime_get();
-	req->handler(smd_info, req);
 	memcpy(&smd_info->latest_ctx, &req->ctx, sizeof(req->ctx));
 	smd_info->latest_ctx_valid = true;
-
-	spin_unlock_bh(&req->lock);
-
-	kfree(req);
 	smd_info->current_req = NULL;
 	smd_info->ctx_inflight = false;
+
+	/* handler released req->lock and smd_lock */
+	req->handler(smd_info, req);
+
+	kfree(req);
+	/* Queue work now to wake up the pending requests */
+	ath12k_smd_ctx_queue_work(&smd_info->ctx_wk);
+
+	return true;
 }
 
 u16 ath12k_smd_ctx_get_rx_ba_bufsize(struct ath12k_base *ab, struct ath12k_hw *ah,
@@ -2237,11 +2277,13 @@ static void ath12k_smd_ctx_hw_tx_tid_cb(struct ath12k_dp *dp, void *cb_ctx,
 					u8 *addr, u8 tid)
 {
 	struct ath12k_smd_ctx_tx_cb_per_tid *cb_data = cb_ctx;
+	struct ath12k_ba_session_params drv_ba = {};
 	struct ath12k_smd_info *smd_info;
 	struct ath12k_base *ab = dp->ab;
 	struct ath12k_smd_ctx_req *req;
 	struct ieee80211_sta *sta;
 	struct ath12k_sta *ahsta;
+	bool drv_ba_valid = false;
 	struct ath12k_hw *ah;
 
 	ath12k_dbg_level(ab, ATH12K_DBG_SMD, ATH12K_DBG_L2,
@@ -2259,10 +2301,27 @@ static void ath12k_smd_ctx_hw_tx_tid_cb(struct ath12k_dp *dp, void *cb_ctx,
 	ahsta = ath12k_sta_to_ahsta(sta);
 	smd_info = &ahsta->smd_info;
 
+	if (tid < IEEE80211_MAX_NUM_TIDS) {
+		spin_lock_bh(&ahsta->ba_lock);
+		if (ahsta->tx_ba_params[tid].valid) {
+			drv_ba = ahsta->tx_ba_params[tid];
+			drv_ba_valid = true;
+		}
+		spin_unlock_bh(&ahsta->ba_lock);
+	}
+
+	spin_lock_bh(&smd_info->smd_lock);
+
+	if (smd_info->torndown) {
+		spin_unlock_bh(&smd_info->smd_lock);
+		return;
+	}
+
 	req = smd_info->current_req;
 	if (!req) {
 		ath12k_err(ab, "Current request not found for %pM to process SMD ctx",
 			   sta->addr);
+		spin_unlock_bh(&smd_info->smd_lock);
 		return;
 	}
 
@@ -2271,12 +2330,14 @@ static void ath12k_smd_ctx_hw_tx_tid_cb(struct ath12k_dp *dp, void *cb_ctx,
 		ath12k_err(ab, "Invalid SMD HW tx ctx cb for %pM tid=%u in state=%u",
 			   sta->addr, tid, req->state);
 		spin_unlock_bh(&req->lock);
+		spin_unlock_bh(&smd_info->smd_lock);
 		return;
 	}
 
 	if (!test_bit(tid, req->ctx.dl.valid_tid_bmap) &&
 	    tid != ATH12K_SMD_TX_MGMT_TID) {
 		spin_unlock_bh(&req->lock);
+		spin_unlock_bh(&smd_info->smd_lock);
 		return;
 	}
 
@@ -2296,25 +2357,22 @@ static void ath12k_smd_ctx_hw_tx_tid_cb(struct ath12k_dp *dp, void *cb_ctx,
 			memcpy(req->ctx.dl.pn, cb_data->pn, cb_data->pn_len);
 		}
 
-		if (test_bit(ATH12K_SMD_CTX_VALID_BA_PARAMS, req->ctx.valid_ctx_bmap)) {
-			spin_lock_bh(&ahsta->ba_lock);
-			if (ahsta->tx_ba_params[tid].valid) {
-				struct ath12k_smd_ctx_ba *dl_ba = &req->ctx.dl.ba[tid];
-				u16 buf_size_base = 0, buf_size_ext = 0;
+		if (test_bit(ATH12K_SMD_CTX_VALID_BA_PARAMS, req->ctx.valid_ctx_bmap) &&
+		    drv_ba_valid) {
+			struct ath12k_smd_ctx_ba *dl_ba = &req->ctx.dl.ba[tid];
+			u16 buf_size_base = 0, buf_size_ext = 0;
 
-				ba_setup = true;
-				ba_buf_size = ahsta->tx_ba_params[tid].buf_size;
+			ba_setup = true;
+			ba_buf_size = drv_ba.buf_size;
 
-				dl_ba->amsdu_supported = ahsta->tx_ba_params[tid].amsdu;
-				dl_ba->ba_policy = ahsta->tx_ba_params[tid].policy;
-				dl_ba->timeout = ahsta->tx_ba_params[tid].timeout;
-				ath12k_smd_ctx_encode_ba_buf_size(ba_buf_size,
-								  &buf_size_base,
-								  &buf_size_ext);
-				dl_ba->buffer_size = buf_size_base;
-				dl_ba->ext_buffer_size = buf_size_ext;
-			}
-			spin_unlock_bh(&ahsta->ba_lock);
+			dl_ba->amsdu_supported = drv_ba.amsdu;
+			dl_ba->ba_policy = drv_ba.policy;
+			dl_ba->timeout = drv_ba.timeout;
+			ath12k_smd_ctx_encode_ba_buf_size(ba_buf_size,
+							  &buf_size_base,
+							  &buf_size_ext);
+			dl_ba->buffer_size = buf_size_base;
+			dl_ba->ext_buffer_size = buf_size_ext;
 		}
 
 		/* LSN Offset */
@@ -2346,20 +2404,25 @@ static void ath12k_smd_ctx_hw_tx_tid_cb(struct ath12k_dp *dp, void *cb_ctx,
 		}
 
 		spin_unlock_bh(&req->lock);
+		spin_unlock_bh(&smd_info->smd_lock);
 		return;
 	}
 
 	/* Mgmt TID */
 	ath12k_smd_ctx_hw_tid_cb_vendor(cb_data, req, true, tid);
-	spin_unlock_bh(&req->lock);
 
-	ath12k_smd_ctx_hw_completion(smd_info, req, true, tid);
+	if (!ath12k_smd_ctx_hw_completion(smd_info, req, true, tid)) {
+		/* @handler is not invoked, unlock */
+		spin_unlock_bh(&req->lock);
+		spin_unlock_bh(&smd_info->smd_lock);
+	}
 }
 
 static void ath12k_smd_ctx_hw_rx_tid_cb(struct ath12k_dp *dp, void *cb_ctx,
 					struct hal_reo_status *reo_status)
 {
 	struct ath12k_dp_smd_ctx *smd_data = cb_ctx;
+	struct ath12k_ba_session_params drv_ba = {};
 	struct hal_reo_status_queue_stats *q_stats;
 	struct ath12k_smd_info *smd_info;
 	struct ath12k_base *ab = dp->ab;
@@ -2367,6 +2430,7 @@ static void ath12k_smd_ctx_hw_rx_tid_cb(struct ath12k_dp *dp, void *cb_ctx,
 	struct ieee80211_sta *sta;
 	struct ath12k_sta *ahsta;
 	u8 tid = smd_data->out.tid;
+	bool drv_ba_valid = false;
 	struct ath12k_hw *ah;
 
 	ath12k_dbg_level(ab, ATH12K_DBG_SMD, ATH12K_DBG_L2,
@@ -2385,10 +2449,27 @@ static void ath12k_smd_ctx_hw_rx_tid_cb(struct ath12k_dp *dp, void *cb_ctx,
 	ahsta = ath12k_sta_to_ahsta(sta);
 	smd_info = &ahsta->smd_info;
 
+	if (tid < IEEE80211_MAX_NUM_TIDS) {
+		spin_lock_bh(&ahsta->ba_lock);
+		if (ahsta->tx_ba_params[tid].valid) {
+			drv_ba = ahsta->tx_ba_params[tid];
+			drv_ba_valid = true;
+		}
+		spin_unlock_bh(&ahsta->ba_lock);
+	}
+
+	spin_lock_bh(&smd_info->smd_lock);
+
+	if (smd_info->torndown) {
+		spin_unlock_bh(&smd_info->smd_lock);
+		return;
+	}
+
 	req = smd_info->current_req;
 	if (!req) {
 		ath12k_err(ab, "Current request not found for %pM to process SMD ctx",
 			   sta->addr);
+		spin_unlock_bh(&smd_info->smd_lock);
 		return;
 	}
 
@@ -2397,12 +2478,14 @@ static void ath12k_smd_ctx_hw_rx_tid_cb(struct ath12k_dp *dp, void *cb_ctx,
 		ath12k_err(ab, "Invalid SMD HW rx ctx cb for %pM tid=%u in state=%u",
 			   sta->addr, tid, req->state);
 		spin_unlock_bh(&req->lock);
+		spin_unlock_bh(&smd_info->smd_lock);
 		return;
 	}
 
 	if (!test_bit(tid, req->ctx.ul.valid_tid_bmap) &&
 	    tid != ATH12K_SMD_RX_MGMT_TID) {
 		spin_unlock_bh(&req->lock);
+		spin_unlock_bh(&smd_info->smd_lock);
 		return;
 	}
 
@@ -2413,6 +2496,7 @@ static void ath12k_smd_ctx_hw_rx_tid_cb(struct ath12k_dp *dp, void *cb_ctx,
 	if (ath12k_hal_rx_reo_1k_status(ab, reo_status)) {
 		if (!test_bit(tid, req->ctx.ul.valid_tid_bmap)) {
 			spin_unlock_bh(&req->lock);
+			spin_unlock_bh(&smd_info->smd_lock);
 			return;
 		}
 
@@ -2425,6 +2509,7 @@ static void ath12k_smd_ctx_hw_rx_tid_cb(struct ath12k_dp *dp, void *cb_ctx,
 			set_bit(tid, req->ctx.ul.completed_tid_bmap);
 		}
 		spin_unlock_bh(&req->lock);
+		spin_unlock_bh(&smd_info->smd_lock);
 		return;
 	}
 
@@ -2452,31 +2537,27 @@ static void ath12k_smd_ctx_hw_rx_tid_cb(struct ath12k_dp *dp, void *cb_ctx,
 			memcpy(&req->ctx.ul.pn[tid][4], &q_stats->pn_47_32,
 			       sizeof(q_stats->pn_47_32));
 		}
-		if (test_bit(ATH12K_SMD_CTX_VALID_BA_PARAMS, req->ctx.valid_ctx_bmap)) {
-			spin_lock_bh(&ahsta->ba_lock);
-			if (ahsta->rx_ba_params[tid].valid) {
-				struct ath12k_smd_ctx_ba *ul_ba = &req->ctx.ul.ba[tid];
-				u16 orig_buf_size = ahsta->rx_ba_params[tid].buf_size;
-				u16 buf_size_base = 0, buf_size_ext = 0;
+		if (test_bit(ATH12K_SMD_CTX_VALID_BA_PARAMS, req->ctx.valid_ctx_bmap) &&
+		    drv_ba_valid) {
+			struct ath12k_smd_ctx_ba *ul_ba = &req->ctx.ul.ba[tid];
+			u16 orig_buf_size = drv_ba.buf_size;
+			u16 buf_size_base = 0, buf_size_ext = 0;
 
-				ba_setup = true;
-				ba_buf_size =
-					ath12k_smd_ctx_get_rx_ba_bufsize(ab, ah,
-									 sta->addr,
-									 tid,
-									 orig_buf_size);
+			ba_setup = true;
+			ba_buf_size =
+				ath12k_smd_ctx_get_rx_ba_bufsize(ab, ah,
+								 sta->addr,
+								 tid,
+								 orig_buf_size);
 
-				ul_ba->amsdu_supported = ahsta->rx_ba_params[tid].amsdu;
-				ul_ba->ba_policy = ahsta->rx_ba_params[tid].policy;
-				ul_ba->timeout = ahsta->rx_ba_params[tid].timeout;
-				ath12k_smd_ctx_encode_ba_buf_size(ba_buf_size,
-								  &buf_size_base,
-								  &buf_size_ext);
-				ul_ba->buffer_size = buf_size_base;
-				ul_ba->ext_buffer_size = buf_size_ext;
-			}
-
-			spin_unlock_bh(&ahsta->ba_lock);
+			ul_ba->amsdu_supported = drv_ba.amsdu;
+			ul_ba->ba_policy = drv_ba.policy;
+			ul_ba->timeout = drv_ba.timeout;
+			ath12k_smd_ctx_encode_ba_buf_size(ba_buf_size,
+							  &buf_size_base,
+							  &buf_size_ext);
+			ul_ba->buffer_size = buf_size_base;
+			ul_ba->ext_buffer_size = buf_size_ext;
 		}
 
 		/* Rx SN computation and REO Bitmap */
@@ -2495,14 +2576,18 @@ static void ath12k_smd_ctx_hw_rx_tid_cb(struct ath12k_dp *dp, void *cb_ctx,
 				 req->ctx.ul.ba[tid].timeout);
 
 		spin_unlock_bh(&req->lock);
+		spin_unlock_bh(&smd_info->smd_lock);
 		return;
 	}
 
 	/* Mgmt TID */
 	ath12k_smd_ctx_hw_tid_cb_vendor((void *)reo_status, req, false, tid);
-	spin_unlock_bh(&req->lock);
 
-	ath12k_smd_ctx_hw_completion(smd_info, req, false, tid);
+	if (!ath12k_smd_ctx_hw_completion(smd_info, req, false, tid)) {
+		/* @handler is not invoked, unlock */
+		spin_unlock_bh(&req->lock);
+		spin_unlock_bh(&smd_info->smd_lock);
+	}
 }
 
 void ath12k_smd_parse_vendor_ctx(struct ieee80211_smd_ctx *ctx,

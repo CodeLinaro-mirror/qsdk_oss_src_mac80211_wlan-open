@@ -1487,19 +1487,19 @@ struct ath12k_ba_session_params {
 };
 
 struct ath12k_smd_info {
-	bool ctx_inflight;
-	bool teardown;
+	/* protects below resources */
+	spinlock_t smd_lock;
 	u8 st_control;
+	bool torndown;
+	bool ctx_inflight;
 	bool latest_ctx_valid;
 	ktime_t latest_ctx_ts;
-	struct ath12k_smd_ctx latest_ctx;
-
-	/* protects @ctx_list */
-	spinlock_t ctx_list_lock;
 	struct list_head ctx_list;
+	struct ath12k_smd_ctx latest_ctx;
+	struct ath12k_smd_ctx_req *current_req;
+
 	struct work_struct ctx_wk;
 
-	struct ath12k_smd_ctx_req *current_req;
 
 	/* for WMI smd roam config cmd */
 	u16 sn[IEEE80211_MAX_NUM_TIDS];

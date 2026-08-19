@@ -15510,24 +15510,27 @@ static int ath12k_mac_reconfig_ahsta_links_mode0(struct ath12k_hw *ah,
 static void ath12k_mac_sta_smd_info_cleanup(struct ath12k_sta *ahsta)
 {
 	struct ath12k_smd_ctx_req *req, *tmp;
-	LIST_HEAD(cleanup_list);
 
-	spin_lock_bh(&ahsta->smd_info.ctx_list_lock);
-	ahsta->smd_info.teardown = true;
-	spin_unlock_bh(&ahsta->smd_info.ctx_list_lock);
+	spin_lock_bh(&ahsta->smd_info.smd_lock);
+	ahsta->smd_info.torndown = true;
+	spin_unlock_bh(&ahsta->smd_info.smd_lock);
 
+	/* work handler takes smd_lock inside to process requests */
 	cancel_work_sync(&ahsta->smd_info.ctx_wk);
-	kfree(ahsta->smd_info.current_req);
-	ahsta->smd_info.current_req = NULL;
 
-	spin_lock_bh(&ahsta->smd_info.ctx_list_lock);
-	list_splice_init(&ahsta->smd_info.ctx_list, &cleanup_list);
-	spin_unlock_bh(&ahsta->smd_info.ctx_list_lock);
+	spin_lock_bh(&ahsta->smd_info.smd_lock);
+	if (ahsta->smd_info.current_req) {
+		dev_kfree_skb_any(ahsta->smd_info.current_req->mmpdu);
+		kfree(ahsta->smd_info.current_req);
+		ahsta->smd_info.current_req = NULL;
+	}
 
-	list_for_each_entry_safe(req, tmp, &cleanup_list, list) {
+	list_for_each_entry_safe(req, tmp, &ahsta->smd_info.ctx_list, list) {
 		list_del(&req->list);
+		dev_kfree_skb_any(req->mmpdu);
 		kfree(req);
 	}
+	spin_unlock_bh(&ahsta->smd_info.smd_lock);
 }
 
 void ath12k_mac_op_sta_pre_rcu_remove(struct ieee80211_hw *hw,
@@ -15941,7 +15944,7 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 		/* Initialize SMD context data after successful transition to state3 */
 		if (vif->type == NL80211_IFTYPE_AP && sta->smd_params.smd_enabled) {
 			INIT_LIST_HEAD(&ahsta->smd_info.ctx_list);
-			spin_lock_init(&ahsta->smd_info.ctx_list_lock);
+			spin_lock_init(&ahsta->smd_info.smd_lock);
 			INIT_WORK(&ahsta->smd_info.ctx_wk,
 				  ath12k_smd_ctx_collector_work);
 		}
