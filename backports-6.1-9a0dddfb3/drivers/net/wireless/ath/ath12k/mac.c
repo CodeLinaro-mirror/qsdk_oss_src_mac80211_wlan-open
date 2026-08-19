@@ -12210,7 +12210,7 @@ install:
 	return ar->install_key_status ? -EINVAL : 0;
 }
 
-static int ath12k_clear_peer_keys(struct ath12k_link_vif *arvif, void *dp_peer,
+static int ath12k_clear_peer_keys(struct ath12k_link_vif *arvif,
 				  struct ath12k_link_sta *arsta)
 {
 	struct ath12k *ar = arvif->ar;
@@ -12225,11 +12225,7 @@ static int ath12k_clear_peer_keys(struct ath12k_link_vif *arvif, void *dp_peer,
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
-	if (!dp_peer)
-		return -ENOENT;
-
-	ret = ath12k_dp_peer_set_param_by_dp_peer(dp_peer,
-						  ATH12K_DP_PEER_CLEAR_KEYS_PARAM, &val);
+	ret = ath12k_dp_peer_clear_keys(ar, ath12k_ahsta_to_sta(arsta->ahsta), &val);
 	if (ret)
 		return -ENOENT;
 
@@ -14369,23 +14365,10 @@ static int ath12k_mac_station_unauthorize(struct ath12k *ar,
 					  struct ath12k_link_sta *arsta)
 {
 	int ret;
-	void *dp_peer;
-	union ath12k_config_param val = {0};
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
-	dp_peer = ath12k_sta_get_dp_peer_wiphy_locked(ath12k_ar_to_hw(ar)->wiphy,
-						      arsta->ahsta);
-	if (dp_peer) {
-		val.is_authorized = false;
-		ath12k_dp_peer_set_param_by_dp_peer(dp_peer,
-						    ATH12K_DP_PEER_AUTHORIZE_PARAM,
-						    &val);
-		ath12k_dp_link_peer_set_param_by_dp_peer_and_link_id(dp_peer,
-								     arsta->link_id,
-								     ATH12K_DP_LINK_PEER_AUTHORIZE_PARAM,
-								     &val);
-	}
+	ath12k_dp_peer_unauthorize(ar, ath12k_ahsta_to_sta(arsta->ahsta), arsta->link_id);
 
 	/* Driver must clear the keys during the state change from
 	 * IEEE80211_STA_AUTHORIZED to IEEE80211_STA_ASSOC, since after
@@ -14393,7 +14376,7 @@ static int ath12k_mac_station_unauthorize(struct ath12k *ar,
 	 * in __sta_info_destroy_part2(). This will ensure that the driver does
 	 * not retain stale key references after mac80211 deletes the keys.
 	 */
-	ret = ath12k_clear_peer_keys(arvif, dp_peer, arsta);
+	ret = ath12k_clear_peer_keys(arvif, arsta);
 	if (ret) {
 		ath12k_dbg_level(ar->ab, ATH12K_DBG_PEER, ATH12K_DBG_L0,
 				 "failed to clear all peer keys for vdev %i: %d\n",
@@ -14504,8 +14487,6 @@ static int ath12k_mac_station_remove(struct ath12k *ar,
 	struct ieee80211_vif *vif = ahvif->vif;
 	bool skip_peer_del = false;
 	int ret = 0;
-	struct ath12k_dp_hw *dp_hw = &ar->ah->dp_hw;
-	struct ath12k_dp_peer *dp_peer;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -14535,13 +14516,7 @@ static int ath12k_mac_station_remove(struct ath12k *ar,
 	ath12k_smart_ant_api_peer_disconnect(arsta);
 #endif
 
-	spin_lock_bh(&dp_hw->peer_hash_lock);
-
-	dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, sta->addr);
-
-	ath12k_dp_peer_cleanup(ar, dp_peer, arvif->vdev_id, arsta->addr);
-
-	spin_unlock_bh(&dp_hw->peer_hash_lock);
+	ath12k_dp_peer_cleanup_by_addr(ar, arvif->vdev_id, arsta->addr, sta);
 
 	/*
 	 * Check if peer_del_all is enabled for this vdev

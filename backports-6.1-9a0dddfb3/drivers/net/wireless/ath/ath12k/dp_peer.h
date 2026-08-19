@@ -250,6 +250,7 @@ struct ath12k_dp_peer {
 	struct hlist_node hash_node;
 
 	bool pre_rcu_remove_done;
+	struct ath12k_dp_link_peer *teardown_link_peers[ATH12K_DP_PEER_MAX_MLO_LINKS];
 };
 
 #define QOS_MSDUQ_MAX ((QOS_TID_MDSUQ_MAX * QOS_TID_MAX) + MSDUQ_MAX_DEF)
@@ -520,4 +521,13 @@ void ath12k_dp_peer_hash_table_delete(struct ath12k_dp_hw *dp_hw,
 				      struct ath12k_dp_peer *dp_peer);
 u16 ath12k_dp_link_peer_get_peer_id(struct ath12k_base *ab,
 				    struct ath12k_dp_link_peer *link_peer);
+void ath12k_dp_peer_unauthorize(struct ath12k *ar, struct ieee80211_sta *sta,
+				u8 link_id);
+void ath12k_dp_peer_cleanup_by_addr(struct ath12k *ar, int vdev_id,
+				    const u8 *addr, struct ieee80211_sta *sta);
+int ath12k_dp_peer_clear_keys(struct ath12k *ar, struct ieee80211_sta *sta,
+			      union ath12k_config_param *key_params);
+struct ath12k_dp_link_peer *
+ath12k_dp_link_peer_find_by_addr_post_rcu_remove(struct ath12k_dp_peer *dp_peer,
+						 const char *addr);
 #endif
