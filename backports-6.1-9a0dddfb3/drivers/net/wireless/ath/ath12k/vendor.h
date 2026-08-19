@@ -1642,6 +1642,10 @@ enum qca_wlan_vendor_attr_config {
 	QCA_WLAN_VENDOR_ATTR_CONFIG_INVALID = 0,
 	/* Unsigned 32-bit attribute for generic commands */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_COMMAND = 17,
+	/* 6-byte MAC address to identify a specific peer.
+	 * Used with QCA_WLAN_VENDOR_ATTR_CONFIG_VHT_MCS_10_11_PEER_SUPP.
+	 */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_PEER_MAC = 35,
 	/* Unsigned 32-bit value attribute for generic commands */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_VALUE = 18,
 	/* Unsigned 32-bit data attribute for generic command response */
@@ -1729,6 +1733,26 @@ enum qca_wlan_vendor_attr_config {
 	 * chainmask changes.
 	 */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_AGILE_CAPABLE = 153,
+
+	/* Per-peer VHT MCS 10/11 (1024-QAM) support negotiated via QCN IE.
+	 * u8 attribute: 1 = peer supports MCS10/11, 0 = does not.
+	 * Sent via QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION after
+	 * station add to inform the driver of the negotiated capability.
+	 * Requires QCA_WLAN_VENDOR_ATTR_CONFIG_PEER_MAC to identify the peer.
+	 */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_VHT_MCS_10_11_PEER_SUPP = 154,
+
+	/* Keep last */
+
+	/* Per-peer QCA-internal HE capability word negotiated via QCN IE.
+	 * u32 attribute carrying the he_cap_info_internal bitmap:
+	 *   bit 0: RX 1xLTF + 0.4us GI (QCN attr 0x03 byte 0)
+	 *   bit 1: RX 2xLTF + 0.4us GI (QCN attr 0x03 byte 1)
+	 *   bit 2: 2xLTF in 160/80+80 MHz (QCN attr 0x04)
+	 * Sent via QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION after
+	 * station add. Requires QCA_WLAN_VENDOR_ATTR_CONFIG_PEER_MAC.
+	 */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_HE_CAP_INFO_INTERNAL = 155,
 
 	/* Keep last */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_AFTER_LAST,
@@ -4648,6 +4672,8 @@ enum qca_vendor_vdev_param {
 	QCA_WLAN_VENDOR_VDEV_PARAM_UNDECODED_PHY_ERR_MASK = 98,
 	QCA_WLAN_VENDOR_VDEV_PARAM_BA_MODE = 99,
 	QCA_WLAN_VENDOR_VDEV_PARAM_UNDECODED_METADATA_CAPTURE = 100,
+	QCA_WLAN_VENDOR_VDEV_PARAM_VHT_MCS_10_11_SUPP = 101,
+	QCA_WLAN_VENDOR_VDEV_PARAM_VHT_MCS_10_11_NQ2Q_PEER_SUPP = 102,
 
 	/* Add new params above */
 	QCA_WLAN_VENDOR_VDEV_PARAM_LAST,
