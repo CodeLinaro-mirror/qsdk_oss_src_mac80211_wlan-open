@@ -70,6 +70,7 @@ void ath12k_smd_ctx_queue_work(struct work_struct *ctx_wk)
 {
 	queue_work(ath12k_smd_ctx_wq, ctx_wk);
 }
+EXPORT_SYMBOL(ath12k_smd_ctx_queue_work);
 
 static int ath12k_uhr_smd_transfer_ext_ctx(struct ath12k_vif *ahvif,
 					   struct ieee80211_sta *current_sta,
@@ -1388,10 +1389,10 @@ void ath12k_smd_global_deinit(void)
 }
 
 /* Note: callers must hold rcu_read_lock and @smd_info->smd_lock */
-static int ath12k_smd_post_sta_session_ctx_req(struct ath12k_vif *ahvif,
-					       struct ath12k_link_vif *arvif,
-					       struct ath12k_smd_ctx_req *req,
-					       struct ath12k_smd_info *smd_info)
+int ath12k_smd_post_sta_session_ctx_req(struct ath12k_vif *ahvif,
+					struct ath12k_link_vif *arvif,
+					struct ath12k_smd_ctx_req *req,
+					struct ath12k_smd_info *smd_info)
 {
 	struct ath12k_dp_hw *dp_hw = &ahvif->ah->dp_hw;
 	struct ath12k_ba_session_params *dl_ba;
@@ -1443,6 +1444,10 @@ static int ath12k_smd_post_sta_session_ctx_req(struct ath12k_vif *ahvif,
 			} else {
 				dp_ctx.in.tx_tid_ba_size[tid] = dl_ba->buf_size;
 			}
+
+			/* Stop Tx of current AP MLD with the next packet */
+			if (req->exec_via_target && dl_sn_transfer)
+				dp_ctx.in.tx_tid_ba_size[tid] = 2;
 		}
 
 		spin_unlock_bh(&ahsta->ba_lock);
@@ -1458,9 +1463,10 @@ static int ath12k_smd_post_sta_session_ctx_req(struct ath12k_vif *ahvif,
 
 	return ret;
 }
+EXPORT_SYMBOL(ath12k_smd_post_sta_session_ctx_req);
 
-static int ath12k_smd_reuse_sta_session_prep_ctx(struct ath12k_smd_info *smd_info,
-						 struct ath12k_smd_ctx_req *req)
+int ath12k_smd_reuse_sta_session_prep_ctx(struct ath12k_smd_info *smd_info,
+					  struct ath12k_smd_ctx_req *req)
 {
 	lockdep_assert_held(&smd_info->smd_lock);
 
@@ -1474,6 +1480,7 @@ static int ath12k_smd_reuse_sta_session_prep_ctx(struct ath12k_smd_info *smd_inf
 
 	return -ETIME;
 }
+EXPORT_SYMBOL(ath12k_smd_reuse_sta_session_prep_ctx);
 
 void ath12k_smd_ctx_collector_work(struct work_struct *work)
 {
@@ -1940,8 +1947,8 @@ static void ath12k_smd_ctx_set_vendor_tlv(struct ath12k_smd_ctx *ctx,
 	}
 }
 
-static void ath12k_smd_ctx_to_ieee80211_ctx(struct ath12k_smd_ctx *ctx,
-					    struct ieee80211_smd_ctx *i80211_ctx)
+void ath12k_smd_ctx_to_ieee80211_ctx(struct ath12k_smd_ctx *ctx,
+				     struct ieee80211_smd_ctx *i80211_ctx)
 {
 	u8 tid;
 
@@ -2016,6 +2023,7 @@ static void ath12k_smd_ctx_to_ieee80211_ctx(struct ath12k_smd_ctx *ctx,
 	 */
 	ath12k_smd_ctx_set_vendor_tlv(ctx, i80211_ctx);
 }
+EXPORT_SYMBOL(ath12k_smd_ctx_to_ieee80211_ctx);
 
 void ath12k_smd_update_ctx_to_stack(struct ath12k_smd_info *smd_info,
 				    struct ath12k_smd_ctx_req *req)
@@ -2056,6 +2064,41 @@ deliver:
 	if (i80211_ctx)
 		kfree(i80211_ctx->drv_ctx);
 }
+
+void ath12k_smd_update_ctx_for_user(struct ath12k_smd_info *smd_info,
+				    struct ath12k_smd_ctx_req *req)
+{
+	struct cfg80211_smd_transition_info st_info = {};
+	struct ieee80211_smd_ctx i80211_ctx = {};
+	struct ieee80211_vif *vif = req->vif;
+	u8 sta_addr[ETH_ALEN];
+	bool ctx_complete;
+
+	lockdep_assert_held(&smd_info->smd_lock);
+	lockdep_assert_held(&req->lock);
+
+	vif = req->vif;
+	ctx_complete = (req->state == SMD_CTX_COMPLETE);
+
+	if (!ctx_complete)
+		ath12k_dbg_level(NULL, ATH12K_DBG_SMD, ATH12K_DBG_L3,
+				 "User-requested SMD ctx for %pM  request is not complete",
+				 req->sta_addr);
+	else
+		ath12k_smd_ctx_to_ieee80211_ctx(&req->ctx, &i80211_ctx);
+
+	memcpy(sta_addr, req->sta_addr, ETH_ALEN);
+
+	st_info.type = (u8)req->type;
+	st_info.ctx = ctx_complete ? &i80211_ctx : NULL;
+
+	spin_unlock_bh(&req->lock);
+	spin_unlock_bh(&smd_info->smd_lock);
+
+	ieee80211_get_smd_ctx_done(vif, sta_addr, &st_info);
+	kfree(i80211_ctx.drv_ctx);
+}
+EXPORT_SYMBOL(ath12k_smd_update_ctx_for_user);
 
 static bool ath12k_smd_ctx_hw_completion(struct ath12k_smd_info *smd_info,
 					 struct ath12k_smd_ctx_req *req,
@@ -2202,8 +2245,12 @@ ath12k_smd_ctx_hw_tid_cb_vendor_v1(void *cb_data, struct ath12k_smd_ctx_req *req
 		tx_cb_data = (struct ath12k_smd_ctx_tx_cb_per_tid *)cb_data;
 
 		if (tid != ATH12K_SMD_TX_MGMT_TID) {
-			req->ctx.vendor_ctx.ctx_v1.dl_data_lsn_offset[tid] =
-				tx_cb_data->lsn_offset;
+			if (req->exec_via_target &&
+			    test_bit(ATH12K_SMD_CTX_VALID_DL_SN, req->ctx.valid_ctx_bmap))
+				req->ctx.vendor_ctx.ctx_v1.dl_data_lsn_offset[tid] = 0;
+			else
+				req->ctx.vendor_ctx.ctx_v1.dl_data_lsn_offset[tid] =
+					tx_cb_data->lsn_offset;
 			return;
 		}
 
