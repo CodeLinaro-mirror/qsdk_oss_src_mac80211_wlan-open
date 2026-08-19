@@ -3367,6 +3367,9 @@ static void ath12k_check_for_valid_chanctx(struct ath12k *ar)
 			continue;
 
 		if (!ath12k_mac_is_bridge_vdev(arvif) && !arvif->chanctx.def.chan) {
+			ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+				   "Del arvif vdev %u MAC %pM from radio hw_link_id %d list\n",
+				   arvif->vdev_id, arvif->addr, ar->hw_link_id);
 			list_del(&arvif->list);
 			arvif->ar = NULL;
 		} else if (arvif->chanctx.def.chan) {
@@ -3554,8 +3557,16 @@ static void ath12k_core_pre_reconfigure_recovery(struct ath12k_base *ab)
 		ah = ar->ah;
 
 		if (!ah || ah->state == ATH12K_HW_STATE_OFF ||
-		    ah->state == ATH12K_HW_STATE_TM)
+		    ah->state == ATH12K_HW_STATE_TM) {
+			ath12k_dbg(ab, ATH12K_DBG_MAC,
+				   "radio hw_link_id %d skipped pre reconfigure recovery, ah_valid %d state %d\n",
+				   ar->hw_link_id, !!ah, ah ? ah->state : -1);
 			continue;
+		}
+
+		ath12k_dbg(ab, ATH12K_DBG_MAC,
+			   "Invoke init flags reset for radio hw_link_id %d\n",
+			   ar->hw_link_id);
 
 		wiphy_lock(ah->hw->wiphy);
 
@@ -3567,9 +3578,17 @@ static void ath12k_core_pre_reconfigure_recovery(struct ath12k_base *ab)
 			ath12k_arvif_abort_cu_notify(ah, arvif);
 
 			arvif->is_started = false;
+			if (arvif->is_created) {
+				spin_lock_bh(&ar->data_lock);
+				ar->created_vdev_map &= ~(1LL << arvif->vdev_id);
+				spin_unlock_bh(&ar->data_lock);
+			}
 			arvif->is_created = false;
 			arvif->is_up = false;
 			arvif->spectral_enabled = false;
+			ath12k_dbg(ab, ATH12K_DBG_MAC,
+				   "init flags reset for MAC %pM vdev %d\n",
+				   arvif->addr, arvif->vdev_id);
 		}
 
 #ifdef CPTCFG_ATH12K_SPECTRAL
@@ -3754,8 +3773,12 @@ static void ath12k_core_restart(struct work_struct *work)
 
 			spin_lock_bh(&ar->data_lock);
 			ath12k_check_for_valid_chanctx(ar);
-			if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE0)
+			if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE0) {
+				ath12k_dbg(ab, ATH12K_DBG_MAC,
+					   "Initialize arvifs list for radio hw_link_id %d\n",
+					   ar->hw_link_id);
 				INIT_LIST_HEAD(&ar->arvifs);
+			}
 			spin_unlock_bh(&ar->data_lock);
 		}
 
