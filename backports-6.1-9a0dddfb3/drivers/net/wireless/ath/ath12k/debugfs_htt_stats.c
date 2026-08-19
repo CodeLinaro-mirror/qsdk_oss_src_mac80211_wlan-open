@@ -15862,7 +15862,8 @@ static ssize_t ath12k_read_htt_stats_type(struct file *file,
 
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
 
-	if (ar->ab->is_bypassed) {
+	if (ar->ab->is_bypassed ||
+	    test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)) {
 		wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
 		return -ENETDOWN;
 	}
@@ -15913,7 +15914,8 @@ static ssize_t ath12k_write_htt_stats_type(struct file *file,
 
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
 
-	if (ar->ab->is_bypassed) {
+	if (ar->ab->is_bypassed ||
+	    test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)) {
 		wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
 		return -ENETDOWN;
 	}
@@ -16118,7 +16120,8 @@ static ssize_t ath12k_read_htt_stats_reset(struct file *file,
 
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
 
-	if (ar->ab->is_bypassed) {
+	if (ar->ab->is_bypassed ||
+	    test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)) {
 		wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
 		return -ENETDOWN;
 	}
@@ -16149,7 +16152,8 @@ static ssize_t ath12k_write_htt_stats_reset(struct file *file,
 
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
 
-	if (ar->ab->is_bypassed) {
+	if (ar->ab->is_bypassed ||
+	    test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)) {
 		wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
 		return -ENETDOWN;
 	}
