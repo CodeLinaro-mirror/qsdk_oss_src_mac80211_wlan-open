@@ -3965,7 +3965,8 @@ static void ath12k_core_mlo_recover_station(struct ath12k_hw_group *ag,
 	struct ath12k *ar;
 	int i, j;
 
-	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2)
+	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2 ||
+	    ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE3)
 		return;
 
 	for (i = 0; i < ag->num_devices; i++) {
@@ -4392,6 +4393,707 @@ static void ath12k_reset_group_key_slots(struct ath12k_link_vif *arvif,
 	}
 }
 
+static bool ath12k_sta_is_assoc_on_ab(struct ath12k_sta *ahsta,
+				      struct ath12k_base *ab)
+{
+	struct ath12k_link_sta *arsta;
+
+	arsta = rcu_dereference(ahsta->link[ahsta->assoc_link_id]);
+	if (!arsta || !arsta->arvif || !arsta->arvif->ar)
+		return false;
+	return arsta->arvif->ar->ab == ab;
+}
+
+static bool ath12k_sta_is_primary_on_ab(struct ath12k_sta *ahsta,
+					struct ath12k_base *ab)
+{
+	struct ath12k_link_sta *arsta;
+
+	arsta = rcu_dereference(ahsta->link[ahsta->primary_link_id]);
+	if (!arsta || !arsta->arvif || !arsta->arvif->ar)
+		return false;
+	return arsta->arvif->ar->ab == ab;
+}
+
+static u8 ath12k_mode3_select_new_primary(struct wiphy *wiphy,
+					  struct ath12k_sta *ahsta,
+					  u8 asserted_link_id)
+{
+	struct ath12k_link_sta *arsta;
+	unsigned long links = ahsta->links_map;
+	u8 link_id;
+
+	/* Fast path: assoc link survived — use it directly */
+	if (ahsta->assoc_link_id != asserted_link_id) {
+		arsta = wiphy_dereference(wiphy, ahsta->link[ahsta->assoc_link_id]);
+		if (arsta && arsta->arvif && arsta->arvif->ar) {
+			ahsta->recov.new_primary_hwlink_id =
+				arsta->arvif->ar->pdev->hw_link_id;
+			return ahsta->assoc_link_id;
+		}
+	}
+
+	/* Assoc link was asserted — pick any other surviving link */
+	for_each_set_bit(link_id, &links, ATH12K_NUM_MAX_LINKS) {
+		if (link_id == asserted_link_id)
+			continue;
+		arsta = wiphy_dereference(wiphy, ahsta->link[link_id]);
+		if (!arsta || !arsta->arvif || !arsta->arvif->ar)
+			continue;
+		ahsta->recov.new_primary_hwlink_id = arsta->arvif->ar->pdev->hw_link_id;
+		return link_id;
+	}
+
+	ahsta->recov.new_primary_hwlink_id = WMI_MLO_INVALID_MASTER_LL_ID;
+	return WMI_MLO_INVALID_MASTER_LL_ID;
+}
+
+/*
+ * ath12k_mode3_do_internal_migration - Wi-Fi 8 internal primary link update
+ *
+ * On Wi-Fi 8 (C-UMAC), FW does not send HTT_T2H_MSG_TYPE_PRIMARY_LINK_PEER_MIGRATE_IND.
+ * The host must call hw_ops->dp_peer_migration() directly after PEER_ASSOC_CONF to
+ * update primary_link_id and DP peer flags. This mirrors what the Wi-Fi 7 HTT
+ * indication handler does after receiving FW confirmation.
+ */
+static void ath12k_mode3_do_internal_migration(struct ath12k_sta *ahsta,
+					       struct ath12k_link_vif *arvif)
+{
+	const struct ath12k_hw_ops *hw_ops = arvif->ar->ab->hw_params->hw_ops;
+	struct ath12k_mac_pri_link_migr_peer_node node = {};
+
+	if (!hw_ops || !hw_ops->dp_peer_migration)
+		return;
+
+	node.ml_peer_id  = ahsta->ml_peer_id;
+	node.pri_link_id = ahsta->primary_link_id;
+
+	hw_ops->dp_peer_migration(arvif, &node);
+}
+
+static int ath12k_core_send_recovery_t2lm(struct ath12k_hw_group *ag)
+{
+	struct ath12k_wmi_tid_to_link_map_ap_params *map_params;
+	struct ath12k_link_vif *arvif;
+	struct ath12k_base *ab;
+	struct ath12k *ar;
+	int i, j, k, n, ret;
+
+	ath12k_info(ag->assert_ab,
+		    "Mode3 Applying T2LM configuration(one link per MLD AP)\n");
+
+	for (i = 0; i < ag->num_devices; i++) {
+		ab = ag->ab[i];
+		/* Skip the asserted chip — not operational during Phase 2 */
+		if (ab == ag->assert_ab || ab->is_bypassed)
+			continue;
+
+		map_params = kcalloc(TARGET_NUM_VDEVS, sizeof(*map_params),
+				     GFP_KERNEL);
+		if (!map_params)
+			return -ENOMEM;
+
+		for (j = 0; j < ab->num_radios; j++) {
+			ar = ab->pdevs[j].ar;
+			if (!ar)
+				continue;
+
+			n = 0;
+			spin_lock_bh(&ar->data_lock);
+			list_for_each_entry(arvif, &ar->arvifs, list) {
+				if (!arvif->ahvif ||
+				    arvif->ahvif->vdev_type != WMI_VDEV_TYPE_AP)
+					continue;
+				/* Skip repurposed links -- not eligible as T2LM anchor */
+				if (arvif->ahvif->repurposed_links & BIT(arvif->link_id))
+					continue;
+				/*
+				 * Per-MLD dedup: send T2LM only once per MLD AP.
+				 * mode3_t2lm_sent is set on the first non-repurposed
+				 * surviving link so sibling arvifs of the same MLD
+				 * (e.g. on another radio of the same chip) are skipped.
+				 */
+				if (arvif->ahvif->mode3_t2lm_sent)
+					continue;
+				if (n >= TARGET_NUM_VDEVS)
+					break;
+				memset(&map_params[n], 0, sizeof(map_params[n]));
+				rcu_read_lock();
+				if (ath12k_mac_populate_recovery_t2lm_params(arvif,
+						ag->assert_ab,
+						&map_params[n], true)) {
+					rcu_read_unlock();
+					continue;
+				}
+				rcu_read_unlock();
+				arvif->mode3_t2lm_anchor      = true;
+				arvif->ahvif->mode3_t2lm_sent = true;
+				n++;
+			}
+			spin_unlock_bh(&ar->data_lock);
+
+			for (k = 0; k < n; k++) {
+				ret = ath12k_wmi_ap_tid_to_link_map_config(ar,
+								&map_params[k]);
+				if (ret)
+					ath12k_warn(ab,
+						    "Mode3 T2LM set failed for vdev=%u hw_link=%u ret=%d Continuing for other vdevs..\n",
+						    map_params[k].vdev_id,
+						    map_params[k].hw_link_id, ret);
+				else
+					ath12k_info(ab,
+						    "Mode3 T2LM anchor set successfully! vdev=%u hw_link=%u\n",
+						    map_params[k].vdev_id,
+						    map_params[k].hw_link_id);
+			}
+		}
+		kfree(map_params);
+	}
+	ag->recovery_t2lm_active = true;
+	ath12k_info(ag->assert_ab, "Mode3 Phase 2: T2LM anchors set\n");
+	return 0;
+}
+
+static void ath12k_disassoc_non_mlo_peer(struct ath12k_sta *ahsta,
+					 struct ath12k_hw_group *ag)
+{
+	struct ath12k_link_sta *arsta = &ahsta->deflink;
+
+	if (arsta->arvif && arsta->arvif->ar &&
+	    arsta->arvif->ar->ab == ag->assert_ab)
+		ath12k_mac_peer_disassoc(ag->assert_ab, ath12k_ahsta_to_sta(ahsta),
+					 ahsta, ATH12K_DBG_MODE1_RECOVERY);
+}
+
+static int ath12k_core_mlo_unified_peer_update(struct ath12k_hw_group *ag)
+{
+	struct ath12k_hw *ah = ath12k_ag_to_ah(ag, 0);
+	struct ath12k_base *assert_ab = ag->assert_ab;
+	struct ath12k_sta *ahsta;
+	struct ath12k_link_sta *arsta, *arsta_iter;
+	struct hlist_node *arsta_tmp;
+	struct ath12k_link_vif *arvif;
+	struct ath12k_vif *ahvif;
+	struct ieee80211_sta *sta;
+	struct ath12k_wmi_peer_assoc_arg *peer_arg;
+	struct ath12k *ar;
+	u8 asserted_link_id, link_id;
+	bool master_crashed = 0;
+	bool assoc_crashed = 0;
+	unsigned long links;
+	int j, ret = 0;
+	u32 bkt;
+
+	ath12k_dbg(assert_ab, ATH12K_DBG_MODE1_RECOVERY,
+		    "Mode3: link_remove_phase : Migrating clients if required\n");
+
+	peer_arg = kzalloc(sizeof(*peer_arg), GFP_KERNEL);
+	if (!peer_arg)
+		return -ENOMEM;
+
+	wiphy_lock(ah->hw->wiphy);
+
+	/*
+	 * Walk only the arsta_list of the asserted chip's radios.
+	 * Every arsta there has a link on the asserted chip — no need to scan
+	 * the full dp_hw.peers list and filter per peer.  The asserted chip is
+	 * down so its arsta_list is stable: no concurrent add/remove.
+	 * arsta_lock is held to read ahsta, dropped for sleeping work, then
+	 * re-acquired before the next iteration.
+	 */
+	for (j = 0; j < assert_ab->num_radios; j++) {
+		ar = assert_ab->pdevs[j].ar;
+		if (!ar)
+			continue;
+
+		spin_lock_bh(&ar->arsta_lock);
+		ath12k_link_sta_for_each_safe(ar, bkt, arsta_iter, arsta_tmp) {
+			if (arsta_iter->is_self_peer || !arsta_iter->ahsta)
+				continue;
+
+			ahsta            = arsta_iter->ahsta;
+			asserted_link_id = arsta_iter->link_id;
+			spin_unlock_bh(&ar->arsta_lock);
+
+			sta = ath12k_ahsta_to_sta(ahsta);
+
+			if (!ahsta->is_mlo) {
+				ath12k_disassoc_non_mlo_peer(ahsta, ag);
+				spin_lock_bh(&ar->arsta_lock);
+				continue;
+			}
+
+			ahsta->recov.new_primary_hwlink_id = WMI_MLO_INVALID_MASTER_LL_ID;
+			if (ahsta->recov.removed_links) {
+				spin_lock_bh(&ar->arsta_lock);
+				continue;
+			}
+
+			arsta = wiphy_dereference(ah->hw->wiphy,
+						  ahsta->link[asserted_link_id]);
+			if (arsta) {
+				arsta->is_mode3_link_recovery = true;
+				ath12k_mode3_set_dp_recovery_flag(assert_ab, arsta, true);
+			}
+			master_crashed = ath12k_sta_is_primary_on_ab(ahsta, assert_ab);
+			assoc_crashed  = ath12k_sta_is_assoc_on_ab(ahsta, assert_ab);
+
+			if (master_crashed) {
+				ahsta->recov.new_master_ll_id =
+					ath12k_mode3_select_new_primary(
+						ah->hw->wiphy, ahsta, asserted_link_id);
+				if (ahsta->recov.new_master_ll_id ==
+				    WMI_MLO_INVALID_MASTER_LL_ID) {
+					ahsta->recov.removed_links = 0;
+					ath12k_mac_peer_disassoc(
+						assert_ab, sta, ahsta,
+						ATH12K_DBG_MODE1_RECOVERY);
+					spin_lock_bh(&ar->arsta_lock);
+					continue;
+				}
+				ath12k_warn(assert_ab,
+					    "Mode3: link_remove_phase: Primary migration for %pM chosen new link id %d\n",
+					    sta->addr, ahsta->recov.new_master_ll_id);
+				ahsta->primary_link_id = ahsta->recov.new_master_ll_id;
+			} else {
+				ahsta->recov.new_master_ll_id =
+					WMI_MLO_INVALID_MASTER_LL_ID;
+				ath12k_warn(assert_ab,
+					    "Mode3: link_remove_phase : No Primary migration for %pM  new link id %d\n",
+					    sta->addr, ahsta->recov.new_master_ll_id);
+			}
+
+			ahsta->recov.master_crashed = master_crashed;
+
+			if (assoc_crashed)
+				ahsta->recov.assoc_link = ahsta->primary_link_id;
+
+			ahsta->recov.removed_links = BIT(asserted_link_id);
+
+			/* Per-peer capability check: if master migration is not
+			 * supported (old-style Wi-Fi 7 PTQM only), fall back to
+			 * Mode2 for this peer.
+			 */
+			if (!ath12k_wmi_is_master_migration_supported(assert_ab)) {
+				ath12k_warn(assert_ab,
+					    "Mode3:  Primary migration not supported %pM, disassociating\n",
+					    sta->addr);
+				ahsta->recov.removed_links = 0;
+				ath12k_mac_peer_disassoc(assert_ab, sta, ahsta,
+							 ATH12K_DBG_MODE1_RECOVERY);
+				spin_lock_bh(&ar->arsta_lock);
+				continue;
+			}
+
+			memset(peer_arg, 0, sizeof(*peer_arg));
+
+			links = ahsta->links_map;
+			for_each_set_bit(link_id, &links, ATH12K_NUM_MAX_LINKS) {
+				arsta = wiphy_dereference(ah->hw->wiphy,
+							  ahsta->link[link_id]);
+				if (!arsta || !arsta->arvif || !arsta->arvif->ar)
+					continue;
+				if (arsta->arvif->ar->ab == assert_ab)
+					continue;
+				arvif = arsta->arvif;
+				ahvif = arvif->ahvif;
+
+				ath12k_peer_assoc_prepare(arvif->ar, arvif,
+					arsta, peer_arg, false,
+					wiphy_dereference(ah->hw->wiphy,
+						sta->link[link_id]));
+
+				ath12k_info(arvif->ar->ab,
+					    "Mode3 link_remove_phase: peer_assoc link_id=%u peer=%pM vdev=%u phymode=%u nss=%u flags=0x%x caps=0x%x ht_flag=%d vht_flag=%d he_flag=%d eht_flag=%d bw_40=%d bw_80=%d bw_160=%d bw_320=%d mlo_enabled=%d assoc_link=%d primary_umac=%d ll_idx=%u ml_peer_id=%u ml_recovery=%d new_master_ll_id=%u num_partners=%u link_add=%u link_del=%u\n",
+					    link_id, peer_arg->peer_mac,
+					    peer_arg->vdev_id, peer_arg->peer_phymode,
+					    peer_arg->peer_nss, peer_arg->peer_flags,
+					    peer_arg->peer_caps,
+					    peer_arg->ht_flag, peer_arg->vht_flag,
+					    peer_arg->he_flag, peer_arg->eht_flag,
+					    peer_arg->bw_40, peer_arg->bw_80,
+					    peer_arg->bw_160, peer_arg->bw_320,
+					    peer_arg->ml.enabled,
+					    peer_arg->ml.assoc_link,
+					    peer_arg->ml.primary_umac,
+					    peer_arg->ml.logical_link_idx,
+					    peer_arg->ml.ml_peer_id,
+					    peer_arg->ml.ml_recovery_reconfig,
+					    peer_arg->ml.new_master_ll_id,
+					    peer_arg->ml.num_partner_links,
+					    peer_arg->ml.mlo_link_add,
+					    peer_arg->ml.mlo_link_del);
+
+				if (ath12k_wmi_send_peer_assoc_cmd(
+					    arvif->ar, peer_arg) ||
+				    !wait_for_completion_timeout(
+					    &arvif->ar->peer_assoc_done,
+					    1 * HZ)) {
+					ath12k_warn(arvif->ar->ab,
+						    "Mode3: link_remove_phase peer assoc/timeout for %pM link %u\n",
+						    sta->addr, link_id);
+					goto fallback;
+				}
+
+				/* unblock data TIDs on this surviving link */
+				ath12k_mac_station_authorize(arvif->ar, arvif, arsta);
+			}
+
+			arvif = ath12k_get_arvif_from_link_id(
+					ahvif, ahsta->primary_link_id);
+			if (!arvif) {
+				ath12k_err(NULL, "Mode3: Unable to fetch vif for migration\n");
+				goto fallback;
+			}
+
+			if (master_crashed)
+				ath12k_mode3_do_internal_migration(ahsta, arvif);
+			if (assoc_crashed)
+				ath12k_mac_migrate_assoc_link(ahsta,
+					ahsta->primary_link_id);
+
+			ahsta->recov.removed_links = 0;
+			ath12k_info(assert_ab,
+				    "Mode3 link_remove_phase migrated %pM (asserted link %u → primary link %u)\n",
+				    sta->addr, asserted_link_id, ahsta->primary_link_id);
+			spin_lock_bh(&ar->arsta_lock);
+			continue;
+
+fallback:
+			ahsta->recov.removed_links = 0;
+			ath12k_warn(assert_ab,
+				    "Mode3: link_remove_phase peer update failed for %pM, disassociating\n",
+				    sta->addr);
+			ath12k_mac_peer_disassoc(assert_ab, sta, ahsta,
+						 ATH12K_DBG_MODE1_RECOVERY);
+			spin_lock_bh(&ar->arsta_lock);
+		}
+		spin_unlock_bh(&ar->arsta_lock);
+	}
+
+	wiphy_unlock(ah->hw->wiphy);
+	kfree(peer_arg);
+	return ret;
+}
+
+int ath12k_recovery_peer_create(struct ath12k_link_vif *arvif,
+				struct ath12k_link_sta *arsta,
+				struct ieee80211_sta *sta)
+{
+	struct ath12k_wmi_peer_create_arg arg = {};
+	struct ath12k_dp_peer *dp_peer = NULL;
+	struct ath12k_dp_hw *dp_hw = NULL;
+
+	arg.vdev_id    = arvif->vdev_id;
+	arg.peer_addr  = arsta->addr;
+	arg.peer_type  = WMI_PEER_TYPE_DEFAULT;
+	arg.ml_enabled = sta->mlo;
+
+	dp_hw = &arvif->ar->ah->dp_hw;
+	spin_lock_bh(&dp_hw->peer_hash_lock);
+	dp_peer = ath12k_dp_peer_find_by_addr_and_sta(dp_hw,
+					       sta->addr, sta);
+	spin_unlock_bh(&dp_hw->peer_hash_lock);
+
+	if (dp_peer) {
+		arg.peer_id    = dp_peer->peer_id;
+		arg.sta_id     = dp_peer->sta_id;
+	}
+
+	return ath12k_peer_create(arvif->ar, arvif, sta, &arg);
+}
+
+static int ath12k_core_mlo_link_readd(struct ath12k_hw_group *ag)
+{
+	struct ath12k_base *assert_ab = ag->assert_ab;
+	struct ath12k_sta *ahsta;
+	struct ath12k_link_sta *arsta, *arsta_s;
+	struct hlist_node *arsta_tmp;
+	struct ath12k_link_vif *arvif, *arvif_s;
+	struct ieee80211_sta *sta;
+	struct ath12k_wmi_peer_assoc_arg *peer_arg;
+	struct ieee80211_link_sta *link_sta;
+	struct ath12k *ar;
+	u8 asserted_link_id, link_id;
+	unsigned long links;
+	int j, ret = 0;
+	u32 flags = 0, bkt;
+
+	ath12k_dbg(assert_ab, ATH12K_DBG_MODE1_RECOVERY,
+		    "Mode3 Re-adding Asserted link back on each peer\n");
+
+	peer_arg = kzalloc(sizeof(*peer_arg), GFP_KERNEL);
+	if (!peer_arg)
+		return -ENOMEM;
+
+	for (j = 0; j < assert_ab->num_radios; j++) {
+		ar = assert_ab->pdevs[j].ar;
+		if (!ar)
+			continue;
+
+		spin_lock_bh(&ar->arsta_lock);
+		ath12k_link_sta_for_each_safe(ar, bkt, arsta, arsta_tmp) {
+			if (arsta->is_self_peer || !arsta->ahsta)
+				continue;
+			if (!arsta->is_mode3_link_recovery)
+				continue;
+
+			ahsta            = arsta->ahsta;
+			asserted_link_id = arsta->link_id;
+			arvif            = arsta->arvif;
+			spin_unlock_bh(&ar->arsta_lock);
+
+			sta = ath12k_ahsta_to_sta(ahsta);
+
+			if (!arvif) {
+				spin_lock_bh(&ar->arsta_lock);
+				continue;
+			}
+
+			ret = ath12k_recovery_peer_create(arvif, arsta, sta);
+			if (ret) {
+				ath12k_warn(assert_ab,
+					    "Mode3: peer create failed for %pM: %d\n",
+					    sta->addr, ret);
+				goto readd_fallback;
+			}
+
+			memset(peer_arg, 0, sizeof(*peer_arg));
+
+			ahsta->recov.added_links      = BIT(asserted_link_id);
+			ahsta->recov.new_master_ll_id = WMI_MLO_INVALID_MASTER_LL_ID;
+
+			link_sta = wiphy_dereference(ag->ah[0]->hw->wiphy,
+						     sta->link[asserted_link_id]);
+			ath12k_peer_assoc_prepare(arvif->ar, arvif,
+						  arsta, peer_arg,
+						  false, link_sta);
+
+			ath12k_info(assert_ab,
+				    "Mode3 link_readd_phase : peer_assoc (asserted link) link_id=%u peer=%pM vdev=%u phymode=%u nss=%u flags=0x%x caps=0x%x ht_flag=%d vht_flag=%d he_flag=%d eht_flag=%d bw_40=%d bw_80=%d bw_160=%d bw_320=%d mlo_enabled=%d assoc_link=%d primary_umac=%d ll_idx=%u ml_peer_id=%u ml_recovery=%d new_master_ll_id=%u num_partners=%u mlo link add=%u mlo link del=%u\n",
+				    asserted_link_id, peer_arg->peer_mac,
+				    peer_arg->vdev_id, peer_arg->peer_phymode,
+				    peer_arg->peer_nss, peer_arg->peer_flags,
+				    peer_arg->peer_caps,
+				    peer_arg->ht_flag, peer_arg->vht_flag,
+				    peer_arg->he_flag, peer_arg->eht_flag,
+				    peer_arg->bw_40, peer_arg->bw_80,
+				    peer_arg->bw_160, peer_arg->bw_320,
+				    peer_arg->ml.enabled,
+				    peer_arg->ml.assoc_link,
+				    peer_arg->ml.primary_umac,
+				    peer_arg->ml.logical_link_idx,
+				    peer_arg->ml.ml_peer_id,
+				    peer_arg->ml.ml_recovery_reconfig,
+				    peer_arg->ml.new_master_ll_id,
+				    peer_arg->ml.num_partner_links,
+				    peer_arg->ml.mlo_link_add,
+				    peer_arg->ml.mlo_link_del);
+
+			ret = ath12k_wmi_send_peer_assoc_cmd(arvif->ar, peer_arg);
+
+			if (ret ||
+			    !wait_for_completion_timeout(
+					&arvif->ar->peer_assoc_done,
+					1 * HZ)) {
+				ath12k_warn(assert_ab,
+					    "Mode3: link_readd_phase peer assoc failed for %pM: %d\n",
+					    sta->addr, ret);
+				goto readd_fallback;
+			}
+
+			/* --- Peer assoc on all surviving (non-asserted) links ---
+			 *
+			 * The FW on each surviving chip must be informed that the
+			 * asserted link has been re-added.  ath12k_peer_assoc_h_mlo()
+			 * uses mode3_added_links to set mlo_link_add=true in the
+			 * partner_info TLV for the re-added link.
+			 */
+			links = ahsta->links_map;
+			for_each_set_bit(link_id, &links, ATH12K_NUM_MAX_LINKS) {
+				arsta_s = wiphy_dereference(ag->ah[0]->hw->wiphy,
+							    ahsta->link[link_id]);
+				if (!arsta_s || !arsta_s->arvif || !arsta_s->arvif->ar)
+					continue;
+				if (arsta_s->arvif->ar->ab == assert_ab)
+					continue;
+				arvif_s = arsta_s->arvif;
+
+				memset(peer_arg, 0, sizeof(*peer_arg));
+				link_sta = wiphy_dereference(ag->ah[0]->hw->wiphy,
+							     sta->link[link_id]);
+				ath12k_peer_assoc_prepare(arvif_s->ar,
+							  arvif_s,
+							  arsta_s,
+							  peer_arg,
+							  false, link_sta);
+
+				ath12k_info(arvif_s->ar->ab,
+					    "Mode3 link_readd_phase: peer_assoc (surviving) link_id=%u peer=%pM vdev=%u mlo_enabled=%d assoc_link=%d primary_umac=%d ll_idx=%u ml_peer_id=%u ml_recovery=%d new_master_ll_id=%u num_partners=%u link_add=%u link_del=%u\n",
+					    link_id, peer_arg->peer_mac,
+					    peer_arg->vdev_id,
+					    peer_arg->ml.enabled,
+					    peer_arg->ml.assoc_link,
+					    peer_arg->ml.primary_umac,
+					    peer_arg->ml.logical_link_idx,
+					    peer_arg->ml.ml_peer_id,
+					    peer_arg->ml.ml_recovery_reconfig,
+					    peer_arg->ml.new_master_ll_id,
+					    peer_arg->ml.num_partner_links,
+					    peer_arg->ml.mlo_link_add,
+					    peer_arg->ml.mlo_link_del);
+
+				ret = ath12k_wmi_send_peer_assoc_cmd(
+					arvif_s->ar, peer_arg);
+				if (ret || !wait_for_completion_timeout(
+					    &arvif_s->ar->peer_assoc_done, 1 * HZ)) {
+					ath12k_warn(arvif_s->ar->ab,
+						    "Mode3: link_readd_phase peer assoc (surviving) failed for %pM link %u: %d\n",
+						    sta->addr, link_id, ret);
+					ahsta->recov.added_links = 0;
+					goto readd_fallback;
+				}
+			}
+			ahsta->recov.added_links = 0;
+
+			ath12k_info(assert_ab,
+				    "Mode3 link_readd_phase key install %pM on asserted link %u\n",
+				    sta->addr, asserted_link_id);
+
+			for (int ki = 0; ki < ARRAY_SIZE(arsta->keys); ki++) {
+				if (!arsta->keys[ki])
+					continue;
+				if (!(arsta->keys[ki]->flags &
+				     IEEE80211_KEY_FLAG_PAIRWISE))
+					continue;
+				flags |= WMI_KEY_PAIRWISE;
+				ret = ath12k_install_key(arvif, arsta->keys[ki],
+							 SET_KEY, arsta->addr,
+							 flags, NULL);
+				if (ret) {
+					ath12k_warn(assert_ab, "failed to add peer key %d: %d\n",
+						    ki, ret);
+					goto readd_fallback;
+				}
+				break;
+			}
+
+			ret = ath12k_mac_station_authorize(arvif->ar, arvif, arsta);
+			if (ret) {
+				ath12k_warn(assert_ab, "Unable to authorize peer %pM vdev %d: %d\n",
+					    sta->addr, arvif->vdev_id, ret);
+				goto readd_fallback;
+			}
+
+			arsta = wiphy_dereference(ag->ah[0]->hw->wiphy,
+						  ahsta->link[asserted_link_id]);
+			if (arsta) {
+				arsta->is_mode3_link_recovery = false;
+				ath12k_mode3_set_dp_recovery_flag(
+					assert_ab, arsta, false);
+			}
+
+			ahsta->recov.master_crashed = false;
+			ath12k_info(assert_ab,
+				    "Mode3 link_readd_phase: restored %pM on link %u\n",
+				    sta->addr, asserted_link_id);
+			spin_lock_bh(&ar->arsta_lock);
+			continue;
+
+readd_fallback:
+			arsta = wiphy_dereference(ag->ah[0]->hw->wiphy,
+						  ahsta->link[asserted_link_id]);
+			if (arsta)
+				arsta->is_mode3_link_recovery = false;
+			ahsta->recov.added_links = 0;
+			ahsta->recov.removed_links = 0;
+			ahsta->recov.master_crashed = false;
+			ath12k_warn(assert_ab,
+				    "Mode3: link_readd failed for %pM, disassociating\n",
+				    sta->addr);
+			ath12k_info(assert_ab,
+				    "mode3: link_readd failed: peer %pM asserted_peer_pending=%d hw_link=%u - manual HTT unmap will fire on teardown\n",
+				    sta->addr, ahsta->recov.asserted_peer_pending,
+				    ahsta->recov.asserted_hw_link_id);
+			ath12k_mac_peer_disassoc(assert_ab, sta, ahsta,
+						 ATH12K_DBG_MODE1_RECOVERY);
+			spin_lock_bh(&ar->arsta_lock);
+		}
+		spin_unlock_bh(&ar->arsta_lock);
+	}
+
+	kfree(peer_arg);
+	return ret;
+}
+
+static int ath12k_core_clear_recovery_t2lm(struct ath12k_hw_group *ag)
+{
+	struct ath12k_wmi_tid_to_link_map_ap_params *map_params;
+	struct ath12k_link_vif *arvif;
+	struct ath12k_base *ab;
+	struct ath12k *ar;
+	int i, j, k, n;
+
+	/*
+	 * Clear T2LM on every arvif marked as T2LM anchor in Phase 2.
+	 * Multiple MLD APs may share the same radio; collect all matching
+	 * anchors per radio under data_lock then send WMI outside the lock.
+	 */
+	for (i = 0; i < ag->num_devices; i++) {
+		ab = ag->ab[i];
+		if (ab->is_bypassed)
+			continue;
+
+		map_params = kcalloc(TARGET_NUM_VDEVS, sizeof(*map_params),
+				     GFP_KERNEL);
+		if (!map_params)
+			return -ENOMEM;
+
+		for (j = 0; j < ab->num_radios; j++) {
+			ar = ab->pdevs[j].ar;
+			if (!ar)
+				continue;
+
+			n = 0;
+			spin_lock_bh(&ar->data_lock);
+			list_for_each_entry(arvif, &ar->arvifs, list) {
+				if (!arvif->mode3_t2lm_anchor)
+					continue;
+				if (n >= TARGET_NUM_VDEVS)
+					break;
+				memset(&map_params[n], 0, sizeof(map_params[n]));
+				rcu_read_lock();
+				if (ath12k_mac_populate_recovery_t2lm_params(
+						arvif, ag->assert_ab,
+						&map_params[n], false)) {
+					arvif->mode3_t2lm_anchor      = false;
+					arvif->ahvif->mode3_t2lm_sent = false;
+					rcu_read_unlock();
+					continue;
+				}
+				rcu_read_unlock();
+				arvif->mode3_t2lm_anchor      = false;
+				arvif->ahvif->mode3_t2lm_sent = false;
+				n++;
+			}
+			spin_unlock_bh(&ar->data_lock);
+
+			for (k = 0; k < n; k++) {
+				ath12k_wmi_ap_tid_to_link_map_config(ar, &map_params[k]);
+				ath12k_dbg(ab, ATH12K_DBG_MODE1_RECOVERY,
+					   "Mode3 T2LM cleared on vdev=%u hw_link=%u\n",
+					   map_params[k].vdev_id,
+					   map_params[k].hw_link_id);
+			}
+		}
+		kfree(map_params);
+	}
+	ag->recovery_t2lm_active = false;
+	ag->assert_ab             = NULL;
+	ath12k_info(ag->ab[0], "Mode3  T2LM cleared, recovery complete\n");
+	return 0;
+}
+
 /* Wrapper function for recovery after crash
  * This recovery function will be called for
  * both Mode 1 and Mode 2. Because both Mode
@@ -4557,7 +5259,8 @@ skip_link_info:
 		if (partner_ab->is_bypassed)
 			continue;
 
-		if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2)
+		if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2 ||
+		    ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE3)
 			continue;
 
 		for (j = 0; j < partner_ab->num_radios; j++) {
@@ -4606,12 +5309,15 @@ skip_link_info:
 		}
 	}
 
-	ath12k_mac_reconfig_complete(ah->hw, IEEE80211_RECONFIG_TYPE_RESTART);
-
-	/* Send disassoc to MLD STA */
-	ath12k_core_peer_disassoc(ag, ab);
+	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE3) {
+		ath12k_core_mlo_link_readd(ag);
+		ath12k_core_clear_recovery_t2lm(ag);
+	} else {
+		ath12k_core_peer_disassoc(ag, ab);
+	}
 	ab->recovery_start = false;
 	ath12k_info(ab, "Mode %d recovery completed\n", ag->recovery_mode - 1);
+	ath12k_mac_reconfig_complete(ah->hw, IEEE80211_RECONFIG_TYPE_RESTART);
 	wiphy_unlock(ah->hw->wiphy);
 	return ret;
 }
@@ -4833,6 +5539,12 @@ static void ath12k_update_recovery_mode(struct ath12k_hw_group *ag,
 	if (asserted_ab->recovery_mode_address) {
 		/*get current recovery mode as per FW from shmem*/
 		switch (*asserted_ab->recovery_mode_address) {
+		case ATH12K_MLO_RECOVERY_MODE3:
+			ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE3;
+			ag->assert_ab     = asserted_ab;
+			ath12k_info(asserted_ab,
+				    "Mode3: client-retaining recovery selected\n");
+			break;
 		case ATH12K_MLO_RECOVERY_MODE2:
 			ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE2;
 			break;
@@ -4853,7 +5565,8 @@ static void ath12k_update_recovery_mode(struct ath12k_hw_group *ag,
 
 	/* Fallback to mode0 recovery during a cumac HW crash when Mode-2 is selected */
 	if (asserted_ab->is_cumac_chip &&
-	    ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2 &&
+	    (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2 ||
+	     ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE3) &&
 	    !test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &asserted_ab->dev_flags)) {
 		ath12k_info(asserted_ab, "Recovery is falling back to Mode0 due to cumac HW assert\n");
 		ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
@@ -5039,7 +5752,20 @@ static void ath12k_core_reset(struct work_struct *work)
 			/* wake queues here as ping should continue for
 			 * legacy clients in non-asserted chipsets
 			 */
-			ath12k_core_peer_disassoc(ag, ab);
+			if (ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE3) {
+				ath12k_core_peer_disassoc(ag, ab);
+			} else {
+				if (ath12k_core_send_recovery_t2lm(ag) ||
+				    ath12k_core_mlo_unified_peer_update(ag)) {
+					ath12k_warn(ab,
+						    "Mode3: T2LM and Peer Reconfiguration failed, falling to Mode0\n");
+					ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
+					ag->assert_ab     = NULL;
+				} else {
+					ath12k_info(ag->assert_ab,
+						    "Mode3 Asserted, MLO Client-retaining recovery - Steering T2LM/Link removal Success\n");
+				}
+			}
 			for (i = 0; i < ag->num_hw; i++) {
 				ah = ag->ah[i];
 				if (!ah)
@@ -5075,7 +5801,8 @@ static void ath12k_core_reset(struct work_struct *work)
 
 	ath12k_dbg(ab, ATH12K_DBG_BOOT, "waiting recovery start...\n");
 
-	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2)
+	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2 ||
+	    ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE3)
 		ath12k_partner_chip_power_state_info(ag, FW_ASSERTED_CHIP_PWR_DOWN);
 
 	if (ab->fw_recovery_support) {
@@ -5126,7 +5853,8 @@ static void ath12k_core_reset(struct work_struct *work)
 	}
 
 	/*As a foolproof clear ag->block_peer_create unconditionally for Mode-0*/
-	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2)
+	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2 ||
+	    ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE3)
 		ath12k_partner_chip_power_state_info(ag,
 						     FW_ASSERTED_CHIP_PWR_UP);
 	else
@@ -5992,8 +6720,16 @@ void ath12k_core_send_fw_hang_cmd(struct ath12k_base *ab,
 		ath12k_info(ab, "Mode 1 Recovery is depricated, setting recovery as Mode 2\n");
 		fallthrough;
 	case ATH12K_FW_RECOVERY_ENABLE_MODE2:
-		if (test_bit(WMI_SERVICE_MLO_MODE2_RECOVERY_SUPPORTED,
+		if (!ath12k_cfg_get(ab, ATH12K_CFG_MLO_FORCE_MODE2_RECOVERY) &&
+		    test_bit(WMI_SERVICE_MLO_MODE3_RECOVERY_SUPPORTED,
 			     ab->wmi_ab.svc_map)) {
+			recovery_mode = ATH12K_WMI_FW_HANG_RECOVERY_MODE3;
+			ath12k_info(ab, "FW Supports Client retaining Mode 3 Recovery\n");
+			break;
+		} else if (test_bit(WMI_SERVICE_MLO_MODE2_RECOVERY_SUPPORTED,
+				    ab->wmi_ab.svc_map)) {
+			if (ath12k_cfg_get(ab, ATH12K_CFG_MLO_FORCE_MODE2_RECOVERY))
+				ath12k_info(ab, "mlo_force_mode2_recovery set, using Mode 2\n");
 			recovery_mode = ATH12K_WMI_FW_HANG_RECOVERY_MODE2;
 		} else {
 			ath12k_info(ab, "FW doesn't support Mode 2 fallback to Mode 0\n");

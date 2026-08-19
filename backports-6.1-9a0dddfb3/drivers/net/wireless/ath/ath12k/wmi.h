@@ -2958,6 +2958,7 @@ enum wmi_tlv_service {
 	WMI_TLV_SERVICE_SHARED_CU_MEM_MODEL_COUNT_DOWN = 497,
 	WMI_SERVICE_ML_PEER_MASTER_MIGRATION_SUPPORT = 500,
 	WMI_SERVICE_PDEV_SET_CUMAC_CHIP_CMD_SUPPORT = 520,
+	WMI_SERVICE_MLO_MODE3_RECOVERY_SUPPORTED = 524,
 
 	/* MAPC / C-TDMA (802.11bn) service bits, per FW wmi_services.h */
 	WMI_TLV_SERVICE_UHR_MAX_CO_AP_PEERS = 511,
@@ -5368,6 +5369,7 @@ enum wmi_fw_hang_recovery_mode_type {
 	ATH12K_WMI_FW_HANG_RECOVERY_MODE0,
 	ATH12K_WMI_FW_HANG_RECOVERY_MODE1,
 	ATH12K_WMI_FW_HANG_RECOVERY_MODE2,
+	ATH12K_WMI_FW_HANG_RECOVERY_MODE3 = 204,
 };
 
 /* type, 0:unused 1: ASSERT 2: not respond detect command
@@ -5587,6 +5589,8 @@ struct peer_assoc_mlo_params {
 	bool ml_reconfig;
 	bool mlo_link_add;
 	bool mlo_link_del;
+	bool ml_recovery_reconfig;
+	u8   new_master_ll_id;
 };
 
 struct wmi_rate_set_arg {
@@ -5975,11 +5979,24 @@ struct wmi_peer_assoc_mlo_params {
 	__le32 max_num_simultaneous_links;
 	__le32 nstr_indication_bitmap;
 	__le32 recommended_max_num_simultaneous_links;
-	struct {
-		__le32 ml_reconfig: 1,
-		       unused: 31;
+	union {
+		__le32 ml_reconfig__word;
+		struct {
+			__le32 ml_reconfig:          1; /* bit 0: dynamic ML reconfig */
+			__le32 ml_recovery_reconfig: 1; /* bit 1: Mode3 reconfig */
+			__le32 unused:              30;
+		};
 	};
+	__le32 new_master_ll_id;
 } __packed;
+
+/* Accessor macros matching FW wmi_unified.h definitions */
+#define WMI_ASSOC_MLO_PEER_ML_RECONFIG_GET(w)             WMI_GET_BITS(w, 0, 1)
+#define WMI_ASSOC_MLO_PEER_ML_RECONFIG_SET(w, v)          WMI_SET_BITS(w, 0, 1, v)
+#define WMI_ASSOC_MLO_PEER_ML_RECOVERY_RECONFIG_GET(w)    WMI_GET_BITS(w, 1, 1)
+#define WMI_ASSOC_MLO_PEER_ML_RECOVERY_RECONFIG_SET(w, v) WMI_SET_BITS(w, 1, 1, v)
+
+#define WMI_MLO_INVALID_MASTER_LL_ID	0xFF
 
 #define WMI_MGMTQ_LINK_ID	GENMASK(2, 0)
 #define WMI_MGMTQ_MSDU_TYPE	GENMASK(7, 3)

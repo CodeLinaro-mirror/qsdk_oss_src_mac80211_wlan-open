@@ -1787,6 +1787,7 @@ static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 	.dp_link_peer_assign_id = ath12k_wifi8_dp_link_peer_assign_id,
 	.dp_link_peer_unassign_id = ath12k_wifi8_dp_link_peer_unassign_id,
 	.peer_cleanup_indication = ath12k_dp_htt_peer_cleanup_indication,
+	.peer_drv_cleanup_indication = ath12k_dp_peer_cleanup_indication,
 	.dp_ppeds_tx_completion_handler = ath12k_wifi8_ppeds_tx_completion_handler,
 	.dp_link_peer_assoc = ath12k_wifi8_dp_link_peer_assoc,
 	.dp_get_peer_mgmt_flowq = ath12k_wifi8_get_mgmt_flowq,

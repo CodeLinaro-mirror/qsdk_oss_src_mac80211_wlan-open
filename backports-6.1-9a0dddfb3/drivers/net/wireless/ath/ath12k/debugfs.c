@@ -7837,7 +7837,7 @@ static ssize_t ath12k_debug_write_fw_recovery(struct file *file,
 
 	if (value < ATH12K_FW_RECOVERY_DISABLE ||
 	    value > ATH12K_FW_RECOVERY_ENABLE_MODE2) {
-		ath12k_warn(ab, "Please enter: 0 = Disable, 1 = Mode - 0 recovery, 2/3 = Mode - 2 recovery\n");
+		ath12k_warn(ab, "Please enter: 0 = Disable, 1 = Mode-0 recovery, 2/3 = Mode-2 or Mode-3 recovery based on HW support\n");
 		ret = -EINVAL;
 		goto exit;
 	}

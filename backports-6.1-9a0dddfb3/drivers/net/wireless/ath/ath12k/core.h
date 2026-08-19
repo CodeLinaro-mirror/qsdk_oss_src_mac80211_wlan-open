@@ -625,6 +625,7 @@ enum ath12k_mlo_recovery_mode {
 	ATH12K_MLO_RECOVERY_MODE0 = 1,
 	ATH12K_MLO_RECOVERY_MODE1 = 2,
 	ATH12K_MLO_RECOVERY_MODE2 = 3,
+	ATH12K_MLO_RECOVERY_MODE3 = 4,
 };
 
 #define ATH12K_STATS_MGMT_FRM_TYPE_MAX 16
@@ -1029,6 +1030,7 @@ struct ath12k_link_vif {
 	u64 rx_pn_err_cnt;
 	/* Flag to enable peer_del_all optimization when link is going down */
 	bool peer_del_all_enable;
+	bool mode3_t2lm_anchor;
 
 	/* shared memory to firmware for critical update procedure */
 	struct ath12k_cu_mem *cu_mem;
@@ -1285,6 +1287,7 @@ struct ath12k_vif {
 	u8 roc_link_id;
 	struct ath12k_vlan_iface *vlan_iface;
 	bool mode0_recover_bridge_vdevs;
+	bool mode3_t2lm_sent;
 	u8 device_bitmap;
 	bool chanctx_peer_del_done;
 	u8 primary_link_id;
@@ -1457,6 +1460,7 @@ struct ath12k_link_sta {
 	s8 min_rssi;
 	s8 max_rssi;
 
+	bool is_mode3_link_recovery;
 	enum wmi_phy_mode phymode;
 	bool is_secured_peer;
 };
@@ -1507,6 +1511,17 @@ struct ath12k_smd_info {
 	u16 lsn_offset[IEEE80211_MAX_NUM_TIDS];
 	u32 tx_ba_buf_size[IEEE80211_MAX_NUM_TIDS];
 	u32 rx_ba_buf_size[IEEE80211_MAX_NUM_TIDS];
+};
+
+struct ath12k_mode3_recovery_params {
+	u8   new_master_ll_id;
+	u8   new_primary_hwlink_id;
+	u8   assoc_link;
+	u8   asserted_hw_link_id;
+	bool master_crashed;
+	bool asserted_peer_pending;
+	u16  removed_links;
+	u16  added_links;
 };
 
 struct ath12k_sta {
@@ -1567,6 +1582,7 @@ struct ath12k_sta {
 	/* Opaque RCU pointer to ath12k_dp_peer */
 	void __rcu *dp_peer;
 
+	struct ath12k_mode3_recovery_params recov;
 	struct ath12k_smd_info smd_info;
 
 	/*
@@ -2679,6 +2695,8 @@ struct ath12k_hw_group {
 	u8 cumac_chip_id;
 	bool cumac_selected;
 	bool cumac_enabled;
+	struct ath12k_base *assert_ab;
+	bool recovery_t2lm_active;
 };
 
 /* Holds WSI info specific to each device, excluding WSI group info */

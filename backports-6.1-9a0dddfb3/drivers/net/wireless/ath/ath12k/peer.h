@@ -94,6 +94,23 @@ int ath12k_wait_pending_deauth_disassoc_tx(struct ath12k *ar, const u8 *addr,
 				 &(_ar)->arsta_list[(_bkt)], hlist_addr)
 
 /**
+ * ath12k_link_sta_for_each_safe - iterate over all link STAs, safe against removal
+ * @_ar:    struct ath12k * whose arsta_list is walked
+ * @_bkt:   u32 bucket counter declared by the caller
+ * @_arsta: loop cursor (struct ath12k_link_sta *)
+ * @_tmp:   struct hlist_node * for safe-iteration temporary storage
+ *
+ * Caller must hold @_ar->arsta_lock.  Saves the next-node pointer so the lock
+ * may be dropped inside the body and re-acquired before the next iteration.
+ */
+#define ath12k_link_sta_for_each_safe(_ar, _bkt, _arsta, _tmp)		\
+	for ((_bkt) = 0;						\
+	     (_ar)->arsta_list && (_bkt) < BIT((_ar)->arsta_hash_bits);	\
+	     (_bkt)++)							\
+		hlist_for_each_entry_safe((_arsta), (_tmp),		\
+				 &(_ar)->arsta_list[(_bkt)], hlist_addr)
+
+/**
  * ath12k_ahsta_for_each - iterate over all MLD/STA entries in ag->ahsta_list
  * @_ag:    struct ath12k_hw_group * whose ahsta_list is walked
  * @_bkt:   u32 bucket counter declared by the caller
