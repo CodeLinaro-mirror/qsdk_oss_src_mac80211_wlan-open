@@ -10342,6 +10342,7 @@ int ath12k_wmi_send_afc_cmd_tlv(struct ath12k *ar, int data_type,
 		break;
 	default:
 		ath12k_dbg(ar->ab, ATH12K_DBG_WMI, "Unknown AFC command\n");
+		dev_kfree_skb(skb);
 		return -EINVAL;
 	}
 
@@ -11257,7 +11258,7 @@ ath12k_update_link_removal_params(struct ath12k_base *ab,
 	for (i = 0; i < num_link_removal_params; i++) {
 		info = &params[i];
 
-		if (info->hw_link_id > ATH12K_GROUP_MAX_RADIO) {
+		if (info->hw_link_id >= ATH12K_GROUP_MAX_RADIO) {
 			ath12k_warn(ab, "Wrong hw_link_id received:%d\n",
 				    info->hw_link_id);
 			continue;
@@ -11470,6 +11471,12 @@ static int wmi_process_mgmt_tx_comp(struct ath12k *ar, u32 desc_id,
 	if (ieee80211_is_mgmt(hdr->frame_control)) {
 		frm_stype = FIELD_GET(IEEE80211_FCTL_STYPE, hdr->frame_control);
 		vif = skb_cb->vif;
+		if (frm_stype >= ARRAY_SIZE(mgmt_frame_name)) {
+			ath12k_warn(ar->ab,
+				    "wmi mgmt tx compl: unknown frame subtype %u\n",
+				    frm_stype);
+			goto skip_mgmt_stats;
+		}
 		if (ATH12K_MGMT_MLME_FRAME(hdr->frame_control))
 			ath12k_dbg_level(ar->ab, ATH12K_DBG_MLME, ATH12K_DBG_L0,
 					 "Tx completion for %s frame to STA %pM status %u\n",
@@ -12040,7 +12047,7 @@ ath12k_pull_vdev_install_key_compl_ev(struct ath12k_base *ab, struct sk_buff *sk
 	}
 
 	arg->vdev_id = le32_to_cpu(ev->vdev_id);
-	arg->macaddr = ev->peer_macaddr.addr;
+	ether_addr_copy(arg->macaddr, ev->peer_macaddr.addr);
 	arg->key_idx = le32_to_cpu(ev->key_idx);
 	arg->key_flags = le32_to_cpu(ev->key_flags);
 	arg->status = le32_to_cpu(ev->status);
@@ -12071,7 +12078,7 @@ static int ath12k_pull_peer_assoc_conf_ev(struct ath12k_base *ab, struct sk_buff
 	}
 
 	peer_assoc_conf->vdev_id = le32_to_cpu(ev->vdev_id);
-	peer_assoc_conf->macaddr = ev->peer_macaddr.addr;
+	ether_addr_copy(peer_assoc_conf->macaddr, ev->peer_macaddr.addr);
 	peer_assoc_conf->status = le32_to_cpu(ev->status);
 
 	kfree(tb);
@@ -12366,6 +12373,9 @@ static int ath12k_wmi_rdy_parse(struct ath12k_base *ab, u16 tag, u16 len,
 
 		if (!(ab->num_radios > 1 && num_mac_addr >= ab->num_radios))
 			break;
+
+		if (len < ab->num_radios * sizeof(*addr_list))
+			return -EINVAL;
 
 		for (i = 0; i < ab->num_radios; i++) {
 			pdev = &ab->pdevs[i];
@@ -13768,10 +13778,10 @@ static int ath12k_wmi_tlv_services_parser(struct ath12k_base *ab,
 			} while (++j % WMI_AVAIL_SERVICE_BITS_IN_SIZE32);
 		}
 
-		ath12k_dbg(ab, ATH12K_DBG_WMI,
-			   "wmi_ext2_service_bitmap 0x%04x 0x%04x 0x%04x 0x%04x",
-			   wmi_ext2_service_bitmap[0], wmi_ext2_service_bitmap[1],
-			   wmi_ext2_service_bitmap[2], wmi_ext2_service_bitmap[3]);
+		for (i = 0; i < wmi_max_ext2_service_words; i++)
+			ath12k_dbg(ab, ATH12K_DBG_WMI,
+				   "wmi_ext2_service_bitmap[%u] 0x%04x",
+				   i, wmi_ext2_service_bitmap[i]);
 		break;
 	}
 	return 0;

@@ -6720,7 +6720,7 @@ struct wmi_vdev_install_key_compl_event {
 
 struct wmi_vdev_install_key_complete_arg {
 	u32 vdev_id;
-	const u8 *macaddr;
+	u8 macaddr[ETH_ALEN];
 	u32 key_idx;
 	u32 key_flags;
 	u32 status;
@@ -6777,7 +6777,7 @@ struct wmi_peer_assoc_conf_event {
 
 struct wmi_peer_assoc_conf_arg {
 	u32 vdev_id;
-	const u8 *macaddr;
+	u8 macaddr[ETH_ALEN];
 	u32 status; /* 0 - Pass; 1 - Failure */
 };
 
