@@ -402,3 +402,12 @@ config QCN_EXTN_MESH_SUPPORT
 	  11s mesh protocol. The Managed mesh peers are added and configured
 	  statically and traffic between these mesh peers is exchanged in
 	  3 address format.
+
+config ATHDEBUG
+        bool "Enable athdebug module support"
+        default y
+        help
+          This option enables ATHDEBUG module support. Thjis module provides
+          interface to enable/disable debug options and intermittent interface
+          to extend driver feature. It enable support for minidump across
+          ath12k, mac80211 and cfg80211 modules.

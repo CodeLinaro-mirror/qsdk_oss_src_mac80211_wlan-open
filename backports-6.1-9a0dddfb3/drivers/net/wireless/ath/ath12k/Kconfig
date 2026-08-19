@@ -214,7 +214,6 @@ config QCN_EXTN_MESH_SUPPORT
 
 config ATHDEBUG
 	bool "ath12k debugging module"
-	depends on ATH12K
 	help
 	  Enable athdebug module support, this module will help to
 	  enable various debugging feature such as debug mask, minidump,
