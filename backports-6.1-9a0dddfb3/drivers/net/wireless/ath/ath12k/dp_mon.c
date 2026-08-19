@@ -3159,6 +3159,12 @@ ath12k_dp_ext_mon_update_rx_config(struct ath12k_pdev_mon_dp *dp_mon_pdev,
 		memset(&curr_config->mo, 0, sizeof(curr_config->mo));
 		memset(&curr_config->fpmo, 0, sizeof(curr_config->fpmo));
 		memset(&curr_config->md, 0, sizeof(curr_config->md));
+		curr_config->fp.data_mpdu_tlv.mcast = 0xF;
+		curr_config->fp.data_mpdu_tlv.ucast = 0xF;
+		curr_config->fp.data_mpdu_tlv.null_frm = 0xF;
+		curr_config->fpmo.data_mpdu_tlv.mcast = 0xF;
+		curr_config->fpmo.data_mpdu_tlv.ucast = 0xF;
+		curr_config->fpmo.data_mpdu_tlv.null_frm = 0xF;
 	}
 	spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
 }
@@ -3792,6 +3798,13 @@ int ath12k_dp_ext_mon_alloc(struct ath12k_pdev_dp *dp_pdev)
 	rx_config = kzalloc(sizeof(*rx_config), GFP_KERNEL);
 	if (!rx_config)
 		return -ENOMEM;
+
+	rx_config->fp.data_mpdu_tlv.mcast = 0xF;
+	rx_config->fp.data_mpdu_tlv.ucast = 0xF;
+	rx_config->fp.data_mpdu_tlv.null_frm = 0xF;
+	rx_config->fpmo.data_mpdu_tlv.mcast = 0xF;
+	rx_config->fpmo.data_mpdu_tlv.ucast = 0xF;
+	rx_config->fpmo.data_mpdu_tlv.null_frm = 0xF;
 
 	INIT_LIST_HEAD(&rx_config->peer_list);
 	spin_lock_init(&dp_mon_pdev->rx_ext_mon_lock);

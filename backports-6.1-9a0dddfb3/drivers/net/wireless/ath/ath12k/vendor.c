@@ -14834,10 +14834,57 @@ ath12k_ext_mon_extract_filter_len(struct nlattr *len_attr,
 }
 
 static int
+ath12k_ext_mon_extract_data_mpdu_tlv(struct nlattr *attr,
+				     struct ath12k_ext_mon_data_mpdu_tlv_config *tlv)
+{
+	struct nlattr *tb[QCA_VENDOR_ATTR_EXT_MON_DATA_MPDU_TLV_MAX + 1] = {0};
+	int ret;
+
+	ret = nla_parse_nested(tb, QCA_VENDOR_ATTR_EXT_MON_DATA_MPDU_TLV_MAX,
+			       attr,
+			       ath12k_vendor_ext_mon_data_mpdu_tlv_policy, NULL);
+	if (ret)
+		return ret;
+
+	if (tb[QCA_VENDOR_ATTR_EXT_MON_DATA_MPDU_TLV_MCAST]) {
+		tlv->mcast =
+			nla_get_u8(tb[QCA_VENDOR_ATTR_EXT_MON_DATA_MPDU_TLV_MCAST]);
+		if (tlv->mcast > ATH12K_EXT_MON_MPDU_TLV_FILTER_MAX) {
+			ath12k_err(NULL, "invalid data MPDU TLV mcast filter 0x%x\n",
+				   tlv->mcast);
+			return -EINVAL;
+		}
+	}
+	if (tb[QCA_VENDOR_ATTR_EXT_MON_DATA_MPDU_TLV_UCAST]) {
+		tlv->ucast =
+			nla_get_u8(tb[QCA_VENDOR_ATTR_EXT_MON_DATA_MPDU_TLV_UCAST]);
+		if (tlv->ucast > ATH12K_EXT_MON_MPDU_TLV_FILTER_MAX) {
+			ath12k_err(NULL, "invalid data MPDU TLV ucast filter 0x%x\n",
+				   tlv->ucast);
+			return -EINVAL;
+		}
+	}
+	if (tb[QCA_VENDOR_ATTR_EXT_MON_DATA_MPDU_TLV_NULL]) {
+		tlv->null_frm =
+			nla_get_u8(tb[QCA_VENDOR_ATTR_EXT_MON_DATA_MPDU_TLV_NULL]);
+		if (tlv->null_frm > ATH12K_EXT_MON_MPDU_TLV_FILTER_MAX) {
+			ath12k_err(NULL, "invalid data MPDU TLV null filter 0x%x\n",
+				   tlv->null_frm);
+			return -EINVAL;
+		}
+	}
+
+	tlv->tlv_configured = true;
+	return 0;
+}
+
+static int
 ath12k_ext_mon_extract_pkt_config(struct nlattr *pkt_attr,
-				  struct ath12k_ext_mon_pkt_config *pkt)
+				  struct ath12k_ext_mon_pkt_config *pkt,
+				  bool is_peer_filter)
 {
 	struct nlattr *tb[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_MAX + 1];
+	u32 data_filter;
 	int ret;
 
 	ret = nla_parse_nested(tb, QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_MAX,
@@ -14862,6 +14909,35 @@ ath12k_ext_mon_extract_pkt_config(struct nlattr *pkt_attr,
 			pkt);
 		if (ret)
 			return ret;
+	}
+
+	if (is_peer_filter) {
+		data_filter = pkt->filter[ATH12K_EXT_MON_FRAME_DATA];
+
+		/* When FP or FPMO Data MPDU TLV filtering is active, the
+		 * driver must send TLV masks for all three data subtypes.
+		 * Default each subtype to 0xF (all TLVs) if it is in the
+		 * data filter — packets are delivered so rx_header is valid.
+		 * Default to 0x7 (mpdu_start+msdu_end+mpdu_end, no rx_header)
+		 * for subtypes not in the filter, where rx_header is not allowed.
+		 * User-supplied masks in the NL command override these defaults.
+		 * The GET response shows all three subtypes; unset ones reflect
+		 * their default value.
+		 */
+		pkt->data_mpdu_tlv.mcast = (data_filter & FILTER_DATA_MCAST) ?
+					ATH12K_EXT_MON_MPDU_TLV_FILTER_MAX : 0x7;
+		pkt->data_mpdu_tlv.ucast = (data_filter & FILTER_DATA_UCAST) ?
+					ATH12K_EXT_MON_MPDU_TLV_FILTER_MAX : 0x7;
+		pkt->data_mpdu_tlv.null_frm = (data_filter & FILTER_DATA_NULL) ?
+					ATH12K_EXT_MON_MPDU_TLV_FILTER_MAX : 0x7;
+
+		if (tb[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_DATA_MPDU_TLV]) {
+			ret = ath12k_ext_mon_extract_data_mpdu_tlv(
+				tb[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_DATA_MPDU_TLV],
+				&pkt->data_mpdu_tlv);
+			if (ret)
+				return ret;
+		}
 	}
 
 	return 0;
@@ -14904,7 +14980,7 @@ ath12k_ext_mon_extract_filter_config(struct nlattr *filter_attr,
 	if (tb[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_ALL_PEER]) {
 		ret = ath12k_ext_mon_extract_pkt_config(
 			tb[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_ALL_PEER],
-			&filter->all_peer);
+			&filter->all_peer, true);
 		if (ret)
 			return ret;
 	}
@@ -14912,7 +14988,7 @@ ath12k_ext_mon_extract_filter_config(struct nlattr *filter_attr,
 	if (tb[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_ALL_NEIGHBOR]) {
 		ret = ath12k_ext_mon_extract_pkt_config(
 			tb[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_ALL_NEIGHBOR],
-			&filter->all_neighbor);
+			&filter->all_neighbor, false);
 		if (ret)
 			return ret;
 	}
@@ -14920,7 +14996,7 @@ ath12k_ext_mon_extract_filter_config(struct nlattr *filter_attr,
 	if (tb[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_TARGET_PEER]) {
 		ret = ath12k_ext_mon_extract_pkt_config(
 			tb[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_TARGET_PEER],
-			&filter->target_peer);
+			&filter->target_peer, true);
 		if (ret)
 			return ret;
 	}
@@ -14928,7 +15004,7 @@ ath12k_ext_mon_extract_filter_config(struct nlattr *filter_attr,
 	if (tb[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_TARGET_NEIGHBOR]) {
 		ret = ath12k_ext_mon_extract_pkt_config(
 			tb[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_TARGET_NEIGHBOR],
-			&filter->target_neighbor);
+			&filter->target_neighbor, false);
 		if (ret)
 			return ret;
 	}

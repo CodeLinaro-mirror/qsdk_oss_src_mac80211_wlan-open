@@ -126,6 +126,7 @@
 
 #define ATH12K_EXT_MON_DEFAULT_PEER_BITMAP	0xFF
 #define ATH12K_EXT_MON_PKT_CAP_ALL_PROTOS	0x3F
+#define ATH12K_EXT_MON_MPDU_TLV_FILTER_MAX	0xF
 
 #define ATH12K_FC0_TYPE_SHIFT		2
 #define ATH12K_FC0_SUBTYPE_SHIFT	4
@@ -977,9 +978,17 @@ enum ath12k_ext_mon_monitor_flags {
 	ATH12K_EXT_MON_MAX
 };
 
+struct ath12k_ext_mon_data_mpdu_tlv_config {
+	u8 mcast;
+	u8 ucast;
+	u8 null_frm;
+	bool tlv_configured;
+};
+
 struct ath12k_ext_mon_pkt_config {
 	u32 filter[ATH12K_EXT_MON_FRAME_MAX];
 	u8 len[ATH12K_EXT_MON_FRAME_MAX];
+	struct ath12k_ext_mon_data_mpdu_tlv_config data_mpdu_tlv;
 };
 
 struct ath12k_ext_mon_filter_config {
