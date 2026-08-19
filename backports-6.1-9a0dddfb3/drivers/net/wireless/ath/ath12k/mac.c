@@ -3295,10 +3295,7 @@ static void ath12k_mac_handle_beacon_iter(void *data, u8 *mac,
 	 * ATH12K_FLAG_BEACON_RECEIVED. When the worker executes, return from
 	 * the worker without doing anything.
 	 */
-	if (work_pending(&ahvif->deflink.connection_loss_work.work))
-		set_bit(ATH12K_FLAG_BEACON_RECEIVED, &ahvif->deflink.beacon_flags);
-	else
-		cancel_delayed_work(&ahvif->deflink.connection_loss_work);
+	set_bit(ATH12K_FLAG_BEACON_RECEIVED, &ahvif->deflink.beacon_flags);
 }
 
 void ath12k_mac_handle_beacon(struct ath12k *ar, struct sk_buff *skb)
@@ -6581,7 +6578,7 @@ void ath12k_bss_disassoc(struct ath12k *ar,
 
 	memset(&arvif->rekey_data, 0, sizeof(arvif->rekey_data));
 
-	cancel_delayed_work(&ahvif->deflink.connection_loss_work);
+	cancel_delayed_work_sync(&ahvif->deflink.connection_loss_work);
 }
 
 u32 ath12k_mac_get_rate_hw_value(int bitrate)
