@@ -139,6 +139,36 @@ void ath12k_dp_link_peer_htbl_delete(struct ath12k_pdev_dp *dp_pdev,
 }
 
 /**
+ * ath12k_dp_link_peer_htbl_find_by_addr - Find link peer by MAC address only
+ * @dp: DP context whose link_peer_htbl is searched
+ * @addr: MAC address to search for
+ *
+ * Unlike ath12k_dp_link_peer_find_by_mac_addr(), this does not require an
+ * ath12k_dp_peer context and does not filter by hw_link_id. Caller must hold
+ * dp->dp_lock.
+ *
+ * Returns: Pointer to link peer if found, NULL otherwise
+ */
+struct ath12k_dp_link_peer *
+ath12k_dp_link_peer_htbl_find_by_addr(struct ath12k_dp *dp, const u8 *addr)
+{
+	struct ath12k_dp_link_peer *peer;
+	u32 hash;
+
+	lockdep_assert_held(&dp->dp_lock);
+
+	hash = jhash(addr, ETH_ALEN, 0);
+
+	hash_for_each_possible(dp->link_peer_htbl, peer, hash_addr_node, hash) {
+		if (ether_addr_equal(peer->addr, addr))
+			return peer;
+	}
+
+	return NULL;
+}
+EXPORT_SYMBOL(ath12k_dp_link_peer_htbl_find_by_addr);
+
+/**
  * ath12k_dp_peer_addr_hash - Compute hash value for MAC address
  * @addr: MAC address (6 bytes)
  *

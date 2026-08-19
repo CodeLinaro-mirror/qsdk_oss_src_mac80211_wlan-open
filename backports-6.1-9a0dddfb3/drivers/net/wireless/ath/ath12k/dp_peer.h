@@ -317,6 +317,8 @@ void ath12k_dp_link_peer_htbl_add(struct ath12k_pdev_dp *dp_pdev,
 				  struct ath12k_dp_link_peer *peer);
 void ath12k_dp_link_peer_htbl_delete(struct ath12k_pdev_dp *dp_pdev,
 				     struct ath12k_dp_link_peer *peer);
+struct ath12k_dp_link_peer *
+ath12k_dp_link_peer_htbl_find_by_addr(struct ath12k_dp *dp, const u8 *addr);
 struct ath12k_dp_peer *ath12k_dp_peer_find_by_peerid_index(struct ath12k_dp *dp,
 							   struct ath12k_pdev_dp *dp_pdev,
 							   u16 peer_id);
