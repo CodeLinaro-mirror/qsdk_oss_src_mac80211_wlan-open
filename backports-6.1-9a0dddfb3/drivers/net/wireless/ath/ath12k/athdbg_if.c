@@ -6,6 +6,7 @@
 #include "ath_debug/athdbg_mhi.h"
 #include "ath_debug/athdbg_wmi_recording.h"
 #include "debug.h"
+#include "debugfs.h"
 #include "mhi.h"
 #include "pci.h"
 #include "ath_debug/athdbg_netlink.h"
@@ -59,9 +60,11 @@ static int athdbg_if_create_debugfs(struct ath12k_base *ab)
 		if (IS_ERR_OR_NULL(athdbg_dir))
 			goto out;
 
-		debugfs_create_file("dbgmask", 0644, athdbg_dir, partner_ab, &debugfs_mask_fops);
-		debugfs_create_file("snapshot", 0644, athdbg_dir,
-				    partner_ab, &debugfs_snapshot_fops);
+		ath12k_debugfs_create_file("dbgmask", 0644, athdbg_dir,
+					   partner_ab, partner_ab, &debugfs_mask_fops);
+		ath12k_debugfs_create_file("snapshot", 0644, athdbg_dir,
+					   partner_ab, partner_ab,
+					   &debugfs_snapshot_fops);
 
 		athdbg_create_minidump_debugfs(athdbg_dir, partner_ab);
 
@@ -70,10 +73,12 @@ static int athdbg_if_create_debugfs(struct ath12k_base *ab)
 		if (IS_ERR_OR_NULL(qdss_dir))
 			return -ENOMEM;
 
-		debugfs_create_file("enable", 0644, qdss_dir, partner_ab,
-							&debugfs_qdss_enable_fops);
-		debugfs_create_file("collect", 0644, qdss_dir, partner_ab,
-							&debugfs_qdss_collect_fops);
+		ath12k_debugfs_create_file("enable", 0644, qdss_dir,
+					   partner_ab, partner_ab,
+					   &debugfs_qdss_enable_fops);
+		ath12k_debugfs_create_file("collect", 0644, qdss_dir,
+					   partner_ab, partner_ab,
+					   &debugfs_qdss_collect_fops);
 
 		athdbg_create_wmi_debugfs(athdbg_dir, partner_ab);
 	}

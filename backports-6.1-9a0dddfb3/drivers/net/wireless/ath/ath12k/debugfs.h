@@ -426,6 +426,12 @@ struct dentry *ath12k_debugfs_erp_create(void)
        return NULL;
 }
 
+/**
+ * struct ath12k_debugfs_ctx - inode->i_private for every file created
+ *                             via ath12k_debugfs_create_file().
+ * @ab:   base device pointer used for the is_bypassed pre-check.
+ * @data: original per-file private pointer forwarded to read/write.
+ */
 #endif /* CPTCFG_ATH12K_DEBUGFS */
 
 void ath12k_init_pktlog(struct ath12k *ar);
@@ -437,4 +443,21 @@ void ath12k_dp_txrx_stats_buf_pktlog_process(struct ath12k *ar, u8 *data,
 void ath12k_cbf_pktlog_process(struct ath12k *ar, u8 *data, u32 len,
 			       struct htt_t2h_ppdu_stats_ind_hdr *htt_hdr,
 			       struct htt_ppdu_stats_rx_mgmtctrl_payload_tlv *cbf_tlv);
+/**
+ * struct ath12k_debugfs_ctx - inode->i_private for every file created
+ *                             via ath12k_debugfs_create_file().
+ * @ab:   base device pointer used for the is_bypassed pre-check.
+ * @data: original per-file private pointer forwarded to read/write.
+ */
+struct ath12k_debugfs_ctx {
+	struct ath12k_base *ab;
+	void               *data;
+};
+
+int ath12k_debugfs_open(struct inode *inode, struct file *file);
+struct dentry *ath12k_debugfs_create_file(const char *name, umode_t mode,
+					  struct dentry *parent,
+					  struct ath12k_base *ab, void *data,
+					  const struct file_operations *fops);
+
 #endif /* _ATH12K_DEBUGFS_H_ */
