@@ -1056,7 +1056,9 @@ struct ath12k_link_vif {
 
 	struct ath12k_smd_params smd_params;
 	struct ath12k_rtt_context rtt_ctx;
+#ifdef CPTCFG_QCN_EXTN
 	struct ath12k_link_vif_extn arvif_extn;
+#endif /* CPTCFG_QCN_EXTN */
 	bool secured_bss;
 };
 
