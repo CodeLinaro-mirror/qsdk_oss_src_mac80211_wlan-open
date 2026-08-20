@@ -1456,6 +1456,7 @@ int ath12k_hal_srng_setup_idx(struct ath12k_base *ab, enum hal_ring_type type,
 			      u32 restore_idx);
 void ath12k_hal_dump_srng_stats(struct ath12k_base *ab);
 ssize_t ath12k_debugfs_hal_dump_srng_stats(struct ath12k_base *ab, char *buf, int size);
+void ath12k_hal_set_low_threshold(struct hal_srng *srng, u32 low_threshold);
 void ath12k_hal_srng_get_shadow_config(struct ath12k_base *ab,
 				       u32 **cfg, u32 *len);
 int ath12k_hal_srng_update_shadow_config(struct ath12k_base *ab,
