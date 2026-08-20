@@ -19,6 +19,9 @@
 #include "core.h"
 #include "nl80211.h"
 #include "rdev-ops.h"
+#ifdef CPTCFG_QCN_EXTN
+#include "cfg80211_dfs_extn.h"
+#endif /* CPTCFG_QCN_EXTN */
 
 
 #ifdef CPTCFG_QCA_LAB_TEST_FEATURES
@@ -1480,8 +1483,9 @@ static void cfg80211_clear_cac_started(struct cfg80211_registered_device *rdev,
 			if (tmp_chandef->chan != chandef->chan)
 				continue;
 
-#ifdef CPTCFG_CFG80211_WEXT
-			if (tmp_wdev->iftype == NL80211_IFTYPE_MESH_POINT)
+#ifdef CPTCFG_QCN_EXTN
+			if (tmp_wdev->iftype == NL80211_IFTYPE_MESH_POINT &&
+			    cfg80211_support_bootup_cac(&rdev->wiphy))
 				continue;
 #endif
 
