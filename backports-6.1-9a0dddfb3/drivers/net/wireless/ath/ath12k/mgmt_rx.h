@@ -19,7 +19,6 @@
 struct ath12k_mgmt;
 
 #define MGMT_RX_BUFFER_SIZE                2048
-#define MGMT_RX_BUFFER_ALIGN_SIZE          128
 
 #define MGMT_REO_DST_RING_SIZE             1024
 #define MGMT_REO_EXCEPTION_RING_SIZE       1024
