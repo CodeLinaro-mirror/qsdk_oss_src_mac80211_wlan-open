@@ -419,7 +419,6 @@ int ath12k_dp_peer_setup(struct ath12k *ar, void *ptr, struct ath12k_link_vif *a
 	link_peer = ath12k_dp_link_peer_find_by_logical_link_id(dp_peer, link_id);
 	if (!link_peer) {
 		ath12k_warn(ab, "failed to find the peer to del rx tid\n");
-		rcu_read_unlock();
 		ret = -ENOENT;
 		goto free_shash;
 	}
