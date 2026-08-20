@@ -5951,6 +5951,7 @@ static struct ath12k_hw_group *ath12k_core_hw_group_alloc(struct ath12k_base *ab
 #endif
 	init_completion(&ag->umac_reset_complete);
 	init_completion(&ag->peer_cleanup_complete);
+	ag->mlo_peer_count = 0;
 	spin_lock_init(&ag->ahsta_lock);
 	ag->mlo_capable = false;
 	ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;

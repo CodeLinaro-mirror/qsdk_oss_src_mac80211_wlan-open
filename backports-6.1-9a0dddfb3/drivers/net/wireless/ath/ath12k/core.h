@@ -1007,6 +1007,19 @@ struct ath12k_link_vif {
 	struct wiphy_work set_dscp_tid_work;
 	bool set_wds_vdev_param;
 	int num_peers;
+	/* Number of real (non-bridge) MLO peers on this VAP.
+	 * Only incremented for AP-mode vdevs; STA-mode vdevs are excluded
+	 * because their peers are deleted via individual peer-delete responses,
+	 * not peer_delete_all.  Used to snapshot num_ml_peers_del_all before
+	 * sending peer_delete_all so mlo_peer_count is decremented correctly
+	 * in the response handler.
+	 */
+	u32 num_ml_peers;
+	/* Snapshot of num_ml_peers taken just before ath12k_wmi_peer_delete_all()
+	 * is sent.  Read by the async WMI_PEER_DELETE_ALL_RESP handler to
+	 * decrement mlo_peer_count by the correct count.  Cleared after use.
+	 */
+	u32 num_ml_peers_del_all;
 	struct wiphy_work update_bcn_tx_status_work;
 	struct wiphy_work tpc_ie_eirp_work;
 	struct ath12k_vap_cfg vap_cfg;
@@ -2677,6 +2690,13 @@ struct ath12k_hw_group {
 	struct ath12k_stats_work_context stats_work;
 	u8 num_bypassed;
 	bool wsi_remap_in_progress;
+	/* Counts real (non-bridge) MLO peers currently alive in firmware.
+	 * Incremented in ath12k_peer_create() for every MLO peer created.
+	 * Decremented in the WMI peer-delete-response handlers (individual
+	 * and peer_delete_all) when firmware confirms peer deletion.
+	 * Protected by ahsta_lock for the WMI workqueue dec path.
+	 */
+	u32 mlo_peer_count;
 	struct completion peer_cleanup_complete;
 	u64 wsi_peer_clean_timeout;
 	struct completion power_up;

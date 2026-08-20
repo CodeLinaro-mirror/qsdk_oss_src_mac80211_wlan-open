@@ -141,6 +141,8 @@ int ath12k_peer_del_tracker_add(struct ath12k_pdev *pdev, u32 vdev_id,
 				const u8 *addr, const u8 *mld_addr);
 void ath12k_peer_del_tracker_remove(struct ath12k_pdev *pdev, u32 vdev_id,
 				    const u8 *addr);
+bool ath12k_peer_del_tracker_is_mlo(struct ath12k_pdev *pdev, u32 vdev_id,
+				    const u8 *addr);
 int ath12k_peer_del_tracker_check(struct ath12k_pdev *pdev, const u8 *addr,
 				  const u8 *mld_addr);
 int ath12k_peer_del_tracker_clear_vdev(struct ath12k_pdev *pdev, u32 vdev_id);
