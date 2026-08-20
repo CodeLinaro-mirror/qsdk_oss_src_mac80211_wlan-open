@@ -373,7 +373,7 @@ const struct ath12k_dp_arch_mon_ops *ath12k_dp_mon_ops_get(struct ath12k_dp *dp)
 int ath12k_dp_mon_buf_replenish(struct ath12k_dp *dp,
 				struct dp_rxdma_mon_ring *buf_ring,
 				struct list_head *used_list,
-				int req_entries);
+				int req_entries, gfp_t gfp);
 struct sk_buff *ath12k_dp_mon_tx_alloc_skb(void);
 enum hal_tx_mon_status
 ath12k_dp_mon_tx_parse_mon_status(struct ath12k_pdev_dp *dp_pdev,

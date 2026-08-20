@@ -304,7 +304,7 @@ ath12k_dp_mon_handle_mon_desc(struct ath12k_dp *dp, struct ath12k_dp_mon_desc *m
 int ath12k_dp_mon_buf_replenish(struct ath12k_dp *dp,
 				struct dp_rxdma_mon_ring *buf_ring,
 				struct list_head *used_list,
-				int req_entries)
+				int req_entries, gfp_t gfp)
 {
 	struct ath12k_base *ab = dp->ab;
 	struct hal_mon_buf_ring *mon_buf_desc;
@@ -328,7 +328,7 @@ int ath12k_dp_mon_buf_replenish(struct ath12k_dp *dp,
 
 		mon_buf = page_frag_alloc(&dp_mon->rx_mon_pf_cache,
 					  ATH12K_DP_MON_RX_BUF_SIZE,
-					  GFP_ATOMIC);
+					  gfp);
 		if (unlikely(!mon_buf)) {
 			ret = -ENOMEM;
 			goto out;
@@ -1444,7 +1444,8 @@ int ath12k_dp_mon_rx_buf_alloc(struct ath12k_dp *dp)
 
 	req_entries = ath12k_dp_mon_get_req_entries_from_buf_ring(dp, rx_ring, &list);
 	if (req_entries)
-		ret = ath12k_dp_mon_buf_replenish(dp, rx_ring, &list, req_entries);
+		ret = ath12k_dp_mon_buf_replenish(dp, rx_ring, &list, req_entries,
+						  GFP_KERNEL);
 	else
 		ath12k_warn(dp, "No required entries available for mon buf ring\n");
 
@@ -2080,7 +2081,8 @@ void ath12k_dp_mon_rx_process_low_thres(struct ath12k_dp *dp)
 	spin_unlock_bh(&dp_mon->mon_desc_lock);
 
 	if (req_entries)
-		ath12k_dp_mon_buf_replenish(dp, rx_ring, &list, req_entries);
+		ath12k_dp_mon_buf_replenish(dp, rx_ring, &list, req_entries,
+					    GFP_ATOMIC);
 }
 EXPORT_SYMBOL(ath12k_dp_mon_rx_process_low_thres);
 
