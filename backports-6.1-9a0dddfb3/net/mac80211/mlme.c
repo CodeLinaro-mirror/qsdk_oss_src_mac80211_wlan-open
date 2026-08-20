@@ -12500,6 +12500,7 @@ int ieee80211_smd_assoc_success(struct ieee80211_sub_if_data *sdata,
 	if (!target->link_id_remap) {
 		__ieee80211_link_assign(sdata, tap_link_id,
 					&tgt_link->data, &tgt_link->conf);
+		target->new_links[tap_link_id] = NULL;
 		sdata_dbg(sdata, "smd: swap link[%u] to tap (same-links)\n",
 			  tap_link_id);
 	} else {
