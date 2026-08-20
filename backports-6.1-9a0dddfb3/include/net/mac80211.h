@@ -3000,6 +3000,12 @@ struct ieee80211_sta_aggregates {
  *	notifications and capabilities. The value is only valid after
  *	the station moves to associated state.
  * @txpwr: the station tx power configuration
+ * @he_mcs_12_13_peer_cap: HE MCS 12/13 capability advertised by this peer,
+ *	parsed from its QCN vendor IE. Only valid when
+ *	@he_mcs_12_13_peer_cap_valid is set. Only present with
+ *	CPTCFG_QCN_EXTN.
+ * @he_mcs_12_13_peer_cap_valid: whether @he_mcs_12_13_peer_cap has been
+ *	populated for this peer. Only present with CPTCFG_QCN_EXTN.
  *
  */
 struct ieee80211_link_sta {
@@ -3027,6 +3033,10 @@ struct ieee80211_link_sta {
 	enum ieee80211_sta_rx_bandwidth bandwidth;
 	enum ieee80211_sta_rx_bandwidth sta_max_bandwidth;
 	struct ieee80211_sta_txpwr txpwr;
+#ifdef CPTCFG_QCN_EXTN
+	u16 he_mcs_12_13_peer_cap;
+	bool he_mcs_12_13_peer_cap_valid;
+#endif /* CPTCFG_QCN_EXTN */
 };
 
 /**
