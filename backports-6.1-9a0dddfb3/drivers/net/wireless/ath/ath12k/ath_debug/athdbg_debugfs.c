@@ -209,7 +209,7 @@ const struct file_operations debugfs_mask_fops = {
 };
 EXPORT_SYMBOL(debugfs_mask_fops);
 
-static atomic_t athdbg_snapshot_enabled = ATOMIC_INIT(0);
+static atomic_t athdbg_snapshot_enabled = ATOMIC_INIT(1);
 
 static ssize_t athdbg_snapshot_read(struct file *file, char __user *user_buf,
 				    size_t count, loff_t *ppos)
