@@ -3312,9 +3312,9 @@ int ath12k_wifi8_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 
 		tx_wbm_rel_source[ts.buf_rel_source]++;
 
+		msdu = sw_metadata->skb;
 		if (dp_pdev && ath12k_dp_stats_enabled(dp_pdev) &&
 		    ath12k_tid_stats_enabled(dp_pdev)) {
-			msdu = sw_metadata->skb;
 			skb_cb = ATH12K_SKB_CB(msdu);
 			ahvif = ath12k_vif_to_ahvif(skb_cb->vif);
 			tid = msdu->priority & IEEE80211_QOS_CTL_TID_MASK;
