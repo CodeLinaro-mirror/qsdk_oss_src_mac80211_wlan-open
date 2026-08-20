@@ -15889,6 +15889,51 @@ fail:
 	return -EMSGSIZE;
 }
 
+static struct ath12k_link_sta *
+ath12k_vendor_get_primary_link_arsta(struct wiphy *wiphy,
+				     struct ath12k_sta *ahsta)
+{
+	struct ath12k_link_sta *arsta;
+
+	lockdep_assert_wiphy(wiphy);
+
+	if (!ahsta->is_mlo)
+		return &ahsta->deflink;
+
+	if (ahsta->primary_link_id >= ATH12K_NUM_MAX_LINKS ||
+	    !(ahsta->links_map & BIT(ahsta->primary_link_id)))
+		return &ahsta->deflink;
+
+	arsta = wiphy_dereference(wiphy, ahsta->link[ahsta->primary_link_id]);
+	if (!arsta)
+		return &ahsta->deflink;
+
+	return arsta;
+}
+
+static int
+ath12k_vendor_get_data_link_peer_rssi(struct ath12k_dp_peer *dp_peer, u8 link_id,
+				      s8 *min_rssi, s8 *max_rssi)
+{
+	struct ath12k_dp_link_peer *link_peer;
+	u8 link_peer_mac[ETH_ALEN];
+
+	rcu_read_lock();
+
+	link_peer = ath12k_dp_link_peer_find_by_logical_link_id(dp_peer, link_id);
+	if (!link_peer) {
+		rcu_read_unlock();
+		return -ENOENT;
+	}
+
+	ether_addr_copy(link_peer_mac, link_peer->addr);
+
+	rcu_read_unlock();
+
+	return ath12k_dp_mon_get_link_peer_rssi(dp_peer, link_peer_mac,
+						min_rssi, max_rssi);
+}
+
 static int ath12k_vendor_get_sta_info_dumpit(struct wiphy *wiphy,
 					     struct wireless_dev *wdev,
 					     struct sk_buff *skb,
@@ -15899,13 +15944,17 @@ static int ath12k_vendor_get_sta_info_dumpit(struct wiphy *wiphy,
 	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_MAX + 1];
 	struct ieee80211_vif *vif = wdev_to_ieee80211_vif(wdev);
 	struct ath12k_vif *ahvif;
-	struct ath12k_link_vif *arvif;
-	struct ath12k_link_sta *arsta;
-	u8 link_id = 0;
-	s8 data_min_rssi = 0, data_max_rssi = 0;
-	int ret;
+	struct ath12k_link_sta *primary_arsta;
+	struct ieee80211_sta *sta;
+	struct ath12k_sta *ahsta;
+	struct ath12k_dp_peer *dp_peer;
+	unsigned long links_map = 0;
 	const u8 *peer_mac;
-	void *dp_peer;
+	u8 link_id = 0;
+	s8 min_rssi, max_rssi;
+	s8 data_min_rssi, data_max_rssi;
+	u8 ps_state;
+	int ret, cur_link_id;
 
 	lockdep_assert_wiphy(wiphy);
 
@@ -15925,6 +15974,7 @@ static int ath12k_vendor_get_sta_info_dumpit(struct wiphy *wiphy,
 	if (!tb[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_MAC] ||
 	    nla_len(tb[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_MAC]) != ETH_ALEN)
 		return -EINVAL;
+
 	peer_mac = nla_data(tb[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_MAC]);
 
 	if (wdev->valid_links) {
@@ -15932,64 +15982,67 @@ static int ath12k_vendor_get_sta_info_dumpit(struct wiphy *wiphy,
 			return -EINVAL;
 
 		link_id = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_LINK_ID]);
-		if (!(wdev->valid_links & BIT(link_id)))
+		if (link_id != INVALID_LINK_ID &&
+		    (link_id >= ATH12K_NUM_MAX_LINKS ||
+		     !(wdev->valid_links & BIT(link_id))))
 			return -ENOLINK;
 	} else {
 		link_id = 0;
 	}
 
-	if (link_id == 0)
-		arvif = &ahvif->deflink;
-	else
-		arvif = wiphy_dereference(wiphy, ahvif->link[link_id]);
-
-	if (!arvif || !arvif->ar || !arvif->ar->ab)
-		return -ENOLINK;
-
-	spin_lock_bh(&arvif->ar->arsta_lock);
-
-	arsta = ath12k_link_sta_find_by_addr(arvif->ar, peer_mac);
-	if (!arsta || arsta->is_self_peer) {
-		spin_unlock_bh(&arvif->ar->arsta_lock);
+	sta = ieee80211_find_sta_by_ifaddr(ahvif->ah->hw, peer_mac, NULL);
+	if (!sta)
 		return -ENOENT;
-	}
 
-	dp_peer = ath12k_sta_get_dp_peer_wiphy_locked(wiphy, arsta->ahsta);
-	if (!dp_peer) {
-		spin_unlock_bh(&arvif->ar->arsta_lock);
+	ahsta = ath12k_sta_to_ahsta(sta);
+	if (!ahsta)
 		return -ENOENT;
+	if (ahsta->ahvif != ahvif)
+		return -ENOENT;
+
+	dp_peer = ath12k_sta_get_dp_peer_wiphy_locked(wiphy, ahsta);
+	if (!dp_peer)
+		return -ENOENT;
+
+	primary_arsta = ath12k_vendor_get_primary_link_arsta(wiphy, ahsta);
+	if (!primary_arsta || primary_arsta->is_self_peer)
+		return -ENOENT;
+
+	max_rssi = primary_arsta->max_rssi;
+	min_rssi = primary_arsta->min_rssi;
+	ps_state = primary_arsta->peer_ps_state;
+
+	if (link_id == INVALID_LINK_ID) {
+		if (ahsta->is_mlo)
+			links_map = ahsta->links_map;
+		else if (ahsta->deflink.link_id < ATH12K_NUM_MAX_LINKS)
+			links_map = BIT(ahsta->deflink.link_id);
+
+		for_each_set_bit(cur_link_id, &links_map, ATH12K_NUM_MAX_LINKS) {
+			ret = ath12k_vendor_get_data_link_peer_rssi(dp_peer, cur_link_id,
+								    &data_min_rssi,
+								    &data_max_rssi);
+			if (ret)
+				continue;
+
+			min_rssi = min(min_rssi, data_min_rssi);
+			max_rssi = max(max_rssi, data_max_rssi);
+		}
+	} else {
+		ret = ath12k_vendor_get_data_link_peer_rssi(dp_peer, link_id,
+							    &data_min_rssi,
+							    &data_max_rssi);
+		min_rssi = min(min_rssi, data_min_rssi);
+		max_rssi = max(max_rssi, data_max_rssi);
 	}
 
-	ret = ath12k_dp_mon_get_link_peer_rssi(dp_peer, peer_mac,
-					       &data_min_rssi,
-					       &data_max_rssi);
-	if (ret) {
-		data_min_rssi = S8_MAX;
-		data_max_rssi = S8_MIN;
-	}
-
-	if (nla_put_s8(skb, QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_MAX_RSSI,
-		       data_max_rssi > arsta->max_rssi ?
-		       data_max_rssi : arsta->max_rssi))
-		goto unlock;
-
-	if (nla_put_s8(skb, QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_MIN_RSSI,
-		       data_min_rssi < arsta->min_rssi ?
-		       data_min_rssi : arsta->min_rssi))
-		goto unlock;
-
-	if (nla_put_u8(skb, QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_PS_STATE,
-		       arsta->peer_ps_state))
-		goto unlock;
-
-	spin_unlock_bh(&arvif->ar->arsta_lock);
+	if (nla_put_s8(skb, QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_MAX_RSSI, max_rssi) ||
+	    nla_put_s8(skb, QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_MIN_RSSI, min_rssi) ||
+	    nla_put_u8(skb, QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_PS_STATE, ps_state))
+		return -ENOBUFS;
 
 	*storage += 1;
 	return skb->len;
-
-unlock:
-	spin_unlock_bh(&arvif->ar->arsta_lock);
-	return -ENOBUFS;
 }
 
 int
