@@ -878,6 +878,9 @@ static void ath12k_mac_smd_roam_config(struct ieee80211_hw *hw,
 		arg.dl_drain_time = 0; /* overlap partner never carries drain time */
 		ether_addr_copy(arg.peer_mac, arsta->addr);
 
+		if (role == SMD_ROAM_CONFIG_ROLE_STA && info->is_exec_via_tap)
+			arg.flags |= SMD_ROAM_CONFIG_FLAG_EXEC_VIA_TAP;
+
 		spin_lock_bh(&target_ahsta->ba_lock);
 		for (tid = 0; tid < IEEE80211_MAX_NUM_TIDS; tid++) {
 			arg.peer_tid_info[tid].tx_buf_size =
@@ -1345,7 +1348,8 @@ int ath12k_smd_uhr_link_reconfig(struct ieee80211_hw *hw,
 		 * target_ahsta (loop 2).  At TERMINATION current_sta is already the
 		 * TAP sta, so target_ahsta is NULL and loop 1 (tap_links_mask) is used.
 		 */
-		if (info->changed & IEEE80211_UHR_CHANGED_TERMINATION)
+		if (info->changed & IEEE80211_UHR_CHANGED_TERMINATION &&
+		    !info->is_exec_via_tap)
 			ath12k_mac_smd_roam_config(hw, ahvif, ahsta, NULL,
 						   SMD_ROAM_CONFIG_CMD_DYNAMIC_CONTEXT,
 						   info);
@@ -1356,8 +1360,9 @@ int ath12k_smd_uhr_link_reconfig(struct ieee80211_hw *hw,
 	}
 
 	if (info->changed & IEEE80211_UHR_CHANGED_TERMINATION) {
-		ath12k_mac_smd_roam_config(hw, ahvif, ahsta, NULL,
-					   SMD_ROAM_CONFIG_CMD_TERMINATION, info);
+		if (!info->is_exec_via_tap)
+			ath12k_mac_smd_roam_config(hw, ahvif, ahsta, NULL,
+						   SMD_ROAM_CONFIG_CMD_TERMINATION, info);
 		ahvif->smd.exec_in_progress = false;
 		if (ahvif->ah->ag && ahvif->ah->ag->dp_hw_grp)
 			ahvif->ah->ag->dp_hw_grp->smd_exec_in_progress = false;

@@ -2805,6 +2805,7 @@ struct ieee80211_uhr_link_transfer_info {
  * @dl_drain_links_mask: Bitmap of links that carry the actual @dl_drain_time_tu;
  *	links NOT in this mask should use drain time 0 in roam_config EXEC.
  * @links: Per-link configuration
+ * @is_exec_via_tap: to check of the ST exec is via target AP
  */
 struct ieee80211_uhr_link_reconfig_info {
 	u32 changed;
@@ -2818,7 +2819,7 @@ struct ieee80211_uhr_link_reconfig_info {
 	u32 dl_drain_time_tu;
 	bool request_dl_sn_not_transferred;
 	bool request_ul_sn_not_transferred;
-
+	bool is_exec_via_tap;
 	/*
 	 * REMAP_LINKS: tap_to_sap_link[tap_lid] = sap_lid (-1 = unmapped).
 	 * Driver swaps ahvif->link[] pointers so ahvif->link[tap_lid] points to
