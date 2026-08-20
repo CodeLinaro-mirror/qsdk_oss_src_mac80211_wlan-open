@@ -4698,10 +4698,12 @@ static int ath12k_core_mlo_unified_peer_update(struct ath12k_hw_group *ag)
 				arvif = arsta->arvif;
 				ahvif = arvif->ahvif;
 
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 				ath12k_peer_assoc_prepare(arvif->ar, arvif,
 					arsta, peer_arg, false,
 					wiphy_dereference(ah->hw->wiphy,
 						sta->link[link_id]));
+#endif /* CPTCFG_QCN_EXTN_MESH_SUPPORT */
 
 				ath12k_info(arvif->ar->ab,
 					    "Mode3 link_remove_phase: peer_assoc link_id=%u peer=%pM vdev=%u phymode=%u nss=%u flags=0x%x caps=0x%x ht_flag=%d vht_flag=%d he_flag=%d eht_flag=%d bw_40=%d bw_80=%d bw_160=%d bw_320=%d mlo_enabled=%d assoc_link=%d primary_umac=%d ll_idx=%u ml_peer_id=%u ml_recovery=%d new_master_ll_id=%u num_partners=%u link_add=%u link_del=%u\n",
@@ -4865,9 +4867,11 @@ static int ath12k_core_mlo_link_readd(struct ath12k_hw_group *ag)
 
 			link_sta = wiphy_dereference(ag->ah[0]->hw->wiphy,
 						     sta->link[asserted_link_id]);
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 			ath12k_peer_assoc_prepare(arvif->ar, arvif,
 						  arsta, peer_arg,
 						  false, link_sta);
+#endif /* CPTCFG_QCN_EXTN_MESH_SUPPORT */
 
 			ath12k_info(assert_ab,
 				    "Mode3 link_readd_phase : peer_assoc (asserted link) link_id=%u peer=%pM vdev=%u phymode=%u nss=%u flags=0x%x caps=0x%x ht_flag=%d vht_flag=%d he_flag=%d eht_flag=%d bw_40=%d bw_80=%d bw_160=%d bw_320=%d mlo_enabled=%d assoc_link=%d primary_umac=%d ll_idx=%u ml_peer_id=%u ml_recovery=%d new_master_ll_id=%u num_partners=%u mlo link add=%u mlo link del=%u\n",
@@ -4922,11 +4926,13 @@ static int ath12k_core_mlo_link_readd(struct ath12k_hw_group *ag)
 				memset(peer_arg, 0, sizeof(*peer_arg));
 				link_sta = wiphy_dereference(ag->ah[0]->hw->wiphy,
 							     sta->link[link_id]);
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 				ath12k_peer_assoc_prepare(arvif_s->ar,
 							  arvif_s,
 							  arsta_s,
 							  peer_arg,
 							  false, link_sta);
+#endif /* CPTCFG_QCN_EXTN_MESH_SUPPORT */
 
 				ath12k_info(arvif_s->ar->ab,
 					    "Mode3 link_readd_phase: peer_assoc (surviving) link_id=%u peer=%pM vdev=%u mlo_enabled=%d assoc_link=%d primary_umac=%d ll_idx=%u ml_peer_id=%u ml_recovery=%d new_master_ll_id=%u num_partners=%u link_add=%u link_del=%u\n",
@@ -6720,16 +6726,23 @@ void ath12k_core_send_fw_hang_cmd(struct ath12k_base *ab,
 		ath12k_info(ab, "Mode 1 Recovery is depricated, setting recovery as Mode 2\n");
 		fallthrough;
 	case ATH12K_FW_RECOVERY_ENABLE_MODE2:
+#ifdef CPTCFG_QCN_EXTN
 		if (!ath12k_cfg_get(ab, ATH12K_CFG_MLO_FORCE_MODE2_RECOVERY) &&
 		    test_bit(WMI_SERVICE_MLO_MODE3_RECOVERY_SUPPORTED,
 			     ab->wmi_ab.svc_map)) {
+#else
+		if (test_bit(WMI_SERVICE_MLO_MODE3_RECOVERY_SUPPORTED,
+			     ab->wmi_ab.svc_map)) {
+#endif /* CPTCFG_QCN_EXTN */
 			recovery_mode = ATH12K_WMI_FW_HANG_RECOVERY_MODE3;
 			ath12k_info(ab, "FW Supports Client retaining Mode 3 Recovery\n");
 			break;
 		} else if (test_bit(WMI_SERVICE_MLO_MODE2_RECOVERY_SUPPORTED,
 				    ab->wmi_ab.svc_map)) {
+#ifdef CPTCFG_QCN_EXTN
 			if (ath12k_cfg_get(ab, ATH12K_CFG_MLO_FORCE_MODE2_RECOVERY))
 				ath12k_info(ab, "mlo_force_mode2_recovery set, using Mode 2\n");
+#endif /* CPTCFG_QCN_EXTN */
 			recovery_mode = ATH12K_WMI_FW_HANG_RECOVERY_MODE2;
 		} else {
 			ath12k_info(ab, "FW doesn't support Mode 2 fallback to Mode 0\n");
