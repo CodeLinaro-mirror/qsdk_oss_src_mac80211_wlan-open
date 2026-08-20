@@ -223,7 +223,7 @@ static ssize_t sta_aqm_read(struct file *file, char __user *userbuf,
 		       bufsz + buf - p,
 		       "tid ac backlog-bytes backlog-packets new-flows drops marks overlimit collisions tx-bytes tx-packets flags\n");
 
-	if (!ieee80211_hw_check(&local->hw, HAS_TX_QUEUE))
+	if (ieee80211_hw_check(&local->hw, HAS_TX_QUEUE))
 		goto skip_txq_info;
 
 	for (i = 0; i < ARRAY_SIZE(sta->sta.txq); i++) {
@@ -1655,12 +1655,14 @@ static void ieee80211_sta_debugfs_add_full(struct sta_info *sta)
 	if (!ieee80211_hw_check(&local->hw, AP_LINK_PS))
 		DEBUGFS_ADD_COUNTER(tx_filtered, deflink.status_stats.filtered);
 
-	DEBUGFS_ADD(aqm);
-	DEBUGFS_ADD(airtime);
+	if (!ieee80211_hw_check(&local->hw, HAS_TX_QUEUE)) {
+		DEBUGFS_ADD(aqm);
+		DEBUGFS_ADD(airtime);
 
-	if (wiphy_ext_feature_isset(local->hw.wiphy,
-				    NL80211_EXT_FEATURE_AQL))
-		DEBUGFS_ADD(aql);
+		if (wiphy_ext_feature_isset(local->hw.wiphy,
+					    NL80211_EXT_FEATURE_AQL))
+			DEBUGFS_ADD(aql);
+	}
 
 	debugfs_create_xul("driver_buffered_tids", 0400, sta->debugfs_dir,
 			   &sta->driver_buffered_tids);
