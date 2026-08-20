@@ -1136,19 +1136,30 @@ EXPORT_SYMBOL(athdbg_qmi_worker_init);
 void athdbg_qmi_deinit(struct ath12k_base *ab)
 {
 	int i;
+	bool remaining_handler = false;
+	struct qmi_msg_handler *ab_handlers =
+			(struct qmi_msg_handler *)ab->qmi.handle.handlers;
 
 	if (ab->dbg_qmi.event_wq) {
 		cancel_work_sync(&ab->dbg_qmi.event_work);
 		destroy_workqueue(ab->dbg_qmi.event_wq);
 	}
 
+	if (!ab_handlers)
+		return;
+
 	for (i = 0; i < athdbg_base->wdbg_handlers_cnt; i++) {
-		if (athdbg_base->wdbg_handlers[i] == NULL)
+		if (athdbg_base->wdbg_handlers[i] != ab_handlers) {
+			if (athdbg_base->wdbg_handlers[i] != NULL)
+				remaining_handler = true;
 			continue;
+		}
 
 		kfree(athdbg_base->wdbg_handlers[i]);
 		athdbg_base->wdbg_handlers[i] = NULL;
 	}
-	athdbg_base->wdbg_handlers_cnt = 0;
+
+	if (!remaining_handler)
+		athdbg_base->wdbg_handlers_cnt = 0;
 }
 EXPORT_SYMBOL(athdbg_qmi_deinit);
