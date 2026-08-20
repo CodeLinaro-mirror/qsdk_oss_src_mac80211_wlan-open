@@ -1880,6 +1880,9 @@ static void ath12k_stats_event_work_handler(struct wiphy *wiphy,
 	struct ath12k_stats_work_context *stats_ctx;
 	struct ath12k_stats_list_entry *list_entry;
 	struct list_head temp_list;
+	struct ieee80211_hw *hw;
+	struct ath12k_hw *ah;
+	struct ath12k *ar;
 
 	stats_ctx = container_of(work, struct ath12k_stats_work_context,
 				 stats_nb_work);
@@ -1894,9 +1897,27 @@ static void ath12k_stats_event_work_handler(struct wiphy *wiphy,
 		list_entry = list_first_entry(&temp_list,
 					      struct ath12k_stats_list_entry,
 					      node);
+		hw = wiphy_to_ieee80211_hw(list_entry->usr_command.wiphy);
+		if (!hw)
+			goto free;
+
+		ah = hw->priv;
+		if (!ah)
+			goto free;
+
+		ar = &ah->radio[list_entry->usr_command.link_id];
+		if (!ar)
+			goto free;
+
+		if (ar->ab && (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags) ||
+		    ar->ab->is_bypassed)) {
+			ath12k_err(NULL, "Peer stats return. Recovery in progress or chip is bypassed\n");
+			goto free;
+		}
 
 		ath12k_wifi_stats_reply_setup(&list_entry->usr_command);
 
+free:
 		list_del(&list_entry->node);
 		kfree(list_entry);
 	}
