@@ -30179,11 +30179,6 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 
 	wiphy->interface_modes = ath12k_mac_get_ifmodes(ah);
 
-	if (wiphy->bands[NL80211_BAND_2GHZ] &&
-	    wiphy->bands[NL80211_BAND_5GHZ] &&
-	    wiphy->bands[NL80211_BAND_6GHZ])
-		ieee80211_hw_set(hw, SINGLE_SCAN_ON_ALL_BANDS);
-
 	/* Enable SG offload */
 	hw->netdev_features |= NETIF_F_SG;
 
@@ -30270,6 +30265,20 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 #ifdef CPTCFG_QCN_EXTN
 	ath12k_mac_hw_register_extn(ah);
 #endif /* CPTCFG_QCN_EXTN */
+
+	/*
+	 * Advertise SINGLE_SCAN_ON_ALL_BANDS when multiple bands are
+	 * present and either:
+	 *  - this is a single-radio wiphy (num_radio == 1), or
+	 *  - parallel HW scan is enabled (all radios can scan simultaneously)
+	 */
+	if ((ah->num_radio == 1 &&
+	     wiphy->bands[NL80211_BAND_2GHZ] &&
+	     wiphy->bands[NL80211_BAND_5GHZ] &&
+	     wiphy->bands[NL80211_BAND_6GHZ]) ||
+	    (ah->num_radio > 1 &&
+	     (wiphy->flags & WIPHY_FLAG_SUPPORTS_PARALLEL_HW_SCAN)))
+		ieee80211_hw_set(hw, SINGLE_SCAN_ON_ALL_BANDS);
 
 	/* Copy over MLO related capabilities received from
 	 * WMI_SERVICE_READY_EXT2_EVENT if single_chip_mlo_supp is set.
