@@ -33,14 +33,15 @@ struct ath12k_rx_smd_ctx_per_tid;
  * @target_ahsta:    Target AP STA (ath12k_sta)  — being added
  * @ahvif:           VIF (used to access link vifs)
  * @primary_link_id: DL drain link of current AP STA (e.g. 0 for 2.4GHz)
+ * @exec_path: Indicates the roam execution path (0 = SAP roam, 1 = TAP roam)
  */
 struct ath12k_smd_peer_assoc_ctx {
 	struct ath12k_sta *current_ahsta;
 	struct ath12k_sta *target_ahsta;
 	struct ath12k_vif *ahvif;
-	u8                 primary_link_id;
+	u8 primary_link_id;
+	u8 exec_path;
 };
-
 
 /* SMD driver op implementations (called from mac.c thin dispatchers) */
 int ath12k_smd_uhr_link_reconfig(struct ieee80211_hw *hw,

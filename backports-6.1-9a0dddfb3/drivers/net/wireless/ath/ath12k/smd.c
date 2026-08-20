@@ -477,6 +477,7 @@ static int ath12k_uhr_prepare_links(struct ath12k_vif *ahvif,
 		ctx.target_ahsta    = target_ahsta;
 		ctx.ahvif           = ahvif;
 		ctx.primary_link_id = bss_assoc_link_id;
+		ctx.exec_path       = info->exec_path;
 	}
 
 	{
@@ -795,9 +796,6 @@ static void ath12k_mac_smd_roam_config(struct ieee80211_hw *hw,
 
 		if (role == SMD_ROAM_CONFIG_ROLE_STA &&
 		    (info->transitioning_links & BIT(link_id)))
-			arg.flags |= BIT(2);
-
-		if (info->transitioning_links & BIT(link_id))
 			arg.flags |= SMD_ROAM_CONFIG_FLAG_DISABLE_LINK;
 
 		if (ahsta) {

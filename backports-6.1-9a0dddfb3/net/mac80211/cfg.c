@@ -22,6 +22,7 @@
 #include "rate.h"
 #include "mesh.h"
 #include "wme.h"
+#include "smd.h"
 #ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/cmn_extn.h"
 #endif /* CPTCFG_QCN_EXTN */
@@ -7180,6 +7181,7 @@ static int ieee80211_mgd_st_execute(struct ieee80211_sub_if_data *sdata,
 				    struct cfg80211_smd_prepare_req *req)
 {
 	struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
+	struct ieee80211_smd_prep_target *target = NULL;
 	int target_slot;
 	int ret;
 
@@ -7209,17 +7211,36 @@ static int ieee80211_mgd_st_execute(struct ieee80211_sub_if_data *sdata,
 	 * For SMD_EXECUTE (target becomes preferred now): drv_info is still set
 	 * from prep_setup.  Run driver activation before sending the EXEC frame.
 	 */
+	target = &ifmgd->prep_targets[target_slot];
 	if (ifmgd->prep_targets[target_slot].drv_info) {
-		ret = ieee80211_smd_prep_activate(sdata,
-						  &ifmgd->prep_targets[target_slot]);
+		ret = ieee80211_smd_prep_activate(sdata, target);
 		if (ret)
 			return ret;
+	}
+
+	if (req->exec_path) {
+		target->exec_path = 1;
+		if (ieee80211_smd_execute_transition(sdata, target, 0)) {
+			sdata_info(sdata, "ST: aborted — %pM (phase=exec mlo path)\n",
+				   target->target_mld_addr);
+			ieee80211_smd_prep_reset_target(sdata, target,
+							WLAN_STATUS_UNSPECIFIED_FAILURE,
+							1, false);
+			return -EINVAL;
+		}
+
+		__ieee80211_smd_dl_drain_complete(sdata, target, true);
+		cfg80211_notify_smd_bss_transition(sdata->dev,
+						   target->target_mld_addr,
+						   NL80211_SMD_TRANSITION_COMPLETE,
+						   WLAN_STATUS_SUCCESS, NULL);
+		return 0;
 	}
 
 	ret = ieee80211_tx_smd_uhr_link_reconf(sdata, req->target_mld_addr, req, NULL);
 	if (ret) {
 		ieee80211_smd_prep_reset_target(sdata,
-						&ifmgd->prep_targets[target_slot],
+						target,
 						WLAN_STATUS_UNSPECIFIED_FAILURE, 0,
 						false);
 		return ret;
@@ -7236,8 +7257,14 @@ ieee80211_uhr_link_reconf(struct wiphy *wiphy, struct net_device *dev,
 
 	lockdep_assert_wiphy(sdata->local->hw.wiphy);
 
-	if (req->type == IEEE80211_UHR_LINK_RECONF_TYPE_ST_EXEC)
-		return ieee80211_mgd_st_execute(sdata, req);
+	if (req->type == IEEE80211_UHR_LINK_RECONF_TYPE_ST_EXEC) {
+		if (!req->exec_path)
+			return ieee80211_mgd_st_execute(sdata, req);
+		else
+			return ieee80211_tx_smd_uhr_link_reconf(sdata,
+								req->target_mld_addr,
+								req, NULL);
+	}
 
 	return ieee80211_mgd_st_prepare(sdata, req);
 }
@@ -7251,12 +7278,35 @@ static int ieee80211_smd_roam(struct wiphy *wiphy,
 	struct sta_info *sta = NULL;
 	u32 type;
 	u32 status = 0;
+	struct cfg80211_smd_prepare_req *exec_req;
+	int ret;
 
 	lockdep_assert_wiphy(local->hw.wiphy);
 
 	if (!req->num_links) {
 		sdata_err(sdata, "smd: num_links zero, no roam config sent");
 		return -EINVAL;
+	}
+
+	if (req->role == 3) { //SMD_ROAM_CONFIG_ROLE_STA
+		sdata_dbg(sdata, "smd: STA rcv roam command\n");
+		exec_req = kzalloc(sizeof(*exec_req), GFP_KERNEL);
+		if (!exec_req)
+			return -ENOMEM;
+
+		exec_req->type = IEEE80211_UHR_LINK_RECONF_TYPE_ST_EXEC;
+		ether_addr_copy(exec_req->target_mld_addr, req->link_macs[0]);
+		exec_req->exec_path = 1; /* 0=SAP, 1=TAP */
+		exec_req->request_dl_sn_not_transferred =
+			req->dl_sn_not_transferred;
+		exec_req->request_ul_sn_not_transferred =
+			req->ul_sn_not_transferred;
+		exec_req->dl_tid_bitmap = 0xFF;
+		exec_req->tx_link_id = -1;
+
+		ret = ieee80211_mgd_st_execute(sdata, exec_req);
+		kfree(exec_req);
+		return ret;
 	}
 
 	sta = sta_info_get_bss(sdata, req->link_macs[0]);

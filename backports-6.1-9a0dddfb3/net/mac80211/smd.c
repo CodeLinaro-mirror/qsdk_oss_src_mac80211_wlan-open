@@ -537,6 +537,7 @@ int ieee80211_smd_execute_transition(struct ieee80211_sub_if_data *sdata,
 	info->dl_drain_time_tu = dl_drain_time_tu;
 	info->request_dl_sn_not_transferred = target->no_dl_sn;
 	info->request_ul_sn_not_transferred = target->no_ul_sn;
+	info->exec_path = target->exec_path;
 
 	/* DL drain applies only to the primary SAP link; other radios get 0. */
 	info->dl_drain_links_mask = BIT(info->primary_link_id);
@@ -730,14 +731,12 @@ static int __smd_dl_drain_no_remap(struct ieee80211_sub_if_data *sdata,
 					      sdata->vif.valid_links &
 					      ~target->tap_prepared_mask);
 
-	if (!target->transition_done_in_prep) {
-		ret = ieee80211_smd_assoc_success(sdata, target, primary_id,
-						  target->tap_to_sap_link[primary_id]);
-		if (ret) {
-			sdata_info(sdata, "smd: dl_drain assoc_success failed for primary %d: %d\n",
-				   primary_id, ret);
-			return ret;
-		}
+	ret = ieee80211_smd_assoc_success(sdata, target, primary_id,
+					  target->tap_to_sap_link[primary_id]);
+	if (ret) {
+		sdata_info(sdata, "smd: dl_drain assoc_success failed for primary %d: %d\n",
+			   primary_id, ret);
+		return ret;
 	}
 
 	sdata->vif.active_links |= BIT(primary_id);
@@ -799,38 +798,31 @@ static int __smd_dl_drain_remap(struct ieee80211_sub_if_data *sdata,
 		}
 	}
 
-	/*
-	 * Skipped when transition_done_in_prep=true: these steps were
-	 * already run during PREP; current_sta will be destroyed by
-	 * assoc_success_finalize at the end of this function.
-	 */
-	if (!target->transition_done_in_prep) {
-		old_primary_link = sdata->link[primary_sap_link_id];
-		current_sta = sta_info_get(sdata, sdata->vif.cfg.ap_addr);
-		if (current_sta &&
-		    (current_sta->sta.valid_links & BIT(primary_sap_link_id))) {
-			sdata_dbg(sdata,
-				  "smd: dl_drain remove current_sta link sap=%d\n",
-				  primary_sap_link_id);
-			ieee80211_sta_remove_link(current_sta, primary_sap_link_id,
-						  true);
-		}
-
-		target->old_links[primary_sap_link_id] = old_primary_link;
-
-		if (current_sta) {
-			sdata_dbg(sdata,
-				  "smd: dl_drain destroy current_sta pre-remap\n");
-			WARN_ON(__sta_info_destroy(current_sta));
-			current_sta = NULL;
-		}
-
+	old_primary_link = sdata->link[primary_sap_link_id];
+	current_sta = sta_info_get(sdata, sdata->vif.cfg.ap_addr);
+	if (current_sta &&
+	    (current_sta->sta.valid_links & BIT(primary_sap_link_id))) {
 		sdata_dbg(sdata,
-			  "smd: dl_drain release SAP primary chanctx sap=%d\n",
+			  "smd: dl_drain remove current_sta link sap=%d\n",
 			  primary_sap_link_id);
-		ieee80211_smd_stop_old_link(&sdata->vif, old_primary_link,
-					    primary_sap_link_id);
+		ieee80211_sta_remove_link(current_sta, primary_sap_link_id,
+					  true);
 	}
+
+	target->old_links[primary_sap_link_id] = old_primary_link;
+
+	if (current_sta) {
+		sdata_dbg(sdata,
+			  "smd: dl_drain destroy current_sta pre-remap\n");
+		WARN_ON(__sta_info_destroy(current_sta));
+		current_sta = NULL;
+	}
+
+	sdata_dbg(sdata,
+		  "smd: dl_drain release SAP primary chanctx sap=%d\n",
+		  primary_sap_link_id);
+	ieee80211_smd_stop_old_link(&sdata->vif, old_primary_link,
+				    primary_sap_link_id);
 
 	remap_info = kzalloc(sizeof(*remap_info), GFP_KERNEL);
 	if (!remap_info)
@@ -868,39 +860,25 @@ static int __smd_dl_drain_remap(struct ieee80211_sub_if_data *sdata,
 			__ieee80211_link_unassign(sdata, sap_link_id_local);
 	}
 
-	if (!target->transition_done_in_prep) {
-		if (target->new_links[primary_id]) {
-			rcu_assign_pointer(
-				target->new_links[primary_id]->conf.chanctx_conf,
-				NULL);
-			if (target->new_links[primary_id]->data.reserved_chanctx)
-				ieee80211_link_unreserve_chanctx(
-						&target->new_links[primary_id]->data);
-		}
-		for_each_set_bit(tap_link_id, (unsigned long *)&prepared_mask,
-				 IEEE80211_MLD_MAX_NUM_LINKS) {
-			if (tap_link_id == (unsigned int)primary_id)
-				continue;
-			if (target->new_links[tap_link_id]) {
-				sdata_dbg(sdata,
-					  "smd: dl_drain link[%u] = new_links[%u]\n",
-					  tap_link_id, tap_link_id);
-				nl = target->new_links[tap_link_id];
-				__ieee80211_link_assign(sdata, tap_link_id,
-							&nl->data, &nl->conf);
-			}
-		}
-	} else {
-		for_each_set_bit(tap_link_id, (unsigned long *)&prepared_mask,
-				 IEEE80211_MLD_MAX_NUM_LINKS) {
-			if (target->new_links[tap_link_id]) {
-				sdata_dbg(sdata,
-					  "smd: dl_drain (tdip) link[%u] = new_links[%u]\n",
-					  tap_link_id, tap_link_id);
-				nl = target->new_links[tap_link_id];
-				__ieee80211_link_assign(sdata, tap_link_id,
-							&nl->data, &nl->conf);
-			}
+	if (target->new_links[primary_id]) {
+		rcu_assign_pointer(
+			target->new_links[primary_id]->conf.chanctx_conf,
+			NULL);
+		if (target->new_links[primary_id]->data.reserved_chanctx)
+			ieee80211_link_unreserve_chanctx(
+					&target->new_links[primary_id]->data);
+	}
+	for_each_set_bit(tap_link_id, (unsigned long *)&prepared_mask,
+			 IEEE80211_MLD_MAX_NUM_LINKS) {
+		if (tap_link_id == (unsigned int)primary_id)
+			continue;
+		if (target->new_links[tap_link_id]) {
+			sdata_dbg(sdata,
+				  "smd: dl_drain link[%u] = new_links[%u]\n",
+				  tap_link_id, tap_link_id);
+			nl = target->new_links[tap_link_id];
+			__ieee80211_link_assign(sdata, tap_link_id,
+						&nl->data, &nl->conf);
 		}
 	}
 
@@ -938,19 +916,17 @@ static int __smd_dl_drain_remap(struct ieee80211_sub_if_data *sdata,
 	sdata_dbg(sdata, "smd: dl_drain remap sta links\n");
 	ieee80211_smd_remap_sta_links(target->target_sta, target->tap_to_sap_link);
 
-	if (!target->transition_done_in_prep) {
-		sdata->vif.active_links |= BIT(primary_id);
+	sdata->vif.active_links |= BIT(primary_id);
 
-		sdata_dbg(sdata,
-			  "smd: dl_drain assoc_success(tap=%d sap=%d) active=0x%x\n",
-			  primary_id, primary_id,
-			  sdata->vif.active_links);
-		ret = ieee80211_smd_assoc_success(sdata, target, primary_id, primary_id);
-		if (ret) {
-			sdata_info(sdata, "smd: dl_drain assoc_success failed: %d\n",
-				   ret);
-			return ret;
-		}
+	sdata_dbg(sdata,
+		  "smd: dl_drain assoc_success(tap=%d sap=%d) active=0x%x\n",
+		  primary_id, primary_id,
+		  sdata->vif.active_links);
+	ret = ieee80211_smd_assoc_success(sdata, target, primary_id, primary_id);
+	if (ret) {
+		sdata_info(sdata, "smd: dl_drain assoc_success failed: %d\n",
+			   ret);
+		return ret;
 	}
 
 	sdata->vif.active_links  = target->tap_prepared_mask;
@@ -1353,10 +1329,11 @@ void ieee80211_smd_prep_complete_target(struct ieee80211_sub_if_data *sdata,
 		done.links[link_id].addr = conf ? conf->addr : NULL;
 	}
 
-	cfg80211_notify_smd_bss_transition(sdata->dev,
-					   target->target_mld_addr,
-					   NL80211_SMD_TRANSITION_COMPLETE,
-					   WLAN_STATUS_SUCCESS, &done);
+	if (!target->exec_path)
+		cfg80211_notify_smd_bss_transition(sdata->dev,
+						   target->target_mld_addr,
+						   NL80211_SMD_TRANSITION_COMPLETE,
+						   WLAN_STATUS_SUCCESS, &done);
 
 	/* Clear the SMD BSS transition state bit only when the last target
 	 * completes — other targets may still be in flight in multi-prep.
