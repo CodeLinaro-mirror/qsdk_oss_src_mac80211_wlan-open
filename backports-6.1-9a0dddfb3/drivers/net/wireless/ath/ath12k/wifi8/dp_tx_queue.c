@@ -560,10 +560,13 @@ int ath12k_peer_alloc_dynamic_queue(struct ath12k_dp_hw_group *dp_hw_grp,
 		}
 
 		if (flow_type >= HTT_TID_MSDUQ_CUSTOM_0 &&
-		    flow_type <= HTT_TID_MSDUQ_CUSTOM_1)
+		    flow_type <= HTT_TID_MSDUQ_CUSTOM_1) {
 			msduq->svc_id = tx_queue_params->q_params.svc_id;
-		else
+			msduq->qm_id = tx_queue_params->q_params.qm_id;
+			msduq->txop_intent = tx_queue_params->q_params.txop_intent;
+		} else {
 			msduq->svc_id = ATH12K_INVALID_SVC_ID;
+		}
 	}
 unlock:
 	spin_unlock_bh(&tx_flow_info->tx_q_lock);

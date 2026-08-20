@@ -871,7 +871,8 @@ struct ath12k_dp_arch_ops {
 						   u8 *addr, u8 tid));
 	int (*dp_qos_queue_setup)(struct ath12k_dp_hw_group *dp_hw_grp,
 				  struct ath12k_dp_peer *dp_peer,
-				  u16 msduq, u16 qos_id);
+				  u8 msduq, u16 qos_id,
+				  u8 qm_id, bool txop_intent);
 	int (*peer_tx_tid_update_for_smd)(struct ath12k_base *ab,
 					  struct ath12k_dp_hw *dp_hw,
 					  struct ieee80211_vif *vif,
@@ -1907,11 +1908,13 @@ static inline void ath12k_dp_tx_set_ast(struct ath12k_dp *dp,
 static inline int ath12k_dp_qos_queue_setup(struct ath12k_dp *dp,
 					    struct ath12k_dp_hw_group *dp_hw_grp,
 					    struct ath12k_dp_peer *dp_peer,
-					    u16 msduq, u16 qos_id)
+					    u8 msduq, u16 qos_id,
+					    u8 qm_id, bool txop_intent)
 {
 	if (dp->arch_ops->dp_qos_queue_setup)
 		return dp->arch_ops->dp_qos_queue_setup(dp_hw_grp, dp_peer,
-							msduq, qos_id);
+							msduq, qos_id,
+							qm_id, txop_intent);
 	return -EOPNOTSUPP;
 }
 

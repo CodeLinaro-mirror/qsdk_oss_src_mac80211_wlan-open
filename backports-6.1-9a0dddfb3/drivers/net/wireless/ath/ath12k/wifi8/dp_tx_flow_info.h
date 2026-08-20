@@ -81,6 +81,8 @@ struct ath12k_dp_msdu_q_info  {
 	};
 	struct list_head list;
 	u8 svc_id;
+	u8 qm_id;
+	bool txop_intent;
 	u8 bitmap;
 	u8 mlo:1,
 	   qos:1,
@@ -160,5 +162,6 @@ int ath12k_wifi8_dp_tx_pool_create(struct ath12k_dp_hw_group *dp_hw_grp);
 void ath12k_wifi8_dp_tx_pool_destroy(struct ath12k_dp_hw_group *dp_hw_grp);
 int ath12k_wifi8_qos_queue_setup(struct ath12k_dp_hw_group *dp_hw_grp,
 				 struct ath12k_dp_peer *dp_peer,
-				 u16 msduq, u16 qos_id);
+				 u8 msduq, u16 qos_id,
+				 u8 qm_id, bool txop_intent);
 #endif

@@ -572,7 +572,8 @@ int ath12k_wifi7_dp_fetch_replenish_ring_id(struct ath12k_dp *dp)
 
 static int ath12k_wifi7_dp_qos_queue_setup(struct ath12k_dp_hw_group *dp_hw_grp,
 					   struct ath12k_dp_peer *dp_peer,
-					   u16 msduq, u16 qos_id)
+					   u8 msduq, u16 qos_id,
+					   u8 qm_id, bool txop_intent)
 {
 	return 0;
 }
