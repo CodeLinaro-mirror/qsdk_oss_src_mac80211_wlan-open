@@ -3165,6 +3165,68 @@ int ath12k_wmi_pdev_set_param(struct ath12k *ar, u32 param_id,
 	return ret;
 }
 
+int ath12k_wmi_send_wlan_profile_enable_cmd(struct ath12k *ar, u32 profile_id, u32 enable)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct wmi_wlan_profile_enable_profile_id_cmd *cmd;
+	struct sk_buff *skb;
+	int ret;
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_wlan_profile_enable_profile_id_cmd *)skb->data;
+	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(
+		WMI_TAG_WLAN_PROFILE_ENABLE_PROFILE_ID_CMD,
+		sizeof(*cmd));
+	cmd->profile_id = cpu_to_le32(profile_id);
+	cmd->enable = cpu_to_le32(enable);
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "WMI wlan profile enable profile_id %u enable %u\n",
+		   profile_id, enable);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_WLAN_PROFILE_ENABLE_PROFILE_ID_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "failed to send WMI_WLAN_PROFILE_ENABLE_PROFILE_ID_CMDID: %d\n",
+			    ret);
+		dev_kfree_skb(skb);
+	}
+
+	return ret;
+}
+
+int ath12k_wmi_send_wlan_profile_trigger_cmd(struct ath12k *ar, u32 enable)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct wmi_wlan_profile_trigger_cmd *cmd;
+	struct sk_buff *skb;
+	int ret;
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_wlan_profile_trigger_cmd *)skb->data;
+	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_WLAN_PROFILE_TRIGGER_CMD,
+						 sizeof(*cmd));
+	cmd->enable = cpu_to_le32(enable);
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI, "WMI wlan profile trigger enable %u\n",
+		   enable);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_WLAN_PROFILE_TRIGGER_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "failed to send WMI_WLAN_PROFILE_TRIGGER_CMDID: %d\n", ret);
+	dev_kfree_skb(skb);
+	}
+
+	return ret;
+}
+
 int ath12k_wmi_send_pdev_set_rf_path_cmd(struct ath12k *ar, u32 rf_path)
 {
 	struct ath12k_wmi_pdev *wmi = ar->wmi;
@@ -20552,6 +20614,54 @@ static void ath12k_wmi_mapc_peer_setup_status_event(struct ath12k_base *ab,
 }
 
 
+static void ath12k_wmi_wlan_profile_data_event(struct ath12k_base *ab,
+					       struct sk_buff *skb)
+{
+	const struct wmi_wlan_profile_ctx *ctx;
+	const struct wmi_wlan_profile *profile;
+	u32 i, bin_count;
+
+	if (skb->len < sizeof(*ctx)) {
+		ath12k_warn(ab, "profile data event too short: %d ", skb->len);
+		return;
+	}
+
+	ctx = (const struct wmi_wlan_profile_ctx *)skb->data;
+	bin_count = le32_to_cpu(ctx->bin_count);
+
+	ath12k_dbg(ab, ATH12K_DBG_WMI,
+		   "profile data: tot=%u tx_msdu=%u tx_mpdu=%u tx_ppdu=%u rx_msdu=%u rx_mpdu=%u bins=%u ",
+		   le32_to_cpu(ctx->tot),
+		   le32_to_cpu(ctx->tx_msdu_cnt),
+		   le32_to_cpu(ctx->tx_mpdu_cnt),
+		   le32_to_cpu(ctx->tx_ppdu_cnt),
+		   le32_to_cpu(ctx->rx_msdu_cnt),
+		   le32_to_cpu(ctx->rx_mpdu_cnt),
+		   bin_count);
+
+	if (skb->len < sizeof(*ctx) + bin_count * sizeof(*profile)) {
+		ath12k_warn(ab, "profile data event truncated: len=%d expected=%zu ",
+			    skb->len,
+			    sizeof(*ctx) + bin_count * sizeof(*profile));
+		return;
+	}
+
+	profile = (const struct wmi_wlan_profile *)(skb->data + sizeof(*ctx));
+	for (i = 0; i < bin_count; i++, profile++) {
+		ath12k_dbg(ab, ATH12K_DBG_WMI,
+			   "profile[%u]: id=%u cnt=%u tot=%u min=%u max=%u hist=[%u,%u,%u] ",
+			   i,
+			   le32_to_cpu(profile->id),
+			   le32_to_cpu(profile->cnt),
+			   le32_to_cpu(profile->tot),
+			   le32_to_cpu(profile->min),
+			   le32_to_cpu(profile->max),
+			   le32_to_cpu(profile->hist[0]),
+			   le32_to_cpu(profile->hist[1]),
+			   le32_to_cpu(profile->hist[2]));
+	}
+}
+
 static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 {
 	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
@@ -20655,6 +20765,9 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 		break;
 	case WMI_UPDATE_STATS_EVENTID:
 		ath12k_update_stats_event(ab, skb);
+		break;
+	case WMI_WLAN_PROFILE_DATA_EVENTID:
+		ath12k_wmi_wlan_profile_data_event(ab, skb);
 		break;
 	case WMI_PDEV_CTL_FAILSAFE_CHECK_EVENTID:
 		ath12k_pdev_ctl_failsafe_check_event(ab, skb);

@@ -11768,6 +11768,46 @@ struct wmi_pdev_multiple_vdev_set_param_cmd {
 	 */
 } __packed;
 
+struct wmi_wlan_profile_enable_profile_id_cmd {
+	u32 tlv_header;
+	u32 profile_id;
+	u32 enable;
+};
+
+struct wmi_wlan_profile_trigger_cmd {
+	u32 tlv_header;
+	u32 enable;
+};
+
+#define WMI_WLAN_PROFILE_MAX_HIST  3
+
+struct wmi_wlan_profile_ctx {
+	u32 tlv_header;
+	u32 tot;
+	u32 tx_msdu_cnt;
+	u32 tx_mpdu_cnt;
+	u32 tx_ppdu_cnt;
+	u32 rx_msdu_cnt;
+	u32 rx_mpdu_cnt;
+	u32 bin_count;
+};
+
+struct wmi_wlan_profile {
+	u32 tlv_header;
+	u32 id;
+	u32 cnt;
+	u32 tot;
+	u32 min;
+	u32 max;
+	u32 hist_intvl;
+	u32 hist[WMI_WLAN_PROFILE_MAX_HIST];
+};
+
+int ath12k_wmi_send_wlan_profile_trigger_cmd(struct ath12k *ar, u32 enable);
+
+int ath12k_wmi_send_wlan_profile_enable_cmd(struct ath12k *ar,
+					    u32 profile_id, u32 enable);
+
 int ath12k_wmi_cmd_send(struct ath12k_wmi_pdev *wmi, struct sk_buff *skb,
 			u32 cmd_id);
 struct sk_buff *ath12k_wmi_alloc_skb(struct ath12k_wmi_base *wmi_sc, u32 len);
