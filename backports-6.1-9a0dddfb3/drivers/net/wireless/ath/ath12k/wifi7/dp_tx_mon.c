@@ -19,8 +19,10 @@
 #include "../wmi.h"
 #include "../ath12k_notif.h"
 #include "dp_tx_mon.h"
+#ifdef CPTCFG_QCN_EXTN
 #include "../../net/mac80211/qcn_extns/cmn_extn.h"
 #include "qcn_extns/dp_mon_extn.h"
+#endif /* CPTCFG_QCN_EXTN */
 
 /**
  * ath12k_wifi7_dp_ext_mon_filter() - decide whether an MPDU passes TX

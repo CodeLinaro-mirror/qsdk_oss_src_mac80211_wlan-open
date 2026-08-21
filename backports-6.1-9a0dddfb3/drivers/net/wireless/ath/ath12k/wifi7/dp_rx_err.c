@@ -24,9 +24,9 @@
 #include "hal_wcn7850.h"
 #include "../debugfs.h"
 #include "../dp.h"
-#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#if defined(CPTCFG_EXT_IPA_OFFLOAD) && defined(CPTCFG_QCN_EXTN)
 #include "qcn_extns/ipa/dp_ipa.h"
-#endif
+#endif /* CPTCFG_EXT_IPA_OFFLOAD && CPTCFG_QCN_EXTN */
 
 static
 void ath12k_wifi7_convert_n_deliver_nw_frame(struct ath12k_pdev_dp *dp_pdev,

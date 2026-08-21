@@ -17,7 +17,9 @@
 #include "mesh.h"
 #include "led.h"
 #include "wme.h"
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/cmn_extn.h"
+#endif /* CPTCFG_QCN_EXTN */
 
 
 void ieee80211_tx_status_irqsafe(struct ieee80211_hw *hw,
@@ -1173,8 +1175,6 @@ void ieee80211_tx_monitor(struct ieee80211_local *local, struct sk_buff *skb,
 	struct cfg80211_chan_def *chandef;
 	int rtap_len;
 	bool tlv_check_ok;
-	int ret;
-
 	/* check valid TLV_AT_END */
 	tlv_check_ok = ieee80211_tx_monitor_check_end_tlvs(local, status);
 	if (WARN_ON_ONCE(!tlv_check_ok)) {
@@ -1223,6 +1223,8 @@ void ieee80211_tx_monitor(struct ieee80211_local *local, struct sk_buff *skb,
 				skb2 = skb_clone(skb, GFP_ATOMIC);
 				if (skb2) {
 					skb2->dev = prev_dev;
+#ifdef CPTCFG_QCN_EXTN
+					int ret;
 					ret = ieee80211_ext_mon_tx_notify(&local->hw,
 									  prev_sdata,
 									  skb2);
@@ -1230,6 +1232,9 @@ void ieee80211_tx_monitor(struct ieee80211_local *local, struct sk_buff *skb,
 						dev_kfree_skb(skb2);
 					else
 						netif_rx(skb2);
+#else
+					netif_rx(skb2);
+#endif /* CPTCFG_QCN_EXTN */
 				}
 			}
 			prev_sdata = sdata;
@@ -1238,11 +1243,16 @@ void ieee80211_tx_monitor(struct ieee80211_local *local, struct sk_buff *skb,
 	}
 	if (prev_dev) {
 		skb->dev = prev_dev;
+#ifdef CPTCFG_QCN_EXTN
+		int ret;
 		ret = ieee80211_ext_mon_tx_notify(&local->hw, prev_sdata, skb);
 		if (ret == NOTIFY_OK || ret == NOTIFY_STOP)
 			dev_kfree_skb(skb);
 		else
 			netif_rx(skb);
+#else
+		netif_rx(skb);
+#endif /* CPTCFG_QCN_EXTN */
 		skb = NULL;
 	}
 	rcu_read_unlock();
