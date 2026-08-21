@@ -2642,7 +2642,9 @@ core_pdev_create:
 
 		mutex_lock(&ab->core_lock);
 
-		if (ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE0 && !ab->recovery_start) {
+		if (ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE0 &&
+		    !ab->recovery_start &&
+		    ath12k_hw_group_recovery_in_progress(ag)) {
 			mutex_unlock(&ab->core_lock);
 			continue;
 		}
