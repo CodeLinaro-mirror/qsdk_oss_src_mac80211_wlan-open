@@ -3297,6 +3297,13 @@ enum nl80211_commands {
  * @NL80211_ATTR_UHR_RECONFIG_TYPE: u8 attribute specifying the UHR Link
  *	Reconfiguration frame type: 0 = ST Preparation, 1 = ST Execution.
  *
+ * @NL80211_ATTR_SMD_DELETE_TARGET_MLD_ADDRS: Array of nested MAC addresses,
+ *	each a target AP MLD whose ST preparation is being deleted (IEEE
+ *	P802.11bn/D2.0 Reconfiguration Operation Type=6), carried in an ST
+ *	Preparation Request frame (%NL80211_ATTR_UHR_RECONFIG_TYPE = 0). Each
+ *	nested entry's payload is the raw 6-byte MLD address, matching
+ *	%NL80211_ATTR_MAC_ADDRS.
+ *
  * @NL80211_ATTR_SMD_EXEC_PATH: u8 attribute specifying the ST Execution path:
  *	0 = via current AP (SAP), 1 = direct to target AP (TAP).
  *
@@ -4025,7 +4032,6 @@ enum nl80211_attrs {
 	NL80211_ATTR_SMD_DL_DRAIN_TIME,
 
 	NL80211_ATTR_SMD_STA_LINK_MACS,
-	NL80211_ATTR_SMD_STA_LINK_MAC,
 
 	NL80211_ATTR_SMD_PREFERRED_TARGET,
 
@@ -4039,6 +4045,8 @@ enum nl80211_attrs {
 	NL80211_ATTR_SMD_ROAM_STA,
 
 	NL80211_ATTR_STA_ISOLATED,
+	NL80211_ATTR_SMD_DELETE_TARGET_MLD_ADDRS,
+
 	/* add attributes here, update the policy in nl80211.c */
 	__NL80211_ATTR_AFTER_LAST,
 	NUM_NL80211_ATTR = __NL80211_ATTR_AFTER_LAST,
