@@ -466,7 +466,7 @@ void ath12k_dp_aggr_del_stats(struct ath12k_dp_peer_stats *dst_peer_stats,
 	}
 }
 
-static u8 ath12k_dp_get_bw_offset(u8 bw)
+u8 ath12k_dp_get_bw_offset(u8 bw)
 {
 	switch (bw) {
 	case HAL_RX_BW_20MHZ:
