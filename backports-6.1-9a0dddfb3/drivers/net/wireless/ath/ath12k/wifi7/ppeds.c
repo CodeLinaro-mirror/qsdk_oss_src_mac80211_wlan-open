@@ -300,6 +300,7 @@ int ath12k_ppeds_wifi7_inst_attach(struct ath12k_base *ab)
 	}
 	ab->dp->ppe.ds_node_id = ds_node_id;
 	ds_node_map[ds_node_id] = ab;
+	ab->dp->ppe.ppeds_stopped = 0;
 
 	WARN_ON(ab->dp->ppe.ppeds_soc_idx != -1);
 	/* dec ppeds_soc_idx to start from 0 */

@@ -421,6 +421,7 @@ static void ath12k_wifi7_dp_op_device_deinit(struct ath12k_dp *dp)
 		return;
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	dp->ppe.ppe_ops->ath12k_ppeds_stop(ab);
 	dp->ppe.ppe_ops->ath12k_ppeds_detach(ab);
 #endif
 	ath12k_dp_cc_deinit(ab);
