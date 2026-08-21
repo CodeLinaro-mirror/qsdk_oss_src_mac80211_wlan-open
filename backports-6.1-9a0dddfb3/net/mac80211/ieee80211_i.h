@@ -588,22 +588,29 @@ struct ieee80211_smd_target_link;
 /**
  * enum smd_bss_trans_flags - flags for
  *	&struct ieee80211_smd_prep_target.smd_bss_trans_flags
- * @SMD_BSS_TRANS_FLAG_AID_PRESENT: ST Prep Response carries a new AID
+ *
+ * IEEE P802.11bn/D2.0 removed the AID Present bit that D1.4 carried at B0
+ * (AID is instead carried in the Basic Multi-Link element's per-link STA
+ * Profile, see ieee80211_smd_parse_ml_persta()) — DL/UL BA Info Present and
+ * SCS List Present shifted down by one bit accordingly.
+ *
  * @SMD_BSS_TRANS_FLAG_DL_BA_INFO_PRESENT: DL BA session info present
  * @SMD_BSS_TRANS_FLAG_UL_BA_INFO_PRESENT: UL BA session info present
  * @SMD_BSS_TRANS_FLAG_SCS_LIST_PRESENT: SCS prioritization list present
  */
 enum smd_bss_trans_flags {
-	SMD_BSS_TRANS_FLAG_AID_PRESENT		= BIT(0),
-	SMD_BSS_TRANS_FLAG_DL_BA_INFO_PRESENT	= BIT(1),
-	SMD_BSS_TRANS_FLAG_UL_BA_INFO_PRESENT	= BIT(2),
-	SMD_BSS_TRANS_FLAG_SCS_LIST_PRESENT	= BIT(3),
+	SMD_BSS_TRANS_FLAG_DL_BA_INFO_PRESENT	= BIT(0),
+	SMD_BSS_TRANS_FLAG_UL_BA_INFO_PRESENT	= BIT(1),
+	SMD_BSS_TRANS_FLAG_SCS_LIST_PRESENT	= BIT(2),
 };
 
 /**
  * struct ieee80211_smd_prep_target - SMD preparation target tracking
  * @target_mld_addr: MAC address of the target AP MLD
  * @dialog_token: Dialog token for this preparation
+ * @defrag_sta_prof: Heap buffer holding a per-STA profile that had to be
+ *		     reassembled from IEEE80211_MLE_SUBELEM_FRAGMENT
+ *		     continuations
  * @prep_time: Timestamp when preparation was initiated (jiffies)
  * @prep_timeout_work: Delayed work for ST Prep timeout handling
  * @exec_timeout_work: Delayed work for ST Exec timeout handling
@@ -615,6 +622,7 @@ struct ieee80211_smd_prep_target {
 	u8 dialog_token;
 	struct ieee80211_mgd_assoc_data *assoc_data;
 	struct ieee802_11_elems *elems;
+	u8 *defrag_sta_prof[IEEE80211_MLD_MAX_NUM_LINKS];
 	unsigned long prep_time;
 	struct wiphy_delayed_work prep_timeout_work;
 	struct wiphy_delayed_work exec_timeout_work;
@@ -3683,6 +3691,9 @@ u8 *ieee80211_add_uhr_link_reconf_elem(struct sk_buff *skb,
 				       u16 removed_links,
 				       u8 type);
 u8 *ieee80211_add_uhr_link_reconf_smd_bss_trans_elem(struct sk_buff *skb,
+				struct ieee80211_sub_if_data *sdata,
+				struct cfg80211_smd_prepare_req *req_params);
+u8 *ieee80211_add_uhr_link_reconf_delete_st_prep_elems(struct sk_buff *skb,
 				struct ieee80211_sub_if_data *sdata,
 				struct cfg80211_smd_prepare_req *req_params);
 u8 *ieee80211_add_uhr_link_reconf_dh_nonce_elems(struct sk_buff *skb,
