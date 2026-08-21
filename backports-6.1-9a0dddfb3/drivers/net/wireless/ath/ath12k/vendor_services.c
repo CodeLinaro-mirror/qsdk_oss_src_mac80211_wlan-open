@@ -441,6 +441,8 @@ ath12k_vendor_send_init_response(const u8 service_id,
 			  link_info->tx_chain_mask);
 	ATH12K_VENDOR_PUT(vendor_event, u8, QCA_WLAN_VENDOR_ATTR_LINK_RX_CHAIN_MASK,
 			  link_info->rx_chain_mask);
+	ATH12K_VENDOR_PUT(vendor_event, string, QCA_WLAN_VENDOR_ATTR_LINK_WIRELESS_MODE,
+			  ath12k_mac_phymode_str(link_info->phymode));
 	nla_nest_end(vendor_event, nl_per_link_info);
 	nla_nest_end(vendor_event, nl_link_info);
 
@@ -827,6 +829,7 @@ int ath12k_vendor_generic_app_init_reply(struct sk_buff *vendor_event)
 			ath12k_vendor_put_ar_link_mac_addr(vendor_event, ar);
 			ath12k_vendor_put_ar_chan_info(vendor_event, ar);
 			ath12k_vendor_put_ar_nss_chains(vendor_event, ar);
+			ath12k_vendor_put_ar_wireless_mode(vendor_event, ar);
 			nla_nest_end(vendor_event, per_link_info);
 			num_hw_links++;
 		}
@@ -1188,6 +1191,7 @@ static void ath12k_vendor_report_link_info(struct ath12k_base *ab,
 	link_info->chan_freq = ctx->def.chan->center_freq;
 	link_info->tx_chain_mask = ar->pdev->cap.tx_chain_mask;
 	link_info->rx_chain_mask = ar->pdev->cap.rx_chain_mask;
+	link_info->phymode = arvif->ahvif->dp_vif.dp_link_vif[arvif->link_id].phymode;
 
 	spin_lock(&vendor_info.vendor_lock);
 	list_add(&soc_info->list, &vendor_info.soc_list);

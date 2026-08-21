@@ -5048,6 +5048,9 @@ enum qca_wlan_vendor_attr_soc_device_info {
  *
  * @QCA_WLAN_VENDOR_ATTR_LINK_RX_CHAIN_MASK: u8, represents the max rx chainmask
  * value.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_LINK_WIRELESS_MODE: NUL-terminated string, current
+ * PHY mode of the link (e.g. "11be-eht160").
  */
 enum qca_wlan_vendor_attr_link_info {
 	QCA_WLAN_VENDOR_ATTR_LINK_INFO_HW_LINK_ID = 1,
@@ -5057,6 +5060,7 @@ enum qca_wlan_vendor_attr_link_info {
 	QCA_WLAN_VENDOR_ATTR_LINK_BAND_CAP = 5,
 	QCA_WLAN_VENDOR_ATTR_LINK_TX_CHAIN_MASK = 6,
 	QCA_WLAN_VENDOR_ATTR_LINK_RX_CHAIN_MASK = 7,
+	QCA_WLAN_VENDOR_ATTR_LINK_WIRELESS_MODE = 8,
 
 	/* keep last */
 	QCA_WLAN_VENDOR_ATTR_LINK_AFTER_LAST,
@@ -7455,6 +7459,8 @@ int ath12k_vendor_put_ar_chan_info(struct sk_buff *vendor_event,
 				   struct ath12k *ar);
 int ath12k_vendor_put_ar_nss_chains(struct sk_buff *vendor_event,
 				    struct ath12k *ar);
+int ath12k_vendor_put_ar_wireless_mode(struct sk_buff *vendor_event,
+				       struct ath12k *ar);
 int ath12k_vendor_put_ab_soc_id(struct sk_buff *vendor_event,
 				struct ath12k_base *ab);
 int ath12k_vendor_put_ab_num_links(struct sk_buff *vendor_event,

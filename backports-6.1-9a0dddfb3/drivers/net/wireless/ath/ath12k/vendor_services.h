@@ -62,6 +62,7 @@ struct ath12k_vendor_link_info {
 	enum ath12k_link_band_caps band_cap;
 	u8 tx_chain_mask;
 	u8 rx_chain_mask;
+	enum wmi_phy_mode phymode;
 	struct ath12k_vendor_link_sm state;
 };
 
