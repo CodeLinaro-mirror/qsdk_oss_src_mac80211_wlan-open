@@ -211,12 +211,21 @@ int __cfg80211_join_mesh(struct cfg80211_registered_device *rdev,
 		return -EINVAL;
 
 #ifdef CPTCFG_QCN_EXTN
-	if (!cfg80211_bootup_cac_is_5g_dfs_chan_extn(&rdev->wiphy,
-						      &setup->chandef))
+	if (cfg80211_bootup_cac_is_5g_dfs_chan_extn(&rdev->wiphy,
+						    &setup->chandef)) {
+		if (!_cfg80211_chandef_usable(&rdev->wiphy, &setup->chandef,
+					      IEEE80211_CHAN_DISABLED, 0) ||
+		    !cfg80211_chandef_dfs_nol_clear(&rdev->wiphy,
+						    &setup->chandef))
+			return -EINVAL;
+	} else {
 #endif /* CPTCFG_QCN_EXTN */
 		if (!cfg80211_reg_can_beacon(&rdev->wiphy, &setup->chandef,
 					     NL80211_IFTYPE_MESH_POINT))
 			return -EINVAL;
+#ifdef CPTCFG_QCN_EXTN
+	}
+#endif /* CPTCFG_QCN_EXTN */
 
 	err = rdev_join_mesh(rdev, dev, conf, setup);
 	if (!err) {

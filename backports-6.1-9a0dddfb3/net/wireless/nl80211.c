@@ -8292,8 +8292,16 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 	 * the BSS to be created so that RNR can be populated immediately.
 	 */
 #ifdef CPTCFG_QCN_EXTN
-	if (!cfg80211_bootup_cac_is_5g_dfs_chan_extn(&rdev->wiphy,
-						      &params->chandef)) {
+	if (cfg80211_bootup_cac_is_5g_dfs_chan_extn(&rdev->wiphy,
+						    &params->chandef)) {
+		if (!_cfg80211_chandef_usable(&rdev->wiphy, &params->chandef,
+					      IEEE80211_CHAN_DISABLED, 0) ||
+		    !cfg80211_chandef_dfs_nol_clear(&rdev->wiphy,
+						    &params->chandef)) {
+			err = -EINVAL;
+			goto out;
+		}
+	} else {
 #endif /* CPTCFG_QCN_EXTN */
 		if (!wdev_is_scan_radio(wdev) &&
 		    !cfg80211_reg_check_beaconing(&rdev->wiphy, &params->chandef,
@@ -8560,12 +8568,28 @@ static int nl80211_update_ap(struct sk_buff *skb, struct genl_info *info)
 	beacon_check.reg_power =
 		cfg80211_get_6ghz_power_type(params->beacon.tail,
 					     params->beacon.tail_len);
-	if (!cfg80211_reg_check_beaconing(&rdev->wiphy,
-					  &wdev->links[link_id].ap.chandef,
-					  &beacon_check)) {
-		err = -EINVAL;
-		goto out;
+#ifdef CPTCFG_QCN_EXTN
+	if (cfg80211_bootup_cac_is_5g_dfs_chan_extn(&rdev->wiphy,
+						    &wdev->links[link_id].ap.chandef)) {
+		if (!_cfg80211_chandef_usable(&rdev->wiphy,
+					      &wdev->links[link_id].ap.chandef,
+					      IEEE80211_CHAN_DISABLED, 0) ||
+		    !cfg80211_chandef_dfs_nol_clear(&rdev->wiphy,
+						    &wdev->links[link_id].ap.chandef)) {
+			err = -EINVAL;
+			goto out;
+		}
+	} else {
+#endif /* CPTCFG_QCN_EXTN */
+		if (!cfg80211_reg_check_beaconing(&rdev->wiphy,
+						  &wdev->links[link_id].ap.chandef,
+						  &beacon_check)) {
+			err = -EINVAL;
+			goto out;
+		}
+#ifdef CPTCFG_QCN_EXTN
 	}
+#endif /* CPTCFG_QCN_EXTN */
 
 	attr = info->attrs[NL80211_ATTR_FILS_DISCOVERY];
 	if (attr) {
