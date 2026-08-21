@@ -4778,9 +4778,9 @@ int ath12k_dp_mon_tx_buff_alloc(struct ath12k_dp *dp)
 	}
 
 	if (tx_ring->bufs_max > ring_lvl)
-		tx_ring->bufs_fill_lvl = ring_lvl;
+		tx_ring->cur_fill_lvl = ring_lvl;
 	else
-		tx_ring->bufs_fill_lvl = tx_ring->bufs_max;
+		tx_ring->cur_fill_lvl = tx_ring->bufs_max;
 
 	spin_lock_bh(&dp_tx_mon->tx_mon_desc_lock);
 	dp_tx_mon->tx_mon_buf_ring_ready = true;
@@ -5748,9 +5748,9 @@ void ath12k_dp_mon_tx_process_low_thres(struct ath12k_dp *dp)
 	srng = &dp->hal->srng_list[tx_buff_ring->refill_buf_ring.ring_id];
 
 	/* Buffers intentionally left unfilled so the ring is maintained at
-	 * bufs_fill_lvl, not full.
+	 * cur_fill_lvl, not full.
 	 */
-	reserved_bufs = tx_buff_ring->bufs_max - tx_buff_ring->bufs_fill_lvl;
+	reserved_bufs = tx_buff_ring->bufs_max - tx_buff_ring->cur_fill_lvl;
 
 	spin_lock_bh(&srng->lock);
 	ath12k_hal_srng_access_begin(ab, srng);
@@ -5765,7 +5765,7 @@ void ath12k_dp_mon_tx_process_low_thres(struct ath12k_dp *dp)
 	num_free = num_free - reserved_bufs;
 
 	/* if ring is less than half filled need to replenish */
-	if (num_free < (tx_buff_ring->bufs_fill_lvl / 2)) {
+	if (num_free < (tx_buff_ring->cur_fill_lvl / 2)) {
 		ath12k_hal_srng_access_end(ab, srng);
 		spin_unlock_bh(&srng->lock);
 		spin_unlock_bh(&dp_tx_mon->tx_mon_desc_lock);

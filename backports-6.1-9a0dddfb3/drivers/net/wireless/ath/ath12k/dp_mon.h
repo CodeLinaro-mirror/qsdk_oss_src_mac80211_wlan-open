@@ -155,7 +155,7 @@ struct dp_rxdma_mon_ring {
 	/* Protects bufs_idr */
 	spinlock_t idr_lock;
 	int bufs_max;
-	int bufs_fill_lvl;
+	int cur_fill_lvl;
 };
 
 struct dp_mon_desc_list_params {
@@ -342,7 +342,7 @@ struct ath12k_dp_mon {
 	u32 mon_buf_ring_size;
 	u32 mon_dst_ring_size;
 	u32 mon_num_ppdu_desc;
-	u32 mon_ring_fill_lvl;
+	u32 default_fill_lvl;
 };
 
 enum dp_monitor_type {
@@ -1161,6 +1161,7 @@ void ath12k_dp_mon_rx_smart_mon_set(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_mon_rx_smart_mon_reset(struct ath12k_pdev_dp *dp_pdev);
 int ath12k_dp_mon_rx_monitor_mode_buf_setup(struct ath12k *ar);
 int ath12k_dp_mon_rx_monitor_mode_reset_buffers(struct ath12k *ar);
+int ath12k_dp_mon_set_fill_level(struct ath12k_pdev_dp *dp_pdev, u32 val);
 size_t ath12k_dp_mon_list_cut_nodes(struct list_head *list, struct list_head *head,
 				    size_t count);
 void ath12k_dp_mon_rx_deliver_skb(struct ath12k_pdev_dp *dp_pdev,
