@@ -1084,9 +1084,9 @@ static u32 cfg80211_set_punctured_device(struct wiphy *wiphy,
 }
 
 
-static int cfg80211_get_chans_dfs_required(struct wiphy *wiphy,
-					   const struct cfg80211_chan_def *chandef,
-					   enum nl80211_iftype iftype)
+int cfg80211_get_chans_dfs_required(struct wiphy *wiphy,
+				    const struct cfg80211_chan_def *chandef,
+				    enum nl80211_iftype iftype)
 {
 	struct ieee80211_channel *c;
 
@@ -1102,6 +1102,7 @@ static int cfg80211_get_chans_dfs_required(struct wiphy *wiphy,
 
 	return 0;
 }
+EXPORT_SYMBOL(cfg80211_get_chans_dfs_required);
 
 static int cfg80211_get_chans_dfs_required_device(struct wiphy *wiphy,
 						  const struct cfg80211_chan_def *chandef)
