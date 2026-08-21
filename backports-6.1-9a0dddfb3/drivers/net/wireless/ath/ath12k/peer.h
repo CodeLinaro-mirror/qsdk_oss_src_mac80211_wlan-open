@@ -73,6 +73,9 @@ bool ath12k_link_sta_hlist_empty(struct ath12k *ar);
 void ath12k_link_sta_hlist_delete(struct ath12k *ar, struct ath12k_link_sta *arsta);
 int ath12k_link_sta_hlist_add(struct ath12k *ar, struct ath12k_link_sta *arsta);
 struct ath12k_link_sta *ath12k_link_sta_find_by_addr(struct ath12k *ar, const u8 *addr);
+struct ath12k_link_sta *ath12k_link_sta_find_by_addr_vdev_id(struct ath12k *ar,
+							     const u8 *addr,
+							     u32 vdev_id);
 bool ath12k_peer_deauth_disassoc_tx_inc(struct ath12k *ar, const u8 *addr);
 void ath12k_peer_deauth_disassoc_tx_dec(struct ath12k *ar, const u8 *addr);
 int ath12k_wait_pending_deauth_disassoc_tx(struct ath12k *ar, const u8 *addr,
