@@ -14649,6 +14649,22 @@ static int ath12k_mac_station_add(struct ath12k *ar,
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
+	if (ath12k_pasn_peer_is_fw_created(arvif, arsta->addr)) {
+		ath12k_dbg(ab, ATH12K_DBG_RTT,
+			   "RTT PASN deleting FW peer %pM before station add vdev=%u\n",
+			   arsta->addr, arvif->vdev_id);
+
+		ret = ath12k_pasn_fw_peer_delete(arvif, arsta->addr);
+		if (ret) {
+			ath12k_warn(ab,
+				    "failed to delete RTT PASN fw peer %pM before station add: %d\n",
+				    arsta->addr, ret);
+			goto exit;
+		}
+
+		ath12k_pasn_peer_delete(arvif, arsta->addr);
+	}
+
 	ret = ath12k_mac_addr_collision_check(ar, arvif, arsta->addr,
 					      false, arsta->ahsta);
 	if (ret) {
