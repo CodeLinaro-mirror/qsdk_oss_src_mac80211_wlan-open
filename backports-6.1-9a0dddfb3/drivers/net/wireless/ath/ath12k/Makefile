@@ -48,7 +48,9 @@ ath12k-y += core.o \
 	    me_hmmc.o \
 	    ath12k_notif.o
 
-ath12k-$(CONFIG_KPROBES) += qcn_extns/kprobe.o
+ifeq ($(CPTCFG_QCN_EXTN)$(CONFIG_KPROBES),yy)
+ath12k-y += qcn_extns/kprobe.o
+endif
 
 ath12k-$(CPTCFG_ATHDEBUG) += athdbg_if.o
 ath12k-$(CPTCFG_ATH12K_AHB) += ahb.o
