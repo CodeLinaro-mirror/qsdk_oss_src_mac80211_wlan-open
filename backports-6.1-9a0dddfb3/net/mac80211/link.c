@@ -20,7 +20,7 @@ static void ieee80211_update_apvlan_links(struct ieee80211_sub_if_data *sdata)
 
 	list_for_each_entry(vlan, &sdata->u.ap.vlans, u.vlan.list) {
 		unsigned long add = sdata->vif.valid_links;
-		unsigned long rem = ~sdata->vif.valid_links & GENMASK(15,0);
+		unsigned long rem;
 		int link_id;
 
 		if (vlan->wdev.use_4addr) {
@@ -28,6 +28,16 @@ static void ieee80211_update_apvlan_links(struct ieee80211_sub_if_data *sdata)
 			if (sta)
 				add = add & sta->sta.valid_links;
 		}
+
+		/*
+		 * For 4-addr WDS VLANs, add is narrowed to the intersection
+		 * of AP links and STA links.  Derive rem from add so that AP
+		 * links the STA has not joined are also cleared from wdev,
+		 * preventing stale link addresses from appearing on the VLAN.
+		 * For non-4addr (DVLAN) VLANs, add == AP.valid_links so rem
+		 * is equivalent to the original ~AP.valid_links — no change.
+		 */
+		rem = ~add & GENMASK(15, 0);
 
 		if (add == vlan->vif.valid_links)
 			continue;
