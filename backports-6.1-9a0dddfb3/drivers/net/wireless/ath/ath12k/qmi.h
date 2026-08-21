@@ -103,6 +103,7 @@ enum ath12k_qmi_event_type {
 	ATH12K_QMI_EVENT_POWER_DOWN,
 	ATH12K_QMI_EVENT_HOST_CAP,
 	ATH12K_QMI_EVENT_M3_DUMP_UPLOAD_REQ,
+	ATH12K_QMI_EVENT_REQUEST_CMA_MEM,
 	ATH12K_QMI_EVENT_MAX,
 };
 
@@ -429,7 +430,7 @@ struct qmi_wlanfw_phy_cap_resp_msg_v01 {
 	u8 dynamic_ddr_support;
 };
 
-#define QMI_WLANFW_IND_REGISTER_REQ_MSG_V01_MAX_LEN		58
+#define QMI_WLANFW_IND_REGISTER_REQ_MSG_V01_MAX_LEN		62
 #define QMI_WLANFW_IND_REGISTER_REQ_V01				0x0020
 #define QMI_WLANFW_IND_REGISTER_RESP_MSG_V01_MAX_LEN		18
 #define QMI_WLANFW_IND_REGISTER_RESP_V01			0x0020
@@ -472,6 +473,8 @@ struct qmi_wlanfw_ind_register_req_msg_v01 {
 	u8 ddr_dump_region_enable;
 	u8 request_mem_free_valid;
 	u8 request_mem_free;
+	u8 request_cma_mem_enable_valid;
+	u8 request_cma_mem_enable;
 };
 
 struct qmi_wlanfw_ind_register_resp_msg_v01 {
@@ -488,6 +491,12 @@ struct qmi_wlanfw_ind_register_resp_msg_v01 {
 #define QMI_WLANFW_RESPOND_MEM_RESP_V01			0x0036
 #define QMI_WLANFW_MAX_NUM_MEM_CFG_V01			2
 #define QMI_WLANFW_MAX_STR_LEN_V01                      16
+#define QMI_WLANFW_REQUEST_CMA_MEM_IND_MSG_V01_MAX_MSG_LEN 1876
+#define QMI_WLANFW_RESPOND_CMA_MEM_REQ_MSG_V01_MAX_MSG_LEN 888
+#define QMI_WLANFW_RESPOND_CMA_MEM_RESP_MSG_V01_MAX_MSG_LEN 7
+#define QMI_WLANFW_REQUEST_CMA_MEM_IND_V01			0x0069
+#define QMI_WLANFW_RESPOND_CMA_MEM_REQ_V01			0x006a
+#define QMI_WLANFW_RESPOND_CMA_MEM_RESP_V01			0x006a
 
 struct qmi_wlanfw_mem_cfg_s_v01 {
 	u64 offset;
@@ -561,6 +570,30 @@ struct qmi_wlanfw_fw_cold_cal_done_ind_msg_v01 {
 
 struct qmi_wlanfw_request_mem_free_ind_msg_v01 {
 	struct qmi_wlanfw_mem_seg_info_s_v01 mem_seg;
+};
+
+struct qmi_wlanfw_cma_mem_seg_s_v01 {
+	u32 size;
+	enum qmi_wlanfw_mem_type_enum_v01 type;
+	u32 mem_cfg_len;
+	struct qmi_wlanfw_mem_cfg_s_v01 mem_cfg[QMI_WLANFW_MAX_NUM_MEM_CFG_V01];
+	u8 persist;
+};
+
+struct qmi_wlanfw_request_cma_mem_ind_msg_v01 {
+	u32 mem_seg_len;
+	struct qmi_wlanfw_cma_mem_seg_s_v01
+		mem_seg[ATH12K_QMI_WLANFW_MAX_NUM_MEM_SEG_V01];
+};
+
+struct qmi_wlanfw_respond_cma_mem_req_msg_v01 {
+	u32 mem_seg_len;
+	struct qmi_wlanfw_mem_seg_resp_s_v01
+		mem_seg[ATH12K_QMI_WLANFW_MAX_NUM_MEM_SEG_V01];
+};
+
+struct qmi_wlanfw_respond_cma_mem_resp_msg_v01 {
+	struct qmi_response_type_v01 resp;
 };
 
 #define QMI_WLANFW_CAP_REQ_MSG_V01_MAX_LEN	0
