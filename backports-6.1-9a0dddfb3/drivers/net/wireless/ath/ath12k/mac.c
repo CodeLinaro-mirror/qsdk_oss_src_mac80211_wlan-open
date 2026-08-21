@@ -7787,10 +7787,14 @@ int ath12k_mac_get_bridge_link_id_from_ahvif(struct ath12k_vif *ahvif,
 			ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
 					 "arvif found link_id %d for bridge_bitmap 0x%x\n",
 					 *link_id, bridge_bitmap);
-			if (!arvif->is_started) {
+			if ((ahvif->vdev_type == WMI_VDEV_TYPE_AP &&
+			     (!arvif->is_up || !arvif->is_started)) ||
+			    (ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
+			     !arvif->is_started)) {
 				ath12k_err(ab,
-					   "bridge vdev not started on link %d addr %pM, cannot create bridge peer\n",
-					   *link_id, arvif->addr);
+					   "bridge vdev on link %d addr %pM vdev_type %d is_started %d is_up %d, cannot create bridge peer\n",
+					   *link_id, arvif->addr, ahvif->vdev_type,
+					   arvif->is_started, arvif->is_up);
 				continue;
 			}
 			ret = 0;
@@ -25791,6 +25795,8 @@ static void ath12k_mac_handle_failures_bridge_addition(struct ieee80211_hw *hw,
 
 		if (arvif->is_started) {
 			ath12k_mac_unassign_vif_chanctx_handle(hw, vif, NULL, NULL, link_id);
+			ath12k_mac_remove_link_interface(hw, arvif);
+			ath12k_mac_unassign_link_vif(arvif);
 		} else if (arvif->is_created) {
 			ath12k_mac_remove_link_interface(hw, arvif);
 			ath12k_mac_unassign_link_vif(arvif);
