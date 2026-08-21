@@ -14,6 +14,7 @@ config MAC80211
 	depends on CRYPTO_GCM
 	depends on CRYPTO_CMAC
 	depends on CRC32
+	select SKB_EXTENSIONS
 	help
 	  This option enables the hardware independent IEEE 802.11
 	  networking stack.
