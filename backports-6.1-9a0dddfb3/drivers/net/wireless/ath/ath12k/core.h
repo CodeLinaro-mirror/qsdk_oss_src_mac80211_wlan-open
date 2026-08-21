@@ -2361,6 +2361,8 @@ struct ath12k {
 
 	/* Cached IGMP/MLD TID override value (0=disabled, 1-7=TID) */
 	u32 igmp_tid_override;
+	/* Bitmask for UNII-1/2A coex disable: bit0=UNII-1, bit1=UNII-2A */
+	u8 chan_coex_disable_mask;
 };
 
 static inline bool ath12k_is_rf_path_switch_supported(struct ath12k *ar)
