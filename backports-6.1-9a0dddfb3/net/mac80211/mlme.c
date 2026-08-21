@@ -1631,10 +1631,10 @@ static int ieee80211_config_bw(struct ieee80211_link_data *link,
 		return 0;
 	}
 
-	if (link->u.mgd.csa.bw_reconfig) {
-		link->u.mgd.csa.bw_reconfig = false;
+	if (link->conf->csa_active && link->u.mgd.csa.bw_reconfig &&
+	    ieee80211_chanreq_identical(&chanreq, &link->csa.chanreq)) {
 		link_info(link,
-			  "bw reconfig CSA in progress or just completed in %s, ignoring beacon bw change freq=%d width=%d\n",
+			  "bw reconfig already pending in %s freq=%d width=%d\n",
 			  frame, chanreq.oper.chan->center_freq,
 			  chanreq.oper.width);
 		return 0;
@@ -2888,13 +2888,7 @@ static void ieee80211_chswitch_post_beacon(struct ieee80211_link_data *link)
 	link->conf->csa_active = false;
 	link->u.mgd.csa.blocked_tx = false;
 	link->u.mgd.csa.waiting_bcn = false;
-	/*
-	 * The completing beacon may still carry the AP's pre-switch
-	 * operation elements (AP hasn't updated them yet), so tell
-	 * ieee80211_config_bw() to ignore one more stale bandwidth
-	 * reading against the just-applied chanreq.
-	 */
-	link->u.mgd.csa.bw_reconfig = true;
+	link->u.mgd.csa.bw_reconfig = false;
 
 	ret = drv_post_channel_switch(link);
 	if (ret) {
