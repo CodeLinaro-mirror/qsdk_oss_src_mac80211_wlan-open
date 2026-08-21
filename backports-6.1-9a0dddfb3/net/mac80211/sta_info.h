@@ -1123,6 +1123,26 @@ static inline u32 sta_stats_encode_rate(struct ieee80211_rx_status *s)
 
 	switch (s->encoding) {
 	case RX_ENC_VHT:
+	case RX_ENC_HE:
+	case RX_ENC_EHT:
+	case RX_ENC_UHR:
+		/*
+		 * Guard against drivers reporting an out-of-range nss for
+		 * offloaded/fast-rx frames, which don't go through the
+		 * validation in __ieee80211_rx_handle_packet(). Caching a
+		 * bad nss here would otherwise only surface later as a
+		 * WARN_ON_ONCE in cfg80211_calculate_bitrate_*() when this
+		 * stat is decoded for e.g. a station dump/removal.
+		 */
+		if (s->nss < 1 || s->nss > 8)
+			return STA_STATS_RATE_INVALID;
+		break;
+	default:
+		break;
+	}
+
+	switch (s->encoding) {
+	case RX_ENC_VHT:
 		r |= STA_STATS_FIELD(TYPE, STA_STATS_RATE_TYPE_VHT);
 		r |= STA_STATS_FIELD(VHT_NSS, s->nss);
 		r |= STA_STATS_FIELD(VHT_MCS, s->rate_idx);
