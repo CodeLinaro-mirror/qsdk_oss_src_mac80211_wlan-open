@@ -852,6 +852,9 @@ ath12k_pull_mac_phy_cap_svc_ready_ext(struct ath12k_wmi_pdev *wmi_handle,
 	if (phy_id >= le32_to_cpu(svc->soc_hal_reg_caps->num_phy))
 		return -EINVAL;
 
+	if (phy_idx >= svc->n_mac_phy_caps)
+		return -EINVAL;
+
 	mac_caps = wmi_mac_phy_caps + phy_idx;
 	supported_bands = le32_to_cpu(mac_caps->supported_bands);
 
