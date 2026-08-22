@@ -1314,8 +1314,10 @@ static bool sta_info_cleanup_expire_buffered(struct ieee80211_local *local,
 
 static int __must_check __sta_info_destroy_part1(struct sta_info *sta)
 {
+	struct cfg80211_smd_get_ctx_pending *pending, *tmp;
 	struct ieee80211_local *local;
 	struct ieee80211_sub_if_data *sdata;
+	struct wireless_dev *wdev;
 	int ret, i;
 
 	might_sleep();
@@ -1325,6 +1327,7 @@ static int __must_check __sta_info_destroy_part1(struct sta_info *sta)
 
 	local = sta->local;
 	sdata = sta->sdata;
+	wdev = &sdata->wdev;
 
 	lockdep_assert_wiphy(local->hw.wiphy);
 
@@ -1378,6 +1381,19 @@ static int __must_check __sta_info_destroy_part1(struct sta_info *sta)
 	if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN &&
 	    rcu_access_pointer(sdata->u.vlan.sta) == sta)
 		RCU_INIT_POINTER(sdata->u.vlan.sta, NULL);
+
+	if (sdata->vif.type == NL80211_IFTYPE_AP) {
+		spin_lock_bh(&wdev->smd_get_ctx_lock);
+		list_for_each_entry_safe(pending, tmp,
+					 &wdev->smd_get_ctx_pending_list, list) {
+			if (ether_addr_equal(pending->sta_addr, sta->addr)) {
+				list_del(&pending->list);
+				kfree(pending);
+				break;
+			}
+		}
+		spin_unlock_bh(&wdev->smd_get_ctx_lock);
+	}
 
 	return 0;
 }

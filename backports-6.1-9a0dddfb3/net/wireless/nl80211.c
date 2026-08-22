@@ -21922,12 +21922,12 @@ static int nl80211_set_smd_ctx(struct sk_buff *skb, struct genl_info *info)
 static bool
 __cfg80211_smd_ctx_pending_exists(struct wireless_dev *wdev, const u8 *addr)
 {
-	struct cfg80211_smd_get_ctx_pending *pending = NULL, *tmp_pending;
+	struct cfg80211_smd_get_ctx_pending *pending = NULL, *tmp;
 
 	spin_lock_bh(&wdev->smd_get_ctx_lock);
-	list_for_each_entry(tmp_pending, &wdev->smd_get_ctx_pending_list, list) {
-		if (!memcmp(tmp_pending->sta_addr, addr, ETH_ALEN)) {
-			pending = tmp_pending;
+	list_for_each_entry(tmp, &wdev->smd_get_ctx_pending_list, list) {
+		if (ether_addr_equal(tmp->sta_addr, addr)) {
+			pending = tmp;
 			break;
 		}
 	}
@@ -21945,8 +21945,9 @@ static int nl80211_get_smd_ctx(struct sk_buff *skb, struct genl_info *info)
 	struct net_device *dev = info->user_ptr[1];
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
 	struct cfg80211_smd_transition_info st_info = {0};
-	struct cfg80211_smd_get_ctx_pending *pending;
-	struct ieee80211_smd_ctx *ctx;
+	struct cfg80211_smd_get_ctx_pending *pending __free(kfree) = NULL;
+	struct cfg80211_smd_get_ctx_pending *tmp;
+	struct ieee80211_smd_ctx ctx = {};
 	struct nlattr *bmap_attr;
 	const u8 *addr = NULL;
 	u8 valid_ctx;
@@ -21973,27 +21974,22 @@ static int nl80211_get_smd_ctx(struct sk_buff *skb, struct genl_info *info)
 	if (__cfg80211_smd_ctx_pending_exists(wdev, addr))
 		return -EBUSY;
 
-	ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
-	if (!ctx)
-		return -ENOMEM;
-
-	st_info.ctx = ctx;
+	st_info.ctx = &ctx;
 	st_info.type = nla_get_u8(tb[NL80211_SMD_CTX_ATTR_TYPE]);
 
 	valid_ctx = nla_get_u8(tb[NL80211_SMD_CTX_ATTR_VALID_CTX]);
-	bitmap_write(ctx->valid_ctx_bmap, valid_ctx, 0, IEEE80211_SMD_CTX_NUM_VALID_CTX);
+	bitmap_write(ctx.valid_ctx_bmap, valid_ctx, 0, IEEE80211_SMD_CTX_NUM_VALID_CTX);
 
 	if (tb[NL80211_SMD_CTX_ATTR_DL]) {
 		if (nla_parse_nested(dl_tb, NL80211_SMD_CTX_DL_ATTR_MAX,
 				     tb[NL80211_SMD_CTX_ATTR_DL],
 				     nl80211_smd_ctx_dl_policy, NULL)) {
-			kfree(ctx);
 			return -EINVAL;
 		}
 
 		bmap_attr = dl_tb[NL80211_SMD_CTX_DL_ATTR_VALID_TID_BITMAP];
 		if (bmap_attr)
-			bitmap_write(ctx->dl.valid_tid_bmap, nla_get_u8(bmap_attr),
+			bitmap_write(ctx.dl.valid_tid_bmap, nla_get_u8(bmap_attr),
 				     0, IEEE80211_SMD_CTX_NUM_TIDS);
 	}
 
@@ -22001,19 +21997,22 @@ static int nl80211_get_smd_ctx(struct sk_buff *skb, struct genl_info *info)
 		if (nla_parse_nested(ul_tb, NL80211_SMD_CTX_UL_ATTR_MAX,
 				     tb[NL80211_SMD_CTX_ATTR_UL],
 				     nl80211_smd_ctx_ul_policy, NULL)) {
-			kfree(ctx);
 			return -EINVAL;
 		}
 
 		bmap_attr = ul_tb[NL80211_SMD_CTX_UL_ATTR_VALID_TID_BITMAP];
 		if (bmap_attr)
-			bitmap_write(ctx->ul.valid_tid_bmap, nla_get_u8(bmap_attr),
+			bitmap_write(ctx.ul.valid_tid_bmap, nla_get_u8(bmap_attr),
 				     0, IEEE80211_SMD_CTX_NUM_TIDS);
 	}
 
+	pending = kzalloc(sizeof(*pending), GFP_KERNEL);
+	if (!pending)
+		return -ENOMEM;
+	memcpy(pending->sta_addr, addr, ETH_ALEN);
+
 	ret = rdev_get_smd_ctx(rdev, wdev, addr, &st_info);
 	if (ret && ret != -EINPROGRESS) {
-		kfree(ctx);
 		return ret;
 	}
 
@@ -22024,8 +22023,7 @@ static int nl80211_get_smd_ctx(struct sk_buff *skb, struct genl_info *info)
 
 		msg = nlmsg_new(100 + nl80211_smd_ctx_nl_size(&st_info), GFP_ATOMIC);
 		if (!msg) {
-			kfree(ctx->drv_ctx);
-			kfree(ctx);
+			kfree(ctx.drv_ctx);
 			return -ENOMEM;
 		}
 		hdr = nl80211hdr_put(msg, info->snd_portid, info->snd_seq, 0,
@@ -22033,14 +22031,12 @@ static int nl80211_get_smd_ctx(struct sk_buff *skb, struct genl_info *info)
 		if (!hdr ||
 		    nla_put(msg, NL80211_ATTR_MAC, ETH_ALEN, addr) ||
 		    nl80211_put_smd_ctx(msg, &st_info)) {
-			kfree(ctx->drv_ctx);
-			kfree(ctx);
+			kfree(ctx.drv_ctx);
 			nlmsg_free(msg);
 			return -ENOBUFS;
 		}
 		genlmsg_end(msg, hdr);
-		kfree(ctx->drv_ctx);
-		kfree(ctx);
+		kfree(ctx.drv_ctx);
 		return genlmsg_reply(msg, info);
 	}
 
@@ -22050,18 +22046,14 @@ static int nl80211_get_smd_ctx(struct sk_buff *skb, struct genl_info *info)
 	 * the BH completion fires.  The ctx skel is no longer needed here —
 	 * the driver owns it until completion.
 	 */
-	kfree(ctx);
 
-	pending = kzalloc(sizeof(*pending), GFP_KERNEL);
-	if (!pending)
-		return -ENOMEM;
-
-	INIT_LIST_HEAD(&pending->list);
-	memcpy(pending->sta_addr, addr, ETH_ALEN);
 
 	spin_lock_bh(&wdev->smd_get_ctx_lock);
 	list_add_tail(&pending->list, &wdev->smd_get_ctx_pending_list);
 	spin_unlock_bh(&wdev->smd_get_ctx_lock);
+
+	/* release ownership */
+	tmp = no_free_ptr(pending);
 
 	/* Reply will arrive via cfg80211_get_smd_ctx_done() */
 	return -EINPROGRESS;
