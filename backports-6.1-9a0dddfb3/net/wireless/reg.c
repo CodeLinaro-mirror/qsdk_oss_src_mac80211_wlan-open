@@ -1666,6 +1666,7 @@ freq_reg_info_regd(u32 center_freq,
 
 	return ERR_PTR(-EINVAL);
 }
+EXPORT_SYMBOL(freq_reg_info_regd);
 
 static const struct ieee80211_reg_rule *
 __freq_reg_info(struct wiphy *wiphy, u32 center_freq, u32 min_bw)
@@ -2204,12 +2205,13 @@ static bool reg_is_world_roaming(struct wiphy *wiphy)
 	return false;
 }
 
-static void reg_call_notifier(struct wiphy *wiphy,
-			      struct regulatory_request *request)
+void reg_call_notifier(struct wiphy *wiphy,
+		       struct regulatory_request *request)
 {
 	if (wiphy->reg_notifier)
 		wiphy->reg_notifier(wiphy, request);
 }
+EXPORT_SYMBOL(reg_call_notifier);
 
 static void handle_reg_beacon(struct wiphy *wiphy, unsigned int chan_idx,
 			      struct reg_beacon *reg_beacon)
@@ -2788,7 +2790,7 @@ static void handle_band_custom(struct wiphy *wiphy,
 				      MHZ_TO_KHZ(20), 0);
 }
 
-static void
+void
 cfg80211_init_reg_request(struct regulatory_request *request,
 			  struct wiphy *wiphy,
 			  const char *alpha2)
@@ -2799,6 +2801,7 @@ cfg80211_init_reg_request(struct regulatory_request *request,
 	request->alpha2[1] = alpha2[1];
 	request->initiator = NL80211_REGDOM_SET_BY_DRIVER;
 }
+EXPORT_SYMBOL(cfg80211_init_reg_request);
 
 #ifdef CPTCFG_QCA_LAB_TEST_FEATURES
 static bool cfg80211_is_freq_in_range(u32 freq_mhz, u32 start_mhz, u32 end_mhz)

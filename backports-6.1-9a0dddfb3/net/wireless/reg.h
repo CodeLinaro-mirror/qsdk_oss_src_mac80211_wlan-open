@@ -45,6 +45,31 @@ int regulatory_hint_user(const char *alpha2,
 void regulatory_hint_indoor(bool is_indoor, u32 portid);
 
 /**
+ * cfg80211_init_reg_request - initialise a regulatory_request for a wiphy
+ * @request: the request structure to initialise (zeroed on entry)
+ * @wiphy: the wiphy whose index and alpha2 to populate
+ * @alpha2: two-character country code to embed in the request
+ *
+ * Fills in wiphy_idx, alpha2, and sets initiator to
+ * NL80211_REGDOM_SET_BY_DRIVER.  Use before calling reg_call_notifier()
+ * or nl80211_wiphy_reg_change_event() from a vendor command handler.
+ */
+void
+cfg80211_init_reg_request(struct regulatory_request *request,
+			  struct wiphy *wiphy,
+			  const char *alpha2);
+
+/**
+ * reg_call_notifier - invoke the wiphy regulatory notifier callback
+ * @wiphy: the wiphy whose notifier to call
+ * @request: the regulatory request to pass to the notifier
+ *
+ * Calls wiphy->reg_notifier() if set.  Used to notify the driver that
+ * the regulatory domain has changed so it can update its channel state.
+ */
+void reg_call_notifier(struct wiphy *wiphy,
+		       struct regulatory_request *request);
+/**
  * regulatory_netlink_notify - notify on released netlink socket
  * @portid: the netlink socket port ID
  */

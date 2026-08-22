@@ -619,6 +619,16 @@ void ath12k_change_6g_txpow_sta_mode_work(struct work_struct *work);
 void ath12k_set_previous_country_work(struct work_struct *work);
 struct ieee80211_regdomain *ath12k_reg_build_regd(struct ath12k_base *ab,
 						  struct ath12k_reg_info *reg_info);
+/**
+ * ath12k_get_current_regd - get the active regulatory domain for a radio
+ * @ar: pointer to the ath12k radio instance
+ *
+ * Returns new_regd if set, otherwise falls back to default_regd.
+ * Acquires base_lock internally.
+ *
+ * Return: pointer to the current ieee80211_regdomain, or NULL on error.
+ */
+struct ieee80211_regdomain *ath12k_get_current_regd(struct ath12k *ar);
 enum wmi_reg_6g_ap_type
 ath12k_ieee80211_ap_pwr_type_convert(enum ieee80211_ap_reg_power power_type);
 int ath12k_regd_update(struct ath12k *ar, bool init);
