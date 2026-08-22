@@ -1008,11 +1008,15 @@ struct ath12k_ext_mon_snr_info {
 	u64 timestamp;
 };
 
+struct ath12k_ext_mon_ta_peer_info {
+	u8 bitmap;
+	struct ath12k_ext_mon_snr_info snr_info;
+};
+
 struct ath12k_ext_mon_peer_info {
 	u8 mac_addr[ETH_ALEN];
 	bool ra_addr;
-	u8 bitmap;
-	struct ath12k_ext_mon_snr_info snr_info;
+	struct ath12k_ext_mon_ta_peer_info ta_info;
 };
 
 struct ath12k_ext_mon_peer_config {

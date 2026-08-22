@@ -2390,9 +2390,9 @@ int ath12k_wifi7_dp_ext_mon_validate_request(struct ath12k_pdev_dp *dp_pdev,
 	if (req->peer.action == ATH12K_EXT_MON_PEER_ACTION_ADD) {
 		for (i = 0; i < req->peer.count; i++) {
 			peer = &req->peer.peer_info[i];
-			if (peer->bitmap != ATH12K_EXT_MON_DEFAULT_PEER_BITMAP) {
+			if (peer->ta_info.bitmap != ATH12K_EXT_MON_DEFAULT_PEER_BITMAP) {
 				ath12k_warn(dp_pdev->dp, "invalid bitmap: %02x",
-					    peer->bitmap);
+					    peer->ta_info.bitmap);
 				return -EINVAL;
 			}
 		}

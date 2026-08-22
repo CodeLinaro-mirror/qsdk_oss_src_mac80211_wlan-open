@@ -15096,7 +15096,7 @@ ath12k_ext_mon_extract_peer_info(struct nlattr *peer_info_attr,
 					tb[QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_ADDR_IS_RA]);
 
 		if (tb[QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_BITMAP])
-			peer->peer_info[i].bitmap =
+			peer->peer_info[i].ta_info.bitmap =
 				nla_get_u8(tb[QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_BITMAP]);
 
 		i++;
@@ -15567,10 +15567,10 @@ ath12k_ext_mon_put_peer_info(struct sk_buff *skb, int idx,
 		goto err;
 
 	if (nla_put_u8(skb, QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_BITMAP,
-		       peer_info->bitmap))
+		       peer_info->ta_info.bitmap))
 		goto err;
 
-	ret = ath12k_ext_mon_put_snr_info(skb, &peer_info->snr_info);
+	ret = ath12k_ext_mon_put_snr_info(skb, &peer_info->ta_info.snr_info);
 	if (ret)
 		goto err;
 
