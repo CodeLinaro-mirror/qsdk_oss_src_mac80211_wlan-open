@@ -1379,10 +1379,11 @@ void ath12k_wifi8_hal_reo_hw_setup(struct ath12k_base *ab)
 
 	/* Configure error ring RDs for mgmt rings */
 	val = ath12k_hif_read32(ab, reo_base + HAL_REO1_ERROR_RING_CFG_FOR_DEST_IX1);
-	val |= u32_encode_bits(10, HAL_REO1_ERROR_RING_CFG_FOR_DEST_REO2SW9_ERR);
 	val |= u32_encode_bits(8, HAL_REO1_ERROR_RING_CFG_FOR_DEST_REO2PPE_ERR);
 	val |= u32_encode_bits(8, HAL_REO1_ERROR_RING_CFG_FOR_DEST_REO2SW5_ERR);
 	val |= u32_encode_bits(8, HAL_REO1_ERROR_RING_CFG_FOR_DEST_REO2SW6_ERR);
+	val |= u32_encode_bits(10, HAL_REO1_ERROR_RING_CFG_FOR_DEST_REO2SW8_ERR);
+	val |= u32_encode_bits(10, HAL_REO1_ERROR_RING_CFG_FOR_DEST_REO2SW9_ERR);
 	ath12k_hif_write32(ab, reo_base + HAL_REO1_ERROR_RING_CFG_FOR_DEST_IX1, val);
 
 	val = ath12k_hif_read32(ab, reo_base + HAL_REO1_ERROR_RING_CFG_FOR_DEST_IX2);
@@ -1411,10 +1412,13 @@ void ath12k_wifi8_hal_reo_hw_setup(struct ath12k_base *ab)
 
 	val = ath12k_hif_read32(ab, reo_base + HAL_REO1_FRAG_ERROR_RING_CFG_FOR_DEST_IX1);
 	val |= u32_encode_bits(8, HAL_REO1_FRAG_ERROR_RING_CFG_FOR_DEST_REO2SW5_ERR);
+	val |= u32_encode_bits(10, HAL_REO1_FRAG_ERROR_RING_CFG_FOR_DEST_REO2SW8_ERR);
+	val |= u32_encode_bits(10, HAL_REO1_FRAG_ERROR_RING_CFG_FOR_DEST_REO2SW9_ERR);
 	val |= u32_encode_bits(8, HAL_REO1_FRAG_ERROR_RING_CFG_FOR_DEST_REO2PPE_ERR);
 	ath12k_hif_write32(ab, reo_base + HAL_REO1_FRAG_ERROR_RING_CFG_FOR_DEST_IX1, val);
 
 	val = ath12k_hif_read32(ab, reo_base + HAL_REO1_FRAG_ERROR_RING_CFG_FOR_DEST_IX2);
+	val |= u32_encode_bits(10, HAL_REO1_FRAG_ERROR_RING_CFG_FOR_DEST_REO2SW11_ERR);
 	val |= u32_encode_bits(8, HAL_REO1_FRAG_ERROR_RING_CFG_FOR_DEST_REO2PPE1_ERR);
 	val |= u32_encode_bits(8, HAL_REO1_FRAG_ERROR_RING_CFG_FOR_DEST_REO2PPE2_ERR);
 	ath12k_hif_write32(ab, reo_base + HAL_REO1_FRAG_ERROR_RING_CFG_FOR_DEST_IX2, val);
@@ -1492,10 +1496,13 @@ void ath12k_wifi8_hal_reo_hw_setup(struct ath12k_base *ab)
 
 	val = ath12k_hif_read32(ab, reo_base + HAL_REO1_FRAG_MAP_IX_1);
 	val |= u32_encode_bits(8, HAL_REO1_FRAG_MAP_REO2SW5);
+	val |= u32_encode_bits(10, HAL_REO1_FRAG_MAP_REO2SW8);
+	val |= u32_encode_bits(10, HAL_REO1_FRAG_MAP_REO2SW9);
 	val |= u32_encode_bits(8, HAL_REO1_FRAG_MAP_REO2PPE);
 	ath12k_hif_write32(ab, reo_base + HAL_REO1_FRAG_MAP_IX_1, val);
 
 	val = ath12k_hif_read32(ab, reo_base + HAL_REO1_FRAG_MAP_IX_2);
+	val |= u32_encode_bits(10, HAL_REO1_FRAG_MAP_REO2SW11);
 	val |= u32_encode_bits(8, HAL_REO1_FRAG_MAP_REO2PPE1);
 	val |= u32_encode_bits(8, HAL_REO1_FRAG_MAP_REO2PPE2);
 	ath12k_hif_write32(ab, reo_base + HAL_REO1_FRAG_MAP_IX_2, val);
