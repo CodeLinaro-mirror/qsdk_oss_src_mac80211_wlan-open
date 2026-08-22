@@ -309,6 +309,12 @@ enum ath12k_bdf_search {
 #define ATH12K_EHT_MCS_MAX	15
 #define ATH12K_UHR_MCS_MAX	23
 
+/**
+ * TODO: ATH12K_VHT_MCS_MAX to support MCS-10 and 11 by default
+ * when driver support for the same is added.
+ */
+#define ATH12K_VHT_VENDOR_MCS_MAX 2
+
 /* EHT MCS_NSS_FOR_20_MHZ_ONLY_STA */
 #define EHT_MCS_20_MHZ_ONLY_0_7_RX    GENMASK(3, 0)
 #define EHT_MCS_20_MHZ_ONLY_0_7_TX    GENMASK(7, 4)

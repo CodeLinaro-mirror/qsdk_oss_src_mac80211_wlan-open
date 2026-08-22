@@ -467,7 +467,7 @@ ath12k_wifi8_mgmt_rx_h_ppdu(struct ath12k *partner_ar, struct sk_buff *mmpdu,
 	case RX_MSDU_START_PKT_TYPE_11AC:
 		status->encoding = RX_ENC_VHT;
 		status->rate_idx = rate_mcs;
-		if (rate_mcs > ATH12K_VHT_MCS_MAX) {
+		if (rate_mcs > ATH12K_VHT_MCS_MAX + ATH12K_VHT_VENDOR_MCS_MAX) {
 			ath12k_warn(partner_ar->ab,
 				    "Received with invalid mcs in VHT mode %d",
 				    rate_mcs);
