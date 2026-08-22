@@ -985,8 +985,10 @@ static int update_smd_forall_links_locked(struct ieee80211_hw *hw,
 		if (ul_sn_not_transferred)
 			arg.flags |= BIT(1);
 
-		if (type == IEEE80211_SMD_ROAM_CONFIG_TYPE_DYNAMIC_CONTEXT &&
-		    (role == SMD_ROAM_CONFIG_ROLE_TARGET_AP))
+		/* STA is authorized only after roam notification in TAP roaming */
+		if (ahsta && ahsta->state != IEEE80211_STA_AUTHORIZED &&
+		    type == IEEE80211_SMD_ROAM_CONFIG_TYPE_DYNAMIC_CONTEXT &&
+		    role == SMD_ROAM_CONFIG_ROLE_TARGET_AP)
 			arg.flags |= SMD_ROAM_CONFIG_FLAG_EXEC_VIA_TAP;
 
 		arg.dl_drain_time = dl_drain_time;
