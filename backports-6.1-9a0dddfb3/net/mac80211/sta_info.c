@@ -1608,7 +1608,11 @@ int __must_check __sta_info_destroy(struct sta_info *sta)
 	if (err)
 		return err;
 
-	synchronize_net();
+	if (ieee80211_hw_check(&sta->local->hw,
+			       STA_DESTROY_SYNC_RCU_EXPEDITED))
+		synchronize_rcu_expedited();
+	else
+		synchronize_net();
 
 	__sta_info_destroy_part2(sta, true);
 
