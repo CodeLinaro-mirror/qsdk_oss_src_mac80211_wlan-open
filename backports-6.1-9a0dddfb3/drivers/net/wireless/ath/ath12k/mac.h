@@ -372,6 +372,7 @@ bool ath12k_mac_is_phya1_pdev(struct ath12k *ar);
 int ath12k_mac_mlo_setup(struct ath12k_hw_group *ag);
 int ath12k_mac_mlo_ready(struct ath12k_hw_group *ag);
 int ath12k_mac_vdev_stop(struct ath12k_link_vif *arvif);
+int ath12k_mac_vdev_setup_sync(struct ath12k *ar);
 void ath12k_mac_mlo_teardown(struct ath12k_hw_group *ag);
 void ath12k_mac_get_any_chanctx_conf_iter(struct ieee80211_hw *hw,
 					  struct ieee80211_chanctx_conf *conf,

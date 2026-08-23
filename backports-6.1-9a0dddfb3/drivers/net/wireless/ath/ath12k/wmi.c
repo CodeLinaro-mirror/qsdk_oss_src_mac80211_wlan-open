@@ -29,6 +29,7 @@
 #include "cfr.h"
 #ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/ini.h"
+#include "qcn_extns/ranging_extn.h"
 #endif
 #ifdef CPTCFG_ATHDEBUG
 #include "athdbg_if.h"
@@ -24197,6 +24198,14 @@ void ath12k_wmi_rtt_pasn_peer_create_req_event(struct ath12k_base *ab,
 
 	rcu_read_lock();
 	arvif = ath12k_mac_get_arvif_by_vdev_id(ab, vdev_id);
+#ifdef CPTCFG_QCN_EXTN
+	if (!arvif) {
+		ath12k_dbg(ab, ATH12K_DBG_RTT,
+			   "RTT PASN create: vdev_id=%u not in mac80211, checking rtt_vif\n",
+			   vdev_id);
+		arvif = ath12k_get_rtt_vif_by_vdev_id_extn(ab, vdev_id);
+	}
+#endif
 	if (!arvif) {
 		rcu_read_unlock();
 		ath12k_warn(ab, "invalid vdev id %u in RTT PASN peer create event\n",
