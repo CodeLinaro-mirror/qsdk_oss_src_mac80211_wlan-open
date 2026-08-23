@@ -2627,6 +2627,10 @@ static int ath12k_get_peer_rx_stats_size(void)
 				nla_total_size(sizeof(rx_stats.msdu_part_of_amsdu)) +
 				nla_total_size(sizeof(rx_stats.mpdu_retry));
 
+		payload_size = nla_total_size(sizeof(rx_stats.sg.packets)) +
+				nla_total_size(sizeof(rx_stats.sg.bytes));
+		attr_size += nla_total_size_nested(payload_size);
+
 		/* Ring Attr Size */
 		total_size += nla_total_size_nested(attr_size);
 	}
@@ -5987,6 +5991,34 @@ static int ath12k_fill_peer_rx_per_pkt_stats_attrs(struct sk_buff *vendor_event,
 			   ring_num + 1);
 		return -EINVAL;
 	}
+
+	attr = nla_nest_start(vendor_event,
+			      QCA_VENDOR_ATTR_PER_PKT_STATS_RX_PKTINFO_SG);
+	if (!attr) {
+		ath12k_err(NULL,
+			   "nla nest failure: Peer per pkt stats - rx sg");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_PKTS,
+			peer_stats->rx[ring_num].sg.packets)) {
+		ath12k_err(NULL, "nla put failure: Peer rx per pkt stats attr %d packets | ring %d",
+			   QCA_VENDOR_ATTR_PER_PKT_STATS_RX_PKTINFO_SG,
+			   ring_num + 1);
+		nla_nest_end(vendor_event, attr);
+		return -EINVAL;
+	}
+
+	if (nla_put_u64_64bit(vendor_event, QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_BYTES,
+			      peer_stats->rx[ring_num].sg.bytes,
+			      NL80211_ATTR_PAD)) {
+		ath12k_err(NULL, "nla put failure: Peer rx per pkt stats attr %d bytes | ring %d",
+			   QCA_VENDOR_ATTR_PER_PKT_STATS_RX_PKTINFO_SG,
+			   ring_num + 1);
+		nla_nest_end(vendor_event, attr);
+		return -EINVAL;
+	}
+	nla_nest_end(vendor_event, attr);
 
 	return 0;
 }

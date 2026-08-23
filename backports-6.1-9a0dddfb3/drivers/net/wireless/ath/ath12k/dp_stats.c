@@ -211,6 +211,8 @@ void ath12k_dp_aggr_per_pkt_rx_stats(struct ath12k_dp_peer_rx_stats *dst_rx_stat
 	dst_rx_stats->non_amsdu += src_rx_stats->non_amsdu;
 	dst_rx_stats->msdu_part_of_amsdu += src_rx_stats->msdu_part_of_amsdu;
 	dst_rx_stats->mpdu_retry += src_rx_stats->mpdu_retry;
+	dst_rx_stats->sg.packets += src_rx_stats->sg.packets;
+	dst_rx_stats->sg.bytes += src_rx_stats->sg.bytes;
 }
 
 /**
