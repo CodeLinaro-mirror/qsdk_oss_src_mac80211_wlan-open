@@ -57,9 +57,6 @@ void ath12k_cfr_decrement_peer_count(struct ath12k *ar,
 {
 	struct ath12k_cfr *cfr = &ar->cfr;
 
-	if (!cfr->cfr_enabled)
-		return;
-
 	spin_lock_bh(&cfr->lock);
 
 	if (cfr->cfr_enabled_peer_cnt == 0) {
