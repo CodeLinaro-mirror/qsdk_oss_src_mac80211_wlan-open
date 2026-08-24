@@ -61,6 +61,9 @@ static inline int ath12k_htt_send(struct ath12k_base *ab,
 {
 	int ret;
 
+	if (!ab->ag->wsi_remap_in_progress && ab->is_bypassed)
+		return -EPERM;
+
 	ath12k_dp_htt_message_record(dp->htt_logger_handle, msg_type,
 				     msg_data, HTT_LOGGER_COMMAND);
 	ret = ath12k_htc_send(&ab->htc, dp->eid, skb);

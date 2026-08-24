@@ -756,6 +756,9 @@ int ath12k_wmi_cmd_send(struct ath12k_wmi_pdev *wmi, struct sk_buff *skb,
 		cmd_id != WMI_INIT_CMDID)
 		return -ESHUTDOWN;
 
+	if (!ab->ag->wsi_remap_in_progress && ab->is_bypassed)
+		return -EPERM;
+
 	might_sleep();
 
 	if (ab->hw_params->credit_flow) {
