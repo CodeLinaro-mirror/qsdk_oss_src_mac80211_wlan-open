@@ -18261,11 +18261,13 @@ ath12k_dp_rx_update_pdev_protocol_tag(struct wiphy *wiphy,
 	struct ath12k_pdev_dp *dp_pdev;
 	struct ath12k_link_vif *arvif;
 	struct ath12k_vif *ahvif;
+	unsigned long links_map;
+	unsigned int link_id;
 	struct ath12k *ar;
 	u32 proto_type;
 	u16 tag_value = 0;
 	u8 op_code;
-	int ret;
+	int ret = -ENODEV;
 
 	if (!vif) {
 		ath12k_err(NULL, "rx_protocol_tag: no vif for wdev\n");
@@ -18273,12 +18275,6 @@ ath12k_dp_rx_update_pdev_protocol_tag(struct wiphy *wiphy,
 	}
 
 	ahvif = ath12k_vif_to_ahvif(vif);
-	arvif = &ahvif->deflink;
-	ar    = arvif->ar;
-	if (!ar) {
-		ath12k_err(NULL, "rx_protocol_tag: no ar for vif\n");
-		return -EINVAL;
-	}
 
 	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_MAX,
 			data, data_len,
@@ -18318,31 +18314,53 @@ ath12k_dp_rx_update_pdev_protocol_tag(struct wiphy *wiphy,
 		return -EINVAL;
 	}
 
-	dp_pdev = &ar->dp;
-
 	param.opcode           = op_code;
 	param.route_type_bmap  = BIT(proto_type);
 	param.dst_ring_handler = ATH12K_WMI_PKTROUTE_USE_FSE;
 	param.dst_ring         = 1;
-	param.meta_data        = tag_value;
+	/* Encode proto_type in meta_data (PROP approach): firmware stamps
+	 * proto_type + offset in cce_metadata; RX path decodes proto_type with
+	 * O(1) subtraction and retrieves the full u16 user tag from the host
+	 * software map — no hardware width constraint on the tag value.
+	 * Exception: CCE_DROP (0xDEAD) is sent as-is so firmware drops matched pkts.
+	 */
+	if (tag_value == CCE_DROP)
+		param.meta_data = CCE_DROP;
+	else
+		param.meta_data = proto_type + ATH12K_RX_PROTOCOL_TAG_START_OFFSET;
 
-	ret = ath12k_wmi_send_pdev_pkt_route(ar, &param);
-	if (ret) {
-		ath12k_warn(ar->ab,
-			    "rx_protocol_tag: WMI failed op=%u proto=%u tag=0x%04x ret=%d\n",
-			    op_code, proto_type, tag_value, ret);
-		return ret;
-	}
+	/* Program CCE rule on every active link's pdev. Each band has its own
+	 * ar/pdev and WMI channel to firmware — deflink alone covers 2G only
+	 * and leaves 5G/6G pdefs unconfigured in an MLD setup.
+	 */
+	links_map = ahvif->links_map;
+	for_each_set_bit(link_id, &links_map, IEEE80211_MLD_MAX_NUM_LINKS) {
+		arvif = wiphy_dereference(wiphy, ahvif->link[link_id]);
+		if (!arvif || !arvif->ar)
+			continue;
 
-	if (op_code == ATH12K_WMI_PKTROUTE_ADD) {
-		dp_pdev->protocol_tag_map[proto_type].tag     = tag_value;
-		dp_pdev->protocol_tag_map[proto_type].enabled = true;
-		dp_pdev->protocol_tag_active_count++;
-	} else {
-		dp_pdev->protocol_tag_map[proto_type].tag     = 0;
-		dp_pdev->protocol_tag_map[proto_type].enabled = false;
-		if (dp_pdev->protocol_tag_active_count)
-			dp_pdev->protocol_tag_active_count--;
+		ar = arvif->ar;
+		ret = ath12k_wmi_send_pdev_pkt_route(ar, &param);
+		if (ret) {
+			ath12k_warn(ar->ab,
+				    "rx_protocol_tag: WMI failed link%u op=%u proto=%u tag=0x%04x ret=%d\n",
+				    link_id, op_code, proto_type, tag_value, ret);
+			continue;
+		}
+
+		dp_pdev = &ar->dp;
+		if (op_code == ATH12K_WMI_PKTROUTE_ADD) {
+			if (!dp_pdev->protocol_tag_map[proto_type].enabled)
+				dp_pdev->protocol_tag_active_count++;
+			dp_pdev->protocol_tag_map[proto_type].tag     = tag_value;
+			dp_pdev->protocol_tag_map[proto_type].enabled = true;
+		} else {
+			if (dp_pdev->protocol_tag_map[proto_type].enabled) {
+				dp_pdev->protocol_tag_map[proto_type].tag     = 0;
+				dp_pdev->protocol_tag_map[proto_type].enabled = false;
+				dp_pdev->protocol_tag_active_count--;
+			}
+		}
 	}
 
 	return ret;
@@ -18484,13 +18502,15 @@ ath12k_dp_rx_fse_cce_stats_dump(struct wiphy *wiphy,
 				const void *data, int data_len)
 {
 	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_MAX + 1];
-	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
-	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
+	struct ieee80211_vif *vif = wdev_to_ieee80211_vif(wdev);
 	struct ath12k_fse_cce_stats *st;
+	struct ath12k_link_vif *arvif;
+	struct ath12k_vif *ahvif;
+	unsigned long links_map;
+	unsigned int link_id;
 	struct dp_rx_fst *fst;
 	struct ath12k *ar;
 	struct sk_buff *skb;
-	u32 pdev_id = 0;
 	int ret, i;
 
 	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_MAX,
@@ -18501,14 +18521,41 @@ ath12k_dp_rx_fse_cce_stats_dump(struct wiphy *wiphy,
 		return ret;
 	}
 
-	if (tb[QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_PDEV_ID])
-		pdev_id = nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_PDEV_ID]);
-
-	ar = ath12k_ah_to_ar(ah, pdev_id);
-	if (!ar) {
-		ath12k_err(NULL, "fse_cce_stats: no ar for pdev_id %u\n", pdev_id);
+	/* Resolve ar from wdev.  If PDEV_ID attr is present, treat its value as
+	 * an MLD link_id and return data for that specific link — this lets
+	 * ath-tools iterate per-link by calling the same cmd with link_id=0,1,...
+	 * without any NL schema change.  If the requested link is not active,
+	 * return -ENODEV so the caller knows to stop iterating.
+	 * Without PDEV_ID: return the first active link (backward-compatible).
+	 */
+	if (!vif) {
+		ath12k_err(NULL, "fse_cce_stats: no vif for wdev\n");
 		return -EINVAL;
 	}
+	ahvif     = ath12k_vif_to_ahvif(vif);
+	links_map = ahvif->links_map;
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_PDEV_ID]) {
+		u32 req_link =
+		nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_PDEV_ID]);
+
+		if (req_link >= IEEE80211_MLD_MAX_NUM_LINKS ||
+		    !test_bit(req_link, &links_map))
+			return -ENODEV;
+		link_id = req_link;
+	} else {
+		link_id = find_first_bit(&links_map, IEEE80211_MLD_MAX_NUM_LINKS);
+	}
+
+	if (link_id < IEEE80211_MLD_MAX_NUM_LINKS)
+		arvif = wiphy_dereference(wiphy, ahvif->link[link_id]);
+	else
+		arvif = &ahvif->deflink;
+	if (!arvif || !arvif->ar) {
+		ath12k_err(NULL, "fse_cce_stats: no ar for vif\n");
+		return -EINVAL;
+	}
+	ar = arvif->ar;
 
 	st  = &ar->dp.fse_cce_stats;
 	fst = ath12k_ab_to_dp(ar->ab)->dp_hw_grp->fst;

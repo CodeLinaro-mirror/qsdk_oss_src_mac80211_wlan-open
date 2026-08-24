@@ -1710,10 +1710,16 @@ out:
 /**
  * dp_rx_update_protocol_tag() - stamp rxcb->protocol_tag from CCE metadata
  *
- * Called in the REO hot path for every MSDU after MPDU validation.  Reads
- * cce_match from the scratchpad; if set, copies cce_metadata into
- * rxcb->protocol_tag and increments the per-protocol CCE hit counter.
+ * Called in the REO hot path for every MSDU after MPDU validation. Reads
+ * cce_match from the scratchpad; if set, decodes proto_type from cce_metadata
+ * (proto_type = cce_metadata - ATH12K_RX_PROTOCOL_TAG_START_OFFSET), fetches
+ * the user-programmed u16 tag from the host software map via direct O(1) index,
+ * stamps rxcb->protocol_tag, and increments the per-protocol CCE hit counter.
  * No-op when CCE_MATCH is clear or no protocols are configured.
+ *
+ * This mirrors the PROP approach: only proto_type+offset is carried through
+ * hardware; the user tag lives exclusively in the host map with no hardware
+ * width constraint (full u16 range supported).
  */
 void dp_rx_update_protocol_tag(struct ath12k_pdev_dp *dp_pdev,
 			       struct sk_buff *msdu,
@@ -1721,7 +1727,7 @@ void dp_rx_update_protocol_tag(struct ath12k_pdev_dp *dp_pdev,
 {
 	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(msdu);
 	u16 cce_meta;
-	int i;
+	u32 proto_type;
 
 	if (!tag->cce_match)
 		return;
@@ -1730,15 +1736,25 @@ void dp_rx_update_protocol_tag(struct ath12k_pdev_dp *dp_pdev,
 		return;
 
 	cce_meta = tag->cce_metadata;
-	rxcb->protocol_tag = cce_meta;
 
-	for (i = 0; i < ATH12K_PKT_TYPE_MAX; i++) {
-		if (dp_pdev->protocol_tag_map[i].enabled &&
-		    dp_pdev->protocol_tag_map[i].tag == cce_meta) {
-			dp_pdev->fse_cce_stats.cce_tagged_pkts[i]++;
-			break;
-		}
-	}
+	/* Decode proto_type from hardware-stamped metadata (PROP style).
+	 * Bounds check guards against stale or unexpected metadata values.
+	 */
+	if (cce_meta < ATH12K_RX_PROTOCOL_TAG_START_OFFSET)
+		return;
+
+	proto_type = cce_meta - ATH12K_RX_PROTOCOL_TAG_START_OFFSET;
+	if (proto_type >= ATH12K_PKT_TYPE_MAX)
+		return;
+
+	if (!dp_pdev->protocol_tag_map[proto_type].enabled)
+		return;
+
+	/* Fetch the full u16 user tag from the host software map — O(1) direct
+	 * index, no scan. Tag value has no hardware width constraint.
+	 */
+	rxcb->protocol_tag = dp_pdev->protocol_tag_map[proto_type].tag;
+	dp_pdev->fse_cce_stats.cce_tagged_pkts[proto_type]++;
 }
 EXPORT_SYMBOL_GPL(dp_rx_update_protocol_tag);
 
