@@ -6400,7 +6400,8 @@ ieee80211_6ghz_power_mode_change(struct wiphy *wiphy, struct wireless_dev *wdev,
 			ieee80211_cfg_to_mac_power_type(ap_6ghz_pwr_mode);
 	}
 
-	changed = BSS_CHANGED_6GHZ_POWER_MODE;
+	ieee80211_recalc_txpower(link, false, link->link_id);
+	changed = BSS_CHANGED_6GHZ_POWER_MODE | BSS_CHANGED_TXPOWER;
 
 	ieee80211_link_info_change_notify(sdata, link, changed);
 
