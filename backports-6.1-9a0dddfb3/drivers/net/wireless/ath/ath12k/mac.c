@@ -3613,6 +3613,9 @@ static void ath12k_peer_assoc_h_basic(struct ath12k *ar,
 	if (sta->control_mic_pad)
 		arg->control_mic_pad = sta->control_mic_pad;
 
+	if (ath12k_mac_is_bridge_vdev(arvif))
+		return;
+
 	bss_conf = ath12k_mac_get_link_bss_conf(arvif);
 	if (!bss_conf) {
 		ath12k_warn(ar->ab, "unable to access bss link conf in peer assoc for vif %pM link %u\n",
