@@ -819,12 +819,6 @@ void athdbg_qmi_qdss_mem_free(struct ath12k_base *ab)
 	bool do_iounmap = false;
 #if defined(CONFIG_UPSTREAM_BUILD) || defined(ATH12K_CMA_SUPPORT)
 	struct target_mem_chunk *mem_chunk;
-#ifdef PLATFORM_SDX
-	struct device *dev = ab->dev;
-#else
-	struct device *dev = ab->qmi_mem_dev.rmem_inited ?
-			     &ab->qmi_mem_dev.dev : ab->dev;
-#endif
 #endif
 
 #if defined(CONFIG_UPSTREAM_BUILD)

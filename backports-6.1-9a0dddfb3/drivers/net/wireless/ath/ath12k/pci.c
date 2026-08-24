@@ -1363,17 +1363,14 @@ static int ath12k_pci_probe(struct pci_dev *pdev,
 	int ret;
 
 #ifdef PLATFORM_SDX
-	/*
-	 * Bind memory-region[0] (qcn9625_N_mem / host-ddr-mem) to pdev->dev so
-	 * that dma_alloc_coherent(ab->dev, ...) allocates from the correct
-	 * per-device CMA pool.  This must happen before ath12k_core_alloc so
-	 * that ab->dev already has the CMA area set when ATH12K_CMA_SUPPORT
-	 * calls ath12k_qmi_get_dma_dev() and returns ab->dev.
+	/* init memory-region idx 0 for the dev, so the further dma alloc will get
+	 * allocated from this region
 	 */
 	ret = of_reserved_mem_device_init(&pdev->dev);
 	if (ret) {
 		dev_err(&pdev->dev,
-			"Failed to init reserved mem device, err = %d\n", ret);
+			"Failed to init reserved mem device, err = %d\n",
+			ret);
 		return -ENOMEM;
 	}
 #endif

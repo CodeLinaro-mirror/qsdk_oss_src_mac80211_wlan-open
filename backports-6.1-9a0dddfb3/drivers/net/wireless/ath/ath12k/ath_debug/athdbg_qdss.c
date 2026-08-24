@@ -33,12 +33,6 @@ int athdbg_qmi_alloc_qdss_mem(struct athdbg_qmi *dbg_qmi)
 	struct ath12k_base *ab = container_of(dbg_qmi, struct ath12k_base, dbg_qmi);
 #if defined(CONFIG_UPSTREAM_BUILD) || defined(ATH12K_CMA_SUPPORT)
 	struct target_mem_chunk *chunk;
-#ifdef PLATFORM_SDX
-	struct device *dev = ab->dev;
-#else
-	struct device *dev = ab->qmi_mem_dev.rmem_inited ?
-			     &ab->qmi_mem_dev.dev : ab->dev;
-#endif
 #endif
 #if !defined(CONFIG_UPSTREAM_BUILD)
 	struct reserved_mem *ddr_rmem = NULL;

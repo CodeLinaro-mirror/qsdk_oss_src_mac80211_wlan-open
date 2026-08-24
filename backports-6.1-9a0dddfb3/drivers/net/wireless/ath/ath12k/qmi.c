@@ -4362,12 +4362,8 @@ static void ath12k_qmi_free_mlo_mem_chunk(struct ath12k_base *ab,
 	struct ath12k_host_mlo_mem_arena *mlomem_arena_ctx = &ag->mlomem_arena;
 	struct target_mem_chunk *mlo_chunk;
 	bool fixed_mem;
-#ifdef PLATFORM_SDX
-	struct device *dev = ab->dev;
-#else
 	struct device *dev = ab->mlo_mem_dev.rmem_inited ?
 			     &ab->mlo_mem_dev.dev : ab->dev;
-#endif
 
 	lockdep_assert_held(&ag->mutex);
 
@@ -4434,12 +4430,8 @@ void ath12k_qmi_free_target_mem_chunk(struct ath12k_base *ab)
 						      &ab->qmi.target_mem[i],
 						      mlo_idx++);
 		} else {
-#ifdef PLATFORM_SDX
-			dev = ab->dev;
-#else
 			dev = ab->qmi_mem_dev.rmem_inited ?
 			      &ab->qmi_mem_dev.dev : ab->dev;
-#endif
 			if (test_bit(ATH12K_FLAG_FIXED_MEM_REGION, &ab->dev_flags) &&
 			    ab->qmi.target_mem[i].v.ioaddr) {
 #ifdef PLATFORM_SDX
@@ -4542,12 +4534,8 @@ static int ath12k_qmi_alloc_chunk(struct ath12k_base *ab,
 static void ath12k_qmi_free_target_mem_chunk_range(struct ath12k_base *ab,
 						   u32 start_idx, u32 end_idx)
 {
-#ifdef PLATFORM_SDX
-	struct device *dev = ab->dev;
-#else
 	struct device *dev = ab->qmi_mem_dev.rmem_inited ?
 			      &ab->qmi_mem_dev.dev : ab->dev;
-#endif
 	u32 i;
 
 	for (i = start_idx; i < end_idx; i++) {
@@ -4678,12 +4666,8 @@ static int ath12k_qmi_alloc_target_mem_chunk(struct ath12k_base *ab,
 				chunk->v.addr = NULL;
 				break;
 			}
-#ifdef PLATFORM_SDX
-			dev = ab->dev;
-#else
 			dev = ab->qmi_mem_dev.rmem_inited ?
 			      &ab->qmi_mem_dev.dev : ab->dev;
-#endif
 			ret = ath12k_qmi_alloc_chunk(ab, chunk, dev);
 			if (ret)
 				goto err;
@@ -4714,12 +4698,8 @@ static int ath12k_qmi_alloc_target_mem_chunk(struct ath12k_base *ab,
 					goto err;
 				}
 			} else {
-#ifdef PLATFORM_SDX
-				dev = ab->dev;
-#else
 				dev = ab->mlo_mem_dev.rmem_inited ?
 				      &ab->mlo_mem_dev.dev : ab->dev;
-#endif
 				mlo_chunk->size = chunk->size;
 				mlo_chunk->type = chunk->type;
 				ret = ath12k_qmi_alloc_chunk(ab, mlo_chunk, dev);
