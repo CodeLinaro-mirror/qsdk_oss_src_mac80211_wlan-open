@@ -1937,30 +1937,6 @@ ath12k_wifi8_dp_process_reo_rx_packets(struct ath12k_dp *dp,
 									tid, ring_id);
 			}
 
-			/* EAPOL frames (EtherType 0x888E) must reach mac80211 /
-			 * hostapd even when they arrive on the normal REO ring.
-			 * This happens for encrypted EAPOL (e.g. M4) after the
-			 * PTK is installed in firmware: the CCE classifier sees
-			 * the encrypted frame (not yet decrypted) so it cannot
-			 * classify it as EAPOL, and the frame bypasses the
-			 * exception ring.  After firmware decrypts the frame it
-			 * lands here as plain Ethernet with EtherType 0x888E.
-			 * Redirect it through convert_n_deliver so it reaches
-			 * ieee80211_rx_napi → hostapd, exactly like M2 does.
-			 */
-			if (unlikely(msdu->len >= ETH_HLEN)) {
-				struct ethhdr *eth =
-					(struct ethhdr *)msdu->data;
-
-				if (eth->h_proto == cpu_to_be16(ETH_P_PAE)) {
-					ath12k_wifi8_convert_n_deliver_nw_frame(
-						dp_pdev, spd_desc_l,
-						peer, &rx_status,
-						napi, &prev_tlv_info);
-					break;
-				}
-			}
-
 			ath12k_wifi8_deliver_ethernet_frame(dp_pdev, spd_desc_l,
 							    peer, &rx_status,
 							    napi, stats,
