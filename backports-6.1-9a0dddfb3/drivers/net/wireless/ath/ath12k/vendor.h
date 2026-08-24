@@ -6825,6 +6825,11 @@ enum qca_vendor_attr_extended_monitor_snr_info {
  * @QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_SNR_INFO: Nested attribute
  *     Defines peer's snr related information.
  *     See enum qca_vendor_attr_extended_monitor_snr_info
+ *
+ * @QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_RA_ADDR_MASK: 6-Byte MAC mask.
+ *     Address mask for RA range peer (ADDR4 slot). Valid only when
+ *     %QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_ADDR_IS_RA is set.
+ *     Absent for exact RA peers (ADDR1/2/3 slots).
  */
 enum qca_vendor_attr_extended_monitor_peer_info {
 	QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_INVALID = 0,
@@ -6832,6 +6837,7 @@ enum qca_vendor_attr_extended_monitor_peer_info {
 	QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_ADDR_IS_RA = 2,
 	QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_BITMAP = 3,
 	QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_SNR_INFO = 4,
+	QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_RA_ADDR_MASK = 5,
 
 	QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_AFTER_LAST,
 	QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_MAX =

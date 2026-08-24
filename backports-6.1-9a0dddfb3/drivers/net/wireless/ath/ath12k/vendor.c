@@ -278,6 +278,8 @@ ath12k_vendor_ext_mon_peer_info_policy[QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_MAX + 1
 	[QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_ADDR_IS_RA] = {.type = NLA_FLAG},
 	[QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_BITMAP] = {.type = NLA_U8},
 	[QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_SNR_INFO] = {.type = NLA_NESTED},
+	[QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_RA_ADDR_MASK] = {.type = NLA_BINARY,
+							     .len = ETH_ALEN},
 };
 
 static const struct nla_policy
