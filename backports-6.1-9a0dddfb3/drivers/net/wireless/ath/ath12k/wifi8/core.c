@@ -15,7 +15,6 @@
 #include "wmi.h"
 #ifdef CPTCFG_QCN_EXTN
 #include "../qcn_extns/ini.h"
-#include "../vendor_services.h"
 #endif
 
 static int pci_err;
@@ -125,8 +124,6 @@ MODULE_PARM_DESC(smd_skip_bitmap_update,
 
 static int ath12k_wifi8_init(void)
 {
-	ath12k_vendor_services_init();
-
 	ath12k_erp_init();
 
 #ifdef CPTCFG_QCN_EXTN
@@ -151,8 +148,6 @@ static void ath12k_wifi8_exit(void)
 #endif
 
 	ath12k_erp_deinit();
-
-	ath12k_vendor_services_deinit();
 }
 
 module_init(ath12k_wifi8_init);
