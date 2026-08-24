@@ -9,6 +9,7 @@
 #include "core.h"
 #include "debug.h"
 #include "debugfs_htt_stats.h"
+#include "debugfs.h"
 #include "dp_tx.h"
 #include "dp_rx.h"
 
@@ -15864,8 +15865,9 @@ static ssize_t ath12k_read_htt_stats_type(struct file *file,
 
 	if (ar->ab->is_bypassed ||
 	    test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "device is in bypassed state\n");
 		wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
-		return -ENETDOWN;
+		return -EPERM;
 	}
 
 	type = ar->debug.htt_stats.type;
@@ -15916,8 +15918,9 @@ static ssize_t ath12k_write_htt_stats_type(struct file *file,
 
 	if (ar->ab->is_bypassed ||
 	    test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "device is in bypassed state\n");
 		wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
-		return -ENETDOWN;
+		return -EPERM;
 	}
 
 	/* If type is non-zero, another writer is active (echo done but
@@ -15945,7 +15948,7 @@ static ssize_t ath12k_write_htt_stats_type(struct file *file,
 static const struct file_operations fops_htt_stats_type = {
 	.read = ath12k_read_htt_stats_type,
 	.write = ath12k_write_htt_stats_type,
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
@@ -16033,9 +16036,14 @@ static int ath12k_open_htt_stats(struct inode *inode,
 		goto err_unlock;
 	}
 
-	if ((ah->state != ATH12K_HW_STATE_ON &&
-	     ar->ab->fw_mode != ATH12K_FIRMWARE_MODE_FTM) ||
-	     ar->ab->is_bypassed) {
+	if (ar->ab->is_bypassed) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "device is in bypassed state\n");
+		ret = -EPERM;
+		goto err_unlock;
+	}
+
+	if (ah->state != ATH12K_HW_STATE_ON &&
+	    ar->ab->fw_mode != ATH12K_FIRMWARE_MODE_FTM) {
 		ret = -ENETDOWN;
 		goto err_unlock;
 	}
@@ -16138,8 +16146,9 @@ static ssize_t ath12k_read_htt_stats_reset(struct file *file,
 
 	if (ar->ab->is_bypassed ||
 	    test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "device is in bypassed state\n");
 		wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
-		return -ENETDOWN;
+		return -EPERM;
 	}
 
 	len = scnprintf(buf, sizeof(buf), "%u\n", ar->debug.htt_stats.reset);
@@ -16170,8 +16179,9 @@ static ssize_t ath12k_write_htt_stats_reset(struct file *file,
 
 	if (ar->ab->is_bypassed ||
 	    test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "device is in bypassed state\n");
 		wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
-		return -ENETDOWN;
+		return -EPERM;
 	}
 
 	cfg_params.cfg0 = HTT_STAT_DEFAULT_RESET_START_OFFSET;
@@ -16212,17 +16222,17 @@ static ssize_t ath12k_write_htt_stats_reset(struct file *file,
 static const struct file_operations fops_htt_stats_reset = {
 	.read = ath12k_read_htt_stats_reset,
 	.write = ath12k_write_htt_stats_reset,
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
 
 void ath12k_debugfs_htt_stats_register(struct ath12k *ar)
 {
-	debugfs_create_file("htt_stats_type", 0600, ar->debug.debugfs_pdev,
-			    ar, &fops_htt_stats_type);
+	ath12k_debugfs_create_file("htt_stats_type", 0600, ar->debug.debugfs_pdev,
+				   ar->ab, ar, &fops_htt_stats_type);
 	debugfs_create_file("htt_stats", 0400, ar->debug.debugfs_pdev,
-			    ar, &fops_dump_htt_stats);
-	debugfs_create_file("htt_stats_reset", 0200, ar->debug.debugfs_pdev,
-			    ar, &fops_htt_stats_reset);
+				   ar, &fops_dump_htt_stats);
+	ath12k_debugfs_create_file("htt_stats_reset", 0200, ar->debug.debugfs_pdev,
+				   ar->ab, ar, &fops_htt_stats_reset);
 }

@@ -41,6 +41,66 @@
 
 bool ath12k_compress_dump;
 
+/**
+ * ath12k_debugfs_open() - generic open callback for all ath12k debugfs files.
+ *
+ * Checks whether the device is in WSI-bypass state before allowing any file
+ * operation.  On success it sets file->private_data to the original per-file
+ * data pointer so that read/write handlers are unaffected.
+ */
+int ath12k_debugfs_open(struct inode *inode, struct file *file)
+{
+	struct ath12k_debugfs_ctx *ctx = inode->i_private;
+
+	if (ctx->ab->is_bypassed) {
+		ath12k_info(ctx->ab, "Device is in Bypass state, skipping cmd\n");
+		return -EPERM;
+	}
+
+	if (test_bit(ATH12K_FLAG_RECOVERY, &ctx->ab->dev_flags)) {
+		ath12k_info(ctx->ab, "Device is in recovery, skipping cmd\n");
+		return -EBUSY;
+	}
+
+	file->private_data = ctx->data;
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_debugfs_open);
+
+/**
+ * ath12k_debugfs_create_file() - wrapper around debugfs_create_file() that
+ *                                installs ath12k_debugfs_open() as the open
+ *                                callback for every file.
+ *
+ * @name:   file name
+ * @mode:   file permission bits
+ * @parent: parent dentry
+ * @ab:     base device pointer (used for the bypass pre-check)
+ * @data:   per-file private data forwarded to read/write handlers
+ * @fops:   file operations (must have .open == ath12k_debugfs_open)
+ *
+ * The context struct is allocated with devm_kzalloc() so it is freed
+ * automatically when the device is torn down.
+ */
+struct dentry *
+ath12k_debugfs_create_file(const char *name, umode_t mode,
+			   struct dentry *parent,
+			   struct ath12k_base *ab, void *data,
+			   const struct file_operations *fops)
+{
+	struct ath12k_debugfs_ctx *ctx;
+
+	ctx = devm_kzalloc(ab->dev, sizeof(*ctx), GFP_KERNEL);
+	if (!ctx)
+		return ERR_PTR(-ENOMEM);
+
+	ctx->ab   = ab;
+	ctx->data = data;
+
+	return debugfs_create_file(name, mode, parent, ctx, fops);
+}
+EXPORT_SYMBOL(ath12k_debugfs_create_file);
+
 static ssize_t ath12k_read_sensitivity_level(struct file *file,
 					     char __user *user_buf,
 					     size_t count, loff_t *ppos)
@@ -103,7 +163,7 @@ exit:
 static const struct file_operations fops_sensitivity_level = {
 	.read = ath12k_read_sensitivity_level,
 	.write = ath12k_write_sensitivity_level,
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
@@ -191,7 +251,7 @@ exit:
 
 static const struct file_operations fops_wsi_bypass_device = {
 	.write = ath12k_debug_write_wsi_bypass_device,
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 };
 
 static int print_btcoex_stats(char *buf, int size, void *stats_ptr)
@@ -747,7 +807,7 @@ static ssize_t ath12k_dump_mgmt_stats(struct file *file,
 
 static const struct file_operations fops_dump_mgmt_stats = {
 	.read = ath12k_dump_mgmt_stats,
-	.open = simple_open
+	.open = ath12k_debugfs_open
 };
 
 static ssize_t ath12k_dump_chanctx_switch_stats(struct file *file,
@@ -846,7 +906,7 @@ static ssize_t ath12k_write_chanctx_switch_stats(struct file *file,
 static const struct file_operations fops_chanctx_switch_stats = {
 	.read = ath12k_dump_chanctx_switch_stats,
 	.write = ath12k_write_chanctx_switch_stats,
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
@@ -1020,7 +1080,7 @@ out:
 static const struct file_operations tt_configs = {
 	.read = ath12k_debug_get_tt_stats_configs,
 	.write = ath12k_debug_write_tt_configs,
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 };
 
 static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
@@ -1408,7 +1468,7 @@ ath12k_debugfs_write_device_dp_stats(struct file *file,
 static const struct file_operations fops_device_dp_stats = {
 	.read = ath12k_debugfs_dump_device_dp_stats,
 	.write = ath12k_debugfs_write_device_dp_stats,
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
@@ -1638,12 +1698,12 @@ exit:
 
 static const struct file_operations fops_simulate_radar = {
 	.write = ath12k_write_simulate_radar,
-	.open = simple_open
+	.open = ath12k_debugfs_open
 };
 
 static const struct file_operations fops_dfs_block_radar = {
 	.write = ath12k_write_block_radar,
-	.open = simple_open
+	.open = ath12k_debugfs_open
 };
 
 static ssize_t ath12k_write_tpc_stats_type(struct file *file,
@@ -2378,6 +2438,11 @@ static int ath12k_open_tpc_stats(struct inode *inode, struct file *file)
 	struct ath12k_hw *ah = ath12k_ar_to_ah(ar);
 	int ret;
 
+	if (ar->ab->is_bypassed) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "device is in bypassed state\n");
+		return -EPERM;
+	}
+
 	guard(wiphy)(ath12k_ar_to_hw(ar)->wiphy);
 
 	if (ah->state != ATH12K_HW_STATE_ON) {
@@ -2441,7 +2506,7 @@ static const struct file_operations fops_tpc_stats = {
 
 static const struct file_operations fops_tpc_stats_type = {
 	.write = ath12k_write_tpc_stats_type,
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.llseek = default_llseek,
 };
 
@@ -2500,7 +2565,7 @@ static ssize_t ath12k_read_enable_extd_tx_stats(struct file *file,
 static const struct file_operations fops_extd_tx_stats = {
         .read = ath12k_read_enable_extd_tx_stats,
         .write = ath12k_write_enable_extd_tx_stats,
-        .open = simple_open
+	.open = ath12k_debugfs_open
 };
 
 static ssize_t ath12k_write_extd_rx_stats(struct file *file,
@@ -2571,7 +2636,7 @@ static ssize_t ath12k_read_extd_rx_stats(struct file *file,
 static const struct file_operations fops_extd_rx_stats = {
 	.read = ath12k_read_extd_rx_stats,
 	.write = ath12k_write_extd_rx_stats,
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 };
 
 static int ath12k_reset_nrp_filter(struct ath12k *ar,
@@ -2722,7 +2787,7 @@ static ssize_t ath12k_read_nrp_rssi(struct file *file,
 
 static const struct file_operations fops_read_nrp_rssi = {
 	.read = ath12k_read_nrp_rssi,
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 };
 
 static ssize_t ath12k_write_nrp_mac(struct file *file,
@@ -2950,9 +3015,10 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 		dp_pdev->num_nrps++;
 		spin_unlock_bh(&dp->dp_lock);
 
-		debugfs_create_file(fname, 0644,
-				    ar->debug.debugfs_nrp, ar,
-				    &fops_read_nrp_rssi);
+		ath12k_debugfs_create_file(fname, 0644,
+					   ar->debug.debugfs_nrp,
+					   ar->ab, ar,
+					   &fops_read_nrp_rssi);
 		break;
 	case WMI_FILTER_NRP_ACTION_REMOVE:
 		spin_lock_bh(&dp->dp_lock);
@@ -3019,7 +3085,7 @@ exit:
 
 static const struct file_operations fops_write_nrp_mac = {
 	.write = ath12k_write_nrp_mac,
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 };
 
 static ssize_t ath12k_write_smart_mon_filter(struct file *file,
@@ -3100,14 +3166,10 @@ static ssize_t ath12k_read_smart_mon_filter(struct file *file,
 static const struct file_operations fops_smart_mon_filter = {
 	.read = ath12k_read_smart_mon_filter,
 	.write = ath12k_write_smart_mon_filter,
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
-
-
-
-
 
 void ath12k_debugfs_op_vif_add(struct ieee80211_hw *hw,
 			       struct ieee80211_vif *vif)
@@ -3392,26 +3454,26 @@ static ssize_t ath12k_dump_fst_dump_table(struct file *file,
 }
 
 static const struct file_operations fops_fse = {
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.write = ath12k_fse_ops_write,
 	.owner = THIS_MODULE,
 };
 
 static const struct file_operations fops_fst_core_mask = {
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.read = ath12k_read_fst_core_mask,
 	.write = ath12k_write_fst_core_mask,
 	.owner = THIS_MODULE,
 };
 
 static const struct file_operations fops_fst_dp_stats = {
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.read = ath12k_dump_fst_flow_stats,
 	.owner = THIS_MODULE,
 };
 
 static const struct file_operations fops_fst_dump_table = {
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.read = ath12k_dump_fst_dump_table,
 	.owner = THIS_MODULE,
 };
@@ -3420,17 +3482,21 @@ void ath12k_fst_debugfs_init(struct ath12k_base *ab)
 {
 	struct dentry *fsestats_dir = debugfs_create_dir("fst_config", ab->debugfs_soc);
 
-	debugfs_create_file("fst_core_mask", 0600, fsestats_dir, ab,
-			    &fops_fst_core_mask);
+	ath12k_debugfs_create_file("fst_core_mask", 0600, fsestats_dir,
+				   ab, ab,
+				   &fops_fst_core_mask);
 
-	debugfs_create_file("fst_dp_stats", 0400, fsestats_dir, ab,
-			    &fops_fst_dp_stats);
+	ath12k_debugfs_create_file("fst_dp_stats", 0400, fsestats_dir,
+				   ab, ab,
+				   &fops_fst_dp_stats);
 
-	debugfs_create_file("fst_dump_table", 0400, fsestats_dir, ab,
-			    &fops_fst_dump_table);
+	ath12k_debugfs_create_file("fst_dump_table", 0400, fsestats_dir,
+				   ab, ab,
+				   &fops_fst_dump_table);
 
-	debugfs_create_file("fse", 0200, fsestats_dir, ab,
-			    &fops_fse);
+	ath12k_debugfs_create_file("fse", 0200, fsestats_dir,
+				   ab, ab,
+				   &fops_fse);
 }
 
 static ssize_t ath12k_dump_ce_stats_histogram(struct file *file,
@@ -3598,17 +3664,17 @@ static ssize_t ath12k_write_ce_stats_enable(struct file *file,
 }
 
 static const struct file_operations fops_ce_stats_enable = {
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.write = ath12k_write_ce_stats_enable,
 };
 
 static const struct file_operations fops_ce_stats_histogram = {
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.read = ath12k_dump_ce_stats_histogram,
 };
 
 static const struct file_operations fops_ce_stats_history = {
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.read = ath12k_dump_ce_stats_history,
 };
 
@@ -3616,14 +3682,17 @@ void ath12k_ce_stats_debugfs_init(struct ath12k_base *ab)
 {
 	struct dentry *cestats_dir  = debugfs_create_dir("ce_stats", ab->debugfs_soc);
 
-	debugfs_create_file("ce_histogram", 0400, cestats_dir, ab,
-			    &fops_ce_stats_histogram);
+	ath12k_debugfs_create_file("ce_histogram", 0400, cestats_dir,
+				   ab, ab,
+				   &fops_ce_stats_histogram);
 
-	debugfs_create_file("ce_history", 0400, cestats_dir, ab,
-			    &fops_ce_stats_history);
+	ath12k_debugfs_create_file("ce_history", 0400, cestats_dir,
+				   ab, ab,
+				   &fops_ce_stats_history);
 
-	debugfs_create_file("enable_ce_stats", 0600, cestats_dir, ab,
-			    &fops_ce_stats_enable);
+	ath12k_debugfs_create_file("enable_ce_stats", 0600, cestats_dir,
+				   ab, ab,
+				   &fops_ce_stats_enable);
 }
 
 void ath12k_debugfs_pdev_destroy(struct ath12k_base *ab)
@@ -3658,7 +3727,7 @@ static ssize_t ath12k_read_compress_fw_dump(struct file *file,
 }
 
 static const struct file_operations fops_compress_fw_dump = {
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.read = ath12k_read_compress_fw_dump,
 	.write = ath12k_write_compress_fw_dump,
 	.llseek = default_llseek,
@@ -3685,10 +3754,10 @@ void ath12k_debugfs_soc_create(struct ath12k_base *ab)
 	debugfs_ath12k_compress_dump = debugfs_lookup("compress_fw_dump", debugfs_ath12k);
 	if (!debugfs_ath12k_compress_dump) {
 		debugfs_ath12k_compress_dump =
-					debugfs_create_file("compress_fw_dump",
-							    0600, debugfs_ath12k,
-							    ab,
-							    &fops_compress_fw_dump);
+				ath12k_debugfs_create_file("compress_fw_dump",
+							   0600, debugfs_ath12k,
+							   ab, ab,
+							   &fops_compress_fw_dump);
 		if (IS_ERR_OR_NULL(debugfs_ath12k_compress_dump))
 			ath12k_err(ab, "failed to create compress_dump entry\n");
 	} else {
@@ -3980,16 +4049,16 @@ static ssize_t ath12k_read_wmi_ctrl_path_stats(struct file *file,
 
 static const struct file_operations ath12k_fops_wmi_ctrl_stats = {
 	.write = ath12k_write_wmi_ctrl_path_stats,
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.read = ath12k_read_wmi_ctrl_path_stats,
 };
 
 static void ath12k_debugfs_wmi_ctrl_stats_register(struct ath12k *ar)
 {
-	debugfs_create_file("wmi_ctrl_stats", 0600,
-			    ar->debug.debugfs_pdev,
-			    ar,
-			    &ath12k_fops_wmi_ctrl_stats);
+	ath12k_debugfs_create_file("wmi_ctrl_stats", 0600,
+				   ar->debug.debugfs_pdev,
+				   ar->ab, ar,
+				   &ath12k_fops_wmi_ctrl_stats);
 	INIT_LIST_HEAD(&ar->debug.wmi_ctrl_path_stats.pdev_stats);
 	INIT_LIST_HEAD(&ar->debug.period_wmi_list);
 	spin_lock_init(&ar->debug.wmi_ctrl_path_stats_lock);
@@ -4131,7 +4200,7 @@ static ssize_t ath12k_read_vdev_tid_stats(struct file *file,
 
 static const struct file_operations ath12k_fops_vdev_tid_stats = {
 	.read = ath12k_read_vdev_tid_stats,
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 };
 
 static void ath12k_reset_vdev_tid_stats(struct ath12k_vif *ahvif)
@@ -4165,7 +4234,7 @@ static ssize_t ath12k_write_reset_dp_tid_stats(struct file *file,
 
 static const struct file_operations ath12k_fops_reset_dp_tid_stats = {
 	.write = ath12k_write_reset_dp_tid_stats,
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 };
 
 void ath12k_debugfs_soc_destroy(struct ath12k_base *ab)
@@ -4364,7 +4433,7 @@ static ssize_t ath12k_read_pdev_qos_map_set(struct file *file,
 static const struct file_operations fops_qos_map_set = {
 	.read = ath12k_read_pdev_qos_map_set,
 	.write = ath12k_write_pdev_qos_map_set,
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
@@ -4375,6 +4444,11 @@ static int ath12k_open_vdev_stats(struct inode *inode, struct file *file)
 	struct ath12k_fw_stats_req_params param;
 	struct ath12k_hw *ah = ath12k_ar_to_ah(ar);
 	int ret;
+
+	if (ar->ab->is_bypassed) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "device is in bypassed state\n");
+		return -EPERM;
+	}
 
 	guard(wiphy)(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -4439,6 +4513,11 @@ static int ath12k_open_vdev_extd_stats(struct inode *inode, struct file *file)
 	struct ath12k_hw *ah = ath12k_ar_to_ah(ar);
 	int ret;
 
+	if (ar->ab->is_bypassed) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "device is in bypassed state\n");
+		return -EPERM;
+	}
+
 	guard(wiphy)(ath12k_ar_to_hw(ar)->wiphy);
 
 	if (!ah)
@@ -4502,6 +4581,11 @@ static int ath12k_open_bcn_stats(struct inode *inode, struct file *file)
 	struct ath12k_fw_stats_req_params param;
 	struct ath12k_hw *ah = ath12k_ar_to_ah(ar);
 	int ret;
+
+	if (ar->ab->is_bypassed) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "device is in bypassed state\n");
+		return -EPERM;
+	}
 
 	guard(wiphy)(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -4575,6 +4659,11 @@ static int ath12k_open_pdev_stats(struct inode *inode, struct file *file)
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_fw_stats_req_params param;
 	int ret;
+
+	if (ar->ab->is_bypassed) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "device is in bypassed state\n");
+		return -EPERM;
+	}
 
 	guard(wiphy)(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -4671,7 +4760,7 @@ static ssize_t ath12k_read_enable_vdev_stats_offload(struct file *file,
 static const struct file_operations fops_vdev_stats_offload = {
 	.read = ath12k_read_enable_vdev_stats_offload,
 	.write = ath12k_write_enable_vdev_stats_offload,
-	.open = simple_open
+	.open = ath12k_debugfs_open
 };
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
@@ -4680,9 +4769,12 @@ static ssize_t ath12k_write_ppe_rfs_core_mask(struct file *file,
 					      size_t count, loff_t *ppos)
 {
 	struct ath12k_vif *ahvif = file->private_data;
-	struct ath12k_base *ab = ahvif->deflink.ar->ab;
+	struct ath12k_base *ab;
 	u32 core_mask;
 	int ret;
+
+	if (ahvif && ahvif->deflink.ar)
+		ab = ahvif->deflink.ar->ab;
 
 	if (kstrtou32_from_user(user_buf, count, 0, &core_mask))
 		return -EINVAL;
@@ -4727,7 +4819,7 @@ static ssize_t ath12k_read_ppe_rfs_core_mask(struct file *file,
 static const struct file_operations ath12k_fops_rfs_core_mask = {
 	.read = ath12k_read_ppe_rfs_core_mask,
 	.write = ath12k_write_ppe_rfs_core_mask,
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
@@ -4974,7 +5066,7 @@ ath12k_debugfs_write_ppeds_stats(struct file *file,
 static const struct file_operations fops_ppeds_stats = {
 	.read = ath12k_debugfs_dump_ppeds_stats,
 	.write = ath12k_debugfs_write_ppeds_stats,
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
@@ -4989,16 +5081,16 @@ void ath12k_debugfs_fw_stats_register(struct ath12k *ar)
 	/* all stats debugfs files created are under "fw_stats" directory
 	 * created per PDEV
 	 */
-	debugfs_create_file("vdev_stats", 0600, fwstats_dir, ar,
-			    &fops_vdev_stats);
-	debugfs_create_file("beacon_stats", 0600, fwstats_dir, ar,
-			    &fops_bcn_stats);
-	debugfs_create_file("pdev_stats", 0600, fwstats_dir, ar,
-			    &fops_pdev_stats);
-	debugfs_create_file("en_vdev_stats_ol", 0600, fwstats_dir, ar,
-			    &fops_vdev_stats_offload);
-	debugfs_create_file("vdev_extd_stats", 0600, fwstats_dir, ar,
-			    &fops_vdev_extd_stats);
+	debugfs_create_file("vdev_stats", 0600, fwstats_dir,
+			    ar, &fops_vdev_stats);
+	debugfs_create_file("beacon_stats", 0600, fwstats_dir,
+			    ar, &fops_bcn_stats);
+	debugfs_create_file("pdev_stats", 0600, fwstats_dir,
+			    ar, &fops_pdev_stats);
+	debugfs_create_file("en_vdev_stats_ol", 0600, fwstats_dir,
+			    ar, &fops_vdev_stats_offload);
+	debugfs_create_file("vdev_extd_stats", 0600, fwstats_dir,
+			    ar, &fops_vdev_extd_stats);
 
 	ath12k_fw_stats_init(ar);
 }
@@ -5104,7 +5196,7 @@ static ssize_t ath12k_read_wmm_stats(struct file *file,
 
 static const struct file_operations fops_wmm_stats = {
 	.read = ath12k_read_wmm_stats,
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 };
 
 static ssize_t ath12k_athdiag_read(struct file *file,
@@ -5202,7 +5294,7 @@ error_unlock:
 static const struct file_operations fops_athdiag = {
 	.read = ath12k_athdiag_read,
 	.write = ath12k_athdiag_write,
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
@@ -5268,7 +5360,7 @@ static ssize_t ath12k_read_enable_m3_dump(struct file *file,
 static const struct file_operations fops_enable_m3_dump = {
 	.read = ath12k_read_enable_m3_dump,
 	.write = ath12k_write_enable_m3_dump,
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.owner = THIS_MODULE,
 };
 
@@ -5397,7 +5489,7 @@ static ssize_t ath12k_read_btcoex(struct file *file, char __user *ubuf,
 static const struct file_operations fops_btcoex = {
 	.read = ath12k_read_btcoex,
 	.write = ath12k_write_btcoex,
-	.open = simple_open
+	.open = ath12k_debugfs_open
 };
 
 static ssize_t ath12k_write_btcoex_duty_cycle(struct file *file,
@@ -5507,9 +5599,9 @@ static ssize_t ath12k_read_btcoex_duty_cycle(struct file *file, char __user *ubu
 }
 
 static const struct file_operations fops_btcoex_duty_cycle = {
-        .read = ath12k_read_btcoex_duty_cycle,
-        .write = ath12k_write_btcoex_duty_cycle,
-        .open = simple_open
+	.read = ath12k_read_btcoex_duty_cycle,
+	.write = ath12k_write_btcoex_duty_cycle,
+	.open = ath12k_debugfs_open
 };
 
 static ssize_t ath12k_write_btcoex_algo(struct file *file,
@@ -5632,9 +5724,9 @@ static ssize_t ath12k_read_btcoex_algo(struct file *file, char __user *ubuf,
 }
 
 static const struct file_operations fops_btcoex_algo = {
-        .read = ath12k_read_btcoex_algo,
-        .write = ath12k_write_btcoex_algo,
-        .open = simple_open
+	.read = ath12k_read_btcoex_algo,
+	.write = ath12k_write_btcoex_algo,
+	.open = ath12k_debugfs_open
 };
 
 static ssize_t ath12k_btcoex_pkt_priority_write(struct file *file,
@@ -5749,11 +5841,11 @@ static ssize_t ath12k_btcoex_pkt_priority_read(struct file *file,
 }
 
 static const struct file_operations fops_btcoex_priority = {
-        .read = ath12k_btcoex_pkt_priority_read,
-        .write = ath12k_btcoex_pkt_priority_write,
-        .open = simple_open,
-        .owner = THIS_MODULE,
-        .llseek = default_llseek,
+	.read = ath12k_btcoex_pkt_priority_read,
+	.write = ath12k_btcoex_pkt_priority_write,
+	.open = ath12k_debugfs_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
 };
 
 /**
@@ -5823,8 +5915,8 @@ static ssize_t ath12k_write_simulate_awgn(struct file *file,
 }
 
 static const struct file_operations fops_simulate_awgn = {
-        .write = ath12k_write_simulate_awgn,
-        .open = simple_open
+	.write = ath12k_write_simulate_awgn,
+	.open = ath12k_debugfs_open
 };
 
 static ssize_t ath12k_read_scan_args_config(struct file *file,
@@ -5888,14 +5980,14 @@ static ssize_t ath12k_write_scan_args_config(struct file *file,
 static const struct file_operations fops_scan_args_config = {
 	.read = ath12k_read_scan_args_config,
 	.write = ath12k_write_scan_args_config,
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
 
 static const struct file_operations fops_configure_afc_grace_timer = {
 	.write = ath12k_write_afc_grace_timer_value,
-	.open = simple_open
+	.open = ath12k_debugfs_open
 };
 
 static ssize_t
@@ -5950,7 +6042,7 @@ ath12k_read_pktlog_remote_enable(struct file *file,
 static const struct file_operations fops_pktlog_remote_enable = {
 	.read = ath12k_read_pktlog_remote_enable,
 	.write = ath12k_write_pktlog_remote_enable,
-	.open = simple_open
+	.open = ath12k_debugfs_open
 };
 
 static ssize_t
@@ -6012,7 +6104,7 @@ ath12k_read_pktlog_remote_ip(struct file *file,
 static const struct file_operations fops_pktlog_remote_ip = {
 	.read = ath12k_read_pktlog_remote_ip,
 	.write = ath12k_write_pktlog_remote_ip,
-	.open = simple_open
+	.open = ath12k_debugfs_open
 };
 
 static ssize_t
@@ -6037,7 +6129,7 @@ ath12k_read_pktlog_remote_port(struct file *file,
 
 static const struct file_operations fops_pktlog_remote_port = {
 	.read = ath12k_read_pktlog_remote_port,
-	.open = simple_open
+	.open = ath12k_debugfs_open
 };
 
 /**
@@ -6179,7 +6271,7 @@ static ssize_t ath12k_read_pktlog_filter(struct file *file,
 static const struct file_operations fops_pktlog_filter = {
         .read = ath12k_read_pktlog_filter,
         .write = ath12k_write_pktlog_filter,
-        .open = simple_open
+	.open = ath12k_debugfs_open
 };
 
 static ssize_t ath12k_write_qos_stats(struct file *file,
@@ -6218,6 +6310,8 @@ static ssize_t ath12k_write_qos_stats(struct file *file,
 
 	for (i = 0; i < ah->num_radio; i++) {
 		ar = &ah->radio[i];
+		if (ar->ab->is_bypassed)
+			continue;
 		if (ar) {
 			cur_stats_lvl = ar->dp.qos_stats &
 					ATH12K_QOS_STATS_COLLECTION_MASK;
@@ -6232,6 +6326,8 @@ static ssize_t ath12k_write_qos_stats(struct file *file,
 
 	for (i = 0; i < ah->num_radio; i++) {
 		ar = &ah->radio[i];
+		if (ar->ab->is_bypassed)
+			continue;
 		if (ar)
 			ar->dp.qos_stats = qos_stats;
 	}
@@ -6276,7 +6372,7 @@ static ssize_t ath12k_read_qos_stats(struct file *file,
 static const struct file_operations fops_qos_stats = {
 	.read = ath12k_read_qos_stats,
 	.write = ath12k_write_qos_stats,
-	.open = simple_open
+	.open = ath12k_debugfs_open
 };
 
 static void ath12k_dp_peer_reset_delay_stats(struct ath12k_dp_peer *dp_peer)
@@ -6366,7 +6462,7 @@ static ssize_t ath12k_write_reset_latency_stats(struct file *file,
 
 static const struct file_operations fops_latency_stats = {
 	.write = ath12k_write_reset_latency_stats,
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
@@ -6497,7 +6593,7 @@ static ssize_t ath12k_show_ofdma_txbf(struct file *file,
 
 static const struct file_operations ofdma_txbf = {
 	.write = ath12k_enable_ofdma_txbf,
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.read = ath12k_show_ofdma_txbf,
 };
 
@@ -6534,6 +6630,8 @@ static ssize_t ath12k_write_dp_stats_mask(struct file *file,
 
 	for (i = 0; i < ah->num_radio; i++) {
 		ar = &ah->radio[i];
+		if (ar->ab->is_bypassed)
+			continue;
 		if (ar) {
 			stats_disable = !(debug_mask & DP_ENABLE_STATS);
 
@@ -6642,6 +6740,8 @@ static ssize_t ath12k_read_dp_stats_mask(struct file *file,
 	wiphy_lock(ah->hw->wiphy);
 	for (i = 0; i < ah->num_radio; i++) {
 		ar = &ah->radio[i];
+		if (ar->ab->is_bypassed)
+			continue;
 		if (ar) {
 			len = scnprintf(buf, sizeof(buf), "%X\n",
 					ar->dp.dp_stats_mask);
@@ -6656,7 +6756,7 @@ static ssize_t ath12k_read_dp_stats_mask(struct file *file,
 static const struct file_operations fops_dp_stats_mask = {
 	.read = ath12k_read_dp_stats_mask,
 	.write = ath12k_write_dp_stats_mask,
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 };
 
 static void ath12k_dp_vif_reset_proto_stats(struct ath12k_dp_vif *dp_vif)
@@ -6819,6 +6919,8 @@ static ssize_t ath12k_write_reset_dp_stats(struct file *file,
 
 	for (i = 0; i < ah->num_radio; i++) {
 		ar = &ah->radio[i];
+		if (ar->ab->is_bypassed)
+			continue;
 		dp_pdev = &ar->dp;
 		if (dp_pdev && ath12k_dp_vow_stats_enabled(dp_pdev)) {
 			memset(&dp_pdev->tid_stats, 0, sizeof(dp_pdev->tid_stats));
@@ -6845,7 +6947,7 @@ static ssize_t ath12k_write_reset_dp_stats(struct file *file,
 
 static const struct file_operations fops_reset_dp_stats = {
 	.write = ath12k_write_reset_dp_stats,
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 };
 
 static ssize_t ath12k_write_reset_proto_stats(struct file *file,
@@ -6870,7 +6972,7 @@ static ssize_t ath12k_write_reset_proto_stats(struct file *file,
 
 	for (i = 0; i < ah->num_radio; i++) {
 		ar = &ah->radio[i];
-		if (!ar)
+		if (!ar || ar->ab->is_bypassed)
 			continue;
 		if (!ath12k_proto_stats_enabled(&ar->dp)) {
 			wiphy_unlock(ah->hw->wiphy);
@@ -6888,6 +6990,8 @@ static ssize_t ath12k_write_reset_proto_stats(struct file *file,
 	/* Reset protocol stats for all VIFs */
 	for (i = 0; i < ah->num_radio; i++) {
 		ar = &ah->radio[i];
+		if (ar->ab->is_bypassed)
+			continue;
 		list_for_each_entry(arvif, &ar->arvifs, list) {
 			dp_vif = &arvif->ahvif->dp_vif;
 			ath12k_dp_vif_reset_proto_stats(dp_vif);
@@ -6900,7 +7004,7 @@ static ssize_t ath12k_write_reset_proto_stats(struct file *file,
 
 static const struct file_operations fops_reset_proto_stats = {
 	.write = ath12k_write_reset_proto_stats,
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
@@ -6959,7 +7063,7 @@ static ssize_t ath12k_write_set_sta_primary_link(struct file *file,
 
 static const struct file_operations ath12k_fops_set_sta_primary_link = {
 	.write = ath12k_write_set_sta_primary_link,
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
@@ -7003,6 +7107,8 @@ ath12k_write_reset_dp_tx_mon_stats(struct file *file,
 			continue;
 		prev_ab = ar->ab;
 		ab = ar->ab;
+		if (ab->is_bypassed)
+			continue;
 		dp = ath12k_ab_to_dp(ab);
 		if (!ath12k_dp_tx_mon_feature_eval(dp))
 			continue;
@@ -7017,6 +7123,8 @@ ath12k_write_reset_dp_tx_mon_stats(struct file *file,
 
 		for (i = 0; i < ah->num_radio; i++) {
 			if (ah->radio[i].ab != ab)
+				continue;
+			if (ah->radio[i].ab->is_bypassed)
 				continue;
 
 			memset(&ah->radio[i].tx_mon_ssr_stats, 0,
@@ -7040,34 +7148,42 @@ ath12k_write_reset_dp_tx_mon_stats(struct file *file,
 
 static const struct file_operations fops_reset_dp_tx_mon_stats = {
 	.write = ath12k_write_reset_dp_tx_mon_stats,
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.owner = THIS_MODULE,
 };
 
 void ath12k_hw_debugfs_register(struct ath12k_hw *ah)
 {
 	struct ieee80211_hw *hw = ah->hw;
+	struct ath12k_base *ab = ah->radio[0].ab;
 
-	debugfs_create_file("set_sta_primary_link", 0200, hw->wiphy->debugfsdir, ah,
-			    &ath12k_fops_set_sta_primary_link);
+	ath12k_debugfs_create_file("set_sta_primary_link", 0200, hw->wiphy->debugfsdir,
+				   ab, ah,
+				   &ath12k_fops_set_sta_primary_link);
 
-	debugfs_create_file("dp_stats_mask", 0644, hw->wiphy->debugfsdir, ah,
-			    &fops_dp_stats_mask);
+	ath12k_debugfs_create_file("dp_stats_mask", 0644, hw->wiphy->debugfsdir,
+				   ab, ah,
+				   &fops_dp_stats_mask);
 
-	debugfs_create_file("reset_dp_stats", 0644, hw->wiphy->debugfsdir, ah,
-			    &fops_reset_dp_stats);
+	ath12k_debugfs_create_file("reset_dp_stats", 0644, hw->wiphy->debugfsdir,
+				   ab, ah,
+				   &fops_reset_dp_stats);
 
-	debugfs_create_file("reset_proto_stats", 0200, hw->wiphy->debugfsdir, ah,
-			    &fops_reset_proto_stats);
+	ath12k_debugfs_create_file("reset_proto_stats", 0200, hw->wiphy->debugfsdir,
+				   ab, ah,
+				   &fops_reset_proto_stats);
 
-	debugfs_create_file("qos_stats", 0644, hw->wiphy->debugfsdir, ah,
-			    &fops_qos_stats);
+	ath12k_debugfs_create_file("qos_stats", 0644, hw->wiphy->debugfsdir,
+				   ab, ah,
+				   &fops_qos_stats);
 
-	debugfs_create_file("reset_latency_stats", 0644, hw->wiphy->debugfsdir, ah,
-			    &fops_latency_stats);
+	ath12k_debugfs_create_file("reset_latency_stats", 0644, hw->wiphy->debugfsdir,
+				   ab, ah,
+				   &fops_latency_stats);
 
-	debugfs_create_file("reset_dp_tx_mon_stats", 0200, hw->wiphy->debugfsdir, ah,
-			&fops_reset_dp_tx_mon_stats);
+	ath12k_debugfs_create_file("reset_dp_tx_mon_stats", 0200, hw->wiphy->debugfsdir,
+				   ab, ah,
+				   &fops_reset_dp_tx_mon_stats);
 }
 
 static ssize_t ath12k_read_bcast_probe_rl_stats(struct file *file,
@@ -7156,7 +7272,7 @@ static ssize_t ath12k_write_bcast_probe_rl_stats(struct file *file,
 static const struct file_operations fops_bcast_probe_rl_stats = {
 	.read  = ath12k_read_bcast_probe_rl_stats,
 	.write = ath12k_write_bcast_probe_rl_stats,
-	.open  = simple_open,
+	.open = ath12k_debugfs_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
@@ -7190,55 +7306,68 @@ void ath12k_debugfs_register(struct ath12k *ar)
 	}
 
 	if (ar->mac.sbands[NL80211_BAND_5GHZ].channels) {
-		debugfs_create_file("dfs_simulate_radar", 0200,
-				    ar->debug.debugfs_pdev, ar,
-				    &fops_simulate_radar);
-		debugfs_create_file("dfs_block_radar_events", 0200,
-				    ar->debug.debugfs_pdev, ar,
-				    &fops_dfs_block_radar);
+		ath12k_debugfs_create_file("dfs_simulate_radar", 0200,
+					   ar->debug.debugfs_pdev,
+					   ar->ab, ar,
+					   &fops_simulate_radar);
+		ath12k_debugfs_create_file("dfs_block_radar_events", 0200,
+					   ar->debug.debugfs_pdev,
+					   ar->ab, ar,
+					   &fops_dfs_block_radar);
 	}
 
-	debugfs_create_file("tpc_stats", 0400, ar->debug.debugfs_pdev, ar,
-			    &fops_tpc_stats);
-	debugfs_create_file("tpc_stats_type", 0200, ar->debug.debugfs_pdev,
-			    ar, &fops_tpc_stats_type);
+	debugfs_create_file("tpc_stats", 0400, ar->debug.debugfs_pdev,
+			    ar, &fops_tpc_stats);
+	ath12k_debugfs_create_file("tpc_stats_type", 0200, ar->debug.debugfs_pdev,
+				   ar->ab, ar, &fops_tpc_stats_type);
 	init_completion(&ar->debug.tpc_complete);
 
-	debugfs_create_file("wmm_stats", 0644,
-		            ar->debug.debugfs_pdev, ar,
-			    &fops_wmm_stats);
+	ath12k_debugfs_create_file("wmm_stats", 0644,
+				   ar->debug.debugfs_pdev,
+				   ar->ab, ar,
+				   &fops_wmm_stats);
 
-	debugfs_create_file("athdiag", 0600, ar->debug.debugfs_pdev, ar,
-			    &fops_athdiag);
+	ath12k_debugfs_create_file("athdiag", 0600, ar->debug.debugfs_pdev,
+				   ar->ab, ar,
+				   &fops_athdiag);
 
-	debugfs_create_file("enable_m3_dump", 0600, ar->debug.debugfs_pdev, ar,
-                            &fops_enable_m3_dump);
+	ath12k_debugfs_create_file("enable_m3_dump", 0600, ar->debug.debugfs_pdev,
+				   ar->ab, ar,
+				   &fops_enable_m3_dump);
 
-        debugfs_create_file("btcoex", 0644, ar->debug.debugfs_pdev, ar,
-                            &fops_btcoex);
+	ath12k_debugfs_create_file("btcoex", 0644, ar->debug.debugfs_pdev,
+				   ar->ab, ar,
+				   &fops_btcoex);
 
-        debugfs_create_file("btcoex_duty_cycle", 0644, ar->debug.debugfs_pdev, ar,
-                            &fops_btcoex_duty_cycle);
+	ath12k_debugfs_create_file("btcoex_duty_cycle", 0644, ar->debug.debugfs_pdev,
+				   ar->ab, ar,
+				   &fops_btcoex_duty_cycle);
 
-        debugfs_create_file("btcoex_algorithm", 0644, ar->debug.debugfs_pdev, ar,
-                            &fops_btcoex_algo);
+	ath12k_debugfs_create_file("btcoex_algorithm", 0644, ar->debug.debugfs_pdev,
+				   ar->ab, ar,
+				   &fops_btcoex_algo);
 
-        debugfs_create_file("btcoex_priority", 0600, ar->debug.debugfs_pdev, ar,
-                            &fops_btcoex_priority);
+	ath12k_debugfs_create_file("btcoex_priority", 0600, ar->debug.debugfs_pdev,
+				   ar->ab, ar,
+				   &fops_btcoex_priority);
 
-	debugfs_create_file("dump_mgmt_stats", 0644,
-				ar->debug.debugfs_pdev, ar,
-				&fops_dump_mgmt_stats);
+	ath12k_debugfs_create_file("dump_mgmt_stats", 0644,
+				   ar->debug.debugfs_pdev,
+				   ar->ab, ar,
+				   &fops_dump_mgmt_stats);
 
-	debugfs_create_file("chanctx_switch_stats", 0644,
-			    ar->debug.debugfs_pdev, ar,
-			    &fops_chanctx_switch_stats);
+	ath12k_debugfs_create_file("chanctx_switch_stats", 0644,
+				   ar->debug.debugfs_pdev,
+				   ar->ab, ar,
+				   &fops_chanctx_switch_stats);
 
-	debugfs_create_file("set_tt_configs", 0600, ar->debug.debugfs_pdev, ar,
-			    &tt_configs);
-	debugfs_create_file("bcast_probe_rl_stats", 0644,
-			    ar->debug.debugfs_pdev, ar,
-			    &fops_bcast_probe_rl_stats);
+	ath12k_debugfs_create_file("set_tt_configs", 0600, ar->debug.debugfs_pdev,
+				   ar->ab, ar,
+				   &tt_configs);
+	ath12k_debugfs_create_file("bcast_probe_rl_stats", 0644,
+				   ar->debug.debugfs_pdev,
+				   ar->ab, ar,
+				   &fops_bcast_probe_rl_stats);
 
 	ath12k_debugfs_htt_stats_register(ar);
 	ath12k_debugfs_fw_stats_register(ar);
@@ -7248,61 +7377,75 @@ void ath12k_debugfs_register(struct ath12k *ar)
 		     ar->ab->wmi_ab.svc_map))
 		ath12k_debugfs_wmi_ctrl_stats_register(ar);
 
-	debugfs_create_file("ext_rx_stats", 0644,
-			     ar->debug.debugfs_pdev, ar,
-			     &fops_extd_rx_stats);
+	ath12k_debugfs_create_file("ext_rx_stats", 0644,
+				   ar->debug.debugfs_pdev,
+				   ar->ab, ar,
+				   &fops_extd_rx_stats);
 
-	debugfs_create_file("ext_tx_stats", 0644,
-			     ar->debug.debugfs_pdev, ar,
-			     &fops_extd_tx_stats);
+	ath12k_debugfs_create_file("ext_tx_stats", 0644,
+				   ar->debug.debugfs_pdev,
+				   ar->ab, ar,
+				   &fops_extd_tx_stats);
 
 	if (ar->mac.sbands[NL80211_BAND_6GHZ].channels) {
-		debugfs_create_file("simulate_awgn", 0200,
-				    ar->debug.debugfs_pdev, ar,
-				    &fops_simulate_awgn);
+		ath12k_debugfs_create_file("simulate_awgn", 0200,
+					   ar->debug.debugfs_pdev,
+					   ar->ab, ar,
+					   &fops_simulate_awgn);
 #ifdef CPTCFG_QCN_EXTN
 		ath12k_debugfs_register_hw_blocklist_extn(ar);
 #endif
-		debugfs_create_file("configure_afc_grace_timer", 0200,
-				    ar->debug.debugfs_pdev, ar,
-				    &fops_configure_afc_grace_timer);
+		ath12k_debugfs_create_file("configure_afc_grace_timer", 0200,
+					   ar->debug.debugfs_pdev,
+					   ar->ab, ar,
+					   &fops_configure_afc_grace_timer);
 	}
-	debugfs_create_file("scan_args_config", 0600, ar->debug.debugfs_pdev, ar,
-			    &fops_scan_args_config);
+	ath12k_debugfs_create_file("scan_args_config", 0600, ar->debug.debugfs_pdev,
+				   ar->ab, ar,
+				   &fops_scan_args_config);
 
-	debugfs_create_file("neighbor_peer", 0644,
-			    ar->debug.debugfs_pdev, ar,
-			    &fops_write_nrp_mac);
+	ath12k_debugfs_create_file("neighbor_peer", 0644,
+				   ar->debug.debugfs_pdev,
+				   ar->ab, ar,
+				   &fops_write_nrp_mac);
 
-	debugfs_create_file("smart_mon_filter", 0644,
-			    ar->debug.debugfs_pdev, ar,
-			    &fops_smart_mon_filter);
+	ath12k_debugfs_create_file("smart_mon_filter", 0644,
+				   ar->debug.debugfs_pdev,
+				   ar->ab, ar,
+				   &fops_smart_mon_filter);
 
-	debugfs_create_file("qos_map_set", 0600, ar->debug.debugfs_pdev, ar,
-			    &fops_qos_map_set);
+	ath12k_debugfs_create_file("qos_map_set", 0600, ar->debug.debugfs_pdev,
+				   ar->ab, ar,
+				   &fops_qos_map_set);
 
-	debugfs_create_file("pktlog_filter", 0644,
-			    ar->debug.debugfs_pdev, ar,
-			    &fops_pktlog_filter);
+	ath12k_debugfs_create_file("pktlog_filter", 0644,
+				   ar->debug.debugfs_pdev,
+				   ar->ab, ar,
+				   &fops_pktlog_filter);
 
-	debugfs_create_file("ofdma_conf", 0600,
-			    ar->debug.debugfs_pdev, ar,
-			    &ofdma_txbf);
+	ath12k_debugfs_create_file("ofdma_conf", 0600,
+				   ar->debug.debugfs_pdev,
+				   ar->ab, ar,
+				   &ofdma_txbf);
 
-	debugfs_create_file("remote_enable", 0644, ar->debug.debugfs_pdev, ar,
-			    &fops_pktlog_remote_enable);
-	debugfs_create_file("remote_ip", 0644, ar->debug.debugfs_pdev, ar,
-			    &fops_pktlog_remote_ip);
-	debugfs_create_file("remote_port", 0444, ar->debug.debugfs_pdev, ar,
-			    &fops_pktlog_remote_port);
+	ath12k_debugfs_create_file("remote_enable", 0644, ar->debug.debugfs_pdev,
+				   ar->ab, ar,
+				   &fops_pktlog_remote_enable);
+	ath12k_debugfs_create_file("remote_ip", 0644, ar->debug.debugfs_pdev,
+				   ar->ab, ar,
+				   &fops_pktlog_remote_ip);
+	ath12k_debugfs_create_file("remote_port", 0444, ar->debug.debugfs_pdev,
+				   ar->ab, ar,
+				   &fops_pktlog_remote_port);
 #if defined(CPTCFG_EXT_IPA_OFFLOAD) && defined(CPTCFG_QCN_EXTN)
 	ath12k_debugfs_register_ipa_extn(ar);
 #endif /* CPTCFG_EXT_IPA_OFFLOAD && CPTCFG_QCN_EXTN */
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
-		debugfs_create_file("ppeds_stats", 0600, ab->debugfs_soc, ab,
-				    &fops_ppeds_stats);
+		ath12k_debugfs_create_file("ppeds_stats", 0600, ab->debugfs_soc,
+					   ab, ab,
+					   &fops_ppeds_stats);
 #endif
 }
 
@@ -7316,6 +7459,11 @@ static int ath12k_debugfs_hal_dump_srng_stats_open(struct inode *inode, struct f
 	struct ath12k_base *ab = inode->i_private;
 	struct ath12k_srng_stats_priv *priv;
 	const int size = 4096 * 6;
+
+	if (ab->is_bypassed) {
+		ath12k_dbg(ab, ATH12K_DBG_MAC, "device is in bypassed state\n");
+		return -EPERM;
+	}
 
 	priv = kzalloc(sizeof(*priv), GFP_KERNEL);
 	if (!priv)
@@ -7537,7 +7685,7 @@ out:
 
 static const struct file_operations fops_umac_reset_stats = {
 	.read = ath12k_read_umac_reset_stats,
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
@@ -7589,7 +7737,7 @@ static ssize_t ath12k_write_simulate_host_crash(struct file *file,
 static const struct file_operations fops_simulate_host_crash = {
 	.read = ath12k_read_simulate_host_crash,
 	.write = ath12k_write_simulate_host_crash,
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
@@ -7629,11 +7777,6 @@ static ssize_t ath12k_write_simulate_fw_crash(struct file *file,
 	/* drop the possible '\n' from the end */
 	if (buf[*ppos - 1] == '\n')
 		buf[*ppos - 1] = '\0';
-
-	if (ab->is_bypassed) {
-		ath12k_err(ab, "Target is in bypassed state, cannot simulate assert\n");
-		return -EINVAL;
-	}
 
 	for (i = 0; i < ab->num_radios; i++) {
 		pdev = &ab->pdevs[i];
@@ -7700,7 +7843,7 @@ static ssize_t ath12k_write_simulate_fw_crash(struct file *file,
 static const struct file_operations fops_simulate_fw_crash = {
 	.read = ath12k_read_simulate_fw_crash,
 	.write = ath12k_write_simulate_fw_crash,
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
@@ -7775,7 +7918,7 @@ static const struct file_operations fops_recovery_in_progress = {
 static const struct file_operations fops_fw_recovery = {
 	.read = ath12k_debug_read_fw_recovery,
 	.write = ath12k_debug_write_fw_recovery,
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 };
 
 
@@ -7819,7 +7962,7 @@ static ssize_t ath12k_debug_read_dbs_power_reduction(struct file *file,
 static const struct file_operations dbs_power_reduction = {
 	.read = ath12k_debug_read_dbs_power_reduction,
 	.write = ath12k_debug_write_dbs_power_reduction,
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 };
 
 static ssize_t ath12k_debug_write_eth_power_reduction(struct file *file,
@@ -7861,7 +8004,7 @@ static ssize_t ath12k_debug_read_eth_power_reduction(struct file *file,
 static const struct file_operations eth_power_reduction = {
 	.read = ath12k_debug_read_eth_power_reduction,
 	.write = ath12k_debug_write_eth_power_reduction,
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 };
 #endif
 
@@ -7924,7 +8067,7 @@ out:
 static const struct file_operations fops_fw_dbglog = {
 	.read = ath12k_read_fw_dbglog,
 	.write = ath12k_write_fw_dbglog,
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
@@ -7954,7 +8097,7 @@ static ssize_t ath12k_debug_fw_reset_stats_read(struct file *file,
 }
 
 static const struct file_operations fops_fw_reset_stats = {
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.read = ath12k_debug_fw_reset_stats_read,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
@@ -8191,7 +8334,7 @@ ath12k_debugfs_write_dp_mon_stats(struct file *file, const char __user *user_buf
 static const struct file_operations fops_device_mon_stats = {
 	.read = ath12k_dump_dp_mon_pdev_stats,
 	.write = ath12k_debugfs_write_dp_mon_stats,
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
@@ -8332,7 +8475,7 @@ static ssize_t ath12k_debugfs_dump_device_mgmt_srng_stats(struct file *file,
 
 static const struct file_operations fops_device_mgmt_srng_stats = {
 	.read = ath12k_debugfs_dump_device_mgmt_srng_stats,
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
@@ -8371,7 +8514,7 @@ static ssize_t ath12k_dump_svc_sorted_list(struct file *file,
 }
 
 static const struct file_operations fops_svc_sorted_list = {
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.read = ath12k_dump_svc_sorted_list,
 };
 
@@ -8423,7 +8566,7 @@ static ssize_t ath12k_write_sorted_ac_mask(struct file *file,
 static const struct file_operations fops_svc_sorted_ac_mask = {
 	.read = ath12k_read_sorted_ac_mask,
 	.write = ath12k_write_sorted_ac_mask,
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
@@ -8468,7 +8611,7 @@ static ssize_t ath12k_update_tx_msdu_flow(struct file *file,
 }
 
 static const struct file_operations fops_update_tx_msdu_flow = {
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.write = ath12k_update_tx_msdu_flow,
 };
 
@@ -8497,7 +8640,7 @@ static ssize_t ath12k_dump_dp_congestion_ctrl_stats(struct file *file,
 }
 
 static const struct file_operations fops_congestion_ctrl_stats = {
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.read = ath12k_dump_dp_congestion_ctrl_stats,
 	.llseek = default_llseek,
 };
@@ -8536,7 +8679,7 @@ static ssize_t ath12k_write_congestion_ctrl_param(struct file *file,
 }
 
 static const struct file_operations fops_congestion_ctrl_set = {
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.write = ath12k_write_congestion_ctrl_param,
 	.owner = THIS_MODULE,
 };
@@ -8567,7 +8710,7 @@ static ssize_t ath12k_dump_dp_congestion_recovery_history(struct file *file,
 }
 
 static const struct file_operations fops_congestion_recovery_history = {
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.read = ath12k_dump_dp_congestion_recovery_history,
 	.llseek = default_llseek,
 };
@@ -8579,61 +8722,79 @@ static void ath12k_debugfs_dp_svc_sorted_flow_init(struct ath12k_base *ab)
 	svc_sorted_flow_dir = debugfs_create_dir("svc_sorted_flow",
 						 ab->debugfs_soc);
 
-	debugfs_create_file("list", 0400, svc_sorted_flow_dir, ab,
-			    &fops_svc_sorted_list);
-	debugfs_create_file("ac_mask", 0600, svc_sorted_flow_dir, ab,
-			    &fops_svc_sorted_ac_mask);
+	ath12k_debugfs_create_file("list", 0400, svc_sorted_flow_dir,
+				   ab, ab,
+				   &fops_svc_sorted_list);
+	ath12k_debugfs_create_file("ac_mask", 0600, svc_sorted_flow_dir,
+				   ab, ab,
+				   &fops_svc_sorted_ac_mask);
 
 	ab->dp->svc_sort_stats.ac_mask = (1 << (IEEE80211_AC_BK + 1)) - 1;
 
-	debugfs_create_file("update_tx_msdu_flow", 0200, svc_sorted_flow_dir, ab,
-			    &fops_update_tx_msdu_flow);
+	ath12k_debugfs_create_file("update_tx_msdu_flow", 0200, svc_sorted_flow_dir,
+				   ab, ab,
+				   &fops_update_tx_msdu_flow);
 
-	debugfs_create_file("congestion_ctrl_stats", 0400, svc_sorted_flow_dir, ab,
-			    &fops_congestion_ctrl_stats);
+	ath12k_debugfs_create_file("congestion_ctrl_stats", 0400, svc_sorted_flow_dir,
+				   ab, ab,
+				   &fops_congestion_ctrl_stats);
 
-	debugfs_create_file("congestion_ctrl_set", 0200, svc_sorted_flow_dir, ab,
-			    &fops_congestion_ctrl_set);
+	ath12k_debugfs_create_file("congestion_ctrl_set", 0200, svc_sorted_flow_dir,
+				   ab, ab,
+				   &fops_congestion_ctrl_set);
 
-	debugfs_create_file("congestion_recovery_history", 0400, svc_sorted_flow_dir,
-			    ab, &fops_congestion_recovery_history);
+	ath12k_debugfs_create_file("congestion_recovery_history", 0400,
+				   svc_sorted_flow_dir,
+				   ab, ab, &fops_congestion_recovery_history);
 }
 
 void ath12k_debugfs_pdev_create(struct ath12k_base *ab) {
-	debugfs_create_file("simulate_fw_crash", 0600, ab->debugfs_soc, ab,
-			    &fops_simulate_fw_crash);
-	debugfs_create_file("set_fw_recovery", 0600, ab->debugfs_soc, ab,
-			    &fops_fw_recovery);
-	debugfs_create_file("recovery_in_progress", 0400, ab->debugfs_soc, ab,
-			    &fops_recovery_in_progress);
+	ath12k_debugfs_create_file("simulate_fw_crash", 0600, ab->debugfs_soc,
+				   ab, ab,
+				   &fops_simulate_fw_crash);
+	ath12k_debugfs_create_file("set_fw_recovery", 0600, ab->debugfs_soc,
+				   ab, ab,
+				   &fops_fw_recovery);
+	debugfs_create_file("recovery_in_progress", 0400, ab->debugfs_soc,
+			    ab, &fops_recovery_in_progress);
 
 #ifdef CPTCFG_ATH12K_POWER_OPTIMIZATION
-	debugfs_create_file("dbs_power_reduction", 0600, ab->debugfs_soc, ab,
-			    &dbs_power_reduction);
-	debugfs_create_file("eth_power_reduction", 0600, ab->debugfs_soc, ab,
-			    &eth_power_reduction);
+	ath12k_debugfs_create_file("dbs_power_reduction", 0600, ab->debugfs_soc,
+				   ab, ab,
+				   &dbs_power_reduction);
+	ath12k_debugfs_create_file("eth_power_reduction", 0600, ab->debugfs_soc,
+				   ab, ab,
+				   &eth_power_reduction);
 #endif
 
-	debugfs_create_file("fw_dbglog_config", 0600, ab->debugfs_soc, ab,
-			    &fops_fw_dbglog);
-	debugfs_create_file("fw_reset_stats", 0400, ab->debugfs_soc, ab,
-			    &fops_fw_reset_stats);
-	debugfs_create_file("umac_reset_stats", 0400, ab->debugfs_soc, ab,
-			    &fops_umac_reset_stats);
-	debugfs_create_file("device_dp_stats", 0600, ab->debugfs_soc, ab,
-			    &fops_device_dp_stats);
-	debugfs_create_file("device_mon_stats", 0600, ab->debugfs_soc, ab,
-			    &fops_device_mon_stats);
-	debugfs_create_file("dump_srng_stats", 0600, ab->debugfs_soc, ab,
-			    &fops_dump_hal_stats);
-	debugfs_create_file("device_mgmt_srng_stats", 0600, ab->debugfs_soc, ab,
-			    &fops_device_mgmt_srng_stats);
+	ath12k_debugfs_create_file("fw_dbglog_config", 0600, ab->debugfs_soc,
+				   ab, ab,
+				   &fops_fw_dbglog);
+	ath12k_debugfs_create_file("fw_reset_stats", 0400, ab->debugfs_soc,
+				   ab, ab,
+				   &fops_fw_reset_stats);
+	ath12k_debugfs_create_file("umac_reset_stats", 0400, ab->debugfs_soc,
+				   ab, ab,
+				   &fops_umac_reset_stats);
+	ath12k_debugfs_create_file("device_dp_stats", 0600, ab->debugfs_soc,
+				   ab, ab,
+				   &fops_device_dp_stats);
+	ath12k_debugfs_create_file("device_mon_stats", 0600, ab->debugfs_soc,
+				   ab, ab,
+				   &fops_device_mon_stats);
+	debugfs_create_file("dump_srng_stats", 0600, ab->debugfs_soc,
+			    ab, &fops_dump_hal_stats);
+	ath12k_debugfs_create_file("device_mgmt_srng_stats", 0600, ab->debugfs_soc,
+				   ab, ab,
+				   &fops_device_mgmt_srng_stats);
 	if (test_bit(WMI_TLV_SERVICE_DYNAMIC_WSI_REMAP_SUPPORT, ab->wmi_ab.svc_map))
-		debugfs_create_file("wsi_bypass_device", 0600, ab->debugfs_soc, ab,
-				    &fops_wsi_bypass_device);
+		ath12k_debugfs_create_file("wsi_bypass_device", 0600, ab->debugfs_soc,
+					   ab, ab,
+					   &fops_wsi_bypass_device);
 
-	debugfs_create_file("simulate_host_crash", 0600, ab->debugfs_soc, ab,
-		&fops_simulate_host_crash);
+	ath12k_debugfs_create_file("simulate_host_crash", 0600, ab->debugfs_soc,
+				   ab, ab,
+				   &fops_simulate_host_crash);
 
 	ath12k_debugfs_dp_svc_sorted_flow_init(ab);
 }
@@ -8915,32 +9076,32 @@ static ssize_t ath12k_write_twt_btwt_remove_sta(struct file *file,
 
 static const struct file_operations ath12k_fops_twt_add_dialog = {
 	.write = ath12k_write_twt_add_dialog,
-	.open = simple_open
+	.open = ath12k_debugfs_open
 };
 
 static const struct file_operations ath12k_fops_twt_del_dialog = {
 	.write = ath12k_write_twt_del_dialog,
-	.open = simple_open
+	.open = ath12k_debugfs_open
 };
 
 static const struct file_operations ath12k_fops_twt_pause_dialog = {
 	.write = ath12k_write_twt_pause_dialog,
-	.open = simple_open
+	.open = ath12k_debugfs_open
 };
 
 static const struct file_operations ath12k_fops_twt_resume_dialog = {
 	.write = ath12k_write_twt_resume_dialog,
-	.open = simple_open
+	.open = ath12k_debugfs_open
 };
 
 static const struct file_operations ath12k_fops_btwt_invite_sta = {
 	.write = ath12k_write_twt_btwt_invite_sta,
-	.open = simple_open
+	.open = ath12k_debugfs_open
 };
 
 static const struct file_operations ath12k_fops_btwt_remove_sta = {
 	.write = ath12k_write_twt_btwt_remove_sta,
-	.open = simple_open
+	.open = ath12k_debugfs_open
 };
 
 static ssize_t ath12k_write_primary_link(struct file *file,
@@ -9019,7 +9180,7 @@ static ssize_t ath12k_read_primary_link(struct file *file,
 }
 
 static const struct file_operations ath12k_fops_primary_link = {
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.write = ath12k_write_primary_link,
 	.read = ath12k_read_primary_link,
 	.owner = THIS_MODULE,
@@ -9103,7 +9264,7 @@ static ssize_t ath12k_read_wmm_stats_vdev(struct file *file,
 
 static const struct file_operations fops_wmm_stats_vdev = {
 	.read = ath12k_read_wmm_stats_vdev,
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 };
 
 static ssize_t ath12k_write_reset_vdev_wmm_stats(struct file *file,
@@ -9125,7 +9286,7 @@ static ssize_t ath12k_write_reset_vdev_wmm_stats(struct file *file,
 
 static const struct file_operations ath12k_fops_reset_vdev_wmm_stats = {
 	.write = ath12k_write_reset_vdev_wmm_stats,
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 };
 
 static ssize_t ath12k_write_power_save_gtx(struct file *file,
@@ -9160,7 +9321,7 @@ static ssize_t ath12k_read_power_save_gtx(struct file *file,
 }
 
 static const struct file_operations ath12k_power_save_gtx = {
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.write = ath12k_write_power_save_gtx,
 	.read = ath12k_read_power_save_gtx,
 };
@@ -9169,6 +9330,7 @@ void ath12k_debugfs_add_interface(struct ath12k_link_vif *arvif)
 {
 	struct ath12k_vif *ahvif = arvif->ahvif;
 	struct ieee80211_hw *hw = arvif->ar->ah->hw;
+	struct ath12k_base *ab = arvif->ar->ab;
 	struct ieee80211_vif *vif = ahvif->vif;
 	u8 link_id = arvif->link_id;
 
@@ -9192,48 +9354,49 @@ void ath12k_debugfs_add_interface(struct ath12k_link_vif *arvif)
 							vif->link_debugfs[link_id]);
 
 	if (!arvif->debugfs_twt || IS_ERR(arvif->debugfs_twt)) {
-		ath12k_warn(arvif->ar->ab,
+		ath12k_warn(ab,
 			    "failed to create directory %p\n",
 			    arvif->debugfs_twt);
 		arvif->debugfs_twt = NULL;
 		return;
 	}
 
-	debugfs_create_file("add_dialog", 0200, arvif->debugfs_twt,
-			    arvif, &ath12k_fops_twt_add_dialog);
+	ath12k_debugfs_create_file("add_dialog", 0200, arvif->debugfs_twt,
+				   ab, arvif, &ath12k_fops_twt_add_dialog);
 
-	debugfs_create_file("del_dialog", 0200, arvif->debugfs_twt,
-			    arvif, &ath12k_fops_twt_del_dialog);
+	ath12k_debugfs_create_file("del_dialog", 0200, arvif->debugfs_twt,
+				   ab, arvif, &ath12k_fops_twt_del_dialog);
 
-	debugfs_create_file("pause_dialog", 0200, arvif->debugfs_twt,
-			    arvif, &ath12k_fops_twt_pause_dialog);
+	ath12k_debugfs_create_file("pause_dialog", 0200, arvif->debugfs_twt,
+				   ab, arvif, &ath12k_fops_twt_pause_dialog);
 
-	debugfs_create_file("resume_dialog", 0200, arvif->debugfs_twt,
-			    arvif, &ath12k_fops_twt_resume_dialog);
+	ath12k_debugfs_create_file("resume_dialog", 0200, arvif->debugfs_twt,
+				   ab, arvif, &ath12k_fops_twt_resume_dialog);
 
-	debugfs_create_file("btwt_invite_sta", 0200, arvif->debugfs_twt,
-			    arvif, &ath12k_fops_btwt_invite_sta);
+	ath12k_debugfs_create_file("btwt_invite_sta", 0200, arvif->debugfs_twt,
+				   ab, arvif, &ath12k_fops_btwt_invite_sta);
 
-	debugfs_create_file("btwt_remove_sta", 0200, arvif->debugfs_twt,
-			    arvif, &ath12k_fops_btwt_remove_sta);
+	ath12k_debugfs_create_file("btwt_remove_sta", 0200, arvif->debugfs_twt,
+				   ab, arvif, &ath12k_fops_btwt_remove_sta);
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (!ahvif->debugfs_rfs_core_mask) {
 		ahvif->debugfs_rfs_core_mask =
-					debugfs_create_file("rfs_core_mask",
-							    0644,
-							    vif->debugfs_dir,
-							    ahvif,
-							    &ath12k_fops_rfs_core_mask);
+				ath12k_debugfs_create_file("rfs_core_mask",
+							   0644,
+							   vif->debugfs_dir,
+							   ab, ahvif,
+							   &ath12k_fops_rfs_core_mask);
 		if (IS_ERR(ahvif->debugfs_rfs_core_mask))
 			ahvif->debugfs_rfs_core_mask = NULL;
 	}
 #endif
 
-	arvif->debugfs_power_save_gtx = debugfs_create_file("power_save_gtx", 0644,
-							    vif->link_debugfs[link_id],
-							    arvif,
-							    &ath12k_power_save_gtx);
+	arvif->debugfs_power_save_gtx =
+				ath12k_debugfs_create_file("power_save_gtx", 0644,
+							   vif->link_debugfs[link_id],
+							   ab, arvif,
+							   &ath12k_power_save_gtx);
 
 #ifdef CPTCFG_QCN_EXTN
 	ath12k_gpr_debugfs_register_extn(arvif, vif->link_debugfs[link_id]);
@@ -9248,51 +9411,55 @@ ap_and_sta_debugfs_file:
 	if (ahvif->debugfs_primary_link)
 		return;
 
-	ahvif->debugfs_primary_link = debugfs_create_file("primary_link",
-							  0644,
-							  vif->debugfs_dir,
-							  ahvif,
-							  &ath12k_fops_primary_link);
+	ahvif->debugfs_primary_link =
+				ath12k_debugfs_create_file("primary_link",
+							   0644,
+							   vif->debugfs_dir,
+							   ab, ahvif,
+							   &ath12k_fops_primary_link);
 
 	if (ahvif->debugfs_wmm_stats_vdev)
 		return;
 
-	ahvif->debugfs_wmm_stats_vdev = debugfs_create_file("wmm_stats", 0644,
-							    vif->debugfs_dir,
-							    ahvif,
-							    &fops_wmm_stats_vdev);
+	ahvif->debugfs_wmm_stats_vdev = ath12k_debugfs_create_file("wmm_stats", 0644,
+								   vif->debugfs_dir,
+								   ab, ahvif,
+								   &fops_wmm_stats_vdev);
 
 	if (ahvif->debugfs_reset_wmm_stats)
 		return;
 
-	ahvif->debugfs_reset_wmm_stats = debugfs_create_file("reset_wmm_stats",
-							     0644,
-							     vif->debugfs_dir,
-							     ahvif,
-							     &ath12k_fops_reset_vdev_wmm_stats);
+	ahvif->debugfs_reset_wmm_stats =
+			ath12k_debugfs_create_file("reset_wmm_stats",
+						   0644,
+						   vif->debugfs_dir,
+						   ab, ahvif,
+						   &ath12k_fops_reset_vdev_wmm_stats);
 
 	if (ahvif->debugfs_vdev_tid_stats)
 		return;
 
-	ahvif->debugfs_vdev_tid_stats = debugfs_create_file("dp_tid_stats",
-							    0644,
-							    vif->debugfs_dir,
-							    ahvif,
-							    &ath12k_fops_vdev_tid_stats);
+	ahvif->debugfs_vdev_tid_stats =
+				ath12k_debugfs_create_file("dp_tid_stats",
+							   0644,
+							   vif->debugfs_dir,
+							   ab, ahvif,
+							   &ath12k_fops_vdev_tid_stats);
 
 	if (ahvif->debugfs_reset_dp_tid_stats)
 		return;
 
-	ahvif->debugfs_reset_dp_tid_stats = debugfs_create_file("reset_dp_tid_stats",
-								0644,
-								vif->debugfs_dir,
-								ahvif,
-								&ath12k_fops_reset_dp_tid_stats);
+	ahvif->debugfs_reset_dp_tid_stats =
+			ath12k_debugfs_create_file("reset_dp_tid_stats",
+						   0644,
+						   vif->debugfs_dir,
+						   ab, ahvif,
+						   &ath12k_fops_reset_dp_tid_stats);
 
 	/* If debugfs_primary_link already exist, don't remove */
 	if (IS_ERR(ahvif->debugfs_primary_link) &&
 	    PTR_ERR(ahvif->debugfs_primary_link) != -EEXIST) {
-		ath12k_warn(arvif->ar->ab,
+		ath12k_warn(ab,
 			    "failed to create primary_link file, vif %pM",
 			    vif->addr);
 		debugfs_remove(ahvif->debugfs_primary_link);

@@ -7,6 +7,7 @@
 #include <linux/relay.h>
 #include "core.h"
 #include "debug.h"
+#include "debugfs.h"
 
 bool peer_is_in_cfr_unassoc_pool(struct ath12k *ar, u8 *peer_mac)
 {
@@ -589,7 +590,7 @@ out:
 static const struct file_operations fops_enable_cfr = {
 	.read = ath12k_read_file_enable_cfr,
 	.write = ath12k_write_file_enable_cfr,
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
@@ -717,7 +718,7 @@ static ssize_t ath12k_read_file_cfr_unassoc(struct file *file,
 static const struct file_operations fops_configure_cfr_unassoc = {
 	.write = ath12k_write_file_cfr_unassoc,
 	.read = ath12k_read_file_cfr_unassoc,
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
@@ -750,9 +751,10 @@ static inline int ath12k_cfr_debug_register(struct ath12k *ar)
 		return -EINVAL;
 	}
 
-	ar->cfr.enable_cfr = debugfs_create_file("enable_cfr", 0600,
-						 ar->debug.debugfs_pdev, ar,
-						 &fops_enable_cfr);
+	ar->cfr.enable_cfr = ath12k_debugfs_create_file("enable_cfr", 0600,
+							ar->debug.debugfs_pdev,
+							ar->ab, ar,
+							&fops_enable_cfr);
 	if (!ar->cfr.enable_cfr) {
 		ath12k_warn(ar->ab, "failed to open debugfs in pdev %d\n",
 			    ar->pdev_idx);
@@ -760,9 +762,10 @@ static inline int ath12k_cfr_debug_register(struct ath12k *ar)
 		goto debug_unregister;
 	}
 
-	ar->cfr.cfr_unassoc = debugfs_create_file("cfr_unassoc", 0600,
-						  ar->debug.debugfs_pdev, ar,
-						  &fops_configure_cfr_unassoc);
+	ar->cfr.cfr_unassoc = ath12k_debugfs_create_file("cfr_unassoc", 0600,
+							 ar->debug.debugfs_pdev,
+							 ar->ab, ar,
+							 &fops_configure_cfr_unassoc);
 
 	if (!ar->cfr.cfr_unassoc) {
 		ath12k_warn(ar->ab,

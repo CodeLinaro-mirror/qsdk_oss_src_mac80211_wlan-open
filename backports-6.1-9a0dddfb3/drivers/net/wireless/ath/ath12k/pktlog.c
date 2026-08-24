@@ -9,6 +9,7 @@
 #include "core.h"
 #include "wmi.h"
 #include "debug.h"
+#include "debugfs.h"
 #include "dp_mon.h"
 #include <linux/inet.h>
 #include <net/sock.h>
@@ -961,7 +962,7 @@ unlock:
 static const struct file_operations fops_pktlog_dump = {
 	.read = ath12k_pktlog_read,
 	.mmap = ath12k_pktlog_mmap,
-	.open = simple_open
+	.open = ath12k_debugfs_open
 };
 
 /**
@@ -1062,7 +1063,7 @@ static ssize_t ath12k_read_pktlog_start(struct file *file, char __user *ubuf,
 static const struct file_operations fops_pktlog_start = {
 	.read = ath12k_read_pktlog_start,
 	.write = ath12k_write_pktlog_start,
-	.open = simple_open
+	.open = ath12k_debugfs_open
 };
 
 static ssize_t ath12k_pktlog_size_write(struct file *file, const char __user *ubuf,
@@ -1123,7 +1124,7 @@ static ssize_t ath12k_pktlog_size_read(struct file *file, char __user *ubuf,
 static const struct file_operations fops_pktlog_size = {
 	.read = ath12k_pktlog_size_read,
 	.write = ath12k_pktlog_size_write,
-	.open = simple_open
+	.open = ath12k_debugfs_open
 };
 
 /**
@@ -1230,12 +1231,12 @@ void ath12k_init_pktlog(struct ath12k *ar)
 {
 	ar->debug.debugfs_pktlog = debugfs_create_dir("pktlog",
 						      ar->debug.debugfs_pdev);
-	debugfs_create_file("start", S_IRUGO | S_IWUSR,
-			    ar->debug.debugfs_pktlog, ar, &fops_pktlog_start);
-	debugfs_create_file("size", S_IRUGO | S_IWUSR,
-			    ar->debug.debugfs_pktlog, ar, &fops_pktlog_size);
-	debugfs_create_file("dump", S_IRUGO,
-			    ar->debug.debugfs_pktlog, ar, &fops_pktlog_dump);
+	ath12k_debugfs_create_file("start", 0644, ar->debug.debugfs_pktlog,
+				   ar->ab, ar, &fops_pktlog_start);
+	ath12k_debugfs_create_file("size", 0644, ar->debug.debugfs_pktlog,
+				   ar->ab, ar, &fops_pktlog_size);
+	ath12k_debugfs_create_file("dump", 0444, ar->debug.debugfs_pktlog,
+				   ar->ab, ar, &fops_pktlog_dump);
 
 	ath12k_pktlog_init(ar);
 }
