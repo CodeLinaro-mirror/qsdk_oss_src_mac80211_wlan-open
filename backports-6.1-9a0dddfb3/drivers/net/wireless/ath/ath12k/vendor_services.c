@@ -12,7 +12,6 @@
 
 static struct ath12k_vendor_service_info vendor_info;
 static bool resources_created;
-static unsigned int vendor_init_count;
 
 /* These macros directly access the fields of the provided vendor_info structure.
  * This is necessary for functions like ath12k_telemetry_destroy_resources that
@@ -592,9 +591,6 @@ void ath12k_vendor_services_init(void)
 	if (!ath12k_mlo_capable)
 		return;
 
-	if (vendor_init_count++ > 0)
-		return;
-
 	memset(&vendor_info, 0, sizeof(struct ath12k_vendor_service_info));
 	resources_created = false;
 
@@ -636,9 +632,6 @@ void ath12k_vendor_services_deinit(void)
 	int id;
 
 	if (!ath12k_mlo_capable)
-		return;
-
-	if (vendor_init_count == 0 || --vendor_init_count > 0)
 		return;
 
 	info.id = ATH12K_RM_MAIN_SERVICE;
