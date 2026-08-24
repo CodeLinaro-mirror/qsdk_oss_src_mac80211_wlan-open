@@ -14193,6 +14193,38 @@ static int nl80211_dump_survey(struct sk_buff *skb, struct netlink_callback *cb)
 	return res;
 }
 
+/* force_bw: validate channel_width values accepted for STA max-bw capping */
+static bool nl80211_valid_sta_channel_width(enum nl80211_chan_width width)
+{
+	switch (width) {
+	case NL80211_CHAN_WIDTH_20:
+	case NL80211_CHAN_WIDTH_40:
+	case NL80211_CHAN_WIDTH_80:
+	case NL80211_CHAN_WIDTH_80P80:
+	case NL80211_CHAN_WIDTH_160:
+	case NL80211_CHAN_WIDTH_320:
+		return true;
+	default:
+		return false;
+	}
+}
+
+/* force_bw: parse optional NL80211_ATTR_CHANNEL_WIDTH for STA max-bw cap */
+static int nl80211_parse_sta_channel_width(struct genl_info *info,
+					   enum nl80211_chan_width *width)
+{
+	if (!info->attrs[NL80211_ATTR_CHANNEL_WIDTH])
+		return 0; /* absent: no restriction */
+
+	*width = nla_get_u32(info->attrs[NL80211_ATTR_CHANNEL_WIDTH]);
+
+	if (!nl80211_valid_sta_channel_width(*width)) {
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 static int nl80211_authenticate(struct sk_buff *skb, struct genl_info *info)
 {
 	struct cfg80211_registered_device *rdev = info->user_ptr[0];
@@ -14322,6 +14354,12 @@ static int nl80211_authenticate(struct sk_buff *skb, struct genl_info *info)
 	req.key_len = key.p.key_len;
 	req.key_idx = key.idx;
 	req.link_id = nl80211_link_id_or_invalid(info->attrs);
+
+	/* force_bw: parse optional channel_width for STA max-bw limit */
+	err = nl80211_parse_sta_channel_width(info, &req.channel_width);
+	if (err)
+		return err;
+
 	if (req.link_id >= 0) {
 		if (!(rdev->wiphy.flags & WIPHY_FLAG_SUPPORTS_MLO))
 			return -EINVAL;
@@ -14804,6 +14842,11 @@ static int nl80211_associate(struct sk_buff *skb, struct genl_info *info)
 		req.supported_selectors_len =
 			nla_len(info->attrs[NL80211_ATTR_SUPPORTED_SELECTORS]);
 	}
+
+	/* force_bw: parse optional channel_width for STA max-bw limit */
+	err = nl80211_parse_sta_channel_width(info, &req.channel_width);
+	if (err)
+		return err;
 
 	if (nla_get_flag(info->attrs[NL80211_ATTR_DISABLE_HT]))
 		req.flags |= ASSOC_REQ_DISABLE_HT;
@@ -15711,6 +15754,11 @@ static int nl80211_connect(struct sk_buff *skb, struct genl_info *info)
 			connect.edmg.bw_config =
 				nla_get_u8(info->attrs[NL80211_ATTR_WIPHY_EDMG_BW_CONFIG]);
 	}
+
+	/* force_bw: parse optional channel_width for STA max-bw limit */
+	err = nl80211_parse_sta_channel_width(info, &connect.channel_width);
+	if (err)
+		return err;
 
 	if (connect.privacy && info->attrs[NL80211_ATTR_KEYS]) {
 		connkeys = nl80211_parse_connkeys(rdev, info, NULL);

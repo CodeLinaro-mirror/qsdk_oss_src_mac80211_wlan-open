@@ -68,6 +68,87 @@ MODULE_PARM_DESC(max_probe_tries,
 		 "Maximum probe tries before disconnecting (reason 4).");
 
 /*
+ * ieee80211_sta_max_bw_limit - map nl80211_chan_width to ieee80211_conn_bw_limit
+ *
+ * Maps a user-requested NL80211_CHAN_WIDTH_* value to the ieee80211_conn_bw_limit
+ * enum used to cap hardware-derived bw_limit when force_bw is configured.
+ * NL80211_CHAN_WIDTH_20_NOHT (0) means no restriction.
+ */
+static enum ieee80211_conn_bw_limit
+ieee80211_sta_max_bw_limit(enum nl80211_chan_width width)
+{
+	switch (width) {
+	case NL80211_CHAN_WIDTH_20:
+		return IEEE80211_CONN_BW_LIMIT_20;
+	case NL80211_CHAN_WIDTH_40:
+		return IEEE80211_CONN_BW_LIMIT_40;
+	case NL80211_CHAN_WIDTH_80:
+		return IEEE80211_CONN_BW_LIMIT_80;
+	case NL80211_CHAN_WIDTH_160:
+	case NL80211_CHAN_WIDTH_80P80:
+		return IEEE80211_CONN_BW_LIMIT_160;
+	case NL80211_CHAN_WIDTH_320:
+		return IEEE80211_CONN_BW_LIMIT_320;
+	default:
+		/* NL80211_CHAN_WIDTH_20_NOHT or unknown: no restriction */
+		return IEEE80211_CONN_BW_LIMIT_320;
+	}
+}
+
+/*
+ * ieee80211_apply_sta_max_bw - cap conn->bw_limit by user force_bw setting
+ *
+ * Called after ieee80211_determine_our_sta_mode() sets conn.bw_limit from
+ * hardware capabilities. Caps it at the user-requested maximum so the STA
+ * never negotiates a wider channel than force_bw allows.
+ *
+ */
+static void
+ieee80211_apply_sta_max_bw(struct ieee80211_sub_if_data *sdata,
+			   struct ieee80211_conn_settings *conn)
+{
+	struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
+	enum ieee80211_conn_bw_limit user_limit;
+
+	if (ifmgd->sta_max_channel_width == NL80211_CHAN_WIDTH_20_NOHT)
+		return; /* force_bw: no restriction configured */
+
+	user_limit = ieee80211_sta_max_bw_limit(ifmgd->sta_max_channel_width);
+
+
+	if (conn->bw_limit > user_limit) {
+		conn->bw_limit = user_limit;
+	} else {
+	}
+}
+
+/*
+ * ieee80211_sta_limit_chanreq_oper - constrain chandef width for CSA target
+ *
+ * Downgrades the given chandef until its width is within the user-configured
+ * sta_max_channel_width (force_bw). Called in ieee80211_sta_process_chanswitch
+ * to ensure the CSA target channel does not exceed the configured maximum.
+ *
+ */
+static void
+ieee80211_sta_limit_chanreq_oper(struct ieee80211_sub_if_data *sdata,
+				 struct cfg80211_chan_def *chandef)
+{
+	struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
+	enum ieee80211_conn_bw_limit user_limit;
+
+	if (ifmgd->sta_max_channel_width == NL80211_CHAN_WIDTH_20_NOHT)
+		return; /* force_bw: no restriction configured */
+
+	user_limit = ieee80211_sta_max_bw_limit(ifmgd->sta_max_channel_width);
+
+
+	while (ieee80211_min_bw_limit_from_chandef(chandef) > user_limit) {
+		ieee80211_chandef_downgrade(chandef, NULL);
+	}
+}
+
+/*
  * Beacon loss timeout is calculated as N frames times the
  * advertised beacon interval.  This may need to be somewhat
  * higher than what hardware might detect to account for
@@ -1562,7 +1643,23 @@ static int ieee80211_config_bw(struct ieee80211_link_data *link,
 	 * 20 MHz STA to a 40 MHz AP (due to regulatory, capabilities
 	 * or config reasons) then switching to a 40 MHz channel now
 	 * won't do us any good -- we couldn't use it with the AP.
+	 *
+	 * force_bw: re-enforce sta_max_channel_width in conn.bw_limit so that
+	 * beacon-driven bandwidth tracking also respects the configured cap.
+	 * Needed because conn.bw_limit may have been reset during CSA/RCSA.
 	 */
+	{
+		struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
+
+		if (ifmgd->sta_max_channel_width != NL80211_CHAN_WIDTH_20_NOHT) {
+			enum ieee80211_conn_bw_limit usr_lim =
+				ieee80211_sta_max_bw_limit(
+					ifmgd->sta_max_channel_width);
+			if (link->u.mgd.conn.bw_limit > usr_lim) {
+				link->u.mgd.conn.bw_limit = usr_lim;
+			}
+		}
+	}
 	while (link->u.mgd.conn.bw_limit <
 			ieee80211_min_bw_limit_from_chandef(&chanreq.oper))
 		ieee80211_chandef_downgrade(&chanreq.oper, NULL);
@@ -3277,6 +3374,8 @@ ieee80211_sta_process_chanswitch(struct ieee80211_link_data *link,
 		if (res == 0) {
 			ch_switch.block_tx = csa_ie.mode;
 			ch_switch.chandef = csa_ie.chanreq.oper;
+			/* force_bw: limit CSA target to configured maximum */
+			ieee80211_sta_limit_chanreq_oper(sdata, &ch_switch.chandef);
 			ch_switch.count = csa_ie.count;
 			ch_switch.delay = csa_ie.max_switch_time;
 		}
@@ -6717,6 +6816,9 @@ ieee80211_determine_our_sta_mode_auth(struct ieee80211_sub_if_data *sdata,
 	ieee80211_determine_our_sta_mode(sdata, sband, NULL, wmm_used,
 					 req->link_id > 0 ? req->link_id : 0,
 					 conn);
+
+	/* force_bw: cap bw_limit at user-configured maximum after hw derivation */
+	ieee80211_apply_sta_max_bw(sdata, conn);
 }
 
 void
@@ -6737,6 +6839,9 @@ ieee80211_determine_our_sta_mode_assoc(struct ieee80211_sub_if_data *sdata,
 			   conn->mode, tmp.mode);
 	conn->bw_limit = min_t(enum ieee80211_conn_bw_limit,
 			       conn->bw_limit, tmp.bw_limit);
+
+	/* force_bw: cap bw_limit at user-configured maximum after hw derivation */
+	ieee80211_apply_sta_max_bw(sdata, conn);
 }
 
 
@@ -10221,6 +10326,9 @@ int ieee80211_mgd_auth(struct ieee80211_sub_if_data *sdata,
 	auth_data->bss = req->bss;
 	auth_data->link_id = req->link_id;
 
+	/* force_bw: store user-requested maximum channel width for this STA session */
+	ifmgd->sta_max_channel_width = req->channel_width;
+
 	if (req->auth_data_len >= 4) {
 		if (req->auth_type == NL80211_AUTHTYPE_SAE ||
 		    req->auth_type == NL80211_AUTHTYPE_EPPKE) {
@@ -10618,6 +10726,9 @@ int ieee80211_mgd_assoc(struct ieee80211_sub_if_data *sdata,
 	memcpy(&ifmgd->s1g_capa, &req->s1g_capa, sizeof(ifmgd->s1g_capa));
 	memcpy(&ifmgd->s1g_capa_mask, &req->s1g_capa_mask,
 	       sizeof(ifmgd->s1g_capa_mask));
+
+	/* force_bw: update sta_max_channel_width from assoc req (covers SME-driven connect) */
+	ifmgd->sta_max_channel_width = req->channel_width;
 
 	/* keep some setup (AP STA, channel, ...) if matching */
 	match_auth = ifmgd->auth_data &&

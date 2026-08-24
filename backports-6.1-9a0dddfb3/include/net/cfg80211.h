@@ -3922,6 +3922,8 @@ struct cfg80211_auth_request {
 	s8 link_id;
 	const u8 *ap_mld_addr;
 	struct cfg80211_smd_params smd_params;
+	/* force_bw: max channel width requested by userspace; 0 = no restriction */
+	enum nl80211_chan_width channel_width;
 };
 
 /**
@@ -4168,6 +4170,8 @@ struct cfg80211_assoc_request {
 	s8 link_id;
 	u16 ext_mld_capa_ops;
 	struct cfg80211_smd_params smd_params;
+	/* force_bw: max channel width requested by userspace; 0 = no restriction */
+	enum nl80211_chan_width channel_width;
 };
 
 /**
@@ -4382,6 +4386,8 @@ struct cfg80211_connect_params {
 	size_t fils_erp_rrk_len;
 	bool want_1x;
 	struct ieee80211_edmg edmg;
+	/* force_bw: max channel width requested by userspace; 0 = no restriction */
+	enum nl80211_chan_width channel_width;
 };
 
 /**

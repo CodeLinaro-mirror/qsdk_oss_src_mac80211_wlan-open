@@ -658,7 +658,15 @@ _cfg80211_chandef_compatible(const struct cfg80211_chan_def *c1,
 		    c1->chan->freq_offset != c2->chan->freq_offset)
 			return NULL;
 	} else {
-		if (c1->chan != c2->chan)
+		/*
+		 * Per-HW channel advertisements may carry channel copies for the
+		 * same frequency. Treat them as the same control channel if band
+		 * and frequency/freq_offset match.
+		 */
+		if (!c1->chan || !c2->chan ||
+		    c1->chan->band != c2->chan->band ||
+		    c1->chan->center_freq != c2->chan->center_freq ||
+		    c1->chan->freq_offset != c2->chan->freq_offset)
 			return NULL;
 	}
 
@@ -666,8 +674,21 @@ _cfg80211_chandef_compatible(const struct cfg80211_chan_def *c1,
 	 * If they have the same width, but aren't identical,
 	 * then they can't be compatible.
 	 */
-	if (c1->width == c2->width)
+	if (c1->width == c2->width) {
+		/*
+		 * Per-HW channel copies may fail cfg80211_chandef_identical()
+		 * only due to chan pointer mismatch. Treat them as compatible
+		 * when all RF operating parameters match. Ignore
+		 * device-bandwidth fields (width_device/center_freq_device)
+		 * which may differ for the same RF channel.
+		 */
+		if (c1->center_freq1 == c2->center_freq1 &&
+		    c1->freq1_offset == c2->freq1_offset &&
+		    c1->center_freq2 == c2->center_freq2 &&
+		    c1->punctured == c2->punctured)
+			return c1;
 		return NULL;
+	}
 
 	/*
 	 * can't be compatible if one of them is 5/10 MHz or S1G
