@@ -6642,7 +6642,8 @@ void ath12k_bss_disassoc(struct ath12k *ar,
 
 	memset(&arvif->rekey_data, 0, sizeof(arvif->rekey_data));
 
-	cancel_delayed_work_sync(&ahvif->deflink.connection_loss_work);
+	if (arvif == &ahvif->deflink)
+		cancel_delayed_work_sync(&ahvif->deflink.connection_loss_work);
 }
 
 u32 ath12k_mac_get_rate_hw_value(int bitrate)
