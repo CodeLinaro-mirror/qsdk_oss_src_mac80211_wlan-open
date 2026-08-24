@@ -9166,7 +9166,7 @@ static int ath12k_fill_radio_tx_mon_stats(struct sk_buff *vendor_event,
 	struct ath12k_dp_mon *dp_mon;
 
 	if (unlikely(!dp_pdev->dp_mon_pdev)) {
-		ath12k_err(NULL, "dp_mon_pdev not present");
+		ath12k_err(NULL, "dp_mon_pdev not initialized");
 		return -ENODEV;
 	}
 
@@ -9182,55 +9182,56 @@ static int ath12k_fill_radio_tx_mon_stats(struct sk_buff *vendor_event,
 
 	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_BUF_REPLENISHED,
 			tx_mon_stats->buf_replenished)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s", "buf_replenished");
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+			   "replenished buffers");
 		return -EMSGSIZE;
 	}
 
 	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_BUF_IN_REAP,
 			tx_mon_stats->in_reap)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s", "in_reap");
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s", "buffers in reap");
 		return -EMSGSIZE;
 	}
 
 	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_BUF_IN_HARDWARE,
 			tx_mon_stats->with_hw)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
-			"buf_with_hardware");
+		ath12k_err(NULL, "nla put failure: tx mon stats %s",
+			   "buffers with hardware");
 		return -EMSGSIZE;
 	}
 
 	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_BUF_FREE,
 			tx_mon_stats->free)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s", "free");
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s", "free buffers");
 		return -EMSGSIZE;
 	}
 
 	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_BUF_REPLENISH_ERR,
 			tx_mon_stats->replenish_err)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
-			"replenish_err");
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+			   "buffers having replenish err");
 		return -EMSGSIZE;
 	}
 
 	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_BUF_PROC_ERR,
 			tx_mon_stats->proc_err)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
-			"proc_err");
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+			   "buffers having processing err");
 		return -EMSGSIZE;
 	}
 
 	if (nla_put_u32(vendor_event,
 			QCA_VENDOR_ATTR_TX_MON_STATS_BUF_ALLOC_FAILED,
 			tx_mon_stats->alloc_fail)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
-			"alloc_fail");
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+			   "buffers allocation failed");
 		return -EMSGSIZE;
 	}
 
 	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_BUF_DMA_FAILED,
 			tx_mon_stats->dma_fail)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
-			"dma_fail");
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+			   "buffers dma failed");
 		return -EMSGSIZE;
 	}
 
@@ -9244,251 +9245,256 @@ static int ath12k_fill_radio_tx_mon_stats(struct sk_buff *vendor_event,
 
 	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_NUM_BUFS_REAPED,
 			pdev_tx_mon_stats->num_bufs_reaped)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s", "num_bufs_reaped");
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+			   "num buffers reaped");
 		return -EMSGSIZE;
 	}
 
 	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_TRUNCATED_BUF,
 			pdev_tx_mon_stats->truncated_buf)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s", "truncated_buf");
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+			   "truncated buffers");
 		return -EMSGSIZE;
 	}
 
 	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_FLUSHED_BUF,
 			pdev_tx_mon_stats->flushed_buf)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s", "flushed_buf");
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s", "flushed buffers");
 		return -EMSGSIZE;
 	}
 
 	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_NULL_BUF,
 			pdev_tx_mon_stats->null_buf)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s", "null_buf");
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s", "null buffers");
 		return -EMSGSIZE;
 	}
 
 	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_MON_DESC_FREE,
 			pdev_tx_mon_stats->mon_desc_free)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s", "mon_desc_free");
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+			   "free monitor descriptors");
 		return -EMSGSIZE;
 	}
 
 	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_PKT_BUF_NULL,
 			pdev_tx_mon_stats->pkt_buf_null)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s", "pkt_buf_null");
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+			   "null pkt buffers");
 		return -EMSGSIZE;
 	}
 
 	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_STATUS_BUF_NULL,
 			pdev_tx_mon_stats->status_buf_null)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s", "status_buf_null");
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+			   "null status buffers");
 		return -EMSGSIZE;
 	}
 
 	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_PREP_WQ_FAILED,
 			pdev_tx_mon_stats->prep_wq_failed)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s", "prep_wq_failed");
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s", "prep wq failed");
 		return -EMSGSIZE;
 	}
 
 	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_EMPTY_DESCRIPTORS,
 			pdev_tx_mon_stats->empty_descriptor)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
-			"empty_descriptor");
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+			   "empty descriptors");
 		return -EMSGSIZE;
 	}
 
 	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_PPDU_PROCESSED,
 			pdev_tx_mon_stats->ppdu_processed)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s", "ppdu_processed");
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s", "ppdu processed");
 		return -EMSGSIZE;
 	}
 
 	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_STATUS_DESC_PROCESSED,
 			pdev_tx_mon_stats->status_desc_processed)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
-			"status_desc_processed");
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+			   "status descriptors processed");
 		return -EMSGSIZE;
 	}
 
 	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_PPDU_DESC_OVERFLOW,
 			pdev_tx_mon_stats->ppdu_desc_overflow)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
-			"ppdu_desc_overflow");
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+			   "ppdu descriptors overflow");
 		return -EMSGSIZE;
 	}
 
 	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_ZERO_STATUS_DESC,
 			pdev_tx_mon_stats->zero_status_desc)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
-			"zero_status_desc");
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+			   "zero status descriptors");
 		return -EMSGSIZE;
 	}
 
 	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_PPDU_PREP_FAILED,
 			pdev_tx_mon_stats->ppdu_prep_failed)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
-			"ppdu_prep_failed");
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+			   "ppdu prep failed");
 		return -EMSGSIZE;
 	}
 
 	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_TLV_PROCESS_FAILED,
 			pdev_tx_mon_stats->tlv_process_failed)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
-			"tlv_process_failed");
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+			   "tlv processing failed");
 		return -EMSGSIZE;
 	}
 
 	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_DATA_GEN_FAILED,
 			pdev_tx_mon_stats->data_gen_failed)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
-			"data_gen_failed");
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+			   "data generation failed");
 		return -EMSGSIZE;
 	}
 
 	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_BUF_EXTRACT_FAILED,
 			pdev_tx_mon_stats->buf_extract_failed)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
-			"buf_extract_failed");
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+			   "buffer extraction failed");
 		return -EMSGSIZE;
 	}
 
 	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_MAGIC_VALUE_ERROR,
 			pdev_tx_mon_stats->magic_value_error)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
-			"magic_value_error");
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+			   "magic value error");
 		return -EMSGSIZE;
 	}
 
 	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_PKT_BUF_FREE,
 			pdev_tx_mon_stats->pkt_buf_free)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s", "pkt_buf_free");
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+			   "free pkt buffers");
 		return -EMSGSIZE;
 	}
 
 	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_STATUS_BUF_FREE,
 			pdev_tx_mon_stats->status_buf_free)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
-			"status_buf_free");
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+			   "free status buffers");
 		return -EMSGSIZE;
 	}
 
 	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_MU_USER_FRAME,
 			pdev_tx_mon_stats->mu_user_frame)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
-			"mu_user_frame");
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s", "mu user frames");
 		return -EMSGSIZE;
 	}
 
 	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_DATA_PPDU_DELIVERED,
 			pdev_tx_mon_stats->data_ppdu_delivered)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
-			"data_ppdu_delivered");
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+			   "non-protection ppdu delivered");
 		return -EMSGSIZE;
 	}
 
 	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_PROT_PPDU_DELIVERED,
 			pdev_tx_mon_stats->prot_ppdu_delivered)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
-			"prot_ppdu_delivered");
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+			   "prot ppdu delivered");
 		return -EMSGSIZE;
 	}
 
 	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_SELF_GEN_FAILED,
 			pdev_tx_mon_stats->self_gen_failed)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
-			"self_gen_failed");
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+			   "self gen frames failed");
 		return -EMSGSIZE;
 	}
 
 	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_SKB_ALLOC_FAILED,
 			pdev_tx_mon_stats->skb_alloc_failed)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
-			"skb_alloc_failed");
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+			   "skb alloc failed");
 		return -EMSGSIZE;
 	}
 
 	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_RING_EXTRACT_FAILED,
 			pdev_tx_mon_stats->ring_extract_failed)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
-			"ring_extract_failed");
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+			   "ring extraction failed");
 		return -EMSGSIZE;
 	}
 
 	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_GET_NUM_USERS_FAILED,
 			pdev_tx_mon_stats->get_num_users_failed)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
-			"get_num_users_failed");
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+			   "get num users failed");
 		return -EMSGSIZE;
 	}
 
 	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_PACKET_BUF_PROCESSED,
 			pdev_tx_mon_stats->pkt_buf_processed)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
-			"pkt_buf_processed");
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+			   "pkt buffers processed");
 		return -EMSGSIZE;
 	}
 
 	if (nla_put_u32(vendor_event,
 			QCA_VENDOR_ATTR_TX_MON_STATS_SSR_RESTART_ATTEMPTS,
 			ssr_stats->restart_attempts)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
-			   "ssr_restart_attempts");
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+			   "ssr restart attempts");
 		return -EMSGSIZE;
 	}
 
 	if (nla_put_u32(vendor_event,
 			QCA_VENDOR_ATTR_TX_MON_STATS_SSR_RESTART_SUCCESS,
 			ssr_stats->restart_success)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
-			   "ssr_restart_success");
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+			   "ssr restart success");
 		return -EMSGSIZE;
 	}
 
 	if (nla_put_u32(vendor_event,
 			QCA_VENDOR_ATTR_TX_MON_STATS_SSR_RESTART_NO_POOL,
 			ssr_stats->restart_no_pool)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
-			   "ssr_restart_no_pool");
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+			   "ssr restart no pool");
 		return -EMSGSIZE;
 	}
 
 	if (nla_put_u32(vendor_event,
 			QCA_VENDOR_ATTR_TX_MON_STATS_SSR_RESTART_FAIL,
 			ssr_stats->restart_fail)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
-			   "ssr_restart_fail");
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+			   "ssr restart failed");
 		return -EMSGSIZE;
 	}
 
 	if (nla_put_u32(vendor_event,
 			QCA_VENDOR_ATTR_TX_MON_STATS_SSR_WORK_CANCEL,
 			ssr_stats->work_cancel)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
-			   "ssr_work_cancel");
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+			   "ssr work cancel");
 		return -EMSGSIZE;
 	}
 
 	if (nla_put_u32(vendor_event,
 			QCA_VENDOR_ATTR_TX_MON_STATS_SSR_MON_DESC_FLUSHED,
 			ssr_stats->mon_desc_flushed)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
-			   "ssr_mon_desc_flushed");
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+			   "ssr flushed mon descriptors");
 		return -EMSGSIZE;
 	}
 
 	if (nla_put_u32(vendor_event,
 			QCA_VENDOR_ATTR_TX_MON_STATS_SSR_PPDU_DESC_DRAINED,
 			ssr_stats->ppdu_desc_drained)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
-			   "ssr_ppdu_desc_drained");
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+			   "ssr drained ppdu descriptors");
 		return -EMSGSIZE;
 	}
 
 	if (nla_put_u32(vendor_event,
 			QCA_VENDOR_ATTR_TX_MON_STATS_SSR_STATUS_DESC_DRAINED,
 			ssr_stats->status_desc_drained)) {
-		ath12k_err(NULL, "nla put failure: tx_mon_stats-> %s",
-			   "ssr_status_desc_drained");
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+			   "ssr drained status descriptors");
 		return -EMSGSIZE;
 	}
 
