@@ -2788,8 +2788,8 @@ static int ath12k_get_htt_tx_stats_basic_attr_size(void)
 	payload_size = nla_total_size(sizeof(u32)) * ATH12K_NSS_NUM;
 	total_size += nla_total_size_nested(payload_size);
 
-	/* bw[ATH12K_BW_NUM] */
-	payload_size = nla_total_size(sizeof(u32)) * ATH12K_BW_NUM;
+	/* bw[ATH12K_BW_MAX] */
+	payload_size = nla_total_size(sizeof(u32)) * ATH12K_BW_MAX;
 	total_size += nla_total_size_nested(payload_size);
 
 	/* ru_start and ru_tones */
@@ -4193,7 +4193,7 @@ ath12k_fill_peer_tx_ppdu_stats_attr(struct ath12k *ar,
 	}
 	nla_nest_end(vendor_event, attr);
 
-	/* bw[ATH12K_BW_NUM] */
+	/* bw[ATH12K_BW_MAX] */
 	attr = nla_nest_start(vendor_event,
 			      QCA_VENDOR_WLAN_TELEMETRY_TX_PPDU_STATS_BW);
 	if (!attr) {
@@ -4201,7 +4201,7 @@ ath12k_fill_peer_tx_ppdu_stats_attr(struct ath12k *ar,
 		return -EINVAL;
 	}
 	for (i = 0; i < QCA_VENDOR_WLAN_TELEMETRY_BW_MAX &&
-	     i < ATH12K_BW_NUM; i++) {
+	     i < ATH12K_BW_MAX; i++) {
 		if (nla_put_u32(vendor_event, (i + 1), tx_ppdu_stats->bw[i])) {
 			nla_nest_cancel(vendor_event, attr);
 			ath12k_err(NULL, "nla put failure: bw[%d]", i);

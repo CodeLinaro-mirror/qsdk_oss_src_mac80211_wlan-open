@@ -263,7 +263,7 @@ ath12k_dp_update_tx_ppdu_stats_aggr(struct ath12k_pdev_dp *dp_pdev,
 		dst_tx_ppdu_stats->nss[i] += src_tx_ppdu_stats->nss[i];
 
 	/* bw: bandwidth success counts */
-	for (i = 0; i < ATH12K_BW_NUM; i++)
+	for (i = 0; i < ATH12K_BW_MAX; i++)
 		dst_tx_ppdu_stats->bw[i] += src_tx_ppdu_stats->bw[i];
 
 
