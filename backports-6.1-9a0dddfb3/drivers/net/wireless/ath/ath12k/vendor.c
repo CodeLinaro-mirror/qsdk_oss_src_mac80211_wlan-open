@@ -13493,11 +13493,13 @@ static int ath12k_vendor_get_channel_switch_time(struct wiphy *wiphy,
 	dfs_required = cfg80211_chandef_dfs_required(hw->wiphy, &chandef,
 						     vif->type);
 	if (dfs_required > 0 &&
-	    !cfg80211_chandef_dfs_available(wiphy, &chandef))
+	    !cfg80211_chandef_dfs_available(wiphy, &chandef)) {
 		dfs_time = cfg80211_chandef_dfs_cac_time(hw->wiphy, &chandef,
 							 false, false);
-	else
+		dfs_time += ATH12K_CSA_DFS_GRACE_TIME;
+	} else {
 		dfs_time = 0;
+	}
 
 	tot_chan_switch_time = beacon_time + restart_time + dfs_time;
 	if (tot_chan_switch_time > U32_MAX)
