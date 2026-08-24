@@ -20682,7 +20682,10 @@ static int ath12k_connect_pdev_htc_service(struct ath12k_base *ab,
 	return 0;
 }
 
-static int
+#ifndef CPTCFG_QCN_EXTN
+static
+#endif
+int
 ath12k_wmi_send_unit_test_cmd(struct ath12k *ar,
 			      struct wmi_unit_test_cmd ut_cmd,
 			      u32 *test_args)
