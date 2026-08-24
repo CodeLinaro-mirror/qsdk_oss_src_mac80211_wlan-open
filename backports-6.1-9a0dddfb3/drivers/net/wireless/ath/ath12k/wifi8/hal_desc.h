@@ -2147,6 +2147,15 @@ enum hal_tlv_tag_be {
 	HAL_TQM_UPDATE_MPDUQ_STATUS_BO		= 370,
 	HAL_SAM_MPDU_QUEUE_CLEAR_PROGRAMMING_BO = 608,
 	HAL_SAM_MSDU_QUEUE_CLEAR_PROGRAMMING_BO = 609,
+
+	/*
+	 * WIFITQM_FW_COMPLETION_E = 637
+	 * Used for SW2TQM FW-owned buffer release commands.
+	 * The buffer_addr_info.return_buffer_manager field must be set
+	 * to the FW RBM value so TQM/WBM returns the buffer to the
+	 * correct FW buffer pool.
+	 */
+	HAL_TQM_FW_COMPLETION_BO = 637,
 	HAL_SAM_PEER_CLEAR_PROGRAMMING_BO = 647,
 };
 
@@ -2535,6 +2544,23 @@ struct hal_tqm_sync_cmd_params {
 	u64 cb_data;
 };
 
+/**
+ * struct hal_tqm_fw_buf_release_params - Parameters for FW-owned buffer release
+ *
+ * Used with HAL_TQM_FW_COMPLETION_BO (TLV tag 637). The paddr, rbm, and
+ * cookie are encoded into buffer_addr_info fields so TQM/WBM returns the
+ * buffer to the correct FW buffer pool (return_buffer_manager = rbm).
+ *
+ * @paddr:  Physical address of the FW-owned buffer
+ * @rbm:    Return Buffer Manager ID (FW pool identifier)
+ * @cookie: SW buffer cookie (original TX descriptor ID)
+ */
+struct hal_tqm_fw_buf_release_params {
+	dma_addr_t paddr;
+	u8 rbm;
+	u32 cookie;
+};
+
 struct hal_tqm_get_mpdu_queue_stats {
 	dma_addr_t mpdu_q_paddr;
 	bool clear_stats;
@@ -2582,6 +2608,7 @@ struct ath12k_hal_tqm_cmd {
 		struct hal_tqm_remove_msdu_params remove_msdu_params;
 		struct hal_tqm_remove_mpdu_params remove_mpdu_params;
 		struct hal_tqm_sync_cmd_params tqm_sync_params;
+		struct hal_tqm_fw_buf_release_params fw_buf_release_params;
 		struct hal_tqm_get_mpdu_queue_stats get_mpduq_stats;
 		struct hal_tqm_update_tx_msdu_flow_params update_tx_msdu_params;
 		struct hal_tqm_update_mpdu_queue_params update_mpduq;

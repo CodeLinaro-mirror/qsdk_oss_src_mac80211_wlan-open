@@ -790,6 +790,23 @@ struct cfr_rcc_param {
 	    rsvd2 :15;
 };
 
+#define ATH12K_PSOC_MAX_NUM_AGC_GAIN_TBLS WMI_AOA_MAX_GAIN_TABLE_IDX
+struct cfr_enhanced_aoa_data {
+	u32 freq;
+	u32 max_aoa_chains;
+	u32 ibf_cal_val[WMI_MAX_CHAINS];
+	u32 max_agc_gain_tbls;
+	u16 max_agc_gain_per_tbl_2g[ATH12K_PSOC_MAX_NUM_AGC_GAIN_TBLS];
+	u16 max_agc_gain_per_tbl_5g[ATH12K_PSOC_MAX_NUM_AGC_GAIN_TBLS];
+	u16 max_agc_gain_per_tbl_6g[ATH12K_PSOC_MAX_NUM_AGC_GAIN_TBLS];
+	u8 max_bdf_entries_per_tbl[ATH12K_PSOC_MAX_NUM_AGC_GAIN_TBLS];
+	u32 max_entries_all_table;
+	u16 *gain_stop_index_array;
+	u16 *enh_phase_delta_array;
+	u8 start_ent[ATH12K_PSOC_MAX_NUM_AGC_GAIN_TBLS];
+	u32 xbar_config;
+};
+
 struct ath12k_cfr {
 	struct ath12k_dbring rx_ring;
 	/* Protects enabled for ath12k_cfr */
@@ -822,6 +839,8 @@ struct ath12k_cfr {
 	bool cfr_enabled;
 	struct cfr_rcc_param rcc_param;
 	struct ta_ra_cfr_cfg global[MAX_TA_RA_ENTRIES];
+	bool is_enh_aoa_data;
+	struct cfr_enhanced_aoa_data enh_aoa_data;
 };
 
 #ifdef CPTCFG_ATH12K_CFR
@@ -839,7 +858,7 @@ void ath12k_cfr_decrement_peer_count(struct ath12k *ar, struct ath12k_link_sta *
 int ath12k_cfr_parse_enh_dma_hdr(struct ath12k *ar, u8 *data,
 				 struct ath12k_cfr_look_up_table *lut,
 				 u32 *length);
-
+int ath12k_cfr_get_enhanced_aoa_caps(struct ath12k *ar);
 #else
 static inline int ath12k_cfr_init(struct ath12k_base *ab)
 {
@@ -888,6 +907,11 @@ static inline int
 ath12k_cfr_parse_enh_dma_hdr(struct ath12k *ar, u8 *data,
 			     struct ath12k_cfr_look_up_table *lut,
 			     u32 *length)
+{
+	return 0;
+}
+
+static inline int ath12k_cfr_get_enhanced_aoa_caps(struct ath12k *ar)
 {
 	return 0;
 }

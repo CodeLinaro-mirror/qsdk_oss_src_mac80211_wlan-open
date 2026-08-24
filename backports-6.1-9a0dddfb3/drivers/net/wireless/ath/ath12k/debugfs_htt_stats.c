@@ -8255,6 +8255,50 @@ ath12k_htt_print_phy_stats_tlv(const void *tag_buf, u16 tag_len,
 }
 
 static void
+ath12k_htt_print_phy_nf_subband_tlv(const void *tag_buf, u16 tag_len,
+				     struct debug_htt_stats_req *stats_req)
+{
+	const struct ath12k_htt_phy_nf_subband_tlv *htt_stats_buf = tag_buf;
+	u32 len = stats_req->buf_len;
+	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE;
+	u8 *buf = stats_req->buf, i, s;
+
+	if (tag_len < sizeof(*htt_stats_buf))
+		return;
+
+	len += scnprintf(buf + len, buf_len - len, "HTT_PHY_NF_SUBBAND_TLV:\n");
+	len += scnprintf(buf + len, buf_len - len, "num_subbands = %u\n",
+			  le32_to_cpu(htt_stats_buf->num_subbands));
+	for (i = 0; i < ATH12K_HTT_STATS_MAX_CHAINS; i++) {
+		len += scnprintf(buf + len, buf_len - len,
+				"runtime_nf_per_chain_per_subband_in_dbm[%u] = ", i);
+		for (s = 0; s < ATH12K_HTT_STATS_MAX_20MHZ_SUBBANDS; s++) {
+			s32 val = a_sle32_to_cpu(htt_stats_buf->nf_runtime_subband[i][s]);
+
+			len += scnprintf(buf + len, buf_len - len, " %2u:%4d,", s, val);
+		}
+		len--;
+		len += scnprintf(buf + len, buf_len - len, "\n");
+	}
+
+	len += scnprintf(buf + len, buf_len - len, "\n");
+
+	for (i = 0; i < ATH12K_HTT_STATS_MAX_CHAINS; i++) {
+		len += scnprintf(buf + len, buf_len - len,
+				"bdf_nf_per_chain_per_subband_in_dbm[%u] = ", i);
+		for (s = 0; s < ATH12K_HTT_STATS_MAX_20MHZ_SUBBANDS; s++) {
+			s32 val = a_sle32_to_cpu(htt_stats_buf->nf_bdf_subband[i][s]);
+
+			len += scnprintf(buf + len, buf_len - len, " %2u:%4d,", s, val);
+		}
+		len--;
+		len += scnprintf(buf + len, buf_len - len, "\n");
+	}
+
+	stats_req->buf_len = len;
+}
+
+static void
 ath12k_htt_print_phy_counters_tlv(const void *tag_buf, u16 tag_len,
 				  struct debug_htt_stats_req *stats_req)
 {
@@ -12764,10 +12808,12 @@ struct debug_htt_stats_req *stats_req)
 	len += scnprintf(buf + len, buf_len - len,
 			"HTT_STATS_LATENCY_PROF_CAL_DATA_TLV:\n");
 
-	for (i = 1; i < ATH12K_HTT_STATS_MAX_PROF_CAL; i++) {
+	for (i = 0; i < ATH12K_HTT_STATS_MAX_PROF_CAL; i++) {
 	/* ensure latency_prof_name is null-terminated */
 		htt_stats_buf->latency_prof_name[i]
 			[ATH12K_HTT_STATS_MAX_PROF_STATS_NAME_LEN - 1] = '\0';
+		len += scnprintf(buf + len, buf_len - len, "%-32s\n",
+				 htt_stats_buf->latency_prof_name[i]);
 		len += scnprintf(buf + len, buf_len - len,
 				"|%-25s|%8s|%8s|%8s|%8s|%8s|%10s|%14s|%8s|%8s|%8s|",
 				"cal_type", "cnt", "min", "max", "last", "tot",
@@ -15735,6 +15781,10 @@ static int ath12k_dbg_htt_ext_stats_parse(struct ath12k_base *ab,
 	case HTT_STATS_RX_PDEV_UL_MUMIMO_TRIG_BN_STATS_TAG:
 		ath12k_htt_print_ul_mumimo_trig_bn_stats(tag_buf, len, stats_req);
 		break;
+
+	case HTT_STATS_PHY_NF_SUBBAND_TAG:
+		ath12k_htt_print_phy_nf_subband_tlv(tag_buf, len, stats_req);
+		break;
 	default:
 		break;
 	}
@@ -15811,6 +15861,13 @@ static ssize_t ath12k_read_htt_stats_type(struct file *file,
 	size_t len;
 
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+
+	if (ar->ab->is_bypassed ||
+	    test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)) {
+		wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+		return -ENETDOWN;
+	}
+
 	type = ar->debug.htt_stats.type;
 	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -15857,6 +15914,12 @@ static ssize_t ath12k_write_htt_stats_type(struct file *file,
 
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
 
+	if (ar->ab->is_bypassed ||
+	    test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)) {
+		wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+		return -ENETDOWN;
+	}
+
 	ar->debug.htt_stats.type = type;
 	ar->debug.htt_stats.cfg_param[0] = cfg_param[0];
 	ar->debug.htt_stats.cfg_param[1] = cfg_param[1];
@@ -15880,21 +15943,14 @@ int ath12k_debugfs_htt_stats_req(struct ath12k *ar)
 {
 	struct debug_htt_stats_req *stats_req = ar->debug.htt_stats.stats_req;
 	enum ath12k_dbg_htt_ext_stats_type type = stats_req->type;
-	u64 cookie;
-	int ret, pdev_id;
 	struct htt_ext_stats_cfg_params cfg_params = { 0 };
+	int ret, pdev_id, i;
+	u64 cookie;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
-	init_completion(&stats_req->htt_stats_rcvd);
-
 	pdev_id = ath12k_mac_get_target_pdev_id(ar);
-	stats_req->done = false;
 	stats_req->pdev_id = pdev_id;
-
-	cookie = u64_encode_bits(ATH12K_HTT_STATS_MAGIC_VALUE,
-				 ATH12K_HTT_STATS_COOKIE_MSB);
-	cookie |= u64_encode_bits(pdev_id, ATH12K_HTT_STATS_COOKIE_LSB);
 
 	if (stats_req->override_cfg_param) {
 		cfg_params.cfg0 = stats_req->cfg_param[0];
@@ -15910,23 +15966,41 @@ int ath12k_debugfs_htt_stats_req(struct ath12k *ar)
 		return ret;
 	}
 
-	ret = ath12k_dp_tx_htt_h2t_ext_stats_req(ar, type, &cfg_params, cookie);
-	if (ret) {
-		ath12k_warn(ar->ab, "failed to send htt stats request: %d\n", ret);
-		return ret;
-	}
-	if (!wait_for_completion_timeout(&stats_req->htt_stats_rcvd, 3 * HZ)) {
-		spin_lock_bh(&ar->data_lock);
-		if (!stats_req->done) {
-			stats_req->done = true;
+	cookie  = u64_encode_bits(ATH12K_HTT_STATS_MAGIC_VALUE,
+				  ATH12K_HTT_STATS_COOKIE_MSB);
+	cookie |= u64_encode_bits(pdev_id, ATH12K_HTT_STATS_COOKIE_LSB);
+
+	for (i = 0; i < ATH12K_HTT_STATS_MAX_RETRIES; i++) {
+		init_completion(&stats_req->htt_stats_rcvd);
+		stats_req->done = false;
+
+		ret = ath12k_dp_tx_htt_h2t_ext_stats_req(ar, type, &cfg_params, cookie);
+		if (ret) {
+			ath12k_warn(ar->ab, "failed to send htt stat request: %d\n", ret);
+			return ret;
+		}
+
+		if (!wait_for_completion_timeout(&stats_req->htt_stats_rcvd, 3 * HZ)) {
+			spin_lock_bh(&ar->data_lock);
+			if (!stats_req->done) {
+				stats_req->done = true;
+				spin_unlock_bh(&ar->data_lock);
+				ath12k_warn(ar->ab, "stats request timed out\n");
+				return -ETIMEDOUT;
+			}
 			spin_unlock_bh(&ar->data_lock);
-			ath12k_warn(ar->ab, "stats request timed out\n");
-			return -ETIMEDOUT;
+		}
+
+		spin_lock_bh(&ar->data_lock);
+		if (stats_req->buf_len) {
+			spin_unlock_bh(&ar->data_lock);
+			return 0;
 		}
 		spin_unlock_bh(&ar->data_lock);
 	}
 
-	return 0;
+	ath12k_warn(ar->ab, "htt stats: max retries reached, buf_len still 0\n");
+	return -ETIMEDOUT;
 }
 
 static int ath12k_open_htt_stats(struct inode *inode,
@@ -15934,19 +16008,23 @@ static int ath12k_open_htt_stats(struct inode *inode,
 {
 	struct ath12k *ar = inode->i_private;
 	struct debug_htt_stats_req *stats_req;
-	enum ath12k_dbg_htt_ext_stats_type type = ar->debug.htt_stats.type;
+	enum ath12k_dbg_htt_ext_stats_type type;
 	struct ath12k_hw *ah = ath12k_ar_to_ah(ar);
 	int ret;
 
-	if (type == ATH12K_DBG_HTT_EXT_STATS_RESET ||
-	    type == ATH12K_DBG_HTT_EXT_STATS_PEER_INFO ||
-	    type == ATH12K_DBG_HTT_EXT_PEER_CTRL_PATH_TXRX_STATS)
-		return -EPERM;
-
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
 
-	if (ah->state != ATH12K_HW_STATE_ON &&
-	    ar->ab->fw_mode != ATH12K_FIRMWARE_MODE_FTM) {
+	type = ar->debug.htt_stats.type;
+	if (type == ATH12K_DBG_HTT_EXT_STATS_RESET ||
+	    type == ATH12K_DBG_HTT_EXT_STATS_PEER_INFO ||
+	    type == ATH12K_DBG_HTT_EXT_PEER_CTRL_PATH_TXRX_STATS) {
+		ret = -EPERM;
+		goto err_unlock;
+	}
+
+	if ((ah->state != ATH12K_HW_STATE_ON &&
+	     ar->ab->fw_mode != ATH12K_FIRMWARE_MODE_FTM) ||
+	     ar->ab->is_bypassed) {
 		ret = -ENETDOWN;
 		goto err_unlock;
 	}
@@ -15962,7 +16040,7 @@ static int ath12k_open_htt_stats(struct inode *inode,
 		goto err_unlock;
 	}
 
-	stats_req = kzalloc(sizeof(*stats_req) + ATH12K_HTT_STATS_BUF_SIZE, GFP_KERNEL);
+	stats_req = vzalloc(sizeof(*stats_req) + ATH12K_HTT_STATS_BUF_SIZE);
 	if (!stats_req) {
 		ret = -ENOMEM;
 		goto err_unlock;
@@ -15990,7 +16068,7 @@ static int ath12k_open_htt_stats(struct inode *inode,
 
 	return 0;
 out:
-	kfree(stats_req);
+	vfree(stats_req);
 	ar->debug.htt_stats.stats_req = NULL;
 err_unlock:
 	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
@@ -16004,7 +16082,7 @@ static int ath12k_release_htt_stats(struct inode *inode,
 	struct ath12k *ar = inode->i_private;
 
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
-	kfree(file->private_data);
+	vfree(file->private_data);
 	ar->debug.htt_stats.stats_req = NULL;
 	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -16040,7 +16118,16 @@ static ssize_t ath12k_read_htt_stats_reset(struct file *file,
 	char buf[32];
 	size_t len;
 
+	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+
+	if (ar->ab->is_bypassed ||
+	    test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)) {
+		wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+		return -ENETDOWN;
+	}
+
 	len = scnprintf(buf, sizeof(buf), "%u\n", ar->debug.htt_stats.reset);
+	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
 
 	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
 }
@@ -16064,6 +16151,13 @@ static ssize_t ath12k_write_htt_stats_reset(struct file *file,
 		return -E2BIG;
 
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+
+	if (ar->ab->is_bypassed ||
+	    test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)) {
+		wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+		return -ENETDOWN;
+	}
+
 	cfg_params.cfg0 = HTT_STAT_DEFAULT_RESET_START_OFFSET;
 	param_pos = (type >> 5) + 1;
 

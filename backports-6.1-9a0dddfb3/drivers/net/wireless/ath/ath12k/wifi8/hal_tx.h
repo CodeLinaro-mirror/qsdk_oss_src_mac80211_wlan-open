@@ -163,4 +163,21 @@ int ath12k_wifi8_hal_tx_sam_cmd_send(struct ath12k_base *ab, struct hal_srng *sr
 void ath12k_wifi8_hal_tx_set_pcp_tid_map(struct ath12k_base *ab, const u8 *map);
 void ath12k_wifi8_hal_tx_set_tid_map_precedence(struct ath12k_base *ab,
 						const u8 precedence);
+
+/**
+ * ath12k_wifi8_hal_tqm_fw_buf_release_cmd() - Build TQM FW-completion command
+ * for FW-owned buffer release, routing completion to HAL_TQM_HOST_STATUS_RING_1
+ * (fw_tqm2sw_ring). Uses TLV tag HAL_TQM_FW_COMPLETION_BO (637).
+ *
+ * Called via ath12k_wifi8_hal_tqm_cmd_send() switch case HAL_TQM_FW_COMPLETION_BO,
+ * which in turn is called by ath12k_wifi8_dp_tqm_cmd_send() with
+ * cmd->fw_buf_release_params populated.
+ *
+ * @ab:  ath12k_base
+ * @tlv: TLV descriptor buffer (staging buffer)
+ * @cmd: TQM command with fw_buf_release_params.{paddr, rbm, cookie} set
+ */
+void ath12k_wifi8_hal_tqm_fw_buf_release_cmd(struct ath12k_base *ab,
+					    struct hal_tlv_64_hdr *tlv,
+					    struct ath12k_hal_tqm_cmd *cmd);
 #endif

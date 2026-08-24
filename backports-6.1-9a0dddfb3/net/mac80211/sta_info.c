@@ -3362,6 +3362,9 @@ unsigned long ieee80211_sta_last_active(struct sta_info *sta, int link_id)
 		link_sta_info = wiphy_dereference(sta->local->hw.wiphy,
 						  sta->link[link_id]);
 
+	if (!link_sta_info)
+		return stats ? stats->last_rx : 0;
+
 	if (!link_sta_info->status_stats.last_ack ||
 	    time_after(stats->last_rx, link_sta_info->status_stats.last_ack))
 		return stats->last_rx;
@@ -3400,6 +3403,9 @@ int ieee80211_sta_allocate_link(struct sta_info *sta, unsigned int link_id)
 	int ret;
 
 	lockdep_assert_wiphy(sdata->local->hw.wiphy);
+
+	if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
+		return -EINVAL;
 
 	WARN_ON(!test_sta_flag(sta, WLAN_STA_INSERTED));
 
@@ -3449,6 +3455,9 @@ int ieee80211_sta_allocate_link_pre_insert(struct sta_info *sta,
 
 	lockdep_assert_wiphy(sdata->local->hw.wiphy);
 
+	if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
+		return -EINVAL;
+
 	/* must represent an MLD from the start */
 	if (WARN_ON(!sta->sta.valid_links))
 		return -EINVAL;
@@ -3486,11 +3495,16 @@ int ieee80211_sta_activate_link(struct sta_info *sta, unsigned int link_id)
 	struct ieee80211_sub_if_data *sdata = sta->sdata;
 	struct link_sta_info *link_sta, *rem_link_sta;
 	u16 old_links = sta->sta.valid_links;
-	u16 new_links = old_links | BIT(link_id);
+	u16 new_links;
 	bool exists;
 	unsigned long rem_links = sta->sta.reconf.matched_rem_links;
 	unsigned long rem_link_id;
 	int ret;
+
+	if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
+		return -EINVAL;
+
+	new_links = old_links | BIT(link_id);
 
 	link_sta = rcu_dereference_protected(sta->link[link_id],
 					     lockdep_is_held(&sdata->local->hw.wiphy->mtx));
@@ -3519,6 +3533,9 @@ int ieee80211_sta_activate_link(struct sta_info *sta, unsigned int link_id)
 				 IEEE80211_MLD_MAX_NUM_LINKS) {
 			rem_link_sta = wiphy_dereference(sta->local->hw.wiphy,
 							 sta->link[rem_link_id]);
+
+			if (!rem_link_sta)
+				continue;
 
 			if (!ether_addr_equal(rem_link_sta->addr,
 					      link_sta->addr))
@@ -3589,66 +3606,69 @@ void ieee80211_sta_remove_link(struct sta_info *sta, unsigned int link_id,
 	 */
 	if (sta->deflink.link_id == link_id &&
 	    !sta->sdata->u.mgd.smd_transitioning_links) {
-		n_link_id = ffs(sta->sta.valid_links) - 1;
+		int next = ffs(sta->sta.valid_links);
 
-		sta_info = rcu_access_pointer(sta->link[n_link_id]);
-		link_sta = rcu_access_pointer(sta->sta.link[n_link_id]);
+		if (next) {
+			n_link_id = next - 1;
 
-		if (sta_info && link_sta) {
-			struct ieee80211_sta_rx_stats __percpu *old_pcpu =
-				sta->deflink.pcpu_rx_stats;
-			struct ieee80211_sta_rx_stats __percpu *src_pcpu =
-				sta_info->pcpu_rx_stats;
+			sta_info = rcu_access_pointer(sta->link[n_link_id]);
+			link_sta = rcu_access_pointer(sta->sta.link[n_link_id]);
 
-			sta->deflink.link_id = n_link_id;
-			sta->sta.deflink.link_id = n_link_id;
+			if (sta_info && link_sta) {
+				struct ieee80211_sta_rx_stats __percpu *old_pcpu =
+					sta->deflink.pcpu_rx_stats;
+				struct ieee80211_sta_rx_stats __percpu *src_pcpu =
+					sta_info->pcpu_rx_stats;
 
-			memcpy(&sta->deflink, sta_info, sizeof(*sta_info));
-			memcpy(&sta->sta.deflink, link_sta, sizeof(*link_sta));
-			sta->deflink.pub = &sta->sta.deflink;
-			/* Be explicit about the per-CPU stats pointer we adopt. */
-			sta->deflink.pcpu_rx_stats = src_pcpu;
-			ht_dbg_ratelimited(sta->sdata,
-					   "deflink move: from link_id=%d to deflink, src_pcpu=%p old_def_pcpu=%p",
-					   n_link_id, src_pcpu, old_pcpu);
+				sta->deflink.link_id = n_link_id;
+				sta->sta.deflink.link_id = n_link_id;
 
-			/*
-			 * Transfer ownership of per-CPU RX stats to the new deflink.
-			 * After memcpy() above, deflink->pcpu_rx_stats now points to
-			 * the per-CPU that belonged to the link we are about to free.
-			 * Avoid freeing that memory via sta_remove_link() by clearing the
-			 * pointer in the soon-to-be-freed link structure.
-			 */
-			sta_info->pcpu_rx_stats = NULL;
-			/* Free the old deflink per-CPU stats to avoid leaks. */
-			if (old_pcpu && old_pcpu != src_pcpu)
-				free_percpu(old_pcpu);
-			ht_dbg_ratelimited(sta->sdata,
-					   "deflink move: cleared old link pcpu pointer to avoid free");
+				memcpy(&sta->deflink, sta_info, sizeof(*sta_info));
+				memcpy(&sta->sta.deflink, link_sta, sizeof(*link_sta));
+				sta->deflink.pub = &sta->sta.deflink;
+				/* Be explicit about the per-CPU stats pointer we adopt. */
+				sta->deflink.pcpu_rx_stats = src_pcpu;
+				ht_dbg_ratelimited(sta->sdata,
+						   "deflink move: from link_id=%d to deflink, src_pcpu=%p old_def_pcpu=%p",
+						   n_link_id, src_pcpu, old_pcpu);
 
-			/* Free the moved link memory */
-			sta_remove_link(sta, n_link_id, true);
+				/*
+				 * Transfer ownership of per-CPU RX stats to the new deflink.
+				 * After memcpy() above, deflink->pcpu_rx_stats now points to
+				 * the per-CPU that belonged to the link we are about to free.
+				 * Avoid freeing that memory via sta_remove_link() by clearing the
+				 * pointer in the soon-to-be-freed link structure.
+				 */
+				sta_info->pcpu_rx_stats = NULL;
+				/* Free the old deflink per-CPU stats to avoid leaks. */
+				if (old_pcpu && old_pcpu != src_pcpu)
+					free_percpu(old_pcpu);
+				ht_dbg_ratelimited(sta->sdata,
+						   "deflink move: cleared old link pcpu pointer to avoid free");
 
-			/* Re-add the link id to valid_links */
-			sta->sta.valid_links |= BIT(n_link_id);
+				/* Free the moved link memory */
+				sta_remove_link(sta, n_link_id, true);
 
-			rcu_assign_pointer(sta->link[n_link_id], &sta->deflink);
-			rcu_assign_pointer(sta->sta.link[n_link_id],
-					   &sta->sta.deflink);
+				/* Re-add the link id to valid_links */
+				sta->sta.valid_links |= BIT(n_link_id);
 
-			link_sta_info_hash_add(sdata->local, &sta->deflink);
-			/*
-			 * memcpy() above shallow-copied sta_info into sta->deflink,
-			 * including its debugfs_dir pointer.  sta_remove_link() has
-			 * already freed that directory; the pointer is stale.  Clear
-			 * it so ieee80211_link_sta_debugfs_add() creates a fresh
-			 * directory for the new link_id.
-			 */
-			sta->deflink.debugfs_dir = NULL;
-			ieee80211_link_sta_debugfs_add(&sta->deflink);
+				rcu_assign_pointer(sta->link[n_link_id], &sta->deflink);
+				rcu_assign_pointer(sta->sta.link[n_link_id],
+						   &sta->sta.deflink);
+
+				link_sta_info_hash_add(sdata->local, &sta->deflink);
+				/*
+				 * memcpy() above shallow-copied sta_info into sta->deflink,
+				 * including its debugfs_dir pointer.  sta_remove_link() has
+				 * already freed that directory; the pointer is stale.  Clear
+				 * it so ieee80211_link_sta_debugfs_add() creates a fresh
+				 * directory for the new link_id.
+				 */
+				sta->deflink.debugfs_dir = NULL;
+				ieee80211_link_sta_debugfs_add(&sta->deflink);
+			}
 		}
 	}
-
 	/* If deflink is being removed during SMD transition, the deflink
 	 * will be updated when the new primary link is activated.
 	 * The WARN below catches unintended non-SMD removal of deflink.

@@ -11,6 +11,7 @@
 #include "peer.h"
 #include "debugfs.h"
 #include "dp_mon_filter.h"
+#include "dp_tx_mon.h"
 #include "telemetry_agent_if.h"
 #include "vendor.h"
 #include "wmi.h"
@@ -632,6 +633,9 @@ ath12k_dp_mon_rx_update_peer_rate_table_stats(struct ath12k_rx_peer_stats *rx_st
 	u32 gi_idx = ppdu_info->gi;
 	u32 len;
 
+	if (!rx_stats)
+		return;
+
 	if (mcs_idx > HAL_RX_MAX_MCS_BN || nss_idx >= HAL_RX_MAX_NSS ||
 	    bw_idx >= HAL_RX_BW_MAX || gi_idx >= HAL_RX_GI_MAX) {
 		return;
@@ -714,7 +718,7 @@ static inline bool ath12k_dp_mon_eval_avg_rate_filter(u32 ratekbps, u32 avg_rx_r
 	return false;
 }
 
-static void ath12k_dp_rx_update_rate_stats(struct ath12k_rx_peer_stats *rx_stats,
+static void ath12k_dp_rx_update_rate_stats(struct ath12k_rx_ppdu_stats *rx_stats,
 					   struct rate_info *rate)
 {
 	u32 ratekbps, ppdu_rx_rate;
@@ -882,14 +886,13 @@ static void ath12k_dp_rx_fill_rate_info(struct rate_info *rate,
 	}
 }
 
-static void ath12k_dp_rx_rate_stats_update(struct ath12k_rx_peer_stats *rx_stats,
-					   struct hal_rx_mon_ppdu_info *ppdu_info,
+static void ath12k_dp_rx_rate_stats_update(struct hal_rx_mon_ppdu_info *ppdu_info,
 					   struct ath12k_dp_link_peer *peer, u32 uid)
 {
 	struct hal_rx_user_status *user_stats = NULL;
 	bool is_su = true;
 
-	if (!peer || !rx_stats || !ppdu_info)
+	if (!peer || !ppdu_info)
 		return;
 
 	if (ppdu_info->reception_type != HAL_RX_RECEPTION_TYPE_SU) {
@@ -904,12 +907,15 @@ static void ath12k_dp_rx_rate_stats_update(struct ath12k_rx_peer_stats *rx_stats
 	spin_unlock_bh(&peer->ppdu_stats_lock);
 }
 
-void ath12k_dp_mon_rx_update_advance_stats(struct ath12k_rx_peer_stats *rx_stats,
+void ath12k_dp_mon_rx_update_advance_stats(struct ath12k_rx_ppdu_stats *rx_stats,
 					   struct hal_rx_mon_ppdu_info *ppdu_info,
 					   u32 num_msdu, u32 uid)
 {
 	struct hal_rx_user_status *user_stats = NULL;
+	struct ath12k_rx_peer_user_stats *mu = NULL;
+	struct pkt_type *su_ppdu_cnt = NULL;
 	u8 preamble_type, mcs, nss, ac, punc_mode, max_mcs, res_mcs, mu_type;
+	u8 proto_idx;
 	u32 byte_count, tid;
 
 	if (!rx_stats || !ppdu_info || uid >= HAL_MAX_UL_MU_USERS)
@@ -930,8 +936,8 @@ void ath12k_dp_mon_rx_update_advance_stats(struct ath12k_rx_peer_stats *rx_stats
 		return;
 
 	if (tid <= IEEE80211_NUM_TIDS && ac < WME_NUM_AC) {
-		rx_stats->wme_ac_type[ac].total_pkts += num_msdu;
-		rx_stats->wme_ac_type[ac].total_bytes += byte_count;
+		rx_stats->wme_ac_type_pkts[ac] += num_msdu;
+		rx_stats->wme_ac_type_bytes[ac] += byte_count;
 	}
 
 	if (punc_mode < MAX_PUNCTURED_MODE)
@@ -945,27 +951,30 @@ void ath12k_dp_mon_rx_update_advance_stats(struct ath12k_rx_peer_stats *rx_stats
 
 	rx_stats->proto_type[preamble_type].mcs_count[res_mcs] += num_msdu;
 
+	proto_idx = ath12k_preamble_to_rx_mon_proto_idx(preamble_type);
+
 	if (ppdu_info->reception_type == HAL_RX_RECEPTION_TYPE_SU) {
-		rx_stats->su_ppdu_count[preamble_type].mcs_count[res_mcs] += 1;
+		if (proto_idx < ATH12K_RX_PPDU_PROTO_MAX) {
+			su_ppdu_cnt = &rx_stats->su_ppdu_count[proto_idx];
+			su_ppdu_cnt->mcs_count[res_mcs] += 1;
+		}
 		if (likely(nss) && (nss - 1) < HAL_RX_MAX_NSS)
 			rx_stats->ppdu_nss[nss - 1] += 1;
 	} else {
 		if (!user_stats)
 			return;
 
-		/* Assumes any non-SU and non-MU-MIMO reception is MU-OFDMA.
-		 * Update if new reception types are introduced.
-		 */
 		mu_type = (ppdu_info->reception_type == HAL_RX_RECEPTION_TYPE_MU_MIMO) ?
 			TXRX_TYPE_MU_MIMO : TXRX_TYPE_MU_OFDMA;
 
-		rx_stats->rx_mu[preamble_type][mu_type].mpdu_cnt_fcs_ok +=
-							user_stats->mpdu_cnt_fcs_ok;
-		rx_stats->rx_mu[preamble_type][mu_type].ppdu.mcs_count[res_mcs] += 1;
-		rx_stats->rx_mu[preamble_type][mu_type].mpdu_cnt_fcs_err +=
-							user_stats->mpdu_cnt_fcs_err;
-		if (likely(nss) && (nss - 1) < HAL_RX_MAX_NSS)
-			rx_stats->rx_mu[preamble_type][mu_type].ppdu_nss[nss - 1] += 1;
+		if (proto_idx < ATH12K_RX_PPDU_PROTO_MAX) {
+			mu = &rx_stats->rx_mu[proto_idx][mu_type];
+			mu->mpdu_cnt_fcs_ok += user_stats->mpdu_cnt_fcs_ok;
+			mu->ppdu.mcs_count[res_mcs] += 1;
+			mu->mpdu_cnt_fcs_err += user_stats->mpdu_cnt_fcs_err;
+			if (likely(nss) && (nss - 1) < HAL_RX_MAX_NSS)
+				mu->ppdu_nss[nss - 1] += 1;
+		}
 	}
 	rx_stats->ppdu_reception[ppdu_info->reception_type] += 1;
 }
@@ -984,7 +993,7 @@ ath12k_dp_mon_fill_rx_user_stats_peer_mac(struct ath12k_dp_link_peer *peer,
 }
 
 void ath12k_dp_mon_rx_update_basic_stats(struct ath12k_dp_link_peer *peer,
-					 struct ath12k_rx_peer_stats *rx_stats,
+					 struct ath12k_rx_ppdu_stats *rx_stats,
 					 struct hal_rx_mon_ppdu_info *ppdu_info,
 					 u32 num_msdu, u32 uid)
 {
@@ -992,7 +1001,8 @@ void ath12k_dp_mon_rx_update_basic_stats(struct ath12k_dp_link_peer *peer,
 	u32 ru_width_factor;
 	u64 rx_duration_scaled;
 	u16 rx_time_us, num_msdu_retry_count;
-	u8 preamble_type, mcs, nss;
+	u8 preamble_type, mcs, nss, tid;
+	u8 ac = 0;
 
 	if (!rx_stats || !ppdu_info)
 		return;
@@ -1000,6 +1010,8 @@ void ath12k_dp_mon_rx_update_basic_stats(struct ath12k_dp_link_peer *peer,
 	if (ppdu_info->reception_type != HAL_RX_RECEPTION_TYPE_SU)
 		user_stats = &ppdu_info->userstats[uid];
 
+	tid = user_stats ? user_stats->tid : ppdu_info->tid;
+	ac = ath12k_tid_to_ac(tid);
 	preamble_type = user_stats ? user_stats->preamble_type : ppdu_info->preamble_type;
 	mcs = user_stats ? user_stats->mcs : ppdu_info->mcs;
 	nss = user_stats ? user_stats->nss : ppdu_info->nss;
@@ -1031,9 +1043,18 @@ void ath12k_dp_mon_rx_update_basic_stats(struct ath12k_dp_link_peer *peer,
 				       user_stats->mpdu_cnt_fcs_err;
 	}
 
+	rx_stats->rx_duration_ac[ac] += rx_time_us;
 	rx_stats->rx_duration += rx_time_us;
 
-	ath12k_dp_rx_rate_stats_update(rx_stats, ppdu_info, peer, uid);
+	/* Update per-GI, per-NSS, per-BW, and per-MCS MSDU counts */
+	if (ppdu_info->gi < HAL_RX_GI_MAX)
+		rx_stats->gi_count[ppdu_info->gi] += num_msdu;
+
+	if (likely(nss) && (nss - 1) < HAL_RX_MAX_NSS)
+		rx_stats->nss_count[nss - 1] += num_msdu;
+
+	if (ppdu_info->bw < HAL_RX_BW_MAX)
+		rx_stats->bw_count[ppdu_info->bw] += num_msdu;
 }
 
 /**
@@ -1125,11 +1146,185 @@ static void ath12k_dp_mon_check_rssi_deauth(struct ath12k_dp_link_peer *peer,
 	}
 }
 
+/**
+ * ath12k_dp_mon_rx_update_peer_ppdu_stats() - Update ath12k_rx_ppdu_stats fields
+ * @peer: Pointer to link peer structure
+ * @rx_ppdu_stats: Pointer to peer's rx_ppdu_stats, may be NULL
+ * @ppdu_info: HAL PPDU info parsed from the monitor status ring
+ * @pdev_dp: Pointer to pdev DP structure, used for the advance-stats sub-knob
+ * @num_msdu: Number of MSDUs seen in this PPDU
+ *
+ * Caller must only invoke this when rx_ppdu_stats telemetry is enabled -
+ * only a NULL pointer check is done here.
+ */
+static void
+ath12k_dp_mon_rx_update_peer_ppdu_stats(struct ath12k_dp_link_peer *peer,
+					struct ath12k_rx_ppdu_stats *rx_ppdu_stats,
+					struct hal_rx_mon_ppdu_info *ppdu_info,
+					struct ath12k_pdev_dp *pdev_dp,
+					u32 num_msdu)
+{
+	if (!rx_ppdu_stats)
+		return;
+
+	rx_ppdu_stats->num_mpdu_fcs_ok += ppdu_info->num_mpdu_fcs_ok;
+	rx_ppdu_stats->num_mpdu_fcs_err += ppdu_info->num_mpdu_fcs_err;
+
+	if (ppdu_info->num_mpdu_fcs_ok > 1)
+		rx_ppdu_stats->ampdu_msdu_count += num_msdu;
+	else
+		rx_ppdu_stats->non_ampdu_msdu_count += num_msdu;
+
+	if (ppdu_info->reception_type < HAL_RX_RECEPTION_TYPE_MAX)
+		rx_ppdu_stats->reception_type[ppdu_info->reception_type] += num_msdu;
+
+	ath12k_dp_mon_rx_update_basic_stats(peer, rx_ppdu_stats,
+					    ppdu_info, num_msdu, 0);
+
+	rx_ppdu_stats->signal_stats = peer->signal_stats;
+
+	/* Update Advance stats */
+	if (ath12k_dp_stats_enabled(pdev_dp) &&
+	    ath12k_dp_advance_stats_enabled(pdev_dp)) {
+		ath12k_dp_mon_rx_update_advance_stats(rx_ppdu_stats,
+						      ppdu_info, num_msdu, 0);
+		ath12k_dp_rx_update_rate_stats(rx_ppdu_stats, &peer->rxrate);
+	}
+}
+
+/**
+ * ath12k_dp_mon_rx_update_peer_ext_stats() - Update ath12k_rx_peer_stats fields
+ * @rx_stats: Pointer to peer's extended rx_stats, may be NULL
+ * @ppdu_info: HAL PPDU info parsed from the monitor status ring
+ * @num_msdu: Number of MSDUs seen in this PPDU
+ *
+ * Caller must only invoke this when extended rx stats telemetry is enabled -
+ * only a NULL pointer check is done here.
+ */
+static void
+ath12k_dp_mon_rx_update_peer_ext_stats(struct ath12k_rx_peer_stats *rx_stats,
+				       struct hal_rx_mon_ppdu_info *ppdu_info,
+				       u32 num_msdu)
+{
+	if (!rx_stats)
+		return;
+
+	rx_stats->num_msdu += num_msdu;
+	rx_stats->num_mpdu_fcs_ok += ppdu_info->num_mpdu_fcs_ok;
+	rx_stats->num_mpdu_fcs_err += ppdu_info->num_mpdu_fcs_err;
+
+	if (ppdu_info->num_mpdu_fcs_ok > 1)
+		rx_stats->ampdu_msdu_count += num_msdu;
+	else
+		rx_stats->non_ampdu_msdu_count += num_msdu;
+
+	if (ppdu_info->reception_type < HAL_RX_RECEPTION_TYPE_MAX)
+		rx_stats->reception_type[ppdu_info->reception_type] += num_msdu;
+
+	rx_stats->rx_duration += ppdu_info->rx_duration;
+
+	if (ppdu_info->preamble_type == HAL_RX_PREAMBLE_11A ||
+	    ppdu_info->preamble_type == HAL_RX_PREAMBLE_11B) {
+		ppdu_info->nss = 1;
+		ppdu_info->mcs = HAL_RX_MAX_MCS;
+		ppdu_info->tid = IEEE80211_NUM_TIDS;
+	}
+
+	rx_stats->tcp_msdu_count += ppdu_info->tcp_msdu_count +
+				  ppdu_info->tcp_ack_msdu_count;
+	rx_stats->udp_msdu_count += ppdu_info->udp_msdu_count;
+	rx_stats->other_msdu_count += ppdu_info->other_msdu_count;
+	rx_stats->dcm_count += ppdu_info->dcm;
+
+	if (ppdu_info->ldpc < HAL_RX_SU_MU_CODING_MAX)
+		rx_stats->coding_count[ppdu_info->ldpc] += num_msdu;
+
+	if (ppdu_info->tid <= IEEE80211_NUM_TIDS)
+		rx_stats->tid_count[ppdu_info->tid] += num_msdu;
+
+	if (ppdu_info->preamble_type < HAL_RX_PREAMBLE_MAX)
+		rx_stats->pream_cnt[ppdu_info->preamble_type] += num_msdu;
+
+	if (ppdu_info->is_stbc)
+		rx_stats->stbc_count += num_msdu;
+
+	if (ppdu_info->beamformed)
+		rx_stats->beamformed_count += num_msdu;
+
+	if (ppdu_info->nss > 0 && ppdu_info->nss <= HAL_RX_MAX_NSS) {
+		rx_stats->pkt_stats.nss_count[ppdu_info->nss - 1] += num_msdu;
+		rx_stats->byte_stats.nss_count[ppdu_info->nss - 1] +=
+			ppdu_info->mpdu_len;
+	}
+
+	if (ppdu_info->preamble_type == HAL_RX_PREAMBLE_11N &&
+	    ppdu_info->mcs <= HAL_RX_MAX_MCS_HT) {
+		rx_stats->pkt_stats.ht_mcs_count[ppdu_info->mcs] += num_msdu;
+		rx_stats->byte_stats.ht_mcs_count[ppdu_info->mcs] +=
+			ppdu_info->mpdu_len;
+		ppdu_info->mcs = ppdu_info->mcs % 8;
+	}
+
+	if (ppdu_info->preamble_type == HAL_RX_PREAMBLE_11AC &&
+	    ppdu_info->mcs <= HAL_RX_MAX_MCS_VHT) {
+		rx_stats->pkt_stats.vht_mcs_count[ppdu_info->mcs] += num_msdu;
+		rx_stats->byte_stats.vht_mcs_count[ppdu_info->mcs] +=
+			ppdu_info->mpdu_len;
+	}
+
+	if (ppdu_info->preamble_type == HAL_RX_PREAMBLE_11AX &&
+	    ppdu_info->mcs <= HAL_RX_MAX_MCS_HE) {
+		rx_stats->pkt_stats.he_mcs_count[ppdu_info->mcs] += num_msdu;
+		rx_stats->byte_stats.he_mcs_count[ppdu_info->mcs] +=
+			ppdu_info->mpdu_len;
+	}
+
+	if (ppdu_info->preamble_type == HAL_RX_PREAMBLE_11BE &&
+	    ppdu_info->mcs <= HAL_RX_MAX_MCS_BE) {
+		rx_stats->pkt_stats.be_mcs_count[ppdu_info->mcs] += num_msdu;
+		rx_stats->byte_stats.be_mcs_count[ppdu_info->mcs] +=
+			ppdu_info->mpdu_len;
+	}
+
+	if (ppdu_info->preamble_type == HAL_RX_PREAMBLE_11BN &&
+	    ppdu_info->mcs <= HAL_RX_MAX_MCS_BN) {
+		rx_stats->pkt_stats.bn_mcs_count[ppdu_info->mcs] += num_msdu;
+		rx_stats->byte_stats.bn_mcs_count[ppdu_info->mcs] +=
+			ppdu_info->mpdu_len;
+	}
+
+	if ((ppdu_info->preamble_type == HAL_RX_PREAMBLE_11A ||
+	     ppdu_info->preamble_type == HAL_RX_PREAMBLE_11B) &&
+	     ppdu_info->rate < HAL_RX_LEGACY_RATE_INVALID) {
+		rx_stats->pkt_stats.legacy_count[ppdu_info->rate] += num_msdu;
+		rx_stats->byte_stats.legacy_count[ppdu_info->rate] +=
+			ppdu_info->mpdu_len;
+	}
+
+	if (ppdu_info->gi < HAL_RX_GI_MAX) {
+		rx_stats->pkt_stats.gi_count[ppdu_info->gi] += num_msdu;
+		rx_stats->byte_stats.gi_count[ppdu_info->gi] +=
+			ppdu_info->mpdu_len;
+	}
+
+	if (ppdu_info->bw < HAL_RX_BW_MAX) {
+		rx_stats->pkt_stats.bw_count[ppdu_info->bw] += num_msdu;
+		rx_stats->byte_stats.bw_count[ppdu_info->bw] +=
+			ppdu_info->mpdu_len;
+	}
+
+	ath12k_dp_mon_rx_update_peer_rate_table_stats(rx_stats, ppdu_info,
+						      NULL, num_msdu);
+}
+
 void ath12k_dp_mon_rx_update_peer_su_stats(struct ath12k_pdev_dp *pdev_dp,
 					   struct hal_rx_mon_ppdu_info *ppdu_info)
 {
 	struct ath12k_dp_link_peer *peer;
+	struct ath12k_rx_ppdu_stats *rx_ppdu_stats;
 	struct ath12k_rx_peer_stats *rx_stats;
+	bool extd_rx = ath12k_extd_rx_stats_enabled(pdev_dp);
+	bool rx_ppdu_stats_en = ath12k_dp_rx_ppdu_stats_enabled(pdev_dp);
 	u32 num_msdu;
 
 	peer = ath12k_dp_link_peer_find_by_peerid_index(pdev_dp->dp, pdev_dp,
@@ -1150,14 +1345,17 @@ void ath12k_dp_mon_rx_update_peer_su_stats(struct ath12k_pdev_dp *pdev_dp,
 		return;
 	}
 
-	rx_stats = peer->peer_stats.rx_stats;
+	num_msdu = ppdu_info->tcp_msdu_count + ppdu_info->tcp_ack_msdu_count +
+		   ppdu_info->udp_msdu_count + ppdu_info->other_msdu_count;
+
+	peer->rx_duration += ppdu_info->rx_duration;
+	peer->rx_packets += num_msdu;
+	peer->rx_bytes += ppdu_info->mpdu_len;
+	peer->peer_stats.rx_retries += ppdu_info->mpdu_retry;
 	peer->rssi_comb = ppdu_info->rssi_comb;
 	ewma_avg_rssi_add(&peer->avg_rssi, ppdu_info->rssi_comb);
-	peer->rx_duration += ppdu_info->rx_duration;
+	ath12k_dp_rx_rate_stats_update(ppdu_info, peer, 0);
 
-	/* Update both pdev-level and per-peer BAR counts together after a
-	 * successful peer lookup.
-	 */
 	if (ppdu_info->userid < ARRAY_SIZE(ppdu_info->ctrl_frm_info)) {
 		pdev_dp->stats.telemetry_stats.rx_bar_cnt +=
 			ppdu_info->ctrl_frm_info[ppdu_info->userid].bar;
@@ -1165,120 +1363,17 @@ void ath12k_dp_mon_rx_update_peer_su_stats(struct ath12k_pdev_dp *pdev_dp,
 			ppdu_info->ctrl_frm_info[ppdu_info->userid].bar;
 	}
 
-	num_msdu = ppdu_info->tcp_msdu_count + ppdu_info->tcp_ack_msdu_count +
-		   ppdu_info->udp_msdu_count + ppdu_info->other_msdu_count;
-	peer->rx_packets += num_msdu;
-	peer->rx_bytes += ppdu_info->mpdu_len;
+	rx_ppdu_stats = peer->peer_stats.rx_ppdu_stats;
+	rx_stats = peer->peer_stats.rx_stats;
 
-	if (!ath12k_extd_rx_stats_enabled(pdev_dp) || !rx_stats)
-		return;
+	if (rx_ppdu_stats_en)
+		ath12k_dp_mon_rx_update_peer_ppdu_stats(peer, rx_ppdu_stats, ppdu_info,
+							pdev_dp, num_msdu);
+	if (extd_rx)
+		ath12k_dp_mon_rx_update_peer_ext_stats(rx_stats, ppdu_info, num_msdu);
 
-	peer->peer_stats.rx_retries += ppdu_info->mpdu_retry;
-	rx_stats->num_msdu += num_msdu;
-	rx_stats->tcp_msdu_count += ppdu_info->tcp_msdu_count +
-				    ppdu_info->tcp_ack_msdu_count;
-	rx_stats->udp_msdu_count += ppdu_info->udp_msdu_count;
-	rx_stats->other_msdu_count += ppdu_info->other_msdu_count;
-
-	ath12k_dp_mon_rx_update_basic_stats(peer, rx_stats, ppdu_info, num_msdu, 0);
-
-	if (ppdu_info->preamble_type == HAL_RX_PREAMBLE_11A ||
-	    ppdu_info->preamble_type == HAL_RX_PREAMBLE_11B) {
-		ppdu_info->nss = 1;
-		ppdu_info->mcs = HAL_RX_MAX_MCS;
-		ppdu_info->tid = IEEE80211_NUM_TIDS;
-	}
-
-	if (ppdu_info->ldpc < HAL_RX_SU_MU_CODING_MAX)
-		rx_stats->coding_count[ppdu_info->ldpc] += num_msdu;
-
-	if (ppdu_info->tid <= IEEE80211_NUM_TIDS)
-		rx_stats->tid_count[ppdu_info->tid] += num_msdu;
-
-	if (ppdu_info->preamble_type < HAL_RX_PREAMBLE_MAX)
-		rx_stats->pream_cnt[ppdu_info->preamble_type] += num_msdu;
-
-	if (ppdu_info->reception_type < HAL_RX_RECEPTION_TYPE_MAX)
-		rx_stats->reception_type[ppdu_info->reception_type] += num_msdu;
-
-	if (ppdu_info->is_stbc)
-		rx_stats->stbc_count += num_msdu;
-
-	if (ppdu_info->beamformed)
-		rx_stats->beamformed_count += num_msdu;
-
-	if (ppdu_info->num_mpdu_fcs_ok > 1)
-		rx_stats->ampdu_msdu_count += num_msdu;
-	else
-		rx_stats->non_ampdu_msdu_count += num_msdu;
-
-	rx_stats->num_mpdu_fcs_ok += ppdu_info->num_mpdu_fcs_ok;
-	rx_stats->num_mpdu_fcs_err += ppdu_info->num_mpdu_fcs_err;
-	rx_stats->dcm_count += ppdu_info->dcm;
-
-	if (ppdu_info->nss > 0 && ppdu_info->nss <= HAL_RX_MAX_NSS) {
-		rx_stats->pkt_stats.nss_count[ppdu_info->nss - 1] += num_msdu;
-		rx_stats->byte_stats.nss_count[ppdu_info->nss - 1] += ppdu_info->mpdu_len;
-	}
-
-	if (ppdu_info->preamble_type == HAL_RX_PREAMBLE_11N &&
-	    ppdu_info->mcs <= HAL_RX_MAX_MCS_HT) {
-		rx_stats->pkt_stats.ht_mcs_count[ppdu_info->mcs] += num_msdu;
-		rx_stats->byte_stats.ht_mcs_count[ppdu_info->mcs] += ppdu_info->mpdu_len;
-		/* To fit into rate table for HT packets */
-		ppdu_info->mcs = ppdu_info->mcs % 8;
-	}
-
-	if (ppdu_info->preamble_type == HAL_RX_PREAMBLE_11AC &&
-	    ppdu_info->mcs <= HAL_RX_MAX_MCS_VHT) {
-		rx_stats->pkt_stats.vht_mcs_count[ppdu_info->mcs] += num_msdu;
-		rx_stats->byte_stats.vht_mcs_count[ppdu_info->mcs] += ppdu_info->mpdu_len;
-	}
-
-	if (ppdu_info->preamble_type == HAL_RX_PREAMBLE_11AX &&
-	    ppdu_info->mcs <= HAL_RX_MAX_MCS_HE) {
-		rx_stats->pkt_stats.he_mcs_count[ppdu_info->mcs] += num_msdu;
-		rx_stats->byte_stats.he_mcs_count[ppdu_info->mcs] += ppdu_info->mpdu_len;
-	}
-
-	if (ppdu_info->preamble_type == HAL_RX_PREAMBLE_11BE &&
-	    ppdu_info->mcs <= HAL_RX_MAX_MCS_BE) {
-		rx_stats->pkt_stats.be_mcs_count[ppdu_info->mcs] += num_msdu;
-		rx_stats->byte_stats.be_mcs_count[ppdu_info->mcs] += ppdu_info->mpdu_len;
-	}
-
-	if (ppdu_info->preamble_type == HAL_RX_PREAMBLE_11BN &&
-	    ppdu_info->mcs <= HAL_RX_MAX_MCS_BN) {
-		rx_stats->pkt_stats.bn_mcs_count[ppdu_info->mcs] += num_msdu;
-		rx_stats->byte_stats.bn_mcs_count[ppdu_info->mcs] += ppdu_info->mpdu_len;
-	}
-
-	if ((ppdu_info->preamble_type == HAL_RX_PREAMBLE_11A ||
-	     ppdu_info->preamble_type == HAL_RX_PREAMBLE_11B) &&
-	     ppdu_info->rate < HAL_RX_LEGACY_RATE_INVALID) {
-		rx_stats->pkt_stats.legacy_count[ppdu_info->rate] += num_msdu;
-		rx_stats->byte_stats.legacy_count[ppdu_info->rate] += ppdu_info->mpdu_len;
-	}
-
-	if (ppdu_info->gi < HAL_RX_GI_MAX) {
-		rx_stats->pkt_stats.gi_count[ppdu_info->gi] += num_msdu;
-		rx_stats->byte_stats.gi_count[ppdu_info->gi] += ppdu_info->mpdu_len;
-	}
-
-	if (ppdu_info->bw < HAL_RX_BW_MAX) {
-		rx_stats->pkt_stats.bw_count[ppdu_info->bw] += num_msdu;
-		rx_stats->byte_stats.bw_count[ppdu_info->bw] += ppdu_info->mpdu_len;
-	}
-
-	ath12k_dp_mon_rx_update_peer_rate_table_stats(rx_stats, ppdu_info,
-						      NULL, num_msdu);
-
-	/* Update Advance stats */
-	if (ath12k_dp_stats_enabled(pdev_dp) &&
-	    ath12k_dp_advance_stats_enabled(pdev_dp)) {
-		ath12k_dp_mon_rx_update_advance_stats(rx_stats, ppdu_info, num_msdu, 0);
-		ath12k_dp_rx_update_rate_stats(rx_stats, &peer->rxrate);
-	}
+	if (rx_ppdu_stats)
+		peer->rx_duration = rx_ppdu_stats->rx_duration;
 }
 EXPORT_SYMBOL(ath12k_dp_mon_rx_update_peer_su_stats);
 
@@ -1335,18 +1430,187 @@ void ath12k_dp_mon_rx_process_ulofdma_stats(struct hal_rx_mon_ppdu_info *ppdu_in
 }
 EXPORT_SYMBOL(ath12k_dp_mon_rx_process_ulofdma_stats);
 
+/**
+ * ath12k_dp_mon_rx_update_user_ppdu_stats() - Update ath12k_rx_ppdu_stats fields
+ * @peer: Pointer to link peer structure
+ * @rx_ppdu_stats: Pointer to peer's rx_ppdu_stats, may be NULL
+ * @ppdu_info: HAL PPDU info parsed from the monitor status ring
+ * @user_stats: Per-user HAL status for this uid
+ * @pdev_dp: Pointer to pdev DP structure, used for advance stats and telemetry
+ * @num_msdu: Number of MSDUs seen from this user in this PPDU
+ * @uid: User index within the PPDU
+ * @extd_rx: Whether extended rx stats telemetry is enabled, only used to
+ *           decide priority of the pdev telemetry snapshot below
+ *
+ * Caller must only invoke this when rx_ppdu_stats telemetry is enabled -
+ * only a NULL pointer check is done here.
+ */
+static void
+ath12k_dp_mon_rx_update_user_ppdu_stats(struct ath12k_dp_link_peer *peer,
+					struct ath12k_rx_ppdu_stats *rx_ppdu_stats,
+					struct hal_rx_mon_ppdu_info *ppdu_info,
+					struct hal_rx_user_status *user_stats,
+					struct ath12k_pdev_dp *pdev_dp,
+					u32 num_msdu, u32 uid)
+{
+	if (!rx_ppdu_stats)
+		return;
+
+	rx_ppdu_stats->num_mpdu_fcs_ok += user_stats->mpdu_cnt_fcs_ok;
+	rx_ppdu_stats->num_mpdu_fcs_err += user_stats->mpdu_cnt_fcs_err;
+
+	if (user_stats->mpdu_cnt_fcs_ok > 1)
+		rx_ppdu_stats->ampdu_msdu_count += num_msdu;
+	else
+		rx_ppdu_stats->non_ampdu_msdu_count += num_msdu;
+
+	if (ppdu_info->reception_type < HAL_RX_RECEPTION_TYPE_MAX)
+		rx_ppdu_stats->reception_type[ppdu_info->reception_type] += num_msdu;
+
+	ath12k_dp_mon_rx_update_basic_stats(peer, rx_ppdu_stats,
+					    ppdu_info, num_msdu, uid);
+
+	rx_ppdu_stats->signal_stats = peer->signal_stats;
+
+	/* Update Advance stats */
+	if (ath12k_dp_stats_enabled(pdev_dp) &&
+	    ath12k_dp_advance_stats_enabled(pdev_dp)) {
+		ath12k_dp_mon_rx_update_advance_stats(rx_ppdu_stats,
+						      ppdu_info, num_msdu, uid);
+		ath12k_dp_rx_update_rate_stats(rx_ppdu_stats, &peer->rxrate);
+	}
+}
+
+/**
+ * ath12k_dp_mon_rx_update_user_ext_stats() - Update ath12k_rx_peer_stats fields
+ * @rx_stats: Pointer to peer's extended rx_stats, may be NULL
+ * @ppdu_info: HAL PPDU info parsed from the monitor status ring
+ * @user_stats: Per-user HAL status for this uid
+ * @pdev_dp: Pointer to pdev DP structure, used for the telemetry snapshot
+ * @num_msdu: Number of MSDUs seen from this user in this PPDU
+ *
+ * Caller must only invoke this when extended rx stats telemetry is enabled -
+ * only a NULL pointer check is done here.
+ */
+static void
+ath12k_dp_mon_rx_update_user_ext_stats(struct ath12k_rx_peer_stats *rx_stats,
+				       struct hal_rx_mon_ppdu_info *ppdu_info,
+				       struct hal_rx_user_status *user_stats,
+				       struct ath12k_pdev_dp *pdev_dp,
+				       u32 num_msdu)
+{
+	struct ath12k_rx_peer_rate_stats *pkt, *byt;
+	u8 ru_sz;
+
+	if (!rx_stats)
+		return;
+
+	rx_stats->num_msdu += num_msdu;
+	rx_stats->num_mpdu_fcs_ok += user_stats->mpdu_cnt_fcs_ok;
+	rx_stats->num_mpdu_fcs_err += user_stats->mpdu_cnt_fcs_err;
+
+	if (user_stats->mpdu_cnt_fcs_ok > 1)
+		rx_stats->ampdu_msdu_count += num_msdu;
+	else
+		rx_stats->non_ampdu_msdu_count += num_msdu;
+
+	if (ppdu_info->reception_type < HAL_RX_RECEPTION_TYPE_MAX)
+		rx_stats->reception_type[ppdu_info->reception_type] += num_msdu;
+
+	rx_stats->rx_duration += ppdu_info->rx_duration;
+
+	pkt = &rx_stats->pkt_stats;
+	byt = &rx_stats->byte_stats;
+	ru_sz = user_stats->ul_ofdma_ru_size;
+
+	rx_stats->tcp_msdu_count += user_stats->tcp_msdu_count +
+				    user_stats->tcp_ack_msdu_count;
+	rx_stats->udp_msdu_count += user_stats->udp_msdu_count;
+	rx_stats->other_msdu_count += user_stats->other_msdu_count;
+	rx_stats->dcm_count += ppdu_info->dcm;
+
+	if (ppdu_info->ldpc < HAL_RX_SU_MU_CODING_MAX)
+		rx_stats->coding_count[ppdu_info->ldpc] += num_msdu;
+
+	if (user_stats->tid <= IEEE80211_NUM_TIDS)
+		rx_stats->tid_count[user_stats->tid] += num_msdu;
+
+	if (user_stats->preamble_type < HAL_RX_PREAMBLE_MAX)
+		rx_stats->pream_cnt[user_stats->preamble_type] +=
+			num_msdu;
+
+	if (ppdu_info->is_stbc)
+		rx_stats->stbc_count += num_msdu;
+
+	if (ppdu_info->beamformed)
+		rx_stats->beamformed_count += num_msdu;
+
+	if (ppdu_info->reception_type ==
+	    HAL_RX_RECEPTION_TYPE_MU_OFDMA ||
+	    ppdu_info->reception_type ==
+	    HAL_RX_RECEPTION_TYPE_MU_OFDMA_MIMO)
+		rx_stats->ru_alloc_cnt[ru_sz] += num_msdu;
+
+	if (user_stats->nss > 0 && user_stats->nss <= HAL_RX_MAX_NSS) {
+		pkt->nss_count[user_stats->nss - 1] += num_msdu;
+		byt->nss_count[user_stats->nss - 1] +=
+			user_stats->mpdu_ok_byte_count;
+	}
+
+	if (user_stats->preamble_type == HAL_RX_PREAMBLE_11AX &&
+	    user_stats->mcs <= HAL_RX_MAX_MCS_HE) {
+		pkt->he_mcs_count[user_stats->mcs] += num_msdu;
+		byt->he_mcs_count[user_stats->mcs] +=
+			user_stats->mpdu_ok_byte_count;
+	}
+
+	if (user_stats->preamble_type == HAL_RX_PREAMBLE_11BE &&
+	    user_stats->mcs <= HAL_RX_MAX_MCS_BE) {
+		pkt->be_mcs_count[user_stats->mcs] += num_msdu;
+		byt->be_mcs_count[user_stats->mcs] +=
+			user_stats->mpdu_ok_byte_count;
+	}
+
+	if (user_stats->preamble_type == HAL_RX_PREAMBLE_11BN &&
+	    user_stats->mcs <= HAL_RX_MAX_MCS_BN) {
+		pkt->bn_mcs_count[user_stats->mcs] += num_msdu;
+		byt->bn_mcs_count[user_stats->mcs] +=
+			user_stats->mpdu_ok_byte_count;
+	}
+
+	if (ppdu_info->gi < HAL_RX_GI_MAX) {
+		pkt->gi_count[ppdu_info->gi] += num_msdu;
+		byt->gi_count[ppdu_info->gi] +=
+			user_stats->mpdu_ok_byte_count;
+	}
+
+	if (ppdu_info->bw < HAL_RX_BW_MAX) {
+		pkt->bw_count[ppdu_info->bw] += num_msdu;
+		byt->bw_count[ppdu_info->bw] +=
+			user_stats->mpdu_ok_byte_count;
+	}
+
+	ath12k_dp_mon_rx_update_peer_rate_table_stats(rx_stats,
+						      ppdu_info,
+						      user_stats,
+						      num_msdu);
+}
+
 static void
 ath12k_dp_mon_rx_update_user_stats(struct ath12k_pdev_dp *pdev_dp,
 				   struct hal_rx_mon_ppdu_info *ppdu_info,
 				   u32 uid)
 {
-	struct ath12k_rx_peer_stats *rx_stats = NULL;
+	struct ath12k_rx_peer_stats *rx_stats;
+	struct ath12k_rx_ppdu_stats *rx_ppdu_stats;
 	struct hal_rx_user_status *user_stats = &ppdu_info->userstats[uid];
-	struct ath12k_pdev_dp_stats *pdev_stats = &pdev_dp->stats;
 	struct ath12k_dp_link_peer *peer;
+	bool extd_rx = ath12k_extd_rx_stats_enabled(pdev_dp);
+	bool rx_ppdu_stats_en = ath12k_dp_rx_ppdu_stats_enabled(pdev_dp);
 	u32 num_msdu;
 	struct ath12k_dp *dp = pdev_dp->dp;
 	struct ath12k_base *ab = dp->ab;
+	struct ath12k_pdev_dp_stats *pdev_stats = &pdev_dp->stats;
 
 	if (ppdu_info->peer_id == HAL_INVALID_PEERID)
 		return;
@@ -1360,116 +1624,43 @@ ath12k_dp_mon_rx_update_user_stats(struct ath12k_pdev_dp *pdev_dp,
 		return;
 	}
 
-	peer->peer_stats.rx_retries = user_stats->mpdu_retry;
-	peer->rx_duration += ppdu_info->rx_duration;
-
 	num_msdu = user_stats->tcp_msdu_count + user_stats->tcp_ack_msdu_count +
 		   user_stats->udp_msdu_count + user_stats->other_msdu_count;
 	peer->rx_packets += num_msdu;
 	peer->rx_bytes += ppdu_info->mpdu_len;
 
-	if (!ath12k_extd_rx_stats_enabled(pdev_dp))
-		return;
-
-	rx_stats = peer->peer_stats.rx_stats;
-	if (!rx_stats)
-		return;
-
-	ppdu_info->usr_nss_sum += user_stats->nss;
-	ppdu_info->usr_ru_tones_sum += user_stats->ul_ofdma_ru_width;
+	peer->peer_stats.rx_retries = user_stats->mpdu_retry;
+	peer->rx_duration += ppdu_info->rx_duration;
+	ath12k_dp_rx_rate_stats_update(ppdu_info, peer, uid);
 
 	peer->rssi_comb = ppdu_info->rssi_comb;
 	ewma_avg_rssi_add(&peer->avg_rssi, ppdu_info->rssi_comb);
 
-	rx_stats->num_msdu += num_msdu;
-	rx_stats->tcp_msdu_count += user_stats->tcp_msdu_count +
-				    user_stats->tcp_ack_msdu_count;
-	rx_stats->udp_msdu_count += user_stats->udp_msdu_count;
-	rx_stats->other_msdu_count += user_stats->other_msdu_count;
-
-	if (ppdu_info->ldpc < HAL_RX_SU_MU_CODING_MAX)
-		rx_stats->coding_count[ppdu_info->ldpc] += num_msdu;
-
-	if (user_stats->tid <= IEEE80211_NUM_TIDS)
-		rx_stats->tid_count[user_stats->tid] += num_msdu;
-
-	if (user_stats->preamble_type < HAL_RX_PREAMBLE_MAX)
-		rx_stats->pream_cnt[user_stats->preamble_type] += num_msdu;
-
-	if (ppdu_info->reception_type < HAL_RX_RECEPTION_TYPE_MAX)
-		rx_stats->reception_type[ppdu_info->reception_type] += num_msdu;
-
-	if (ppdu_info->is_stbc)
-		rx_stats->stbc_count += num_msdu;
-
-	if (ppdu_info->beamformed)
-		rx_stats->beamformed_count += num_msdu;
-
-	if (user_stats->mpdu_cnt_fcs_ok > 1)
-		rx_stats->ampdu_msdu_count += num_msdu;
-	else
-		rx_stats->non_ampdu_msdu_count += num_msdu;
-
-	rx_stats->num_mpdu_fcs_ok += user_stats->mpdu_cnt_fcs_ok;
-	rx_stats->num_mpdu_fcs_err += user_stats->mpdu_cnt_fcs_err;
-	rx_stats->dcm_count += ppdu_info->dcm;
-	if (ppdu_info->reception_type == HAL_RX_RECEPTION_TYPE_MU_OFDMA ||
-	    ppdu_info->reception_type == HAL_RX_RECEPTION_TYPE_MU_OFDMA_MIMO)
-		rx_stats->ru_alloc_cnt[user_stats->ul_ofdma_ru_size] += num_msdu;
-
-	if (user_stats->nss > 0 && user_stats->nss <= HAL_RX_MAX_NSS) {
-		rx_stats->pkt_stats.nss_count[user_stats->nss - 1] += num_msdu;
-		rx_stats->byte_stats.nss_count[user_stats->nss - 1] +=
-						user_stats->mpdu_ok_byte_count;
+	if (extd_rx || rx_ppdu_stats_en) {
+		ppdu_info->usr_nss_sum += user_stats->nss;
+		ppdu_info->usr_ru_tones_sum += user_stats->ul_ofdma_ru_width;
 	}
 
-	if (user_stats->preamble_type == HAL_RX_PREAMBLE_11AX &&
-	    user_stats->mcs <= HAL_RX_MAX_MCS_HE) {
-		rx_stats->pkt_stats.he_mcs_count[user_stats->mcs] += num_msdu;
-		rx_stats->byte_stats.he_mcs_count[user_stats->mcs] +=
-						user_stats->mpdu_ok_byte_count;
-	}
+	rx_ppdu_stats = peer->peer_stats.rx_ppdu_stats;
+	rx_stats = peer->peer_stats.rx_stats;
 
-	if (user_stats->preamble_type == HAL_RX_PREAMBLE_11BE &&
-	    user_stats->mcs <= HAL_RX_MAX_MCS_BE) {
-		rx_stats->pkt_stats.be_mcs_count[user_stats->mcs] += num_msdu;
-		rx_stats->byte_stats.be_mcs_count[user_stats->mcs] +=
-						user_stats->mpdu_ok_byte_count;
-	}
+	if (rx_ppdu_stats_en)
+		ath12k_dp_mon_rx_update_user_ppdu_stats(peer, rx_ppdu_stats, ppdu_info,
+							user_stats, pdev_dp, num_msdu,
+							uid);
+	if (extd_rx)
+		ath12k_dp_mon_rx_update_user_ext_stats(rx_stats, ppdu_info, user_stats,
+						       pdev_dp, num_msdu);
 
-	if (user_stats->preamble_type == HAL_RX_PREAMBLE_11BN &&
-	    user_stats->mcs <= HAL_RX_MAX_MCS_BN) {
-		rx_stats->pkt_stats.bn_mcs_count[user_stats->mcs] += num_msdu;
-		rx_stats->byte_stats.bn_mcs_count[user_stats->mcs] +=
-						user_stats->mpdu_ok_byte_count;
-	}
+	pdev_stats->telemetry_stats.rx_data_msdu_cnt = num_msdu;
+	pdev_stats->telemetry_stats.total_rx_data_bytes =
+		user_stats->mpdu_ok_byte_count;
 
-	if (ppdu_info->gi < HAL_RX_GI_MAX) {
-		rx_stats->pkt_stats.gi_count[ppdu_info->gi] += num_msdu;
-		rx_stats->byte_stats.gi_count[ppdu_info->gi] +=
-						user_stats->mpdu_ok_byte_count;
-	}
-
-	if (ppdu_info->bw < HAL_RX_BW_MAX) {
-		rx_stats->pkt_stats.bw_count[ppdu_info->bw] += num_msdu;
-		rx_stats->byte_stats.bw_count[ppdu_info->bw] +=
-						user_stats->mpdu_ok_byte_count;
-	}
-
-	ath12k_dp_mon_rx_update_peer_rate_table_stats(rx_stats, ppdu_info,
-						      user_stats, num_msdu);
-
-	pdev_stats->telemetry_stats.rx_data_msdu_cnt = rx_stats->num_msdu;
-	pdev_stats->telemetry_stats.total_rx_data_bytes = user_stats->mpdu_ok_byte_count;
-
-	ath12k_dp_mon_rx_update_basic_stats(peer, rx_stats, ppdu_info, num_msdu, uid);
-	peer->rx_duration = rx_stats->rx_duration;
-	/* Update Advance stats */
-	if (ath12k_dp_stats_enabled(pdev_dp) &&
-	    ath12k_dp_advance_stats_enabled(pdev_dp)) {
-		ath12k_dp_mon_rx_update_advance_stats(rx_stats, ppdu_info, num_msdu, uid);
-		ath12k_dp_rx_update_rate_stats(rx_stats, &peer->rxrate);
-	}
+	/* If rx_ppdu_stats is enabled, the rx_duration will account both SU and MU
+	 * duration. Otherwise, rx_duation  will account only SU duration.
+	 */
+	if (rx_ppdu_stats)
+		peer->rx_duration = rx_ppdu_stats->rx_duration;
 }
 
 void
@@ -1573,6 +1764,11 @@ ath12k_dp_mon_link_peer_signal_stats(struct ath12k_pdev_dp *dp_pdev,
 	struct hal_rx_user_status *user_stats = &ppdu_info->userstats[uid];
 	struct ath12k_dp_link_peer *peer;
 	struct ath12k_dp_link_peer_rx_signal_stats *stats = NULL;
+	u32 last_rx_rate;
+	u16 peer_id;
+	u8 pdev_id;
+	u8 soc_id;
+	u8 i;
 
 	if (!dp_pdev)
 		return;
@@ -1595,6 +1791,8 @@ ath12k_dp_mon_link_peer_signal_stats(struct ath12k_pdev_dp *dp_pdev,
 	ewma_avg_snr_add(&stats->avg_snr, stats->snr);
 	stats->snr_avg = ewma_avg_snr_read(&stats->avg_snr);
 	stats->channel_bw = ppdu_info->bw;
+	for (i = 0; i < HAL_RX_MAX_NSS; i++)
+		stats->rssi_chain_pri20[i] = ppdu_info->rssi_chain_pri20[i];
 
 	if (likely(ppdu_info->fc_valid)) {
 		switch (ppdu_info->frame_control & 0x00F0) {
@@ -1625,14 +1823,18 @@ ath12k_dp_mon_link_peer_signal_stats(struct ath12k_pdev_dp *dp_pdev,
 		peer->min_rssi = min(peer->min_rssi, stats->rssi);
 	}
 
-	if (peer->peer_stats.rx_stats &&
-	    IS_VALID_RATE(peer->peer_stats.rx_stats->last_rx_rate) &&
+	if (ath12k_dp_rx_ppdu_stats_enabled(dp_pdev) &&
+	    peer->peer_stats.rx_ppdu_stats &&
+	    IS_VALID_RATE(peer->peer_stats.rx_ppdu_stats->last_rx_rate) &&
 	    IS_VALID_RSSI(stats->rssi)) {
-		u32 last_rx_rate = peer->peer_stats.rx_stats->last_rx_rate;
-		u8 soc_id = ath12k_get_ab_device_id(dp_pdev->ar->ab);
+		last_rx_rate = peer->peer_stats.rx_ppdu_stats->last_rx_rate;
+		soc_id = ath12k_get_ab_device_id(dp_pdev->ar->ab);
+		pdev_id = ath12k_get_pdev_id(dp_pdev->ar->pdev);
+		peer_id = ath12k_dp_link_peer_get_peer_id(dp_pdev->ar->ab, peer);
 
 		ath12k_telemetry_update_rssi_rate_breach(soc_id,
-							 peer->peer_id,
+							 pdev_id,
+							 peer_id,
 							 peer->addr,
 							 PATH_TYPE_RX,
 							 stats->rssi,
@@ -2190,7 +2392,8 @@ void ath12k_dp_mon_rx_stats_enable(struct ath12k_pdev_dp *dp_pdev,
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
-	if (ath12k_extd_rx_stats_enabled(dp_pdev))
+	if (ath12k_extd_rx_stats_enabled(dp_pdev) ||
+	    ath12k_dp_rx_ppdu_stats_enabled(dp_pdev))
 		mode = ATH12k_DP_MON_EXTD_STATS;
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ar->ab->dev_flags))
@@ -2940,11 +3143,14 @@ ath12k_dp_ext_mon_update_rx_config(struct ath12k_pdev_mon_dp *dp_mon_pdev,
 			ath12k_dp_ext_mon_is_mode_enabled(&new_config->target_neighbor);
 
 		curr_config->metadata = new_config->meta_data;
+		curr_config->short_pkt_en =
+				!!ath12k_ext_mon_get_max_shortpkt_len(curr_config);
 		curr_config->enable = true;
 	} else {
 		curr_config->enable = false;
 		curr_config->level = 0;
 		curr_config->metadata = 0;
+		curr_config->short_pkt_en = false;
 		curr_config->fp_enabled = false;
 		curr_config->mo_enabled = false;
 		curr_config->fpmo_enabled = false;
@@ -2953,6 +3159,12 @@ ath12k_dp_ext_mon_update_rx_config(struct ath12k_pdev_mon_dp *dp_mon_pdev,
 		memset(&curr_config->mo, 0, sizeof(curr_config->mo));
 		memset(&curr_config->fpmo, 0, sizeof(curr_config->fpmo));
 		memset(&curr_config->md, 0, sizeof(curr_config->md));
+		curr_config->fp.data_mpdu_tlv.mcast = 0xF;
+		curr_config->fp.data_mpdu_tlv.ucast = 0xF;
+		curr_config->fp.data_mpdu_tlv.null_frm = 0xF;
+		curr_config->fpmo.data_mpdu_tlv.mcast = 0xF;
+		curr_config->fpmo.data_mpdu_tlv.ucast = 0xF;
+		curr_config->fpmo.data_mpdu_tlv.null_frm = 0xF;
 	}
 	spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
 }
@@ -3109,11 +3321,13 @@ ath12k_dp_ext_mon_add_rx_peers(struct ath12k_pdev_dp *dp_pdev,
 		return -EINVAL;
 	}
 
-	if (rx_ext_mon->peer_count + peer_config->count > ATH12K_EXT_MON_MAX_PEERS) {
+	if (rx_ext_mon->peer_count + peer_config->count >
+	    ATH12K_EXT_MON_NUM_PEERS(dp_pdev->dp->ab)) {
 		spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
 		ath12k_warn(dp_pdev->dp,
 			    "adding %u peers would exceed max %d (current: %u)\n",
-			    peer_config->count, ATH12K_EXT_MON_MAX_PEERS,
+			    peer_config->count,
+			    ATH12K_EXT_MON_NUM_PEERS(dp_pdev->dp->ab),
 			    rx_ext_mon->peer_count);
 		return -EINVAL;
 	}
@@ -3244,6 +3458,12 @@ ath12k_dp_ext_mon_remove_rx_peers(struct ath12k_pdev_dp *dp_pdev,
 		peer_info = &peer_config->peer_info[i];
 		found = false;
 
+		if (is_zero_ether_addr(peer_info->mac_addr)) {
+			ath12k_warn(dp_pdev->dp,
+				    "removing all peers not supported in RX direction\n");
+			continue;
+		}
+
 		list_for_each_entry_safe(peer, tmp, &rx_ext_mon->peer_list, list) {
 			if (ether_addr_equal(peer->peer_info.mac_addr,
 					peer_info->mac_addr) &&
@@ -3321,6 +3541,9 @@ int ath12k_dp_ext_mon_set_peer(struct ath12k_pdev_dp *dp_pdev,
 	case QCA_VENDOR_EXT_MON_DIRECTION_RX:
 		ret = ath12k_dp_ext_mon_set_rx_peer(dp_pdev, &req->peer);
 		break;
+	case QCA_VENDOR_EXT_MON_DIRECTION_TX:
+		ret = ath12k_dp_ext_mon_handle_tx_peer(dp_pdev, &req->peer);
+		break;
 	default:
 		ath12k_warn(dp_pdev->dp, "invalid direction\n");
 		ret = -EINVAL;
@@ -3345,11 +3568,13 @@ int ath12k_dp_ext_mon_set_filter(struct ath12k_pdev_dp *dp_pdev,
 	case QCA_VENDOR_EXT_MON_DIRECTION_RX:
 		ret = ath12k_dp_ext_mon_set_rx_filter(dp_pdev, &req->filter);
 		break;
+	case QCA_VENDOR_EXT_MON_DIRECTION_TX:
+		ret = ath12k_dp_ext_mon_set_tx_filter(dp_pdev, &req->filter);
+		break;
 	default:
 		ath12k_warn(dp_pdev->dp, "invalid direction\n");
 		ret = -EINVAL;
 	}
-
 	return ret;
 }
 
@@ -3407,6 +3632,9 @@ ath12k_dp_ext_mon_get_filter(struct ath12k_pdev_dp *dp_pdev,
 	case QCA_VENDOR_EXT_MON_DIRECTION_RX:
 		ret = ath12k_dp_ext_mon_get_rx_filter(dp_pdev, resp);
 		break;
+	case QCA_VENDOR_EXT_MON_DIRECTION_TX:
+		ret = ath12k_dp_ext_mon_get_tx_filter(dp_pdev, resp);
+		break;
 	default:
 		ath12k_warn(dp_pdev->dp, "invalid direction\n");
 		ret = -EINVAL;
@@ -3421,8 +3649,6 @@ ath12k_dp_ext_mon_get_rx_peer(struct ath12k_pdev_dp *dp_pdev,
 {
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
 	struct ath12k_dp_rx_ext_mon *rx_ext_mon;
-	struct ath12k_dp_ext_mon_peer *peer;
-	u8 count = 0;
 
 	if (unlikely(!dp_mon_pdev)) {
 		ath12k_warn(dp_pdev->dp, "monitor pdev is null\n");
@@ -3437,14 +3663,9 @@ ath12k_dp_ext_mon_get_rx_peer(struct ath12k_pdev_dp *dp_pdev,
 		return -EINVAL;
 	}
 
-	list_for_each_entry(peer, &rx_ext_mon->peer_list, list) {
-		if (count >= ATH12K_EXT_MON_MAX_PEERS)
-			break;
-
-		resp->peer.peer_info[count] = peer->peer_info;
-		count++;
-	}
-	resp->peer.count = count;
+	ath12k_dp_get_ext_mon_peers(dp_pdev,
+				    &rx_ext_mon->peer_list, resp,
+				    &dp_mon_pdev->rx_ext_mon_lock);
 	spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
 
 	return 0;
@@ -3466,6 +3687,9 @@ ath12k_dp_ext_mon_get_peer(struct ath12k_pdev_dp *dp_pdev,
 	switch (req->direction) {
 	case QCA_VENDOR_EXT_MON_DIRECTION_RX:
 		ret = ath12k_dp_ext_mon_get_rx_peer(dp_pdev, resp);
+		break;
+	case QCA_VENDOR_EXT_MON_DIRECTION_TX:
+		ret = ath12k_dp_ext_mon_get_tx_peer(dp_pdev, resp);
 		break;
 	default:
 		ath12k_warn(dp_pdev->dp, "invalid direction\n");
@@ -3574,6 +3798,13 @@ int ath12k_dp_ext_mon_alloc(struct ath12k_pdev_dp *dp_pdev)
 	rx_config = kzalloc(sizeof(*rx_config), GFP_KERNEL);
 	if (!rx_config)
 		return -ENOMEM;
+
+	rx_config->fp.data_mpdu_tlv.mcast = 0xF;
+	rx_config->fp.data_mpdu_tlv.ucast = 0xF;
+	rx_config->fp.data_mpdu_tlv.null_frm = 0xF;
+	rx_config->fpmo.data_mpdu_tlv.mcast = 0xF;
+	rx_config->fpmo.data_mpdu_tlv.ucast = 0xF;
+	rx_config->fpmo.data_mpdu_tlv.null_frm = 0xF;
 
 	INIT_LIST_HEAD(&rx_config->peer_list);
 	spin_lock_init(&dp_mon_pdev->rx_ext_mon_lock);
@@ -3857,3 +4088,27 @@ void ath12k_dp_ext_mon_update_snr(struct hal_rx_mon_ppdu_info *ppdu_info,
 	}
 }
 EXPORT_SYMBOL(ath12k_dp_ext_mon_update_snr);
+
+int
+ath12k_dp_ext_mon_subtype_check(struct ath12k_ext_mon_pkt_config *config,
+				u8 type, u8 sub_type, bool is_mcast)
+{
+	u32 filter = config->filter[type];
+
+	switch (type) {
+	case ATH12K_EXT_MON_FRAME_MGMT:
+	case ATH12K_EXT_MON_FRAME_CTRL:
+		if (filter && ((filter >> sub_type) & 0x1))
+			return 0;
+		break;
+
+	case ATH12K_EXT_MON_FRAME_DATA:
+		if ((is_mcast && (filter & FILTER_DATA_MCAST)) ||
+		    (!is_mcast && (filter & FILTER_DATA_UCAST)))
+			return 0;
+		break;
+	}
+
+	return -EINVAL; /* Failure - filter out the frame */
+}
+EXPORT_SYMBOL(ath12k_dp_ext_mon_subtype_check);

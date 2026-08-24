@@ -883,9 +883,11 @@ ieee80211_rx_monitor(struct ieee80211_local *local, struct sk_buff *origskb,
 	unsigned int min_head_len;
 	bool tid_stats_disable = local->hw.tid_stats_disable;
 	int hw_idx = -1;
+#ifdef CPTCFG_QCN_EXTN
 	struct ieee80211_ext_mon_rx_event_extn rx_event;
 	enum ieee80211_ext_mon_event_type_extn ext_mon_evt =
 				IEEE80211_EXT_MON_POST_RTAP;
+#endif /* CPTCFG_QCN_EXTN */
 
 	if (WARN_ON_ONCE(status->flag & RX_FLAG_RADIOTAP_TLV_AT_END &&
 			 !skb_mac_header_was_set(origskb))) {
@@ -1004,6 +1006,7 @@ ieee80211_rx_monitor(struct ieee80211_local *local, struct sk_buff *origskb,
 			ieee80211_rx_stats_reason(prev_sdata, skb->len,
 						  status->tid,
 						  RX_TOTAL_PKTS);
+#ifdef CPTCFG_QCN_EXTN
 		if ((prev_sdata->flags & IEEE80211_SDATA_EXT_RX_MONITOR_ENABLED) &&
 		    ieee80211_ext_mon_rx_notifier_has_listeners_extn()) {
 			rx_event.mpdu = skb;
@@ -1011,7 +1014,9 @@ ieee80211_rx_monitor(struct ieee80211_local *local, struct sk_buff *origskb,
 			ieee80211_ext_mon_rx_notifier_call_extn(ext_mon_evt,
 								&rx_event);
 			dev_kfree_skb(skb);
-		} else {
+		} else
+#endif /* CPTCFG_QCN_EXTN */
+		{
 			if (!tid_stats_disable)
 				ieee80211_rx_stats_reason(prev_sdata, skb->len,
 							  status->tid,
@@ -1035,6 +1040,7 @@ ieee80211_rx_monitor(struct ieee80211_local *local, struct sk_buff *origskb,
 				ieee80211_rx_stats_reason(prev_sdata, skb->len,
 							  status->tid,
 							  RX_TOTAL_PKTS);
+#ifdef CPTCFG_QCN_EXTN
 			if ((prev_sdata->flags &
 			     IEEE80211_SDATA_EXT_RX_MONITOR_ENABLED) &&
 			    ieee80211_ext_mon_rx_notifier_has_listeners_extn()) {
@@ -1043,7 +1049,9 @@ ieee80211_rx_monitor(struct ieee80211_local *local, struct sk_buff *origskb,
 				ieee80211_ext_mon_rx_notifier_call_extn(ext_mon_evt,
 									&rx_event);
 				dev_kfree_skb(skb);
-			} else {
+			} else
+#endif /* CPTCFG_QCN_EXTN */
+			{
 				if (!tid_stats_disable)
 					ieee80211_rx_stats_reason(prev_sdata, skb->len,
 								  status->tid,
@@ -2909,11 +2917,8 @@ bool ieee80211_is_our_addr(struct ieee80211_sub_if_data *sdata,
 
 	if (sdata->wdev.vap_submode == IEEE80211_EXTN_VAP_SUBMODE_MESH) {
 		sta = sta_info_get_bss(sdata, addr);
-		if (sta) {
-			if (out_link_id && ieee80211_vif_is_mld(&sdata->vif))
-				*out_link_id = 0;
+		if (sta)
 			return true;
-		}
 	}
 #endif /* CPTCFG_QCN_EXTN_MESH_SUPPORT */
 
@@ -2970,6 +2975,7 @@ static bool ieee80211_frame_allowed(struct ieee80211_rx_data *rx, __le16 fc)
 static bool inline ieee80211_netif_rx_ppe(struct ieee80211_rx_data *rx,
 					 struct sk_buff *skb)
 {
+	struct netdev_hw_offload_ops __rcu *offload_ops;
 	struct net_device *dev;
 
 	skb->next = NULL;
@@ -2985,7 +2991,9 @@ static bool inline ieee80211_netif_rx_ppe(struct ieee80211_rx_data *rx,
 		return false;
 
 	dev = skb->dev;
-	if (dev->offload_ops->recv(dev, skb))
+	offload_ops = rcu_dereference(dev->offload_ops);
+	if (offload_ops && offload_ops->recv &&
+	    offload_ops->recv(dev, skb))
 		return true;
 
 	return false;
@@ -3951,6 +3959,9 @@ ieee80211_rx_h_mgmt_check(struct ieee80211_rx_data *rx)
 	struct ieee80211_mgmt *mgmt = (struct ieee80211_mgmt *) rx->skb->data;
 	struct ieee80211_rx_status *status = IEEE80211_SKB_RXCB(rx->skb);
 	bool tid_stats_disable = rx->local->hw.tid_stats_disable;
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	ieee80211_rx_result res;
+#endif
 
 	if (ieee80211_is_s1g_beacon(mgmt->frame_control))
 		return RX_CONTINUE;
@@ -3978,8 +3989,9 @@ ieee80211_rx_h_mgmt_check(struct ieee80211_rx_data *rx)
 	}
 
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
-	if (ieee80211_process_mesh_peer_deauth_disassoc(rx) == RX_DROP_MONITOR)
-		return RX_DROP_MONITOR;
+	res = ieee80211_process_mesh_peer_deauth_disassoc(rx);
+	if (res != RX_CONTINUE)
+		return res;
 	if (ieee80211_process_mesh_peer_beacon(rx) == RX_DROP_MONITOR)
 		return RX_DROP_MONITOR;
 #endif /* CPTCFG_QCN_EXTN_MESH_SUPPORT */

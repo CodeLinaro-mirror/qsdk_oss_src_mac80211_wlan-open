@@ -384,7 +384,17 @@ static void ath12k_regd_update_freq_range(struct ath12k *ar)
 	}
 
 	if (supported_bands & WMI_HOST_WLAN_5GHZ_CAP && ar->supports_6ghz) {
-		freq_low = max(reg_cap->low_5ghz_chan, reg_freq_6g.start_freq);
+		/* For a scan radio the pdev spans legacy 5 GHz and 6 GHz under one
+		 * reg_cap.  reg_freq_6g.start_freq is always >= 5925 MHz, so using
+		 * it as the lower bound clips every legacy-5 GHz channel out of the
+		 * WMI scan list.  Use reg_freq_5g for freq_low on scan radios so
+		 * the full 5+6 GHz range is passed to ath12k_mac_update_freq_range.
+		 */
+		if (ath12k_scan_radio_supported(ar->pdev))
+			freq_low = max(reg_cap->low_5ghz_chan, reg_freq_5g.start_freq);
+		else
+			freq_low = max(reg_cap->low_5ghz_chan, reg_freq_6g.start_freq);
+
 		freq_high = min(reg_cap->high_5ghz_chan, reg_freq_6g.end_freq);
 		ath12k_mac_update_freq_range(ar, freq_low, freq_high);
 	}

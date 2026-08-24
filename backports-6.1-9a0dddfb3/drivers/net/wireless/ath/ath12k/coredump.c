@@ -553,17 +553,24 @@ void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 	struct ath12k_hw_group *ag = ab->ag;
 	bool state = false;
 	bool no_recovery, collect_dump;
+#ifdef CPTCFG_QCN_EXTN
 	bool ath12k_skip_partner_chip_dump =
 		ath12k_cfg_get(ab, ATH12K_CFG_SKIP_PARTNER_CHIP_DUMP);
+#endif /* CPTCFG_QCN_EXTN */
+	struct ath12k_dump_segment *dp_segs = NULL;
+	int dp_seg_cnt = 0;
+	int dp_segs_needed = 0;
 
 	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 		return;
 
+#ifdef CPTCFG_QCN_EXTN
 	if (ath12k_skip_partner_chip_dump &&
 	    ab->recovery_skip_dump) {
 		ab->recovery_skip_dump = false;
 		return;
 	}
+#endif /* CPTCFG_QCN_EXTN */
 
 	if (ab->in_panic)
 		state = true;
@@ -591,6 +598,22 @@ void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 			rem_seg_cnt++;
 	}
 
+	/* Arch-specific coredump segments (e.g. host AST/MSDU/MPDU tables
+	 * on wifi8). The segment count is arch-dependent and can be in the
+	 * hundreds, so the array is sized from a query call and allocated
+	 * on the heap.
+	 */
+	if (ab->dp)
+		dp_segs_needed = ath12k_dp_arch_get_coredump_seg_count(ab->dp);
+	if (dp_segs_needed) {
+		dp_segs = kcalloc(dp_segs_needed, sizeof(*dp_segs), GFP_KERNEL);
+		if (dp_segs)
+			dp_seg_cnt = ath12k_dp_arch_get_coredump_segs(ab->dp, dp_segs,
+								      dp_segs_needed);
+	}
+	ath12k_info(ab, "coredump: dp segs needed=%d collected=%d\n",
+		    dp_segs_needed, dp_seg_cnt);
+
 	num_seg = fw_img->entries + rddm_img->entries + rem_seg_cnt;
 
 #ifdef CPTCFG_ATHDEBUG
@@ -598,11 +621,14 @@ void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 		num_seg += qdss_seg_cnt;
 #endif
 
+	num_seg += dp_seg_cnt;
+
 	len = num_seg * sizeof(*segment);
 
 	segment = kzalloc(len, GFP_NOWAIT);
 	if (!segment) {
 		ath12k_err(ab, " Failed to allocate memory for segment for rddm download\n");
+		kfree(dp_segs);
 		return;
 	}
 
@@ -673,6 +699,16 @@ void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 	}
 #endif
 
+	for (i = 0; i < dp_seg_cnt; i++) {
+		*seg_info = dp_segs[i];
+		seg_info++;
+	}
+	/* Only the descriptor array is freed here; vaddr/addr in each
+	 * entry point to memory owned by the arch layer.
+	 */
+	kfree(dp_segs);
+	dp_segs = NULL;
+
 	num_seg = num_seg - skip_count;
 
 	no_recovery = !ab->fw_recovery_support || ab->in_panic ||
@@ -732,14 +768,18 @@ void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 			return;
 		}
 		/* Send vendor event to notify userspace about coredump is ready*/
+#ifdef CPTCFG_QCN_EXTN
 		ath12k_vendor_send_event(ab,
 				QCA_NL80211_VENDOR_FW_RECOVERY_EVENT_DUMP_READY);
+#endif /* CPTCFG_QCN_EXTN */
 		dev_coredumpm(ab->dev, THIS_MODULE, st, st->total_sz, GFP_KERNEL,
 				ath12k_coredump_pci_read, ath12k_coredump_pci_free);
 		wait_for_completion(&st->dump_done);
 		/* Send vendor event to notify userspace about coredump has completed */
+#ifdef CPTCFG_QCN_EXTN
 		ath12k_vendor_send_event(ab,
 				QCA_NL80211_VENDOR_FW_RECOVERY_EVENT_DUMP_COMPLETED);
+#endif /* CPTCFG_QCN_EXTN */
 
 		vfree(st->elf_hdr);
 		kfree(st->chunks[0].vaddr);
@@ -793,11 +833,12 @@ static ssize_t ath12k_userpd_coredump_read(char *buffer, loff_t offset, size_t c
 
        /* Copy the header first */
         if (offset < header_size) {
-                memcpy(buffer, elfcore, header_size);
-                offset += header_size;
-                bytes_left -= header_size;
-                buffer += header_size;
-                return header_size;
+		copy_size = min_t(size_t, bytes_left, header_size - offset);
+		memcpy(buffer, elfcore, copy_size);
+		offset += copy_size;
+		bytes_left -= copy_size;
+		buffer += copy_size;
+		return copy_size;
         }
 
         while (bytes_left) {
@@ -1019,15 +1060,19 @@ void ath12k_coredump_ahb_collect(struct ath12k_base *ab)
         init_completion(&elf_dump_state.dump_done);
 
 	/* Send vendor event to notify userspace about coredump is ready*/
+#ifdef CPTCFG_QCN_EXTN
 	ath12k_vendor_send_event(ab,
 				 QCA_NL80211_VENDOR_FW_RECOVERY_EVENT_DUMP_READY);
+#endif /* CPTCFG_QCN_EXTN */
         dev_coredumpm(ab->dev, THIS_MODULE, &elf_dump_state, data_size, GFP_KERNEL,
                       ath12k_userpd_coredump_read, ath12k_userpd_coredump_free);
 
         wait_for_completion(&elf_dump_state.dump_done);
 	/* Send vendor event to notify userspace about coredump has completed */
+#ifdef CPTCFG_QCN_EXTN
 	ath12k_vendor_send_event(ab,
 				 QCA_NL80211_VENDOR_FW_RECOVERY_EVENT_DUMP_COMPLETED);
+#endif /* CPTCFG_QCN_EXTN */
         vfree(elf_dump_state.header);
 end:
         ath12k_coredump_free_seg_info(ab, segment, phnum);

@@ -641,7 +641,6 @@ drv_uhr_link_reconfig(struct ieee80211_local *local,
 		      struct ieee80211_sub_if_data *sdata,
 		      struct sta_info *current_sta,
 		      struct sta_info *target_sta,
-		      enum ieee80211_uhr_link_reconfig_action action,
 		      struct ieee80211_uhr_link_reconfig_info *info)
 {
 	int ret = -EOPNOTSUPP;
@@ -657,7 +656,7 @@ drv_uhr_link_reconfig(struct ieee80211_local *local,
 		ret = local->ops->uhr_link_reconfig(&local->hw, &sdata->vif,
 						    &current_sta->sta,
 						    target_sta ? &target_sta->sta : NULL,
-						    action, info);
+						    info);
 	/* trace: TODO add DEFINE_EVENT for drv_uhr_link_reconfig in trace.h */
 	trace_drv_return_int(local, ret);
 	return ret;
@@ -1738,6 +1737,29 @@ static inline void drv_sta_set_4addr(struct ieee80211_local *local,
 	trace_drv_return_void(local);
 }
 
+static inline int drv_sta_set_mapc_params(struct ieee80211_local *local,
+					  struct ieee80211_sub_if_data *sdata,
+					  struct ieee80211_sta *sta,
+					  const struct cfg80211_sta_mapc_params *params)
+{
+	int ret;
+
+	might_sleep();
+	lockdep_assert_wiphy(local->hw.wiphy);
+
+	if (!check_sdata_in_driver(sdata))
+		return -EINVAL;
+
+	if (!local->ops->sta_set_mapc_params)
+		return 0;
+
+	trace_drv_sta_set_mapc_params(local, sdata, sta);
+	ret = local->ops->sta_set_mapc_params(&local->hw, &sdata->vif, sta, params);
+	trace_drv_return_int(local, ret);
+
+	return ret;
+}
+
 static inline void drv_set_dscp_tid(struct ieee80211_local *local,
 				    struct ieee80211_sub_if_data *sdata,
 				    struct cfg80211_qos_map *qos_map,
@@ -2106,6 +2128,19 @@ static inline int drv_set_smd_ctx(struct ieee80211_local *local,
 	lockdep_assert_wiphy(local->hw.wiphy);
 
 	return local->ops->set_smd_ctx(&local->hw, &sdata->vif, sta, st_info);
+}
+
+static inline int drv_get_smd_ctx(struct ieee80211_local *local,
+				  struct ieee80211_sub_if_data *sdata,
+				  struct ieee80211_sta *sta,
+				  struct cfg80211_smd_transition_info *st_info)
+{
+	if (!sdata || !local->ops->get_smd_ctx)
+		return -EOPNOTSUPP;
+
+	lockdep_assert_wiphy(local->hw.wiphy);
+
+	return local->ops->get_smd_ctx(&local->hw, &sdata->vif, sta, st_info);
 }
 
 #endif /* __MAC80211_DRIVER_OPS */

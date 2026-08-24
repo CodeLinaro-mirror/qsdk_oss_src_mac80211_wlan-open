@@ -30,8 +30,11 @@
 #include "hal_qcn9625.h"
 #include "mgmt_rx.h"
 #include "dp_peer.h"
+#include "dp_tx_queue.h"
 #include "../dp_mon.h"
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/wifi8_dp_extn.h"
+#endif /* CPTCFG_QCN_EXTN */
 #include "../cfr.h"
 
 /*
@@ -49,6 +52,8 @@
  */
 #define ATH12K_WIFI8_REGULAR_RX_RING_MASK(_ring) \
 	((ATH12K_DP_RX_REGULAR_RING_MAX > (_ring)) ? BIT(_ring) : 0)
+
+#define ATH12K_WIFI8_BOARD_SIZE		(750 * 1024)
 
 static u8 ath12k_wifi8_hw_qcn9625_mac_from_pdev_id(int pdev_idx)
 {
@@ -290,6 +295,8 @@ static const struct ath12k_hw_ops qcn9625_ops = {
 	.rx_peer_ba_config = ath12k_wifi8_hw_rx_peer_ba_config_qcn9625,
 	.rx_peer_tid_skip_pn_replay = ath12k_wifi8_rx_peer_tid_skip_pn_replay_qcn9625,
 	.dp_peer_migration = ath12k_dp_peer_migration_qcn9625,
+	.is_mgmt_reoq_tid = ath12k_wifi8_hal_is_reo_nonqos_mgmt_tid,
+	.update_tqm_status_ring_tp = ath12k_wifi8_update_tqm_status_ring_tp,
 };
 
 /* Interrupt Grouping is as follows
@@ -299,7 +306,8 @@ static const struct ath12k_hw_ops qcn9625_ops = {
  * Group 9: Rx error, Reo Status, TCL status, TQM status
  * Group 10,11 : Monitor destination(TX,RX)
  * Group 12: Monitor buffer(TX,RX)
- * Group 13: Roaming RX ring
+ * Group 13: Roaming RX ring, TX/RX peer telemetry
+ * Group 14: fw_tqm2sw ring (FW-owned buffer completion WAR)
  * Group 18: UMCMN interrupts
  * Group 19-21: PPE interrupts
  * Group 22: UMAC reset
@@ -433,6 +441,14 @@ static struct ath12k_hw_ring_mask ath12k_wifi8_hw_ring_mask_qcn9625 = {
 		0,
 		ATH12K_RX_PEER_TELEMETRY_RING_MASK
 	},
+	/* Group 14: dedicated interrupt for fw_tqm2sw ring
+	 * (FW-owned buffer completion WAR - HAL_TQM_HOST_STATUS_RING=1)
+	 */
+	.tqm2sw_fw = {
+		0, 0, 0, 0,
+		0, 0, 0, 0,
+		ATH12K_FW_TQM2SW_RING_MASK_0,
+	},
 	/* Group 18 */
 	.umcmn_interrupts = {
 		0, 0, 0, 0,
@@ -483,11 +499,14 @@ static struct ath12k_hw_ring_mask ath12k_wifi8_hw_ring_mask_qcn9625 = {
 
 static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 	{
+		/* fw_tqm2sw WAR: enabled only on Trestles V1 (HW1.0).
+		 * This hardware issue is fixed in V2; do not set on HW2.0.
+		 */
 		.name = "qcn9625 hw1.0",
 		.hw_rev = ATH12K_HW_QCN9625_HW10,
 		.fw = {
 			.dir = "QCN9625/hw1.0",
-			.board_size = 256 * 1024,
+			.board_size = ATH12K_WIFI8_BOARD_SIZE,
 			.cal_offset = 128 * 1024,
 			.m3_loader = ath12k_m3_fw_loader_driver,
 			.unified_fw_image = true,
@@ -576,6 +595,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.support_fse = true,
 		.cumac_support = true,
 		.cumac_chip_priority = 1,
+		.tqm_status_war = true,
 		.support_umcmn_interrupts = UMCMN_INTERRUPT_POLL,
 #ifdef PLATFORM_SDX
 		.alloc_cacheable_memory = false,
@@ -588,7 +608,15 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 			.fft_pad_sz = 0,
 			.summary_pad_sz = 16,
 			.fft_hdr_len = 24,
-			.max_fft_bins = 2048,
+			.max_fft_bins = 1024,
+			.fft_size_min = ATH12K_SPECTRAL_FFT_SIZE_MIN,
+			.fft_size_max = {
+				[ATH12K_SPECTRAL_BW_20MHZ]  = 9,
+				[ATH12K_SPECTRAL_BW_40MHZ]  = 10,
+				[ATH12K_SPECTRAL_BW_80MHZ]  = 11,
+				[ATH12K_SPECTRAL_BW_160MHZ] = 11,
+				[ATH12K_SPECTRAL_BW_320MHZ] = 11,
+			},
 			.fragment_160mhz = true,
 			.supports_320mhz = true,
 		},
@@ -615,13 +643,17 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.board_magic = "QCA-ATH12K-BOARD",
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
 		.peer_del_all_support = true,
+		.tqm2sw_fw_war = true,
 	},
 	{
+		/* fw_tqm2sw WAR: enabled only on Trestles V1 (HW1.0).
+		 * This hardware issue is fixed in V2; do not set on HW2.0.
+		 */
 		.name = "qcn9589 hw1.0",
 		.hw_rev = ATH12K_HW_QCN9589_HW10,
 		.fw = {
 			.dir = "QCN9589/hw1.0",
-			.board_size = 256 * 1024,
+			.board_size = ATH12K_WIFI8_BOARD_SIZE,
 			.cal_offset = 128 * 1024,
 			.m3_loader = ath12k_m3_fw_loader_driver,
 			.unified_fw_image = true,
@@ -705,6 +737,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.support_fse = true,
 		.cumac_support = true,
 		.cumac_chip_priority = 2,
+		.tqm_status_war = true,
 		.support_umcmn_interrupts = UMCMN_INTERRUPT_POLL,
 		.alloc_cacheable_memory = true,
 		.spectral = {
@@ -713,7 +746,15 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 			.fft_pad_sz = 0,
 			.summary_pad_sz = 16,
 			.fft_hdr_len = 24,
-			.max_fft_bins = 2048,
+			.max_fft_bins = 1024,
+			.fft_size_min = ATH12K_SPECTRAL_FFT_SIZE_MIN,
+			.fft_size_max = {
+				[ATH12K_SPECTRAL_BW_20MHZ]  = 9,
+				[ATH12K_SPECTRAL_BW_40MHZ]  = 10,
+				[ATH12K_SPECTRAL_BW_80MHZ]  = 11,
+				[ATH12K_SPECTRAL_BW_160MHZ] = 11,
+				[ATH12K_SPECTRAL_BW_320MHZ] = 11,
+			},
 			.fragment_160mhz = true,
 			.supports_320mhz = true,
 		},
@@ -740,13 +781,14 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.board_magic = "QCA-ATH12K-BOARD",
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
 		.peer_del_all_support = true,
+		.tqm2sw_fw_war = true,
 	},
 	{
 		.name = "qcn9625 hw2.0",
 		.hw_rev = ATH12K_HW_QCN9625_HW20,
 		.fw = {
 			.dir = "QCN9625/hw1.0",
-			.board_size = 256 * 1024,
+			.board_size = ATH12K_WIFI8_BOARD_SIZE,
 			.cal_offset = 128 * 1024,
 			.m3_loader = ath12k_m3_fw_loader_driver,
 			.unified_fw_image = true,
@@ -763,7 +805,6 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.ce_count = 16,
 		.target_ce_config = ath12k_wifi8_target_ce_config_wlan_qcn9625,
 		.target_ce_count = 13,
-		/* TODO: CP: update CE maps and definitions later when available */
 		.svc_to_ce_map =
 			ath12k_wifi8_target_service_to_ce_map_wlan_qcn9625,
 		.svc_to_ce_map_len = 21,
@@ -834,15 +875,28 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.support_fse = true,
 		.cumac_support = true,
 		.cumac_chip_priority = 1,
+		.tqm_status_war = false,
 		.support_umcmn_interrupts = UMCMN_INTERRUPT_ENABLE,
+#ifdef PLATFORM_SDX
+		.alloc_cacheable_memory = false,
+#else
 		.alloc_cacheable_memory = true,
+#endif
 		.spectral = {
 			.fft_sz = 7,
 			.fft_bin_sz = 1,
 			.fft_pad_sz = 0,
 			.summary_pad_sz = 16,
 			.fft_hdr_len = 24,
-			.max_fft_bins = 2048,
+			.max_fft_bins = 1024,
+			.fft_size_min = ATH12K_SPECTRAL_FFT_SIZE_MIN,
+			.fft_size_max = {
+				[ATH12K_SPECTRAL_BW_20MHZ]  = 9,
+				[ATH12K_SPECTRAL_BW_40MHZ]  = 10,
+				[ATH12K_SPECTRAL_BW_80MHZ]  = 11,
+				[ATH12K_SPECTRAL_BW_160MHZ] = 11,
+				[ATH12K_SPECTRAL_BW_320MHZ] = 11,
+			},
 			.fragment_160mhz = true,
 			.supports_320mhz = true,
 		},
@@ -869,10 +923,12 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.board_magic = "QCA-ATH12K-BOARD",
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
 		.peer_del_all_support = true,
+		.tqm2sw_fw_war = false,
 	},
 };
 
-static bool ath12k_wifi8_mac_is_mgmt_action_link_agnostic(struct sk_buff *skb)
+static bool ath12k_wifi8_mac_is_mgmt_action_link_agnostic(struct ath12k_base *ab,
+							  struct sk_buff *skb)
 {
 	struct ieee80211_mgmt *mgmt = (struct ieee80211_mgmt *)skb->data;
 	const u8 *buf = (u8 *)&mgmt->u.action;
@@ -901,6 +957,17 @@ static bool ath12k_wifi8_mac_is_mgmt_action_link_agnostic(struct sk_buff *skb)
 	action_code = *buf++;
 
 	switch (category) {
+	case WLAN_CATEGORY_SPECTRUM_MGMT:
+		if (action_code == WLAN_ACTION_SPCT_CHL_SWITCH) {
+			bool ml_link = ath12k_mgmt_has_ml_link_info_ie(ab, skb);
+
+			ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
+					 "%s spectrum-mgmt csa link agnostic %s\n",
+					 __func__, ml_link ? "set" : "clear");
+			return ml_link;
+		}
+		break;
+
 	case WLAN_CATEGORY_PROTECTED_EHT:
 		switch (action_code) {
 		case WLAN_PROTECTED_EHT_ACTION_ML_OP_UPDATE_REQ:
@@ -952,7 +1019,8 @@ static bool ath12k_wifi8_mac_is_mgmt_action_link_agnostic(struct sk_buff *skb)
 /* This function should be called only for mgmt frames to a Multi-Link device,
  * after meeting master link eligibility. Hence, such sanity checks are skipped.
  */
-static bool ath12k_wifi8_mac_is_mgmt_link_agnostic(struct sk_buff *skb)
+static bool ath12k_wifi8_mac_is_mgmt_link_agnostic(struct ath12k_base *ab,
+						   struct sk_buff *skb)
 {
 	struct ieee80211_mgmt *mgmt = (struct ieee80211_mgmt *)skb->data;
 	u16 fc = le16_to_cpu(mgmt->frame_control);
@@ -962,7 +1030,7 @@ static bool ath12k_wifi8_mac_is_mgmt_link_agnostic(struct sk_buff *skb)
 	case IEEE80211_STYPE_DISASSOC:
 		return true;
 	case IEEE80211_STYPE_ACTION:
-		return ath12k_wifi8_mac_is_mgmt_action_link_agnostic(skb);
+		return ath12k_wifi8_mac_is_mgmt_action_link_agnostic(ab, skb);
 	default:
 		break;
 	}
@@ -988,7 +1056,8 @@ ath12k_wifi8_mac_get_tx_link(struct ieee80211_sta *sta, struct ieee80211_vif *vi
 
 	/* Use the link id passed or the first available link */
 	if (!sta) {
-		if (link != IEEE80211_LINK_UNSPECIFIED)
+		if (link != IEEE80211_LINK_UNSPECIFIED &&
+		    (ahvif->links_map & BIT(link)))
 			return link;
 
 		return ffs(ahvif->links_map) - 1;
@@ -1081,7 +1150,7 @@ ath12k_wifi8_mac_get_tx_link(struct ieee80211_sta *sta, struct ieee80211_vif *vi
 	 * addressed mgmt frame can be transmitted on master link after peer assoc.
 	 */
 	if (ahsta->state <= IEEE80211_STA_ASSOC ||
-	    !ath12k_wifi8_mac_is_mgmt_link_agnostic(skb))
+	    !ath12k_wifi8_mac_is_mgmt_link_agnostic(ab, skb))
 		goto skip_link_agnostic_tx;
 
 	ATH12K_SKB_CB(skb)->flags |= ATH12K_SKB_MGMT_LINK_AGNOSTIC;
@@ -1142,11 +1211,11 @@ skip_link_agnostic_tx:
  *
  * Returns: 0 on success, negative on error
  */
-static int ath12k_wifi8_tx_setup_link(struct ieee80211_vif *vif,
-				      struct ieee80211_sta *sta,
-				      struct ieee80211_tx_info *info,
-				      struct sk_buff *skb,
-				      u8 *link_id)
+int ath12k_wifi8_tx_setup_link(struct ieee80211_vif *vif,
+			       struct ieee80211_sta *sta,
+			       struct ieee80211_tx_info *info,
+			       struct sk_buff *skb,
+			       u8 *link_id)
 {
 	u32 info_flags = info->flags;
 
@@ -1292,7 +1361,9 @@ static void ath12k_wifi8_mac_op_tx(struct ieee80211_hw *hw,
 	struct ieee80211_sta *sta = control->sta;
 	struct ath12k_link_sta *arsta = NULL;
 	struct ath12k_sta *ahsta = NULL;
+#ifdef CPTCFG_QCN_EXTN
 	u32 info_flags = info->flags;
+#endif /* CPTCFG_QCN_EXTN */
 	struct ieee80211_tx_info info_tx;
 	struct ath12k_dp_vif *dp_vif = &ahvif->dp_vif;
 	bool is_mcast = false, is_eth = false, is_data = false;
@@ -1305,6 +1376,7 @@ static void ath12k_wifi8_mac_op_tx(struct ieee80211_hw *hw,
 	bool htt_mesh;
 	int ret;
 	struct ath12k_dp_peer *dp_peer = NULL;
+	struct ath12k *ar = NULL;
 
 	/* Check queue stop.*/
 	if (unlikely(ah->queue_stop)) {
@@ -1369,7 +1441,15 @@ static void ath12k_wifi8_mac_op_tx(struct ieee80211_hw *hw,
 
 	/* Get link virtual interface.*/
 	arvif = rcu_dereference(ahvif->link[link_id]);
-	if (!arvif || !arvif->ar) {
+	if (!arvif) {
+		ath12k_mac_ieee80211_free_txskb(hw, skb, NULL, sta, dp_vif,
+						DP_TX_ENQ_DROP_INV_ARVIF,
+						0, false);
+		return;
+	}
+
+	ar = arvif->ar;
+	if (!ar) {
 		ath12k_mac_ieee80211_free_txskb(hw, skb, NULL, sta, dp_vif,
 						DP_TX_ENQ_DROP_INV_ARVIF,
 						0, false);
@@ -1377,7 +1457,7 @@ static void ath12k_wifi8_mac_op_tx(struct ieee80211_hw *hw,
 	}
 
 	/* Setup SKB control block */
-	skb_cb->u.ar = arvif->ar;
+	skb_cb->u.ar = ar;
 	skb_cb->link_id = link_id;
 	skb_cb->vif = vif;
 
@@ -1446,12 +1526,63 @@ static void ath12k_wifi8_mac_op_sta_set_4addr(struct ieee80211_hw *hw,
 	}
 }
 
+static int ath12k_wifi8_smd_ensure_tx_tid_queues(struct ath12k_base *ab,
+						 struct ath12k_dp *dp,
+						 struct ath12k_dp_hw *dp_hw,
+						 const u8 *peer_addr, u8 tid)
+{
+	struct ath12k_dp_tx_queue_metadata tx_queue_params = {};
+	struct ath12k_dp_peer *dp_peer;
+	int ret = 0;
+
+	if (ATH12K_DEFAULT_TID_MAP & BIT(tid))
+		return 0;
+
+	/* peer_hash_lock is dropped before ath12k_peer_alloc_dynamic_queue()
+	 * since that acquires tx_q_lock internally.  The caller holds wiphy_lock
+	 * (asserted in ath12k_wifi8_mac_op_set_smd_ctx), which serialises peer
+	 * removal, so dp_peer remains valid across the lock gap.
+	 */
+	spin_lock_bh(&dp_hw->peer_hash_lock);
+	dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, peer_addr);
+	if (!dp_peer) {
+		spin_unlock_bh(&dp_hw->peer_hash_lock);
+		ath12k_warn(ab, "SMD DL alloc: peer %pM not found for tid %u\n",
+			    peer_addr, tid);
+		return -ENOENT;
+	}
+	spin_unlock_bh(&dp_hw->peer_hash_lock);
+
+	tx_queue_params.tidno = tid;
+	tx_queue_params.encap_type = dp_peer->tx_encap_type;
+
+	tx_queue_params.flow_type = HTT_TID_MSDUQ_NONUDP;
+	ret = ath12k_peer_alloc_dynamic_queue(dp->dp_hw_grp, dp_peer,
+					      &tx_queue_params);
+	if (ret) {
+		ath12k_err(ab,
+			   "SMD DL alloc: failed to alloc non-udp tx queue for peer %pM tid %u err %d\n",
+			   peer_addr, tid, ret);
+		return ret;
+	}
+
+	tx_queue_params.flow_type = HTT_TID_MSDUQ_UDP;
+	ret = ath12k_peer_alloc_dynamic_queue(dp->dp_hw_grp, dp_peer,
+					      &tx_queue_params);
+	if (ret)
+		ath12k_err(ab,
+			   "SMD DL alloc: failed to alloc udp tx queue for peer %pM tid %u err %d\n",
+			   peer_addr, tid, ret);
+	return ret;
+}
+
 static int ath12k_wifi8_mac_op_set_smd_ctx(struct ieee80211_hw *hw,
 					   struct ieee80211_vif *vif,
 					   struct ieee80211_sta *sta,
 					   struct cfg80211_smd_transition_info *st_info)
 {
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
+	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
 	struct ath12k_dp_hw *dp_hw = &ahvif->ah->dp_hw;
 	struct ieee80211_smd_ctx *ctx = st_info->ctx;
 	struct ath12k_smd_ctx *drv_ctx __free(kfree) = NULL; /* to parse vendor ctx */
@@ -1504,6 +1635,9 @@ static int ath12k_wifi8_mac_op_set_smd_ctx(struct ieee80211_hw *hw,
 				 tid, rx_tid.ssn, rx_tid.pn_len,
 				 rx_tid.pn_len, ctx->ul.pn[tid], rx_tid.ba_win_sz);
 
+		/* for WMI smd roam config cmd */
+		ahsta->smd_info.rx_ba_buf_size[tid] = rx_tid.ba_win_sz;
+
 		ret = ath12k_dp_arch_peer_rx_tid_reo_update_for_smd(dp, dp_hw, sta->addr,
 								    &rx_tid);
 		if (ret)
@@ -1532,12 +1666,40 @@ static int ath12k_wifi8_mac_op_set_smd_ctx(struct ieee80211_hw *hw,
 				 tid, tx_tid.ssn, ctx->pn_len,
 				 ctx->pn_len, tx_tid.pn_number, ba_buf_size);
 
+		/*
+		 * Skip TQM queue setup, TQM SN/PN update and WMI roam config
+		 * state for TIDs with no active BA session on the SAP
+		 * (ba_buf_size == 0).  There is no queue to seed and sending
+		 * zero ba_window_size to firmware for these TIDs is spurious.
+		 */
+		if (!ba_buf_size)
+			continue;
+
+		ret = ath12k_wifi8_smd_ensure_tx_tid_queues(ab, dp, dp_hw,
+							    sta->addr, tid);
+		if (ret) {
+			ath12k_err(ab,
+				   "Failed to ensure TX queues for SMD DL ctx peer %pM tid: %d err: %d",
+				   sta->addr, tid, ret);
+			continue;
+		}
+
 		ret = ath12k_dp_arch_peer_tx_tid_update_for_smd(dp, dp_hw, sta->addr,
 								&tx_tid);
-		if (ret)
+		if (ret) {
 			ath12k_err(ab,
 				   "Failed to set SMD DL ctx for %pM tid: %d err: %d",
 				   sta->addr, tid, ret);
+			continue;
+		}
+
+		/* for WMI smd roam config cmd — written only after TQM is
+		 * seeded so firmware receives state that reflects what TQM
+		 * was actually programmed with.
+		 */
+		ahsta->smd_info.sn[tid] = tx_tid.ssn + tx_tid.lsn_offset;
+		ahsta->smd_info.lsn_offset[tid] = tx_tid.lsn_offset;
+		ahsta->smd_info.tx_ba_buf_size[tid] = ba_buf_size;
 	}
 
 	/* Vendor context */
@@ -1553,6 +1715,108 @@ static int ath12k_wifi8_mac_op_set_smd_ctx(struct ieee80211_hw *hw,
 	}
 
 	return 0;
+}
+
+static int ath12k_wifi8_mac_op_get_smd_ctx(struct ieee80211_hw *hw,
+					   struct ieee80211_vif *vif,
+					   struct ieee80211_sta *sta,
+					   struct cfg80211_smd_transition_info *st_info)
+{
+	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
+	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
+	struct ath12k_smd_info *smd_info = &ahsta->smd_info;
+	struct ieee80211_smd_ctx *ctx = st_info->ctx;
+	struct ath12k_smd_ctx_req *req = NULL;
+	struct ath12k_link_vif *arvif;
+	struct ath12k_base *ab;
+
+	lockdep_assert_wiphy(hw->wiphy);
+
+	arvif = ath12k_get_arvif_from_link_id(ahvif, ahvif->deflink.link_id);
+	if (!arvif)
+		return -EINVAL;
+
+	ab = arvif->ar->ab;
+
+	if (!sta->smd_params.smd_enabled) {
+		ath12k_err(ab, "Cannot fetch SMD context from a non-SMD STA %pM",
+			   sta->addr);
+		return -EINVAL;
+	}
+
+	req = kzalloc(sizeof(*req), GFP_KERNEL);
+	if (!req)
+		return -ENOMEM;
+
+	/* Set common context validity bits */
+	set_bit(ATH12K_SMD_CTX_VALID_PN, req->ctx.valid_ctx_bmap);
+	set_bit(ATH12K_SMD_CTX_VALID_BA_PARAMS, req->ctx.valid_ctx_bmap);
+
+	if (test_bit(IEEE80211_SMD_CTX_VALID_DL_SN, ctx->valid_ctx_bmap))
+		set_bit(ATH12K_SMD_CTX_VALID_DL_SN, req->ctx.valid_ctx_bmap);
+	if (test_bit(IEEE80211_SMD_CTX_VALID_UL_SN, ctx->valid_ctx_bmap))
+		set_bit(ATH12K_SMD_CTX_VALID_UL_SN, req->ctx.valid_ctx_bmap);
+
+	spin_lock_init(&req->lock);
+	req->mmpdu = NULL;
+	req->state = SMD_CTX_INIT;
+	req->type = (u8)st_info->type;
+	req->vif = vif;
+	req->handler = ath12k_smd_update_ctx_for_user;
+	req->enqueued_ts = ktime_get();
+	memcpy(req->sta_addr, sta->addr, ETH_ALEN);
+	bitmap_copy(req->ctx.dl.valid_tid_bmap, ctx->dl.valid_tid_bmap,
+		    IEEE80211_MAX_NUM_TIDS);
+	bitmap_copy(req->ctx.ul.valid_tid_bmap, ctx->ul.valid_tid_bmap,
+		    IEEE80211_MAX_NUM_TIDS);
+	req->exec_via_target = true;
+
+	spin_lock_bh(&smd_info->smd_lock);
+
+	if (st_info->type == CFG80211_ST_TYPE_PREP &&
+	    !ath12k_smd_reuse_sta_session_prep_ctx(smd_info, req)) {
+		ath12k_dbg(ab, ATH12K_DBG_SMD, "Using cached ST Prep context for %pM",
+			   sta->addr);
+		spin_unlock_bh(&smd_info->smd_lock);
+		/* synchronous cache-hit: fill caller's ctx and return 0 */
+		ath12k_smd_ctx_to_ieee80211_ctx(&req->ctx, ctx);
+		kfree(req);
+		return 0;
+	}
+
+	if (!smd_info->ctx_inflight) {
+		int ret;
+
+		rcu_read_lock();
+		arvif = rcu_dereference(ahsta->ahvif->link[ahsta->assoc_link_id]);
+		if (!arvif || !arvif->ar) {
+			rcu_read_unlock();
+			spin_unlock_bh(&smd_info->smd_lock);
+			kfree(req);
+			return -ENOLINK;
+		}
+
+		ret = ath12k_smd_post_sta_session_ctx_req(ahsta->ahvif, arvif, req,
+							  smd_info);
+		ath12k_dbg(ab, ATH12K_DBG_SMD,
+			   "Posted user ctx request (0x%*pb) for %pM (ret: %d)",
+			   ATH12K_SMD_CTX_NUM_VALID_CTX, req->ctx.valid_ctx_bmap,
+			   sta->addr, ret);
+		rcu_read_unlock();
+
+		if (ret) {
+			spin_unlock_bh(&smd_info->smd_lock);
+			kfree(req);
+			return ret;
+		}
+	} else {
+		list_add_tail(&req->list, &smd_info->ctx_list);
+		ath12k_smd_ctx_queue_work(&smd_info->ctx_wk);
+	}
+
+	spin_unlock_bh(&smd_info->smd_lock);
+
+	return -EINPROGRESS;
 }
 
 static const struct ieee80211_ops ath12k_ops_wifi8 = {
@@ -1577,6 +1841,7 @@ static const struct ieee80211_ops ath12k_ops_wifi8 = {
 	.set_key                        = ath12k_mac_op_set_key,
 	.set_rekey_data	                = ath12k_mac_op_set_rekey_data,
 	.sta_state                      = ath12k_mac_op_sta_state,
+	.sta_set_mapc_params            = ath12k_mac_op_sta_set_mapc_params,
 	.sta_set_txpwr			= ath12k_mac_op_sta_set_txpwr,
 	.link_sta_rc_update		= ath12k_mac_op_link_sta_rc_update,
 	.conf_tx                        = ath12k_mac_op_conf_tx,
@@ -1639,6 +1904,10 @@ static const struct ieee80211_ops ath12k_ops_wifi8 = {
 	.uhr_mode_update		= ath12k_mac_op_sta_uhr_mode_update,
 	.critical_update		= ath12k_mac_op_critical_update,
 	.set_smd_ctx			= ath12k_wifi8_mac_op_set_smd_ctx,
+	.get_smd_ctx			= ath12k_wifi8_mac_op_get_smd_ctx,
+#ifdef CPTCFG_QCN_EXTN
+	.set_muedca_mode		= ath12k_mac_set_muedca_mode,
+#endif /* CPTCFG_QCN_EXTN */
 };
 
 /*
@@ -1668,8 +1937,8 @@ ath12k_mem_profile_based_param_wifi8[] = {
 			.tx_comp_ppeds_ring_size	= 32768,
 			.num_pool_tx_desc		= 32768,
 			.ppe_wbm2sw_ring_size		= 32768,
-			.rxdma_monitor_buf_ring_size	= 8192,
-			.rxdma_monitor_dst_ring_size	= 8192,
+			.rxdma_monitor_buf_ring_size	= 4096,
+			.rxdma_monitor_dst_ring_size	= 1024,
 			.smart_mon_filter_default	= DP_SMART_MON_PROFILE_1G,
 			.mon_num_ppdu_desc		= 128,
 			.rx_desc_count			= 24576,
@@ -1678,6 +1947,11 @@ ath12k_mem_profile_based_param_wifi8[] = {
 			.ppeds_hotlist_len_max		= 1024,
 			.dp_num_clients_max		= 64,
 			.dp_mon_status_buf		= 320,
+			.tx_monitor_buf_ring_size	= 8192,
+			.tx_monitor_buf_ring_fill_lvl	= 8192,
+			.tx_monitor_dst_ring_size	= 8192,
+			.tx_monitor_num_ppdu_desc	= 128,
+			.tx_monitor_num_status_buf	= 320,
 			.reo_dst_ring_size		= { 8192, 8192, 8192,
 							    8192, 8192 },
 			.tcl_data_ring_size		= { 2048, 2048, 2048,
@@ -1718,7 +1992,12 @@ ath12k_mem_profile_based_param_wifi8[] = {
 			.num_pool_ppeds_tx_desc		= 0x8000,
 			.ppeds_hotlist_len_max		= 1024,
 			.dp_num_clients_max		= 64,
-			.dp_mon_status_buf		= 320,
+			.dp_mon_status_buf		= 200,
+			.tx_monitor_buf_ring_size	= 256,
+			.tx_monitor_buf_ring_fill_lvl	= 256,
+			.tx_monitor_dst_ring_size	= 256,
+			.tx_monitor_num_ppdu_desc	= 8,
+			.tx_monitor_num_status_buf	= 32,
 			.reo_dst_ring_size		= { 8192, 8192, 8192,
 							    8192, 8192 },
 			.tcl_data_ring_size		= { 2048, 2048, 2048,
@@ -1760,6 +2039,11 @@ ath12k_mem_profile_based_param_wifi8[] = {
 			.ppeds_hotlist_len_max		= 256,
 			.dp_num_clients_max		= 56,
 			.dp_mon_status_buf		= 20,
+			.tx_monitor_buf_ring_size	= 256,
+			.tx_monitor_buf_ring_fill_lvl	= 256,
+			.tx_monitor_dst_ring_size	= 256,
+			.tx_monitor_num_ppdu_desc	= 8,
+			.tx_monitor_num_status_buf	= 32,
 			.reo_dst_ring_size		= { 2048, 2048, 2048, 512, 512 },
 			.tcl_data_ring_size		= { 512, 512, 512, 128, 128 },
 			.tx_compl_ring_size		= { 8192, 8192, 8192,

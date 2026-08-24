@@ -608,6 +608,8 @@ use_default_name:
 	INIT_LIST_HEAD(&rdev->bss_list);
 	INIT_LIST_HEAD(&rdev->sched_scan_req_list);
 	wiphy_work_init(&rdev->scan_done_wk, __cfg80211_scan_done);
+	wiphy_work_init(&rdev->parallel_scan_done_wk,
+			cfg80211_parallel_scan_done_work);
 	INIT_DELAYED_WORK(&rdev->dfs_update_channels_wk,
 			  cfg80211_dfs_channels_update_work);
 	device_initialize(&rdev->wiphy.dev);
@@ -1469,6 +1471,19 @@ static void _cfg80211_unregister_wdev(struct wireless_dev *wdev,
 				bgr->wdev = NULL;
 		}
 	}
+
+	if (wdev->iftype == NL80211_IFTYPE_AP) {
+		struct cfg80211_smd_get_ctx_pending *pending, *tmp;
+
+		spin_lock_bh(&wdev->smd_get_ctx_lock);
+		list_for_each_entry_safe(pending, tmp,
+					 &wdev->smd_get_ctx_pending_list, list) {
+			list_del(&pending->list);
+			kfree(pending);
+		}
+		spin_unlock_bh(&wdev->smd_get_ctx_lock);
+	}
+
 	wdev->connected = false;
 }
 
@@ -1586,7 +1601,10 @@ void cfg80211_init_wdev(struct wireless_dev *wdev)
 	INIT_LIST_HEAD(&wdev->mgmt_registrations);
 	INIT_LIST_HEAD(&wdev->pmsr_list);
 	spin_lock_init(&wdev->pmsr_lock);
+	spin_lock_init(&wdev->ttlm_expec_dur_lock);
 	INIT_WORK(&wdev->pmsr_free_wk, cfg80211_pmsr_free_wk);
+	spin_lock_init(&wdev->smd_get_ctx_lock);
+	INIT_LIST_HEAD(&wdev->smd_get_ctx_pending_list);
 
 #ifdef CPTCFG_CFG80211_WEXT
 #ifdef CPTCFG_WIRELESS_EXT
@@ -1733,9 +1751,18 @@ static int cfg80211_netdev_notifier_call(struct notifier_block *nb,
 		wiphy_lock(&rdev->wiphy);
 		cfg80211_update_iface_num(rdev, wdev->iftype, -1);
 		if (rdev->scan_req && rdev->scan_req->wdev == wdev) {
+			/* Suppress the WARN_ON when parallel scans are still
+			 * in progress: the normal scan's completion is
+			 * asynchronous and races with NETDEV_DOWN, so
+			 * notified may legitimately still be false here.
+			 */
 			if (WARN_ON(!rdev->scan_req->notified &&
 				    (!rdev->int_scan_req ||
-				     !rdev->int_scan_req->notified)))
+				     !rdev->int_scan_req->notified) &&
+				    !rdev->parallel_scan_reqs[0] &&
+				    !rdev->parallel_scan_reqs[1] &&
+				    !rdev->parallel_scan_reqs[2] &&
+				    !rdev->parallel_scan_reqs[3]))
 				rdev->scan_req->info.aborted = true;
 			___cfg80211_scan_done(rdev, false);
 		}
@@ -1770,8 +1797,10 @@ static int cfg80211_netdev_notifier_call(struct notifier_block *nb,
 				struct mesh_setup *setup;
 
 				setup = kzalloc(sizeof(*setup), GFP_KERNEL);
-				if (!setup)
+				if (!setup) {
+					wiphy_unlock(&rdev->wiphy);
 					return notifier_from_errno(-ENOMEM);
+				}
 				memcpy(setup, &default_mesh_setup,
 				       sizeof(*setup));
 				 /* back compat only needed for mesh_id */

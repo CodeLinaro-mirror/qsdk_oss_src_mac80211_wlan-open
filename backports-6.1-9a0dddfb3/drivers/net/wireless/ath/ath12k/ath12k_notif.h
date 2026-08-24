@@ -14,7 +14,9 @@
 
 /**
  * enum ath12k_event_type - WDI event types
- * @ATH12K_EVENT_PPDU_RX_COMPLETE: RX PPDU completion
+ * @ATH12K_EVENT_PPDU_RX_COMPLETE: RX PPDU completion. Notifies the PPDU to
+ * listeners even if peer id is invalid when CFR RCC filter is enabled. Listers
+ * to filter out the PPDU if not intended to process PPDU for invalid peer.
  * @ATH12K_EVENT_PPDU_TX_COMPLETE: TX PPDU completion
  * @ATH12K_EVENT_FSE_UPDATE: Flow/Search/Steering Engine update event
  */

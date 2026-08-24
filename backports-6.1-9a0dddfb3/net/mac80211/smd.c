@@ -64,7 +64,7 @@ void ieee80211_smd_prep_timeout_work(struct wiphy *wiphy,
 		   target->target_mld_addr);
 
 	ieee80211_smd_prep_reset_target(sdata, target,
-					WLAN_STATUS_UNSPECIFIED_FAILURE, 0);
+					WLAN_STATUS_UNSPECIFIED_FAILURE, 0, false);
 }
 
 void ieee80211_smd_prep_init(struct ieee80211_sub_if_data *sdata)
@@ -86,6 +86,60 @@ void ieee80211_smd_prep_init(struct ieee80211_sub_if_data *sdata)
 					ieee80211_smd_prep_timeout_work);
 		wiphy_delayed_work_init(&ifmgd->prep_targets[i].exec_timeout_work,
 					ieee80211_smd_exec_timeout_work);
+	}
+}
+
+void ieee80211_smd_cancel_all_targets(struct ieee80211_sub_if_data *sdata)
+{
+	struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
+	int i;
+
+	lockdep_assert_wiphy(sdata->local->hw.wiphy);
+
+	if (!ifmgd->prep_targets)
+		return;
+
+	for (i = 0; i < ifmgd->max_prepared_targets; i++) {
+		struct ieee80211_smd_prep_target *target = &ifmgd->prep_targets[i];
+
+		if (!target->target_sta && !target->sta_inserted &&
+		    !target->assoc_data && !target->drv_info)
+			continue;
+
+		if (target->prep_activated) {
+			struct wiphy_delayed_work *tailroom_delayed_wk;
+			struct wiphy_work *tailroom_wk;
+
+			/*
+			 * Reverse the sdata->link[] remapping done by
+			 * assoc_success(): restore old SAP containers back into
+			 * sdata->link[] and NULL target->old_links[].
+			 *
+			 * After rollback:
+			 *  - sdata->link[sap_lid] = old SAP container (valid,
+			 *    referenced by valid_links → freed + keys cleaned by
+			 *    ieee80211_vif_set_links(0,0) in set_disassoc)
+			 *  - target->new_links[tap_lid] = TAP container (freed
+			 *    by prep_reset_target → free_target_links below)
+			 *  - target->old_links[] = all NULL (cleared by rollback)
+			 */
+			ieee80211_smd_rollback_link_assign(sdata, target);
+
+			sdata->vif.active_links  = sdata->vif.valid_links;
+			sdata->vif.dormant_links = 0;
+
+			tailroom_delayed_wk = &sdata->dec_tailroom_needed_wk;
+			tailroom_wk = &sdata->dec_tailroom_needed_wk.work;
+
+			wiphy_delayed_work_cancel(sdata->local->hw.wiphy,
+						  tailroom_delayed_wk);
+			ieee80211_delayed_tailroom_dec(sdata->local->hw.wiphy,
+						       tailroom_wk);
+		}
+
+		ieee80211_smd_prep_reset_target(sdata, target,
+						WLAN_STATUS_UNSPECIFIED_FAILURE,
+						0, true);
 	}
 }
 
@@ -213,14 +267,79 @@ int ieee80211_smd_find_sap_lid_for_band(struct ieee80211_sub_if_data *sdata,
 	return -1;
 }
 
-/* Build the tap_to_sap_link[] and sap_to_tap_link[] maps for a prep target
- * by matching each TAP link's BSS band against current SAP link operating bands.
- * Initializes to identity if already correct (same-links map); sets link_id_remap=true
- * only when the mapping is non-trivial.
+/*
+ * ieee80211_smd_upgrade_link_slots - assign SAP slots for SLO-to-MLO upgrade
+ *
+ * Called internally by ieee80211_smd_build_link_id_remap after the
+ * band-matched mapping pass.  Assigns free SAP slots for any TAP link that
+ * had no band-matched SAP counterpart (tap_to_sap_link == -1) and expands
+ * the VIF so that all downstream paths see a fully-populated mapping.
+ *
+ * No-op when all prepared TAP links already have a band-matched SAP slot.
  */
-void
-ieee80211_smd_build_link_id_remap(struct ieee80211_sub_if_data *sdata,
-				  struct ieee80211_smd_prep_target *target)
+static int ieee80211_smd_upgrade_link_slots(struct ieee80211_sub_if_data *sdata,
+					    struct ieee80211_smd_prep_target *target)
+{
+	int tap_link_id, sap_link_id;
+	u16 used_sap_slots = sdata->vif.valid_links;
+	u16 upgrade_sap_slots = 0;
+
+	lockdep_assert_wiphy(sdata->local->hw.wiphy);
+
+	for (tap_link_id = 0; tap_link_id < IEEE80211_MLD_MAX_NUM_LINKS; tap_link_id++) {
+		if (!(target->prepared_links_mask & BIT(tap_link_id)))
+			continue;
+		if (target->tap_to_sap_link[tap_link_id] >= 0)
+			continue;
+
+		sap_link_id = ffz(used_sap_slots);
+		if (sap_link_id >= IEEE80211_MLD_MAX_NUM_LINKS) {
+			sdata_info(sdata,
+				   "smd: no free SAP slot for tap link %d\n",
+				   tap_link_id);
+			return -ENOSPC;
+		}
+
+		target->tap_to_sap_link[tap_link_id] = sap_link_id;
+		target->sap_to_tap_link[sap_link_id] = tap_link_id;
+		used_sap_slots |= BIT(sap_link_id);
+		upgrade_sap_slots |= BIT(sap_link_id);
+		if (tap_link_id != sap_link_id)
+			target->link_id_remap = true;
+	}
+
+	if (!upgrade_sap_slots)
+		return 0;
+
+	for (tap_link_id = 0; tap_link_id < IEEE80211_MLD_MAX_NUM_LINKS; tap_link_id++) {
+		if (!(upgrade_sap_slots & BIT(target->tap_to_sap_link[tap_link_id])))
+			continue;
+		sap_link_id = target->tap_to_sap_link[tap_link_id];
+		ether_addr_copy(sdata->wdev.links[sap_link_id].addr,
+				target->assoc_data->link[tap_link_id].addr);
+	}
+
+	sdata_dbg(sdata, "smd: SLO-to-MLO upgrade upgrade_sap=0x%x\n", upgrade_sap_slots);
+
+	if (ieee80211_vif_set_links(sdata,
+				    sdata->vif.valid_links | upgrade_sap_slots,
+				    sdata->vif.dormant_links)) {
+		sdata_info(sdata, "smd: vif_set_links for upgrade failed\n");
+		return -EINVAL;
+	}
+
+	target->upgrade_sap_slots = upgrade_sap_slots;
+	return 0;
+}
+
+/*
+ * Build the tap_to_sap_link[] and sap_to_tap_link[] maps for a prep target
+ * by matching each TAP link's BSS band against current SAP link operating bands.
+ * For any TAP link with no matching SAP band, calls ieee80211_smd_upgrade_link_slots
+ * to assign a free SAP slot and expand the VIF (SLO-to-MLO upgrade path).
+ */
+int ieee80211_smd_build_link_id_remap(struct ieee80211_sub_if_data *sdata,
+				      struct ieee80211_smd_prep_target *target)
 {
 	int tap_link_id, sap_link_id;
 
@@ -234,8 +353,10 @@ ieee80211_smd_build_link_id_remap(struct ieee80211_sub_if_data *sdata,
 
 		tap_band = target->assoc_data->link[tap_link_id].bss->channel->band;
 		sap_link_id = ieee80211_smd_find_sap_lid_for_band(sdata, tap_band);
-		if (sap_link_id < 0)
+		if (sap_link_id < 0) {
+			target->tap_to_sap_link[tap_link_id] = -1;
 			continue;
+		}
 
 		target->tap_to_sap_link[tap_link_id] = sap_link_id;
 		target->sap_to_tap_link[sap_link_id] = tap_link_id;
@@ -248,6 +369,26 @@ ieee80211_smd_build_link_id_remap(struct ieee80211_sub_if_data *sdata,
 			  target->assoc_data->link[tap_link_id].bss->channel->center_freq,
 			  tap_band, sap_link_id);
 	}
+
+	for (tap_link_id = 0; tap_link_id < IEEE80211_MLD_MAX_NUM_LINKS; tap_link_id++) {
+		if (!target->assoc_data->link[tap_link_id].bss)
+			continue;
+		if (target->tap_to_sap_link[tap_link_id] != -1)
+			continue;
+
+		if (sdata_dereference(sdata->link[tap_link_id], sdata) &&
+		    target->sap_to_tap_link[tap_link_id] == tap_link_id) {
+			target->tap_to_sap_link[tap_link_id] = tap_link_id;
+			target->sap_to_tap_link[tap_link_id] = tap_link_id;
+			sdata_dbg(sdata,
+				  "smd: remap: tap[%d] bssid=%pM -> sap[%d] (cross-band in-place)\n",
+				  tap_link_id,
+				  target->assoc_data->link[tap_link_id].bss->bssid,
+				  tap_link_id);
+		}
+	}
+
+	return ieee80211_smd_upgrade_link_slots(sdata, target);
 }
 
 int ieee80211_smd_add_prep_target(struct ieee80211_sub_if_data *sdata,
@@ -341,6 +482,7 @@ int ieee80211_smd_execute_transition(struct ieee80211_sub_if_data *sdata,
 	struct ieee80211_local *local = sdata->local;
 	struct ieee80211_uhr_link_reconfig_info *info;
 	struct sta_info *current_sta, *target_sta;
+	unsigned long prep_mask, link_id;
 	u16 transitioning_links;
 	int ret;
 
@@ -395,9 +537,51 @@ int ieee80211_smd_execute_transition(struct ieee80211_sub_if_data *sdata,
 	info->dl_drain_time_tu = dl_drain_time_tu;
 	info->request_dl_sn_not_transferred = target->no_dl_sn;
 	info->request_ul_sn_not_transferred = target->no_ul_sn;
+	info->is_exec_via_tap = target->exec_path;
 
-	ret = drv_uhr_link_reconfig(local, sdata, current_sta, target_sta,
-				    IEEE80211_UHR_LINK_RECONFIG_EXECUTE_RESP, info);
+	/* DL drain applies only to the primary SAP link; other radios get 0. */
+	info->dl_drain_links_mask = BIT(info->primary_link_id);
+
+	/*
+	 * TAP partner links mask for early (exec-resp) DYNAMIC_CTX: prepared TAP
+	 * links mapped to an OVERLAP SAP radio (present in both SAP and TAP),
+	 * excluding the primary/DL-drain link.  These radios already have a live
+	 * peer, so firmware can take the dynamic context immediately.
+	 *
+	 * Excluded here (handled at TERMINATION instead):
+	 *   - primary/DL-drain link (info->primary_link_id)
+	 *   - upgrade slots (target->upgrade_sap_slots) — brand-new radios with no
+	 *     peer yet at exec-resp time.
+	 *
+	 * NOTE: do NOT gate on sdata->vif.active_links here.  For a diff-links
+	 * remap the overlap partner still sits in dormant_links at exec-resp time
+	 * (the link swap happens later in DL drain), so an active_links check
+	 * wrongly drops the very partner we need to notify.
+	 */
+	info->tap_links_mask = 0;
+	prep_mask = target->prepared_links_mask;
+	for_each_set_bit(link_id, &prep_mask, IEEE80211_MLD_MAX_NUM_LINKS) {
+		int sap_lid = target->tap_to_sap_link[link_id];
+
+		if (sap_lid < 0)
+			continue;
+		if (sap_lid == (int)info->primary_link_id)
+			continue; /* primary gets DYNAMIC_CTX at TERMINATION */
+		if (target->upgrade_sap_slots & BIT(sap_lid))
+			continue; /* upgrade radio has no peer yet; TERMINATION */
+		info->tap_links_mask |= BIT(sap_lid);
+	}
+
+	/*
+	 * Send DYNAMIC_CTX at exec resp time only for active TAP partner links
+	 * (non-primary).  If no such links exist (SLO, upgrade-only, or all
+	 * partners dormant), defer entirely to TERMINATION.
+	 */
+	info->changed = IEEE80211_UHR_CHANGED_EXECUTE_RESP;
+	if (info->tap_links_mask)
+		info->changed |= IEEE80211_UHR_CHANGED_DYNAMIC_CTX;
+
+	ret = drv_uhr_link_reconfig(local, sdata, current_sta, target_sta, info);
 	if (ret) {
 		sdata_info(sdata,
 			   "smd: exec drv_uhr_link_reconfig(EXECUTE) failed: %d\n",
@@ -452,7 +636,8 @@ void ieee80211_smd_stop_old_link(struct ieee80211_vif *vif,
 }
 
 void ieee80211_smd_free_old_links(struct ieee80211_sub_if_data *sdata,
-				  struct ieee80211_smd_prep_target *target)
+				  struct ieee80211_smd_prep_target *target,
+				  bool remap_keys)
 {
 	struct ieee80211_local *local = sdata->local;
 	struct ieee80211_link_data *link;
@@ -460,8 +645,6 @@ void ieee80211_smd_free_old_links(struct ieee80211_sub_if_data *sdata,
 	LIST_HEAD(old_keys);
 
 	lockdep_assert_wiphy(local->hw.wiphy);
-
-	synchronize_rcu();
 
 	for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS; link_id++) {
 		struct ieee80211_link_data *old_link = target->old_links[link_id];
@@ -482,7 +665,7 @@ void ieee80211_smd_free_old_links(struct ieee80211_sub_if_data *sdata,
 	 * that block post-transition TAP key installation (key.c:506).
 	 * Remove them now, before cfg80211_notify(COMPLETE) fires.
 	 */
-	if (target->link_id_remap)
+	if (target->link_id_remap && remap_keys)
 		ieee80211_smd_remap_link_keys(sdata, target->sap_to_tap_link);
 
 	for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS; link_id++) {
@@ -492,7 +675,10 @@ void ieee80211_smd_free_old_links(struct ieee80211_sub_if_data *sdata,
 
 		link = target->old_links[link_id];
 		ieee80211_link_debugfs_remove(link);
-		kfree(target->old_links[link_id]);
+
+		if (sdata->vif.valid_links & BIT(link_id))
+			ieee80211_free_link_container(link);
+
 		target->old_links[link_id] = NULL;
 	}
 }
@@ -545,14 +731,12 @@ static int __smd_dl_drain_no_remap(struct ieee80211_sub_if_data *sdata,
 					      sdata->vif.valid_links &
 					      ~target->tap_prepared_mask);
 
-	if (!target->transition_done_in_prep) {
-		ret = ieee80211_smd_assoc_success(sdata, target, primary_id,
-						  target->tap_to_sap_link[primary_id]);
-		if (ret) {
-			sdata_info(sdata, "smd: dl_drain assoc_success failed for primary %d: %d\n",
-				   primary_id, ret);
-			return ret;
-		}
+	ret = ieee80211_smd_assoc_success(sdata, target, primary_id,
+					  target->tap_to_sap_link[primary_id]);
+	if (ret) {
+		sdata_info(sdata, "smd: dl_drain assoc_success failed for primary %d: %d\n",
+			   primary_id, ret);
+		return ret;
 	}
 
 	sdata->vif.active_links |= BIT(primary_id);
@@ -605,7 +789,8 @@ static int __smd_dl_drain_remap(struct ieee80211_sub_if_data *sdata,
 		u16 kept = sdata->vif.valid_links & mapped_sap_links;
 
 		ieee80211_smd_remove_orphan_sta_links(sdata, orphan_sap_links);
-		ret = ieee80211_vif_set_links(sdata, kept, 0);
+		ret = ieee80211_vif_set_links(sdata, kept,
+					      sdata->vif.dormant_links & kept);
 		if (ret) {
 			sdata_info(sdata, "smd: vif_set_links(0x%x) failed: %d\n",
 				   kept, ret);
@@ -613,38 +798,31 @@ static int __smd_dl_drain_remap(struct ieee80211_sub_if_data *sdata,
 		}
 	}
 
-	/*
-	 * Skipped when transition_done_in_prep=true: these steps were
-	 * already run during PREP; current_sta will be destroyed by
-	 * assoc_success_finalize at the end of this function.
-	 */
-	if (!target->transition_done_in_prep) {
-		old_primary_link = sdata->link[primary_sap_link_id];
-		current_sta = sta_info_get(sdata, sdata->vif.cfg.ap_addr);
-		if (current_sta &&
-		    (current_sta->sta.valid_links & BIT(primary_sap_link_id))) {
-			sdata_dbg(sdata,
-				  "smd: dl_drain remove current_sta link sap=%d\n",
-				  primary_sap_link_id);
-			ieee80211_sta_remove_link(current_sta, primary_sap_link_id,
-						  true);
-		}
-
-		target->old_links[primary_sap_link_id] = old_primary_link;
-
-		if (current_sta) {
-			sdata_dbg(sdata,
-				  "smd: dl_drain destroy current_sta pre-remap\n");
-			WARN_ON(__sta_info_destroy(current_sta));
-			current_sta = NULL;
-		}
-
+	old_primary_link = sdata->link[primary_sap_link_id];
+	current_sta = sta_info_get(sdata, sdata->vif.cfg.ap_addr);
+	if (current_sta &&
+	    (current_sta->sta.valid_links & BIT(primary_sap_link_id))) {
 		sdata_dbg(sdata,
-			  "smd: dl_drain release SAP primary chanctx sap=%d\n",
+			  "smd: dl_drain remove current_sta link sap=%d\n",
 			  primary_sap_link_id);
-		ieee80211_smd_stop_old_link(&sdata->vif, old_primary_link,
-					    primary_sap_link_id);
+		ieee80211_sta_remove_link(current_sta, primary_sap_link_id,
+					  true);
 	}
+
+	target->old_links[primary_sap_link_id] = old_primary_link;
+
+	if (current_sta) {
+		sdata_dbg(sdata,
+			  "smd: dl_drain destroy current_sta pre-remap\n");
+		WARN_ON(__sta_info_destroy(current_sta));
+		current_sta = NULL;
+	}
+
+	sdata_dbg(sdata,
+		  "smd: dl_drain release SAP primary chanctx sap=%d\n",
+		  primary_sap_link_id);
+	ieee80211_smd_stop_old_link(&sdata->vif, old_primary_link,
+				    primary_sap_link_id);
 
 	remap_info = kzalloc(sizeof(*remap_info), GFP_KERNEL);
 	if (!remap_info)
@@ -653,9 +831,9 @@ static int __smd_dl_drain_remap(struct ieee80211_sub_if_data *sdata,
 	memcpy(remap_info->tap_to_sap_link, target->tap_to_sap_link,
 	       sizeof(remap_info->tap_to_sap_link));
 	remap_info->primary_link_id = (u8)primary_sap_link_id;
+	remap_info->changed = IEEE80211_UHR_CHANGED_REMAP_LINKS;
 	sdata_dbg(sdata, "smd: dl_drain remap links\n");
 	ret = drv_uhr_link_reconfig(local, sdata, target->target_sta, NULL,
-				    IEEE80211_UHR_LINK_RECONFIG_REMAP_LINKS,
 				    remap_info);
 	kfree(remap_info);
 	if (ret) {
@@ -682,39 +860,25 @@ static int __smd_dl_drain_remap(struct ieee80211_sub_if_data *sdata,
 			__ieee80211_link_unassign(sdata, sap_link_id_local);
 	}
 
-	if (!target->transition_done_in_prep) {
-		if (target->new_links[primary_id]) {
-			rcu_assign_pointer(
-				target->new_links[primary_id]->conf.chanctx_conf,
-				NULL);
-			if (target->new_links[primary_id]->data.reserved_chanctx)
-				ieee80211_link_unreserve_chanctx(
-						&target->new_links[primary_id]->data);
-		}
-		for_each_set_bit(tap_link_id, (unsigned long *)&prepared_mask,
-				 IEEE80211_MLD_MAX_NUM_LINKS) {
-			if (tap_link_id == (unsigned int)primary_id)
-				continue;
-			if (target->new_links[tap_link_id]) {
-				sdata_dbg(sdata,
-					  "smd: dl_drain link[%u] = new_links[%u]\n",
-					  tap_link_id, tap_link_id);
-				nl = target->new_links[tap_link_id];
-				__ieee80211_link_assign(sdata, tap_link_id,
-							&nl->data, &nl->conf);
-			}
-		}
-	} else {
-		for_each_set_bit(tap_link_id, (unsigned long *)&prepared_mask,
-				 IEEE80211_MLD_MAX_NUM_LINKS) {
-			if (target->new_links[tap_link_id]) {
-				sdata_dbg(sdata,
-					  "smd: dl_drain (tdip) link[%u] = new_links[%u]\n",
-					  tap_link_id, tap_link_id);
-				nl = target->new_links[tap_link_id];
-				__ieee80211_link_assign(sdata, tap_link_id,
-							&nl->data, &nl->conf);
-			}
+	if (target->new_links[primary_id]) {
+		rcu_assign_pointer(
+			target->new_links[primary_id]->conf.chanctx_conf,
+			NULL);
+		if (target->new_links[primary_id]->data.reserved_chanctx)
+			ieee80211_link_unreserve_chanctx(
+					&target->new_links[primary_id]->data);
+	}
+	for_each_set_bit(tap_link_id, (unsigned long *)&prepared_mask,
+			 IEEE80211_MLD_MAX_NUM_LINKS) {
+		if (tap_link_id == (unsigned int)primary_id)
+			continue;
+		if (target->new_links[tap_link_id]) {
+			sdata_dbg(sdata,
+				  "smd: dl_drain link[%u] = new_links[%u]\n",
+				  tap_link_id, tap_link_id);
+			nl = target->new_links[tap_link_id];
+			__ieee80211_link_assign(sdata, tap_link_id,
+						&nl->data, &nl->conf);
 		}
 	}
 
@@ -730,7 +894,6 @@ static int __smd_dl_drain_remap(struct ieee80211_sub_if_data *sdata,
 		target->new_links[tap_link_id]->conf.link_id = tap_link_id;
 		target->new_links[tap_link_id]->data.link_id = tap_link_id;
 	}
-	synchronize_rcu();
 
 	for (tap_link_id = 0; tap_link_id < IEEE80211_MLD_MAX_NUM_LINKS; tap_link_id++) {
 		nl = target->new_links[tap_link_id];
@@ -750,23 +913,32 @@ static int __smd_dl_drain_remap(struct ieee80211_sub_if_data *sdata,
 		ieee80211_link_debugfs_add(&nl->data);
 	}
 
+	for_each_set_bit(tap_link_id, (unsigned long *)&prepared_mask,
+			 IEEE80211_MLD_MAX_NUM_LINKS) {
+
+		if (tap_link_id == (unsigned int)primary_id)
+			continue;
+
+		target->new_links[tap_link_id] = NULL;
+	}
+
 	sdata_dbg(sdata, "smd: dl_drain remap sta links\n");
 	ieee80211_smd_remap_sta_links(target->target_sta, target->tap_to_sap_link);
 
-	if (!target->transition_done_in_prep) {
-		sdata->vif.active_links |= BIT(primary_id);
+	sdata->vif.active_links |= BIT(primary_id);
 
-		sdata_dbg(sdata,
-			  "smd: dl_drain assoc_success(tap=%d sap=%d) active=0x%x\n",
-			  primary_id, primary_id,
-			  sdata->vif.active_links);
-		ret = ieee80211_smd_assoc_success(sdata, target, primary_id, primary_id);
-		if (ret) {
-			sdata_info(sdata, "smd: dl_drain assoc_success failed: %d\n",
-				   ret);
-			return ret;
-		}
+	sdata_dbg(sdata,
+		  "smd: dl_drain assoc_success(tap=%d sap=%d) active=0x%x\n",
+		  primary_id, primary_id,
+		  sdata->vif.active_links);
+	ret = ieee80211_smd_assoc_success(sdata, target, primary_id, primary_id);
+	if (ret) {
+		sdata_info(sdata, "smd: dl_drain assoc_success failed: %d\n",
+			   ret);
+		return ret;
 	}
+
+	target->new_links[primary_id] = NULL;
 
 	sdata->vif.active_links  = target->tap_prepared_mask;
 	sdata->vif.dormant_links = 0;
@@ -902,14 +1074,23 @@ static void ieee80211_smd_exec_timeout_work(struct wiphy *wiphy,
 	sdata_info(sdata, "smd: exec timeout expired for target %pM\n",
 		   target->target_mld_addr);
 
+	if (target->prep_activated) {
+		sdata_info(sdata,
+			   "smd: exec timeout after prep_activate — disconnecting from %pM\n",
+			   sdata->vif.cfg.ap_addr);
+		ieee80211_sta_connection_lost(sdata,
+					      WLAN_REASON_DISASSOC_DUE_TO_INACTIVITY,
+					      false);
+		return;
+	}
+
 	/*
-	 * Execution didn't happen in time. Abort the preparation by:
-	 * 1. Notifying driver to abort via uhr_link_reconfig(ABORT)
-	 * 2. Cleaning up target sta_info
-	 * 3. Resetting the target state
+	 * prep_activate did not run (timeout fired before PREP response was
+	 * processed, or PREP response processing failed).  A simple target
+	 * reset is sufficient — sdata->link[] is still intact.
 	 */
 	ieee80211_smd_prep_reset_target(sdata, target,
-					WLAN_STATUS_UNSPECIFIED_FAILURE, 1);
+					WLAN_STATUS_UNSPECIFIED_FAILURE, 1, false);
 }
 
 #define IEEE80211_SMD_PREP_TIMEOUT_TU	64
@@ -991,7 +1172,8 @@ static void ieee80211_smd_prep_invalidate_target(struct ieee80211_if_managed *if
 
 void ieee80211_smd_prep_reset_target(struct ieee80211_sub_if_data *sdata,
 				     struct ieee80211_smd_prep_target *target,
-				     u16 status, u16 type)
+				     u16 status, u16 type,
+				     bool skip_sta_destroy)
 {
 	struct ieee80211_local *local = sdata->local;
 	struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
@@ -1016,7 +1198,7 @@ void ieee80211_smd_prep_reset_target(struct ieee80211_sub_if_data *sdata,
 		cfg80211_notify_smd_bss_transition(sdata->dev,
 						   target->target_mld_addr,
 						   NL80211_SMD_TRANSITION_ABORT,
-						   status);
+						   status, NULL);
 
 	/* Only clear the transition state bit when the last prepared target
 	 * is being reset — in multi-prep, other targets may still be active.
@@ -1038,10 +1220,11 @@ void ieee80211_smd_prep_reset_target(struct ieee80211_sub_if_data *sdata,
 	}
 
 	if (target->target_sta && status != WLAN_STATUS_SUCCESS) {
-		struct sta_info *current_sta =
-			sta_info_get(sdata, sdata->vif.cfg.ap_addr);
+		struct sta_info *current_sta;
 		struct ieee80211_uhr_link_reconfig_info *info;
 		int ret = 0;
+
+		current_sta = sta_info_get(sdata, target->current_sta_addr);
 
 		if (current_sta) {
 			info = kzalloc(sizeof(*info), GFP_KERNEL);
@@ -1049,11 +1232,11 @@ void ieee80211_smd_prep_reset_target(struct ieee80211_sub_if_data *sdata,
 				info->transitioning_links = target->prepared_links_mask;
 				ether_addr_copy(info->target_ap_mld_addr,
 						target->target_mld_addr);
+				info->changed = IEEE80211_UHR_CHANGED_ABORT;
 
 				ret = drv_uhr_link_reconfig(local, sdata,
 						    current_sta,
 						    target->target_sta,
-						    IEEE80211_UHR_LINK_RECONFIG_ABORT,
 						    info);
 				if (ret)
 					sdata_info(sdata,
@@ -1064,26 +1247,19 @@ void ieee80211_smd_prep_reset_target(struct ieee80211_sub_if_data *sdata,
 		}
 
 		/*
-		 * Use the correct destruction path based on whether the STA
-		 * was inserted into the hash table. __sta_info_destroy() requires
-		 * the STA to be in the hash; sta_info_free() handles the
-		 * pre-insertion case (e.g. exec timeout before STA fully setup).
-		 *
-		 * A concurrent disconnect may have already removed the link
-		 * state that __sta_info_destroy() depends on; if it fails, log
-		 * and fall back to sta_info_free() to avoid leaking the object.
+		 * skip_sta_destroy=true means our caller (ieee80211_set_disassoc
+		 * via ieee80211_smd_cancel_all_targets) will let sta_info_flush()
+		 * destroy the STA — don't touch it here.  For all other callers
+		 * use the correct path based on whether it was hash-inserted.
 		 */
-		if (target->sta_inserted) {
-			if (__sta_info_destroy(target->target_sta)) {
-				sdata_info(sdata,
-					   "smd: sta_info_destroy failed for %pM, freeing directly\n",
-					   target->target_sta->sta.addr);
+		if (!skip_sta_destroy) {
+			if (target->sta_inserted)
+				WARN_ON(__sta_info_destroy(target->target_sta));
+			else
 				sta_info_free(local, target->target_sta);
-			}
-		} else {
-			sta_info_free(local, target->target_sta);
 		}
 		target->target_sta = NULL;
+		target->sta_inserted = false;
 	}
 
 	kfree(target->assoc_data);
@@ -1097,6 +1273,27 @@ void ieee80211_smd_prep_reset_target(struct ieee80211_sub_if_data *sdata,
 
 	ieee80211_smd_free_target_links(target);
 
+	if (target->upgrade_sap_slots) {
+		unsigned long tmp;
+		unsigned int sap_lid;
+
+		if (!skip_sta_destroy) {
+			u16 orig_valid = (sdata->vif.valid_links &
+					  ~target->upgrade_sap_slots);
+
+			ieee80211_vif_set_links(sdata, orig_valid, 0);
+		}
+
+		/* Zero wdev.links[].addr for removed upgrade slots so a
+		 * subsequent roam attempt does not see stale addresses.
+		 */
+		tmp = target->upgrade_sap_slots;
+		for_each_set_bit(sap_lid, &tmp, IEEE80211_MLD_MAX_NUM_LINKS)
+			eth_zero_addr(sdata->wdev.links[sap_lid].addr);
+
+		target->upgrade_sap_slots = 0;
+	}
+
 	ieee80211_smd_prep_invalidate_target(ifmgd, target);
 
 	sdata_dbg(sdata, "smd: prep target reset, remaining=%d\n",
@@ -1106,7 +1303,9 @@ void ieee80211_smd_prep_reset_target(struct ieee80211_sub_if_data *sdata,
 void ieee80211_smd_prep_complete_target(struct ieee80211_sub_if_data *sdata,
 					       struct ieee80211_smd_prep_target *target)
 {
+	struct cfg80211_uhr_reconfig_done done = {};
 	struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
+	struct ieee80211_bss_conf *conf;
 	unsigned int link_id;
 
 	lockdep_assert_wiphy(sdata->local->hw.wiphy);
@@ -1135,10 +1334,17 @@ void ieee80211_smd_prep_complete_target(struct ieee80211_sub_if_data *sdata,
 	kfree(target->assoc_data);
 	target->assoc_data = NULL;
 
-	cfg80211_notify_smd_bss_transition(sdata->dev,
-					   target->target_mld_addr,
-					   NL80211_SMD_TRANSITION_COMPLETE,
-					   WLAN_STATUS_SUCCESS);
+	for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS; link_id++) {
+		conf = wiphy_dereference(sdata->local->hw.wiphy,
+					 sdata->vif.link_conf[link_id]);
+		done.links[link_id].addr = conf ? conf->addr : NULL;
+	}
+
+	if (!target->exec_path)
+		cfg80211_notify_smd_bss_transition(sdata->dev,
+						   target->target_mld_addr,
+						   NL80211_SMD_TRANSITION_COMPLETE,
+						   WLAN_STATUS_SUCCESS, &done);
 
 	/* Clear the SMD BSS transition state bit only when the last target
 	 * completes — other targets may still be in flight in multi-prep.
@@ -1172,7 +1378,7 @@ void ieee80211_smd_prep_reset(struct ieee80211_sub_if_data *sdata,
 		if (ifmgd->prep_targets[i].valid)
 			ieee80211_smd_prep_reset_target(sdata,
 							&ifmgd->prep_targets[i],
-							status_code, type);
+							status_code, type, false);
 	}
 
 	/* Reset global SMD state after all per-target cleanup is done */
@@ -1423,11 +1629,9 @@ int ieee80211_smd_parse_ml_persta(struct ieee80211_sub_if_data *sdata,
 		if (sta_control & IEEE80211_MLE_STA_CONTROL_STA_MAC_ADDR_PRESENT) {
 			sta_info = prof->variable;
 
-			sdata_dbg(sdata, "smd: link[%u] bssid=%pM\n",
-				  link_id, sta_info);
-
-			ether_addr_copy(target->assoc_data->link[link_id].addr,
-					sta_info);
+			sdata_dbg(sdata, "smd: link[%u] ap_link_addr=%pM (sta_addr kept as %pM)\n",
+				  link_id, sta_info,
+				  target->assoc_data->link[link_id].addr);
 
 			if (prof->sta_info_len >= 7) {
 				target->assoc_data->link[link_id].elems =

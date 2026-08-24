@@ -261,6 +261,7 @@ static int ath12k_spectral_get_adjusted_timestamp(struct ath12k *ar,
 
 static size_t ath12k_spectral_get_bin_count_after_len_adj(struct ath12k *ar,
 							  size_t fft_bin_len,
+							  u32 rpt_mode,
 							  size_t *fft_bin_size)
 {
 	struct ath12k_base *ab = ar->ab;
@@ -272,11 +273,20 @@ static size_t ath12k_spectral_get_bin_count_after_len_adj(struct ath12k *ar,
 		return 0;
 	}
 
+	if (rpt_mode == ATH12K_SPECTRAL_RPT_MODE_1) {
+		/* Header + summary report only, no FFT bins expected */
+		*fft_bin_size = 0;
+		return 0;
+	}
+
 	bin_count = fft_bin_len / bin_sz;
 	*fft_bin_size = bin_sz;
 
-	/* Only in-band bins are forwarded to userspace */
-	bin_count >>= 1;
+	/* Mode 2 forwards only the in-band half of the FFT; mode 3
+	 * forwards all bins and needs no halving.
+	 */
+	if (rpt_mode == ATH12K_SPECTRAL_RPT_MODE_2)
+		bin_count >>= 1;
 
 	return bin_count;
 }
@@ -313,16 +323,19 @@ struct ath12k_link_vif *ath12k_spectral_get_vdev(struct ath12k *ar)
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
-	if (list_empty(&ar->arvifs))
-		return NULL;
-
-	/* if there already is a vif doing spectral, return that. */
+	/* if there already is a created vif doing spectral, return that. */
 	list_for_each_entry(arvif, &ar->arvifs, list)
-		if (arvif->spectral_enabled)
+		if (arvif->is_created && arvif->spectral_enabled)
 			return arvif;
 
-	/* otherwise, return the first vif. */
-	return list_first_entry(&ar->arvifs, typeof(*arvif), list);
+	/* otherwise, return the first created vif. arvifs left over from
+	 * SSR recovery have is_created cleared but may still be linked.
+	 */
+	list_for_each_entry(arvif, &ar->arvifs, list)
+		if (arvif->is_created)
+			return arvif;
+
+	return NULL;
 }
 
 int ath12k_spectral_nl80211_bw_to_idx(enum nl80211_chan_width bw)
@@ -339,29 +352,72 @@ int ath12k_spectral_nl80211_bw_to_idx(enum nl80211_chan_width bw)
 	}
 }
 
+static int ath12k_spectral_nl80211_bw_to_wmi_chwidth(enum nl80211_chan_width bw)
+{
+	switch (bw) {
+	case NL80211_CHAN_WIDTH_20_NOHT:
+	case NL80211_CHAN_WIDTH_20:
+		return WMI_PEER_CHWIDTH_20MHZ;
+	case NL80211_CHAN_WIDTH_40:
+		return WMI_PEER_CHWIDTH_40MHZ;
+	case NL80211_CHAN_WIDTH_80:
+		return WMI_PEER_CHWIDTH_80MHZ;
+	case NL80211_CHAN_WIDTH_160:
+		return WMI_PEER_CHWIDTH_160MHZ;
+	case NL80211_CHAN_WIDTH_320:
+		return WMI_PEER_CHWIDTH_320MHZ;
+	default:
+		return -1;
+	}
+}
+
+static void ath12k_spectral_update_chwidth(struct ath12k *ar,
+					   struct ath12k_link_vif *arvif)
+{
+	struct cfg80211_chan_def *chandef = &arvif->chanctx.def;
+	int wmi_bw;
+
+	if (!chandef->chan) {
+		ath12k_warn(ar->ab,
+			    "spectral start_scan: vdev %u has no channel context\n",
+			    arvif->vdev_id);
+		return;
+	}
+
+	wmi_bw = ath12k_spectral_nl80211_bw_to_wmi_chwidth(chandef->width);
+	if (wmi_bw < 0) {
+		ath12k_warn(ar->ab,
+			    "spectral start_scan: unsupported chandef width %u\n",
+			    chandef->width);
+		return;
+	}
+
+	spin_lock_bh(&ar->spectral.lock);
+	ar->spectral.ch_width     = wmi_bw;
+	ar->spectral.sscan_bw     = wmi_bw;
+	ar->spectral.pri20_freq   = chandef->chan->center_freq;
+	ar->spectral.sscan_cfreq1 = chandef->center_freq1;
+	ar->spectral.sscan_cfreq2 = chandef->center_freq2;
+	spin_unlock_bh(&ar->spectral.lock);
+}
+
 static void ath12k_spectral_init_param_min_max(struct ath12k *ar)
 {
 	struct ath12k_spectral_param_min_max *pmm = &ar->spectral.param_min_max;
-	u16 chip_cap = ilog2(ar->ab->hw_params->spectral.max_fft_bins);
+	const u16 *hw_max = ar->ab->hw_params->spectral.fft_size_max;
 	int i;
 
-	pmm->fft_size_min   = ATH12K_SPECTRAL_FFT_SIZE_MIN;
+	pmm->fft_size_min   = ar->ab->hw_params->spectral.fft_size_min;
 	pmm->scan_count_max = ATH12K_SPECTRAL_SCAN_COUNT_MAX;
 
-	/* Default every BW slot to the chip's FFT-engine ceiling. */
 	for (i = 0; i < ATH12K_SPECTRAL_NUM_BW_SLOTS; i++)
-		pmm->fft_size_max[i] = chip_cap;
-
-	/* 20/40 MHz have a tighter HW spec ceiling. */
-	pmm->fft_size_max[ATH12K_SPECTRAL_BW_20MHZ] =
-		min_t(u16, chip_cap, ATH12K_SPECTRAL_FFT_SIZE_MAX_20MHZ);
-	pmm->fft_size_max[ATH12K_SPECTRAL_BW_40MHZ] =
-		min_t(u16, chip_cap, ATH12K_SPECTRAL_FFT_SIZE_MAX_40MHZ);
+		pmm->fft_size_max[i] = hw_max[i];
 }
 
 int ath12k_spectral_start_scan(struct ath12k *ar)
 {
 	struct ath12k_link_vif *arvif;
+	enum spectral_scan_mode smode;
 	int ret;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
@@ -385,6 +441,13 @@ int ath12k_spectral_start_scan(struct ath12k *ar)
 		return -ENODEV;
 	}
 
+	/* If no SESSION_INFO_SUPPORT in FW, seed it from the vdev's current chandef
+	 * so FFT reports still carry a valid width.
+	 */
+	if (!test_bit(WMI_TLV_SERVICE_SPECTRAL_SESSION_INFO_SUPPORT,
+		      ar->ab->wmi_ab.svc_map))
+		ath12k_spectral_update_chwidth(ar, arvif);
+
 	/* Clear any stale trigger state in firmware. */
 	ret = ath12k_wmi_vdev_spectral_enable(ar, arvif->vdev_id,
 					      ATH12K_WMI_SPECTRAL_TRIGGER_CMD_IGNORE,
@@ -400,6 +463,16 @@ int ath12k_spectral_start_scan(struct ath12k *ar)
 		return ret;
 
 	spin_lock_bh(&ar->spectral.lock);
+	smode = ar->spectral.mode;
+
+	if (smode >= SPECTRAL_SCAN_MODE_MAX) {
+		spin_unlock_bh(&ar->spectral.lock);
+		return 0;
+	}
+
+	ar->spectral.last_fft_timestamp[smode] = 0;
+	ar->spectral.timestamp_war_offset[smode] = 0;
+	ar->spectral.samples_done = 0;   /* reset per-scan counter */
 	ar->spectral.scan_active = true;
 	spin_unlock_bh(&ar->spectral.lock);
 
@@ -440,7 +513,12 @@ int ath12k_spectral_stop_scan(struct ath12k *ar)
 	spin_lock_bh(&ar->spectral.lock);
 	ar->spectral.mode = SPECTRAL_SCAN_MODE_INVALID;
 	ar->spectral.scan_active = false;
+	ar->spectral.last_fft_timestamp[SPECTRAL_SCAN_MODE_NORMAL] = 0;
+	ar->spectral.timestamp_war_offset[SPECTRAL_SCAN_MODE_NORMAL] = 0;
+	ar->spectral.samples_done = 0;
 	spin_unlock_bh(&ar->spectral.lock);
+
+	ath12k_spectral_reset_buffer(ar);
 
 	/* Cancel after dropping the spectral lock — the hrtimer cb takes the
 	 * same lock, so cancelling while holding it would deadlock.
@@ -943,8 +1021,9 @@ int ath12k_spectral_process_fft(struct ath12k *ar,
 	}
 
 	total_bins = bin_len / ab->hw_params->spectral.fft_bin_sz;
-	num_bins = ath12k_spectral_get_bin_count_after_len_adj(ar, bin_len,
-							       &fft_bin_size);
+	num_bins = ath12k_spectral_get_bin_count_after_len_adj(
+			ar, bin_len, ar->spectral.params.scan_rpt_mode,
+			&fft_bin_size);
 
 	ath12k_dbg(ab, ATH12K_DBG_SPECTRAL,
 		   "spectral fft hdr: fft_timestamp=0x%x hdr_len=%d(dwords) tag=0x%x sig=0x%x payload_len=%d total_len=%zu bin_len=%d bin_sz=%zu num_bins=%d\n",
@@ -955,9 +1034,10 @@ int ath12k_spectral_process_fft(struct ath12k *ar,
 		   tlv_len, tlv_len + sizeof(*tlv),
 		   bin_len, fft_bin_size, num_bins);
 
-	if (num_bins < ATH12K_SPECTRAL_ATH12K_MIN_IB_BINS ||
-	    num_bins > ATH12K_SPECTRAL_ATH12K_MAX_IB_BINS(ab) ||
-	    !is_power_of_2(num_bins)) {
+	if (ar->spectral.params.scan_rpt_mode != ATH12K_SPECTRAL_RPT_MODE_1 &&
+	    (num_bins < ATH12K_SPECTRAL_ATH12K_MIN_IB_BINS ||
+	     num_bins > ATH12K_SPECTRAL_ATH12K_MAX_IB_BINS(ab) ||
+	     !is_power_of_2(num_bins))) {
 		ath12k_warn(ab, "Invalid num of bins %d\n", num_bins);
 		return -EINVAL;
 	}
@@ -1601,9 +1681,14 @@ int ath12k_spectral_init(struct ath12k_base *ab)
 		idr_init(&sp->rx_ring.bufs_idr);
 		spin_lock_init(&sp->rx_ring.idr_lock);
 		spin_lock_init(&sp->lock);
+#if LINUX_VERSION_IS_GEQ(6, 18, 0)
+		hrtimer_setup(&sp->scan_completion_timer, ath12k_spectral_scan_timeout,
+			      CLOCK_MONOTONIC, HRTIMER_MODE_REL_SOFT);
+#else
 		hrtimer_init(&sp->scan_completion_timer, CLOCK_MONOTONIC,
 			     HRTIMER_MODE_REL_SOFT);
 		sp->scan_completion_timer.function = ath12k_spectral_scan_timeout;
+#endif
 		INIT_WORK(&sp->scan_timeout_work, ath12k_spectral_timeout_work);
 
 		ret = ath12k_spectral_ring_alloc(ar, &db_cap);

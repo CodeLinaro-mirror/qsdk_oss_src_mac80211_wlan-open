@@ -62,8 +62,6 @@ void ath12k_debugfs_unregister(struct ath12k *ar);
 void ath12k_hw_debugfs_register(struct ath12k_hw *ah);
 void ath12k_debugfs_pdev_destroy(struct ath12k_base *ab);
 void ath12k_debugfs_fw_stats_init(struct ath12k *ar);
-void ath12k_send_fw_hang_cmd(struct ath12k_base *ab,
-			     unsigned int value);
 
 static inline bool ath12k_debugfs_is_pktlog_peer_valid(struct ath12k *ar, u8 *addr)
 {
@@ -95,6 +93,12 @@ static inline bool ath12k_extd_rx_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
 {
 	return ((dp_pdev->dp_stats_mask &  DP_ENABLE_STATS) &&
 		(dp_pdev->dp_stats_mask & DP_ENABLE_EXT_RX_STATS));
+}
+
+static inline bool ath12k_dp_rx_ppdu_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
+{
+	return ((dp_pdev->dp_stats_mask & DP_ENABLE_STATS) &&
+		(dp_pdev->dp_stats_mask & DP_ENABLE_RX_PPDU_STATS));
 }
 
 static inline int ath12k_debugfs_rx_filter(struct ath12k *ar)
@@ -176,6 +180,7 @@ struct dentry *ath12k_debugfs_erp_create(void);
 #define HE_EXTRA_MCS_SUPPORT			GENMASK(31, 16)
 #define ATH12K_NSS_1				1
 #define ATH12K_NSS_4				4
+#define ATH12K_NSS_5				5
 #define ATH12K_NSS_8				8
 #define ATH12K_HW_NSS(_rcode)			(((_rcode) >> 5) & 0x7)
 #define TPC_STATS_WAIT_TIME			(1 * HZ)
@@ -243,6 +248,20 @@ enum wmi_tpc_pream_bw {
 	WMI_TPC_PREAM_EHT240,
 	WMI_TPC_PREAM_EHT280,
 	WMI_TPC_PREAM_EHT320,
+	/* UHR preambles: FW sends one shared EHT/UHR rates array;
+	 * host indexes into rates_array2 identically to EHT.
+	 */
+	WMI_TPC_PREAM_UHR20,
+	WMI_TPC_PREAM_UHR40,
+	WMI_TPC_PREAM_UHR60,
+	WMI_TPC_PREAM_UHR80,
+	WMI_TPC_PREAM_UHR120,
+	WMI_TPC_PREAM_UHR140,
+	WMI_TPC_PREAM_UHR160,
+	WMI_TPC_PREAM_UHR200,
+	WMI_TPC_PREAM_UHR240,
+	WMI_TPC_PREAM_UHR280,
+	WMI_TPC_PREAM_UHR320,
 	WMI_TPC_PREAM_MAX
 };
 
@@ -335,6 +354,11 @@ ath12k_htt_tx_ppdu_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
 }
 
 static inline bool ath12k_extd_rx_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
+{
+	return false;
+}
+
+static inline bool ath12k_dp_rx_ppdu_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
 {
 	return false;
 }

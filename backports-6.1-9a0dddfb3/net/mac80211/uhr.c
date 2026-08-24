@@ -39,7 +39,7 @@ ieee80211_uhr_npca_elem_to_sta_uhr_npca_info(struct ieee80211_sub_if_data *sdata
 	const struct ieee80211_uhr_npca_info *npca;
 
 	memset(npca_info, 0, sizeof(*npca_info));
-	link_sta->pub->npca_offset = 0;
+	link_sta->pub->npca_primary_channel = 0;
 	link_sta->pub->npca_puncture_bitmap = 0;
 
 	uhr_cap = ieee80211_get_uhr_iftype_cap_vif(sband, &sdata->vif);
@@ -68,9 +68,9 @@ ieee80211_uhr_npca_elem_to_sta_uhr_npca_info(struct ieee80211_sub_if_data *sdata
 	npca_info->npca_moplen =
 		le32_get_bits(npca->params, IEEE80211_UHR_NPCA_PARAMS_MOPLEN);
 
-	link_sta->pub->npca_offset =
+	link_sta->pub->npca_primary_channel =
 		le32_get_bits(npca->params,
-			      IEEE80211_UHR_NPCA_PARAMS_PRIMARY_CHAN_OFFS);
+			      IEEE80211_UHR_NPCA_PARAMS_PRIMARY_CHAN);
 	if (npca->params &
 	    cpu_to_le32(IEEE80211_UHR_NPCA_PARAMS_DIS_SUBCH_BMAP_PRES))
 		link_sta->pub->npca_puncture_bitmap =
@@ -550,6 +550,10 @@ ieee80211_build_uhr_link_reconf_req(struct ieee80211_sub_if_data *sdata,
 		assoc_data ? IEEE80211_UHR_LINK_RECONF_TYPE_ST_PREP
 			   : IEEE80211_UHR_LINK_RECONF_TYPE_ST_EXEC;
 
+	sdata_dbg(sdata, "smd: st frame info %pM slot=%d token=%u\n",
+		  sdata->vif.addr, target_slot,
+		  mgmt->u.action.u.uhr_link_reconf_req.dialog_token);
+
 	ieee80211_add_uhr_link_reconf_elem(skb, sdata, target_addr,
 					   assoc_data,
 					   0, /* removed_links = 0 for SMD */
@@ -575,6 +579,7 @@ int ieee80211_tx_smd_uhr_link_reconf(struct ieee80211_sub_if_data *sdata,
 {
 	struct ieee80211_local *local = sdata->local;
 	struct sk_buff *skb;
+	int link_id = -1;
 
 	lockdep_assert_wiphy(local->hw.wiphy);
 
@@ -601,7 +606,11 @@ int ieee80211_tx_smd_uhr_link_reconf(struct ieee80211_sub_if_data *sdata,
 		}
 	}
 
-	ieee80211_tx_skb(sdata, skb);
+	if (req_params->tx_link_id >= 0 &&
+	    (sdata->vif.active_links & BIT(req_params->tx_link_id)))
+		link_id = (int)req_params->tx_link_id;
+
+	ieee80211_tx_skb_tid(sdata, skb, 7, link_id);
 
 	if (req_params->type == 0) {
 		struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
@@ -796,7 +805,10 @@ static void ieee80211_process_smd_prep_resp(struct ieee80211_sub_if_data *sdata,
 		target->assoc_data->link[tap_link_id].bss = fresh_bss;
 	}
 
-	ieee80211_smd_build_link_id_remap(sdata, target);
+	if (ieee80211_smd_build_link_id_remap(sdata, target)) {
+		sdata_info(sdata, "smd: link id remap failed\n");
+		goto out_free_elems;
+	}
 
 	while (pos + 2 <= (u8 *)mgmt + orig_len) {
 		u8 id = pos[0];
@@ -916,30 +928,11 @@ static void ieee80211_process_smd_prep_resp(struct ieee80211_sub_if_data *sdata,
 			sdata_err(sdata, "smd: prep_activate failed\n");
 			goto out_fail;
 		}
-		/*
-		 * SLO exec_path=1 (transition_done_in_prep=true): the primary
-		 * link is already on the TAP from prep_activate.  Complete the
-		 * full transition now — ieee80211_set_associated, STA AUTHORIZED,
-		 * ap_addr←TAP — so that PTK can be installed and the EXEC frame
-		 * can be sent to the TAP with encryption.
-		 *
-		 * prep_complete_target (COMPLETE notification + target cleanup) is
-		 * deferred (defer_complete=true) until the EXEC Response confirms
-		 * the TAP accepted the transition.
-		 */
-		if (target->transition_done_in_prep) {
-			target->execution_in_progress = true;
-			__ieee80211_smd_dl_drain_complete(sdata, target, true);
-			target->execution_in_progress = false;
-		}
 	}
 
 	done.status_code = WLAN_STATUS_SUCCESS;
-	done.transitioning_links = target->transition_done_in_prep
-		? target->prep_transition_links
-		: transitioning_links;
-	if (target->is_preferred_target &&
-	    (transitioning_links || target->transition_done_in_prep))
+	done.transitioning_links = transitioning_links;
+	if (!target->exec_path && target->is_preferred_target && transitioning_links)
 		done.link_transition_state = NL80211_SMD_LINK_STATE_PARTIAL;
 	else
 		done.link_transition_state = NL80211_SMD_LINK_STATE_PENDING;
@@ -956,7 +949,7 @@ static void ieee80211_process_smd_prep_resp(struct ieee80211_sub_if_data *sdata,
 		target->prep_timeout_started = false;
 	}
 
-	if (assoc_data->smd_timeout)
+	if (!target->exec_path && assoc_data->smd_timeout)
 		ieee80211_smd_start_exec_timeout(sdata, target, assoc_data->smd_timeout);
 
 	sdata_info(sdata, "ST: prep complete - %pM (transition=0x%x)\n",
@@ -975,7 +968,7 @@ out_fail:
 
 out:
 	if (status_code != WLAN_STATUS_SUCCESS)
-		ieee80211_smd_prep_reset_target(sdata, target, status_code, 0);
+		ieee80211_smd_prep_reset_target(sdata, target, status_code, 0, false);
 }
 
 static void ieee80211_process_smd_exec_resp(struct ieee80211_sub_if_data *sdata,
@@ -1069,7 +1062,7 @@ static void ieee80211_process_smd_exec_resp(struct ieee80211_sub_if_data *sdata,
 	if (status_code != WLAN_STATUS_SUCCESS) {
 		sdata_info(sdata, "smd: exec rejected with status %u\n",
 			   status_code);
-		ieee80211_smd_prep_reset_target(sdata, target, status_code, 1);
+		ieee80211_smd_prep_reset_target(sdata, target, status_code, 1, false);
 		return;
 	}
 
@@ -1084,7 +1077,8 @@ static void ieee80211_process_smd_exec_resp(struct ieee80211_sub_if_data *sdata,
 				  "smd: exec group key data truncated (%u > %zu)\n",
 				  group_key_data_len, len);
 			ieee80211_smd_prep_reset_target(sdata, target,
-						WLAN_STATUS_UNSPECIFIED_FAILURE, 1);
+						WLAN_STATUS_UNSPECIFIED_FAILURE, 1,
+						false);
 			return;
 		}
 
@@ -1132,8 +1126,8 @@ static void ieee80211_process_smd_exec_resp(struct ieee80211_sub_if_data *sdata,
 
 	sdata_info(sdata, "smd: exec dl_drain=%u TU\n", dl_drain_time_tu);
 
-	if (dl_drain_time_tu > 0)
-		sdata_info(sdata, "ST: exec complete — SAP draining DL (%u TU)\n",
+	if (dl_drain_time_tu > 0 && WARN_ON(target->exec_path))
+		sdata_info(sdata, "ST: exec complete SAP draining DL (%u TU)\n",
 			   dl_drain_time_tu);
 	else
 		sdata_info(sdata, "smd: exec complete, no drain (exec_path=%u)\n",
@@ -1152,18 +1146,11 @@ static void ieee80211_process_smd_exec_resp(struct ieee80211_sub_if_data *sdata,
 		if (t->valid && t != target)
 			ieee80211_smd_prep_reset_target(sdata, t,
 							WLAN_STATUS_REQUEST_DECLINED,
-							0);
+							0, false);
 	}
 
-	if (target->transition_done_in_prep) {
+	if (target->exec_path) {
 		ieee80211_smd_prep_complete_target(sdata, target);
-		done.link_transition_state = NL80211_SMD_LINK_STATE_COMPLETE;
-		cfg80211_uhr_reconfig_resp_done(sdata->dev, &done);
-		return;
-	}
-
-	if (target->exec_path == 1) {
-		__ieee80211_smd_dl_drain_complete(sdata, target, false);
 		done.link_transition_state = NL80211_SMD_LINK_STATE_COMPLETE;
 		cfg80211_uhr_reconfig_resp_done(sdata->dev, &done);
 		return;
@@ -1173,7 +1160,8 @@ static void ieee80211_process_smd_exec_resp(struct ieee80211_sub_if_data *sdata,
 		sdata_info(sdata, "ST: aborted — %pM (phase=exec)\n",
 			   target->target_mld_addr);
 		ieee80211_smd_prep_reset_target(sdata, target,
-						WLAN_STATUS_UNSPECIFIED_FAILURE, 1);
+						WLAN_STATUS_UNSPECIFIED_FAILURE, 1,
+						false);
 		return;
 	}
 

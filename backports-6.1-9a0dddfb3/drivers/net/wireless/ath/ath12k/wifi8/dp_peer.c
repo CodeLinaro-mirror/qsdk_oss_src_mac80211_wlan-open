@@ -30,6 +30,10 @@ void ath12k_dp_tqm_update_completion(struct ath12k_dp *dp, void *ctx,
 	struct ath12k_dp_tx_queue *data = ctx;
 	struct ath12k_base *ab = dp->ab;
 
+	/* NULL tqm_status = forced cleanup from tqm_cmd_list_cleanup; no-op. */
+	if (!tqm_status)
+		return;
+
 	ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
 			 "dp tqm update: peer_id=%u hw_link_id=%u status=%d\n",
 			 data ? data->peer_id : 0, data ? data->hw_link_id : 0,
@@ -401,6 +405,7 @@ int ath12k_wifi8_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 	dp_peer->sta = params->sta;
 	dp_peer->vif = vif;
 	dp_peer->is_mlo = params->is_mlo;
+	dp_peer->is_epp_peer = params->is_epp_peer;
 	dp_peer->peer_id = ath12k_wifi8_peer_id_alloc(dp_hw);
 	if (dp_peer->peer_id == ATH12K_MLO_PEER_ID_INVALID) {
 		ath12k_dp_peer_stats_free(dp_peer);
@@ -1058,7 +1063,8 @@ ath12k_wifi8_dp_peer_assoc_smd_transition(struct ath12k_dp *dp,
 }
 
 int ath12k_wifi8_dp_peer_assoc(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
-			       struct ath12k_dp_vif *dp_vif, u8 *addr)
+			       struct ath12k_dp_vif *dp_vif, u8 *addr,
+			       struct ath12k_dp_peer_create_params *params)
 {
 	struct ath12k_ast_entry_config_params ast_param = {0};
 	struct ath12k_dp_hw_group_wifi8 *dp_hw_group_wifi8;
@@ -1085,10 +1091,14 @@ int ath12k_wifi8_dp_peer_assoc(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 	int j;
 
 	spin_lock_bh(&dp_hw->peer_hash_lock);
-	dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, addr);
+	if (!params->is_vdev_peer)
+		dp_peer = ath12k_dp_peer_find_by_addr_and_sta(dp_hw, addr, params->sta);
+	else
+		dp_peer = ath12k_dp_vdev_peer_check(dp_hw, addr, params->hw_link_id);
 
 	if (!dp_peer) {
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
+		ath12k_err(NULL, "Unable to find dp_peer during assoc %pM\n", addr);
 		return -ENOENT;
 	}
 
@@ -1117,6 +1127,13 @@ int ath12k_wifi8_dp_peer_assoc(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 			   addr);
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		return 0;
+	}
+
+	if (dp_peer->peer_ext_ctx) {
+		ath12k_err(dp->ab,
+			   "peer ext is already allocated, wrong peer found %pM", addr);
+		spin_unlock_bh(&dp_hw->peer_hash_lock);
+		return -ENOENT;
 	}
 
 	peer_ext_ctx = kzalloc(sizeof(*peer_ext_ctx), GFP_ATOMIC);
@@ -1231,6 +1248,8 @@ int ath12k_wifi8_dp_peer_assoc(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 	ast_param.peer_id = dp_peer->peer_id;
 	ast_param.tx_classify_info_paddr = tx_classify_paddr;
 	ast_param.ast_entry_flags |= ATH12K_AST_ENTRY_IS_USE_ADDRX;
+	if (dp_peer->is_vdev_peer)
+		ast_param.ast_entry_flags |= ATH12K_AST_ENTRY_IS_AP_BSS_ENTRY;
 	ret = ath12k_dp_ast_entry_create(dp->dp_hw_grp, &ast_param);
 	if (ret)
 		goto free_queues_info;
@@ -2151,11 +2170,32 @@ void ath12k_dp_peer_cleanup_indication(struct ath12k_dp *dp,
 
 	tx_info = ath12k_dp_get_tx_flow_info_from_peer(dp_peer);
 	if (!tx_info) {
-		/* SMD case: peer_ext_ctx was detached during PREP phase (MLO).
-		 * exec_activate_links() already NULLed peer_ext_ctx on the
-		 * current peer during EXEC resp.  Now we just need to send
-		 * TQM_SYNC to trigger the cleanup callback which will skip
-		 * resource freeing (since peer_ext_ctx is NULL).
+		if (dp_peer->is_sta_bss_peer && dp_peer->smd_exec_transferred) {
+			/* SMD BSS Transition EXEC completed on this STA BSS
+			 * peer: all TXQ queues were re-pointed to the target
+			 * peer_id via tqm-update and peer_ext_ctx was NULLed.
+			 * TQM no longer holds queues for this peer_id and will
+			 * not generate a TQM_SYNC status response.
+			 *
+			 * Mark the peer as LOGICALLY_DELETED so that
+			 * ath12k_wifi8_dp_peer_delete() frees it when the WMI
+			 * peer delete response arrives.  Do NOT free here —
+			 * dp_peer_delete() is the owner of the final kfree.
+			 */
+			ath12k_dbg(dp->ab, ATH12K_DBG_SMD | ATH12K_DBG_PEER,
+				   "peer-cleanup-ind: SMD exec complete, skipping TQM_SYNC for dp_peer %pM id=%u\n",
+				   dp_peer->addr, peer_id);
+			dp_peer->dp_peer_state = ATH12K_DP_PEER_LOGICALLY_DELETED;
+			spin_unlock_bh(&dp_hw->peer_hash_lock);
+			rcu_read_unlock();
+			return;
+		}
+
+		/* SMD PREP in progress: peer_ext_ctx still set, EXEC has not
+		 * yet run. Send TQM_SYNC to ensure all in-flight TQM
+		 * completions drain before EXEC transfers ownership.
+		 * tqm-cleanup-sync will find peer_ext_ctx NULL (NULLed by EXEC
+		 * before it fires) and skip resource freeing.
 		 */
 		ath12k_dbg_level(dp->ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
 				 "peer-cleanup-ind: tx_info NULL (SMD case), sending TQM_SYNC only\n");
@@ -2349,6 +2389,90 @@ int ath12k_wifi8_dp_smd_prep_transfer_ext_ctx(struct ath12k_dp *dp,
 	return 0;
 }
 
+/**
+ * ath12k_wifi8_dp_smd_abort_prep()
+ *	Undo the ext_ctx sharing done during PREP.
+ *
+ * PREP phase did two things to ext_ctx:
+ *   1. prep_transfer_ext_ctx: smd_parked_ext_ctx = SAP->peer_ext_ctx (parked ref)
+ *   2. peer_assoc_smd_transition: TAP->peer_ext_ctx = smd_parked_ext_ctx (shared)
+ *
+ * The correct reverse:
+ *   1. NULL the TAP peer's peer_ext_ctx: removes the shared reference.
+ *   2. Clear smd_parked_ext_ctx and tracking state.
+ *
+ * After this, the SAP peer remains the sole owner of its peer_ext_ctx.
+ * It will free ext_ctx naturally via peer-cleanup-ind -> tqm-cleanup-sync
+ * when the SAP peer is deleted by sta_info_flush().
+ *
+ * Do NOT delete the AST, free TXQ memory, or kfree ext_ctx here, those
+ * resources are still in active use by the SAP peer.
+ */
+void ath12k_wifi8_dp_smd_abort_prep(struct ath12k_dp *dp)
+{
+	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
+	struct ath12k_dp_peer_ext_ctx *ext_ctx;
+	struct ath12k_dp_peer *target_dp_peer;
+	struct ath12k_pdev_dp *dp_pdev;
+	struct ath12k_dp_hw *dp_hw;
+	u8 target_mld_addr[ETH_ALEN];
+	int pdev_idx;
+
+	spin_lock_bh(&dp_hw_grp->smd_transition_lock);
+	ext_ctx = dp_hw_grp->smd_parked_ext_ctx;
+	if (!ext_ctx) {
+		spin_unlock_bh(&dp_hw_grp->smd_transition_lock);
+		return;
+	}
+	ether_addr_copy(target_mld_addr, dp_hw_grp->smd_target_mld_addr);
+
+	/* Unpark: clear group-level tracking first. */
+	dp_hw_grp->smd_parked_ext_ctx = NULL;
+	dp_hw_grp->smd_old_peer_id = 0;
+	eth_zero_addr(dp_hw_grp->smd_target_mld_addr);
+	spin_unlock_bh(&dp_hw_grp->smd_transition_lock);
+
+	ath12k_dbg(dp->ab, ATH12K_DBG_SMD,
+		   "smd abort prep: removing shared ext_ctx from target peer %pM\n",
+		   target_mld_addr);
+
+	/* Find the target (TAP) MLD BSS peer across all pdevs and NULL its
+	 * peer_ext_ctx.  This removes the shared reference — the ext_ctx
+	 * remains owned by the SAP peer which will free it on peer delete.
+	 * The target peer may not exist yet (e.g. if PREP failed before
+	 * peer_assoc ran) — silently skip in that case.
+	 */
+	rcu_read_lock();
+	for (pdev_idx = 0; pdev_idx < dp->ab->num_radios; pdev_idx++) {
+		dp_pdev = ath12k_dp_to_dp_pdev(dp, pdev_idx);
+		if (!dp_pdev || !dp_pdev->dp_hw)
+			continue;
+
+		dp_hw = dp_pdev->dp_hw;
+		spin_lock_bh(&dp_hw->peer_hash_lock);
+		target_dp_peer = ath12k_dp_peer_find_by_addr(dp_hw,
+							     target_mld_addr);
+		if (target_dp_peer) {
+			if (WARN_ONCE(target_dp_peer->peer_ext_ctx != ext_ctx,
+				      "smd abort prep: target peer %pM peer_ext_ctx mismatch (got %p, expected %p)\n",
+				      target_mld_addr,
+				      target_dp_peer->peer_ext_ctx, ext_ctx)) {
+				spin_unlock_bh(&dp_hw->peer_hash_lock);
+				break;
+			}
+			target_dp_peer->peer_ext_ctx = NULL;
+			spin_unlock_bh(&dp_hw->peer_hash_lock);
+			ath12k_dbg(dp->ab, ATH12K_DBG_SMD,
+				   "smd abort prep: NULLed peer_ext_ctx on target %pM pdev=%d\n",
+				   target_mld_addr, pdev_idx);
+			break;
+		}
+		spin_unlock_bh(&dp_hw->peer_hash_lock);
+	}
+	rcu_read_unlock();
+}
+EXPORT_SYMBOL(ath12k_wifi8_dp_smd_abort_prep);
+
 void ath12k_wifi8_dp_smd_update_msduq_chip_status_via_tqm(struct ath12k_base *ab,
 					struct ath12k_dp_hw_group *dp_hw_grp,
 					struct ath12k_dp_tx_flow_info *tx_info,
@@ -2493,6 +2617,7 @@ void ath12k_wifi8_dp_smd_exec_activate_links(struct ath12k_dp *dp,
 		if (current_dp_peer &&
 		    current_dp_peer->peer_ext_ctx == ext_ctx) {
 			current_dp_peer->peer_ext_ctx = NULL;
+			current_dp_peer->smd_exec_transferred = true;
 			ath12k_dbg(dp->ab, ATH12K_DBG_SMD,
 				   "smd exec: NULLed ext_ctx on current peer id=%u\n",
 				   old_peer_id);

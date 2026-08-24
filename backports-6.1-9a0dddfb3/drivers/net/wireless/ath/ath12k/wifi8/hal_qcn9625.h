@@ -51,6 +51,14 @@ extern const struct hal_mon_ops hal_qcn9625_mon_ops_base;
 void ath12k_wifi8_hal_qcn9625_hw20_mon_ops_init(struct ath12k_hal *hal);
 void ath12k_wifi8_hal_qcn9625_hw10_mon_ops_init(struct ath12k_hal *hal);
 
+extern struct hal_ops hal_qcn9625_v1_ops;
+void ath12k_wifi8_hal_init_v1_ops(void);
+u32 ath12k_wifi8_hal_get_rx_desc_size_qcn9625_v1(void);
+u16 ath12k_wifi8_hal_rx_mpdu_start_wmask_get_qcn9625_v1(void);
+u32 ath12k_wifi8_hal_rx_msdu_end_wmask_get_qcn9625_v1(void);
+u32 ath12k_wifi8_hal_rx_desc_get_mpdu_start_offset_qcn9625_v1(void);
+u32 ath12k_wifi8_hal_rx_desc_get_msdu_end_offset_qcn9625_v1(void);
+
 /* HAL init/deinit and core config — shared between HW1.0 and HW2.0 ops tables */
 int ath12k_wifi8_hal_init_qcn9625(struct ath12k_hal *hal, u8 hw_version);
 void ath12k_wifi8_hal_deinit_qcn9625(struct ath12k_hal *hal);
@@ -359,4 +367,38 @@ void ath12k_wifi8_hal_rx_desc_get_fse_info_qcn9625(struct hal_rx_desc *desc,
 	rx_mpdu_info->flow_info.flow_metadata =
 		le16_get_bits(desc->u.qcn9625_compact.msdu_end.fse_metadata,
 			      ATH12K_DP_RX_FSE_FLOW_METADATA_MASK);
+}
+
+static inline
+u32 ath12k_wifi8_hal_rx_get_fse_metadata_qcn9625(struct hal_rx_desc *desc)
+{
+	return __le32_to_cpu(desc->u.qcn9625_compact.msdu_end.fse_metadata);
+}
+
+static inline
+u16 ath12k_wifi8_hal_rx_get_cce_metadata_qcn9625(struct hal_rx_desc *desc)
+{
+	/* rsvd_0 lower 16 bits = cce_metadata, upper 16 bits = tcp_udp_chksum */
+	return __le16_to_cpu(desc->u.qcn9625_compact.msdu_end.cce_metadata);
+}
+
+static inline
+bool ath12k_wifi8_hal_rx_get_cce_match_bit_qcn9625(struct hal_rx_desc *desc)
+{
+	return le16_get_bits(desc->u.qcn9625_compact.msdu_end.info8,
+			     RX_MSDU_END_INFO8_CCE_MATCH);
+}
+
+static inline
+void ath12k_wifi8_hal_rx_get_flow_params_qcn9625(struct hal_rx_desc *desc,
+						 u32 *flow_idx,
+						 bool *flow_idx_invalid,
+						 bool *flow_idx_timeout)
+{
+	__le32 info7 = desc->u.qcn9625_compact.msdu_end.info7;
+	__le16 info8 = desc->u.qcn9625_compact.msdu_end.info8;
+
+	*flow_idx = le32_get_bits(info7, RX_MSDU_END_INFO7_FLOW_IDX);
+	*flow_idx_invalid = le16_get_bits(info8, RX_MSDU_END_INFO8_FLOW_IDX_INVALID);
+	*flow_idx_timeout = le16_get_bits(info8, RX_MSDU_END_INFO8_FLOW_IDX_TIMEOUT);
 }

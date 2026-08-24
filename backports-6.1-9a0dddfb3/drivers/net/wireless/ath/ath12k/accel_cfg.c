@@ -72,6 +72,19 @@ void ath12k_ast_info_get(struct  ath12k_base *ab, struct ath12k_vif *ahvif,
 }
 #endif
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+static void ath12k_ppeds_wifi_arch_info_get(struct ath12k_base *ab,
+					   uint8_t *out_wifi_arch_info)
+{
+	struct ppe_ds_wlan_ops_v2 *wlan_ops = ab->dp->ppe.ppeds_wlanops;
+
+	if (!wlan_ops || !wlan_ops->get_wlan_arch_mode)
+		*out_wifi_arch_info = PPE_DS_WIFI_ARCH_MODE_WIFI7;
+	else
+		*out_wifi_arch_info = wlan_ops->get_wlan_arch_mode();
+}
+#endif
+
 /**
  * ath12k_get_ingress_mlo_dev_info() - Retrieve node id
  * @ndev: pointer to corresponding net_device
@@ -92,6 +105,7 @@ void ath12k_get_ingress_mlo_dev_info(struct net_device *ndev,
 	struct  ath12k_base *ab;
 	struct  ieee80211_vif *vif;
 	u8 node_id = ATH12k_DS_NODE_ID_INVALID;
+	md_param->out_wifi_arch_info = PPE_DS_WIFI_ARCH_MODE_WIFI7;
 
 	vif = wdev_to_ieee80211_vif_vlan(wdev, false);
 
@@ -159,6 +173,8 @@ void ath12k_get_ingress_mlo_dev_info(struct net_device *ndev,
 
 	ath12k_ast_info_get(ab, ahvif, sta->addr, &md_param->ast_param);
 	node_id = ab->dp->ppe.ds_node_id;
+
+	ath12k_ppeds_wifi_arch_info_get(ab, &md_param->out_wifi_arch_info);
 #endif
 	ath12k_mlo_info_get(node_id, &md_param->mlo_param);
 

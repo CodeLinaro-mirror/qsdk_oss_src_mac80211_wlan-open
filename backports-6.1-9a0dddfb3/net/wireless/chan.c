@@ -164,19 +164,42 @@ bool valid_puncturing_bitmap(const struct cfg80211_chan_def *chandef)
 		return chandef->punctured == 0;
 	}
 
-	if (!chandef->punctured)
-		return true;
+	if (chandef->punctured) {
+		/* check if primary channel is punctured */
+		if (chandef->punctured & (u16)BIT((primary_center - start_freq) / 20))
+			return false;
 
-	/* check if primary channel is punctured */
-	if (chandef->punctured & (u16)BIT((primary_center - start_freq) / 20))
+		for (i = 0; i < per_bw_puncturing[idx].len; i++) {
+			if (per_bw_puncturing[idx].valid_values[i] == chandef->punctured)
+				goto check_npca;
+		}
 		return false;
-
-	for (i = 0; i < per_bw_puncturing[idx].len; i++) {
-		if (per_bw_puncturing[idx].valid_values[i] == chandef->punctured)
-			return true;
 	}
 
-	return false;
+check_npca:
+	/*
+	 * Validate NPCA puncture bitmap when present (80/160/320 MHz).
+	 * npca_puncture_bitmap spans the full operating bandwidth (same
+	 * coordinate space as chandef->punctured). npca_freq is the NPCA
+	 * primary channel frequency; it must not be punctured in the bitmap,
+	 * and the bitmap must be a valid puncturing pattern for this width.
+	 */
+	if (chandef->npca_freq && chandef->npca_puncture_bitmap) {
+		/* NPCA primary channel must not be punctured */
+		if (chandef->npca_puncture_bitmap &
+		    (u16)BIT((chandef->npca_freq - start_freq) / 20))
+			return false;
+
+		/* must be a valid puncturing pattern for this bandwidth */
+		for (i = 0; i < per_bw_puncturing[idx].len; i++) {
+			if (per_bw_puncturing[idx].valid_values[i] ==
+			    chandef->npca_puncture_bitmap)
+				return true;
+		}
+		return false;
+	}
+
+	return true;
 }
 EXPORT_SYMBOL(valid_puncturing_bitmap);
 
@@ -486,6 +509,11 @@ void cfg80211_chandef_primary_freqs(const struct cfg80211_chan_def *c,
 {
 	int tmp;
 
+	if (!pri40 || !pri80 || !pri160) {
+		WARN_ON_ONCE(1);
+		return;
+	}
+
 	switch (c->width) {
 	case NL80211_CHAN_WIDTH_40:
 		*pri40 = c->center_freq1;
@@ -565,7 +593,10 @@ int cfg80211_chandef_primary(const struct cfg80211_chan_def *c,
 			*punctured >>= bits_to_drop;
 		} else {
 			center -= width / 4;
-			*punctured &= (1 << bits_to_drop) - 1;
+			if (bits_to_drop >= 16)
+				*punctured = 0;
+			else
+				*punctured &= (1U << bits_to_drop) - 1;
 		}
 		width /= 2;
 	}
@@ -608,8 +639,28 @@ _cfg80211_chandef_compatible(const struct cfg80211_chan_def *c1,
 		return c2;
 
 	/* otherwise, must have same control channel */
-	if (c1->chan != c2->chan)
+	if (!c1->chan || !c2->chan)
 		return NULL;
+	/*
+	 * For 6 GHz, ieee80211_get_6g_channel_khz() returns a pointer from
+	 * sband->chan_6g[mode]->channels[] where mode is the regulatory power
+	 * type (LPI/SP/VLP).  Different callers may use different power modes:
+	 * the AP path (nl80211_parse_chandef) uses the configured AP power mode
+	 * while the STA path uses the mode derived from the BSS's advertised
+	 * power type.  Both point to the same physical 6 GHz frequency but in
+	 * different chan_6g[mode] arrays — pointer identity fails.  Compare by
+	 * center_freq and freq_offset for 6 GHz; pointer identity is sufficient
+	 * for 2.4/5 GHz where only one channel array exists.
+	 */
+	if (c1->chan->band == NL80211_BAND_6GHZ ||
+	    c2->chan->band == NL80211_BAND_6GHZ) {
+		if (c1->chan->center_freq != c2->chan->center_freq ||
+		    c1->chan->freq_offset != c2->chan->freq_offset)
+			return NULL;
+	} else {
+		if (c1->chan != c2->chan)
+			return NULL;
+	}
 
 	/*
 	 * If they have the same width, but aren't identical,
@@ -2038,6 +2089,9 @@ cfg80211_update_chandef_6ghz_power_mode(const struct net_device *netdev,
 	if (!chan) {
 		return -EINVAL;
 	}
+
+	if (link_id >= ARRAY_SIZE(wdev->links))
+		return -EINVAL;
 
 	chandef->chan = chan;
 	wdev->links[link_id].reg_6g_power_mode = power_mode;

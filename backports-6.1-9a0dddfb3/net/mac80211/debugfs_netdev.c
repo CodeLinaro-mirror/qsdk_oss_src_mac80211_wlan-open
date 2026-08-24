@@ -21,11 +21,13 @@
 #include "rate.h"
 #include "debugfs.h"
 #include "debugfs_netdev.h"
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/debugfs_bigtk.h"
 #include "qcn_extns/debugfs_gtk.h"
 #include "qcn_extns/debugfs_ptk.h"
 #include "qcn_extns/debugfs_igtk.h"
 #include "qcn_extns/debugfs_cigtk.h"
+#endif /* CPTCFG_QCN_EXTN */
 #include "driver-ops.h"
 
 const char *rx_drop_reason_strings[RX_DROP_REASON_MAX] = {
@@ -212,9 +214,9 @@ static ssize_t ieee80211_if_write_link_handler(struct wiphy *wiphy,
 					       size_t count,
 					       void *data)
 {
-	struct ieee80211_if_write_sdata_data *d = data;
+	struct ieee80211_if_write_link_data *d = data;
 
-	return d->write(d->sdata, buf, count);
+	return d->write(d->link, buf, count);
 }
 
 static ssize_t ieee80211_if_write_link(
@@ -1195,6 +1197,7 @@ static void add_common_files(struct ieee80211_sub_if_data *sdata)
 	    sdata->vif.type != NL80211_IFTYPE_NAN)
 		DEBUGFS_ADD(aqm);
 
+#ifdef CPTCFG_QCN_EXTN
 	/* BIGTK (Beacon Integrity Group Temporal Key) get/set entries */
 	ieee80211_debugfs_bigtk_add(sdata);
 
@@ -1209,6 +1212,7 @@ static void add_common_files(struct ieee80211_sub_if_data *sdata)
 
 	/* CIGTK (Control Integrity Group Temporal Key) get/set entries */
 	ieee80211_debugfs_cigtk_add(sdata);
+#endif /* CPTCFG_QCN_EXTN */
 
 }
 

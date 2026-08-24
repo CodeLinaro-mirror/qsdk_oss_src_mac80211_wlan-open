@@ -300,6 +300,30 @@ void ath12k_peer_del_tracker_remove(struct ath12k_pdev *pdev, u32 vdev_id, const
 	}
 }
 
+/* Check if a peer in the deletion tracker is an MLO peer (has a non-zero
+ * MLD MAC address).  Must be called before ath12k_peer_del_tracker_remove()
+ * since the entry is freed during removal.
+ */
+bool ath12k_peer_del_tracker_is_mlo(struct ath12k_pdev *pdev, u32 vdev_id,
+				    const u8 *addr)
+{
+	struct ath12k_peer_del_tracker *tracker = pdev->peer_del_tracker;
+	struct ath12k_peer_del_entry *entry;
+	bool is_mlo = false;
+
+	if (!tracker)
+		return false;
+
+	spin_lock_bh(&tracker->lock);
+	entry = rhashtable_lookup_fast(&tracker->peer_del_hash, addr,
+				       tracker->hash_params);
+	if (entry && entry->vdev_id == vdev_id)
+		is_mlo = !is_zero_ether_addr(entry->mld_addr);
+	spin_unlock_bh(&tracker->lock);
+
+	return is_mlo;
+}
+
 /* Check if a peer is in the deletion tracking hash.
  * Returns -EEXIST if found, 0 if not found.
  */
@@ -575,6 +599,7 @@ void ath12k_peer_cleanup(struct ath12k *ar, u32 vdev_id)
 		.vdev_id = vdev_id,
 		.num_ml_peers = 0,
 	};
+	struct ath12k_link_vif *arvif = NULL;
 	struct ath12k_base *ab = ar->ab;
 	int count;
 
@@ -586,6 +611,20 @@ void ath12k_peer_cleanup(struct ath12k *ar, u32 vdev_id)
 	if (count > 0) {
 		ar->num_peers -= count;
 		ar->num_ml_peers -= ctx.num_ml_peers;
+		if (ctx.num_ml_peers) {
+			struct ath12k_hw_group *ag = ab->ag;
+
+			ag->mlo_peer_count -= ctx.num_ml_peers;
+			ath12k_dbg(ab, ATH12K_DBG_PEER | ATH12K_DBG_WSI_BYPASS,
+				   "stale MLO peer cleanup ar[%u] num_ml_peers=%u mlo_peer_count=%u\n",
+				   ar->radio_idx, ar->num_ml_peers, ag->mlo_peer_count);
+			if (!ag->mlo_peer_count)
+				complete(&ag->peer_cleanup_complete);
+		}
+		arvif = ath12k_mac_get_arvif(ar, vdev_id);
+		if (arvif)
+			arvif->num_ml_peers_del_all = 0;
+
 		ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L0,
 				 "cleaned up %d stale peers from vdev_id %d\n",
 				 count, vdev_id);
@@ -624,6 +663,13 @@ static int ath12k_peer_delete_send(struct ath12k *ar, u32 vdev_id, const u8 *add
 				    addr, ret);
 	}
 
+	ret = ath12k_wait_pending_deauth_disassoc_tx(ar, addr,
+						     ATH12K_PEER_DELETE_MGMT_TX_WAIT_MS);
+	if (ret)
+		ath12k_err(ab,
+			    "Tx completion for deauth disassoc %pM ret:%d\n",
+			    addr, ret);
+
 	ret = ath12k_wmi_send_peer_delete_cmd(ar, addr, vdev_id,
 					      mlo_hw_link_id_bitmap,
 					      peer_delete_send_mlo_hw_bitmap);
@@ -659,16 +705,21 @@ static int __ath12k_peer_delete(struct ath12k *ar, u32 vdev_id, u8 *addr,
 	int link_id = -1;
 	int ret;
 	bool was_mlo = false;
+	bool is_self_peer = false;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
 	spin_lock_bh(&ar->arsta_lock);
 	arsta = ath12k_link_sta_find_by_addr(ar, addr);
-	if (arsta && arsta->ahsta) {
-		ahsta = arsta->ahsta;
-		link_id = arsta->link_id;
-		if (arsta->ahsta->is_mlo && !arsta->is_bridge_peer)
-			was_mlo = true;
+	if (arsta) {
+		if (arsta->ahsta) {
+			ahsta = arsta->ahsta;
+			link_id = arsta->link_id;
+			if (arsta->ahsta->is_mlo && !arsta->is_bridge_peer)
+				was_mlo = true;
+		}
+		if (arsta->is_self_peer)
+			is_self_peer = true;
 	}
 	spin_unlock_bh(&ar->arsta_lock);
 
@@ -701,13 +752,18 @@ static int __ath12k_peer_delete(struct ath12k *ar, u32 vdev_id, u8 *addr,
 #endif
 	}
 
+	/* Self-peer (AP BSS peer) is never counted in arvif->num_peers
+	 * (only client peers are via station_add), so skip the decrement
+	 * to avoid underflow.
+	 */
+	if (arvif && !skip_peer_del && !is_self_peer)
+		arvif->num_peers--;
+
 	rcu_read_unlock();
+
 	/* Decrement ML peer count for this radio if it was an MLO station */
 	if (was_mlo)
 		ar->num_ml_peers--;
-
-	if (arvif && !skip_peer_del)
-		arvif->num_peers--;
 
 	return 0;
 }
@@ -729,6 +785,9 @@ int ath12k_peer_delete(struct ath12k *ar, u32 vdev_id, u8 *addr,
 
 	ar->num_peers--;
 
+	if (sta && sta->mapc && ar->num_mapc_peers > 0)
+		ar->num_mapc_peers--;
+
 	return ret;
 }
 
@@ -737,8 +796,8 @@ static int ath12k_wait_for_peer_created(struct ath12k *ar, int vdev_id, const u8
 	return ath12k_wait_for_peer_common(ar, vdev_id, addr, true);
 }
 
-static int ath12k_wait_for_peer_create_done(struct ath12k *ar, u32 vdev_id,
-					    const u8 *addr)
+int ath12k_wait_for_peer_create_done(struct ath12k *ar, u32 vdev_id,
+				     const u8 *addr)
 {
 	int ret;
 	unsigned long time_left;
@@ -802,6 +861,7 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		       struct ath12k_wmi_peer_create_arg *arg)
 {
 	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(arvif->ahvif);
+	struct ath12k_hw_group *ag = ar->ab->ag;
 	u8 link_id = arvif->link_id;
 	struct ath12k_sta *ahsta = NULL;
 	int ret;
@@ -827,6 +887,23 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		ath12k_warn(ar->ab,
 			    "[vdev_id : %u radio_idx : %u] failed to create peer due to insufficient peer entry resource in firmware\n",
 			     arg->vdev_id, ar->radio_idx);
+		return -ENOBUFS;
+	}
+
+	/* Block peer create Till the HW restart is done in case of Mode-2*/
+	if (sta && sta->mlo && ag->block_peer_create) {
+		ath12k_err(ar->ab, "Avoiding MLO peer create between qmi restart of partner\n");
+		return -EHOSTDOWN;
+	}
+
+	if (arg->peer_type == WMI_PEER_TYPE_MAPC &&
+	    ar->ab->mapc_max_co_ap_peers > 0 &&
+	    ar->num_mapc_peers >= (int)ar->ab->mapc_max_co_ap_peers) {
+		ath12k_warn(ar->ab,
+			    "[vdev_id:%u radio_idx:%u] MAPC peer limit reached (%d/%u)\n",
+			    arg->vdev_id, ar->radio_idx,
+			    ar->num_mapc_peers,
+			    ar->ab->mapc_max_co_ap_peers);
 		return -ENOBUFS;
 	}
 
@@ -877,10 +954,31 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 
 	ar->num_peers++;
 
+	if (arg->peer_type == WMI_PEER_TYPE_MAPC)
+		ar->num_mapc_peers++;
+
 	if (sta && sta->mlo) {
 		/* Count one ML peer per radio for real link peers */
-		if (!arg->mlo_bridge_peer)
+		if (!arg->mlo_bridge_peer) {
 			ar->num_ml_peers++;
+			/* Increment the per-VAP MLO peer count for AP-mode vdevs
+			 * only.  STA-mode vdevs (repeater upstream connection) are
+			 * excluded because their peers are deleted via individual
+			 * peer-delete responses, not peer_delete_all, so they must
+			 * not be included in the del-all snapshot.
+			 */
+			if (arvif->ahvif->vdev_type != WMI_VDEV_TYPE_STA)
+				arvif->num_ml_peers++;
+			/* mlo_peer_count tracks all MLO peers (AP + STA) since
+			 * every MLO peer gets an individual peer-delete response.
+			 */
+			ar->ab->ag->mlo_peer_count++;
+			ath12k_dbg(ar->ab, ATH12K_DBG_PEER | ATH12K_DBG_WSI_BYPASS,
+				   "MLO peer created %pM ar[%u] arvif_num_ml_peers=%u mlo_peer_count=%u\n",
+				   arg->peer_addr, ar->radio_idx,
+				   arvif->num_ml_peers,
+				   ar->ab->ag->mlo_peer_count);
+		}
 	}
 
 	return ret;
@@ -895,19 +993,13 @@ int ath12k_peer_dp_cp_link_peer_delete(struct ath12k_link_vif *arvif,
 	bool ml_peer_del_all = false;
 	struct ath12k *ar;
 	int ret;
-	struct ath12k_dp_peer *dp_peer;
 
 	if (!arvif)
 		return 0;
 
 	ar = arvif->ar;
 
-	dp_peer = ath12k_sta_get_dp_peer_wiphy_locked(ath12k_ar_to_hw(ar)->wiphy, ahsta);
-	if (!dp_peer)
-		return 0;
-
 	ml_peer_del_all = ar->ab->hw_params->peer_del_all_support;
-	ath12k_dp_peer_cleanup(ar, dp_peer, arvif->vdev_id, addr);
 	ath12k_dp_cp_link_peer_unassign(ar, arvif, ahsta, link_id, addr, update_bmap);
 
 	if (ml_peer_del_all && arvif->peer_del_all_enable) {
@@ -965,11 +1057,28 @@ int ath12k_peer_mlo_link_peers_delete(struct ath12k_vif *ahvif,
 	mlo_hw_link_id_bitmap = ahsta->mlo_hw_link_id_bitmap;
 	for_each_set_bit(link_id, &links, ATH12K_NUM_MAX_LINKS) {
 		arvif = wiphy_dereference(ah->hw->wiphy, ahvif->link[link_id]);
+		/*
+		 * ahsta->link[link_id] may be NULL for MLO STA after
+		 * sta_pre_rcu_remove() cleared it before synchronize_net().
+		 * Use saved_link_sta as fallback — it was saved in
+		 * sta_pre_rcu_remove() before the pointer was cleared.
+		 */
 		arsta = wiphy_dereference(ah->hw->wiphy, ahsta->link[link_id]);
+		if (!arsta)
+			arsta = ahsta->saved_link_sta[link_id];
+		if (!arsta)
+			continue;
 
-		ar = arvif->ar;
+		ar = arvif ? arvif->ar : NULL;
 		if (!ar)
 			continue;
+
+		if (!arsta) {
+			ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
+				   "peer_mlo_link_peers_delete: arsta NULL for link_id=%u sta %pM (SMD abort), skipping\n",
+				   link_id, sta->addr);
+			continue;
+		}
 
 #ifdef CPTCFG_QCN_EXTN
 		ath12k_smart_ant_api_peer_disconnect(arsta);
@@ -986,6 +1095,35 @@ int ath12k_peer_mlo_link_peers_delete(struct ath12k_vif *ahvif,
 							 false);
 		if (ret)
 			err_ret = ret;
+
+		/* In Mode 3 recovery, after link_remove (mlo_link_del) but before
+		 * a successful link_readd, the asserted chip FW has no peer record.
+		 * If the peer is torn down in this window (readd failure or explicit
+		 * disconnect), WMI peer delete is skipped (RECOVERY flag) and FW
+		 * therefore never sends HTT_T2H_GLOBAL_PEER_ID_UNMAP.  Without that
+		 * event, ath12k_dp_peer_cleanup_indication() is never called, leaving
+		 * TQM queues for the asserted link undrained.  Manually invoke it here.
+		 */
+		if (sta->mlo &&
+		    ahsta->recov.asserted_peer_pending &&
+		    ar->ab == ar->ab->ag->assert_ab) {
+			struct ath12k_dp_peer *dp_peer;
+
+			spin_lock_bh(&ar->ah->dp_hw.peer_hash_lock);
+			dp_peer = ath12k_dp_peer_find_by_addr(&ar->ah->dp_hw,
+							      arsta->addr);
+			spin_unlock_bh(&ar->ah->dp_hw.peer_hash_lock);
+
+			if (dp_peer) {
+				ath12k_info(ar->ab,
+					    "mode3: htt_unmap_manual: dp_peer found peer_id=%u hw_link=%u\n",
+					    dp_peer->peer_id,
+					    ahsta->recov.asserted_hw_link_id);
+				ath12k_dp_arch_peer_drv_cleanup_indication(
+					ath12k_ab_to_dp(ar->ab), dp_peer->peer_id,
+					ahsta->recov.asserted_hw_link_id);
+			}
+		}
 
 		ar->num_peers--;
 
@@ -1022,10 +1160,11 @@ void ath12k_mac_peer_disassoc(struct ath12k_base *ab, struct ieee80211_sta *sta,
 		 * will be triggerred when umac reset is happening
 		 */
 		ahsta->low_ack_sent = true;
-		/* Track peers marked for deletion during Mode 2 recovery
+		/* Track peers marked for deletion during Mode 2/3 recovery
 		 * to send mlo_hw_link_id_bitmap only for them.
 		 */
-		if (ag && ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2)
+		if (ag && (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2 ||
+			   ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE3))
 			ahsta->peer_delete_send_mlo_hw_bitmap = true;
 	}
 }
@@ -1064,6 +1203,7 @@ int ath12k_link_sta_hlist_add(struct ath12k *ar,
 		return -EEXIST;
 	}
 
+	atomic_set(&arsta->pending_deauth_disassoc_tx, 0);
 	hlist_add_head(&arsta->hlist_addr, bucket);
 	return 0;
 }
@@ -1170,6 +1310,79 @@ struct ath12k_link_sta *ath12k_link_sta_find_by_addr(struct ath12k *ar,
 	return NULL;
 }
 EXPORT_SYMBOL(ath12k_link_sta_find_by_addr);
+
+static int ath12k_peer_pending_deauth_disassoc_tx_get(struct ath12k *ar,
+						      const u8 *addr)
+{
+	struct ath12k_link_sta *arsta;
+	int pending = 0;
+
+	if (!addr)
+		return 0;
+
+	spin_lock_bh(&ar->arsta_lock);
+	arsta = ath12k_link_sta_find_by_addr(ar, addr);
+	if (arsta)
+		pending = atomic_read(&arsta->pending_deauth_disassoc_tx);
+	spin_unlock_bh(&ar->arsta_lock);
+
+	return pending;
+}
+
+bool ath12k_peer_deauth_disassoc_tx_inc(struct ath12k *ar, const u8 *addr)
+{
+	struct ath12k_link_sta *arsta;
+
+	if (!addr)
+		return false;
+
+	spin_lock_bh(&ar->arsta_lock);
+	arsta = ath12k_link_sta_find_by_addr(ar, addr);
+	if (arsta)
+		atomic_inc(&arsta->pending_deauth_disassoc_tx);
+	spin_unlock_bh(&ar->arsta_lock);
+	return true;
+}
+EXPORT_SYMBOL(ath12k_peer_deauth_disassoc_tx_inc);
+
+void ath12k_peer_deauth_disassoc_tx_dec(struct ath12k *ar, const u8 *addr)
+{
+	struct ath12k_link_sta *arsta;
+	int pending;
+
+	if (!addr)
+		return;
+
+	spin_lock_bh(&ar->arsta_lock);
+	arsta = ath12k_link_sta_find_by_addr(ar, addr);
+	if (arsta) {
+		pending = atomic_dec_if_positive(&arsta->pending_deauth_disassoc_tx);
+		if (pending < 0)
+			ath12k_dbg_level(NULL, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+					 "pending_deauth_disassoc_tx underflow:%d\n",
+					 pending);
+	}
+	spin_unlock_bh(&ar->arsta_lock);
+
+	wake_up(&ar->txmgmt_empty_waitq);
+}
+EXPORT_SYMBOL(ath12k_peer_deauth_disassoc_tx_dec);
+
+int ath12k_wait_pending_deauth_disassoc_tx(struct ath12k *ar, const u8 *addr,
+					   unsigned long timeout_ms)
+{
+	if (!addr)
+		return 0;
+
+	if (!wait_event_timeout(ar->txmgmt_empty_waitq,
+				!ath12k_peer_pending_deauth_disassoc_tx_get(ar, addr),
+				msecs_to_jiffies(timeout_ms)) &&
+	    ath12k_peer_pending_deauth_disassoc_tx_get(ar, addr))
+		return -ETIMEDOUT;
+
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_wait_pending_deauth_disassoc_tx);
 
 struct ath12k_link_sta *ath12k_link_sta_find_by_addr_vdev_id(struct ath12k *ar,
 							     const u8 *addr,
@@ -1870,7 +2083,6 @@ EXPORT_SYMBOL(ath12k_link_sta_find_by_vdev_id);
  * @addr: link MAC address
  * @link_id: link ID
  * @valid_link: whether the link ID is valid
- * @is_ds_vif: flag to check if the vif is configured in DS mode
  *
  * Resolves non-DP objects (arvif -> arsta -> ahsta -> peer)
  * and delegates to ath12k_dp_get_link_peer_stats().
@@ -1878,8 +2090,7 @@ EXPORT_SYMBOL(ath12k_link_sta_find_by_vdev_id);
 static int
 ath12k_get_link_peer_stats(struct ath12k_link_vif *arvif,
 			   struct ath12k_telemetry_dp_peer *telemetry_peer,
-			   u8 *addr, u8 link_id, bool valid_link,
-			   bool is_ds_vif)
+			   u8 *addr, u8 link_id, bool valid_link)
 {
 	struct ath12k *ar = arvif->ar;
 	struct ath12k_pdev_dp *dp_pdev = &arvif->ar->dp;
@@ -1914,8 +2125,7 @@ ath12k_get_link_peer_stats(struct ath12k_link_vif *arvif,
 	}
 
 	return ath12k_dp_get_link_peer_stats(dp_pdev, dp_peer,
-					     hw_link_id, telemetry_peer,
-					     is_ds_vif);
+					     hw_link_id, telemetry_peer);
 }
 
 /**
@@ -1942,11 +2152,6 @@ int ath12k_get_peer_telemetry_stats(struct ath12k_vif *ahvif,
 	int stats_link_id = 0, ret = 0;
 	unsigned long links_map = ahvif->links_map;
 	bool valid_link = ahvif->links_map & BIT(link_id);
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	bool is_ds_vif = (ahvif->dp_vif.ppe_vp_type == PPE_VP_USER_TYPE_DS);
-#else
-	bool is_ds_vif = false;
-#endif
 
 	if (ath12k_dp_stats_enabled(&ar->dp) &&
 	    ath12k_dp_debug_stats_enabled(&ar->dp))
@@ -1980,7 +2185,7 @@ int ath12k_get_peer_telemetry_stats(struct ath12k_vif *ahvif,
 		/* Delegate to DP-only function */
 		ret = ath12k_dp_get_peer_stats(dp_pdev, dp_peer, telemetry_peer,
 					       link_id, valid_link, links_map,
-					       stats_link_id, is_ds_vif);
+					       stats_link_id);
 	} else {
 		/* Link peer path (sta not found via MLD MAC) */
 		telemetry_peer->peer_type = ATH12K_LINK_PEER;
@@ -1991,8 +2196,7 @@ int ath12k_get_peer_telemetry_stats(struct ath12k_vif *ahvif,
 				ret = ath12k_get_link_peer_stats(arvif,
 								 telemetry_peer,
 								 addr, link_id,
-								 valid_link,
-								 is_ds_vif);
+								 valid_link);
 			rcu_read_unlock();
 		} else {
 			rcu_read_lock();
@@ -2003,14 +2207,52 @@ int ath12k_get_peer_telemetry_stats(struct ath12k_vif *ahvif,
 				ret = ath12k_get_link_peer_stats(arvif,
 								 telemetry_peer,
 								 addr, link_id,
-								 valid_link,
-								 is_ds_vif);
+								 valid_link);
 			}
 			rcu_read_unlock();
 		}
 	}
 
 	return ret;
+}
+
+/**
+ * ath12k_bcast_probe_rl_init() - Initialise the broadcast probe request
+ *                                rate-limit hash table for a radio.
+ * @ar: radio instance
+ *
+ * Must be called with ar->data_lock held: resets bcast_probe_rl_entries,
+ * which is a lock-protected field.
+ */
+void ath12k_bcast_probe_rl_init(struct ath12k *ar)
+{
+	lockdep_assert_held(&ar->data_lock);
+	hash_init(ar->bcast_probe_rl);
+	ar->bcast_probe_rl_entries    = 0;
+	ar->bcast_probe_rl_max_entries = ATH12K_BCAST_PROBE_RL_MAX_ENTRIES;
+	ar->bcast_probe_rl_window_ms   = ATH12K_BCAST_PROBE_RL_WINDOW_MS;
+}
+
+/**
+ * ath12k_bcast_probe_rl_flush() - Free all entries in the broadcast probe
+ *                                 request rate-limit table.
+ * @ar: radio instance
+ *
+ * Must be called with ar->data_lock held.
+ */
+void ath12k_bcast_probe_rl_flush(struct ath12k *ar)
+{
+	struct ath12k_bcast_probe_rl_entry *entry;
+	struct hlist_node *tmp;
+	int bkt;
+
+	lockdep_assert_held(&ar->data_lock);
+
+	hash_for_each_safe(ar->bcast_probe_rl, bkt, tmp, entry, hnode) {
+		hash_del(&entry->hnode);
+		kfree(entry);
+	}
+	ar->bcast_probe_rl_entries = 0;
 }
 
 void ath12k_sta_update_primary_link(struct wiphy *wiphy,
@@ -2064,20 +2306,17 @@ static int ath12k_vif_peer_iter_cb(struct ath12k *ar,
 					dp_peer_addr,
 					ar->hw_link_id,
 					ctx->arvif,
-					ctx->aggr_vif_stats,
-					ctx->is_ds_vif);
+					ctx->aggr_vif_stats);
 	return 0;
 }
 
 void ath12k_vif_iterate_peer(struct ath12k_link_vif *arvif,
-			     struct ath12k_dp_aggr_vif_stats *aggr_vif_stats,
-			     bool is_ds_vif)
+			     struct ath12k_dp_aggr_vif_stats *aggr_vif_stats)
 {
 	struct ath12k *ar = arvif->ar;
 	struct ath12k_vif_peer_iter_ctx ctx = {
 		.arvif          = arvif,
 		.aggr_vif_stats = aggr_vif_stats,
-		.is_ds_vif      = is_ds_vif,
 	};
 
 	/* Acquire arsta_lock; ath12k_arsta_itr_on_ar_by_vdev_id requires it held.

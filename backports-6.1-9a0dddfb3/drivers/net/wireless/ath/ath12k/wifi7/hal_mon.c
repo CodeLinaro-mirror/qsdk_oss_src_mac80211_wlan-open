@@ -50,6 +50,76 @@ u32 ath12k_wifi7_hal_mon_rx_ppdu_end_usr_stats_wmask_get(void)
 	return RX_MON_PPDU_END_USER_STATS_WMASK;
 }
 
+static __always_inline void
+ath12k_wifi7_hal_mon_get_bb_info(const void *tlv_data, u16 tlv_len,
+				 struct hal_rx_mon_ppdu_info *ppdu_info)
+{
+	const struct hal_rx_ppdu_bb_capture_info *bb_info = tlv_data;
+	struct hal_rx_ppdu_cfr_info *cfr = &ppdu_info->cfr_info;
+	u32 capture_info = __le32_to_cpu(bb_info->info);
+
+	cfr->bb_captured_channel =
+		!!u32_get_bits(capture_info,
+			       HAL_RXPCU_PPDU_END_INFO_BB_CAPTURED_CHANNEL_MASK);
+	cfr->bb_captured_timeout =
+		!!u32_get_bits(capture_info,
+			       HAL_RXPCU_PPDU_END_INFO_BB_CAPTURED_TIMEOUT_MASK);
+	cfr->bb_captured_reason =
+		u32_get_bits(capture_info,
+			     HAL_RXPCU_PPDU_END_INFO_BB_CAPTURED_REASON_MASK);
+}
+
+static __always_inline void
+ath12k_wifi7_hal_mon_get_rtt_info(const void *tlv_data, u16 tlv_len,
+				  struct hal_rx_mon_ppdu_info *ppdu_info)
+{
+	struct hal_rx_ppdu_cfr_info *cfr = &ppdu_info->cfr_info;
+	const struct hal_rx_ppdu_rtt_info *rtt_info = tlv_data;
+	u8 rtt_cfr_status;
+	u32 info;
+
+	info = __le32_to_cpu(rtt_info->info0);
+	cfr->rx_location_info_valid =
+		!!u32_get_bits(info, HAL_PHYRX_LOCATION_RX_LOCATION_INFO_VALID_MASK);
+
+	info = __le32_to_cpu(rtt_info->info1);
+	rtt_cfr_status = u32_get_bits(info, HAL_PHYRX_LOCATION_RTT_CFR_STATUS_MASK);
+	cfr->chan_capture_status =
+		(rtt_cfr_status & HAL_PHYRX_LOCATION_CHAN_CAPTURE_STATUS_MASK) >>
+		HAL_PHYRX_LOCATION_CHAN_CAPTURE_STATUS_SHIFT;
+
+	info = __le32_to_cpu(rtt_info->info2);
+	cfr->rtt_che_buffer_pointer_low32 =
+		u32_get_bits(info, HAL_PHYRX_LOCATION_RTT_CHE_BUFFER_POINTER_LOW32_MASK);
+
+	info = __le32_to_cpu(rtt_info->info3);
+	cfr->rtt_che_buffer_pointer_high8 =
+		u32_get_bits(info, HAL_PHYRX_LOCATION_RTT_CHE_BUFFER_POINTER_HIGH8_MASK);
+	cfr->mcs_rate = u32_get_bits(info, HAL_PHYRX_LOCATION_RTT_MCS_RATE_MASK);
+
+	info = __le32_to_cpu(rtt_info->info4);
+	cfr->rtt_cfo_measurement =
+		(s16)u32_get_bits(info, HAL_PHYRX_LOCATION_RTT_CFO_MEASUREMENT_MASK);
+	cfr->gi_type = u32_get_bits(info, HAL_PHYRX_LOCATION_RTT_GI_TYPE_MASK);
+
+	info = __le32_to_cpu(rtt_info->info5);
+	cfr->rx_start_ts = u32_get_bits(info, HAL_PHYRX_LOCATION_RX_START_TS_MASK);
+
+	info = __le32_to_cpu(rtt_info->info6);
+	cfr->agc_gain_info0 =
+		u32_get_bits(info, HAL_PHYRX_LOCATION_GAIN_CHAIN0_MASK);
+	cfr->agc_gain_info0 |=
+		u32_get_bits(info, HAL_PHYRX_LOCATION_GAIN_CHAIN1_MASK) << 16;
+
+	info = __le32_to_cpu(rtt_info->info7);
+	cfr->agc_gain_info1 =
+		u32_get_bits(info, HAL_PHYRX_LOCATION_GAIN_CHAIN2_MASK);
+	cfr->agc_gain_info1 |=
+		u32_get_bits(info, HAL_PHYRX_LOCATION_GAIN_CHAIN3_MASK) << 16;
+
+	cfr->agc_gain_info2 = 0;
+	cfr->agc_gain_info3 = 0;
+}
 
 static __always_inline void
 ath12k_wifi7_hal_mon_handle_ofdma_info(u32 *info,
@@ -734,9 +804,10 @@ ath12k_wifi7_hal_mon_rx_parse_u_sig_tb(const struct hal_mon_usig_tb *usig_tb,
 				le32_get_bits(usig_tb->info0,
 					      HAL_RX_USIG_TB_INFO0_PPDU_TYPE_COMP_MODE);
 
-	common |= ATH12K_LE32_DEC_ENC(usig_tb->info0,
-				      HAL_RX_USIG_TB_INFO0_RX_INTEG_CHECK_PASS,
-				      IEEE80211_RADIOTAP_EHT_USIG_COMMON_BAD_USIG_CRC);
+	common |=
+		u32_encode_bits(!le32_get_bits(usig_tb->info0,
+				HAL_RX_USIG_TB_INFO0_RX_INTEG_CHECK_PASS),
+				IEEE80211_RADIOTAP_EHT_USIG_COMMON_BAD_USIG_CRC);
 
 	value |= IEEE80211_RADIOTAP_EHT_USIG1_TB_B20_B25_DISREGARD |
 		 u32_encode_bits(ppdu_info->u_sig_info.ppdu_type_comp_mode,
@@ -794,9 +865,10 @@ ath12k_wifi7_hal_mon_rx_parse_u_sig_mu(const struct hal_mon_usig_mu *usig_mu,
 				le32_get_bits(usig_mu->info0,
 					      HAL_RX_USIG_MU_INFO0_NUM_EHT_SIG_SYM);
 
-	common |= ATH12K_LE32_DEC_ENC(usig_mu->info0,
-				      HAL_RX_USIG_MU_INFO0_RX_INTEG_CHECK_PASS,
-				      IEEE80211_RADIOTAP_EHT_USIG_COMMON_BAD_USIG_CRC);
+	common |=
+		u32_encode_bits(!le32_get_bits(usig_mu->info0,
+					       HAL_RX_USIG_MU_INFO0_RX_INTEG_CHECK_PASS),
+				IEEE80211_RADIOTAP_EHT_USIG_COMMON_BAD_USIG_CRC);
 
 	value |= IEEE80211_RADIOTAP_EHT_USIG1_MU_B20_B24_DISREGARD |
 		 IEEE80211_RADIOTAP_EHT_USIG1_MU_B25_VALIDATE |
@@ -1399,7 +1471,7 @@ ath12k_wifi7_hal_mon_parse_user_info(const struct hal_receive_user_info *rx_usr_
 	ru_type_80_0 = le32_get_bits(rx_usr_info->info2, HAL_RX_USR_INFO2_RU_TYPE_80_0);
 	ru_start_index_80_0 = le32_get_bits(rx_usr_info->info3,
 					    HAL_RX_USR_INFO3_RU_START_IDX_80_0);
-	if (ru_type_80_0 != HAL_EHT_RU_NONE) {
+	if (ru_type_80_0 != HAL_EHT_RU_NONE && ru_type_80_0 >= HAL_EHT_RU_484) {
 		ru_size += ru_type_80_0;
 		ru_index_per80mhz = ru_start_index_80_0;
 		ru_index = ru_index_per80mhz;
@@ -1410,7 +1482,7 @@ ath12k_wifi7_hal_mon_parse_user_info(const struct hal_receive_user_info *rx_usr_
 	ru_type_80_1 = le32_get_bits(rx_usr_info->info2, HAL_RX_USR_INFO2_RU_TYPE_80_1);
 	ru_start_index_80_1 = le32_get_bits(rx_usr_info->info3,
 					    HAL_RX_USR_INFO3_RU_START_IDX_80_1);
-	if (ru_type_80_1 != HAL_EHT_RU_NONE) {
+	if (ru_type_80_1 != HAL_EHT_RU_NONE && ru_type_80_1 >= HAL_EHT_RU_484) {
 		ru_size += ru_type_80_1;
 		ru_index_per80mhz = ru_start_index_80_1;
 		ru_index = ru_index_per80mhz;
@@ -1421,7 +1493,7 @@ ath12k_wifi7_hal_mon_parse_user_info(const struct hal_receive_user_info *rx_usr_
 	ru_type_80_2 = le32_get_bits(rx_usr_info->info2, HAL_RX_USR_INFO2_RU_TYPE_80_2);
 	ru_start_index_80_2 = le32_get_bits(rx_usr_info->info3,
 					    HAL_RX_USR_INFO3_RU_START_IDX_80_2);
-	if (ru_type_80_2 != HAL_EHT_RU_NONE) {
+	if (ru_type_80_2 != HAL_EHT_RU_NONE && ru_type_80_2 >= HAL_EHT_RU_484) {
 		ru_size += ru_type_80_2;
 		ru_index_per80mhz = ru_start_index_80_2;
 		ru_index = ru_index_per80mhz;
@@ -1432,7 +1504,7 @@ ath12k_wifi7_hal_mon_parse_user_info(const struct hal_receive_user_info *rx_usr_
 	ru_type_80_3 = le32_get_bits(rx_usr_info->info2, HAL_RX_USR_INFO2_RU_TYPE_80_3);
 	ru_start_index_80_3 = le32_get_bits(rx_usr_info->info3,
 					    HAL_RX_USR_INFO3_RU_START_IDX_80_3);
-	if (ru_type_80_3 != HAL_EHT_RU_NONE) {
+	if (ru_type_80_3 != HAL_EHT_RU_NONE && ru_type_80_3 >= HAL_EHT_RU_484) {
 		ru_size += ru_type_80_3;
 		ru_index_per80mhz = ru_start_index_80_3;
 		ru_index = ru_index_per80mhz;
@@ -3780,10 +3852,9 @@ ath12k_wifi7_hal_mon_tx_parse_fw2sw(const void *tlv_data, u32 userid,
 				     HAL_TX_MON_FW2SW_INFO2_SCHEDULE_ID);
 
 		if (is_valid) {
-			if (pkt_id < 7)
-				status_info->dp_tx_pkt_cap_cookie[pkt_id]++;
-			else
-				status_info->dp_tx_pkt_cap_cookie[0]++;
+			status_info->spc_pkt_id =
+				pkt_id < ATH12K_DP_MON_TX_SPC_PKT_ID_MAX ? pkt_id : 0;
+			status_info->dp_tx_pkt_cap_cookie++;
 		}
 		break;
 	}
@@ -3905,6 +3976,8 @@ ath12k_wifi7_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 
 	case HAL_PHYRX_RSSI_LEGACY: {
 		const struct hal_rx_phyrx_rssi_legacy_info *rssi = tlv_data;
+		u8 *rssi_info_tlv = (u8 *)tlv_data +
+			HAL_PHYRX_RSSI_LEGACY_PREAMBLE_RSSI_INFO_OFFSET;
 		u32 info[3];
 
 		info[0] = __le32_to_cpu(rssi->info0);
@@ -3925,6 +3998,11 @@ ath12k_wifi7_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 		ppdu_info->rssi_region_offset =
 			u32_get_bits(info[1],
 				     HAL_RX_PHYRX_RSSI_LEGACY_INFO_INFO1_REGION_OFFSET);
+
+		HAL_RX_MON_UPDATE_PRI20_RSSI_PER_CHAIN(0, ppdu_info, rssi_info_tlv);
+		HAL_RX_MON_UPDATE_PRI20_RSSI_PER_CHAIN(1, ppdu_info, rssi_info_tlv);
+		HAL_RX_MON_UPDATE_PRI20_RSSI_PER_CHAIN(2, ppdu_info, rssi_info_tlv);
+		HAL_RX_MON_UPDATE_PRI20_RSSI_PER_CHAIN(3, ppdu_info, rssi_info_tlv);
 		break;
 	}
 	case HAL_PHYRX_COMMON_USER_INFO: {
@@ -3946,12 +4024,14 @@ ath12k_wifi7_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 		eht->known = cpu_to_le32(known);
 
 		data = __le32_to_cpu(eht->data[0]);
-		data |= ATH12K_LE32_DEC_ENC(cmn_usr_info->info0,
-					    HAL_RX_PHY_CMN_USER_INFO0_GI,
-					    IEEE80211_RADIOTAP_EHT_DATA0_GI);
+		data |= u32_encode_bits(ath12k_eht_gi_to_nl80211_eht_gi(ppdu_info->gi),
+					IEEE80211_RADIOTAP_EHT_DATA0_GI);
 		eht->data[0] = cpu_to_le32(data);
 		break;
 	}
+	case HAL_PHYRX_LOCATION:
+		ath12k_wifi7_hal_mon_get_rtt_info(tlv_data, tlv_len, ppdu_info);
+		break;
 	case HAL_RX_PPDU_START_USER_INFO:
 		ath12k_wifi7_hal_mon_parse_user_info(tlv_data, userid, ppdu_info);
 		break;
@@ -3970,6 +4050,7 @@ ath12k_wifi7_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 		ppdu_info->tsft = __le32_to_cpu(ppdu_rx_duration->rsvd0[1]);
 		ppdu_info->tsft = (ppdu_info->tsft << 32) |
 				   __le32_to_cpu(ppdu_rx_duration->rsvd0[0]);
+		ath12k_wifi7_hal_mon_get_bb_info(tlv_data, tlv_len, ppdu_info);
 		break;
 	}
 	case HAL_RX_MPDU_START: {

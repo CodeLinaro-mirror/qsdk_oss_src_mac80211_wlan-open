@@ -188,6 +188,16 @@ enum ath12k_bus {
 	ATH12K_BUS_HYBRID,
 };
 
+/* nl80211_chan_width slots we validate. */
+enum ath12k_spectral_bw_slot {
+	ATH12K_SPECTRAL_BW_20MHZ,
+	ATH12K_SPECTRAL_BW_40MHZ,
+	ATH12K_SPECTRAL_BW_80MHZ,
+	ATH12K_SPECTRAL_BW_160MHZ,
+	ATH12K_SPECTRAL_BW_320MHZ,
+	ATH12K_SPECTRAL_NUM_BW_SLOTS,
+};
+
 #define ATH12K_EXT_IRQ_NUM_MAX	22
 
 struct hal_rx_desc;
@@ -222,6 +232,8 @@ struct ath12k_hw_ring_mask {
 	u8 tx_peer_telemetry[ATH12K_EXT_IRQ_NUM_MAX];
 	u8 rx_peer_telemetry[ATH12K_EXT_IRQ_NUM_MAX];
 	u8 reo_flush[ATH12K_EXT_IRQ_NUM_MAX];
+	/* Dedicated ring for FW-owned buffer completions (fw_tqm2sw WAR) */
+	u8 tqm2sw_fw[ATH12K_EXT_IRQ_NUM_MAX];
 };
 
 enum ath12k_m3_fw_loaders {
@@ -235,7 +247,11 @@ struct ath12k_cp_arch_ops {
 	int (*cu_mem_alloc)(struct ath12k *ar, struct ath12k_link_vif *arvif);
 	void (*cu_mem_free)(struct ath12k *ar, struct ath12k_link_vif *arvif);
 	void (*cu_notify)(struct ath12k *ar, struct ath12k_link_vif *arvif);
+	int (*wsi_bypass_remove)(struct ath12k_base *ab);
+	int (*wsi_bypass_add)(struct ath12k_base *ab);
+	void (*en_ssr)(struct ath12k_base *ab, unsigned int value);
 };
+
 
 enum ath12k_umcmn_interrupt_handling {
 	UMCMN_INTERRUPT_DISABLE,
@@ -287,6 +303,8 @@ struct ath12k_hw_params {
 		u8 summary_pad_sz;
 		u8 fft_hdr_len;
 		u16 max_fft_bins;
+		u8 fft_size_min;
+		u16 fft_size_max[ATH12K_SPECTRAL_NUM_BW_SLOTS];
 		bool fragment_160mhz;
 		bool supports_320mhz;
 	} spectral;
@@ -364,6 +382,7 @@ struct ath12k_hw_params {
 	bool cfr_support;
 	bool cumac_support;
 	u8 cumac_chip_priority;
+	bool tqm_status_war;
 	enum ath12k_umcmn_interrupt_handling support_umcmn_interrupts;
 	u32 cfr_dma_hdr_size;
 	u32 cfr_num_stream_bufs;
@@ -373,6 +392,13 @@ struct ath12k_hw_params {
 	const char *board_magic;
 	bool peer_del_all_support;
 	u8 tlv_logger_support;
+	/*
+	 * fw_tqm2sw_war: enable the dedicated fw_tqm2sw ring WAR for
+	 * FW-owned buffer completions.  This is a hardware bug present on
+	 * Trestles V1 (QCN9625/QCN9589 HW1.0) that is fixed in V2; the WAR
+	 * must not be enabled on V2 or later silicon.
+	 */
+	bool tqm2sw_fw_war;
 };
 
 struct ath12k_hw_ops {
@@ -395,6 +421,8 @@ struct ath12k_hw_ops {
 	bool (*rx_peer_tid_skip_pn_replay)(struct ath12k_base *ab, u8 tid);
 	void (*dp_peer_migration)(struct ath12k_link_vif *arvif,
 				   struct ath12k_mac_pri_link_migr_peer_node *peer_node);
+	bool (*is_mgmt_reoq_tid)(u8 tid);
+	void (*update_tqm_status_ring_tp)(struct ath12k_base *ab, bool enable);
 };
 
 static inline
@@ -423,6 +451,15 @@ static inline int ath12k_hw_mac_id_to_srng_id(const struct ath12k_hw_params *hw,
 		return hw->hw_ops->mac_id_to_srng_id(hw, mac_id);
 
 	return 0;
+}
+
+static inline bool ath12k_hw_is_mgmt_reoq_tid(const struct ath12k_hw_params *hw,
+					      u8 tid)
+{
+	if (hw->hw_ops->is_mgmt_reoq_tid)
+		return hw->hw_ops->is_mgmt_reoq_tid(tid);
+
+	return false;
 }
 
 struct ath12k_fw_ie {

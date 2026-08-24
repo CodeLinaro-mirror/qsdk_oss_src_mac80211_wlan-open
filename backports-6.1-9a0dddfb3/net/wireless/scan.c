@@ -171,6 +171,8 @@ static inline void bss_ref_put(struct cfg80211_registered_device *rdev,
 		hbss = bss_from_pub(bss->pub.hidden_beacon_bss);
 		hbss->refcount--;
 		if (hbss->refcount == 0) {
+			if (hbss->pub.transmitted_bss)
+				list_del_init(&hbss->pub.nontrans_list);
 			if (hbss->in_rbtree == true) {
 				rb_erase(&hbss->rbn, &rdev->bss_tree);
 				hbss->in_rbtree = false;
@@ -185,6 +187,8 @@ static inline void bss_ref_put(struct cfg80211_registered_device *rdev,
 		tbss = bss_from_pub(bss->pub.transmitted_bss);
 		tbss->refcount--;
 		if (tbss->refcount == 0) {
+			if (tbss->pub.transmitted_bss)
+				list_del_init(&tbss->pub.nontrans_list);
 			if (tbss->in_rbtree == true) {
 				rb_erase(&tbss->rbn, &rdev->bss_tree);
 				tbss->in_rbtree = false;
@@ -195,6 +199,8 @@ static inline void bss_ref_put(struct cfg80211_registered_device *rdev,
 
 	bss->refcount--;
 	if (bss->refcount == 0) {
+		if (bss->pub.transmitted_bss)
+			list_del_init(&bss->pub.nontrans_list);
 		if (bss->in_rbtree == true) {
 			rb_erase(&bss->rbn, &rdev->bss_tree);
 			bss->in_rbtree = false;
@@ -1205,7 +1211,7 @@ void ___cfg80211_scan_done(struct cfg80211_registered_device *rdev,
 		spin_unlock_bh(&rdev->bss_lock);
 	}
 
-	msg = nl80211_build_scan_msg(rdev, wdev, request->info.aborted);
+	msg = nl80211_build_scan_msg(rdev, wdev, request);
 
 #ifdef CPTCFG_CFG80211_WEXT
 	if (wdev->netdev && !request->info.aborted) {
@@ -1215,6 +1221,10 @@ void ___cfg80211_scan_done(struct cfg80211_registered_device *rdev,
 	}
 #endif
 
+	wiphy_dbg(&rdev->wiphy,
+		  "normal scan done work: dev_put(%s) refcnt_before=%d\n",
+		  wdev->netdev ? wdev->netdev->name : "<none>",
+		  wdev->netdev ? netdev_refcnt_read(wdev->netdev) : -1);
 	dev_put(wdev->netdev);
 
 	kfree(rdev->int_scan_req);
@@ -1234,14 +1244,148 @@ void __cfg80211_scan_done(struct wiphy *wiphy, struct wiphy_work *wk)
 	___cfg80211_scan_done(wiphy_to_rdev(wiphy), true);
 }
 
+/**
+ * cfg80211_parallel_scan_abort - synchronously complete all pending parallel
+ *   scan requests during teardown.
+ *
+ * Must be called with the wiphy mutex held.  Cancels any queued
+ * parallel_scan_done_wk and runs its body inline so that dev_put() is
+ * guaranteed to happen before the caller returns (and therefore before
+ * unregister_netdevice() is reached during rmmod).
+ */
+void cfg80211_parallel_scan_abort(struct wiphy *wiphy)
+{
+	struct cfg80211_registered_device *rdev = wiphy_to_rdev(wiphy);
+	int slot;
+
+	lockdep_assert_held(&rdev->wiphy.mtx);
+
+	/* Cancel any work that was queued but has not run yet. */
+	wiphy_work_cancel(wiphy, &rdev->parallel_scan_done_wk);
+
+	/*
+	 * Run the completion body synchronously for every notified request so
+	 * that dev_put() is called before the caller proceeds to remove
+	 * interfaces (which calls unregister_netdevice).
+	 */
+	for (slot = 0; slot < ARRAY_SIZE(rdev->parallel_scan_reqs); slot++) {
+		struct cfg80211_scan_request *req = rdev->parallel_scan_reqs[slot];
+		struct wireless_dev *wdev;
+		struct sk_buff *msg;
+
+		if (!req || !req->notified)
+			continue;
+
+		wdev = req->wdev;
+
+		if (wdev->netdev)
+			cfg80211_sme_scan_done(wdev->netdev);
+
+		if (!req->info.aborted &&
+		    req->flags & NL80211_SCAN_FLAG_FLUSH) {
+			spin_lock_bh(&rdev->bss_lock);
+			__cfg80211_bss_expire(rdev, req->scan_start);
+			spin_unlock_bh(&rdev->bss_lock);
+		}
+
+		msg = nl80211_build_scan_msg(rdev, wdev, req);
+
+		dev_put(wdev->netdev);
+
+		rdev->parallel_scan_reqs[slot] = NULL;
+		kfree(req);
+
+		nl80211_send_scan_msg(rdev, msg);
+	}
+}
+EXPORT_SYMBOL(cfg80211_parallel_scan_abort);
+
+void cfg80211_parallel_scan_done_work(struct wiphy *wiphy,
+				      struct wiphy_work *wk)
+{
+	struct cfg80211_registered_device *rdev =
+		container_of(wk, struct cfg80211_registered_device,
+			     parallel_scan_done_wk);
+	int slot;
+
+	lockdep_assert_held(&rdev->wiphy.mtx);
+
+	for (slot = 0; slot < ARRAY_SIZE(rdev->parallel_scan_reqs); slot++) {
+		struct cfg80211_scan_request *req = rdev->parallel_scan_reqs[slot];
+		struct wireless_dev *wdev;
+		struct sk_buff *msg;
+
+		if (!req || !req->notified)
+			continue;
+
+		wdev = req->wdev;
+
+		wiphy_dbg(wiphy,
+			  "parallel scan done work: slot=%d req=%p notified=%d netdev=%s refcnt=%d aborted=%d\n",
+			  slot, req, req->notified,
+			  wdev->netdev ? wdev->netdev->name : "<none>",
+			  wdev->netdev ? netdev_refcnt_read(wdev->netdev) : -1,
+			  req->info.aborted);
+
+		if (wdev->netdev)
+			cfg80211_sme_scan_done(wdev->netdev);
+
+		if (!req->info.aborted &&
+		    req->flags & NL80211_SCAN_FLAG_FLUSH) {
+			spin_lock_bh(&rdev->bss_lock);
+			__cfg80211_bss_expire(rdev, req->scan_start);
+			spin_unlock_bh(&rdev->bss_lock);
+		}
+
+		msg = nl80211_build_scan_msg(rdev, wdev, req);
+
+		wiphy_dbg(wiphy,
+			  "parallel scan done work: dev_put(%s) refcnt_before=%d\n",
+			  wdev->netdev ? wdev->netdev->name : "<none>",
+			  wdev->netdev ? netdev_refcnt_read(wdev->netdev) : -1);
+		dev_put(wdev->netdev);
+
+		rdev->parallel_scan_reqs[slot] = NULL;
+		kfree(req);
+
+		nl80211_send_scan_msg(rdev, msg);
+	}
+}
+
 void cfg80211_scan_done(struct cfg80211_scan_request *request,
 			struct cfg80211_scan_info *info)
 {
+	struct cfg80211_registered_device *rdev = wiphy_to_rdev(request->wiphy);
 	struct cfg80211_scan_info old_info = request->info;
+	int slot;
 
 	trace_cfg80211_scan_done(request, info);
-	WARN_ON(request != wiphy_to_rdev(request->wiphy)->scan_req &&
-		request != wiphy_to_rdev(request->wiphy)->int_scan_req);
+
+	/* Check if this is a parallel scan request tracked outside scan_req */
+	for (slot = 0; slot < ARRAY_SIZE(rdev->parallel_scan_reqs); slot++) {
+		if (rdev->parallel_scan_reqs[slot] == request) {
+			request->info = *info;
+			request->notified = true;
+			wiphy_dbg(request->wiphy,
+				  "parallel scan done: queuing work slot=%d req=%p scan_id=%u netdev=%s refcnt=%d aborted=%d\n",
+				  slot, request, info->scan_id,
+				  request->wdev && request->wdev->netdev ?
+					request->wdev->netdev->name : "<none>",
+				  request->wdev && request->wdev->netdev ?
+					netdev_refcnt_read(request->wdev->netdev) : -1,
+				  info->aborted);
+			wiphy_work_queue(request->wiphy,
+					 &rdev->parallel_scan_done_wk);
+			return;
+		}
+	}
+
+	wiphy_dbg(request->wiphy,
+		  "normal scan done: queueing work request=%p scan_id=%u netdev=%s aborted=%d rdev->scan_req=%p rdev->int_scan_req=%p\n",
+		  request, info->scan_id,
+		  request->wdev && request->wdev->netdev ?
+			request->wdev->netdev->name : "<none>",
+		  info->aborted, rdev->scan_req, rdev->int_scan_req);
 
 	request->info = *info;
 
@@ -1257,8 +1401,7 @@ void cfg80211_scan_done(struct cfg80211_scan_request *request,
 	}
 
 	request->notified = true;
-	wiphy_work_queue(request->wiphy,
-			 &wiphy_to_rdev(request->wiphy)->scan_done_wk);
+	wiphy_work_queue(request->wiphy, &rdev->scan_done_wk);
 }
 EXPORT_SYMBOL(cfg80211_scan_done);
 
@@ -1716,7 +1859,7 @@ static bool rb_insert_bss(struct cfg80211_registered_device *rdev,
 
 		if (WARN_ON(!cmp)) {
 			bss->in_rbtree = false;
-			/* will sort of leak this BSS */
+			bss_ref_put(rdev, bss);
 			return false;
 		}
 
@@ -2152,7 +2295,8 @@ static bool cfg80211_is_6ghz_dup_beacon(struct ieee80211_channel *chan,
 	if (!tmp)
 		return false;
 
-	if (tmp->datalen < sizeof(*he_oper) ||
+	if (tmp->datalen < 1 ||
+	    tmp->datalen < sizeof(*he_oper) ||
 	    tmp->datalen < ieee80211_he_oper_size(&tmp->data[1]))
 		return false;
 
@@ -2178,7 +2322,8 @@ int cfg80211_get_ies_channel_number(const u8 *ie, size_t ielen,
 
 		tmp = cfg80211_find_ext_elem(WLAN_EID_EXT_HE_OPERATION, ie,
 					     ielen);
-		if (tmp && tmp->datalen >= sizeof(*he_oper) &&
+		if (tmp && tmp->datalen >= 1 &&
+		    tmp->datalen >= sizeof(*he_oper) &&
 		    tmp->datalen >= ieee80211_he_oper_size(&tmp->data[1])) {
 			const struct ieee80211_he_6ghz_oper *he_6ghz_oper;
 
@@ -2560,6 +2705,9 @@ size_t cfg80211_merge_profile(const u8 *ie, size_t ielen,
 								sub_elem))) {
 		const struct element *next_sub = (void *)&next_mbssid->data[1];
 
+		mbssid_elem = next_mbssid;
+		sub_elem = next_sub;
+
 		if (copied_len + next_sub->datalen > max_copy_len)
 			break;
 		memcpy(merged_ie + copied_len, next_sub->data,
@@ -2623,7 +2771,7 @@ cfg80211_parse_mbssid_data(struct wiphy *wiphy,
 		if (elem->data[0] < 1 || (int)elem->data[0] > 8)
 			continue;
 		for_each_element(sub, elem->data + 1, elem->datalen - 1) {
-			u8 profile_len;
+			size_t profile_len;
 
 			if (sub->id != 0 || sub->datalen < 4) {
 				/* not a valid BSS profile */
@@ -3064,6 +3212,9 @@ cfg80211_parse_ml_elem_sta_data(struct wiphy *wiphy,
 	if (!ieee80211_mle_type_ok(elem->data + 1,
 				   IEEE80211_ML_CONTROL_TYPE_BASIC,
 				   elem->datalen - 1))
+		return;
+
+	if (elem->datalen < 1 + sizeof(*ml_elem))
 		return;
 
 	ml_elem = (void *)(elem->data + 1);
@@ -3709,8 +3860,10 @@ int cfg80211_wext_siwscan(struct net_device *dev,
 	/* translate "Scan for SSID" request */
 	if (wreq) {
 		if (wrqu->data.flags & IW_SCAN_THIS_ESSID) {
-			if (wreq->essid_len > IEEE80211_MAX_SSID_LEN)
-				return -EINVAL;
+			if (wreq->essid_len > IEEE80211_MAX_SSID_LEN) {
+				err = -EINVAL;
+				goto out;
+			}
 			memcpy(creq->ssids[0].ssid, wreq->essid, wreq->essid_len);
 			creq->ssids[0].ssid_len = wreq->essid_len;
 		}
@@ -3763,9 +3916,20 @@ static char *ieee80211_scan_add_ies(struct iw_request_info *info,
 	end = pos + ies->len;
 
 	while (end - pos > IW_GENERIC_IE_MAX) {
+		if (end - pos < 2)
+			return ERR_PTR(-EINVAL);
 		next = pos + 2 + pos[1];
-		while (next + 2 + next[1] - pos < IW_GENERIC_IE_MAX)
+		if (next > end)
+			return ERR_PTR(-EINVAL);
+		while (next < end) {
+			if (end - next < 2)
+				return ERR_PTR(-EINVAL);
+			if (next + 2 + next[1] > end)
+				return ERR_PTR(-EINVAL);
+			if (next + 2 + next[1] - pos >= IW_GENERIC_IE_MAX)
+				break;
 			next = next + 2 + next[1];
+		}
 
 		memset(&iwe, 0, sizeof(iwe));
 		iwe.cmd = IWEVGENIE;

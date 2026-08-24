@@ -18,6 +18,8 @@
 
 #define ATH12K_BA_DURATION_US  32
 
+#define ATH12K_DP_MON_TX_SPC_PKT_ID_MAX	7
+
 #define ATH12K_DP_MON_TX_BA_BITMAP_BYTES(sz) \
 	(ATH12K_DP_MON_TX_BA_BITMAP_BASE_SZ << (sz))
 
@@ -112,9 +114,10 @@
 
 #define _ATH12K_STAT_INC(dp_pdev, field) \
 	do { \
-		if (likely(dp_pdev && dp_pdev->dp_mon_pdev && \
-			dp_pdev->dp_mon_pdev->dp_pdev_tx_mon)) \
-			dp_pdev->dp_mon_pdev->dp_pdev_tx_mon->pdev_tx_mon_stats.field++; \
+		if (likely((dp_pdev) && (dp_pdev)->dp_mon_pdev && \
+			(dp_pdev)->dp_mon_pdev->dp_pdev_tx_mon)) \
+			(dp_pdev)->dp_mon_pdev->dp_pdev_tx_mon-> \
+				pdev_tx_mon_stats.field++; \
 	} while (0)
 
 #define ATH12K_TX_MON_STAT_INC(dp_pdev, field)  _ATH12K_STAT_INC(dp_pdev, field)
@@ -125,6 +128,10 @@
 
 enum dp_mon_tx_filter_mode;
 struct dp_mon_tx_filter;
+struct ath12k_ext_mon_config;
+struct ath12k_ext_mon_filter_config;
+struct ath12k_ext_mon_peer_config;
+struct ath12k_ext_mon_pkt_config;
 
 /**
  * struct ath12k_pdev_tx_mon_stats - per-pdev TX monitor ring stats counters
@@ -199,6 +206,8 @@ struct ath12k_pdev_tx_mon_stats {
 	/* HAL related statistics */
 	u32 ring_extract_failed;
 	u32 get_num_users_failed;
+	/* bitmap: 0=unknown 1=ARP 2=EAPOL 3=DHCP 4=DNS 5=ICMP 6=MGMT */
+	u32 spl_pkt_cap_stats[ATH12K_DP_MON_TX_SPC_PKT_ID_MAX];
 };
 
 /**
@@ -256,6 +265,23 @@ enum txmon_generated_response {
 	TXMON_GEN_RESP_SELFGEN_NDP_LMR
 };
 
+enum ath12k_dp_mon_tx_dma_length {
+	ATH12K_DP_MON_TX_DMA_LENGTH_64B = BIT(0),
+	ATH12K_DP_MON_TX_DMA_LENGTH_128B = BIT(1),
+	ATH12K_DP_MON_TX_DMA_LENGTH_256B = BIT(2),
+	ATH12K_DP_MON_TX_DMA_LENGTH_MAX = GENMASK(2, 0),
+};
+
+struct ath12k_dp_ext_mon_tx_peer_params {
+	int vdev_id;
+	struct list_head *peers_to_wmi;
+	struct list_head *peer_list;
+	u8 staged_count;
+	u8 *ext_mon_peer_count;
+	const struct ath12k_ext_mon_peer_config *peer_config;
+	bool toggle_hw_state;
+};
+
 int ath12k_dp_mon_tx_process_ring(struct ath12k_pdev_dp *dp_pdev, int mac_id,
 				  struct napi_struct *napi, int *budget);
 
@@ -298,12 +324,15 @@ int ath12k_dp_mon_tx_htt_dst_ring_setup(struct ath12k_pdev_dp *dp_pdev, u32 mac_
 int ath12k_dp_mon_tx_monitor_start_stop(struct ath12k *ar, bool state);
 void ath12k_dp_mon_tx_filter_free(struct ath12k_pdev_dp *dp_pdev);
 bool ath12k_dp_tx_mon_feature_eval(struct ath12k_dp *dp);
+void ath12k_dp_mon_tx_update_spl_pkt_cap_stats(struct ath12k_pdev_dp *dp_pdev,
+					    struct hal_tx_mon_status_info *status_info);
+void ath12k_dp_mon_spl_pkt_cap_config(struct ath12k_base *ab);
 int ath12k_dp_mon_tx_srng_alloc(struct ath12k_dp *dp);
 int ath12k_dp_mon_tx_srng_init(struct ath12k_dp *dp);
 void ath12k_dp_mon_tx_htt_src_ring_cleanup(struct ath12k_dp *dp);
 void ath12k_dp_mon_tx_pdev_free(struct ath12k_pdev_dp *dp_pdev);
 int ath12k_dp_mon_tx_htt_src_ring_setup(struct ath12k_dp *dp);
-int ath12k_dp_mon_tx_config_monitor_mode(struct ath12k *ar, bool set);
+int ath12k_dp_mon_tx_config_full_monitor(struct ath12k *ar, bool set);
 int ath12k_dp_mon_tx_update_filter(struct ath12k *ar);
 void ath12k_dp_mon_tx_srng_free(struct ath12k_dp *dp);
 void ath12k_dp_mon_tx_srng_deinit(struct ath12k_dp *dp);
@@ -320,5 +349,29 @@ ath12k_dp_mon_tx_setup_mon_mode_filter(struct ath12k_dp *dp,
 void ath12k_dp_mon_tx_update_buf_ownership_stats(struct ath12k_dp *dp);
 int ath12k_dp_ext_mon_tx_alloc(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_ext_mon_tx_free(struct ath12k_pdev_dp *dp_pdev);
+void ath12k_dp_mon_tx_ssr_restart_pdev(struct ath12k_pdev_dp *dp_pdev);
+int
+ath12k_dp_ext_mon_get_tx_filter(struct ath12k_pdev_dp *dp_pdev,
+				struct ath12k_ext_mon_config *resp);
+int ath12k_dp_ext_mon_get_tx_peer(struct ath12k_pdev_dp *dp_pdev,
+				  struct ath12k_ext_mon_config *resp);
+int ath12k_dp_ext_mon_set_tx_filter(struct ath12k_pdev_dp *dp_pdev,
+				    const struct ath12k_ext_mon_filter_config
+				    *new_config);
+enum ath12k_dp_mon_tx_dma_length
+ath12k_dp_mon_tx_get_ext_mon_filter_len(u8 filter_len);
+int ath12k_dp_ext_mon_handle_tx_peer(struct ath12k_pdev_dp *dp_pdev,
+				     const struct ath12k_ext_mon_peer_config
+				     *peer_config);
+void
+ath12k_dp_tx_mon_set_tx_mon_teardown(struct ath12k *ar);
+int
+ath12k_dp_ext_mon_filter_peer(struct ieee80211_hdr *wh, struct list_head *peer_list);
+int
+ath12k_dp_ext_mon_filter_type(struct ieee80211_hdr *wh,
+			      struct ath12k_ext_mon_pkt_config *pkt_config);
+int
+ath12k_dp_ext_mon_filter_subtype(struct ieee80211_hdr *wh,
+				 struct ath12k_ext_mon_pkt_config *pkt_config);
 
 #endif /* ATH12K_DP_TX_MON_H */

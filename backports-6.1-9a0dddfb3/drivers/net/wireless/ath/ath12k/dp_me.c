@@ -20,7 +20,9 @@
 #include "debug.h"
 #include "dp_tx.h"
 #include "dp_ext_desc.h"
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/me_snoop_extn.h"
+#endif /* CPTCFG_QCN_EXTN */
 #include "dp_stats.h"
 
 static inline u16 ath12k_dp_get_me_peer_id(struct ath12k_dp *dp,
@@ -75,11 +77,15 @@ static int ath12k_dp_tx_me5(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vif,
 				      skb_get(skb), NULL, NULL);
 
 	if (unlikely(err != DP_TX_ENQ_SUCCESS))
-		goto fail;
+		goto fail_tx;
 
 	DP_STATS_INC(dp_vif, tx_i.me.me5_hits, 1, ring_id);
 	atomic_inc(&dp_pdev->num_tx_pending);
 	return 0;
+
+fail_tx:
+	/* drop reference to SKB taken in mcast_send */
+	dev_kfree_skb_any(skb);
 fail:
 	DP_STATS_INC(dp_vif, tx_i.drop[err], 1, ring_id);
 	DP_STATS_INC(dp_vif, tx_i.me.me_fail, 1, ring_id);
@@ -132,12 +138,15 @@ static int ath12k_dp_tx_me6(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vif,
 				      skb_get(skb), NULL, NULL);
 
 	if (unlikely(err != DP_TX_ENQ_SUCCESS))
-		goto fail;
+		goto fail_tx;
 
 	DP_STATS_INC(dp_vif, tx_i.me.me6_hits, 1, ring_id);
 	atomic_inc(&dp_pdev->num_tx_pending);
 	return 0;
 
+fail_tx:
+	/* drop reference to SKB taken in mcast_send */
+	dev_kfree_skb_any(skb);
 fail:
 	DP_STATS_INC(dp_vif, tx_i.drop[err], 1, ring_id);
 	DP_STATS_INC(dp_vif, tx_i.me.me_fail, 1, ring_id);
@@ -386,6 +395,7 @@ int ath12k_dp_me_tx(struct ath12k_dp_vif *dp_vif, struct sk_buff *skb,
 
 	if (!force_mcuc) {
 #if defined(CONFIG_BRIDGE_MCAST_OFFLOAD)
+#ifdef CPTCFG_QCN_EXTN
 		ctx.grp = ath12k_me_snoop_grp_find(dp_vif, skb);
 		if (!ctx.grp)
 			return -EINVAL;
@@ -398,7 +408,10 @@ int ath12k_dp_me_tx(struct ath12k_dp_vif *dp_vif, struct sk_buff *skb,
 		 * needs to be sent as multicast
 		 */
 		return -EINVAL;
-#endif
+#endif /* CPTCFG_QCN_EXTN */
+#else
+		return -EINVAL;
+#endif /* CONFIG_BRIDGE_MCAST_OFFLOAD */
 	}
 
 	DP_STATS_INC(dp_vif, tx_i.me.me_mcuc, 1, ring_id);

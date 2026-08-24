@@ -69,6 +69,7 @@ extern const struct ath12k_hw_hal_params ath12k_wifi8_hw_hal_params_qcn9625;
 struct ath12k_hal_wifi8 {
 	const struct ath12k_hal_reset_rings *reset_rings;
 	struct ath12k_cumac_hw_reset_timestamps ssr_ts;
+	struct ath12k_cumac_hw_reset_errors reset_errors;
 };
 
 static inline struct ath12k_hal_wifi8 *ath12k_get_hal_wifi8(struct ath12k_hal *hal)
@@ -311,6 +312,7 @@ enum rdi_based_source_ring_selection {
 /*TQM2SW Ring address */
 #define HAL_TQM2SW0_RELEASE_RING_HP		0x3078
 #define HAL_TQM2SW1_RELEASE_RING_HP		0x3080
+#define HAL_TQM2SW5_RELEASE_RING_HP		0x30A0
 #define HAL_TQM2SW6_RELEASE_RING_HP		0x30A8
 
 /* SAM cmd Ring address*/
@@ -337,6 +339,11 @@ enum rdi_based_source_ring_selection {
  */
 #define HAL_SAM_QUEUE_SLICE_START_IDX		256
 #define HAL_SAM_QUEUE_SLICE_END_IDX		511
+
+#define HAL_SAM_R0_CONFIG			0
+#define HAL_SAM_ENABLE				BIT(0)
+#define HAL_SAM_IDLE_MASK			BIT(5)
+#define HAL_SAM_IDLE_VALUE			1
 
 #define HAL_TCL_PPE_INDEX_MAPPING_OFFSET 0x670
 #define HAL_TCL_PPE_INDEX_MAPPING_SLOT_SIZE 0x4
@@ -436,6 +443,7 @@ enum rdi_based_source_ring_selection {
 #define HAL_REO1_MISC_CFG_1_RXDMA_ERR_DELINK_ENABLE	BIT(4)
 #define HAL_REO1_MISC_CFG_1_REO_MSDU_FETCH_OPTIMIZE	BIT(1)
 #define HAL_REO1_MISC_CFG_1_REO_MSDU_LINK_SHARING_EN	BIT(10)
+#define HAL_REO1_MISC_CFG_1_STOP_DELINKING_DURING_CORRUPTION	BIT(11)
 
 #define HAL_REO1_COOKIE_CONV_EN_RING			0x1910
 #define HAL_REO1_COOKIE_CONV_REO2SW0_EN			BIT(0)
@@ -574,19 +582,17 @@ enum rdi_based_source_ring_selection {
 #define HAL_REO_BP_DROP_REO2PPE2	BIT(16)
 
 /* Convenience masks */
-/* All REO2SW rings (SW0..SW11) — enable backpressure drop for all SW rings */
-#define HAL_REO_BP_DROP_REO2SW_ALL	(HAL_REO_BP_DROP_REO2SW0  | \
-					 HAL_REO_BP_DROP_REO2SW1  | \
+/* All REO2SW rings (SW0..SW11) — enable backpressure drop for all SW rings
+ * except flush(REO2SW0) and mgmt(REO2SW8, REO2SW9 and REO2SW11) rings.
+ */
+#define HAL_REO_BP_DROP_REO2SW_ALL	(HAL_REO_BP_DROP_REO2SW1  | \
 					 HAL_REO_BP_DROP_REO2SW2  | \
 					 HAL_REO_BP_DROP_REO2SW3  | \
 					 HAL_REO_BP_DROP_REO2SW4  | \
 					 HAL_REO_BP_DROP_REO2SW5  | \
 					 HAL_REO_BP_DROP_REO2SW6  | \
 					 HAL_REO_BP_DROP_REO2SW7  | \
-					 HAL_REO_BP_DROP_REO2SW8  | \
-					 HAL_REO_BP_DROP_REO2SW9  | \
-					 HAL_REO_BP_DROP_REO2SW10 | \
-					 HAL_REO_BP_DROP_REO2SW11)
+					 HAL_REO_BP_DROP_REO2SW10)
 /* All REO2PPE rings */
 #define HAL_REO_BP_DROP_REO2PPE_ALL	(HAL_REO_BP_DROP_REO2PPE  | \
 					 HAL_REO_BP_DROP_REO2PPE1 | \
@@ -840,6 +846,7 @@ enum rdi_based_source_ring_selection {
 /* TQM2SW R0 release address */
 #define HAL_TQM2SW0_RELEASE_RING_BASE_LSB	0x73c
 #define HAL_TQM2SW1_RELEASE_RING_BASE_LSB	0x7b4
+#define HAL_TQM2SW5_RELEASE_RING_BASE_LSB	0x994
 #define HAL_TQM2SW6_RELEASE_RING_BASE_LSB	0xA0C
 
 /* REO2SW6 ring */
@@ -955,6 +962,8 @@ enum rdi_based_source_ring_selection {
 #define HAL_TCL1_RING_FIELD_DSCP_TID_MAP5		0x38000
 #define HAL_TCL1_RING_FIELD_DSCP_TID_MAP6		0x1c0000
 #define HAL_TCL1_RING_FIELD_DSCP_TID_MAP7		0xe00000
+
+#define HAL_TCL1_CMN_CONFIG_CLFY_INVALID_PPE_DESC	BIT(26)
 
 /* TODO: CORE DP TX needs any update from Host */
 #define HAL_TCL1_CMN_CONFIG	(HAL_SEQ_WCSS_UMAC_TCL_REG + 0x38)
@@ -1203,6 +1212,30 @@ enum rdi_based_source_ring_selection {
 #define HAL_TQM_SM_STATES_IX1				0xEDC
 #define HAL_TQM_SM_STATES_IX2				0xEE0
 #define HAL_TQM_SM_STATES_IX3				0xEE4
+#define HAL_TQM_SM_STATES_IX4				0x1828
+#define HAL_TQM_SM_STATES_IX5				0x182C
+#define HAL_TQM_SM_STATES_IX6				0x1830
+#define HAL_TQM_SM_STATES_IX7				0x1834
+#define HAL_TQM_SM_STATES_IX8				0x1838
+#define HAL_TQM_SM_STATES_IX9				0x183C
+#define HAL_TQM_SM_STATES_IX10				0x1840
+#define HAL_TQM_SM_STATES_IX11				0x1844
+#define HAL_TQM_SM_STATES_IX12				0x1848
+#define HAL_TQM_SM_STATES_IX13				0x184C
+#define HAL_TQM_BANK_SM_STATES_IX0			0x20A0
+#define HAL_TQM_BANK_SM_STATES_IX1			0x20A4
+#define HAL_TQM_BANK_SM_STATES_IX2			0x20A8
+#define HAL_TQM_BANK_SM_STATES_IX3			0x20AC
+#define HAL_TQM_BANK_SM_STATES_IX4			0x2124
+#define HAL_TQM_BANK_SM_STATES_IX5			0x2128
+#define HAL_TQM_BANK_SM_STATES_IX6			0x212C
+#define HAL_TQM_BANK_SM_STATES_IX7			0x2130
+#define HAL_TQM_BANK_SM_STATES_IX8			0x2134
+#define HAL_TQM_BANK_SM_STATES_IX9			0x2138
+#define HAL_TQM_BANK_SM_STATES_IX10			0x213C
+#define HAL_TQM_BANK_SM_STATES_IX11			0x2140
+#define HAL_TQM_BANK_SM_STATES_IX12			0x2144
+#define HAL_TQM_BANK_SM_STATES_IX13			0x2148
 
 #define HAL_WBM_ENABLE_MASK				GENMASK(4, 2)
 #define HAL_WBM_ENABLE_VALUE				7
@@ -1261,6 +1294,7 @@ enum rdi_based_source_ring_selection {
 
 #define HAL_UMAC_UMCMN_GLOBAL_CFG		0x1a0
 #define HAL_UMAC_UMCMN_GLOBAL_CFG_HOLD		BIT(0)
+#define HAL_UMCMN_R0_IDLE_SIGNAL		0xD8
 
 #define HAL_PMAC_HWSCH_R0_MTU_FOR_HMAC_CONTROLS_IX_0 0x718
 #define HAL_PMAC_PMCMN_MAC_PCU_DIAG_SW			0x1220
@@ -1513,6 +1547,10 @@ enum rdi_based_source_ring_selection {
 #define HAL_UMAC_WBM_LOW_WATERMARK_SHIFT 16
 #define HAL_UMAC_WBM_LOW_WATERMARK_DIFF 32
 #define HAL_UMAC_WBM_MAX_WATERMARK_CFG_REGS 5
+
+
+#define HAL_UMAC_WBM_WATERMARK_DISABLE	BIT(13)
+#define HAL_UMAC_WBM_MISC_CTRL	0x0040
 
 #define HAL_UMAC_WBM_BUFF_DESC_RING_CFG1 \
 	{0x2300, 0x2304, 0x2308, 0x230C, 0x2310}
@@ -1771,7 +1809,10 @@ struct rx_tlv_info_1 {
 	    is_decrypted		: 1,
 	    mesh_ctrl_present		: 1,
 	    pkt_type			: 4,
-	    bw				: 3;
+	    bw				: 3,
+	    encrypt_info_valid		: 1,
+	    mpdu_frame_control_valid	: 1,
+	    encrypted			: 1;
 };
 
 struct hal_rx_spd_data {
@@ -1825,7 +1866,8 @@ struct hal_rx_spd_data {
 			u8 first_sg_frame		: 1,
 			    last_sg_frame		: 1,
 			    is_frag			: 1,
-			    rsvd0			: 5;
+			    cce_match                   : 1,
+			    rsvd0			: 4;
 		};
 	};
 
@@ -2111,6 +2153,7 @@ void ath12k_wifi8_hal_srng_hw_disable(struct ath12k_base *ab,
 				      struct hal_srng *srng);
 void ath12k_wifi8_hal_reset_rx_reo_tid_q(void *vaddr,
 					 u32 ba_window_size, u8 tid);
+void ath12k_wifi8_hal_tx_configure_cmn_reg(struct ath12k_base *ab);
 void ath12k_wifi8_hal_tx_configure_bank_register_default(struct ath12k_base *ab);
 bool ath12k_wifi8_hal_tx_ppe2tcl_ring_halt_get(struct ath12k_base *ab);
 void ath12k_wifi8_hal_tx_ppe2tcl_ring_halt_set(struct ath12k_base *ab);

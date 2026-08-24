@@ -29,7 +29,9 @@
 #include "driver-ops.h"
 #include "rate.h"
 #include "led.h"
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/cmn_extn.h"
+#endif /* CPTCFG_QCN_EXTN */
 #include "fils_aead.h"
 #include "sta_info.h"
 #include "key.h"
@@ -387,8 +389,10 @@ ieee80211_determine_ap_chan(struct ieee80211_sub_if_data *sdata,
 		*chandef = eht_chandef;
 	}
 
+#ifdef CPTCFG_QCN_EXTN
 	if (ieee802_11_determine_ap_chan_extn(elems, chandef, sdata))
 		return IEEE80211_CONN_MODE_HE;
+#endif /* CPTCFG_QCN_EXTN */
 
 check_uhr:
 	if (conn->mode < IEEE80211_CONN_MODE_UHR || !uhr_oper)
@@ -409,16 +413,26 @@ check_uhr:
 
 		npca = ieee80211_uhr_npca_info(uhr_oper);
 		if (npca) {
+			/*
+			 * Per IEEE P802.11bn/D1.5, this field carries the real
+			 * NPCA primary channel number, not an offset from the
+			 * BSS primary channel, so convert it to a frequency
+			 * before validating it against the chandef.
+			 */
 			int width = cfg80211_chandef_get_width(chandef);
-			u8 offs = le32_get_bits(npca->params,
-						IEEE80211_UHR_NPCA_PARAMS_PRIMARY_CHAN_OFFS);
+			u8 npca_chan = le32_get_bits(npca->params,
+						IEEE80211_UHR_NPCA_PARAMS_PRIMARY_CHAN);
 			u32 cf1 = chandef->center_freq1;
+			int npca_freq = ieee80211_channel_to_frequency(
+				npca_chan, chandef->chan->band);
 			bool pri_upper, npca_upper;
 
 			pri_upper = chandef->chan->center_freq > cf1;
-			npca_upper = 20 * offs >= width / 2;
+			npca_upper = npca_freq > (int)cf1;
 
-			if (20 * offs >= cfg80211_chandef_get_width(chandef) ||
+			if (!npca_freq ||
+			    npca_freq < (int)cf1 - width / 2 ||
+			    npca_freq >= (int)cf1 + width / 2 ||
 			    pri_upper == npca_upper) {
 				sdata_info(sdata,
 					   "AP UHR NPCA primary channel invalid, disabling UHR\n");
@@ -430,7 +444,7 @@ check_uhr:
 
 		if (dis_subch_bmap) {
 			npca_punct = get_unaligned_le16(dis_subch_bmap);
-			npca_chandef.punctured = npca_punct;
+			npca_chandef.npca_puncture_bitmap = npca_punct;
 			/*
 			 * must be a valid puncturing pattern for this channel as
 			 * well as puncturing all subchannels that are already in
@@ -1617,10 +1631,10 @@ static int ieee80211_config_bw(struct ieee80211_link_data *link,
 		return 0;
 	}
 
-	if (link->conf->csa_active && link->u.mgd.csa.bw_reconfig &&
-	    ieee80211_chanreq_identical(&chanreq, &link->csa.chanreq)) {
+	if (link->u.mgd.csa.bw_reconfig) {
+		link->u.mgd.csa.bw_reconfig = false;
 		link_info(link,
-			  "bw reconfig already pending in %s freq=%d width=%d\n",
+			  "bw reconfig CSA in progress or just completed in %s, ignoring beacon bw change freq=%d width=%d\n",
 			  frame, chanreq.oper.chan->center_freq,
 			  chanreq.oper.width);
 		return 0;
@@ -2192,10 +2206,12 @@ ieee80211_add_link_elems(struct ieee80211_sub_if_data *sdata,
 		ieee80211_add_s1g_capab_ie(sdata, &sband->s1g_cap, skb);
 	}
 
+#ifdef CPTCFG_QCN_EXTN
 	struct ieee80211_bss *bss = (void *)cbss->priv;
 
 	ieee80211_add_qcn_vendor_ie_extn(skb, &bss->bss_extn,
 					 assoc_data->link[link_id].conn.mode);
+#endif /* CPTCFG_QCN_EXTN */
 
 	if (iftd && iftd->vendor_elems.data && iftd->vendor_elems.len)
 		skb_put_data(skb, iftd->vendor_elems.data, iftd->vendor_elems.len);
@@ -2872,7 +2888,13 @@ static void ieee80211_chswitch_post_beacon(struct ieee80211_link_data *link)
 	link->conf->csa_active = false;
 	link->u.mgd.csa.blocked_tx = false;
 	link->u.mgd.csa.waiting_bcn = false;
-	link->u.mgd.csa.bw_reconfig = false;
+	/*
+	 * The completing beacon may still carry the AP's pre-switch
+	 * operation elements (AP hasn't updated them yet), so tell
+	 * ieee80211_config_bw() to ignore one more stale bandwidth
+	 * reading against the just-applied chanreq.
+	 */
+	link->u.mgd.csa.bw_reconfig = true;
 
 	ret = drv_post_channel_switch(link);
 	if (ret) {
@@ -4782,6 +4804,8 @@ static void ieee80211_set_disassoc(struct ieee80211_sub_if_data *sdata,
 
 	sdata->vif.cfg.ssid_len = 0;
 
+	ieee80211_smd_cancel_all_targets(sdata);
+
 	/* Remove TDLS peers */
 	__sta_info_flush(sdata, false, -1, ap_sta);
 
@@ -4880,6 +4904,7 @@ static void ieee80211_set_disassoc(struct ieee80211_sub_if_data *sdata,
 			link->csa_block_tx = false;
 		}
 		link->u.mgd.csa.bw_reconfig = false;
+		link->u.mgd.ecu_countdown = -1;
 
 		ieee80211_link_release_channel(link);
 	}
@@ -4924,6 +4949,11 @@ static void ieee80211_set_disassoc(struct ieee80211_sub_if_data *sdata,
 	 * when the flow started.
 	 */
 	ieee80211_ml_reconf_reset(sdata);
+
+	wiphy_delayed_work_cancel(sdata->local->hw.wiphy,
+				  &sdata->dec_tailroom_needed_wk);
+	ieee80211_delayed_tailroom_dec(sdata->local->hw.wiphy,
+				       &sdata->dec_tailroom_needed_wk.work);
 
 	ieee80211_vif_set_links(sdata, 0, 0);
 
@@ -6162,9 +6192,11 @@ static bool ieee80211_assoc_config_link(struct ieee80211_link_data *link,
 							    elems->eht_cap_len,
 							    link_sta);
 
+#ifdef CPTCFG_QCN_EXTN
 			ieee80211_bss_240mhz_to_sta_eht_cap_extn(sdata, link_sta,
 								 sband,
 								 cbss);
+#endif /* CPTCFG_QCN_EXTN */
 
 			bss_conf->eht_support = link_sta->pub->eht_cap.has_eht;
 			bss_conf->epcs_support = bss_conf->eht_support &&
@@ -6648,7 +6680,9 @@ ieee80211_determine_our_sta_mode(struct ieee80211_sub_if_data *sdata,
 	}
 	conn->mode = IEEE80211_CONN_MODE_EHT;
 
+#ifdef CPTCFG_QCN_EXTN
 	ieee80211_modify_bw_limit_for_240mhz(is_5ghz, conn);
+#endif /* CPTCFG_QCN_EXTN */
 
 	/* check bandwidth */
 	if (is_6ghz &&
@@ -8406,6 +8440,68 @@ static void ieee80211_rx_mgmt_beacon(struct ieee80211_link_data *link,
 	/* note that after this elems->ml_basic can no longer be used fully */
 	ieee80211_mgd_check_cross_link_csa(sdata, rx_status->link_id, elems);
 
+	/* UHR Parameters Update IE (ECU): track countdown and apply mode
+	 * tuple parameters when it expires, mirroring CSA handling in STA mode.
+	 */
+	if (link->u.mgd.conn.mode >= IEEE80211_CONN_MODE_UHR &&
+	    elems->uhr_params_update &&
+	    elems->uhr_params_update_len >= sizeof(*elems->uhr_params_update)) {
+		const struct ieee80211_uhr_param_upd *upd = elems->uhr_params_update;
+		u8 cntdwn = upd->countdown;
+
+		if (cntdwn >= 128 || cntdwn == 0) {
+			/* ECU fired: apply exactly once on the first beacon of the
+			 * post-notification phase (cntdwn >= 128) or when countdown
+			 * reaches 0.
+			 */
+			if (link->u.mgd.ecu_countdown > 0) {
+				const struct ieee80211_uhr_npca_info *npca_ie;
+
+				drv_critical_update(local, sdata, link->link_id,
+						  NL80211_CU_TYPE_UHR_PARAMS,
+						  (const u8 *)upd,
+						  elems->uhr_params_update_len);
+
+				/* Update the STA-side chandef with the new NPCA
+				 * primary freq and puncture bitmap so that
+				 * ieee80211_update_npca_configs() reflects the
+				 * ECU result in link_conf->chanreq.oper.
+				 */
+				npca_ie = ieee80211_uhr_param_upd_npca(upd,
+						elems->uhr_params_update_len);
+				if (npca_ie) {
+					u32 params = le32_to_cpu(npca_ie->params);
+					u32 prim_chan;
+					u32 npca_freq;
+					u16 npca_bitmap = 0;
+
+					prim_chan = params &
+						IEEE80211_UHR_NPCA_PARAMS_PRIMARY_CHAN;
+					npca_freq =
+						ieee80211_channel_to_frequency(
+							prim_chan, chan->band);
+
+					if (params &
+					    IEEE80211_UHR_NPCA_PARAMS_DIS_SUBCH_BMAP_PRES)
+						npca_bitmap = le16_to_cpu(
+							npca_ie->dis_subch_bmap[0]);
+
+					ieee80211_update_npca_configs(&sdata->vif,
+						link->link_id,
+						npca_freq,
+						npca_bitmap);
+				}
+			}
+			link->u.mgd.ecu_countdown = -1;
+		} else {
+			/* Advance-notification phase (1..127): track countdown. */
+			link->u.mgd.ecu_countdown = (s8)cntdwn;
+		}
+	} else if (link->u.mgd.ecu_countdown >= 0) {
+		/* IE gone before countdown reached 0: cancel */
+		link->u.mgd.ecu_countdown = -1;
+	}
+
 	ieee80211_mgd_update_bss_param_ch_cnt(sdata, bss_conf, elems);
 
 	if (!sdata->u.mgd.epcs.enabled &&
@@ -8468,7 +8564,12 @@ static void ieee80211_rx_mgmt_beacon(struct ieee80211_link_data *link,
 
 	changed |= ieee80211_recalc_twt_req(sdata, sband, link, link_sta, elems);
 
-	if (ieee80211_config_bw(link, elems, true, &changed, "beacon")) {
+	/* Skip mode-change disconnect for links pending ML Reconf removal.
+	 * After countdown=0, firmware strips EHT IEs from the beacon before
+	 * VDEV_DOWN. This is expected teardown behaviour, not a real mode change.
+	 */
+	if (!(sdata->u.mgd.removed_links & BIT(link->link_id)) &&
+	    ieee80211_config_bw(link, elems, true, &changed, "beacon")) {
 		ieee80211_set_disassoc(sdata, IEEE80211_STYPE_DEAUTH,
 				       WLAN_REASON_DEAUTH_LEAVING,
 				       true, deauth_buf);
@@ -8826,9 +8927,17 @@ void ieee80211_process_neg_ttlm_req(struct ieee80211_sub_if_data *sdata,
 	if (!ieee80211_vif_is_mld(&sdata->vif))
 		return;
 
-	dialog_token = mgmt->u.action.u.ttlm_req.dialog_token;
-	ies_len  = len - offsetof(struct ieee80211_mgmt,
-				  u.action.u.ttlm_req.variable);
+	{
+		size_t hdr = offsetof(struct ieee80211_mgmt,
+				      u.action.u.ttlm_req.variable);
+
+		if (len < hdr) {
+			ttlm_res = NEG_TTLM_RES_REJECT;
+			goto out;
+		}
+		dialog_token = mgmt->u.action.u.ttlm_req.dialog_token;
+		ies_len = len - hdr;
+	}
 	elems = ieee802_11_parse_elems(mgmt->u.action.u.ttlm_req.variable,
 				       ies_len,
 				       IEEE80211_FTYPE_MGMT |
@@ -9883,11 +9992,16 @@ static int ieee80211_prep_connection(struct ieee80211_sub_if_data *sdata,
 		} else if (!ieee80211_hw_check(&sdata->local->hw,
 					       TIMING_BEACON_ONLY)) {
 			ies = rcu_dereference(cbss->proberesp_ies);
-			/* must be non-NULL since beacon IEs were NULL */
-			link->conf->sync_tsf = ies->tsf;
-			link->conf->sync_device_ts =
-				bss->device_ts_presp;
-			link->conf->sync_dtim_count = 0;
+			if (!ies) {
+				link->conf->sync_tsf = 0;
+				link->conf->sync_device_ts = 0;
+				link->conf->sync_dtim_count = 0;
+			} else {
+				link->conf->sync_tsf = ies->tsf;
+				link->conf->sync_device_ts =
+					bss->device_ts_presp;
+				link->conf->sync_dtim_count = 0;
+			}
 		} else {
 			link->conf->sync_tsf = 0;
 			link->conf->sync_device_ts = 0;
@@ -10028,8 +10142,10 @@ static void ieee80211_parse_cfg_selectors(unsigned long *userspace_selectors,
 {
 	if (supported_selectors) {
 		for (int i = 0; i < supported_selectors_len; i++) {
-			set_bit(supported_selectors[i],
-				userspace_selectors);
+			if (supported_selectors[i] >=
+			    BITS_TO_LONGS(128) * BITS_PER_LONG)
+				continue;
+			set_bit(supported_selectors[i], userspace_selectors);
 		}
 	} else {
 		/* Assume SAE_H2E support for backward compatibility. */
@@ -11144,6 +11260,9 @@ void ieee80211_process_ml_reconf_resp(struct ieee80211_sub_if_data *sdata,
 		goto disconnect;
 
 	valid_links = sdata->vif.valid_links;
+	if (!add_links_data)
+		goto disconnect;
+
 	for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS; link_id++) {
 		if (!add_links_data->link[link_id].bss ||
 		    !(sdata->u.mgd.reconf.added_links & BIT(link_id)))
@@ -11886,6 +12005,10 @@ void ieee80211_process_epcs_ena_resp(struct ieee80211_sub_if_data *sdata,
 	if (!ieee80211_mgd_epcs_supp(sdata))
 		return;
 
+	if (len < offsetof(struct ieee80211_mgmt, u.action.u.epcs.variable) +
+		  IEEE80211_EPCS_ENA_RESP_BODY_LEN)
+		return;
+
 	/* Handle dialog token and status code */
 	pos = mgmt->u.action.u.epcs.variable;
 	dialog_token = *pos;
@@ -11974,6 +12097,12 @@ void ieee80211_process_epcs_ena_req(struct ieee80211_sub_if_data *sdata,
 	size_t ies_len;
 	u8 *pos;
 	u16 status_code = WLAN_STATUS_SUCCESS;
+
+	if (len < offsetof(struct ieee80211_mgmt, u.action.u.epcs.variable) +
+		  IEEE80211_EPCS_ENA_REQ_BODY_LEN) {
+		status_code = WLAN_STATUS_EPCS_DENIED;
+		goto send_frame;
+	}
 
 	pos = mgmt->u.action.u.epcs.variable;
 	sdata->u.mgd.epcs.dialog_token = *pos;
@@ -12220,12 +12349,6 @@ static int ieee80211_smd_init_target_link(struct ieee80211_sub_if_data *sdata,
 		return -EINVAL;
 	}
 
-
-	struct ieee80211_link_data *old =
-		sdata_dereference(sdata->link[sap_link_id], sdata);
-	if (old)
-		ieee80211_link_debugfs_remove(old);
-
 	__ieee80211_link_init_data(sdata, sap_link_id, link, conf);
 
 	if (conf && target->assoc_data->smd_enabled) {
@@ -12377,6 +12500,7 @@ int ieee80211_smd_assoc_success(struct ieee80211_sub_if_data *sdata,
 	if (!target->link_id_remap) {
 		__ieee80211_link_assign(sdata, tap_link_id,
 					&tgt_link->data, &tgt_link->conf);
+		target->new_links[tap_link_id] = NULL;
 		sdata_dbg(sdata, "smd: swap link[%u] to tap (same-links)\n",
 			  tap_link_id);
 	} else {
@@ -12446,6 +12570,9 @@ int ieee80211_smd_assoc_success(struct ieee80211_sub_if_data *sdata,
 		ieee80211_recalc_smps(sdata, link);
 
 	}
+
+	if ((int)tap_link_id != target->primary_link_id)
+		cfg80211_smd_link_established(&sdata->wdev, tap_link_id);
 
 	return 0;
 }
@@ -12534,13 +12661,6 @@ ieee80211_smd_assoc_success_finalize(struct ieee80211_sub_if_data *sdata,
 
 	ieee80211_mgd_reset_mcast_seq(ifmgd, false);
 
-	current_sta = sta_info_get(sdata, current_sta_addr);
-	if (current_sta) {
-		sdata_dbg(sdata, "smd: destroy current_sta %pM\n",
-			  current_sta->sta.addr);
-		WARN_ON(__sta_info_destroy(current_sta));
-	}
-
 	dyn_info = kzalloc(sizeof(*dyn_info), GFP_KERNEL);
 	if (!dyn_info)
 		goto skip_dyn_info;
@@ -12553,14 +12673,42 @@ ieee80211_smd_assoc_success_finalize(struct ieee80211_sub_if_data *sdata,
 	dyn_info->target_aid = target->target_aid;
 	dyn_info->request_dl_sn_not_transferred = target->no_dl_sn;
 	dyn_info->request_ul_sn_not_transferred = target->no_ul_sn;
+	dyn_info->is_exec_via_tap = target->exec_path;
 
-	drv_uhr_link_reconfig(local, sdata, target_sta, NULL,
-			      IEEE80211_UHR_LINK_RECONFIG_DYNAMIC_CONTEXT,
-			      dyn_info);
+	if (ifmgd->smd_ptk != IEEE80211_SMD_PTK_DISABLED) {
+		struct ieee80211_key *ptk;
+
+		ptk = wiphy_dereference(local->hw.wiphy,
+					target_sta->ptk[target_sta->ptk_idx]);
+		if (ptk) {
+			ret = drv_set_key(local, SET_KEY, sdata,
+					  &target_sta->sta, &ptk->conf);
+			if (ret)
+				sdata_dbg(sdata,
+					  "smd: PTK install failed: %d\n", ret);
+			else
+				sdata_dbg(sdata,
+					  "smd: primary PTK installed before DYNAMIC_CONTEXT (links=0x%x)\n",
+					  (unsigned int)target_sta->sta.valid_links);
+		}
+	}
+
+	dyn_info->tap_links_mask = (u16)BIT(target->primary_link_id);
+	dyn_info->changed = IEEE80211_UHR_CHANGED_DYNAMIC_CTX |
+			    IEEE80211_UHR_CHANGED_TERMINATION;
+
+	drv_uhr_link_reconfig(local, sdata, target_sta, NULL, dyn_info);
 	kfree(dyn_info);
 
 skip_dyn_info:
-	ieee80211_smd_free_old_links(sdata, target);
+	current_sta = sta_info_get(sdata, current_sta_addr);
+	if (current_sta) {
+		sdata_dbg(sdata, "smd: destroy current_sta %pM\n",
+			  current_sta->sta.addr);
+		WARN_ON(__sta_info_destroy(current_sta));
+	}
+
+	ieee80211_smd_free_old_links(sdata, target, true);
 
 	WARN_ON(sdata->vif.dormant_links != 0);
 	WARN_ON(!ether_addr_equal(sdata->vif.cfg.ap_addr, target->target_mld_addr));
@@ -12583,6 +12731,7 @@ int ieee80211_smd_prep_setup(struct ieee80211_sub_if_data *sdata,
 	struct ieee80211_uhr_link_reconfig_info *info;
 	struct ieee802_11_elems *elems = target->elems;
 	struct ieee80211_smd_target_link *tgt_link;
+	struct ieee80211_bss_conf *cur_conf;
 	struct sta_info *target_sta;
 	struct sta_info *cur_sta;
 	u16 sap_prep_links = 0;
@@ -12604,29 +12753,11 @@ int ieee80211_smd_prep_setup(struct ieee80211_sub_if_data *sdata,
 	}
 
 	target_sta = target->target_sta;
-
-	if (target->exec_path == 1 && target->transitioning_links == 0) {
-		target->prep_transition_links = target->dl_drain_link_mask;
-		target->transition_done_in_prep = true;
-	} else {
-		target->prep_transition_links = target->transitioning_links;
-		target->transition_done_in_prep = false;
-	}
-	target->post_exec_transition_links =
-		target->prepared_links_mask & ~target->prep_transition_links;
-
-	target->exec_link_id =
-		(target->exec_path == 0 || target->transitioning_links == 0)
-		? target->primary_link_id
-		: (ffs(target->prep_transition_links) - 1);
-
-	transitioning_links = target->prep_transition_links;
-
+	transitioning_links = target->transitioning_links;
 	sdata_dbg(sdata,
-		  "smd: prep_setup exec_path=%u prep=0x%x post_exec=0x%x primary=%d exec_link=%d\n",
+		  "smd: prep_setup exec_path=%u prep=0x%x primary=%d\n",
 		  target->exec_path, transitioning_links,
-		  target->post_exec_transition_links,
-		  target->primary_link_id, target->exec_link_id);
+		  target->primary_link_id);
 
 	info = kzalloc(sizeof(*info), GFP_KERNEL);
 	if (!info) {
@@ -12650,6 +12781,7 @@ int ieee80211_smd_prep_setup(struct ieee80211_sub_if_data *sdata,
 	info->target_aid = target->target_aid;
 	info->request_dl_sn_not_transferred = target->no_dl_sn;
 	info->request_ul_sn_not_transferred = target->no_ul_sn;
+	info->exec_path = target->exec_path;
 
 	for_each_set_bit(link_id, (unsigned long *)&target->prepared_links_mask,
 			 IEEE80211_MLD_MAX_NUM_LINKS) {
@@ -12691,6 +12823,12 @@ int ieee80211_smd_prep_setup(struct ieee80211_sub_if_data *sdata,
 
 		target->changed[link_id] = 0;
 		link->link_id = link_id;
+
+		cur_conf = rcu_access_pointer(sdata->vif.link_conf[link_id]);
+		if (!cur_conf || !cur_conf->chanreq.oper.chan)
+			rcu_assign_pointer(sdata->vif.link_conf[link_id],
+					   &tgt_link->conf);
+
 		if (!ieee80211_assoc_config_link(link, link_sta, cbss,
 						 mgmt, ie_start, ie_len,
 						 target->assoc_data,
@@ -12698,12 +12836,17 @@ int ieee80211_smd_prep_setup(struct ieee80211_sub_if_data *sdata,
 			sdata_err(sdata,
 				  "smd: prep_setup assoc_config_link failed for link %u\n",
 				  link_id);
+
+		if (rcu_access_pointer(sdata->vif.link_conf[link_id]) ==
+		    &tgt_link->conf)
+			RCU_INIT_POINTER(sdata->vif.link_conf[link_id], NULL);
+
 		link->link_id = sap_link_id;
 
 		drv_link->valid = true;
 		drv_link->link_id = sap_link_id;
 		ether_addr_copy(drv_link->target_bssid,
-				target->assoc_data->link[link_id].addr);
+				target->assoc_data->link[link_id].bss->bssid);
 		drv_link->link_conf = &tgt_link->conf;
 		drv_link->transfer_pn = true;
 		drv_link->transfer_sn = true;
@@ -12751,7 +12894,7 @@ out_free_sta:
  * all in-flight RCU readers see the restored pointers before the tgt_links are
  * released.
  */
-static void
+void
 ieee80211_smd_rollback_link_assign(struct ieee80211_sub_if_data *sdata,
 				   struct ieee80211_smd_prep_target *target)
 {
@@ -12776,7 +12919,9 @@ int ieee80211_smd_prep_activate(struct ieee80211_sub_if_data *sdata,
 	struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
 	struct ieee80211_uhr_link_reconfig_info *info = target->drv_info;
 	struct sta_info *current_sta, *target_sta = target->target_sta;
-	u16 transitioning_links = target->prep_transition_links;
+	u16 transitioning_links;
+	u16 upgrade_tap_links = 0;
+	unsigned long slots;
 	unsigned int link_id, tap_id;
 	int ret;
 
@@ -12791,8 +12936,8 @@ int ieee80211_smd_prep_activate(struct ieee80211_sub_if_data *sdata,
 		return -ENOENT;
 	}
 
-	/*
-	 * SLO→MLO upgrade: expand valid_links before the assoc_success loop.
+	transitioning_links = target->transitioning_links;
+	/* SLO→MLO upgrade: expand valid_links before the assoc_success loop.
 	 *
 	 * For SLO, sdata->vif.valid_links == BIT(primary_link_id).
 	 * Transitioning partner links may be new to this STA; the driver
@@ -12814,19 +12959,56 @@ int ieee80211_smd_prep_activate(struct ieee80211_sub_if_data *sdata,
 
 	target->assoc_data->assoc_link_id = target->primary_link_id;
 
-	current_sta->sta.is_uhr_link_reconf = true;
 	for_each_set_bit(link_id,
-			 (unsigned long *)&target->prep_transition_links,
+			 (unsigned long *)&target->upgrade_sap_slots,
+			 IEEE80211_MLD_MAX_NUM_LINKS) {
+		int tap_lid = target->sap_to_tap_link[link_id];
+
+		if (tap_lid < 0 || tap_lid >= IEEE80211_MLD_MAX_NUM_LINKS) {
+			sdata_info(sdata,
+				   "smd: prep_activate upgrade sap[%u] has no tap mapping, skip\n",
+				   link_id);
+			continue;
+		}
+
+		upgrade_tap_links |= BIT(tap_lid);
+		/* link_id is already the SAP slot — mark active now */
+		sdata->vif.active_links  |= BIT(link_id);
+		sdata->vif.dormant_links &= ~BIT(link_id);
+	}
+	current_sta->sta.is_uhr_link_reconf = true;
+
+	for_each_set_bit(link_id,
+			 (unsigned long *)&transitioning_links,
 			 IEEE80211_MLD_MAX_NUM_LINKS) {
 		int sap_link_id = target->tap_to_sap_link[link_id];
-		int assoc_ret = ieee80211_smd_assoc_success(sdata, target,
-							    link_id, sap_link_id);
 
-		if (assoc_ret) {
-			ret = assoc_ret;
+		ret = ieee80211_smd_assoc_success(sdata, target,
+						  link_id, sap_link_id);
+		if (ret) {
 			current_sta->sta.is_uhr_link_reconf = false;
 			goto out_free_links;
 		}
+	}
+
+	slots = upgrade_tap_links;
+	for_each_set_bit(link_id, &slots, IEEE80211_MLD_MAX_NUM_LINKS) {
+		int sap_link_id = target->tap_to_sap_link[link_id];
+
+		if (sap_link_id < 0 || sap_link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
+			continue;
+
+		if (!(transitioning_links & BIT(link_id))) {
+			ret = ieee80211_smd_assoc_success(sdata, target,
+							  link_id, sap_link_id);
+			if (ret) {
+				current_sta->sta.is_uhr_link_reconf = false;
+				goto out_free_links;
+			}
+		}
+
+		sdata->vif.dormant_links |= BIT(sap_link_id);
+		sdata->vif.active_links  &= ~BIT(sap_link_id);
 	}
 	current_sta->sta.is_uhr_link_reconf = false;
 
@@ -12841,9 +13023,8 @@ int ieee80211_smd_prep_activate(struct ieee80211_sub_if_data *sdata,
 		ifmgd->smd_transitioning_links |=
 			BIT(target->tap_to_sap_link[tap_id]);
 
-	ret = drv_uhr_link_reconfig(local, sdata, current_sta, target_sta,
-				    IEEE80211_UHR_LINK_RECONFIG_PREPARE_RESP,
-				    info);
+	info->changed = IEEE80211_UHR_CHANGED_PREPARE_RESP;
+	ret = drv_uhr_link_reconfig(local, sdata, current_sta, target_sta, info);
 	if (ret)
 		goto out_free_links;
 
@@ -12851,12 +13032,23 @@ int ieee80211_smd_prep_activate(struct ieee80211_sub_if_data *sdata,
 		sdata->vif.active_links  |= transitioning_links;
 		sdata->vif.dormant_links &= ~transitioning_links;
 	} else {
-		sdata->vif.dormant_links |= transitioning_links;
-		sdata->vif.active_links  &= ~transitioning_links;
+		u16 sap_transitioning = 0;
+
+		for_each_set_bit(link_id,
+				 (unsigned long *)&transitioning_links,
+				 IEEE80211_MLD_MAX_NUM_LINKS) {
+			int sap_link_id = target->tap_to_sap_link[link_id];
+
+			if (sap_link_id >= 0 &&
+			    sap_link_id < IEEE80211_MLD_MAX_NUM_LINKS)
+				sap_transitioning |= BIT(sap_link_id);
+		}
+		sdata->vif.dormant_links |= sap_transitioning;
+		sdata->vif.active_links  &= ~sap_transitioning;
 	}
 	ifmgd->smd_transitioning_links = 0;
 
-	if (target->prep_transition_links &&
+	if (transitioning_links &&
 	    !ieee80211_smd_move_sta_state(sdata,
 					  target->target_sta->sta.addr,
 					  IEEE80211_STA_ASSOC)) {
@@ -12867,9 +13059,25 @@ int ieee80211_smd_prep_activate(struct ieee80211_sub_if_data *sdata,
 	kfree(target->drv_info);
 	target->drv_info = NULL;
 
+	target->prep_activated = true;
 	return 0;
 
 out_free_links:
+	ifmgd->smd_transitioning_links = 0;
+
+	if (target->upgrade_sap_slots) {
+		u16 orig_valid = sdata->vif.valid_links & ~target->upgrade_sap_slots;
+
+		slots = target->upgrade_sap_slots;
+		sdata->vif.active_links  |= target->upgrade_sap_slots;
+		sdata->vif.dormant_links &= ~target->upgrade_sap_slots;
+		ieee80211_vif_set_links(sdata, orig_valid, 0);
+
+		for_each_set_bit(link_id, &slots, IEEE80211_MLD_MAX_NUM_LINKS)
+			eth_zero_addr(sdata->wdev.links[link_id].addr);
+		target->upgrade_sap_slots = 0;
+	}
+
 	ieee80211_smd_rollback_link_assign(sdata, target);
 	ieee80211_smd_free_target_links(target);
 	kfree(target->drv_info);
@@ -12883,12 +13091,7 @@ out_free_links:
 		 * fail; fall back to sta_info_free() to avoid leaking the object.
 		 */
 		if (target->sta_inserted) {
-			if (__sta_info_destroy(target->target_sta)) {
-				sdata_info(sdata,
-					   "smd: sta_info_destroy failed for %pM, freeing directly\n",
-					   target->target_sta->sta.addr);
-				sta_info_free(local, target->target_sta);
-			}
+			WARN_ON(__sta_info_destroy(target->target_sta));
 			target->sta_inserted = false;
 		} else {
 			sta_info_free(local, target->target_sta);

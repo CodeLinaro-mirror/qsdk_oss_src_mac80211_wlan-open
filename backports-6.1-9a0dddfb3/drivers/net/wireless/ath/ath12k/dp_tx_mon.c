@@ -38,14 +38,11 @@ ath12k_dp_mon_tx_setup_ppdu_desc(struct ath12k_pdev_dp *dp_pdev)
 {
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
 	struct ath12k_pdev_tx_mon *dp_pdev_tx_mon;
-	struct ath12k_dp *dp = dp_pdev->dp;
-	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
 	struct ath12k_base *ab = dp_pdev->dp->ab;
 	size_t alloc_size = sizeof(struct ath12k_dp_mon_ppdu_desc);
 	size_t status_desc_size;
 	int i, ret;
-	u32 mon_num_ppdu_desc = dp_mon->mon_num_ppdu_desc;
-	u32 mon_status_buf = ATH12K_DP_MON_STATUS_BUF;
+	u32 mon_status_buf = DP_TX_MON_NUM_STATUS_BUF(ab);
 
 	if (unlikely(!dp_mon_pdev || !dp_mon_pdev->dp_pdev_tx_mon))
 		return -EINVAL;
@@ -62,7 +59,7 @@ ath12k_dp_mon_tx_setup_ppdu_desc(struct ath12k_pdev_dp *dp_pdev)
 	spin_lock_init(&dp_pdev_tx_mon->tx_mon_ppdu_desc_lock);
 
 	dp_pdev_tx_mon->tx_mon_ppdu_desc_pool =
-			kcalloc(mon_num_ppdu_desc,
+			kcalloc(DP_TX_MON_NUM_PPDU_DESC(ab),
 				sizeof(*dp_pdev_tx_mon->tx_mon_ppdu_desc_pool),
 				GFP_KERNEL);
 
@@ -74,7 +71,7 @@ ath12k_dp_mon_tx_setup_ppdu_desc(struct ath12k_pdev_dp *dp_pdev)
 
 	status_desc_size = sizeof(struct ath12k_dp_mon_status_desc) * mon_status_buf;
 
-	for (i = 0; i < mon_num_ppdu_desc; i++) {
+	for (i = 0; i < DP_TX_MON_NUM_PPDU_DESC(ab); i++) {
 		dp_pdev_tx_mon->tx_mon_ppdu_desc_pool[i] =
 			kzalloc(sizeof(*dp_pdev_tx_mon->tx_mon_ppdu_desc_pool[i]),
 				GFP_KERNEL);
@@ -99,7 +96,7 @@ ath12k_dp_mon_tx_setup_ppdu_desc(struct ath12k_pdev_dp *dp_pdev)
 	ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
 		   "TX MON SETUP: Allocated PPDU desc pool at %p, size=%zu\n",
 		   dp_pdev_tx_mon->tx_mon_ppdu_desc_pool,
-		   alloc_size * mon_num_ppdu_desc);
+		   alloc_size * DP_TX_MON_NUM_PPDU_DESC(ab));
 
 
 	ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX,
@@ -111,7 +108,7 @@ ath12k_dp_mon_tx_setup_ppdu_desc(struct ath12k_pdev_dp *dp_pdev)
 	INIT_LIST_HEAD(&dp_pdev_tx_mon->tx_mon_ppdu_desc_proc_list);
 
 	spin_lock_bh(&dp_pdev_tx_mon->tx_mon_ppdu_desc_lock);
-	for (i = 0; i < mon_num_ppdu_desc; i++) {
+	for (i = 0; i < DP_TX_MON_NUM_PPDU_DESC(ab); i++) {
 		INIT_LIST_HEAD(&dp_pdev_tx_mon->tx_mon_ppdu_desc_pool[i]->list);
 		list_add_tail(&dp_pdev_tx_mon->tx_mon_ppdu_desc_pool[i]->list,
 			      &dp_pdev_tx_mon->tx_mon_ppdu_desc_free_list);
@@ -212,7 +209,6 @@ static void ath12k_dp_mon_tx_cleanup_ppdu_desc(struct ath12k_pdev_dp *dp_pdev)
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
 	struct ath12k_pdev_tx_mon *dp_pdev_tx_mon;
 	struct ath12k_dp *dp = dp_pdev->dp;
-	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
 	struct ath12k_dp_mon_ppdu_desc *tx_ppdu_desc;
 	int i;
 
@@ -228,7 +224,7 @@ static void ath12k_dp_mon_tx_cleanup_ppdu_desc(struct ath12k_pdev_dp *dp_pdev)
 		return;
 	}
 
-	for (i = 0; i < dp_mon->mon_num_ppdu_desc; i++) {
+	for (i = 0; i < DP_TX_MON_NUM_PPDU_DESC(dp->ab); i++) {
 		if (dp_pdev_tx_mon->tx_mon_ppdu_desc_pool[i]) {
 			tx_ppdu_desc = dp_pdev_tx_mon->tx_mon_ppdu_desc_pool[i];
 			/* Free status_desc arrays for each PPDU descriptor */
@@ -336,24 +332,12 @@ cleanup_ppdu_desc:
 EXPORT_SYMBOL(ath12k_dp_mon_tx_wq_start);
 
 /**
- * ath12k_dp_mon_tx_wq_stop() - Stop TX monitor work queue and cleanup descriptors
+ * ath12k_dp_mon_tx_wq_stop() - Destroy TX monitor work queue and free descriptors
  * @dp_pdev: Pointer to DP PDEV context for cleanup operations
  *
- * This function performs complete cleanup of TX monitor work queue infrastructure
- * and PPDU descriptor resources. It should be called during interface shutdown
- * or when TX monitor functionality needs to be deactivated.
- *
- * The function performs cleanup in the following order:
- * 1. Deinitialize work queue and cancel any pending work
- * 2. Cleanup PPDU descriptors and free associated resources
- * 3. Ensure all resources are properly released
- *
- * This function is the counterpart to ath12k_dp_mon_tx_wq_start() and should
- * be called during interface teardown. It complements the basic resource
- * deallocation done in ath12k_dp_mon_tx_pdev_free().
- *
- * Context: Can be called from process context during interface shutdown.
- * Locking: Uses internal locking through architecture-specific operations.
+ * Called at pdev free time (via ath12k_dp_mon_tx_pdev_free()). Drains any
+ * in-flight txmon_work after successful WQ init, destroys the workqueue, and
+ * frees the PPDU descriptor pool.
  */
 void ath12k_dp_mon_tx_wq_stop(struct ath12k_pdev_dp *dp_pdev)
 {
@@ -571,13 +555,16 @@ ath12k_dp_tx_mon_flush_tlv(struct ath12k_pdev_dp *dp_pdev,
  * @mon_desc_list: List of monitor descriptors to flush
  *
  * This function flushes monitor descriptors when errors occur during
- * ring processing. It processes any TLV data in the descriptors and
- * returns the descriptors to the free list.
+ * ring processing. It processes any TLV data in the descriptors,
+ * returns the descriptors to the free list, and returns the number of
+ * descriptors that had an active monitor buffer to flush.
  *
  * Called from NAPI context when PPDU preparation fails or during
  * error recovery scenarios.
+ *
+ * Return: Number of descriptors with a non-NULL monitor buffer flushed.
  */
-static void
+static u32
 ath12k_dp_tx_mon_flush_desc_list(struct ath12k_pdev_dp *dp_pdev,
 				 struct list_head *mon_desc_list)
 {
@@ -586,11 +573,14 @@ ath12k_dp_tx_mon_flush_desc_list(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_hal *hal = &dp_pdev->dp->ab->hal;
 	bool pkt_buf_cnt_in_desc = ath12k_hal_mon_tx_pkt_buf_cnt_in_desc(hal);
 	struct ath12k_dp_mon_status_desc desc;
+	u32 mon_desc_flushed = 0;
 
 	list_for_each_entry_safe(entry_desc, tmp_desc,
 				 mon_desc_list, list) {
 		if (unlikely(!entry_desc->mon_buf))
 			continue;
+
+		mon_desc_flushed++;
 
 		ath12k_core_dma_unmap_page(dp_pdev->dp->dev, entry_desc->paddr,
 					   ATH12K_DP_MON_TX_BUF_SIZE,
@@ -610,6 +600,8 @@ ath12k_dp_tx_mon_flush_desc_list(struct ath12k_pdev_dp *dp_pdev,
 
 	/* Free descriptor list */
 	ath12k_dp_mon_tx_desc_free(dp_pdev, mon_desc_list, dp_mon);
+
+	return mon_desc_flushed;
 }
 
 /**
@@ -647,6 +639,7 @@ ath12k_dp_mon_tx_prep_ppdu_info(struct ath12k_pdev_mon_dp *dp_mon_pdev,
 	struct hal_tlv_64_hdr *tlv_hdr;
 	void *tlv_data;
 	u16 tlv_tag, tlv_len;
+	u32 tlv_upper;
 	u32 tlv_userid = 0;
 	int i;
 
@@ -678,12 +671,20 @@ ath12k_dp_mon_tx_prep_ppdu_info(struct ath12k_pdev_mon_dp *dp_mon_pdev,
 	tlv_tag = ath12k_hal_get_tlv_hdr_tag(&dp_pdev->dp->ab->hal, tlv_hdr->tl);
 	tlv_len = le64_get_bits(tlv_hdr->tl, HAL_TLV_64_HDR_LEN);
 	tlv_userid = le64_get_bits(tlv_hdr->tl, HAL_TLV_64_USR_ID);
+	tlv_upper = upper_32_bits(le64_to_cpu(tlv_hdr->tl));
 
-	if (sizeof(struct hal_tlv_64_hdr) + tlv_len > status_desc->buf_len) {
-		ath12k_warn(dp_pdev->dp->ab,
-			    "TX Mon: TLV length exceeds buffer: %u + %u > %u\n",
-			    (u32)sizeof(struct hal_tlv_64_hdr),
-			    tlv_len, status_desc->buf_len);
+	if (unlikely(tlv_upper)) {
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
+			   "TX Mon: Corrupt status buf: tag=0x%x len=%u upper=0x%08x\n",
+			   tlv_tag, tlv_len, tlv_upper);
+		return -EINVAL;
+	}
+
+	if (unlikely(sizeof(*tlv_hdr) + tlv_len > status_desc->buf_len)) {
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
+			   "TX Mon: TLV length exceeds buffer: %u + %u > %u\n",
+			   (u32)sizeof(*tlv_hdr), tlv_len,
+			   status_desc->buf_len);
 		return -EINVAL;
 	}
 
@@ -1276,18 +1277,21 @@ ath12k_dp_tx_mon_process_mpdu_start(struct ath12k_pdev_dp *dp_pdev,
 
 /**
  * ath12k_dp_tx_mon_generate_data_frm() - Generate data frame with fragments
+ * @dp_pdev: DP pdev handle
  * @ppdu_info: Data PPDU information
  * @user_idx: User index
  * @take_ref: Whether to take reference on buffer page
- *           - true: Increment page reference count (buffer may be reused)
+ *           - true: Increment page reference count (buffer may be reused);
+ *                   uses buffer/offset/length from TX monitor data status info
  *           - false: Transfer page ownership (buffer consumed)
  *
  * Return: 0 on success, negative error code on failure
  */
-int ath12k_dp_tx_mon_generate_data_frm(struct dp_mon_tx_ppdu_info *ppdu_info,
+int ath12k_dp_tx_mon_generate_data_frm(struct ath12k_pdev_dp *dp_pdev,
+				       struct dp_mon_tx_ppdu_info *ppdu_info,
 				       u8 user_idx, bool take_ref)
 {
-	struct sk_buff *skb;
+	struct sk_buff *skb, *tmp_skb;
 	struct hal_rx_mon_ppdu_info *rx_status;
 	struct sk_buff_head *mpdu_q;
 	struct hal_tx_mon_ppdu_info *tx_info;
@@ -1310,18 +1314,33 @@ int ath12k_dp_tx_mon_generate_data_frm(struct dp_mon_tx_ppdu_info *ppdu_info,
 	if (ppdu_info->has_buffer_data && ppdu_info->buffer_addr) {
 		buffer_addr = ppdu_info->buffer_addr;
 		buffer_length = ppdu_info->buffer_length;
+		page = ppdu_info->page;
+		frag_offset = ppdu_info->frag_offset;
 
-		page = virt_to_head_page(buffer_addr);
-		frag_offset = buffer_addr - page_address(page);
+		tmp_skb = ath12k_dp_mon_get_skb_valid_frag(dp_pdev->dp, skb);
+		if (!tmp_skb) {
+			tmp_skb = dev_alloc_skb(ATH12K_DP_MON_TX_MAX_RADIO_TAP_HDR);
+			if (!tmp_skb) {
+				ATH12K_TX_MON_STAT_INC_ERR(dp_pdev, skb_alloc_failed);
+				ath12k_warn(dp_pdev->dp->ab,
+					    "TX Mon: SKB allocation failed for frag renewal, user %u\n",
+					    user_idx);
+				return -ENOMEM;
+			}
+			ath12k_dp_mon_append_skb(skb, tmp_skb);
+		}
 
-		skb_add_rx_frag(skb, skb_shinfo(skb)->nr_frags,
+		skb_add_rx_frag(tmp_skb, skb_shinfo(tmp_skb)->nr_frags,
 				page,
 				frag_offset,
 				buffer_length,
 				ATH12K_DP_MON_TX_BUF_SIZE);
 
+		if (tmp_skb != skb)
+			ath12k_dp_mon_update_skb_len(skb, buffer_length);
+
 		if (take_ref)
-			skb_frag_ref(skb, skb_shinfo(skb)->nr_frags - 1);
+			skb_frag_ref(tmp_skb, skb_shinfo(tmp_skb)->nr_frags - 1);
 	}
 	return 0;
 }
@@ -1440,6 +1459,9 @@ ath12k_dp_tx_mon_extract_buffer_info(struct ath12k_pdev_dp *dp_pdev,
 	tx_ppdu_info->msdu_continuation = packet_info->msdu_continuation;
 	tx_ppdu_info->truncated = packet_info->truncated;
 	tx_ppdu_info->has_buffer_data = true;
+	tx_ppdu_info->page = virt_to_head_page(tx_ppdu_info->buffer_addr);
+	tx_ppdu_info->frag_offset = (tx_ppdu_info->buffer_addr -
+				     page_address(tx_ppdu_info->page));
 	ATH12K_TX_MON_STAT_INC(dp_pdev, pkt_buf_processed);
 
 return_mon_desc:
@@ -1880,6 +1902,27 @@ ath12k_dp_tx_mon_generated_response_frm(struct ath12k_pdev_dp *dp_pdev,
 	return 0;
 }
 
+static int
+dp_tx_mon_setup_buf_from_status(struct ath12k_pdev_dp *dp_pdev,
+					struct dp_mon_tx_ppdu_info *ppdu_info)
+{
+	struct hal_tx_mon_status_info *status_info =
+		&dp_pdev->dp_mon_pdev->mon_data.data_status_info;
+
+	if (!status_info->buffer || !status_info->length)
+		return -ENOENT;
+
+	if (!ppdu_info->buffer_addr) {
+		ppdu_info->buffer_addr = status_info->buffer;
+		ppdu_info->buffer_length = status_info->length;
+		ppdu_info->has_buffer_data = true;
+		ppdu_info->page = virt_to_head_page(ppdu_info->buffer_addr);
+		ppdu_info->frag_offset = status_info->offset;
+	}
+
+	return 0;
+}
+
 /**
  * ath12k_dp_tx_mon_update_ppdu_info_status() - Update PPDU info based on TLV status
  * @dp_pdev: DP pdev handle
@@ -1962,7 +2005,17 @@ ath12k_dp_tx_mon_update_ppdu_info_status(struct ath12k_pdev_dp *dp_pdev,
 	case HAL_TX_MON_DATA:
 		/* Data frame generation - keep buffer reference for reuse */
 		tx_info->is_used = 1;
-		ret = ath12k_dp_tx_mon_generate_data_frm(tx_ppdu_info,
+		ret = dp_tx_mon_setup_buf_from_status(dp_pdev, tx_ppdu_info);
+		if (ret) {
+			ATH12K_TX_MON_STAT_INC_ERR(dp_pdev, data_gen_failed);
+			ath12k_warn(dp_pdev->dp->ab,
+				    "TX Mon: Failed to setup data buffer for user %u: %d\n",
+				    usr_idx, ret);
+			tx_info->is_used = 0;
+			break;
+		}
+
+		ret = ath12k_dp_tx_mon_generate_data_frm(dp_pdev, tx_ppdu_info,
 							 usr_idx, true);
 		if (ret) {
 			ATH12K_TX_MON_STAT_INC_ERR(dp_pdev, data_gen_failed);
@@ -1987,7 +2040,7 @@ ath12k_dp_tx_mon_update_ppdu_info_status(struct ath12k_pdev_dp *dp_pdev,
 				    ret);
 			tx_info->is_used = 0;
 		} else {
-			ret = ath12k_dp_tx_mon_generate_data_frm(tx_ppdu_info,
+			ret = ath12k_dp_tx_mon_generate_data_frm(dp_pdev, tx_ppdu_info,
 								 usr_idx, false);
 			if (ret) {
 				ATH12K_TX_MON_STAT_INC_ERR(dp_pdev, data_gen_failed);
@@ -2864,6 +2917,56 @@ ath12k_dp_tx_mon_generate_cts_rx_frm(struct ath12k_pdev_dp *dp_pdev,
 }
 
 /**
+ * ath12k_dp_tx_mon_trim_last_frag() - Trim bytes from the tail of the last frag
+ * @dp_pdev: DP PDEV context for logging
+ * @skb: Head SKB, whose fraglist may contain chained SKBs
+ * @trim_len: Number of bytes to remove
+ *
+ * Shrinks the last rx frag of @skb by @trim_len bytes.  When frags have been
+ * distributed across a fraglist chain (as ath12k_dp_tx_mon_generate_data_frm()
+ * does when the head's frags[] array is full), the last frag may live in a
+ * chained SKB rather than in the head itself.  Using the global fraglist count
+ * directly as an index into the head's fixed-size frags[] array overflows
+ * MAX_SKB_FRAGS; this helper walks the chain to find the right owner first.
+ */
+static void ath12k_dp_tx_mon_trim_last_frag(struct ath12k_pdev_dp *dp_pdev,
+					    struct sk_buff *skb, u32 trim_len)
+{
+	struct sk_buff *last_frag_skb = skb;
+	skb_frag_t *last_frag;
+	struct sk_buff *iter;
+	int last_frag_idx;
+
+	skb_walk_frags(skb, iter) {
+		if (skb_shinfo(iter)->nr_frags) {
+			last_frag_skb = iter;
+		} else {
+			ath12k_warn(dp_pdev->dp,
+				    "trim_tail walk: iter=%p has nr_frags=0 len=%u, skipping\n",
+				    iter, iter->len);
+			return;
+		}
+	}
+
+	last_frag_idx = skb_shinfo(last_frag_skb)->nr_frags - 1;
+	last_frag = &skb_shinfo(last_frag_skb)->frags[last_frag_idx];
+	if (skb_frag_size(last_frag) <= trim_len)
+		return;
+
+	skb_coalesce_rx_frag(last_frag_skb,
+			     last_frag_idx,
+			     -trim_len, 0);
+
+	/* skb_coalesce_rx_frag() updated last_frag_skb->{len,data_len}.
+	 * Propagate the change to the head skb when they differ.
+	 */
+	if (last_frag_skb != skb) {
+		skb->len -= trim_len;
+		skb->data_len -= trim_len;
+	}
+}
+
+/**
  * ath12k_dp_tx_mon_frame_trim_mic() - Trim MIC from encrypted frames
  * @skb: SKB containing the frame
  * @ppdu_info: PPDU info structure
@@ -2881,7 +2984,8 @@ ath12k_dp_tx_mon_generate_cts_rx_frm(struct ath12k_pdev_dp *dp_pdev,
  * - Other types: No trimming
  */
 static void
-ath12k_dp_tx_mon_frame_trim_mic(struct sk_buff *skb,
+ath12k_dp_tx_mon_frame_trim_mic(struct ath12k_pdev_dp *dp_pdev,
+				struct sk_buff *skb,
 				struct hal_tx_mon_ppdu_info *ppdu_info,
 				u8 user_idx)
 {
@@ -2894,9 +2998,15 @@ ath12k_dp_tx_mon_frame_trim_mic(struct sk_buff *skb,
 		return;
 
 	frag_count = ath12k_dp_mon_get_num_frags_in_fraglist(skb);
-	if (frag_count)
+	if (frag_count) {
+		if (!skb_shinfo(skb)->nr_frags) {
+			ath12k_dbg(NULL, ATH12K_DBG_DP_MON_TX,
+				   "ext mon: mpdu fraglist reports %d frag(s) but skb nr_frags is 0\n",
+				   frag_count);
+			return;
+		}
 		hdr = (struct ieee80211_hdr *)ath12k_dp_mon_skb_get_frag_addr(skb, 0);
-	else
+	} else
 		hdr = (struct ieee80211_hdr *)skb->data;
 
 	if (!ieee80211_has_protected(hdr->frame_control))
@@ -2922,7 +3032,7 @@ ath12k_dp_tx_mon_frame_trim_mic(struct sk_buff *skb,
 		return;
 
 	if (frag_count > 0)
-		skb_coalesce_rx_frag(skb, frag_count - 1, -trim_len, 0);
+		ath12k_dp_tx_mon_trim_last_frag(dp_pdev, skb, trim_len);
 	else
 		skb_trim(skb, skb->len - trim_len);
 }
@@ -3154,6 +3264,52 @@ ath12k_dp_mon_tx_fill_rate_status(struct ath12k_pdev_dp *dp_pdev,
 	}
 }
 
+int ath12k_dp_mon_tx_ext_mon_deliver(struct ath12k_pdev_dp *dp_pdev,
+				     struct sk_buff *mpdu)
+{
+#ifdef CPTCFG_QCN_EXTN
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct ath12k_pdev_tx_mon *tx_mon;
+	struct ath12k_dp_tx_ext_mon *tx_ext_mon;
+	struct ath12k_dp_tx_ext_mon_config *tx_config;
+	struct ieee80211_ext_mon_tx_event_extn event;
+	bool need_rtap;
+	int ret;
+
+	if (!ieee80211_ext_mon_tx_notifier_has_listeners_extn())
+		return NOTIFY_DONE;
+
+	if (unlikely(!dp_mon_pdev || !dp_mon_pdev->dp_pdev_tx_mon))
+		return NOTIFY_DONE;
+
+	tx_mon = dp_mon_pdev->dp_pdev_tx_mon;
+	tx_ext_mon = &tx_mon->tx_ext_mon;
+
+	spin_lock(&tx_ext_mon->tx_ext_mon_lock);
+	tx_config = tx_ext_mon->tx_ext_mon_config;
+	if (unlikely(!tx_config) || !tx_config->enable) {
+		spin_unlock(&tx_ext_mon->tx_ext_mon_lock);
+		return NOTIFY_DONE;
+	}
+	need_rtap = tx_config->metadata & ATH12K_EXT_MON_METADATA_RTAP_HDR;
+	spin_unlock(&tx_ext_mon->tx_ext_mon_lock);
+
+	/* RTAP_HDR requested: let the frame flow to the POST_RTAP path via
+	 * ieee80211_tx_monitor() -> ieee80211_ext_mon_tx_notify() instead.
+	 */
+	if (need_rtap)
+		return NOTIFY_DONE;
+
+	event.hw = ath12k_dp_pdev_to_hw(dp_pdev);
+	event.mpdu = mpdu;
+	event.sdata = NULL;
+	ret = ieee80211_ext_mon_tx_notifier_call_extn_nc(IEEE80211_EXT_MON_PRE_RTAP,
+							 &event);
+	return ret;
+#else
+	return NOTIFY_DONE;
+#endif /* CPTCFG_QCN_EXTN */
+}
 /**
  * ath12k_dp_mon_tx_deliver_frame() - Helper to deliver single frame to monitor stack
  * @dp_pdev: ath12k pdev dp context
@@ -3186,14 +3342,28 @@ ath12k_dp_mon_tx_deliver_frame(struct ath12k_pdev_dp *dp_pdev,
 		.info = IEEE80211_SKB_CB(skb),
 		.rates = &rate_status,
 	};
+	int ext_mon_ret;
 
 	if (!is_response_frame)
-		ath12k_dp_tx_mon_frame_trim_mic(skb, ppdu_info, user_idx);
+		ath12k_dp_tx_mon_frame_trim_mic(dp_pdev, skb,
+						ppdu_info, user_idx);
 
 	ath12k_dp_mon_tx_update_mon_info(dp_pdev, &status.mon_info,
 					 ppdu_info, status_info,
 					 contains_host_frames,
 					 is_response_frame, user_idx);
+
+	ath12k_dp_mon_tx_update_spl_pkt_cap_stats(dp_pdev, status_info);
+
+	/* If the extended-monitor consumer accepted the frame
+	 * (NOTIFY_OK/NOTIFY_STOP), free it instead of passing it up
+	 * the monitor netdev, to avoid delivering it twice. see --metadata
+	 */
+	ext_mon_ret = ath12k_dp_mon_tx_ext_mon_deliver(dp_pdev, skb);
+	if (ext_mon_ret == NOTIFY_OK || ext_mon_ret == NOTIFY_STOP) {
+		dev_kfree_skb(skb);
+		return;
+	}
 
 	if (!ieee80211_is_data_qos(cpu_to_le16(ppdu_info->rx_status.frame_control))) {
 		status.n_rates = ATH12K_RATE_STATUS_N_RATES;
@@ -3203,7 +3373,58 @@ ath12k_dp_mon_tx_deliver_frame(struct ath12k_pdev_dp *dp_pdev,
 		ath12k_dp_tx_mon_update_rtap_tlv_at_end(skb, &status.mon_info, ppdu_info);
 	}
 
-	ieee80211_tx_monitor_offload(hw, &status);
+	ieee80211_tx_monitor_offload_ni(hw, &status);
+}
+
+static
+int ath12k_dp_ext_mon_tx_filter_frame(struct ath12k_pdev_dp *dp_pdev,
+					 struct sk_buff *mpdu, u32 mpdu_count)
+{
+	struct ath12k_pdev_tx_mon *tx_mon;
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	struct ath12k_dp_tx_ext_mon_config *tx_ext_mon;
+	int ret;
+
+	tx_mon = dp_pdev->dp_mon_pdev->dp_pdev_tx_mon;
+	tx_ext_mon = tx_mon->tx_ext_mon.tx_ext_mon_config;
+	if (unlikely(!tx_ext_mon)) {
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
+				"ext_mon in tx direction is null\n");
+		return 0;
+	}
+
+	if (!tx_ext_mon->enable)
+		return 0;
+
+	// TODO: Optimise this to trim this before processing
+	if (tx_ext_mon->level == ATH12K_EXT_MON_FILTER_LEVEL_PPDU &&
+		mpdu_count > 1)
+		return -EINVAL;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp_pdev->dp);
+	if (mon_ops && mon_ops->ext_mon_filter) {
+		ret = mon_ops->ext_mon_filter(mpdu, tx_ext_mon);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+
+static int
+ath12k_dp_ext_mon_tx_frame_is_filtered(struct ath12k_pdev_dp *dp_pdev,
+					 struct sk_buff *mpdu, u32 mpdu_count)
+{
+	struct ath12k_pdev_tx_mon *tx_mon;
+	int ret;
+
+	tx_mon = dp_pdev->dp_mon_pdev->dp_pdev_tx_mon;
+	spin_lock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+	ret = ath12k_dp_ext_mon_tx_filter_frame(dp_pdev, mpdu,
+						  mpdu_count);
+	spin_unlock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+
+	return ret;
 }
 
 /**
@@ -3235,6 +3456,7 @@ ath12k_dp_mon_tx_deliver_single_ppdu(struct ath12k_pdev_dp *dp_pdev,
 	struct hal_tx_mon_ppdu_info *rx_ppdu_info = NULL;
 	int delivered = 0;
 	bool contains_host_frames;
+	u32 mpdu_count = 0;
 
 	if (!ppdu_info || !mpdu_q || !ppdu_context)
 		return;
@@ -3284,6 +3506,12 @@ ath12k_dp_mon_tx_deliver_single_ppdu(struct ath12k_pdev_dp *dp_pdev,
 	contains_host_frames = ppdu_context->contains_host_frames;
 
 	while ((mpdu = skb_dequeue(mpdu_q))) {
+		if (ath12k_dp_ext_mon_tx_frame_is_filtered(dp_pdev, mpdu,
+							   ++mpdu_count)) {
+			dev_kfree_skb_any(mpdu);
+			continue;
+		}
+
 		ath12k_dp_mon_tx_deliver_frame(dp_pdev, hw, mpdu,
 					       ppdu_info, status_info,
 					       contains_host_frames,
@@ -3413,8 +3641,8 @@ void ath12k_dp_tx_mon_process_ppdu(struct work_struct *work)
 		spin_unlock_bh(&dp_pdev_tx_mon->tx_mon_ppdu_desc_lock);
 		return;
 	}
-	list_splice_init(&dp_pdev_tx_mon->tx_mon_ppdu_desc_used_list,
-			 &dp_pdev_tx_mon->tx_mon_ppdu_desc_proc_list);
+	list_splice_tail_init(&dp_pdev_tx_mon->tx_mon_ppdu_desc_used_list,
+			      &dp_pdev_tx_mon->tx_mon_ppdu_desc_proc_list);
 	spin_unlock_bh(&dp_pdev_tx_mon->tx_mon_ppdu_desc_lock);
 
 	ab = dp_pdev->dp->ab;
@@ -3429,11 +3657,14 @@ void ath12k_dp_tx_mon_process_ppdu(struct work_struct *work)
 			continue;
 		}
 
-		if (unlikely(ppdu_desc->status_desc_cnt > ATH12K_DP_MON_STATUS_BUF)) {
+		if (unlikely(ppdu_desc->status_desc_cnt >
+		    DP_TX_MON_NUM_STATUS_BUF(dp_pdev->dp->ab))) {
 			ath12k_warn(dp_pdev->dp->ab,
 				    "TX Mon: PPDU desc overflow count=%u max=%u\n",
-				    ppdu_desc->status_desc_cnt, ATH12K_DP_MON_STATUS_BUF);
-			ppdu_desc->status_desc_cnt = ATH12K_DP_MON_STATUS_BUF;
+				    ppdu_desc->status_desc_cnt,
+				    DP_TX_MON_NUM_STATUS_BUF(dp_pdev->dp->ab));
+			ppdu_desc->status_desc_cnt =
+					DP_TX_MON_NUM_STATUS_BUF(dp_pdev->dp->ab);
 			ATH12K_TX_MON_STAT_INC(dp_pdev, ppdu_desc_overflow);
 		}
 
@@ -3576,7 +3807,7 @@ static int ath12k_dp_tx_mon_prep_wq(struct list_head *mon_desc_used_list,
 	/* Copy monitor descriptors to PPDU descriptor */
 	list_for_each_entry(desc, mon_desc_used_list, list) {
 		desc_cnt = ppdu_desc->status_desc_cnt;
-		if (unlikely(desc_cnt >= ATH12K_DP_MON_STATUS_BUF)) {
+		if (unlikely(desc_cnt >= DP_TX_MON_NUM_STATUS_BUF(ab))) {
 			/* On overflow, reset and add to used list, return error */
 			ath12k_dp_mon_reset_ppdu_desc(ppdu_desc);
 			spin_lock_bh(&dp_pdev_tx_mon->tx_mon_ppdu_desc_lock);
@@ -3922,13 +4153,172 @@ int ath12k_dp_ext_mon_tx_alloc(struct ath12k_pdev_dp *dp_pdev)
 
 	INIT_LIST_HEAD(&tx_config->peer_list);
 
-	spin_lock_bh(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+	spin_lock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
 	tx_mon->tx_ext_mon.tx_ext_mon_config = tx_config;
-	spin_unlock_bh(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+	spin_unlock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
 
 	return 0;
 }
 EXPORT_SYMBOL(ath12k_dp_ext_mon_tx_alloc);
+
+static void
+ath12k_dp_ext_mon_delete_tx_peer_list(struct list_head *peer_list)
+{
+	struct ath12k_dp_ext_mon_peer *peer, *tmp;
+
+	list_for_each_entry_safe(peer, tmp, peer_list, list) {
+		list_del(&peer->list);
+		kfree(peer);
+	}
+}
+
+static void
+ath12k_dp_ext_mon_prepare_remove_peer(struct ath12k_pdev_dp *dp_pdev,
+				      struct ath12k_dp_ext_mon_tx_peer_params
+				      *ext_mon_peer_params)
+{
+	struct ath12k_dp_ext_mon_peer *peer, *tmp;
+	const struct ath12k_ext_mon_peer_info *peer_info;
+	bool found;
+	int i;
+	struct list_head *peer_list = ext_mon_peer_params->peer_list;
+	const struct ath12k_ext_mon_peer_config *peer_config =
+		ext_mon_peer_params->peer_config;
+
+	for (i = 0; i < peer_config->count; i++) {
+		peer_info = &peer_config->peer_info[i];
+		found = false;
+
+		/** An all-zero MAC is the wildcard sentinel for "remove all
+		 * TX peers"; splice the whole list to peers_to_wmi instead
+		 * of matching against individual entries.
+		 */
+		if (is_zero_ether_addr(peer_info->mac_addr)) {
+			*ext_mon_peer_params->ext_mon_peer_count = 0;
+			list_splice_tail_init(peer_list,
+					      ext_mon_peer_params->peers_to_wmi);
+			return;
+		}
+		if (!peer_info->ra_addr) {
+			ath12k_warn(dp_pdev->dp,
+				    "skipping peer %pM: TA not allowed in TX direction\n",
+				    peer_config->peer_info[i].mac_addr);
+			continue;
+		}
+
+		list_for_each_entry_safe(peer, tmp, peer_list, list) {
+			if (ether_addr_equal(peer->peer_info.mac_addr,
+					     peer_info->mac_addr)) {
+				list_del(&peer->list);
+				(*ext_mon_peer_params->ext_mon_peer_count)--;
+				list_add_tail(&peer->list,
+					      ext_mon_peer_params->peers_to_wmi);
+				found = true;
+				break;
+			}
+		}
+
+		if (!found)
+			ath12k_warn(dp_pdev->dp, "peer %pM (%s) not found for remove\n",
+				    peer_info->mac_addr,
+				    peer_info->ra_addr ? "RA" : "TA");
+	}
+}
+
+static int
+ath12k_dp_ext_mon_remove_tx_peers(struct ath12k_pdev_dp *dp_pdev,
+				  bool retain_peer_list,
+				  const struct ath12k_ext_mon_peer_config *peer_config)
+{
+	struct ath12k_pdev_tx_mon *tx_mon;
+	struct ath12k_dp_tx_ext_mon_config *tx_ext_mon;
+	LIST_HEAD(peers_to_wmi);
+	int ret = 0, vdev_id;
+	u8 peer_count;
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	struct ath12k_dp_ext_mon_tx_peer_params tx_mon_peer_params = {
+		.peers_to_wmi = &peers_to_wmi,
+		.peer_config = peer_config,
+	};
+
+	vdev_id = ath12k_dp_ext_mon_find_mon_vdev_id(dp_pdev);
+	if (vdev_id == -1)
+		ath12k_warn(dp_pdev->dp, "no active monitor vdev found\n");
+
+	tx_mon = dp_pdev->dp_mon_pdev->dp_pdev_tx_mon;
+
+	spin_lock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+
+	tx_ext_mon = tx_mon->tx_ext_mon.tx_ext_mon_config;
+	if (unlikely(!tx_ext_mon)) {
+		ath12k_warn(dp_pdev->dp, "ext_mon for tx direction is null\n");
+		spin_unlock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+		return -EINVAL;
+	}
+
+	if (tx_ext_mon->peer_count == 0) {
+		spin_unlock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+		return 0;
+	}
+
+	tx_mon_peer_params.peer_list = &tx_ext_mon->peer_list;
+	tx_mon_peer_params.ext_mon_peer_count = &tx_ext_mon->peer_count;
+	peer_count = tx_ext_mon->peer_count;
+	ath12k_dp_ext_mon_prepare_remove_peer(dp_pdev, &tx_mon_peer_params);
+
+	mon_ops = ath12k_dp_mon_ops_get(dp_pdev->dp);
+
+	tx_mon_peer_params.toggle_hw_state =
+		(tx_ext_mon->peer_count == 0);
+	spin_unlock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+
+	if (vdev_id == -1)
+		goto delete_peer_list;
+	tx_mon_peer_params.vdev_id = vdev_id;
+
+	if (mon_ops && mon_ops->ext_mon_remove_wmi_tx_peers)
+		ret = mon_ops->ext_mon_remove_wmi_tx_peers(dp_pdev,
+							   &tx_mon_peer_params);
+	if (retain_peer_list) {
+		/**
+		 * splice the wmi peers back into tx_config->peer_list so
+		 * host-side bookkeeping survives instead of being dropped
+		 */
+		spin_lock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+		list_splice_tail_init(&peers_to_wmi, &tx_ext_mon->peer_list);
+		tx_ext_mon->peer_count = peer_count;
+		spin_unlock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+		return ret;
+	}
+delete_peer_list:
+	ath12k_dp_ext_mon_delete_tx_peer_list(&peers_to_wmi);
+
+	return ret;
+}
+
+static int
+ath12k_dp_ext_mon_tx_remove_all_peers(struct ath12k_pdev_dp *dp_pdev)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct ath12k_pdev_tx_mon *tx_mon;
+	int ret = 0;
+	struct ath12k_ext_mon_peer_config *peer_config;
+
+	peer_config = kzalloc(sizeof(*peer_config), GFP_KERNEL);
+	if (!peer_config)
+		return -ENOMEM;
+
+	tx_mon = dp_mon_pdev->dp_pdev_tx_mon;
+	peer_config->count = 1;
+	eth_zero_addr(peer_config->peer_info[0].mac_addr);
+
+	ret = ath12k_dp_ext_mon_remove_tx_peers(dp_pdev, !tx_mon->tx_mon_teardown,
+						peer_config);
+
+	kfree(peer_config);
+
+	return ret;
+}
 
 void ath12k_dp_ext_mon_tx_free(struct ath12k_pdev_dp *dp_pdev)
 {
@@ -3946,15 +4336,13 @@ void ath12k_dp_ext_mon_tx_free(struct ath12k_pdev_dp *dp_pdev)
 		ath12k_warn(dp_pdev->dp->ab, "tx monitor is null\n");
 		return;
 	}
+	tx_mon->tx_mon_teardown = true;
+	ath12k_dp_ext_mon_tx_remove_all_peers(dp_pdev);
 
-	spin_lock_bh(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+	spin_lock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
 	tx_config = tx_mon->tx_ext_mon.tx_ext_mon_config;
-	if (!tx_config) {
-		spin_unlock_bh(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
-		return;
-	}
 	tx_mon->tx_ext_mon.tx_ext_mon_config = NULL;
-	spin_unlock_bh(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+	spin_unlock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
 
 	kfree(tx_config);
 }
@@ -4004,12 +4392,149 @@ int ath12k_dp_mon_tx_htt_src_ring_setup(struct ath12k_dp *dp)
 	return ret;
 }
 
-int ath12k_dp_mon_tx_config_monitor_mode(struct ath12k *ar, bool set)
+static void
+ath12k_dp_ext_mon_tx_set_rtap_mode(struct ath12k_pdev_dp *dp_pdev, u8 meta_data)
+{
+#ifdef CPTCFG_QCN_EXTN
+	struct ieee80211_vif *mon_vif = NULL;
+	struct ath12k_link_vif *arvif;
+	bool enable = !!(meta_data & ATH12K_EXT_MON_METADATA_RTAP_HDR);
+	enum ieee80211_ext_mon_event_type_extn mode =
+		enable ? IEEE80211_EXT_MON_POST_RTAP : IEEE80211_EXT_MON_PRE_RTAP;
+
+	list_for_each_entry(arvif, &dp_pdev->ar->arvifs, list) {
+		if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR &&
+		    arvif->is_started) {
+			mon_vif = arvif->ahvif->vif;
+			break;
+		}
+	}
+	if (!mon_vif)
+		return;
+
+	ieee80211_set_ext_tx_monitor(mon_vif, enable);
+	ieee80211_set_ext_tx_mon_evt_typ(mon_vif, mode);
+#endif /* CPTCFG_QCN_EXTN */
+}
+
+static int ath12k_dp_tx_mon_reset_ext_mon_config(struct ath12k_pdev_dp *dp_pdev)
+{
+	struct ath12k_dp_tx_ext_mon *tx_ext_mon;
+	struct ath12k_dp_tx_ext_mon_config *tx_config;
+	int ret = 0;
+
+	tx_ext_mon = &dp_pdev->dp_mon_pdev->dp_pdev_tx_mon->tx_ext_mon;
+
+	spin_lock(&tx_ext_mon->tx_ext_mon_lock);
+	tx_config = tx_ext_mon->tx_ext_mon_config;
+	if (tx_config) {
+		tx_config->enable = false;
+		tx_config->level = 0;
+		tx_config->monitor_flags = 0;
+		tx_config->metadata = 0;
+		tx_config->fp_enabled = false;
+		tx_config->fpmo_enabled = false;
+		memset(&tx_config->fp, 0, sizeof(tx_config->fp));
+		memset(&tx_config->fpmo, 0, sizeof(tx_config->fpmo));
+	}
+	spin_unlock(&tx_ext_mon->tx_ext_mon_lock);
+	ath12k_dp_ext_mon_tx_set_rtap_mode(dp_pdev, 0);
+	ret = ath12k_dp_ext_mon_tx_remove_all_peers(dp_pdev);
+	return ret;
+}
+
+static int ath12k_dp_mon_tx_filter_cfg(const struct ath12k_dp_arch_mon_ops *mon_ops,
+				       struct ath12k_pdev_dp *dp_pdev,
+				       u8 new_mode, bool enable)
+{
+	u8 old_mode = dp_pdev->dp_mon_pdev->dp_pdev_tx_mon->tx_monitor_mode;
+	int ret = 0;
+
+	if (!mon_ops || !mon_ops->mon_tx_filter_configure)
+		return -EINVAL;
+
+	ret = mon_ops->mon_tx_filter_configure(dp_pdev, false);
+
+	if (ret) {
+		ath12k_warn(dp_pdev->dp->ab,
+			    "TX Mon: failed to clear filter mode %u: %d\n",
+			    old_mode, ret);
+		return ret;
+	}
+
+	dp_pdev->dp_mon_pdev->dp_pdev_tx_mon->tx_monitor_mode = new_mode;
+	ret = mon_ops->mon_tx_filter_configure(dp_pdev, enable);
+
+	if (ret)
+		ath12k_warn(dp_pdev->dp->ab,
+			    "TX Mon: failed to %s filter mode %u: %d\n",
+			    enable ? "enable" : "clear", new_mode, ret);
+	return ret;
+}
+
+void
+ath12k_dp_mon_tx_update_spl_pkt_cap_stats(struct ath12k_pdev_dp *dp_pdev,
+					     struct hal_tx_mon_status_info *status_info)
+{
+	static const char * const pkt_names[] = {
+		"unknown", "ARP", "EAPOL", "DHCP", "DNS", "ICMP", "MGMT"
+	};
+	struct ath12k_pdev_tx_mon *tx_mon = dp_pdev->dp_mon_pdev->dp_pdev_tx_mon;
+	u8 pkt_id = status_info->spc_pkt_id;
+
+	tx_mon->pdev_tx_mon_stats.spl_pkt_cap_stats[pkt_id] +=
+					status_info->dp_tx_pkt_cap_cookie;
+	ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
+		   "tx_pkt_cap %s +%u (total %u)\n",
+		   pkt_names[pkt_id],
+		   status_info->dp_tx_pkt_cap_cookie,
+		   tx_mon->pdev_tx_mon_stats.spl_pkt_cap_stats[pkt_id]);
+}
+
+/**
+ * ath12k_dp_mon_spl_pkt_cap_config() - Send WMI special packet classify command
+ * @ab: ath12k base structure
+ *
+ * Sends WMI_SOC_TX_PACKET_CUSTOM_CLASSIFY_CMDID to firmware for each radio
+ * that has TX monitor enabled, so FW tags high-value protocol frames with a
+ * cookie in FW2SW MON TLVs before any VAP is created.
+ *
+ * Called from ath12k_core_pdev_init() and re-sent automatically after SSR.
+ */
+void ath12k_dp_mon_spl_pkt_cap_config(struct ath12k_base *ab)
+{
+	int i;
+
+	for (i = 0; i < ab->num_radios; i++) {
+		struct ath12k *ar = ab->pdevs[i].ar;
+		const struct ath12k_dp_arch_mon_ops *mon_ops;
+		u32 bitmap = 0;
+		int ret;
+
+		if (!ar || !ath12k_dp_tx_mon_feature_eval(ar->dp.dp))
+			continue;
+
+		mon_ops = ath12k_dp_mon_ops_get(ar->dp.dp);
+		if (mon_ops && mon_ops->mon_tx_get_spc_bitmap)
+			bitmap = mon_ops->mon_tx_get_spc_bitmap(ab);
+
+		ret = ath12k_wmi_tx_mon_pkt_cap_set_config(ar, bitmap);
+		if (ret)
+			ath12k_warn(ab,
+				    "radio%d: TX mon pkt cap WMI failed: %d\n",
+				    i, ret);
+	}
+}
+EXPORT_SYMBOL(ath12k_dp_mon_spl_pkt_cap_config);
+
+int ath12k_dp_mon_tx_config_full_monitor(struct ath12k *ar, bool set)
 {
 	struct ath12k_base *ab;
 	struct ath12k_dp *dp;
 	const struct ath12k_dp_arch_mon_ops *mon_ops;
 	struct ath12k_pdev_dp *dp_pdev;
+	struct ath12k_pdev_mon_dp *dp_mon_pdev;
+	struct ath12k_pdev_tx_mon *tx_mon;
 	int ret = -EINVAL;
 
 	if (unlikely(!ar || !ar->ab)) {
@@ -4021,6 +4546,8 @@ int ath12k_dp_mon_tx_config_monitor_mode(struct ath12k *ar, bool set)
 	dp = ath12k_ab_to_dp(ab);
 	mon_ops = ath12k_dp_mon_ops_get(dp);
 	dp_pdev = &ar->dp;
+	dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	tx_mon = dp_mon_pdev->dp_pdev_tx_mon;
 
 	if (set) {
 		ret = ath12k_dp_mon_tx_htt_src_ring_setup(dp);
@@ -4030,12 +4557,9 @@ int ath12k_dp_mon_tx_config_monitor_mode(struct ath12k *ar, bool set)
 		}
 	}
 
-	if (mon_ops && mon_ops->mon_tx_filter_configure) {
-		ret = mon_ops->mon_tx_filter_configure(dp_pdev, set);
-		if (ret)
-			ath12k_err(dp->ab, "TX Monitor: Filter config failed, ret=%d",
-				   ret);
-	}
+	ret = ath12k_dp_mon_tx_filter_cfg(mon_ops, dp_pdev,
+					  DP_MON_TX_FULL_MONITOR, set);
+	ath12k_dp_tx_mon_reset_ext_mon_config(dp_pdev);
 
 	return ret;
 }
@@ -4161,7 +4685,7 @@ int ath12k_dp_mon_tx_desc_pool_alloc(struct ath12k_dp *dp)
 	spin_lock_init(&dp_tx_mon->tx_mon_desc_lock);
 	spin_lock_bh(&dp_tx_mon->tx_mon_desc_lock);
 	dp_tx_mon->tx_mon_buf_ring_ready = false;
-	dp_tx_mon->tx_mon_desc_pool = kcalloc(DP_TX_MONITOR_BUF_RING_SIZE,
+	dp_tx_mon->tx_mon_desc_pool = kcalloc(DP_TX_MON_BUF_RING_SIZE(dp->ab),
 					      sizeof(*dp_tx_mon->tx_mon_desc_pool),
 					      GFP_ATOMIC);
 	if (!dp_tx_mon->tx_mon_desc_pool) {
@@ -4199,7 +4723,8 @@ void ath12k_dp_mon_tx_desc_pool_free(struct ath12k_dp *dp)
 
 size_t ath12k_dp_mon_get_tx_free_desc_list(struct ath12k_dp *dp,
 					   struct dp_rxdma_mon_ring *rx_ring,
-					   struct list_head *list)
+					   struct list_head *list,
+					   size_t ring_lvl)
 {
 	struct ath12k_dp_tx_mon *dp_tx_mon = dp->dp_mon ? dp->dp_mon->dp_tx_mon : NULL;
 	struct dp_mon_desc_list_params list_params;
@@ -4214,7 +4739,7 @@ size_t ath12k_dp_mon_get_tx_free_desc_list(struct ath12k_dp *dp,
 	list_params.buff_size = 0;
 	list_params.is_tx_monitor = true;
 
-	return ath12k_dp_mon_get_free_desc_list(dp, rx_ring, &list_params, 0);
+	return ath12k_dp_mon_get_free_desc_list(dp, rx_ring, &list_params, ring_lvl);
 }
 
 int ath12k_dp_mon_tx_buff_alloc(struct ath12k_dp *dp)
@@ -4224,6 +4749,7 @@ int ath12k_dp_mon_tx_buff_alloc(struct ath12k_dp *dp)
 	struct ath12k_dp_tx_mon *dp_tx_mon = dp_mon ? dp_mon->dp_tx_mon : NULL;
 	struct dp_rxdma_mon_ring *tx_ring;
 	int num_entries, ret = -EINVAL, free_list_count;
+	size_t ring_lvl = DP_TX_MON_BUF_RING_FILL_LVL(ab);
 	LIST_HEAD(list);
 
 	if (!dp_tx_mon)
@@ -4246,7 +4772,7 @@ int ath12k_dp_mon_tx_buff_alloc(struct ath12k_dp *dp)
 	tx_ring->bufs_max = num_entries;
 
 	free_list_count =
-		ath12k_dp_mon_get_tx_free_desc_list(dp, tx_ring, &list);
+		ath12k_dp_mon_get_tx_free_desc_list(dp, tx_ring, &list, ring_lvl);
 
 	if (unlikely(!free_list_count)) {
 		ath12k_warn(dp, "Tx Mon: No entries available for mon buf ring\n");
@@ -4258,6 +4784,11 @@ int ath12k_dp_mon_tx_buff_alloc(struct ath12k_dp *dp)
 		ath12k_warn(dp, "Tx Mon: Replenish of mon buf ring failed\n");
 		return ret;
 	}
+
+	if (tx_ring->bufs_max > ring_lvl)
+		tx_ring->bufs_fill_lvl = ring_lvl;
+	else
+		tx_ring->bufs_fill_lvl = tx_ring->bufs_max;
 
 	spin_lock_bh(&dp_tx_mon->tx_mon_desc_lock);
 	dp_tx_mon->tx_mon_buf_ring_ready = true;
@@ -4280,16 +4811,50 @@ int ath12k_dp_mon_tx_htt_dst_ring_setup(struct ath12k_pdev_dp *dp_pdev, u32 mac_
 	ret = ath12k_dp_tx_htt_srng_setup(dp->ab, ring_id, mac_id,
 					  HAL_TX_MONITOR_DST);
 	if (ret)
-		ath12k_warn(dp->ab, "TX Monitor: failed to configure dst ring %d\n", ret);
+		ath12k_warn(dp->ab,
+			    "TX Monitor: failed to configure dst ring %d\n", ret);
 
 	return ret;
 }
 
+/**
+ * ath12k_dp_mon_tx_monitor_start_stop() - Start or stop TX monitor
+ * @ar: per-radio ath12k context
+ * @state: true to start, false to stop
+ *
+ * Configures TX monitor HW and filter state for the given radio.
+ * Idempotent: starting an already-started or stopping an already-stopped
+ * monitor returns 0 immediately.
+ *
+ * The WQ is pre-initialised at pdev alloc and destroyed at pdev free;
+ * this function does not create or destroy it. The SSR path may clear
+ * tx_monitor_started without clearing is_tx_monitor_enabled_on_ssr so
+ * recovery can distinguish runtime state from restart intent.
+ *
+ * Start sequence (state=true):
+ *   1. Enable the TX monitor destination ring via
+ *      ath12k_dp_mon_tx_config_monitor_mode().
+ *   2. Push the TLV filter configuration to FW via
+ *      ath12k_dp_mon_tx_update_filter().
+ *   3. Set tx_monitor_started=true and is_tx_monitor_enabled_on_ssr=true.
+ *
+ * Stop sequence (state=false):
+ *   1. Disable the TX monitor destination ring.
+ *   2. Push cleared filter configuration to FW.
+ *   3. Set tx_monitor_started=false and is_tx_monitor_enabled_on_ssr=false.
+ *
+ * Context: Process context. Caller must hold wiphy_lock when invoked
+ *          from mac80211 ops path.
+ *
+ * Return: 0 on success, negative error code on failure.
+ */
 int ath12k_dp_mon_tx_monitor_start_stop(struct ath12k *ar, bool state)
 {
 	int ret = -EOPNOTSUPP;
 	struct ath12k_pdev_mon_dp *dp_mon_pdev;
 	struct ath12k_pdev_tx_mon *dp_pdev_tx_mon;
+	struct ath12k_dp_tx_ext_mon_config *tx_ext_mon;
+	bool ext_mon_enabled = false;
 
 	dp_mon_pdev = ar->dp.dp_mon_pdev;
 	if (!dp_mon_pdev || !dp_mon_pdev->dp_pdev_tx_mon) {
@@ -4300,7 +4865,13 @@ int ath12k_dp_mon_tx_monitor_start_stop(struct ath12k *ar, bool state)
 
 	dp_pdev_tx_mon = dp_mon_pdev->dp_pdev_tx_mon;
 
-	if (state && dp_pdev_tx_mon->tx_monitor_started) {
+	spin_lock(&dp_pdev_tx_mon->tx_ext_mon.tx_ext_mon_lock);
+	tx_ext_mon = dp_pdev_tx_mon->tx_ext_mon.tx_ext_mon_config;
+	if (tx_ext_mon)
+		ext_mon_enabled = tx_ext_mon->enable;
+	spin_unlock(&dp_pdev_tx_mon->tx_ext_mon.tx_ext_mon_lock);
+
+	if (state && dp_pdev_tx_mon->tx_monitor_started && !ext_mon_enabled) {
 		ath12k_dbg(ar->ab, ATH12K_DBG_DP_MON,
 			   "Tx mon already active on requested interface\n");
 		return 0;
@@ -4309,10 +4880,14 @@ int ath12k_dp_mon_tx_monitor_start_stop(struct ath12k *ar, bool state)
 	if (!state && !dp_pdev_tx_mon->tx_monitor_started) {
 		ath12k_dbg(ar->ab, ATH12K_DBG_DP_MON,
 			   "Not running Tx mon on requested interface\n");
+		ar->is_tx_monitor_enabled_on_ssr = false;
 		return 0;
 	}
 
-	ret = ath12k_dp_mon_tx_config_monitor_mode(ar, state);
+	if (state)
+		dp_pdev_tx_mon->tx_mon_teardown = false;
+
+	ret = ath12k_dp_mon_tx_config_full_monitor(ar, state);
 	if (ret) {
 		ath12k_warn(ar->ab, "Tx Monitor: Configuration Failure %d\n",
 			    ret);
@@ -4323,16 +4898,16 @@ int ath12k_dp_mon_tx_monitor_start_stop(struct ath12k *ar, bool state)
 	if (ret) {
 		ath12k_warn(ar->ab, "Tx Monitor: fail tx monitor filter update ret %d\n",
 			    ret);
-		/* always set tx mon mode as false in case of failure*/
-		if (ath12k_dp_mon_tx_config_monitor_mode(ar, false)) {
+		if (ath12k_dp_mon_tx_config_full_monitor(ar, false))
 			ath12k_err(ar->ab,
 				   "Tx Mon: Config failure potential state mismatch\n");
-			return ret;
-		}
 		dp_pdev_tx_mon->tx_monitor_started = false;
+		ar->is_tx_monitor_enabled_on_ssr = false;
 		return ret;
 	}
 	dp_pdev_tx_mon->tx_monitor_started = state;
+	ar->is_tx_monitor_enabled_on_ssr = state;
+
 	return ret;
 }
 
@@ -4344,14 +4919,17 @@ int ath12k_dp_mon_tx_set_monitor_flags(struct ath12k *ar, u32 new_flags, u32 *cu
 	struct ath12k_pdev_tx_mon *dp_pdev_tx_mon;
 
 	dp_mon_pdev = ar->dp.dp_mon_pdev;
+	if (!ath12k_dp_tx_mon_feature_eval(ar->dp.dp)) {
+		ath12k_warn(ar->ab, "Tx Monitor: Config disabled/mismatch\n");
+		return 0;
+	}
+
 	if (!dp_mon_pdev || !dp_mon_pdev->dp_pdev_tx_mon) {
 		ath12k_warn(ar->ab, "Tx Monitor: Invalid Pdev (%d)\n", ret);
 		return ret;
 	}
 
 	dp_pdev_tx_mon = dp_mon_pdev->dp_pdev_tx_mon;
-	if (!ath12k_dp_tx_mon_feature_eval(ar->dp.dp))
-		return 0;
 
 	req_state = !(new_flags & MONITOR_FLAG_SKIP_TX);
 	ret = ath12k_dp_mon_tx_monitor_start_stop(ar, req_state);
@@ -4384,7 +4962,8 @@ bool ath12k_dp_tx_mon_feature_eval(struct ath12k_dp *dp)
 
 	if (!DP_TX_MONITOR || !ab->hw_params->supports_tx_monitor) {
 		ab->hw_params->supports_tx_monitor = false;
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "TX Monitor disabled\n");
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX,
+			   "TX Monitor Feature flag disabled\n");
 		return false;
 	}
 
@@ -4411,7 +4990,7 @@ void ath12k_dp_mon_tx_buff_free(struct ath12k_dp *dp)
 		return;
 	}
 
-	for (i = 0; i < DP_TX_MONITOR_BUF_RING_SIZE; i++) {
+	for (i = 0; i < DP_TX_MON_BUF_RING_SIZE(dp->ab); i++) {
 		if (dp_tx_mon->tx_mon_desc_pool[i].in_use != DP_MON_DESC_TO_HW)
 			continue;
 
@@ -4680,6 +5259,8 @@ void ath12k_dp_mon_tx_prepare_filter(struct ath12k_dp *dp,
 
 		dst_tlv_filter->txmon_disable |= src_tlv_filter->txmon_disable;
 		dst_tlv_filter->pkt_buf_cnt_en |= src_tlv_filter->pkt_buf_cnt_en;
+		dst_tlv_filter->mac_addr_filter_en |=
+					src_tlv_filter->mac_addr_filter_en;
 		dst_tlv_filter->tx_mon_mgmt_pkt_dma_len |=
 					src_tlv_filter->tx_mon_mgmt_pkt_dma_len;
 		dst_tlv_filter->tx_mon_data_pkt_dma_len |=
@@ -4723,7 +5304,7 @@ ath12k_dp_mon_tx_htt_update_filters(struct ath12k_dp *dp,
 
 	int ring_buf_size, mac_id, ring_id;
 
-	if (!dp_mon_pdev || !dp->ab) {
+	if (!dp_mon_pdev || !ab) {
 		ath12k_err(NULL, "Tx Mon: mon pdev/base invalid - skip filter config\n");
 		return ret;
 	}
@@ -4763,13 +5344,10 @@ int ath12k_dp_mon_tx_srng_alloc_setup(struct ath12k_dp *dp)
 
 	dp_tx_mon = dp_mon->dp_tx_mon;
 
-	/*Todo : DP_TX_MONITOR_BUF_RING_SIZE is 8192 - 512M profile will need
-	 *	 smaller size
-	 */
 	ret = ath12k_dp_srng_alloc(ab,
 				   &dp_tx_mon->tx_mon_buf_ring.refill_buf_ring,
 				   HAL_TX_MONITOR_BUF, 0, 0,
-				   DP_TX_MONITOR_BUF_RING_SIZE);
+				   DP_TX_MON_BUF_RING_SIZE(ab));
 	if (ret) {
 		ath12k_warn(dp, "Tx Mon: failed to alloc buffer srng (%d)\n", ret);
 		return ret;
@@ -4822,9 +5400,9 @@ int ath12k_dp_mon_tx_desc_pool_init(struct ath12k_dp *dp)
 	}
 
 	 memset(dp_tx_mon->tx_mon_desc_pool, 0,
-		DP_TX_MONITOR_BUF_RING_SIZE * sizeof(*dp_tx_mon->tx_mon_desc_pool));
+		DP_TX_MON_BUF_RING_SIZE(dp->ab) * sizeof(*dp_tx_mon->tx_mon_desc_pool));
 
-	for (i = 0; i < DP_TX_MONITOR_BUF_RING_SIZE; i++) {
+	for (i = 0; i < DP_TX_MON_BUF_RING_SIZE(dp->ab); i++) {
 		dp_tx_mon->tx_mon_desc_pool[i].magic = ATH12K_MON_MAGIC_VALUE;
 		INIT_LIST_HEAD(&dp_tx_mon->tx_mon_desc_pool[i].list);
 		list_add_tail(&dp_tx_mon->tx_mon_desc_pool[i].list,
@@ -4948,7 +5526,7 @@ int ath12k_dp_mon_tx_dst_ring_alloc_setup(struct ath12k_pdev_dp *dp_pdev,
 	ret = ath12k_dp_srng_alloc(dp->ab,
 				   &dp_pdev->dp_mon_pdev->dp_pdev_tx_mon->tx_mon_dst_ring,
 				   HAL_TX_MONITOR_DST, 0, mac_id,
-				   DP_TX_MONITOR_DEST_RING_SIZE);
+				   DP_TX_MON_DST_RING_SIZE(dp->ab));
 	if (ret) {
 		ath12k_warn(dp->ab, "Tx Mon: failed dest. ring allocation\n");
 		return ret;
@@ -5037,7 +5615,7 @@ void ath12k_dp_mon_tx_update_buf_ownership_stats(struct ath12k_dp *dp)
 
 	stats = &mon_dp->dp_tx_mon->tx_mon_stats;
 	/* lockdep_assert_held(&dp_mon->tx_mon_desc_lock) */
-	for (i = 0; i < DP_TX_MONITOR_BUF_RING_SIZE; i++) {
+	for (i = 0; i < DP_TX_MON_BUF_RING_SIZE(dp->ab); i++) {
 		desc = &mon_dp->dp_tx_mon->tx_mon_desc_pool[i];
 		switch (desc->in_use) {
 		case DP_MON_DESC_TO_HW:
@@ -5158,6 +5736,7 @@ void ath12k_dp_mon_tx_process_low_thres(struct ath12k_dp *dp)
 	struct dp_rxdma_mon_ring *tx_buff_ring;
 	struct hal_srng *srng;
 	int num_free, free_list_count;
+	int reserved_bufs;
 	LIST_HEAD(list);
 
 	if (!dp_tx_mon)
@@ -5176,12 +5755,25 @@ void ath12k_dp_mon_tx_process_low_thres(struct ath12k_dp *dp)
 	tx_buff_ring = &dp_tx_mon->tx_mon_buf_ring;
 	srng = &dp->hal->srng_list[tx_buff_ring->refill_buf_ring.ring_id];
 
+	/* Buffers intentionally left unfilled so the ring is maintained at
+	 * bufs_fill_lvl, not full.
+	 */
+	reserved_bufs = tx_buff_ring->bufs_max - tx_buff_ring->bufs_fill_lvl;
+
 	spin_lock_bh(&srng->lock);
 	ath12k_hal_srng_access_begin(ab, srng);
 
 	num_free = ath12k_hal_srng_src_num_free(ab, srng, true);
+
+	/* Discount the buffers intentionally left unfilled. num_free is signed:
+	 * if the physical free count is below the reserved gap, num_free goes
+	 * negative here and is caught by the half-fill check below (it never
+	 * reaches the unsigned list_cut_nodes count). Keep num_free signed.
+	 */
+	num_free = num_free - reserved_bufs;
+
 	/* if ring is less than half filled need to replenish */
-	if (num_free < (tx_buff_ring->bufs_max / 2)) {
+	if (num_free < (tx_buff_ring->bufs_fill_lvl / 2)) {
 		ath12k_hal_srng_access_end(ab, srng);
 		spin_unlock_bh(&srng->lock);
 		spin_unlock_bh(&dp_tx_mon->tx_mon_desc_lock);
@@ -5201,3 +5793,815 @@ void ath12k_dp_mon_tx_process_low_thres(struct ath12k_dp *dp)
 		ath12k_dp_mon_tx_buf_replenish(dp, tx_buff_ring, &list, free_list_count);
 }
 EXPORT_SYMBOL(ath12k_dp_mon_tx_process_low_thres);
+
+static int
+ath12k_dp_ext_mon_tx_prepare_add_peers(struct ath12k_pdev_dp *dp_pdev,
+				       struct ath12k_dp_ext_mon_tx_peer_params
+					 *ext_mon_peer_params)
+{
+	struct ath12k_link_vif *arvif;
+	const struct ath12k_ext_mon_peer_info *peer_info;
+	struct ath12k_dp_ext_mon_peer *peer;
+	bool found;
+	int i;
+	const struct ath12k_ext_mon_peer_config *peer_config =
+		ext_mon_peer_params->peer_config;
+	u8 peers_to_add_cnt = peer_config->count;
+
+	for (i = 0; i < peer_config->count; i++) {
+		if (!peer_config->peer_info[i].ra_addr) {
+			ath12k_warn(dp_pdev->dp,
+				    "skipping peer %pM: TA not allowed in TX direction\n",
+				    peer_config->peer_info[i].mac_addr);
+			peers_to_add_cnt--;
+		}
+	}
+
+	if (peers_to_add_cnt == 0)
+		return -EINVAL;
+
+	if ((*ext_mon_peer_params->ext_mon_peer_count) + peers_to_add_cnt >
+		ATH12K_EXT_MON_MAX_PEERS) {
+		ath12k_warn(dp_pdev->dp,
+			    "adding %u peers would exceed max %d (current: %u)\n",
+			    peers_to_add_cnt, ATH12K_EXT_MON_MAX_PEERS,
+			    (*ext_mon_peer_params->ext_mon_peer_count));
+		return -EINVAL;
+	}
+
+	for (i = 0; i < peer_config->count; i++) {
+		peer_info = &peer_config->peer_info[i];
+		found = false;
+
+		if (!peer_info->ra_addr)
+			continue;
+
+		list_for_each_entry(arvif, &dp_pdev->ar->arvifs, list) {
+			if (ether_addr_equal(arvif->bssid, peer_info->mac_addr)) {
+				found = true;
+				ath12k_warn(dp_pdev->dp,
+					    "skipped adding bssid %pM as peer\n",
+					    peer_info->mac_addr);
+				break;
+			}
+		}
+		if (found)
+			continue;
+
+		/* TODO: Optimize with the help of hash table */
+		list_for_each_entry(peer, ext_mon_peer_params->peer_list, list) {
+			if (ether_addr_equal(peer->peer_info.mac_addr,
+					     peer_info->mac_addr)) {
+				found = true;
+				ath12k_warn(dp_pdev->dp, "peer %pM already added\n",
+					    peer_info->mac_addr);
+				break;
+			}
+		}
+		if (found)
+			continue;
+
+		list_for_each_entry(peer, ext_mon_peer_params->peers_to_wmi, list) {
+			if (ether_addr_equal(peer->peer_info.mac_addr,
+					     peer_info->mac_addr)) {
+				found = true;
+				ath12k_warn(dp_pdev->dp,
+					    "peer %pM duplicate in request\n",
+					    peer_info->mac_addr);
+				break;
+			}
+		}
+		if (found)
+			continue;
+
+		peer = kzalloc(sizeof(*peer), GFP_ATOMIC);
+		if (!peer)
+			continue;
+
+		memcpy(&peer->peer_info, peer_info, sizeof(*peer_info));
+		list_add_tail(&peer->list, ext_mon_peer_params->peers_to_wmi);
+		ext_mon_peer_params->staged_count++;
+	}
+
+	if (ext_mon_peer_params->staged_count == 0)
+		return -EINVAL;
+	return 0;
+}
+
+static int
+ath12k_dp_ext_mon_add_tx_peers(struct ath12k_pdev_dp *dp_pdev,
+			       bool skip_validation,
+			       const struct ath12k_ext_mon_peer_config *peer_config)
+{
+	struct ath12k_pdev_tx_mon *tx_mon;
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	struct ath12k_dp_tx_ext_mon_config *tx_ext_mon;
+	LIST_HEAD(peers_to_wmi);
+	int ret = 0, vdev_id;
+	struct ath12k_dp_ext_mon_tx_peer_params tx_mon_peer_params = {
+		.peers_to_wmi = &peers_to_wmi,
+		.staged_count = 0,
+		.peer_config = peer_config,
+		.toggle_hw_state = false,
+	};
+
+	vdev_id = ath12k_dp_ext_mon_find_mon_vdev_id(dp_pdev);
+	if (vdev_id == -1) {
+		ath12k_warn(dp_pdev->dp, "no active monitor vdev found\n");
+		return -ENODEV;
+	}
+
+	tx_mon_peer_params.vdev_id = vdev_id;
+	mon_ops = ath12k_dp_mon_ops_get(dp_pdev->dp);
+	if (!mon_ops) {
+		ath12k_warn(dp_pdev->dp,
+			   "peer configuration via ext_mon not supported\n");
+		return -EOPNOTSUPP;
+	}
+
+	tx_mon = dp_pdev->dp_mon_pdev->dp_pdev_tx_mon;
+
+	spin_lock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+	tx_ext_mon = tx_mon->tx_ext_mon.tx_ext_mon_config;
+	if (unlikely(!tx_ext_mon)) {
+		ath12k_warn(dp_pdev->dp, "ext_mon in tx direction is null\n");
+		ret = -EINVAL;
+		goto unlock;
+	}
+
+	if (skip_validation) {
+		tx_mon_peer_params.staged_count = tx_ext_mon->peer_count;
+		/**
+		 * Staging all peers to add present in the peer list.
+		 * Making peer_count = 0 to stage all the peers for addition.
+		 */
+		tx_ext_mon->peer_count = 0;
+		list_splice_tail_init(&tx_ext_mon->peer_list,
+				      tx_mon_peer_params.peers_to_wmi);
+	} else {
+		tx_mon_peer_params.peer_list = &tx_ext_mon->peer_list;
+		tx_mon_peer_params.ext_mon_peer_count = &tx_ext_mon->peer_count;
+
+		ret = ath12k_dp_ext_mon_tx_prepare_add_peers(dp_pdev,
+							     &tx_mon_peer_params);
+		if (ret)
+			goto unlock;
+	}
+	if (tx_ext_mon->peer_count == 0)
+		tx_mon_peer_params.toggle_hw_state = true;
+	spin_unlock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+
+	/**
+	 * ext_mon_add_wmi_tx_peers sends a WMI command and
+	 * waits on the firmware round-trip, which can sleep, that is
+	 * unsafe under a spinlock. tx_ext_mon_config is re-checked,
+	 * re-locked below before peers_to_wmi is spliced back into
+	 * tx_ext_mon->peer_list.
+	 */
+	if (mon_ops->ext_mon_add_wmi_tx_peers)
+		ret = mon_ops->ext_mon_add_wmi_tx_peers(dp_pdev,
+							&tx_mon_peer_params);
+
+	spin_lock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+	tx_ext_mon = tx_mon->tx_ext_mon.tx_ext_mon_config;
+	if (unlikely(!tx_ext_mon)) {
+		spin_unlock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+		/** tx_ext_mon_config was torn down while the WMI add above was
+		 * in flight, so these peers were never committed to
+		 * tx_ext_mon->peer_list. If hw peer filtering was active, FW
+		 * still has them staged from the add call; remove them so FW
+		 * doesn't retain filter entries the host no longer tracks.
+		 */
+		tx_mon_peer_params.toggle_hw_state = true;
+		if (mon_ops->ext_mon_remove_wmi_tx_peers)
+			ret = mon_ops->ext_mon_remove_wmi_tx_peers(dp_pdev,
+								   &tx_mon_peer_params);
+		ath12k_dp_ext_mon_delete_tx_peer_list(&peers_to_wmi);
+		return -EINVAL;
+	}
+
+	tx_ext_mon->peer_count += tx_mon_peer_params.staged_count;
+	list_splice_tail(&peers_to_wmi, &tx_ext_mon->peer_list);
+	/** Peers can be skipped from legitimate reasons,
+	 * the successfully staged subset above is still committed.
+	 * Report -EINVAL anyway so the caller knows the request
+	 * wasn't fully honored, even though it's not a hard failure.
+	 */
+	if  (tx_mon_peer_params.staged_count != peer_config->count)
+		ret = -EINVAL;
+
+unlock:
+	spin_unlock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+	return ret;
+}
+
+/**
+ * ath12k_dp_mon_tx_drain_status_desc() - DMA-unmap and free one TX monitor
+ * status descriptor during SSR cleanup.
+ * @dp_pdev: DP pdev handle, used to reach the DMA device
+ * @desc: status descriptor to drain; no-op if mon_buf is NULL
+ *
+ * Releases a single status descriptor entry during SSR drain. The TLV-aware
+ * cleanup is needed because TX monitor status buffers can reference additional
+ * packet buffers via HAL_TX_MON_BUF_ADDR TLVs.
+ */
+static void
+ath12k_dp_mon_tx_drain_status_desc(struct ath12k_pdev_dp *dp_pdev,
+				   struct ath12k_dp_mon_status_desc *desc)
+{
+	struct ath12k_hal *hal = &dp_pdev->dp->ab->hal;
+	bool pkt_buf_cnt_in_desc;
+
+	if (!desc->mon_buf)
+		return;
+
+	pkt_buf_cnt_in_desc = ath12k_hal_mon_tx_pkt_buf_cnt_in_desc(hal);
+
+	ath12k_core_dma_unmap_page(dp_pdev->dp->dev, desc->paddr,
+				   ATH12K_DP_MON_TX_BUF_SIZE, DMA_FROM_DEVICE);
+	ath12k_dp_tx_mon_flush_tlv(dp_pdev, desc, pkt_buf_cnt_in_desc);
+
+	desc->mon_buf = NULL;
+	desc->paddr = 0;
+	desc->buf_len = 0;
+	desc->end_of_ppdu = false;
+	desc->pkt_buf_cnt = 0;
+}
+
+/**
+ * ath12k_dp_mon_tx_ssr_restart_pdev() - Restart TX monitor after SSR
+ * @dp_pdev: DP pdev handle for the recovering radio
+ *
+ * Called from ath12k_mac_monitor_start() when is_tx_monitor_enabled_on_ssr
+ * is set, indicating that TX monitor was active before the crash.
+ *
+ * The WQ is created by wq_start() at pdev alloc time and destroyed by
+ * wq_stop() at pdev free. It remains alive across SSR because wq_stop() is
+ * not called on the SSR path. This function cancels any in-flight txmon_work
+ * and drains stale descriptors before recovery re-arms the HW/FW monitor state.
+ *
+ * Restart sequence:
+ *   1. Verify dp_pdev_tx_mon is allocated; abort if not.
+ *   2. Verify the descriptor pool is ready; warn and abort if not.
+ *   3. Drain partial descriptors from tx_mon_desc_work_list.
+ *   4. Splice used_list and proc_list into a private local_drain_list under
+ *      tx_mon_ppdu_desc_lock. For each ppdu_desc, DMA-unmap and free every
+ *      status_desc via ath12k_dp_mon_tx_drain_status_desc(), then reset via
+ *      ath12k_dp_mon_reset_ppdu_desc(). Bulk-return to free_list under lock.
+ *   5. Call ath12k_dp_mon_tx_monitor_start_stop(ar, true) to re-enable the HW
+ *      ring and push TLV filter config to FW.
+ *
+ * On monitor_start_stop() failure: is_tx_monitor_enabled_on_ssr is cleared
+ * here explicitly. monitor_start_stop(ar, true) does not reach its state-update
+ * block on early failure returns, so the flag would not be cleared otherwise.
+ * Clearing it prevents a re-entry loop on the next SSR cycle.
+ */
+void ath12k_dp_mon_tx_ssr_restart_pdev(struct ath12k_pdev_dp *dp_pdev)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev;
+	struct ath12k_pdev_tx_mon *dp_pdev_tx_mon;
+	struct ath12k_tx_mon_ssr_stats *stats;
+	struct ath12k_dp_mon_ppdu_desc *ppdu_desc;
+	struct hal_srng *tx_mon_dst_ring;
+	struct list_head *work_list;
+	LIST_HEAD(local_drain_list);
+	struct ath12k *ar;
+	bool desc_initialized;
+	u32 ppdu_desc_drained = 0;
+	u32 status_desc_drained = 0;
+	u32 mon_desc_flushed;
+	u32 ring_id;
+	int i, ret;
+
+	if (!dp_pdev || !dp_pdev->dp_mon_pdev)
+		return;
+
+	ar = dp_pdev->ar;
+	dp_mon_pdev = dp_pdev->dp_mon_pdev;
+
+	dp_pdev_tx_mon = dp_mon_pdev->dp_pdev_tx_mon;
+	if (WARN_ON(!dp_pdev_tx_mon)) {
+		ar->is_tx_monitor_enabled_on_ssr = false;
+		return;
+	}
+	work_list = &dp_pdev_tx_mon->tx_mon_desc_work_list;
+	stats = &ar->tx_mon_ssr_stats;
+	stats->restart_attempts++;
+
+	spin_lock_bh(&dp_pdev_tx_mon->tx_mon_ppdu_desc_lock);
+	desc_initialized = dp_pdev_tx_mon->tx_mon_ppdu_desc_initialized;
+	spin_unlock_bh(&dp_pdev_tx_mon->tx_mon_ppdu_desc_lock);
+	if (!desc_initialized) {
+		ath12k_warn(ar->ab,
+			    "TX monitor desc pool not ready during SSR recovery\n");
+		stats->restart_no_pool++;
+		ar->is_tx_monitor_enabled_on_ssr = false;
+		return;
+	}
+
+	ring_id = dp_pdev_tx_mon->tx_mon_dst_ring.ring_id;
+	tx_mon_dst_ring = &ar->ab->hal.srng_list[ring_id];
+	spin_lock_bh(&tx_mon_dst_ring->lock);
+	mon_desc_flushed = ath12k_dp_tx_mon_flush_desc_list(dp_pdev, work_list);
+	spin_unlock_bh(&tx_mon_dst_ring->lock);
+	stats->mon_desc_flushed += mon_desc_flushed;
+
+	if (dp_pdev_tx_mon->tx_mon_wq_initialized) {
+		stats->work_cancel++;
+		cancel_work_sync(&dp_pdev_tx_mon->txmon_work);
+	}
+
+	spin_lock_bh(&dp_pdev_tx_mon->tx_mon_ppdu_desc_lock);
+	list_splice_init(&dp_pdev_tx_mon->tx_mon_ppdu_desc_used_list,
+			 &local_drain_list);
+	list_splice_tail_init(&dp_pdev_tx_mon->tx_mon_ppdu_desc_proc_list,
+			      &local_drain_list);
+	spin_unlock_bh(&dp_pdev_tx_mon->tx_mon_ppdu_desc_lock);
+
+	list_for_each_entry(ppdu_desc, &local_drain_list, list) {
+		ppdu_desc_drained++;
+		for (i = 0; i < ppdu_desc->status_desc_cnt; i++) {
+			if (ppdu_desc->status_desc[i].mon_buf)
+				status_desc_drained++;
+			ath12k_dp_mon_tx_drain_status_desc(dp_pdev,
+							   &ppdu_desc->status_desc[i]);
+		}
+		ath12k_dp_mon_reset_ppdu_desc(ppdu_desc);
+	}
+	stats->ppdu_desc_drained += ppdu_desc_drained;
+	stats->status_desc_drained += status_desc_drained;
+
+	spin_lock_bh(&dp_pdev_tx_mon->tx_mon_ppdu_desc_lock);
+	list_splice_tail_init(&local_drain_list,
+			      &dp_pdev_tx_mon->tx_mon_ppdu_desc_free_list);
+	spin_unlock_bh(&dp_pdev_tx_mon->tx_mon_ppdu_desc_lock);
+
+	/* SSR invalidates the HW/FW TX monitor programming; force re-arm below. */
+	dp_pdev_tx_mon->tx_monitor_started = false;
+	ret = ath12k_dp_mon_tx_monitor_start_stop(ar, true);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "TX monitor restart failed during SSR: %d\n", ret);
+		stats->restart_fail++;
+		ar->is_tx_monitor_enabled_on_ssr = false;
+	} else {
+		stats->restart_success++;
+	}
+}
+
+int
+ath12k_dp_ext_mon_handle_tx_peer(struct ath12k_pdev_dp *dp_pdev,
+				 const struct ath12k_ext_mon_peer_config *peer_config)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+
+	if (unlikely(!dp_mon_pdev)) {
+		ath12k_warn(dp_pdev->dp, "monitor pdev is null\n");
+		return -EINVAL;
+	}
+
+	if (!dp_mon_pdev->dp_pdev_tx_mon ||
+	    !dp_mon_pdev->dp_pdev_tx_mon->tx_monitor_started) {
+		ath12k_warn(dp_pdev->dp, "Tx monitor not enabled\n");
+		return -EINVAL;
+	}
+
+	switch (peer_config->action) {
+	case QCA_VENDOR_EXT_MON_PEER_ACTION_ADD:
+		return ath12k_dp_ext_mon_add_tx_peers(dp_pdev, false, peer_config);
+	case QCA_VENDOR_EXT_MON_PEER_ACTION_REMOVE:
+		return ath12k_dp_ext_mon_remove_tx_peers(dp_pdev, false, peer_config);
+	default:
+		ath12k_warn(dp_pdev->dp, "invalid peer action %u\n",
+				peer_config->action);
+	}
+
+	return -EINVAL;
+}
+
+int
+ath12k_dp_ext_mon_get_tx_filter(struct ath12k_pdev_dp *dp_pdev,
+				struct ath12k_ext_mon_config *resp)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct ath12k_dp_tx_ext_mon *tx_ext_mon;
+	struct ath12k_dp_tx_ext_mon_config *tx_ext_mon_config;
+	int ret = 0;
+	bool tx_mon_started;
+
+	if (unlikely(!dp_mon_pdev)) {
+		ath12k_warn(dp_pdev->dp->ab, "monitor pdev is null\n");
+		return -EINVAL;
+	}
+
+	if (unlikely(!dp_mon_pdev->dp_pdev_tx_mon)) {
+		ath12k_warn(dp_pdev->dp, "tx monitor pdev is null\n");
+		return -EINVAL;
+	}
+
+	tx_mon_started = dp_mon_pdev->dp_pdev_tx_mon->tx_monitor_started;
+	if (!tx_mon_started)
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
+			   "Enable TX monitor for this feature.\n");
+
+	tx_ext_mon = &dp_mon_pdev->dp_pdev_tx_mon->tx_ext_mon;
+
+	spin_lock(&tx_ext_mon->tx_ext_mon_lock);
+	tx_ext_mon_config = tx_ext_mon->tx_ext_mon_config;
+	if (unlikely(!tx_ext_mon_config)) {
+		ath12k_warn(dp_pdev->dp, "ext_mon in tx direction is null\n");
+		ret = -EINVAL;
+		goto unlock;
+	}
+
+	resp->filter.disable = !tx_ext_mon_config->enable;
+	if (!tx_ext_mon_config->enable)
+		goto unlock;
+
+	resp->filter.level = tx_ext_mon_config->level;
+	resp->filter.all_peer = tx_ext_mon_config->fp;
+	resp->filter.target_peer = tx_ext_mon_config->fpmo;
+	resp->filter.meta_data = tx_ext_mon_config->metadata;
+	resp->filter.monitor_flags = tx_ext_mon_config->monitor_flags;
+
+unlock:
+	spin_unlock(&tx_ext_mon->tx_ext_mon_lock);
+	return ret;
+}
+
+int
+ath12k_dp_ext_mon_get_tx_peer(struct ath12k_pdev_dp *dp_pdev,
+				struct ath12k_ext_mon_config *resp)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct ath12k_dp_tx_ext_mon_config *tx_ext_mon;
+	struct ath12k_pdev_tx_mon *tx_mon;
+
+	if (unlikely(!dp_mon_pdev)) {
+		ath12k_warn(dp_pdev->dp->ab, "monitor pdev is null\n");
+		return -EINVAL;
+	}
+
+	tx_mon = dp_mon_pdev->dp_pdev_tx_mon;
+	if (unlikely(!tx_mon)) {
+		ath12k_warn(dp_pdev->dp, "TX monitor is null\n");
+		return -EINVAL;
+	}
+
+	spin_lock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+	tx_ext_mon = tx_mon->tx_ext_mon.tx_ext_mon_config;
+	if (!tx_ext_mon) {
+		spin_unlock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+		ath12k_warn(dp_pdev->dp, "ext_mon in tx direction is null\n");
+		return -EINVAL;
+	}
+
+	ath12k_dp_get_ext_mon_peers(dp_pdev,
+				    &tx_ext_mon->peer_list, resp,
+				    &tx_mon->tx_ext_mon.tx_ext_mon_lock);
+	spin_unlock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+
+	return 0;
+}
+
+static int
+ath12k_dp_ext_mon_update_tx_config(struct ath12k_pdev_mon_dp *dp_mon_pdev,
+				   const struct ath12k_ext_mon_filter_config *new_config)
+{
+	struct ath12k_dp_tx_ext_mon *curr;
+	struct ath12k_dp_tx_ext_mon_config *curr_config;
+
+	if (unlikely(!dp_mon_pdev->dp_pdev_tx_mon))
+		return -EINVAL;
+
+	curr = &dp_mon_pdev->dp_pdev_tx_mon->tx_ext_mon;
+
+	spin_lock(&curr->tx_ext_mon_lock);
+	curr_config = curr->tx_ext_mon_config;
+
+	if (unlikely(!curr_config)) {
+		spin_unlock(&curr->tx_ext_mon_lock);
+		ath12k_dbg(dp_mon_pdev->dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
+			   "ext_mon is not initialized\n");
+		return -EINVAL;
+	}
+
+	if (new_config->disable && !curr_config->enable) {
+		spin_unlock(&curr->tx_ext_mon_lock);
+		ath12k_dbg(dp_mon_pdev->dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
+			   "ext_mon is already disabled\n");
+		return 0;
+	}
+
+	if (!new_config->disable) {
+		curr_config->level = new_config->level;
+
+		curr_config->fp = new_config->all_peer;
+		curr_config->fpmo = new_config->target_peer;
+
+		curr_config->fp_enabled =
+			ath12k_dp_ext_mon_is_mode_enabled(&new_config->all_peer);
+		curr_config->fpmo_enabled =
+			ath12k_dp_ext_mon_is_mode_enabled(&new_config->target_peer);
+		curr_config->monitor_flags = new_config->monitor_flags;
+		curr_config->metadata = new_config->meta_data;
+		curr_config->enable = true;
+	} else {
+		curr_config->enable = false;
+		curr_config->level = 0;
+		curr_config->metadata = 0;
+		curr_config->monitor_flags = 0;
+		curr_config->fp_enabled = false;
+		curr_config->fpmo_enabled = false;
+		memset(&curr_config->fp, 0, sizeof(curr_config->fp));
+		memset(&curr_config->fpmo, 0, sizeof(curr_config->fpmo));
+	}
+	spin_unlock(&curr->tx_ext_mon_lock);
+	return 0;
+}
+
+static int ath12k_dp_mon_tx_update_send_filter(struct ath12k_pdev_dp *dp_pdev,
+					       struct ath12k_pdev_tx_mon *tx_mon,
+					       enum dp_mon_tx_filter_mode mode)
+{
+	const struct ath12k_dp_arch_mon_ops *mon_ops =
+		ath12k_dp_mon_ops_get(dp_pdev->dp);
+	int ret;
+
+	if (unlikely(!mon_ops || !mon_ops->mon_tx_filter_configure))
+		return -EINVAL;
+
+	ret = ath12k_dp_mon_tx_filter_cfg(mon_ops, dp_pdev, mode, true);
+	if (ret)
+		return ret;
+
+	ret = ath12k_dp_mon_tx_update_ring_filter(dp_pdev);
+	if (ret)
+		ath12k_warn(dp_pdev->dp->ab,
+			    "TX Mon: failed to update ring filter for mode %u: %d\n",
+			    mode, ret);
+	return ret;
+}
+
+static void dp_tx_mon_disable_full_tx_mon(struct ath12k_pdev_dp *dp_pdev,
+					  struct ath12k *ar)
+{
+	ath12k_warn(dp_pdev->dp->ab, "TX Mon: disabling TX monitor\n");
+	if (ath12k_dp_mon_tx_monitor_start_stop(ar, false))
+		ath12k_err(dp_pdev->dp->ab,
+			   "TX Mon: disable failed after recovery failure\n");
+}
+
+/*
+ * ath12k_dp_ext_mon_tx_recover() - recovery when ext-mon filter apply fails
+ *
+ * Tries, in order:
+ *   1. Restore previous ext-mon config + filter  (only if ext-mon was on)
+ *   2. Fall back to full monitor via start_stop(true)
+ *   3. Kill the monitor entirely if all else fails
+ */
+static void ath12k_dp_ext_mon_tx_recover(struct ath12k_pdev_dp *dp_pdev,
+					 const struct ath12k_dp_tx_ext_mon_config *old,
+					 enum dp_mon_tx_filter_mode old_mode)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct ath12k_pdev_tx_mon *tx_mon = dp_mon_pdev->dp_pdev_tx_mon;
+	struct ath12k *ar = dp_pdev->ar;
+
+	if (old->enable) {
+		struct ath12k_ext_mon_filter_config restore = {
+			.level         = old->level,
+			.monitor_flags = old->monitor_flags,
+			.all_peer      = old->fp,
+			.target_peer   = old->fpmo,
+			.meta_data     = old->metadata,
+		};
+		ath12k_dp_ext_mon_tx_set_rtap_mode(dp_pdev, restore.meta_data);
+		if (!ath12k_dp_ext_mon_update_tx_config(dp_mon_pdev, &restore) &&
+		    !ath12k_dp_mon_tx_update_send_filter(dp_pdev, tx_mon, old_mode))
+			return;
+		ath12k_warn(dp_pdev->dp->ab, "TX Mon: old config restore failed\n");
+	}
+
+	if (!ath12k_dp_mon_tx_monitor_start_stop(ar, true))
+		return;
+
+	dp_tx_mon_disable_full_tx_mon(dp_pdev, ar);
+}
+
+static int
+ath12k_dp_ext_mon_reconfigure_tx_peers(struct ath12k_pdev_dp *dp_pdev,
+				       const struct ath12k_dp_tx_ext_mon_config
+				       *old, const struct ath12k_ext_mon_filter_config
+				       *new_config)
+{
+	int ret = 0;
+	struct ath12k_ext_mon_peer_config *peer_config;
+	u8 old_filter_mode = (old->fp_enabled << 1) | old->fpmo_enabled;
+	bool fp_enabled =
+		ath12k_dp_ext_mon_is_mode_enabled(&new_config->all_peer);
+	bool fpmo_enabled =
+		ath12k_dp_ext_mon_is_mode_enabled(&new_config->target_peer);
+	u8 new_filter_mode = (fp_enabled << 1) | fpmo_enabled;
+
+	if (old_filter_mode == new_filter_mode)
+		return 0;
+
+	peer_config = kzalloc(sizeof(*peer_config), GFP_KERNEL);
+	if (!peer_config)
+		return -ENOMEM;
+
+	peer_config->count = old->peer_count;
+	ret = ath12k_dp_ext_mon_tx_remove_all_peers(dp_pdev);
+	if (ret) {
+		kfree(peer_config);
+		return ret;
+	}
+
+	ret = ath12k_dp_ext_mon_add_tx_peers(dp_pdev, true, peer_config);
+
+	kfree(peer_config);
+
+	return ret;
+}
+
+int ath12k_dp_ext_mon_set_tx_filter(struct ath12k_pdev_dp *dp_pdev,
+				    const struct ath12k_ext_mon_filter_config *new_config)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct ath12k_pdev_tx_mon *tx_mon;
+	struct ath12k_dp_tx_ext_mon *tx_ext_mon;
+	struct ath12k_dp_tx_ext_mon_config *tx_config;
+	struct ath12k *ar = dp_pdev->ar;
+	struct ath12k_dp_tx_ext_mon_config old;
+	enum dp_mon_tx_filter_mode old_mode;
+	enum dp_mon_tx_filter_mode new_mode = DP_MON_TX_FULL_MONITOR;
+	int ret = 0;
+
+	if (unlikely(!dp_mon_pdev)) {
+		ath12k_warn(dp_pdev->dp->ab, "monitor pdev is null\n");
+		return -EINVAL;
+	}
+
+	tx_mon = dp_mon_pdev->dp_pdev_tx_mon;
+	if (unlikely(!tx_mon)) {
+		ath12k_warn(dp_pdev->dp->ab, "tx mon pdev is null\n");
+		return -EINVAL;
+	}
+
+	/* S1: TX mon not running */
+	if (!tx_mon->tx_monitor_started) {
+		ath12k_warn(dp_pdev->dp->ab, "TX Mon: enable TX monitor first\n");
+		return -EINVAL;
+	}
+
+	tx_ext_mon = &tx_mon->tx_ext_mon;
+
+	spin_lock(&tx_ext_mon->tx_ext_mon_lock);
+	tx_config = tx_ext_mon->tx_ext_mon_config;
+	if (unlikely(!tx_config)) {
+		spin_unlock(&tx_ext_mon->tx_ext_mon_lock);
+		ath12k_warn(dp_pdev->dp->ab, "ext_mon TX config is null\n");
+		return -EINVAL;
+	}
+
+	/* S2: already disabled, disable request — not honoured */
+	if (new_config->disable && !tx_config->enable) {
+		spin_unlock(&tx_ext_mon->tx_ext_mon_lock);
+		ath12k_warn(dp_pdev->dp->ab, "TX Mon: ext-mon already disabled\n");
+		return -EINVAL;
+	}
+
+	old.enable        = tx_config->enable;
+	old.level         = tx_config->level;
+	old.monitor_flags = tx_config->monitor_flags;
+	old.metadata      = tx_config->metadata;
+	old.fp            = tx_config->fp;
+	old.fpmo          = tx_config->fpmo;
+	old_mode          = tx_mon->tx_monitor_mode;
+	old.fp_enabled    = tx_config->fp_enabled;
+	old.fpmo_enabled  = tx_config->fpmo_enabled;
+	old.peer_count    = tx_config->peer_count;
+	spin_unlock(&tx_ext_mon->tx_ext_mon_lock);
+
+	/* S3: disable — restore full monitor */
+	if (new_config->disable) {
+		ret = ath12k_dp_mon_tx_monitor_start_stop(ar, true);
+		if (ret) {
+			ath12k_warn(dp_pdev->dp->ab,
+				    "TX Mon: full monitor restore failed: %d\n", ret);
+			dp_tx_mon_disable_full_tx_mon(dp_pdev, ar);
+		}
+		return ret;
+	}
+
+	ret = ath12k_dp_ext_mon_update_tx_config(dp_mon_pdev, new_config);
+	if (ret) {
+		ath12k_warn(dp_pdev->dp->ab,
+			    "TX Mon: config update failed: %d\n", ret);
+		return ret;
+	}
+
+	/* S4/S5: enable or reconfigure */
+	switch (new_config->monitor_flags) {
+	case ATH12K_EXT_MON_DEFAULT:
+		new_mode = DP_MON_TX_FILTER_EXT_MON_MODE;
+		break;
+	case ATH12K_EXT_MON_PKT_CAP:
+		new_mode = DP_MON_TX_FILTER_SPL_PKT_CAP;
+		break;
+	default:
+		ath12k_warn(dp_pdev->dp->ab, "TX Mon: invalid monitor_flags %u\n",
+			    new_config->monitor_flags);
+		return -EINVAL;
+	}
+
+	ret = ath12k_dp_mon_tx_update_send_filter(dp_pdev, tx_mon, new_mode);
+	if (ret) {
+		ath12k_warn(dp_pdev->dp->ab,
+			    "TX Mon: filter apply failed for mode %u: %d\n",
+			    new_mode, ret);
+		ath12k_dp_ext_mon_tx_recover(dp_pdev, &old, old_mode);
+		return ret;
+	}
+
+	ath12k_dp_ext_mon_tx_set_rtap_mode(dp_pdev, new_config->meta_data);
+	ret = ath12k_dp_ext_mon_reconfigure_tx_peers(dp_pdev, &old, new_config);
+	return ret;
+}
+EXPORT_SYMBOL(ath12k_dp_ext_mon_set_tx_filter);
+
+enum ath12k_dp_mon_tx_dma_length
+ath12k_dp_mon_tx_get_ext_mon_filter_len(u8 filter_len)
+{
+	switch (filter_len) {
+	case ATH12K_EXT_MON_LEN_64B:
+		return ATH12K_DP_MON_TX_DMA_LENGTH_64B;
+	case ATH12K_EXT_MON_LEN_128B:
+		return ATH12K_DP_MON_TX_DMA_LENGTH_128B;
+	case ATH12K_EXT_MON_LEN_256B:
+		return ATH12K_DP_MON_TX_DMA_LENGTH_256B;
+	case ATH12K_EXT_MON_LEN_FULL_PKT:
+		return ATH12K_DP_MON_TX_DMA_LENGTH_MAX;
+	default:
+		return ATH12K_DP_MON_TX_DMA_LENGTH_MAX;
+	}
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_get_ext_mon_filter_len);
+
+void
+ath12k_dp_tx_mon_set_tx_mon_teardown(struct ath12k *ar)
+{
+	if (ar->dp.dp_mon_pdev && ar->dp.dp_mon_pdev->dp_pdev_tx_mon)
+		ar->dp.dp_mon_pdev->dp_pdev_tx_mon->tx_mon_teardown = true;
+}
+
+int
+ath12k_dp_ext_mon_filter_peer(struct ieee80211_hdr *wh, struct list_head *peer_list)
+{
+	struct ath12k_dp_ext_mon_peer *peer;
+
+	list_for_each_entry(peer, peer_list, list) {
+		if (ether_addr_equal(peer->peer_info.mac_addr, wh->addr1))
+			return 0;
+	}
+	return -EINVAL;
+}
+EXPORT_SYMBOL(ath12k_dp_ext_mon_filter_peer);
+
+int
+ath12k_dp_ext_mon_filter_type(struct ieee80211_hdr *wh,
+			      struct ath12k_ext_mon_pkt_config *pkt_config)
+{
+	u16 type;
+
+	type = ((__le16_to_cpu(wh->frame_control) & IEEE80211_FCTL_FTYPE) >>
+		ATH12K_FC0_TYPE_SHIFT);
+
+	if (type < ATH12K_EXT_MON_FRAME_MAX && pkt_config->filter[type])
+		return 0;
+
+	return -EINVAL;
+}
+EXPORT_SYMBOL(ath12k_dp_ext_mon_filter_type);
+
+int
+ath12k_dp_ext_mon_filter_subtype(struct ieee80211_hdr *wh,
+				 struct ath12k_ext_mon_pkt_config *pkt_config)
+{
+	bool is_mcast = false;
+	u16 type, sub_type;
+
+	type = ((__le16_to_cpu(wh->frame_control) & IEEE80211_FCTL_FTYPE) >>
+		ATH12K_FC0_TYPE_SHIFT);
+	sub_type = ((__le16_to_cpu(wh->frame_control) & IEEE80211_FCTL_STYPE) >>
+		    ATH12K_FC0_SUBTYPE_SHIFT);
+	is_mcast = is_multicast_ether_addr(wh->addr1);
+
+	if (type >= ATH12K_EXT_MON_FRAME_MAX)
+		return -EINVAL;
+
+	return ath12k_dp_ext_mon_subtype_check(pkt_config, type, sub_type,
+					       is_mcast);
+}
+EXPORT_SYMBOL(ath12k_dp_ext_mon_filter_subtype);

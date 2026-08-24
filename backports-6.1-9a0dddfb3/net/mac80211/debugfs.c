@@ -470,6 +470,63 @@ static const struct file_operations force_tx_status_ops = {
 };
 #endif
 
+static ssize_t addba_req_enable_read(struct file *file,
+				     char __user *user_buf,
+				     size_t count, loff_t *ppos)
+{
+	struct ieee80211_local *local = file->private_data;
+	char buf[3];
+	int len;
+
+	len = scnprintf(buf, sizeof(buf), "%d\n",
+			(int)local->addba_req_enable);
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static ssize_t addba_req_enable_write(struct file *file,
+				      const char __user *user_buf,
+				      size_t count, loff_t *ppos)
+{
+	struct ieee80211_local *local = file->private_data;
+	char buf[3] = {0};
+
+	if (count >= sizeof(buf))
+		return -EINVAL;
+
+	if (copy_from_user(buf, user_buf, count))
+		return -EFAULT;
+
+	if (count && buf[count - 1] == '\n')
+		buf[count - 1] = '\0';
+	else
+		buf[count] = '\0';
+
+	if (buf[0] == '0' && buf[1] == '\0')
+		local->addba_req_enable = 0;
+	else if (buf[0] == '1' && buf[1] == '\0')
+		local->addba_req_enable = 1;
+	else
+		return -EINVAL;
+
+	return count;
+}
+
+#if LINUX_VERSION_IS_GEQ(6, 13, 0)
+static const struct debugfs_short_fops addba_req_enable_ops = {
+	.write = addba_req_enable_write,
+	.read = addba_req_enable_read,
+	.llseek = default_llseek,
+};
+#else
+static const struct file_operations addba_req_enable_ops = {
+	.write = addba_req_enable_write,
+	.read = addba_req_enable_read,
+	.open = simple_open,
+	.llseek = default_llseek,
+};
+#endif
+
 static ssize_t dbg_mask_read(struct file *file, char __user *user_buf,
 			     size_t count, loff_t *ppos)
 {
@@ -900,6 +957,7 @@ void debugfs_hw_add(struct ieee80211_local *local)
 	DEBUGFS_ADD(power);
 	DEBUGFS_ADD(hw_conf);
 	DEBUGFS_ADD_MODE(force_tx_status, 0600);
+	DEBUGFS_ADD_MODE(addba_req_enable, 0600);
 	DEBUGFS_ADD_MODE(aql_enable, 0600);
 	DEBUGFS_ADD(aql_pending);
 	DEBUGFS_ADD(dbg_mask);

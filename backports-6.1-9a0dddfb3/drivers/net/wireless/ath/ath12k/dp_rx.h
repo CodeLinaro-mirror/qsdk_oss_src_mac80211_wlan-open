@@ -74,30 +74,6 @@ struct link_peer_rx_tid_stats {
 	u8 bcast_cnt;
 } __aligned(64);
 
-/* different supported pkt types for routing */
-enum ath12k_routing_pkt_type {
-	ATH12K_PKT_TYPE_ARP_IPV4,
-	ATH12K_PKT_TYPE_NS_IPV6,
-	ATH12K_PKT_TYPE_IGMP_IPV4,
-	ATH12K_PKT_TYPE_MLD_IPV6,
-	ATH12K_PKT_TYPE_DHCP_IPV4,
-	ATH12K_PKT_TYPE_DHCP_IPV6,
-	ATH12K_PKT_TYPE_DNS_TCP_IPV4,
-	ATH12K_PKT_TYPE_DNS_TCP_IPV6,
-	ATH12K_PKT_TYPE_DNS_UDP_IPV4,
-	ATH12K_PKT_TYPE_DNS_UDP_IPV6,
-	ATH12K_PKT_TYPE_ICMP_IPV4,
-	ATH12K_PKT_TYPE_ICMP_IPV6,
-	ATH12K_PKT_TYPE_TCP_IPV4,
-	ATH12K_PKT_TYPE_TCP_IPV6,
-	ATH12K_PKT_TYPE_UDP_IPV4,
-	ATH12K_PKT_TYPE_UDP_IPV6,
-	ATH12K_PKT_TYPE_IPV4,
-	ATH12K_PKT_TYPE_IPV6,
-	ATH12K_PKT_TYPE_EAP,
-	ATH12K_PKT_TYPE_MAX
-};
-
 enum filter_mgmt {
 	FILTER_MGMT_ASSOC_REQ                   = BIT(0),
 	FILTER_MGMT_ASSOC_RESP                  = BIT(1),
@@ -155,6 +131,12 @@ enum dp_rx_desc_pool {
 #define ATH12K_ROUTE_WBM_RELEASE(ab) \
 	((ab)->hw_params->route_wbm_release)
 #define ATH12K_ROUTE_EAP_METADATA       (ATH12K_RX_PROTOCOL_TAG_START_OFFSET + ATH12K_PKT_TYPE_EAP)
+
+/* cce_metadata value that signals the MSDU must be dropped */
+#define CCE_DROP          0xDEAD
+
+/* bit in fse_metadata that signals the flow must be dropped */
+#define FSE_FLOW_DROP_BIT BIT(31)
 
 struct ath12k_dp_rx_tid {
 	u8 tid;
@@ -276,6 +258,7 @@ struct ath12k_dp_rx_rfc1042_hdr {
 } __packed;
 
 struct dp_rx_fst {
+	struct ath12k_base *ab;
 	u8 *base;
 	struct hal_rx_fst *hal_rx_fst;
 	u16 num_entries;
@@ -286,6 +269,7 @@ struct dp_rx_fst {
 	u32 flow_del_fail;
 	/* spinlock to prevent concurrent table access */
 	spinlock_t fst_lock;
+	struct delayed_work cache_inval_full_work;
 };
 
 static inline u32 ath12k_he_gi_to_nl80211_he_gi(u8 sgi)
@@ -442,7 +426,13 @@ int ath12k_dp_rx_peer_pn_replay_config(struct ath12k_link_vif *arvif,
 				       const u8 *peer_addr,
 				       enum set_key_cmd key_cmd,
 				       struct ieee80211_key_conf *key,
-				       struct ieee80211_sta *sta);
+				       struct ieee80211_sta *sta,
+				       enum ath12k_rxtid_pn_check cfg);
+int ath12k_dp_rx_peer_epp_pn_replay_config(struct ath12k_dp_peer *dp_peer,
+					   struct ath12k_link_vif *arvif,
+					   const u8 *peer_addr,
+					   enum set_key_cmd key_cmd,
+					   enum ath12k_rxtid_pn_check cfg);
 void ath12k_dp_rx_peer_tid_cleanup(struct ath12k *ar,
 				   struct ath12k_dp_link_peer *peer);
 int ath12k_dp_rx_reo_alloc(struct ath12k_base *ab);
@@ -490,7 +480,7 @@ void ath12k_dp_rx_h_undecap_raw(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *
 				struct hal_rx_desc *rx_desc,
 				enum hal_encrypt_type enctype,
 				struct ieee80211_rx_status *status, bool decrypted,
-				u16 peer_id, bool is_first_msdu, bool is_last_msdu);
+				u16 peer_id);
 int ath12k_dp_rx_flow_add_entry(struct ath12k_base *ab,
 				struct rx_flow_info *flow_info);
 int ath12k_dp_rx_flow_delete_entry(struct ath12k_base *ab,
@@ -548,4 +538,25 @@ void ath12k_dp_tid_wbm_err_stats(struct ath12k_pdev_dp *dp_pdev,
 				 u8 tid,
 				 bool is_reo,
 				 u32 error_code);
+/**
+ * struct dp_rx_tag_params - chip-independent CCE/FSE classification results
+ *
+ * Populated by wifi7/wifi8 callers from their chip-specific scratchpad or HAL
+ * ops before calling dp_rx_update_protocol_tag() / dp_rx_update_flow_tag().
+ */
+struct dp_rx_tag_params {
+	bool    cce_match;
+	u16     cce_metadata;
+	bool    flow_idx_invalid;
+	bool    flow_idx_timeout;
+	u16     flow_metadata;
+};
+
+void dp_rx_update_protocol_tag(struct ath12k_pdev_dp *dp_pdev,
+			       struct sk_buff *msdu,
+			       const struct dp_rx_tag_params *tag);
+
+void dp_rx_update_flow_tag(struct ath12k_pdev_dp *dp_pdev,
+			   struct sk_buff *msdu,
+			   const struct dp_rx_tag_params *tag);
 #endif /* ATH12K_DP_RX_H */

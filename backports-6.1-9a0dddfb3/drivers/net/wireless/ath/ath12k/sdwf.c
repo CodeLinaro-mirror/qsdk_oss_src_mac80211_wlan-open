@@ -992,16 +992,16 @@ int ath12k_telemetry_get_sawf_tx_stats_tput(void *ptr, void *peer, u64 *in_bytes
 		if (!mld_peer->qos_stats_lvl) {
 			if (tmp_peer->primary_link) {
 				*in_bytes = qos_tx->tx_ingress.bytes;
-				*in_cnt = qos_tx->tx_ingress.num;
+				*in_cnt = qos_tx->tx_ingress.packets;
 				*tx_bytes = qos_tx->tx_success.bytes;
-				*tx_cnt = qos_tx->tx_success.num;
+				*tx_cnt = qos_tx->tx_success.packets;
 				break;
 			}
 		} else {
 			*in_bytes += qos_tx->tx_ingress.bytes;
-			*in_cnt += qos_tx->tx_ingress.num;
+			*in_cnt += qos_tx->tx_ingress.packets;
 			*tx_bytes += qos_tx->tx_success.bytes;
-			*tx_cnt += qos_tx->tx_success.num;
+			*tx_cnt += qos_tx->tx_success.packets;
 		}
 		tmp_peer = NULL;
 	}
@@ -1055,16 +1055,16 @@ static void ath12k_copy_tx_stats(struct ath12k_dp_qos_tx_stats *src,
 {
 	u8 pkt_type, mcs;
 
-	dst->tx_success.num += src->tx_success.num;
+	dst->tx_success.packets += src->tx_success.packets;
 	dst->tx_success.bytes += src->tx_success.bytes;
 
-	dst->tx_ingress.num += src->tx_ingress.num;
+	dst->tx_ingress.packets += src->tx_ingress.packets;
 	dst->tx_ingress.bytes += src->tx_ingress.bytes;
 
-	dst->tx_failed.num += src->tx_failed.num;
+	dst->tx_failed.packets += src->tx_failed.packets;
 	dst->tx_failed.bytes += src->tx_failed.bytes;
 
-	dst->dropped.fw_rem.num += src->dropped.fw_rem.num;
+	dst->dropped.fw_rem.packets += src->dropped.fw_rem.packets;
 	dst->dropped.fw_rem.bytes += src->dropped.fw_rem.bytes;
 	dst->dropped.fw_rem_notx += src->dropped.fw_rem_notx;
 	dst->dropped.fw_rem_tx += src->dropped.fw_rem_tx;

@@ -451,6 +451,14 @@ void ath12k_wifi7_hal_extract_rx_spd_data_wcn7850(struct hal_rx_spd_data *rx_inf
 	rx_info->tlv_info.sgi = ath12k_wifi7_hal_rx_h_sgi_wcn7850(rx_desc);
 	rx_info->tlv_info.is_decrypted =
 		ath12k_wifi7_hal_rx_h_is_decrypted_wcn7850(rx_desc);
+	rx_info->tlv_info.encrypt_info_valid =
+		ath12k_wifi7_hal_rx_desc_encrypt_valid_wcn7850(rx_desc);
+	rx_info->tlv_info.mpdu_frame_control_valid =
+		!!(__le32_to_cpu(rx_desc->u.wcn7850.mpdu_start.info4) &
+		   RX_MPDU_START_INFO4_MPDU_FCTRL_VALID);
+	rx_info->tlv_info.encrypted =
+		!!(__le32_to_cpu(rx_desc->u.wcn7850.mpdu_start.info4) &
+		   RX_MPDU_START_INFO4_ENCRYPTED);
 }
 
 static int ath12k_wifi7_hal_srng_create_config_wcn7850(struct ath12k_hal *hal)

@@ -35,7 +35,9 @@
 #include "sta_info.h"
 #include "debug.h"
 #include "drop.h"
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/cmn_extn.h"
+#endif /* CPTCFG_QCN_EXTN */
 
 #ifdef CPTCFG_MAC80211_NSS_SUPPORT
 #include <nss_api_if.h>
@@ -141,7 +143,9 @@ struct ieee80211_bss {
 	bool wmm_used;
 	bool uapsd_supported;
 
+#ifdef CPTCFG_QCN_EXTN
 	struct ieee80211_bss_extn bss_extn;
+#endif /* CPTCFG_QCN_EXTN */
 
 #define IEEE80211_MAX_SUPP_RATES 32
 	u8 supp_rates[IEEE80211_MAX_SUPP_RATES];
@@ -657,6 +661,13 @@ struct ieee80211_smd_prep_target {
 	bool execution_in_progress;
 	bool exec_timeout_started; /* true if exec timeout timer was queued */
 	bool prep_timeout_started; /* true if prep timeout timer was queued */
+	/*
+	 * Set when ieee80211_smd_prep_activate() completes successfully.
+	 * When true, exec timeout must trigger a full disconnect because
+	 * sdata->link[] has been partially remapped to TAP links and cannot
+	 * be safely rolled back to the pre-PREP state in-place.
+	 */
+	bool prep_activated;
 
 	/*
 	 * EXEC phase tracking - computed at start of execution
@@ -670,23 +681,11 @@ struct ieee80211_smd_prep_target {
 
 	/* Bitmap correctness fields (Phase 1) */
 	u16 rejected_links_mask;       /* BIT(tap_link_id) rejected in ST Prep Response */
-	u16 dl_drain_link_mask;        /* BIT(primary_link_id) in TAP link ID space */
-	u16 prep_transition_links;     /* links running PREP transition:
-					* exec_path=0: transitioning_links
-					*              (partner tap_link_ids)
-					* exec_path=1 SLO: = dl_drain_link_mask
-					* exec_path=1 MLO: = transitioning_links (same)
+	u16 upgrade_sap_slots;         /* SAP slots added by SLO->MLO upgrade fix;
+					* reverted on prep reset/abort
 					*/
-	u16 post_exec_transition_links; /* links transitioning after EXEC Response:
-					 * exec_path=0: = dl_drain_link_mask
-					 *               (async FW event)
-					 * exec_path=1 SLO: = 0 (done in PREP)
-					 * exec_path=1 MLO: = dl_drain_link_mask
-					 *                   (immediate)
-					 */
+	u16 dl_drain_link_mask;        /* BIT(primary_link_id) in TAP link ID space */
 	u8  exec_path;                 /* 0 = SAP (§37.15.7), 1 = TAP (§37.15.8) */
-	int exec_link_id;              /* link_id carrying EXEC Request/Response */
-	bool transition_done_in_prep;  /* SLO + exec_path=1: EXEC Resp is confirm */
 
 	/* Link ID remap — same-links default: identity (tap_link_id == sap_link_id) */
 	s8  tap_to_sap_link[IEEE80211_MLD_MAX_NUM_LINKS]; /* tap→sap, -1=none */
@@ -1311,6 +1310,9 @@ struct ieee80211_link_data_managed {
 
 	int wmm_last_param_set;
 	int mu_edca_last_param_set;
+
+	/* UHR ECU countdown; -1=off, 1-127=advance, 0 or >127=fired */
+	s8 ecu_countdown;
 };
 
 struct ieee80211_link_data_ap {
@@ -1814,6 +1816,23 @@ struct channel_awgn_info {
 	u32 chan_bw_interference_bitmap;
 };
 
+struct ieee80211_parallel_scan_ctx {
+	struct cfg80211_scan_request *req;
+	struct ieee80211_sub_if_data *sdata;
+	struct ieee80211_scan_request *hw_scan_req;
+	struct cfg80211_chan_def scan_chandef;
+	struct cfg80211_scan_info scan_info;
+	enum nl80211_band hw_scan_band;
+	int scan_channel_idx;
+	u8 scan_addr[ETH_ALEN];
+	u8 scan_id;
+	int hw_scan_ies_bufsize;
+	unsigned long scanning;
+	bool cancelling;
+	unsigned long leave_oper_channel_time;
+	enum mac80211_scan_state next_scan_state;
+};
+
 struct ieee80211_tasklet_data {
 	struct tasklet_struct tasklet;
 	struct ieee80211_local *local;
@@ -1846,7 +1865,9 @@ struct ieee80211_local {
 
 	const struct ieee80211_ops *ops;
 
+#ifdef CPTCFG_QCN_EXTN
 	const struct ieee80211_ops_extn *ops_extn;
+#endif /* CPTCFG_QCN_EXTN */
 
 	/*
 	 * private workqueue to mac80211. mac80211 makes this accessible
@@ -2008,6 +2029,11 @@ struct ieee80211_local {
 	struct wiphy_delayed_work scan_work;
 	struct ieee80211_sub_if_data __rcu *scan_sdata;
 
+	struct ieee80211_parallel_scan_ctx
+		*parallel_scan_ctx[CFG80211_MAX_PARALLEL_SCANS];
+	u8 parallel_scan_ctx_bitmap;
+	u8 parallel_scan_next_id;
+
 	/* Temporary remain-on-channel for off-channel operations */
 	struct ieee80211_channel *tmp_channel;
 
@@ -2089,6 +2115,7 @@ struct ieee80211_local {
 		struct dentry *keys;
 	} debugfs;
 	bool force_tx_status;
+	bool addba_req_enable;
 #endif
 
 	/*
@@ -2255,7 +2282,9 @@ struct ieee802_11_elems {
 	size_t total_len;
 	u32 crc;
 
+#ifdef CPTCFG_QCN_EXTN
 	struct ieee802_11_elems_extn elems_extn;
+#endif /* CPTCFG_QCN_EXTN */
 
 	/* pointers to IEs */
 	const struct ieee80211_tdls_lnkie *lnk_id;
@@ -2321,6 +2350,7 @@ struct ieee802_11_elems {
 	const struct ieee80211_ttlm_elem *ttlm[IEEE80211_TTLM_MAX_CNT];
 	const struct ieee80211_uhr_cap_elem *uhr_cap;
 	const struct ieee80211_uhr_operation *uhr_operation;
+	const struct ieee80211_uhr_param_upd *uhr_params_update;
 
 	/* not the order in the psd values is per element, not per chandef */
 	struct ieee80211_parsed_tpe tpe;
@@ -2347,6 +2377,7 @@ struct ieee802_11_elems {
 	u8 eht_cap_len;
 	u8 uhr_cap_len;
 	u8 uhr_operation_len;
+	u8 uhr_params_update_len;
 
 	/* mult-link element can be de-fragmented and thus u8 is not sufficient */
 	size_t ml_basic_len;
@@ -3576,7 +3607,8 @@ void ieee80211_smd_remove_prep_target(struct ieee80211_sub_if_data *sdata,
 				      int slot);
 void ieee80211_smd_prep_reset_target(struct ieee80211_sub_if_data *sdata,
 				     struct ieee80211_smd_prep_target *target,
-				     u16 status, u16 type);
+				     u16 status, u16 type,
+				     bool skip_sta_destroy);
 void ieee80211_smd_start_prep_timeout(struct ieee80211_sub_if_data *sdata,
 				      struct ieee80211_smd_prep_target *target,
 				      u16 timeout_tu);

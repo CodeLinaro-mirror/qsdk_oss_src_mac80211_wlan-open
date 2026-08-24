@@ -32,12 +32,6 @@ void athmem_find_and_print_minidump_entry(const char *struct_name);
 void athmem_enable_minidump_list(void);
 void athmem_clear_memdebug_info(void);
 char *ath_minidump_update_free(void *ptr);
-
-void *athdbg_kmalloc(size_t size, gfp_t flags, const char *struct_name,
-				const char *module_name);
-void *athdbg_kzalloc(size_t size, gfp_t flags, const char *struct_name,
-				const char *module_name);
-void athdbg_kfree(const void *ptr);
 void athmem_add_entry_to_minidump(void *start_addr, size_t size,
 				  const char *struct_name,
 				  const char *module_name);

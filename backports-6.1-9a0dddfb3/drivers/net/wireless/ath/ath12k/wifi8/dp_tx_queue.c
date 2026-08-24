@@ -495,11 +495,15 @@ int ath12k_peer_alloc_dynamic_queue(struct ath12k_dp_hw_group *dp_hw_grp,
 	struct ath12k_dp_tx_flow_info *tx_flow_info =
 				ath12k_dp_get_tx_flow_info_from_peer(peer);
 	struct ath12k_dp_tx_tid_info *tid;
+	struct ath12k_dp_tx_tid_info *orig_tid;
 	struct ath12k_dp_msdu_q_info *msduq = NULL;
 	struct ath12k_dp_mpdu_q_info *mpduq = NULL;
 	u8 flow_type = tx_queue_params->flow_type;
 	int ret = 0;
 	int status;
+
+	if (!tx_flow_info)
+		return -EINVAL;
 
 	spin_lock_bh(&tx_flow_info->tx_q_lock);
 
@@ -520,16 +524,22 @@ int ath12k_peer_alloc_dynamic_queue(struct ath12k_dp_hw_group *dp_hw_grp,
 		goto unlock;
 	}
 	if (tid->num_of_active_msdu_queues == 0 && !mpduq) {
-		tid->mpduq = ath12k_peer_alloc_tid(dp_hw_grp, peer,
+		orig_tid = tid;
+		mpduq = ath12k_peer_alloc_tid(dp_hw_grp, peer,
 						   tx_queue_params->encap_type,
 						   tx_queue_params->tidno, &tid,
 						   flow_type);
-		mpduq = tid->mpduq;
+		/* ath12k_peer_alloc_tid sets *ptid=NULL on error; restore
+		 * orig_tid so we can safely write mpduq back to the tid slot.
+		 */
+		if (!tid)
+			tid = orig_tid;
 		if (!mpduq) {
 			ath12k_err(NULL, "mpduq is NULL");
 			ret = -ENOMEM;
 			goto unlock;
 		}
+		tid->mpduq = mpduq;
 	}
 	if (!msduq) {
 		status =
@@ -539,12 +549,6 @@ int ath12k_peer_alloc_dynamic_queue(struct ath12k_dp_hw_group *dp_hw_grp,
 						      (1 << flow_type));
 		msduq = tid->msduq[flow_type];
 
-		if (flow_type >= HTT_TID_MSDUQ_CUSTOM_0 &&
-		    flow_type <= HTT_TID_MSDUQ_CUSTOM_1)
-			msduq->svc_id = tx_queue_params->q_params.svc_id;
-		else
-			msduq->svc_id = ATH12K_INVALID_SVC_ID;
-
 		if (status || !msduq) {
 			ath12k_err(NULL, "status %d or msduq is null", status);
 			if (tid->num_of_active_msdu_queues == 0 && mpduq) {
@@ -552,7 +556,14 @@ int ath12k_peer_alloc_dynamic_queue(struct ath12k_dp_hw_group *dp_hw_grp,
 				tid->mpduq = NULL;
 			}
 			ret = -ENOMEM;
+			goto unlock;
 		}
+
+		if (flow_type >= HTT_TID_MSDUQ_CUSTOM_0 &&
+		    flow_type <= HTT_TID_MSDUQ_CUSTOM_1)
+			msduq->svc_id = tx_queue_params->q_params.svc_id;
+		else
+			msduq->svc_id = ATH12K_INVALID_SVC_ID;
 	}
 unlock:
 	spin_unlock_bh(&tx_flow_info->tx_q_lock);

@@ -1595,8 +1595,18 @@ static void ath12k_ahb_resource_deinit(struct ath12k_base *ab)
 {
 	struct ath12k_ahb *ab_ahb = ath12k_ab_to_ahb(ab);
 
-	if (ab->mem)
-		devm_iounmap(ab->dev, ab->mem);
+	if (ab->mem) {
+		/* On HYBRID bus, ab->mem is mapped via plain ioremap() in the
+		 * QMI device-info path (not devm-tracked), so it must be
+		 * released with iounmap(). The non-HYBRID path maps ab->mem via
+		 * devm_platform_get_and_ioremap_resource() and needs
+		 * devm_iounmap().
+		 */
+		if (ab->hif.bus == ATH12K_BUS_HYBRID)
+			iounmap(ab->mem);
+		else
+			devm_iounmap(ab->dev, ab->mem);
+	}
 
 	if (ab->mem_ce)
 		iounmap(ab->mem_ce);
@@ -1832,14 +1842,8 @@ static void ath12k_ahb_free_resources(struct ath12k_base *ab)
 	struct platform_device *pdev = ab->pdev;
 	struct ath12k_ahb *ab_ahb = ath12k_ab_to_ahb(ab);
 
-	if (ab->hif.bus == ATH12K_BUS_HYBRID) {
+	if (ab->hif.bus == ATH12K_BUS_HYBRID)
 		ath12k_pcic_free_hybrid_irq(ab);
-		ath12k_ahb_deconfigure_rproc(ab);
-#ifdef CPTCFG_QCN_EXTN
-		ath12k_cfg_deinit(ab);
-#endif
-		return;
-	}
 
 	ath12k_hal_srng_deinit(ab);
 	ath12k_ce_free_pipes(ab);

@@ -17,7 +17,9 @@
 #include "dp_stats.h"
 #include "dp_htt_logger.h"
 #include "dp_ext_desc.h"
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/ini.h"
+#endif /* CPTCFG_QCN_EXTN */
 
 #define DP_TX_MONITOR			(ab->mem_params.tx_monitor_support)
 #define DP_PPE_WBM2SW_RING_SIZE		(ab->mem_params.dp_params.ppe_wbm2sw_ring_size)
@@ -282,6 +284,8 @@ struct ath12k_pdev_telemetry_stats {
 	 * on every broadcast probe in high-density (16+ VAP) environments.
 	 */
 	u32 rx_probe_req_bc;
+	/* Broadcast probe requests suppressed by the per-STA rate-limit gate */
+	u32 rx_bc_prb_req_drop;
 	u32 rx_decrypt_err;
 	u32 rx_mic_err;
 	u32 rx_over_run;
@@ -300,6 +304,24 @@ struct ath12k_htt_ppdu_stats {
 	u32 last_ppdu_id;
 	bool last_ppdu_buf_drop;
 	u64 ppdu_wrap_drop;
+};
+
+/* CCE protocol tag map — one entry per ath12k_routing_pkt_type (see dp_rx.h) */
+struct ath12k_rx_protocol_tag_map {
+	u16  tag;
+	bool enabled;
+};
+
+/* FSE/CCE per-pdev statistics */
+struct ath12k_fse_cce_stats {
+	u64 cce_tagged_pkts[ATH12K_PKT_TYPE_MAX]; /* indexed by ath12k_routing_pkt_type */
+	u64 cce_drop_pkts;
+	u64 fse_tagged_pkts;
+	u64 fse_drop_pkts;
+	u64 fse_new_flow_pkts;
+	u64 reo_err_cce_drop;
+	u64 wbm_reo_cce_drop;
+	u64 wbm_rxdma_fse_drop;
 };
 
 struct ath12k_pdev_dp_stats {
@@ -341,6 +363,13 @@ struct ath12k_pdev_dp {
 	/*Neighbors Peer count per pdev*/
 	int num_nrps;
 	u32 prev_tx_enq_tstamp;
+
+	/* CCE protocol tag map: indexed by ath12k_routing_pkt_type */
+	struct ath12k_rx_protocol_tag_map protocol_tag_map[ATH12K_PKT_TYPE_MAX];
+	u8 protocol_tag_active_count;
+
+	/* FSE/CCE statistics */
+	struct ath12k_fse_cce_stats fse_cce_stats;
 };
 
 #define EAPOL_WPA_KEY_INFO_KEY_TYPE		BIT(3)
@@ -599,6 +628,8 @@ struct ath12k_tx_smd_ctx_per_tid {
 /* DP arch ops to communicate from common module
  * to arch specific module
  */
+struct ath12k_dump_segment;
+
 struct ath12k_dp_arch_ops {
 	int (*dp_op_device_init)(struct ath12k_dp *dp);
 	void (*dp_op_device_deinit)(struct ath12k_dp *dp);
@@ -667,12 +698,16 @@ struct ath12k_dp_arch_ops {
 	void (*dp_peer_delete)(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 *addr,
 			       struct ieee80211_sta *sta, u8 hw_link_id);
 	int (*dp_peer_assoc)(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
-			     struct ath12k_dp_vif *dp_vif, u8 *addr);
+			     struct ath12k_dp_vif *dp_vif, u8 *addr,
+			     struct ath12k_dp_peer_create_params *params);
 	void (*dp_link_peer_assign_id)(struct ath12k_dp *dp, struct ath12k *ar,
 				       struct ath12k_dp_link_peer *peer);
 	void (*dp_link_peer_unassign_id)(struct ath12k_dp *dp,  struct ath12k *ar,
 					 struct ath12k_dp_link_peer *peer);
 	void (*peer_cleanup_indication)(struct ath12k_dp *dp, struct sk_buff *skb);
+	void (*peer_drv_cleanup_indication)(struct ath12k_dp *dp,
+					    u16 peer_id,
+					    u8 hw_link_id);
 	int (*dp_ppeds_tx_completion_handler)(struct ath12k_base *ab, int budget);
 	void (*dp_link_peer_assoc)(struct ath12k_dp_hw *dp_hw, struct ath12k_dp *dp,
 				   u8 *addr, u32 hw_link_id);
@@ -697,6 +732,8 @@ struct ath12k_dp_arch_ops {
 				  const u8 *addr);
 	void (*dp_smd_clear_old_peer_rx_lut)(struct ath12k_dp *dp,
 					     struct ath12k_dp_peer *dp_peer);
+	/* Release parked ext_ctx when a PREP transition is aborted. */
+	void (*dp_smd_abort_prep)(struct ath12k_dp *dp);
 	int (*dp_get_peer_holq)(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 				u8 *addr,
 				struct peer_assoc_holq_params *holq_params);
@@ -783,6 +820,9 @@ struct ath12k_dp_arch_ops {
 	int (*peer_rx_tid_svld_reset)(struct ath12k_base *ab,
 				      struct ath12k_dp_hw *dp_hw,
 				      const u8 *peer_addr);
+	int (*get_coredump_seg_count)(struct ath12k_dp *dp);
+	int (*get_coredump_segs)(struct ath12k_dp *dp,
+				 struct ath12k_dump_segment *seg_arr, int max_segs);
 };
 
 struct ath12k_bp_stats {
@@ -853,7 +893,6 @@ struct ath12k_device_dp_stats {
 	u32 non_fast_mcast_rx[DP_REO_DST_RING_MAX][ATH12K_MAX_SOCS];
 	u32 rx_eapol[ATH12K_MAX_SOCS];
 	u32 rx_eapol_type[DP_EAPOL_KEY_TYPE_MAX][ATH12K_MAX_SOCS];
-	u32 first_and_last_msdu_bit_miss;
 	u32 fast_rx[DP_REO_DST_RING_MAX] [ATH12K_MAX_SOCS];
 	struct ath12k_device_dp_tx_err_stats tx_err;
 	struct ath12k_device_dp_rx_err_stats rx;
@@ -1166,6 +1205,12 @@ struct ath12k_dp_umac_reset {
 #endif
 };
 
+enum ath12k_rxtid_pn_check {
+	ATH12K_RXTID_PN_CHECK_DATA_TIDS,
+	ATH12K_RXTID_PN_CHECK_MGMT_TIDS,
+	ATH12K_RXTID_PN_CHECK_ALL_TIDS,
+};
+
 #define HTT_T2H_EXT_STATS_INFO1_DONE	BIT(11)
 #define HTT_T2H_EXT_STATS_INFO1_LENGTH   GENMASK(31, 16)
 
@@ -1408,10 +1453,11 @@ ath12k_dp_arch_assoc_link_update(struct ath12k_dp *dp,
 static inline int ath12k_dp_arch_peer_assoc(struct ath12k_dp *dp,
 					    struct ath12k_dp_hw *dp_hw,
 					    struct ath12k_dp_vif *dp_vif,
-					    u8 *addr)
+					    u8 *addr,
+					    struct ath12k_dp_peer_create_params *params)
 {
 	if (dp->arch_ops->dp_peer_assoc)
-		return dp->arch_ops->dp_peer_assoc(dp, dp_hw, dp_vif, addr);
+		return dp->arch_ops->dp_peer_assoc(dp, dp_hw, dp_vif, addr, params);
 	return -EOPNOTSUPP;
 }
 
@@ -1436,6 +1482,16 @@ static inline void ath12k_dp_arch_peer_cleanup_indication(struct ath12k_dp *dp,
 {
 	if (dp->arch_ops->peer_cleanup_indication)
 		dp->arch_ops->peer_cleanup_indication(dp, skb);
+}
+
+static inline void
+ath12k_dp_arch_peer_drv_cleanup_indication(struct ath12k_dp *dp,
+					   u16 peer_id,
+					   u8 hw_link_id)
+{
+	if (dp->arch_ops->peer_drv_cleanup_indication)
+		dp->arch_ops->peer_drv_cleanup_indication(dp, peer_id,
+							  hw_link_id);
 }
 
 static inline void ath12k_dp_arch_link_peer_assoc(struct ath12k_dp *dp,
@@ -1647,6 +1703,13 @@ ath12k_dp_arch_smd_clear_old_peer_rx_lut(struct ath12k_dp *dp,
 		dp->arch_ops->dp_smd_clear_old_peer_rx_lut(dp, dp_peer);
 }
 
+static inline void
+ath12k_dp_arch_smd_abort_prep(struct ath12k_dp *dp)
+{
+	if (dp->arch_ops->dp_smd_abort_prep)
+		dp->arch_ops->dp_smd_abort_prep(dp);
+}
+
 static inline void ath12k_dp_get_mac_addr(u32 addr_l32, u16 addr_h16, u8 *addr)
 {
 	memcpy(addr, &addr_l32, 4);
@@ -1763,6 +1826,24 @@ static inline int ath12k_dp_qos_queue_setup(struct ath12k_dp *dp,
 	return -EOPNOTSUPP;
 }
 
+static inline int ath12k_dp_arch_get_coredump_seg_count(struct ath12k_dp *dp)
+{
+	if (dp->arch_ops->get_coredump_seg_count)
+		return dp->arch_ops->get_coredump_seg_count(dp);
+
+	return 0;
+}
+
+static inline int ath12k_dp_arch_get_coredump_segs(struct ath12k_dp *dp,
+						   struct ath12k_dump_segment *seg_arr,
+						   int max_segs)
+{
+	if (dp->arch_ops->get_coredump_segs)
+		return dp->arch_ops->get_coredump_segs(dp, seg_arr, max_segs);
+
+	return 0;
+}
+
 int ath12k_dp_htt_connect(struct ath12k_dp *dp);
 void ath12k_dp_partner_cc_init(struct ath12k_base *ab);
 int ath12k_dp_get_pdev_telemetry_stats(struct ath12k_base *ab,
@@ -1771,6 +1852,9 @@ int ath12k_dp_get_pdev_telemetry_stats(struct ath12k_base *ab,
 int ath12k_dp_pdev_pre_alloc(struct ath12k *ar);
 int ath12k_dp_tx_htt_srng_setup(struct ath12k_base *ab, u32 ring_id,
 				int mac_id, enum hal_ring_type ring_type);
+int ath12k_dp_peer_epp_setup_mgmt_tids(struct ath12k *ar, void *ptr,
+				       struct ath12k_link_vif *arvif,
+				       struct ath12k_link_sta *arsta);
 int ath12k_dp_peer_setup(struct ath12k *ar, void *ptr, struct ath12k_link_vif *arvif,
 			 const u8 *addr, u8 link_id);
 void ath12k_dp_peer_cleanup(struct ath12k *ar, void *ptr, int vdev_id, const u8 *addr);
@@ -1840,14 +1924,12 @@ void ath12k_dp_get_device_stats(struct ath12k_dp *dp,
 int ath12k_dp_get_link_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 				  struct ath12k_dp_peer *peer,
 				  int hw_link_id,
-				  struct ath12k_telemetry_dp_peer *telemetry_peer,
-				  bool is_ds_vif);
+				  struct ath12k_telemetry_dp_peer *telemetry_peer);
 int ath12k_dp_get_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 			     struct ath12k_dp_peer *peer,
 			     struct ath12k_telemetry_dp_peer *telemetry_peer,
 			     u8 link_id, bool valid_link,
-			     unsigned long links_map, int stats_link_id,
-			     bool is_ds_vif);
+			     unsigned long links_map, int stats_link_id);
 void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 			     struct ath12k_telemetry_dp_vif *telemetry_vif,
 			     u8 link_id);
@@ -1856,7 +1938,6 @@ void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 struct ath12k_vif_peer_iter_ctx {
 	struct ath12k_link_vif          *arvif;
 	struct ath12k_dp_aggr_vif_stats *aggr_vif_stats;
-	bool                             is_ds_vif;
 };
 void ath12k_dp_get_pdev_stats(struct ath12k_pdev_dp *pdev,
 			      struct ath12k_telemetry_dp_radio *telemetry_radio);
@@ -1926,7 +2007,7 @@ void ath12k_dp_srng_dst_invalidate_entries(struct ath12k_dp *dp,
 	u32 tp, hp;
 	dma_addr_t desc_paddr;
 
-	if (!(srng->flags & HAL_SRNG_FLAGS_CACHED))
+	if (!(srng->flags & HAL_SRNG_FLAGS_CACHED) || !entries)
 		return;
 
 	tp = srng->u.dst_ring.tp;
@@ -1935,7 +2016,7 @@ void ath12k_dp_srng_dst_invalidate_entries(struct ath12k_dp *dp,
 	desc_paddr = srng->ring_base_paddr + (tp * sizeof(u32));
 	if (hp > tp) {
 		dma_sync_single_for_cpu(dp->dev, desc_paddr,
-					entries * sizeof(u32),
+					entries * srng->entry_size * sizeof(u32),
 					DMA_FROM_DEVICE);
 	} else {
 		entries = srng->ring_size - tp;
@@ -1992,6 +2073,7 @@ dma_addr_t ath12k_dp_tx_buffer_map(struct ath12k_dp *dp,
 	return dma_addr;
 }
 
+#ifdef CPTCFG_QCN_EXTN
 static inline
 void ath12k_dp_tx_buffer_unmap(struct ath12k_dp *dp,
 			       struct ath12k_tx_desc_info *tx_sw_desc)
@@ -1999,6 +2081,7 @@ void ath12k_dp_tx_buffer_unmap(struct ath12k_dp *dp,
 	dma_unmap_single(dp->dev, tx_sw_desc->paddr,
 			 tx_sw_desc->length, DMA_TO_DEVICE);
 }
+#endif /* CPTCFG_QCN_EXTN */
 
 static inline void ath12k_dsb(void)
 {
@@ -2007,6 +2090,7 @@ static inline void ath12k_dsb(void)
 	 */
 }
 
+static inline
 struct sk_buff *ath12k_dp_alloc_skb(int size)
 {
 	return dev_alloc_skb(size);

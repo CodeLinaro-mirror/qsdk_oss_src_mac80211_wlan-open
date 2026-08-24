@@ -6,9 +6,9 @@
 
 #include <linux/inet.h>
 #include "core.h"
-#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#if defined(CPTCFG_EXT_IPA_OFFLOAD) && defined(CPTCFG_QCN_EXTN)
 #include "qcn_extns/ipa/dp_ipa.h"
-#endif
+#endif /* CPTCFG_EXT_IPA_OFFLOAD && CPTCFG_QCN_EXTN */
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 #include "ppe.h"
 #endif
@@ -614,6 +614,14 @@ static ssize_t ath12k_dump_mgmt_stats(struct file *file,
 		"timing_advertisement", "reserved",
 		"beacon", "atim", "disassoc",
 		"auth", "deauth", "action", "action_no_ack"};
+	/*
+	 * Beacon Tx is offloaded to firmware in ath12k.
+	 * Skip beacon Tx stats for all vdev types and beacon Rx stats for AP.
+	 * Beacon Rx stats remain valid for Mesh/STA.
+	 * Skip the reserved management subtype as well for all modes.
+	 */
+	int beacon_frm_type = IEEE80211_STYPE_BEACON >> 4;
+	int reserved_frm_type = 0x0070 >> 4; /* mgmt reserved subtype */
 
 	if (ar->ah->state != ATH12K_HW_STATE_ON)
 		return -ENETDOWN;
@@ -662,15 +670,22 @@ static ssize_t ath12k_dump_mgmt_stats(struct file *file,
 				 "  Total TX Cmpl error bytes = %llu\n",
 				 mgmt_stats->tx_cmpl_err_bytes);
 		len += scnprintf(buf + len, size - len, "  Success frames:\n");
-		for (i = 0; i < ATH12K_STATS_MGMT_FRM_TYPE_MAX-1; i++)
+		for (i = 0; i < ATH12K_STATS_MGMT_FRM_TYPE_MAX - 1; i++) {
+			if (i == beacon_frm_type || i == reserved_frm_type)
+				continue;
 			len += scnprintf(buf + len, size - len, "       %s: %d\n",
-					mgmt_frm_type[i], mgmt_stats->tx_succ_cnt[i]);
+					mgmt_frm_type[i],
+					mgmt_stats->tx_succ_cnt[i]);
+		}
 
 		len += scnprintf(buf + len, size - len, "  Failed frames:\n");
 
-		for (i = 0; i < ATH12K_STATS_MGMT_FRM_TYPE_MAX-1; i++)
+		for (i = 0; i < ATH12K_STATS_MGMT_FRM_TYPE_MAX - 1; i++) {
+			if (i == beacon_frm_type || i == reserved_frm_type)
+				continue;
 			len += scnprintf(buf + len, size - len, "       %s: %d\n",
 					mgmt_frm_type[i], mgmt_stats->tx_fail_cnt[i]);
+		}
 
 		len += scnprintf(buf + len, size - len, "  RX stats :\n");
 		len += scnprintf(buf + len, size - len,
@@ -681,21 +696,34 @@ static ssize_t ath12k_dump_mgmt_stats(struct file *file,
 				 "  Total RX Mgmt frames = %llu\n",
 				 mgmt_stats->aggr_rx_mgmt);
 		len += scnprintf(buf + len, size - len, "  Success frames:\n");
-		for (i = 0; i < ATH12K_STATS_MGMT_FRM_TYPE_MAX-1; i++)
+		for (i = 0; i < ATH12K_STATS_MGMT_FRM_TYPE_MAX - 1; i++) {
+			/* Skip reserved frame types and Beacon frames in AP-only mode. */
+			if (i == reserved_frm_type ||
+			    (i == beacon_frm_type &&
+			     (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP &&
+			      arvif->vdev_subtype != WMI_VDEV_SUBTYPE_MESH_11S)))
+				continue;
 			len += scnprintf(buf + len, size - len, "       %s: %d\n",
 					mgmt_frm_type[i], mgmt_stats->rx_cnt[i]);
+		}
 
 		len += scnprintf(buf + len, size - len, " Tx completion stats :\n");
 		len += scnprintf(buf + len, size - len, " success completions:\n");
 
-		for (i = 0; i < ATH12K_STATS_MGMT_FRM_TYPE_MAX-1; i++)
+		for (i = 0; i < ATH12K_STATS_MGMT_FRM_TYPE_MAX - 1; i++) {
+			if (i == beacon_frm_type || i == reserved_frm_type)
+				continue;
 			len += scnprintf(buf + len, size - len, "       %s: %d\n",
 					mgmt_frm_type[i], mgmt_stats->tx_compl_succ[i]);
+		}
 
 		len += scnprintf(buf + len, size - len, " failure completions:\n");
 
-		for (i = 0; i < ATH12K_STATS_MGMT_FRM_TYPE_MAX-1; i++)
+		for (i = 0; i < ATH12K_STATS_MGMT_FRM_TYPE_MAX - 1; i++) {
+			if (i == beacon_frm_type || i == reserved_frm_type)
+				continue;
 			len += scnprintf(buf + len, size - len, "        %s: %d\n", mgmt_frm_type[i], mgmt_stats->tx_compl_fail[i]);
+		}
 
 		len += scnprintf(buf + len, size - len, "  Link Stats :\n ");
 		len += scnprintf(buf + len, size - len,
@@ -746,6 +774,9 @@ static ssize_t ath12k_dump_chanctx_switch_stats(struct file *file,
 	len += scnprintf(buf + len, size - len,
 			 "  total_switches          = %llu\n",
 			 stats->total_switches);
+	len += scnprintf(buf + len, size - len,
+			 "  nl_notify_count         = %llu\n",
+			 stats->nl_notify_count);
 	len += scnprintf(buf + len, size - len,
 			 "  last_switch_time_us     = %llu\n",
 			 stats->last_switch_time_us);
@@ -1322,10 +1353,6 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 					 device_stats->rx_wbm_rel_source[i][j]);
 	}
 
-	len += scnprintf(buf + len, size - len,
-			 "\n\nFIRSTLAST_MSDU_BIT_MISSING_COUNT= %u\n",
-			 device_stats->first_and_last_msdu_bit_miss);
-
 	rcu_read_lock();
 	if (ab->dp) {
 		for (i = 0; i < MAX_RADIOS; i++) {
@@ -1386,56 +1413,6 @@ static const struct file_operations fops_device_dp_stats = {
 	.llseek = default_llseek,
 };
 
-static ssize_t ath12k_write_stats_disable(struct file *file,
-					  const char __user *user_buf,
-					  size_t count, loff_t *ppos)
-{
-	struct ath12k_base *ab = file->private_data;
-	struct ath12k_pdev *pdev;
-	u32 mask = 0;
-	int ret, i;
-	bool disable;
-	enum dp_mon_stats_mode mode = ATH12k_DP_MON_BASIC_STATS;
-
-	if (kstrtobool_from_user(user_buf, count, &disable))
-		return -EINVAL;
-
-	if (disable != ab->stats_disable) {
-		ab->stats_disable = disable;
-		ab->dp->stats_disable = disable;
-
-		for (i = 0; i < ab->num_radios; i++) {
-			pdev = &ab->pdevs[i];
-			if (pdev && pdev->ar) {
-				wiphy_lock(ath12k_ar_to_hw(pdev->ar)->wiphy);
-				ath12k_dp_mon_rx_stats_config(pdev->ar, !disable, mode);
-				ret = ath12k_dp_mon_rx_update_filter(pdev->ar);
-				if (ret)
-					ath12k_warn(ab, "Failed to configure monitor filters\n");
-				wiphy_unlock(ath12k_ar_to_hw(pdev->ar)->wiphy);
-
-				pdev->ar->ah->hw->perf_mode = disable;
-				if (!disable)
-					mask = HTT_PPDU_STATS_TAG_DEFAULT;
-
-				ath12k_dp_tx_htt_h2t_ppdu_stats_req(pdev->ar, mask);
-
-				ath12k_info(ab, "Monitor disable %u PPDU stats mask 0x%x",
-					    disable, mask);
-			}
-		}
-	}
-
-	ret = count;
-
-	return ret;
-}
-
-static const struct file_operations fops_soc_stats_disable = {
-	.open = simple_open,
-	.write = ath12k_write_stats_disable,
-};
-
 static ssize_t ath12k_write_block_radar(struct file *file,
 					const char __user *user_buf,
 					size_t count, loff_t *ppos)
@@ -1491,6 +1468,27 @@ static inline bool ath12k_is_below320mhz_offset_invalid(s32 freq_offset,
 	return ((freq_offset < -half_bw) || (freq_offset > half_bw));
 }
 
+static bool ath12k_is_target_freq_non_dfs(struct ath12k_base *ab,
+					  struct wiphy *wiphy,
+					  u32 center_freq1, s32 freq_offset)
+{
+	u32 target_freq = center_freq1 + freq_offset;
+	/* freq_offset may land between 20 MHz channel boundaries; round to the
+	 * nearest channel center so ieee80211_get_channel() finds a valid entry.
+	 */
+	u32 chan_center = DIV_ROUND_CLOSEST(target_freq, 20) * 20;
+	struct ieee80211_channel *chan = ieee80211_get_channel(wiphy, chan_center);
+
+	if (!chan || !(chan->flags & IEEE80211_CHAN_RADAR)) {
+		ath12k_warn(ab,
+			    "dfs_simulate_radar: %u MHz is not DFS-required, ignoring\n",
+			    target_freq);
+		return true;
+	}
+
+	return false;
+}
+
 static bool ath12k_is_offset_invalid_for_bw(struct ath12k *ar,
 					    s32 freq_offset)
 {
@@ -1523,6 +1521,12 @@ static bool ath12k_is_offset_invalid_for_bw(struct ath12k *ar,
 	}
 
 	ch_width = ath12k_mac_get_chan_width(ctx->def.width);
+
+	if (ch_width != ATH12K_CHWIDTH_320 &&
+	    ath12k_is_target_freq_non_dfs(ar->ab, ath12k_ar_to_hw(ar)->wiphy,
+					  ctx->def.center_freq1, freq_offset))
+		return true;
+
 	switch (ch_width) {
 	case ATH12K_CHWIDTH_320:
 		return ath12k_is_320mhz_offset_invalid(freq_offset);
@@ -1752,6 +1756,13 @@ static int ath12k_get_tpc_ctl_mode_idx(struct wmi_tpc_stats_arg *tpc_stats,
 		case WMI_TPC_PREAM_EHT320:
 			*mode_idx = ATH12K_TPC_STATS_CTL_MODE_HE_EHT320_5GHZ_6GHZ;
 			break;
+		/* TODO: UHR has distinct CTL powers from EHT at the HALPHY level.
+		 * New CTL mode indices for UHR (UHR20/40/80/.../320 and their
+		 * punctured variants) must be defined once FW confirms the index
+		 * values it uses when populating the CTL table.  Until then UHR
+		 * preambles default to the default LEGACY_5GHZ_6GHZ which
+		 * is conservative but not accurate.
+		 */
 		default:
 			/* for 5GHZ and 6GHZ, default case will be for OFDM */
 			*mode_idx = ATH12K_TPC_STATS_CTL_MODE_LEGACY_5GHZ_6GHZ;
@@ -1833,9 +1844,12 @@ static s16 ath12k_tpc_get_rate(struct ath12k *ar,
 	}
 
 	/* Below is the min calculation of ctl array, rates array and
-	 * regulator power table. tpc is minimum of all 3
+	 * regulator power table. tpc is minimum of all 3.
+	 * EHT and UHR share rates_array2 — FW sends one copy of MCS0-15
+	 * target powers for both preamble types.
 	 */
-	if (pream_bw >= WMI_TPC_PREAM_EHT20 && pream_bw <= WMI_TPC_PREAM_EHT320) {
+	if ((pream_bw >= WMI_TPC_PREAM_EHT20 && pream_bw <= WMI_TPC_PREAM_EHT320) ||
+	    (pream_bw >= WMI_TPC_PREAM_UHR20 && pream_bw <= WMI_TPC_PREAM_UHR320)) {
 		rate2 = tpc_stats->rates_array2.rate_array[eht_rate_idx];
 		if (is_mu)
 			rates = u32_get_bits(rate2, ATH12K_TPC_RATE_ARRAY_MU);
@@ -1930,6 +1944,23 @@ static u16 ath12k_get_ratecode(u16 pream_idx, u16 nss, u16 mcs_rate)
 		else
 			mcs_rate -= 2;
 		break;
+	case WMI_TPC_PREAM_UHR20:
+	case WMI_TPC_PREAM_UHR40:
+	case WMI_TPC_PREAM_UHR60:
+	case WMI_TPC_PREAM_UHR80:
+	case WMI_TPC_PREAM_UHR120:
+	case WMI_TPC_PREAM_UHR140:
+	case WMI_TPC_PREAM_UHR160:
+	case WMI_TPC_PREAM_UHR200:
+	case WMI_TPC_PREAM_UHR240:
+	case WMI_TPC_PREAM_UHR280:
+	case WMI_TPC_PREAM_UHR320:
+		mode_type = WMI_RATE_PREAMBLE_UHR;
+		if (mcs_rate == 0 || mcs_rate == 1)
+			mcs_rate += 14;
+		else
+			mcs_rate -= 2;
+		break;
 	default:
 		return mode_type;
 	}
@@ -1983,13 +2014,24 @@ static int ath12k_tpc_fill_pream(struct ath12k *ar, char *buf, int buf_len, int 
 		[WMI_TPC_PREAM_EHT40]   = "EHT40",
 		[WMI_TPC_PREAM_EHT60]   = "EHT60",
 		[WMI_TPC_PREAM_EHT80]   = "EHT80",
-		[WMI_TPC_PREAM_EHT120]   = "EHT120",
-		[WMI_TPC_PREAM_EHT140]   = "EHT140",
-		[WMI_TPC_PREAM_EHT160]   = "EHT160",
-		[WMI_TPC_PREAM_EHT200]   = "EHT200",
-		[WMI_TPC_PREAM_EHT240]   = "EHT240",
-		[WMI_TPC_PREAM_EHT280]   = "EHT280",
-		[WMI_TPC_PREAM_EHT320]   = "EHT320"};
+		[WMI_TPC_PREAM_EHT120]  = "EHT120",
+		[WMI_TPC_PREAM_EHT140]  = "EHT140",
+		[WMI_TPC_PREAM_EHT160]  = "EHT160",
+		[WMI_TPC_PREAM_EHT200]  = "EHT200",
+		[WMI_TPC_PREAM_EHT240]  = "EHT240",
+		[WMI_TPC_PREAM_EHT280]  = "EHT280",
+		[WMI_TPC_PREAM_EHT320]  = "EHT320",
+		[WMI_TPC_PREAM_UHR20]   = "UHR20",
+		[WMI_TPC_PREAM_UHR40]   = "UHR40",
+		[WMI_TPC_PREAM_UHR60]   = "UHR60",
+		[WMI_TPC_PREAM_UHR80]   = "UHR80",
+		[WMI_TPC_PREAM_UHR120]  = "UHR120",
+		[WMI_TPC_PREAM_UHR140]  = "UHR140",
+		[WMI_TPC_PREAM_UHR160]  = "UHR160",
+		[WMI_TPC_PREAM_UHR200]  = "UHR200",
+		[WMI_TPC_PREAM_UHR240]  = "UHR240",
+		[WMI_TPC_PREAM_UHR280]  = "UHR280",
+		[WMI_TPC_PREAM_UHR320]  = "UHR320"};
 
 	active_tx_chains = ar->num_tx_chains;
 
@@ -2053,7 +2095,8 @@ static int ath12k_tpc_stats_print(struct ath12k *ar,
 				  char *buf, size_t len,
 				  enum wmi_halphy_ctrl_path_stats_id type)
 {
-	u32 eht_idx = 0, pream_idx = 0, rate_pream_idx = 0, total_rates = 0, max_rix = 0;
+	u32 eht_idx = 0, uhr_idx = 0, pream_idx = 0, rate_pream_idx = 0, total_rates = 0;
+	u32 max_rix = 0;
 	u32 chan_freq, num_tx_chain, caps, i, j = 1;
 	size_t buf_len = ATH12K_TPC_STATS_BUF_SIZE;
 	u8 nss, active_tx_chains;
@@ -2087,7 +2130,19 @@ static int ath12k_tpc_stats_print(struct ath12k *ar,
 		[WMI_TPC_PREAM_EHT200]  = ATH12K_EHT_RATES,
 		[WMI_TPC_PREAM_EHT240]  = ATH12K_EHT_RATES,
 		[WMI_TPC_PREAM_EHT280]  = ATH12K_EHT_RATES,
-		[WMI_TPC_PREAM_EHT320]  = ATH12K_EHT_RATES};
+		[WMI_TPC_PREAM_EHT320]  = ATH12K_EHT_RATES,
+		/* UHR shares same MCS0-15 rate count as EHT */
+		[WMI_TPC_PREAM_UHR20]   = ATH12K_EHT_RATES,
+		[WMI_TPC_PREAM_UHR40]   = ATH12K_EHT_RATES,
+		[WMI_TPC_PREAM_UHR60]   = ATH12K_EHT_RATES,
+		[WMI_TPC_PREAM_UHR80]   = ATH12K_EHT_RATES,
+		[WMI_TPC_PREAM_UHR120]  = ATH12K_EHT_RATES,
+		[WMI_TPC_PREAM_UHR140]  = ATH12K_EHT_RATES,
+		[WMI_TPC_PREAM_UHR160]  = ATH12K_EHT_RATES,
+		[WMI_TPC_PREAM_UHR200]  = ATH12K_EHT_RATES,
+		[WMI_TPC_PREAM_UHR240]  = ATH12K_EHT_RATES,
+		[WMI_TPC_PREAM_UHR280]  = ATH12K_EHT_RATES,
+		[WMI_TPC_PREAM_UHR320]  = ATH12K_EHT_RATES};
 	static const u8 max_nss[WMI_TPC_PREAM_MAX] = {
 		[WMI_TPC_PREAM_CCK]     = ATH12K_NSS_1,
 		[WMI_TPC_PREAM_OFDM]    = ATH12K_NSS_1,
@@ -2111,7 +2166,19 @@ static int ath12k_tpc_stats_print(struct ath12k *ar,
 		[WMI_TPC_PREAM_EHT200]  = ATH12K_NSS_4,
 		[WMI_TPC_PREAM_EHT240]  = ATH12K_NSS_4,
 		[WMI_TPC_PREAM_EHT280]  = ATH12K_NSS_4,
-		[WMI_TPC_PREAM_EHT320]  = ATH12K_NSS_4};
+		[WMI_TPC_PREAM_EHT320]  = ATH12K_NSS_4,
+		/* UHR supports up to 5 chains on Trestles */
+		[WMI_TPC_PREAM_UHR20]   = ATH12K_NSS_5,
+		[WMI_TPC_PREAM_UHR40]   = ATH12K_NSS_5,
+		[WMI_TPC_PREAM_UHR60]   = ATH12K_NSS_5,
+		[WMI_TPC_PREAM_UHR80]   = ATH12K_NSS_5,
+		[WMI_TPC_PREAM_UHR120]  = ATH12K_NSS_5,
+		[WMI_TPC_PREAM_UHR140]  = ATH12K_NSS_5,
+		[WMI_TPC_PREAM_UHR160]  = ATH12K_NSS_5,
+		[WMI_TPC_PREAM_UHR200]  = ATH12K_NSS_5,
+		[WMI_TPC_PREAM_UHR240]  = ATH12K_NSS_5,
+		[WMI_TPC_PREAM_UHR280]  = ATH12K_NSS_5,
+		[WMI_TPC_PREAM_UHR320]  = ATH12K_NSS_5};
 
 	u16 rate_idx[WMI_TPC_PREAM_MAX] = {}, eht_rate_idx[WMI_TPC_PREAM_MAX] = {};
 	static const u8 pream_type[WMI_TPC_PREAM_MAX] = {
@@ -2137,7 +2204,19 @@ static int ath12k_tpc_stats_print(struct ath12k *ar,
 		[WMI_TPC_PREAM_EHT200]  = WMI_RATE_PREAMBLE_EHT,
 		[WMI_TPC_PREAM_EHT240]  = WMI_RATE_PREAMBLE_EHT,
 		[WMI_TPC_PREAM_EHT280]  = WMI_RATE_PREAMBLE_EHT,
-		[WMI_TPC_PREAM_EHT320]  = WMI_RATE_PREAMBLE_EHT};
+		[WMI_TPC_PREAM_EHT320]  = WMI_RATE_PREAMBLE_EHT,
+		/* UHR uses EHT preamble type so rates_array2 lookup is shared */
+		[WMI_TPC_PREAM_UHR20]   = WMI_RATE_PREAMBLE_EHT,
+		[WMI_TPC_PREAM_UHR40]   = WMI_RATE_PREAMBLE_EHT,
+		[WMI_TPC_PREAM_UHR60]   = WMI_RATE_PREAMBLE_EHT,
+		[WMI_TPC_PREAM_UHR80]   = WMI_RATE_PREAMBLE_EHT,
+		[WMI_TPC_PREAM_UHR120]  = WMI_RATE_PREAMBLE_EHT,
+		[WMI_TPC_PREAM_UHR140]  = WMI_RATE_PREAMBLE_EHT,
+		[WMI_TPC_PREAM_UHR160]  = WMI_RATE_PREAMBLE_EHT,
+		[WMI_TPC_PREAM_UHR200]  = WMI_RATE_PREAMBLE_EHT,
+		[WMI_TPC_PREAM_UHR240]  = WMI_RATE_PREAMBLE_EHT,
+		[WMI_TPC_PREAM_UHR280]  = WMI_RATE_PREAMBLE_EHT,
+		[WMI_TPC_PREAM_UHR320]  = WMI_RATE_PREAMBLE_EHT};
 
 	chan_freq = le32_to_cpu(tpc_stats->tpc_config.chan_freq);
 	num_tx_chain = le32_to_cpu(tpc_stats->tpc_config.num_tx_chain);
@@ -2204,7 +2283,9 @@ static int ath12k_tpc_stats_print(struct ath12k *ar,
 			    i == WMI_TPC_PREAM_HE80 ||
 			    i == WMI_TPC_PREAM_HE160 ||
 			    (i >= WMI_TPC_PREAM_EHT60 &&
-			     i <= WMI_TPC_PREAM_EHT320)) {
+			     i <= WMI_TPC_PREAM_EHT320) ||
+			    (i >= WMI_TPC_PREAM_UHR60 &&
+			     i <= WMI_TPC_PREAM_UHR320)) {
 				max_rix += max_nss[i] * max_rates[i];
 				continue;
 			}
@@ -2217,23 +2298,38 @@ static int ath12k_tpc_stats_print(struct ath12k *ar,
 
 		nss = (max_nss[i] < ar->num_tx_chains ? max_nss[i] : ar->num_tx_chains);
 
-		if (!(caps &
-		    (1 << ATH12K_TPC_STATS_SUPPORT_BE_PUNC))) {
+		if (!(caps & (1 << ATH12K_TPC_STATS_SUPPORT_BE_PUNC))) {
 			if (i == WMI_TPC_PREAM_EHT60 || i == WMI_TPC_PREAM_EHT120 ||
 			    i == WMI_TPC_PREAM_EHT140 || i == WMI_TPC_PREAM_EHT200 ||
-			    i == WMI_TPC_PREAM_EHT240 || i == WMI_TPC_PREAM_EHT280) {
+			    i == WMI_TPC_PREAM_EHT240 || i == WMI_TPC_PREAM_EHT280 ||
+			    i == WMI_TPC_PREAM_UHR60  || i == WMI_TPC_PREAM_UHR120 ||
+			    i == WMI_TPC_PREAM_UHR140 || i == WMI_TPC_PREAM_UHR200 ||
+			    i == WMI_TPC_PREAM_UHR240 || i == WMI_TPC_PREAM_UHR280) {
 				max_rix += max_nss[i] * max_rates[i];
 				continue;
 			}
 		}
 
-		len = ath12k_tpc_fill_pream(ar, buf, buf_len, len, i, max_rix, nss,
-					    max_rates[i], pream_type[i],
-					    type, rate_idx[i], eht_rate_idx[eht_idx]);
+		/* UHR and EHT share rates_array2. uhr_idx tracks position within
+		 * UHR preambles (0=UHR20..10=UHR320), mapping to the same
+		 * eht_rate_idx slots as EHT20..EHT320 respectively.
+		 */
+		if (i >= WMI_TPC_PREAM_UHR20 && i <= WMI_TPC_PREAM_UHR320) {
+			len = ath12k_tpc_fill_pream(ar, buf, buf_len, len, i, max_rix,
+						    nss, max_rates[i], pream_type[i],
+						    type, rate_idx[i],
+						    eht_rate_idx[uhr_idx]);
+			++uhr_idx;
+		} else {
+			len = ath12k_tpc_fill_pream(ar, buf, buf_len, len, i, max_rix,
+						    nss, max_rates[i], pream_type[i],
+						    type, rate_idx[i],
+						    eht_rate_idx[eht_idx]);
 
-		if (pream_type[i] == WMI_RATE_PREAMBLE_EHT)
-			/*For fetch the next index eht rates from rates array2*/
-			++eht_idx;
+			if (pream_type[i] == WMI_RATE_PREAMBLE_EHT)
+				/*For fetch the next index eht rates from rates array2*/
+				++eht_idx;
+		}
 
 		max_rix += max_nss[i] * max_rates[i];
 	}
@@ -2273,7 +2369,6 @@ static void ath12k_tpc_stats_fill(struct ath12k *ar,
 
 	ath12k_tpc_stats_print(ar, tpc_stats, buf, len,
 			       ar->debug.tpc_stats_type);
-
 	spin_unlock_bh(&ar->data_lock);
 }
 
@@ -3017,7 +3112,6 @@ static int ath12k_open_link_stats(struct inode *inode, struct file *file)
 	struct ath12k_link_stats linkstat;
 	struct ath12k_link_vif *arvif;
 	unsigned long links_map;
-	struct wiphy *wiphy;
 	int link_id, i;
 	char *buf;
 
@@ -3028,16 +3122,14 @@ static int ath12k_open_link_stats(struct inode *inode, struct file *file)
 	if (!buf)
 		return -ENOMEM;
 
-	wiphy = ahvif->ah->hw->wiphy;
-	wiphy_lock(wiphy);
+	rcu_read_lock();
 
 	links_map = ahvif->links_map;
 	for_each_set_bit(link_id, &links_map,
 			 ATH12K_NUM_MAX_LINKS) {
 		if (ATH12K_SCAN_LINKS_MASK & BIT(link_id))
 			continue;
-		arvif = rcu_dereference_protected(ahvif->link[link_id],
-						  lockdep_is_held(&wiphy->mtx));
+		arvif = rcu_dereference(ahvif->link[link_id]);
 
 		spin_lock_bh(&arvif->link_stats_lock);
 		linkstat = arvif->link_stats;
@@ -3094,7 +3186,7 @@ static int ath12k_open_link_stats(struct inode *inode, struct file *file)
 				"------------------------------------------------------\n");
 	}
 
-	wiphy_unlock(wiphy);
+	rcu_read_unlock();
 
 	file->private_data = buf;
 
@@ -3142,169 +3234,8 @@ void ath12k_debugfs_op_vif_add(struct ieee80211_hw *hw,
 }
 EXPORT_SYMBOL(ath12k_debugfs_op_vif_add);
 
-static ssize_t ath12k_write_mld_stats(struct file *file,
-				      const char __user *ubuf,
-				      size_t count, loff_t *ppos)
-{
-	struct ath12k_vif *ahvif = file->private_data;
-	struct ath12k_dp_vif *dp_vif;
-	char buf[20] = {0};
-	ssize_t ret = -EINVAL;
 
-	if (count > 19)
-		return -EFAULT;
 
-	ret = copy_from_user(buf, ubuf, count);
-	if (ret)
-		return -EFAULT;
-	buf[count] = '\0';
-
-	if (!ahvif)
-		return -EINVAL;
-
-	wiphy_lock(ahvif->ah->hw->wiphy);
-
-	dp_vif = &ahvif->dp_vif;
-	if (!dp_vif)
-		goto out;
-
-	if (strstr(buf, "reset")) {
-		memset(&dp_vif->stats, 0, sizeof(dp_vif->stats));
-		ret = count;
-	}
-out:
-	wiphy_unlock(ahvif->ah->hw->wiphy);
-	return ret;
-}
-
-static ssize_t ath12k_read_mld_stats(struct file *file,
-				    char __user *user_buf,
-				    size_t count, loff_t *ppos)
-{
-	struct ath12k_vif *ahvif = file->private_data;
-	size_t len = 0, buf_len = (PAGE_SIZE * 2);
-	struct ath12k_dp_vif *dp_vif;
-	struct wiphy *wiphy;
-	u8 i = 0, j = 0;
-	char *buf;
-	u32 tx_packets = 0;
-	u64 tx_bytes = 0;
-	ssize_t retval;
-	static const char *tx_enq_err[DP_TX_ENQ_ERR_MAX] = {
-			"Success", "Miscellaneous", "Monitor Vif",
-			"Invalid Link", "Invalid Arvif", "MGMT Frame",
-			"Max Tx Limit", "Invalid Pdev", "Invalid Peer",
-			"Crash Flush", "NON data Frame", "SW Desc NA",
-			"Encap RAW", "ENCAP 8023", "DMA ERR", "Extended Desc NA",
-			"HTT Metadata Err", "TCL Desc NA", "TCL Desc Retry",
-			"Invalid Arvif Fast", "Invalid Pdev Fast",
-			"Max Tx Limit Fast", "Invalid ENCAP Fast",
-			"Bridge vdev", "Arsta NA", "Clone", "MHDR ERR",
-			"Feature Error", "Queue Stop", "HW Enqueue Fail",
-			"MCBC encryption Fail", "MCBC MSDU setup Fail",
-			"Mcast unconnected link", "FW Recovery",
-			"SKB No Linear"};
-
-	if (!ahvif)
-		return -EINVAL;
-
-	if (!ahvif->ah->hw->wiphy)
-		return -EINVAL;
-
-	wiphy = ahvif->ah->hw->wiphy;
-	wiphy_lock(wiphy);
-
-	dp_vif = &ahvif->dp_vif;
-	if (!dp_vif) {
-		wiphy_unlock(wiphy);
-		return -EINVAL;
-	}
-
-	buf = kzalloc(buf_len, GFP_KERNEL);
-	if (!buf) {
-		wiphy_unlock(wiphy);
-		return -ENOMEM;
-	}
-
-	len += scnprintf(buf + len, buf_len - len,
-			 "Tx Packets Received from Stack\n");
-	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++) {
-		len += scnprintf(buf + len, buf_len - len,
-				 "  Ring [%u] Packets = %u  \tBytes = %llu\n",
-				 i, dp_vif->stats[i].tx_i.recv_from_stack.packets,
-				 dp_vif->stats[i].tx_i.enque_to_hw.bytes);
-		tx_packets += dp_vif->stats[i].tx_i.recv_from_stack.packets;
-		tx_bytes += dp_vif->stats[i].tx_i.recv_from_stack.bytes;
-	}
-	len += scnprintf(buf + len, buf_len - len,
-			 "Total Packets Received from Stack = %u  \tBytes = %llu\n",
-			 tx_packets, tx_bytes);
-
-	tx_packets = 0;
-	tx_bytes = 0;
-
-	len += scnprintf(buf + len, buf_len - len,
-			 "\nTx Packet Enqueue to HW\n");
-	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++) {
-		len += scnprintf(buf + len, buf_len - len,
-				 "  Ring [%u] Packets = %u  \tBytes = %llu\n",
-				 i, dp_vif->stats[i].tx_i.enque_to_hw.packets,
-				 dp_vif->stats[i].tx_i.enque_to_hw.bytes);
-		tx_packets += dp_vif->stats[i].tx_i.enque_to_hw.packets;
-		tx_bytes += dp_vif->stats[i].tx_i.enque_to_hw.bytes;
-	}
-
-	len += scnprintf(buf + len, buf_len - len,
-			 "Total Packets Enqueue to HW = %u  \tBytes = %llu\n",
-			 tx_packets, tx_bytes);
-
-	tx_packets = 0;
-	tx_bytes = 0;
-
-	len += scnprintf(buf + len, buf_len - len,
-			 "\nTx Packet Enqueue to HW Fast\n");
-	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++) {
-		len += scnprintf(buf + len, buf_len - len,
-				 "  Ring [%u] Packets = %u  \tBytes = %llu\n",
-				 i, dp_vif->stats[i].tx_i.enque_to_hw_fast.packets,
-				 dp_vif->stats[i].tx_i.enque_to_hw_fast.bytes);
-		tx_packets += dp_vif->stats[i].tx_i.enque_to_hw_fast.packets;
-		tx_bytes += dp_vif->stats[i].tx_i.enque_to_hw_fast.bytes;
-	}
-
-	len += scnprintf(buf + len, buf_len - len,
-			 "Total Packets Enqueue to HW Fast = %u  \tBytes = %llu\n",
-			 tx_packets, tx_bytes);
-
-	len += scnprintf(buf + len, buf_len - len,
-			 "\nDrops in Tx Enqueue\n");
-	for (i = 1; i < DP_TX_ENQ_ERR_MAX; i++) {
-		len += scnprintf(buf + len, buf_len - len,
-				 "%s:\t", tx_enq_err[i]);
-
-		for (j = 0; j < DP_TCL_NUM_RING_MAX; j++) {
-			len += scnprintf(buf + len, buf_len - len,
-					 "%u\t",
-					 dp_vif->stats[j].tx_i.drop[i]);
-		}
-		len += scnprintf(buf + len, buf_len - len, "\n");
-	}
-	wiphy_unlock(wiphy);
-	if (len > buf_len)
-		len = buf_len;
-	retval = simple_read_from_buffer(user_buf, count, ppos, buf, len);
-	kfree(buf);
-
-	return retval;
-}
-
-static const struct file_operations ath12k_fops_mld_stats = {
-	.read = ath12k_read_mld_stats,
-	.write = ath12k_write_mld_stats,
-	.open = simple_open,
-	.owner = THIS_MODULE,
-	.llseek = default_llseek,
-};
 
 static ssize_t ath12k_fse_ops_write(struct file *file,
 				    const char __user *ubuf,
@@ -3582,22 +3513,26 @@ static ssize_t ath12k_dump_fst_dump_table(struct file *file,
 static const struct file_operations fops_fse = {
 	.open = simple_open,
 	.write = ath12k_fse_ops_write,
+	.owner = THIS_MODULE,
 };
 
 static const struct file_operations fops_fst_core_mask = {
 	.open = simple_open,
 	.read = ath12k_read_fst_core_mask,
 	.write = ath12k_write_fst_core_mask,
+	.owner = THIS_MODULE,
 };
 
 static const struct file_operations fops_fst_dp_stats = {
 	.open = simple_open,
 	.read = ath12k_dump_fst_flow_stats,
+	.owner = THIS_MODULE,
 };
 
 static const struct file_operations fops_fst_dump_table = {
 	.open = simple_open,
 	.read = ath12k_dump_fst_dump_table,
+	.owner = THIS_MODULE,
 };
 
 void ath12k_fst_debugfs_init(struct ath12k_base *ab)
@@ -6692,6 +6627,8 @@ static ssize_t ath12k_write_dp_stats_mask(struct file *file,
 	struct ath12k_hw *ah = file->private_data;
 	struct ath12k *ar;
 	u32 debug_mask;
+	u32 ppdu_mask;
+	bool stats_disable;
 	int i = 0, ret;
 	enum dp_mon_stats_mode mode = 0;
 	struct ath12k_link_vif *arvif;
@@ -6710,13 +6647,65 @@ static ssize_t ath12k_write_dp_stats_mask(struct file *file,
 		goto exit;
 	}
 
+	ath12k_dbg(ah->radio[0].ab, ATH12K_DBG_TELEMETRY,
+		   "dp_stats_mask write: debug_mask=0x%x num_radio=%d\n",
+		   debug_mask, ah->num_radio);
+
 	for (i = 0; i < ah->num_radio; i++) {
 		ar = &ah->radio[i];
 		if (ar) {
+			stats_disable = !(debug_mask & DP_ENABLE_STATS);
+
+			ath12k_dbg(ar->ab, ATH12K_DBG_TELEMETRY,
+				   "radio[%d] stats_disable=%d ab->stats_disable=%d\n",
+				   i, stats_disable, ar->ab->stats_disable);
+
+			if (stats_disable != ar->ab->stats_disable) {
+				mode = ATH12k_DP_MON_BASIC_STATS;
+				ath12k_dp_mon_rx_stats_config(ar, !stats_disable,
+							      mode);
+
+				ret = ath12k_dp_mon_rx_update_filter(ar);
+				if (ret)
+					ath12k_warn(ar->ab,
+						    "failed to configure basic stats monitor filters: %d\n",
+						    ret);
+
+				ppdu_mask = stats_disable ?
+					    0 : HTT_PPDU_STATS_TAG_DEFAULT;
+
+				ath12k_dp_tx_htt_h2t_ppdu_stats_req(ar,
+								    ppdu_mask);
+
+				/*
+				 * perf_mode is checked by mac80211 in
+				 * mesh configuration, stats_disable is
+				 * checked in ppeds
+				 */
+				ar->ah->hw->perf_mode = stats_disable;
+				ar->ab->stats_disable = stats_disable;
+				ar->ab->dp->stats_disable = stats_disable;
+
+				ath12k_dbg(ar->ab, ATH12K_DBG_TELEMETRY,
+					   "dp_stats_mask: perf_mode %d, Tx PPDU mask 0x%x Rx Mon mode : %u\n",
+					    ar->ah->hw->perf_mode, ppdu_mask,
+					    mode);
+
+			} else {
+				ath12k_dbg(ar->ab, ATH12K_DBG_TELEMETRY,
+					   "radio[%d] basic stats state unchanged, skipping...\n",
+					   i);
+			}
+
+			/* Handle extended RX stats */
 			mode = ATH12k_DP_MON_EXTD_STATS;
 			if (debug_mask & DP_ENABLE_EXT_RX_STATS) {
 				if (!ar->ab->hw_params->rxdma1_enable)
 					debug_mask &= ~DP_ENABLE_EXT_RX_STATS;
+
+				ath12k_dbg(ar->ab, ATH12K_DBG_TELEMETRY,
+					   "radio[%d] enabling ext RX stats : mode : %u\n",
+					   i, mode);
 
 				ath12k_dp_mon_rx_stats_config(ar, true, mode);
 
@@ -6728,6 +6717,11 @@ static ssize_t ath12k_write_dp_stats_mask(struct file *file,
 			} else {
 				ath12k_dp_mon_rx_stats_config(ar, false, mode);
 			}
+
+			ath12k_dbg(ar->ab, ATH12K_DBG_TELEMETRY,
+				   "radio[%d] dp_stats_mask updated: 0x%x -> 0x%x\n",
+				   i, ar->dp.dp_stats_mask, debug_mask);
+
 			ar->dp.dp_stats_mask = debug_mask;
 
 			/* Sync dp_vif->dp_features bit-7 with dp_stats_mask bit-0 */
@@ -6741,7 +6735,7 @@ static ssize_t ath12k_write_dp_stats_mask(struct file *file,
 				else
 					dp_vif->dp_features &= ~BIT(7);
 
-				ath12k_dbg(ar->ab, ATH12K_DBG_DP_TX,
+				ath12k_dbg(ar->ab, ATH12K_DBG_TELEMETRY,
 					   "dp_stats_mask 0x%x dp_features 0x%x\n",
 					   ar->dp.dp_stats_mask,
 					   dp_vif->dp_features);
@@ -6916,6 +6910,10 @@ static ssize_t ath12k_write_reset_dp_stats(struct file *file,
 			if (tmp_peer->peer_stats.tx_ppdu_stats)
 				memset(tmp_peer->peer_stats.tx_ppdu_stats, 0,
 				       sizeof(struct ath12k_htt_tx_ppdu_stats));
+
+			if (tmp_peer->peer_stats.rx_ppdu_stats)
+				memset(tmp_peer->peer_stats.rx_ppdu_stats, 0,
+				       sizeof(struct ath12k_rx_ppdu_stats));
 
 			if (tmp_peer->peer_stats.rx_stats)
 				memset(tmp_peer->peer_stats.rx_stats, 0,
@@ -7140,6 +7138,9 @@ ath12k_write_reset_dp_tx_mon_stats(struct file *file,
 			if (ah->radio[i].ab != ab)
 				continue;
 
+			memset(&ah->radio[i].tx_mon_ssr_stats, 0,
+			       sizeof(ah->radio[i].tx_mon_ssr_stats));
+
 			pdev = &ah->radio[i].dp;
 			pdev_mon_dp = pdev->dp_mon_pdev;
 			if (unlikely(!pdev_mon_dp))
@@ -7187,6 +7188,97 @@ void ath12k_hw_debugfs_register(struct ath12k_hw *ah)
 	debugfs_create_file("reset_dp_tx_mon_stats", 0200, hw->wiphy->debugfsdir, ah,
 			&fops_reset_dp_tx_mon_stats);
 }
+
+static ssize_t ath12k_read_bcast_probe_rl_stats(struct file *file,
+						char __user *ubuf,
+						size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	struct ath12k_pdev_telemetry_stats *stats = &ar->dp.stats.telemetry_stats;
+	int len = 0, ret;
+	const int size = 512;
+
+	char *buf __free(kfree) = kzalloc(size, GFP_KERNEL);
+
+	if (!buf)
+		return -ENOMEM;
+
+	spin_lock_bh(&ar->data_lock);
+
+	len += scnprintf(buf + len, size - len,
+			 "Broadcast Probe Request Rate-Limit Stats:\n");
+	len += scnprintf(buf + len, size - len,
+			 "  enabled                    = %u\n",
+			 ar->bcast_probe_rl_enabled);
+	len += scnprintf(buf + len, size - len,
+			 "  rx_bcast_probe_req_total   = %u\n",
+			 stats->rx_probe_req_bc);
+	len += scnprintf(buf + len, size - len,
+			 "  rx_bc_prb_req_drop = %u\n",
+			 stats->rx_bc_prb_req_drop);
+	len += scnprintf(buf + len, size - len,
+			 "  suppress_window_ms         = %u\n",
+			 ar->bcast_probe_rl_window_ms);
+	len += scnprintf(buf + len, size - len,
+			 "  table_entries_live         = %u\n",
+			 ar->bcast_probe_rl_entries);
+	len += scnprintf(buf + len, size - len,
+			 "  table_entries_max          = %u\n",
+			 ar->bcast_probe_rl_max_entries);
+
+	spin_unlock_bh(&ar->data_lock);
+
+	len += scnprintf(buf + len, size - len,
+			 "Commands:\n"
+			 "  echo enable/disable/reset > bcast_probe_rl_stats\n"
+			 "  echo window_ms=<50-5000>  > bcast_probe_rl_stats\n"
+			 "  echo max_entries=<64-4096> > bcast_probe_rl_stats\n");
+
+	ret = simple_read_from_buffer(ubuf, count, ppos, buf, len);
+	return ret;
+}
+
+static ssize_t ath12k_write_bcast_probe_rl_stats(struct file *file,
+						 const char __user *ubuf,
+						 size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	char buf[32] = {0};
+	u32 val;
+
+	if (count > sizeof(buf) - 1)
+		return -EINVAL;
+
+	if (copy_from_user(buf, ubuf, count))
+		return -EFAULT;
+
+	spin_lock_bh(&ar->data_lock);
+
+	if (strncmp(buf, "enable", 6) == 0)
+		ar->bcast_probe_rl_enabled = true;
+	else if (strncmp(buf, "disable", 7) == 0)
+		ar->bcast_probe_rl_enabled = false;
+	else if (strncmp(buf, "reset", 5) == 0)
+		ar->dp.stats.telemetry_stats.rx_bc_prb_req_drop = 0;
+	else if (sscanf(buf, "window_ms=%u", &val) == 1 &&
+		 val >= 50 && val <= 5000)
+		ar->bcast_probe_rl_window_ms = val;
+	else if (sscanf(buf, "max_entries=%u", &val) == 1 &&
+		 val >= 64 && val <= 4096)
+		ar->bcast_probe_rl_max_entries = val;
+
+	spin_unlock_bh(&ar->data_lock);
+
+	return count;
+}
+
+static const struct file_operations fops_bcast_probe_rl_stats = {
+	.read  = ath12k_read_bcast_probe_rl_stats,
+	.write = ath12k_write_bcast_probe_rl_stats,
+	.open  = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
 
 void ath12k_debugfs_register(struct ath12k *ar)
 {
@@ -7263,6 +7355,9 @@ void ath12k_debugfs_register(struct ath12k *ar)
 
 	debugfs_create_file("set_tt_configs", 0600, ar->debug.debugfs_pdev, ar,
 			    &tt_configs);
+	debugfs_create_file("bcast_probe_rl_stats", 0644,
+			    ar->debug.debugfs_pdev, ar,
+			    &fops_bcast_probe_rl_stats);
 
 	ath12k_debugfs_htt_stats_register(ar);
 	ath12k_debugfs_fw_stats_register(ar);
@@ -7319,9 +7414,9 @@ void ath12k_debugfs_register(struct ath12k *ar)
 			    &fops_pktlog_remote_ip);
 	debugfs_create_file("remote_port", 0444, ar->debug.debugfs_pdev, ar,
 			    &fops_pktlog_remote_port);
-#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#if defined(CPTCFG_EXT_IPA_OFFLOAD) && defined(CPTCFG_QCN_EXTN)
 	ath12k_debugfs_register_ipa_extn(ar);
-#endif
+#endif /* CPTCFG_EXT_IPA_OFFLOAD && CPTCFG_QCN_EXTN */
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
@@ -7330,33 +7425,61 @@ void ath12k_debugfs_register(struct ath12k *ar)
 #endif
 }
 
+struct ath12k_srng_stats_priv {
+	char *buf;
+	int len;
+};
+
+static int ath12k_debugfs_hal_dump_srng_stats_open(struct inode *inode, struct file *file)
+{
+	struct ath12k_base *ab = inode->i_private;
+	struct ath12k_srng_stats_priv *priv;
+	const int size = 4096 * 6;
+
+	priv = kzalloc(sizeof(*priv), GFP_KERNEL);
+	if (!priv)
+		return -ENOMEM;
+
+	priv->buf = vmalloc(size);
+	if (!priv->buf) {
+		kfree(priv);
+		return -ENOMEM;
+	}
+
+	priv->len = ath12k_debugfs_hal_dump_srng_stats(ab, priv->buf, size);
+	priv->len = min_t(int, priv->len, size);
+
+	file->private_data = priv;
+
+	return 0;
+}
+
 static ssize_t ath12k_debugfs_hal_dump_srng_stats_read(struct file *file,
                                                char __user *user_buf,
                                                size_t count, loff_t *ppos)
 {
-       struct ath12k_base *ab = file->private_data;
-       int len = 0, retval;
-       const int size = 4096 * 6;
-       char *buf;
+	struct ath12k_srng_stats_priv *priv = file->private_data;
 
-       buf = vmalloc(size);
-       if (!buf)
-               return -ENOMEM;
+	return simple_read_from_buffer(user_buf, count, ppos, priv->buf, priv->len);
+}
 
-       len = ath12k_debugfs_hal_dump_srng_stats(ab, buf + len, size - len);
-       if (len > size)
-               len = size;
-       retval = simple_read_from_buffer(user_buf, count, ppos, buf, len);
-       vfree(buf);
+static int ath12k_debugfs_hal_dump_srng_stats_release(struct inode *inode,
+						      struct file *file)
+{
+	struct ath12k_srng_stats_priv *priv = file->private_data;
 
-       return retval;
+	vfree(priv->buf);
+	kfree(priv);
+
+	return 0;
 }
 
 static const struct file_operations fops_dump_hal_stats = {
-       .read = ath12k_debugfs_hal_dump_srng_stats_read,
-       .open = simple_open,
-       .owner = THIS_MODULE,
-       .llseek = default_llseek,
+	.read = ath12k_debugfs_hal_dump_srng_stats_read,
+	.open = ath12k_debugfs_hal_dump_srng_stats_open,
+	.release = ath12k_debugfs_hal_dump_srng_stats_release,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
 };
 
 static ssize_t ath12k_read_umac_reset_stats(struct file *file,
@@ -7609,8 +7732,10 @@ static ssize_t ath12k_write_simulate_fw_crash(struct file *file,
 	struct ath12k_pdev *pdev;
 	struct ath12k *ar = NULL;
 	char buf[32] = {0};
-	int i, ret;
+	int i, j, ret;
 	ssize_t rc;
+	struct ath12k_base *cumac_ab = NULL;
+	struct ath12k *cumac_ar = NULL;
 
 	/* filter partial writes and invalid commands */
 	if (*ppos != 0 || count >= sizeof(buf) || count == 0)
@@ -7636,7 +7761,8 @@ static ssize_t ath12k_write_simulate_fw_crash(struct file *file,
 			break;
 	}
 
-	if (!ar || ar->ah->state != ATH12K_HW_STATE_ON)
+	if (!ar || (ar->ah->state != ATH12K_HW_STATE_ON &&
+	    !ath12k_ftm_mode))
 		return -ENETDOWN;
 
 	if (ath12k_hw_group_recovery_in_progress(ag)) {
@@ -7653,6 +7779,30 @@ static ssize_t ath12k_write_simulate_fw_crash(struct file *file,
 		ath12k_info(ab, "simulating firmware assert crash\n");
 		ret = ath12k_wmi_force_fw_hang_cmd(ar,
 						   ATH12K_WMI_FW_HANG_ASSERT_TYPE,
+						   ATH12K_WMI_FW_HANG_DELAY, false);
+	} else if (!strcmp(buf, "cumac_q6_bcr_assert")) {
+		for (i = 0; i < ag->num_devices; i++) {
+			cumac_ab = ag->ab[i];
+			if (!cumac_ab || cumac_ab->is_bypassed)
+				continue;
+			if (!cumac_ab->is_cumac_chip)
+				continue;
+			for (j = 0; j < cumac_ab->num_radios; j++) {
+				cumac_ar = cumac_ab->pdevs[j].ar;
+				if (cumac_ar)
+					break;
+			}
+			break;
+		}
+
+		if (!cumac_ar) {
+			ath12k_err(ab, "No CUMAC chip found in hw group\n");
+			return -ENODEV;
+		}
+
+		ath12k_info(cumac_ab, "simulating CUMAC Q6 BCR assert crash\n");
+		ret = ath12k_wmi_force_fw_hang_cmd(cumac_ar,
+						   ATH12K_WMI_Q6_BCR_ASSERT_TYPE,
 						   ATH12K_WMI_FW_HANG_DELAY, false);
 	} else {
 		return -EINVAL;
@@ -7674,101 +7824,6 @@ static const struct file_operations fops_simulate_fw_crash = {
 	.llseek = default_llseek,
 };
 
-static void ath12k_debug_multipd_wmi_pdev_set_param(struct ath12k_base *ab,
-						    const unsigned int value)
-{
-	struct ath12k_pdev *pdev;
-	struct ath12k *ar;
-	bool assert_userpd;
-	int i;
-
-	if (ab->hif.bus == ATH12K_BUS_PCI)
-		return;
-
-	for (i = 0; i < ab->num_radios; i++) {
-		pdev = &ab->pdevs[i];
-		ar = pdev->ar;
-
-		/* Set pdev param to let firmware know which pd to use for
-		 * sending fatal IRQ.
-		 * Non-MLO, fatal error comes from asserted radios's user pd
-		 * MLO, fatal error comes from asserted radio's root pd
-		 */
-		if (!ab->ag->mlo_capable) {
-			assert_userpd = true;
-		} else {
-			if (value == ATH12K_FW_RECOVERY_DISABLE)
-				assert_userpd = false;
-			else
-				assert_userpd = true;
-		}
-
-		ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_MPD_USERPD_SSR,
-					  assert_userpd, ar->pdev->pdev_id);
-	}
-}
-
-void ath12k_send_fw_hang_cmd(struct ath12k_base *ab,
-                            unsigned int value)
-{
-	struct ath12k_hw_group *ag = ab->ag;
-	enum wmi_fw_hang_recovery_mode_type recovery_mode;
-	int ret;
-	int i;
-
-	if (ath12k_hw_group_recovery_in_progress(ag)) {
-		ath12k_err(ab, "Recovery is in progress, try again once it's done\n");
-		return;
-	}
-
-	switch (value) {
-	case ATH12K_FW_RECOVERY_ENABLE_MODE1:
-		ath12k_info(ab, "Mode 1 Recovery is depricated, setting recovery as Mode 2\n");
-		fallthrough;
-	case ATH12K_FW_RECOVERY_ENABLE_MODE2:
-		if (test_bit(WMI_SERVICE_MLO_MODE2_RECOVERY_SUPPORTED, ab->wmi_ab.svc_map)) {
-			recovery_mode = ATH12K_WMI_FW_HANG_RECOVERY_MODE2;
-		} else {
-			ath12k_info(ab, "FW doesn't support Mode 2 fallback to Mode 0\n");
-			recovery_mode = ATH12K_WMI_FW_HANG_RECOVERY_MODE0;
-		}
-		break;
-	case ATH12K_FW_RECOVERY_ENABLE_AUTO:
-		recovery_mode = ATH12K_WMI_FW_HANG_RECOVERY_MODE0;
-		break;
-	default:
-		recovery_mode = ATH12K_WMI_DISABLE_FW_RECOVERY;
-		break;
-	}
-
-	for (i = 0; i < ag->num_devices; i++) {
-		ab = ag->ab[i];
-		if (ab->is_bypassed)
-			continue;
-		mutex_lock(&ab->core_lock);
-		ab->fw_recovery_support = value;
-		mutex_unlock(&ab->core_lock);
-
-		/*
-		 * TODO: Instead of checking recovery mode addr from
-		 * TLV, need to check WMI caps once the support is
-		 * added from FW.
-		 */
-		if (ag->mlo_capable && !ab->recovery_mode_address)
-			continue;
-
-		if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
-			continue;
-
-		ath12k_debug_multipd_wmi_pdev_set_param(ab, value);
-
-		ret = ath12k_wmi_force_fw_hang_cmd(ab->pdevs[0].ar, recovery_mode,
-						   ATH12K_WMI_FW_HANG_DELAY, false);
-		ath12k_info(ab, "setting FW assert mode [%d] ret [%d]\n", recovery_mode,
-			    ret);
-	}
-}
-
 static ssize_t ath12k_debug_write_fw_recovery(struct file *file,
 					      const char __user *user_buf,
 					      size_t count, loff_t *ppos)
@@ -7782,7 +7837,7 @@ static ssize_t ath12k_debug_write_fw_recovery(struct file *file,
 
 	if (value < ATH12K_FW_RECOVERY_DISABLE ||
 	    value > ATH12K_FW_RECOVERY_ENABLE_MODE2) {
-		ath12k_warn(ab, "Please enter: 0 = Disable, 1 = Mode - 0 recovery, 2/3 = Mode - 2 recovery\n");
+		ath12k_warn(ab, "Please enter: 0 = Disable, 1 = Mode-0 recovery, 2/3 = Mode-2 or Mode-3 recovery based on HW support\n");
 		ret = -EINVAL;
 		goto exit;
 	}
@@ -7794,7 +7849,7 @@ static ssize_t ath12k_debug_write_fw_recovery(struct file *file,
 		goto exit;
 	}
 
-	ath12k_send_fw_hang_cmd(ab, value);
+	ath12k_core_send_fw_hang_cmd(ab, value);
 
 	ret = count;
 
@@ -7814,6 +7869,27 @@ static ssize_t ath12k_debug_read_fw_recovery(struct file *file,
 
 	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
 }
+
+static ssize_t ath12k_debug_read_recovery_in_progress(struct file *file,
+						       char __user *user_buf,
+						       size_t count, loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	char buf[8];
+	size_t len;
+
+	len = scnprintf(buf, sizeof(buf), "%u\n",
+			ath12k_hw_group_recovery_in_progress(ab->ag));
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static const struct file_operations fops_recovery_in_progress = {
+	.read = ath12k_debug_read_recovery_in_progress,
+	.open = simple_open,
+};
+
+
 
 static const struct file_operations fops_fw_recovery = {
 	.read = ath12k_debug_read_fw_recovery,
@@ -8321,8 +8397,10 @@ static ssize_t ath12k_debugfs_dump_device_mgmt_srng_stats(struct file *file,
 
 	device_stats = &ab->mgmt->srng_stats;
 
+#ifdef CPTCFG_QCN_EXTN
 	if (ath12k_cfg_get(ab, ATH12K_CFG_REO_MGMT_PATH_DISABLE))
 		ath12k_info(ab, "REO2SW management path is disabled");
+#endif /* CPTCFG_QCN_EXTN */
 
 	len += scnprintf(buf + len, size - len, "SOC MGMT SRNG RX STATS:\n\n");
 
@@ -8645,6 +8723,8 @@ void ath12k_debugfs_pdev_create(struct ath12k_base *ab) {
 			    &fops_simulate_fw_crash);
 	debugfs_create_file("set_fw_recovery", 0600, ab->debugfs_soc, ab,
 			    &fops_fw_recovery);
+	debugfs_create_file("recovery_in_progress", 0400, ab->debugfs_soc, ab,
+			    &fops_recovery_in_progress);
 
 #ifdef CPTCFG_ATH12K_POWER_OPTIMIZATION
 	debugfs_create_file("dbs_power_reduction", 0600, ab->debugfs_soc, ab,
@@ -8661,8 +8741,6 @@ void ath12k_debugfs_pdev_create(struct ath12k_base *ab) {
 			    &fops_umac_reset_stats);
 	debugfs_create_file("device_dp_stats", 0600, ab->debugfs_soc, ab,
 			    &fops_device_dp_stats);
-	debugfs_create_file("stats_disable", 0600, ab->debugfs_soc, ab,
-			    &fops_soc_stats_disable);
 	debugfs_create_file("device_mon_stats", 0600, ab->debugfs_soc, ab,
 			    &fops_device_mon_stats);
 	debugfs_create_file("dump_srng_stats", 0600, ab->debugfs_soc, ab,
@@ -9276,19 +9354,15 @@ void ath12k_debugfs_add_interface(struct ath12k_link_vif *arvif)
 							    arvif,
 							    &ath12k_power_save_gtx);
 
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_gpr_debugfs_register_extn(arvif, vif->link_debugfs[link_id]);
+#endif /* CPTCFG_QCN_EXTN */
+
 	/* Note: Add new AP mode only debugfs file before "ap_and_sta_debugfs_file" label.
 	 * Add new debugfs file for both AP and STA mode after the "ap_and_sta_debugfs_file"
 	 * label.
 	 */
 ap_and_sta_debugfs_file:
-	if (!ahvif->mld_stats) {
-		ahvif->mld_stats = debugfs_create_file("mld_stats", 0600,
-						       vif->debugfs_dir,
-						       ahvif,
-						       &ath12k_fops_mld_stats);
-		if (IS_ERR(ahvif->mld_stats))
-			ahvif->mld_stats = NULL;
-	}
 
 	if (ahvif->debugfs_primary_link)
 		return;
@@ -9376,7 +9450,6 @@ void ath12k_debugfs_remove_interface(struct ath12k_link_vif *arvif)
 		ahvif->debugfs_reset_dp_tid_stats = NULL;
 		ahvif->debugfs_rfs_core_mask = NULL;
 		ahvif->debugfs_linkstats = NULL;
-		ahvif->mld_stats = NULL;
 	}
 }
 

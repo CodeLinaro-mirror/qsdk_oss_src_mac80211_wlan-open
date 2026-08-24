@@ -26,7 +26,9 @@
 #include "driver-ops.h"
 #include "wme.h"
 #include "rate.h"
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/cmn_extn.h"
+#endif /* CPTCFG_QCN_EXTN */
 
 #ifdef CPTCFG_MAC80211_NSS_SUPPORT
 bool nss_redirect = false;
@@ -378,8 +380,12 @@ static int ieee80211_check_concurrent_iface(struct ieee80211_sub_if_data *sdata,
 			 * check whether it may have the same address
 			 */
 			if (!identical_mac_addr_allowed(iftype,
-							nsdata->vif.type))
+							nsdata->vif.type)) {
+				sdata_err(sdata, "DUP MAC addr %pM -> %s, vif types: %d/%d\n",
+					  sdata->vif.addr, nsdata->name,
+					  sdata->vif.type, nsdata->vif.type);
 				return -ENOTUNIQ;
+			}
 
 			/*
 			 * can only add VLANs to enabled APs
@@ -704,7 +710,9 @@ static void ieee80211_do_stop(struct ieee80211_sub_if_data *sdata, bool going_do
 		if (!going_down)
 			break;
 
+#ifdef CPTCFG_QCN_EXTN
 		ieee80211_scan_radio_do_stop_extn(sdata, &hw_reconf_flags);
+#endif /* CPTCFG_QCN_EXTN */
 		drv_remove_interface(local, sdata);
 
 		/* Clear private driver data to prevent reuse */
@@ -1246,6 +1254,8 @@ int ieee80211_add_virtual_monitor(struct ieee80211_local *local)
 
 	ret = ieee80211_check_queues(sdata, NL80211_IFTYPE_MONITOR);
 	if (ret) {
+		if (ieee80211_hw_check(&local->hw, WANT_MONITOR_VIF))
+			drv_remove_interface(local, sdata);
 		kfree(sdata);
 		return ret;
 	}
@@ -1332,6 +1342,8 @@ void receive_from_nss(struct net_device *dev, struct sk_buff *sk_buff, struct na
 		kfree(sk_buff);
 		return;
 	}
+	if (!sk_buff)
+		return;
 	skb = (struct sk_buff *)sk_buff;
 	skb->dev = netdev;
 	skb->protocol = eth_type_trans(skb, netdev);
@@ -1577,7 +1589,9 @@ int ieee80211_do_open(struct wireless_dev *wdev, bool coming_up)
 		break;
 	case NL80211_IFTYPE_AP:
 		/* Handle scan radio as monitor for Rx */
+#ifdef CPTCFG_QCN_EXTN
 		ieee80211_scan_radio_do_open_extn(sdata, wdev, dev, &hw_reconf_flags);
+#endif /* CPTCFG_QCN_EXTN */
 		break;
 	default:
 		break;
@@ -1658,6 +1672,11 @@ static void ieee80211_iface_process_skb(struct ieee80211_local *local,
 		if (sta) {
 			switch (mgmt->u.action.u.addba_req.action_code) {
 			case WLAN_ACTION_ADDBA_REQ:
+				if (!local->addba_req_enable) {
+					wiphy_dbg(local->hw.wiphy,
+						  "ADDBA req processing disabled via debugfs, dropping frame\n");
+					break;
+				}
 				ieee80211_process_addba_request(local, sta,
 								mgmt, len,
 								rx_status->link_id);
@@ -2368,8 +2387,13 @@ int ieee80211_if_add(struct ieee80211_local *local, const char *name,
 
 	local->hw.tid_stats_disable = true;
 	sdata->txrx_stats = alloc_percpu_gfp(struct pcpu_txrx_stats, GFP_KERNEL);
-	if (!sdata->txrx_stats)
+	if (!sdata->txrx_stats) {
+		if (!ndev)
+			kfree(sdata);
+		else
+			free_netdev(ndev);
 		return -ENOMEM;
+	}
 
 	ieee80211_init_frag_cache(&sdata->frags);
 
@@ -2434,6 +2458,7 @@ int ieee80211_if_add(struct ieee80211_local *local, const char *name,
 
 		ret = cfg80211_register_netdevice(ndev);
 		if (ret) {
+			free_percpu(sdata->txrx_stats);
 			free_netdev(ndev);
 			return ret;
 		}
@@ -2608,7 +2633,7 @@ void ieee80211_enable_offchan_packet_capture(struct ieee80211_vif *vif,
 	struct ieee80211_sub_if_data *sdata = vif_to_sdata(vif);
 	struct ieee80211_local *local = sdata->local;
 	struct cfg80211_chan_def *chandef = &sdata->vif.bss_conf.chanreq.oper;
-	u32 ctr_freq = MHZ_TO_KHZ(chandef->chan->center_freq);
+	u32 ctr_freq;
 
 	if (enable) {
 		if (!chandef->chan) {
@@ -2616,6 +2641,7 @@ void ieee80211_enable_offchan_packet_capture(struct ieee80211_vif *vif,
 				sdata->name);
 			return;
 		}
+		ctr_freq = MHZ_TO_KHZ(chandef->chan->center_freq);
 		sdata->flags |= IEEE80211_SDATA_OFFCHAN_PACKETS;
 		sdata->chan_hw_idx = cfg80211_get_hw_idx_by_freq(local->hw.wiphy,
 								 ctr_freq);

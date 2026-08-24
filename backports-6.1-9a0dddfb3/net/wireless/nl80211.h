@@ -37,7 +37,8 @@ void nl80211_notify_iface(struct cfg80211_registered_device *rdev,
 void nl80211_send_scan_start(struct cfg80211_registered_device *rdev,
 			     struct wireless_dev *wdev);
 struct sk_buff *nl80211_build_scan_msg(struct cfg80211_registered_device *rdev,
-				       struct wireless_dev *wdev, bool aborted);
+				       struct wireless_dev *wdev,
+				       struct cfg80211_scan_request *req);
 void nl80211_send_scan_msg(struct cfg80211_registered_device *rdev,
 			   struct sk_buff *msg);
 void nl80211_send_sched_scan(struct cfg80211_sched_scan_request *req, u32 cmd);
@@ -147,9 +148,17 @@ void nl80211_smd_exec_done(struct net_device *dev,
 void nl80211_uhr_reconf_done(struct net_device *dev,
 			     struct cfg80211_uhr_reconfig_done *data);
 
+void nl80211_notify_get_smd_ctx_done(struct wireless_dev *wdev,
+				     const u8 *sta_addr,
+				     struct cfg80211_smd_transition_info *st_info);
+
 void nl80211_notify_smd_bss_transition(struct net_device *dev,
 				       const u8 *target_mld_addr,
 				       enum nl80211_smd_transition_type type,
 				       u16 status_code);
+
+size_t nl80211_smd_ctx_nl_size(struct cfg80211_smd_transition_info *st_info);
+int nl80211_put_smd_ctx(struct sk_buff *msg,
+			struct cfg80211_smd_transition_info *st_info);
 
 #endif /* __NET_WIRELESS_NL80211_H */

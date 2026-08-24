@@ -27,6 +27,7 @@ ath12k-y += core.o \
 	    p2p.o \
 	    fse.o \
 	    vendor.o \
+	    ranging.o \
 	    umac_reset.o \
 	    accel_cfg.o \
 	    qos.o \

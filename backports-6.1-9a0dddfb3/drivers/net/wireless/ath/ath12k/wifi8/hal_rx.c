@@ -223,8 +223,8 @@ ath12k_wifi8_hal_reo_cmd_update_rx_queue(struct hal_tlv_64_hdr *tlv,
 		le32_encode_bits(!!(cmd->upd2 & HAL_REO_CMD_UPD2_PN_VALID),
 				 HAL_REO_UPD_RX_QUEUE_INFO2_PN_VALID);
 
-	if (cmd->upd2 & HAL_REO_CMD_UPD2_FLUSH_FROM_CACHE)
-		desc->info2 |= cpu_to_le32(HAL_REO_UPD_RX_QUEUE_INFO2_FLUSH_FROM_CACHE);
+	/* Enable write back to DDR for every Update queue command */
+	desc->info2 |= cpu_to_le32(HAL_REO_UPD_RX_QUEUE_INFO2_FLUSH_FROM_CACHE);
 
 	if (cmd->upd0 & HAL_REO_CMD_UPD0_PN) {
 		desc->pn_31_0 = cpu_to_le32(cmd->pn[0]);
@@ -656,10 +656,10 @@ ath12k_wifi8_hal_rx_msdu_link_desc_set(struct ath12k_base *ab,
 				       enum hal_wbm_rel_bm_act action)
 {
 	desc->buf_addr_info = *buf_addr_info;
-	desc->info0 |= le32_encode_bits(HAL_WBM_REL_SRC_MODULE_SW,
+	desc->info0 |= le16_encode_bits(HAL_WBM_REL_SRC_MODULE_SW,
 					HAL_WBM_RELEASE_INFO0_REL_SRC_MODULE) |
-		    //le32_encode_bits(action, HAL_WBM_RELEASE_INFO0_BM_ACTION) |
-		    le32_encode_bits(HAL_WBM_REL_DESC_TYPE_MSDU_LINK,
+		    //le16_encode_bits(action, HAL_WBM_RELEASE_INFO0_BM_ACTION) |
+		    le16_encode_bits(HAL_WBM_REL_DESC_TYPE_MSDU_LINK,
 				     HAL_WBM_RELEASE_INFO0_DESC_TYPE);
 }
 
@@ -1356,6 +1356,11 @@ void ath12k_wifi8_hal_reo_hw_setup(struct ath12k_base *ab)
 	val = ath12k_hif_read32(ab, reo_base + HAL_REO1_MISC_CFG_1);
 	val |= u32_encode_bits(1, HAL_REO1_MISC_CFG_1_REO_ERR_DELINK_ENABLE);
 	val |= u32_encode_bits(1, HAL_REO1_MISC_CFG_1_RXDMA_ERR_DELINK_ENABLE);
+	/*
+	 * WAR enablement for HW issue on tresles V1 for TRSLONE-1155
+	 * This setting should be skipped for trestles V2
+	 */
+	val &= ~HAL_REO1_MISC_CFG_1_STOP_DELINKING_DURING_CORRUPTION;
 	val &= ~HAL_REO1_MISC_CFG_1_REO_MSDU_FETCH_OPTIMIZE;
 	val &= ~HAL_REO1_MISC_CFG_1_REO_MSDU_LINK_SHARING_EN;
 	ath12k_hif_write32(ab, reo_base + HAL_REO1_MISC_CFG_1, val);
@@ -1981,8 +1986,8 @@ int ath12k_wifi8_hal_rx_flow_insert_entry(struct ath12k_base *ab,
 		/* Find the matching flow entry in HW FST */
 		if (!memcmp(&hal_tuple_info, flow_tuple_info,
 			    sizeof(struct hal_flow_tuple_info))) {
-			ath12k_dbg(ab, ATH12K_DBG_DP_FST,
-				   "Flow already exists in FST %u at skid %u",
+			ath12k_err(ab,
+				   "Flow already exists in FST %u at skid %u\n",
 				   hal_hash, i);
 			*flow_idx = hal_hash;
 			return -EEXIST;
@@ -2168,9 +2173,10 @@ int ath12k_wifi8_hal_fse_cmd_send(struct ath12k_base *ab, struct hal_srng *srng,
 
 	if (!fse_desc) {
 		ret = -ENOBUFS;
-		ath12k_info(ab, "FSE CMD send: no space in ring_id=%u new_hp=%u new_tp=%u",
-			    srng->ring_id, srng->u.src_ring.hp,
-			    srng->u.src_ring.tp_addr ? *srng->u.src_ring.tp_addr : 0);
+		ath12k_dbg(ab, ATH12K_DBG_DP_FST,
+			   "FSE CMD send: no space in ring_id=%u new_hp=%u new_tp=%u",
+			   srng->ring_id, srng->u.src_ring.hp,
+			   srng->u.src_ring.tp_addr ? *srng->u.src_ring.tp_addr : 0);
 		goto out;
 	}
 	memcpy(fse_desc, fse_cmd, sizeof(*fse_cmd));
@@ -2211,27 +2217,27 @@ ath12k_wifi8_hal_invalidate_rx_cache_cmd_send(struct ath12k_base *ab,
 	}
 	memset(ase_cmd, 0x0, sizeof(*ase_cmd));
 
-	ase_cmd->info0 = le32_encode_bits(param->hw_link_bitmap,
+	ase_cmd->info0 = le16_encode_bits(param->hw_link_bitmap,
 					  HAL_ASE_CMD_RING_INFO0_CMD_TO_CHIP_0) |
-			 le32_encode_bits(param->hw_link_bitmap,
+			 le16_encode_bits(param->hw_link_bitmap,
 					  HAL_ASE_CMD_RING_INFO0_CMD_TO_CHIP_1) |
-			 le32_encode_bits(param->hw_link_bitmap,
+			 le16_encode_bits(param->hw_link_bitmap,
 					  HAL_ASE_CMD_RING_INFO0_CMD_TO_CHIP_2) |
-			 le32_encode_bits(param->hw_link_bitmap,
+			 le16_encode_bits(param->hw_link_bitmap,
 					  HAL_ASE_CMD_RING_INFO0_CMD_TO_CHIP_3) |
-			 le32_encode_bits(param->hw_link_bitmap,
+			 le16_encode_bits(param->hw_link_bitmap,
 					  HAL_ASE_CMD_RING_INFO0_CMD_TO_CHIP_4);
 	ase_cmd->mac_addr_31_0 = cpu_to_le32(param->mac_addr_31_0);
 	ase_cmd->mac_addr_47_32 = cpu_to_le16(param->mac_addr_47_32);
-	ase_cmd->info1 = le32_encode_bits(param->is_mcast,
+	ase_cmd->info1 = le16_encode_bits(param->is_mcast,
 					  HAL_ASE_CMD_RING_INFO1_IS_MCAST) |
-			 le32_encode_bits(param->is_mec,
+			 le16_encode_bits(param->is_mec,
 					  HAL_ASE_CMD_RING_INFO1_IS_MEC) |
-			 le32_encode_bits(param->ad1_match,
+			 le16_encode_bits(param->ad1_match,
 					  HAL_ASE_CMD_RING_INFO1_AD1_MATCH) |
-			 le32_encode_bits(param->link_id,
+			 le16_encode_bits(param->link_id,
 					  HAL_ASE_CMD_RING_INFO1_LINK_ID) |
-			 le32_encode_bits(param->cmd_num,
+			 le16_encode_bits(param->cmd_num,
 					  HAL_ASE_CMD_RING_INFO1_GSE_CTRL);
 	ase_cmd->cmd_meta_data_31_0 = cpu_to_le32(param->meta_data_0);
 out:

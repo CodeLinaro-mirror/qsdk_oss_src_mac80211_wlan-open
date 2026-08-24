@@ -142,7 +142,9 @@ struct ath12k_pci {
 	u32 register_window;
 	struct timer_list mhi_q6_boot_debug_timer;
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
+#ifdef CPTCFG_QCN_EXTN
 	struct ath12k_pci_extn ath12k_pci_extn;
+#endif /* CPTCFG_QCN_EXTN */
 #endif
 	/* protects register_window above */
 	spinlock_t window_lock;

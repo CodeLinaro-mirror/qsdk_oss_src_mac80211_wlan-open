@@ -2059,7 +2059,7 @@ struct cfg80211_ttlm_params {
  * @ml_max_rec_links_valid: Indicates valid ML Max recommended links
  * @ml_max_rec_links: ML Max recommended links
  * @ttlm_params: tid-to-link mapping parameters
- * @dps_assist_disable: indicates AP to disable DPS Assist Support.
+ * @dps_assist: indicates AP to enable/disable DPS Assist Support.
  * @smd_params: SMD params for a AP
  * @uhr_cap: UHR capabilities element (or %NULL if not provided)
  * @residual_cac_ms: residual CAC time in milliseconds, derived from
@@ -2108,7 +2108,7 @@ struct cfg80211_ap_settings {
 	enum nl80211_regulatory_power_modes he_6ghz_power_type;
 	struct cfg80211_ttlm_params ttlm_params;
 	bool is_cfp_enabled;
-	bool dps_assist_disable;
+	bool dps_assist;
 	struct cfg80211_smd_params smd_params;
 	u32 residual_cac_ms;
 	bool skip_cac;
@@ -2218,6 +2218,47 @@ struct iface_combination_params {
 	u8 radar_detect;
 	int iftype_num[NUM_NL80211_IFTYPES];
 	u32 new_beacon_int;
+};
+
+/**
+ * struct cfg80211_sta_mapc_cotdma - Co-TDMA channel profile for a MAPC peer
+ *
+ * Describes the operating channel parameters of a co-ordinating AP peer
+ *
+ * @channel_width: operating channel width; 0=20MHz, 1=40MHz, 2=80MHz,
+ *  3=160MHz, 4=320MHz (MAPC_CHANNEL_WIDTH_* values)
+ * @ccfs: center channel frequency segment 0 index
+ * @disable_subchannel_bitmap: EHT punctured 20 MHz subchannels bitmap
+ * @bss_color: peer BSS color (bits 0–5; B6–B7 reserved)
+ * @rx_txop_return_support: true if the peer supports RX-driven TXOP return
+ */
+struct cfg80211_sta_mapc_cotdma {
+	u8  channel_width;
+	u8  ccfs;
+	u16 disable_subchannel_bitmap;
+	u8  bss_color;
+	bool rx_txop_return_support;
+};
+
+/**
+ * struct cfg80211_sta_mapc_params - MAPC coordination parameters for a peer
+ *
+ * Carries the parameters required to activate and maintain a MAPC
+ * co-ordination agreement with a neighbouring AP peer
+ *
+ * @apid_to_neighbor_peer: APID assigned locally and sent to the peer;
+ *  equivalent to the IEEE AID in the local AP's association context
+ * @apid_from_neighbor_peer: APID assigned by the peer and sent to us;
+ *  used by the peer to identify this AP in its own context
+ * @mapc_capability_bitmap: peer's advertised MAPC capability bitmap
+ *  as received in the most recent Discovery or Negotiation frame
+ * @cotdma: Co-TDMA channel profile; see &struct cfg80211_sta_mapc_cotdma
+ */
+struct cfg80211_sta_mapc_params {
+	u16 apid_to_neighbor_peer;
+	u16 apid_from_neighbor_peer;
+	u16 mapc_capability_bitmap;
+	struct cfg80211_sta_mapc_cotdma cotdma;
 };
 
 /**
@@ -2374,6 +2415,8 @@ struct link_station_del_parameters {
  * @link_sta_params: link related params.
  * @control_mic_pad: padding info for control frames
  * @epp_peer: EPP peer indication
+ * @mapc_params_present: indicates that @mapc_params has been populated
+ * @mapc_params: MAPC coordination parameters for this peer
  */
 struct station_parameters {
 	struct net_device *vlan;
@@ -2403,6 +2446,8 @@ struct station_parameters {
 	struct link_station_parameters link_sta_params;
 	u8 control_mic_pad;
 	bool epp_peer;
+	bool mapc_params_present;
+	struct cfg80211_sta_mapc_params mapc_params;
 };
 
 /**
@@ -3382,6 +3427,7 @@ struct cfg80211_scan_info {
 	u64 scan_start_tsf;
 	u8 tsf_bssid[ETH_ALEN] __aligned(2);
 	bool aborted;
+	u8 scan_id; /* parallel scan context ID; 0 = normal scan */
 };
 
 /**
@@ -3441,7 +3487,20 @@ struct cfg80211_scan_6ghz_params {
  * @bssid: BSSID to scan for (most commonly, the wildcard BSSID)
  * @tsf_report_link_id: for MLO, indicates the link ID of the BSS that should be
  *      used for TSF reporting. Can be set to -1 to indicate no preference.
+ * @parallel_hw_scan: opt-in request flag for prototype parallel HW scan
+ *	arbitration. When set, upper layers may allow coexistence with another
+ *	active parallel HW scan request on the same wiphy if the driver/wiphy
+ *	explicitly supports it and the requests are radio-disjoint.
+ * @parallel_scan_id: internal prototype context identifier assigned by
+ *	cfg80211/mac80211 for parallel HW scan arbitration.
  */
+/* Maximum number of parallel HW scan slots (excludes the normal scan
+ * tracked via rdev->scan_req, giving 5 total concurrent scans).
+ * Sized for the maximum number of disjoint frequency bands on a single
+ * wiphy: 2.4 GHz, 5 GHz-low, 5 GHz-high, 6 GHz.
+ */
+#define CFG80211_MAX_PARALLEL_SCANS	4
+
 struct cfg80211_scan_request {
 	struct cfg80211_ssid *ssids;
 	int n_ssids;
@@ -3473,6 +3532,8 @@ struct cfg80211_scan_request {
 	s8 tsf_report_link_id;
 	u8 hw_idx;
 	bool scan_with_freq_info;
+	bool parallel_hw_scan;
+	u8 parallel_scan_id;
 
 	/* keep last */
 	struct ieee80211_channel *channels[] __counted_by(n_channels);
@@ -5566,11 +5627,18 @@ struct cfg80211_ap_power_save_params {
  * @enable: enable (true) or disable (false) NPCA feature
  * @switch_delay: delay in ms before switching to non-primary channel
  * @switch_back_delay: delay in ms before switching back to primary channel
+ * @mode_update: true if NPCA was already enabled on this link and remains
+ *	enabled, and the switch_delay or switch_back_delay value is actually
+ *	changing, i.e. this is a parameter update on an already-enabled link
+ *	rather than a fresh enable, a disable, or a no-op re-send of the same
+ *	values. Computed internally by mac80211 from the link's previous NPCA
+ *	state; not set by the caller.
  */
 struct cfg80211_uhr_npca_params {
 	bool enable;
 	u8 switch_delay;
 	u8 switch_back_delay;
+	bool mode_update;
 };
 
 /**
@@ -5600,6 +5668,32 @@ struct cfg80211_smd_transition_info {
 		CFG80211_ST_PREP_EXEC,
 	} type;
 };
+
+/**
+ * struct cfg80211_smd_get_ctx_pending - pending async GET_SMD_CTX request
+ * @list: linkage on wireless_dev.smd_get_ctx_pending_list
+ * @sta_addr: non-AP MLD address for which context was requested
+ */
+struct cfg80211_smd_get_ctx_pending {
+	struct list_head list;
+	u8 sta_addr[ETH_ALEN];
+};
+
+/**
+ * cfg80211_get_smd_ctx_done - deliver async GET_SMD_CTX result to nl80211
+ * @wdev: wireless device that handled the request
+ * @sta_addr: non-AP MLD address the context was collected for
+ * @st_info: SMD BSS Transition Info
+ *
+ * Called (indirectly via ieee80211_get_smd_ctx_done) after async driver context
+ * collection completes. Finds the matching pending request and sends a unicast
+ * NL80211_CMD_GET_SMD_CTX reply to userspace.
+ *
+ * Return: None
+ */
+void cfg80211_get_smd_ctx_done(struct wireless_dev *wdev,
+			       const u8 *sta_addr,
+			       struct cfg80211_smd_transition_info *st_info);
 
 /**
  * struct cfg80211_ops - backend description for wireless configuration
@@ -5676,6 +5770,7 @@ struct cfg80211_smd_transition_info {
  * @set_rekey_data: give the data necessary for GTK rekeying to the driver
  *
  * @start_ap: Start acting in AP mode defined by the parameters.
+ * @bootup_cac_handle_ap: Post-start AP boot-up CAC handling on DFS channels.
  * @update_ap: Update parameters for an access point mode interface.
  *	This should reject the call when AP mode wasn't started.
  * @stop_ap: Stop being an AP, including stopping beaconing.
@@ -6047,6 +6142,7 @@ struct cfg80211_smd_transition_info {
  * @set_muedca_mode: Set the mode of setting MU EDCA parameters.
  * @uhr_link_reconf: Initiate SMD preparation with target AP MLD
  * @set_smd_ctx: Set UHR SMD context data for the non-AP MLD.
+ * @get_smd_ctx: Get UHR SMD context data for the non-AP MLD.
  */
 struct cfg80211_ops {
 	int	(*suspend)(struct wiphy *wiphy, struct cfg80211_wowlan *wow);
@@ -6100,6 +6196,11 @@ struct cfg80211_ops {
 
 	int	(*start_ap)(struct wiphy *wiphy, struct net_device *dev,
 			    struct cfg80211_ap_settings *settings);
+#ifdef CPTCFG_QCN_EXTN
+	void	(*bootup_cac_handle_ap)(struct wiphy *wiphy,
+					struct net_device *dev,
+					struct cfg80211_ap_settings *settings);
+#endif /* CPTCFG_QCN_EXTN */
 	int	(*update_ap)(struct wiphy *wiphy, struct net_device *dev,
 			     struct cfg80211_ap_settings *settings);
 	int	(*stop_ap)(struct wiphy *wiphy, struct net_device *dev,
@@ -6466,6 +6567,9 @@ struct cfg80211_ops {
 	int	(*set_smd_ctx)(struct wiphy *wiphy, struct wireless_dev *wdev,
 			       const u8 *addr,
 			       struct cfg80211_smd_transition_info *st_info);
+	int	(*get_smd_ctx)(struct wiphy *wiphy, struct wireless_dev *wdev,
+			       const u8 *addr,
+			       struct cfg80211_smd_transition_info *st_info);
 };
 
 /*
@@ -6533,7 +6637,11 @@ struct cfg80211_ops {
  *	will transmit beacons for all bands at the same time (burst mode) if
  *	the beacon intervals are the same.
  * @WIPHY_FLAG_SUPPORTS_SMD: Flag attribute indicating that HW will support
- *      roaming within a seamless mobility domain (SMD).
+ *	roaming within a seamless mobility domain (SMD).
+ * @WIPHY_FLAG_SUPPORTS_PARALLEL_HW_SCAN: prototype opt-in capability for
+ *	allowing concurrent hardware scan contexts on one wiphy, subject to
+ *	upper-layer arbitration and radio-disjoint request placement.
+
  */
 enum wiphy_flags {
 	WIPHY_FLAG_SUPPORTS_EXT_KEK_KCK			= BIT(0),
@@ -6565,6 +6673,7 @@ enum wiphy_flags {
 	WIPHY_FLAG_SUPPORTS_CONCUR_MONITOR_N_OTHER_VIF	= BIT(26),
 	WIPHY_FLAG_SUPPORTS_BEACON_TX_SYNC              = BIT(27),
 	WIPHY_FLAG_SUPPORTS_SMD				= BIT(28),
+	WIPHY_FLAG_SUPPORTS_PARALLEL_HW_SCAN		= BIT(29),
 };
 
 /* SMD Prepare Request flags */
@@ -7281,6 +7390,9 @@ struct wiphy_radio {
  *	advertise the maximum allowed size for beacon frame.
  *
  * @sta_dfs_en: Enable or disable Station DFS support.
+ *
+ * @mapc_hw_cap_bitmap: MAPC hardware capability bitmap
+ * @mapc_max_ctdma_peers: max Co-TDMA-specific peers
  */
 struct wiphy {
 	struct mutex mtx;
@@ -7449,6 +7561,9 @@ struct wiphy {
 	u8 mbssid_max_ngroups;
 	u16 max_beacon_size;
 	u8 sta_dfs_en;
+
+	u32 mapc_hw_cap_bitmap;
+	u8 mapc_max_ctdma_peers;
 
 	char priv[] __aligned(NETDEV_ALIGN);
 };
@@ -8044,6 +8159,8 @@ struct wireless_dev {
 		u8 switch_count;
 		u32 link_removal_tbtt_count;
 		u32 ttlm_expec_dur;
+		u32 ttlm_expec_dur_gen;
+		u32 ttlm_expec_dur_sent_gen;
 		u8 reg_6g_power_mode;
 		u8 enhanced_bpcc; /* Enhanced BPCC (IEEE 802.11bn 37.30.3) */
 		bool enhanced_critical_update;
@@ -8053,12 +8170,17 @@ struct wireless_dev {
 
 	struct cfg80211_smd_prep_state *smd_prep;
 
+	/* protects @smd_get_ctx_pending_list */
+	spinlock_t smd_get_ctx_lock;
+	struct list_head smd_get_ctx_pending_list;
+
 	u32 radio_mask;
 	bool critical_update;
 	bool is_netdev_going_down; /*Indicates netdev going down - wdev specific*/
 	u8 ppe_vp_type;
 	bool link_removal_flag;
 	bool ttlm_expec_dur_update_flag;
+	spinlock_t ttlm_expec_dur_lock; /* protects TTLM expected duration state */
 	u8 vap_submode;
 	u16 repurposed_links;
 };
@@ -8986,6 +9108,23 @@ int reg_query_regdb_wmm(char *alpha2, int freq,
  */
 void cfg80211_scan_done(struct cfg80211_scan_request *request,
 			struct cfg80211_scan_info *info);
+
+/**
+ * cfg80211_parallel_scan_abort - synchronously complete all pending parallel
+ *   scan requests during teardown.
+ *
+ * @wiphy: the wiphy whose parallel scans should be aborted
+ *
+ * Must be called with the wiphy mutex held.  Cancels any queued
+ * parallel_scan_done_wk and runs its body inline so that dev_put() is
+ * guaranteed to happen before the caller returns (and therefore before
+ * unregister_netdevice() is reached during rmmod).
+ *
+ * Call this from the scan-cancel path during interface teardown, after
+ * cfg80211_scan_done() has been called for each parallel scan request,
+ * to ensure the matching dev_put() is not deferred past interface removal.
+ */
+void cfg80211_parallel_scan_abort(struct wiphy *wiphy);
 
 /**
  * cfg80211_sched_scan_results - notify that new scan results are available
@@ -11699,6 +11838,10 @@ void cfg80211_uhr_reconfig_resp_done(struct net_device *dev,
  * @type: transition type (%NL80211_SMD_TRANSITION_COMPLETE or
  *	  %NL80211_SMD_TRANSITION_ABORT)
  * @status_code: Status code (0 for complete, abort reason for ABORT)
+ * @done: reconfig done info carrying per-link STA addresses (COMPLETE only,
+ *	NULL for ABORT). links[link_id].addr is written to wdev->links[].addr
+ *	for all valid TAP links so the wdev layer reflects correct addresses
+ *	after a diff-links remap.
  *
  * COMPLETE: Called after DL drain, Updates wdev->links[].client.current_bss
  *           for primary link, unholds BSS, cleans up prep state. Notifies
@@ -11710,7 +11853,8 @@ void cfg80211_uhr_reconfig_resp_done(struct net_device *dev,
 void cfg80211_notify_smd_bss_transition(struct net_device *dev,
 					const u8 *target_mld_addr,
 					enum nl80211_smd_transition_type type,
-					u16 status_code);
+					u16 status_code,
+					const struct cfg80211_uhr_reconfig_done *done);
 
 int cfg80211_smd_hold_prepared_bss(struct wireless_dev *wdev,
 				   const u8 *target_mld_addr,
@@ -11721,6 +11865,8 @@ int cfg80211_smd_transfer_bss(struct wireless_dev *wdev,
 			      unsigned int link_id);
 void cfg80211_smd_cleanup_target(struct wireless_dev *wdev,
 				 const u8 *target_mld_addr);
+void cfg80211_smd_link_established(struct wireless_dev *wdev,
+				   unsigned int link_id);
 /**
  * cfg80211_schedule_channels_check - schedule regulatory check if needed
  * @wdev: the wireless device to check
@@ -11905,4 +12051,5 @@ int cfg80211_set_repurpose_link(struct wireless_dev *wdev, u8 link_id);
  * Return: 0 on success, negative error code on failure
  */
 int cfg80211_clear_repurpose_link(struct wireless_dev *wdev, u8 link_id);
+
 #endif /* __NET_CFG80211_H */

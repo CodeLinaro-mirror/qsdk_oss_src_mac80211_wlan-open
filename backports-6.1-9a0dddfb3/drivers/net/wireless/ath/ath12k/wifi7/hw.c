@@ -14,8 +14,9 @@
 #include "ce.h"
 #include "../hw.h"
 #include "hw.h"
+#ifdef CPTCFG_QCN_EXTN
 #include "../qcn_extns/ath12k_cmn_extn.h"
-#include "../qcn_extns/ath12k_cmn_extn.h"
+#endif /* CPTCFG_QCN_EXTN */
 #include "../mhi.h"
 #include "mhi.h"
 #include "../pci.h"
@@ -28,7 +29,9 @@
 #include "../debugfs.h"
 #include "../testmode.h"
 #include "../dp_peer.h"
+#ifdef CPTCFG_QCN_EXTN
 #include "../qcn_extns/mesh_util.h"
+#endif /* CPTCFG_QCN_EXTN */
 #include "../dp_tx.h"
 #include "dp_tx.h"
 #include "dp.h"
@@ -37,7 +40,9 @@
 #include "../cfr.h"
 #include "../dp_stats.h"
 #include "../dp_mon.h"
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/wifi7_dp_extn.h"
+#endif /* CPTCFG_QCN_EXTN */
 
 static const guid_t wcn7850_uuid = GUID_INIT(0xf634f534, 0x6147, 0x11ec,
 					     0x90, 0xd6, 0x02, 0x42,
@@ -640,6 +645,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.wmi_init = ath12k_wifi7_wmi_init_qcn9274,
 
 		.hal_ops = &hal_qcn9274_ops,
+		.cp_arch_ops = &ath12k_wifi7_cp_ops,
 
 		.qmi_cnss_feature_bitmap = BIT(CNSS_QDSS_CFG_MISS_V01),
 
@@ -764,6 +770,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.wmi_init = ath12k_wifi7_wmi_init_wcn7850,
 
 		.hal_ops = &hal_wcn7850_ops,
+		.cp_arch_ops = &ath12k_wifi7_cp_ops,
 
 		.qmi_cnss_feature_bitmap = BIT(CNSS_QDSS_CFG_MISS_V01) |
 					   BIT(CNSS_PCIE_PERST_NO_PULL_V01),
@@ -883,6 +890,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.wmi_init = ath12k_wifi7_wmi_init_qcn9274,
 
 		.hal_ops = &hal_qcn9274_ops,
+		.cp_arch_ops = &ath12k_wifi7_cp_ops,
 
 		.qmi_cnss_feature_bitmap = BIT(CNSS_QDSS_CFG_MISS_V01),
 
@@ -921,9 +929,18 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 			.summary_pad_sz = 16,
 			.fft_hdr_len = 24,
 			.max_fft_bins = 1024,
+			.fft_size_min = ATH12K_SPECTRAL_FFT_SIZE_MIN,
+			.fft_size_max = {
+				[ATH12K_SPECTRAL_BW_20MHZ]  = 9,
+				[ATH12K_SPECTRAL_BW_40MHZ]  = 10,
+				[ATH12K_SPECTRAL_BW_80MHZ]  = 11,
+				[ATH12K_SPECTRAL_BW_160MHZ] = 11,
+				[ATH12K_SPECTRAL_BW_320MHZ] = 11,
+			},
 			.fragment_160mhz = true,
 			.supports_320mhz = true,
 		},
+
 		.supports_ap_ps = true,
 		.support_ce_manual_poll=true,
 		.ftm_responder = true,
@@ -1005,6 +1022,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.wmi_init = &ath12k_wifi7_wmi_init_qcn9274,
 
 		.hal_ops = &hal_qcn9274_ops,
+		.cp_arch_ops = &ath12k_wifi7_cp_ops,
 
 		.qmi_cnss_feature_bitmap = BIT(CNSS_QDSS_CFG_MISS_V01),
 		.rfkill_pin = 0,
@@ -1038,6 +1056,14 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 			.summary_pad_sz = 16,
 			.fft_hdr_len = 24,
 			.max_fft_bins = 1024,
+			.fft_size_min = ATH12K_SPECTRAL_FFT_SIZE_MIN,
+			.fft_size_max = {
+				[ATH12K_SPECTRAL_BW_20MHZ]  = 9,
+				[ATH12K_SPECTRAL_BW_40MHZ]  = 10,
+				[ATH12K_SPECTRAL_BW_80MHZ]  = 11,
+				[ATH12K_SPECTRAL_BW_160MHZ] = 11,
+				[ATH12K_SPECTRAL_BW_320MHZ] = 11,
+			},
 			.fragment_160mhz = false,
 			.supports_320mhz = true,
 		},
@@ -1122,6 +1148,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 
 		.wmi_init = &ath12k_wifi7_wmi_init_qcn9274,
 		.hal_ops = &hal_qcn9274_ops,
+		.cp_arch_ops = &ath12k_wifi7_cp_ops,
 
 		.supports_aspm = true,
 		.send_platform_model = true,
@@ -1135,6 +1162,14 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 			.summary_pad_sz = 16,
 			.fft_hdr_len = 24,
 			.max_fft_bins = 1024,
+			.fft_size_min = ATH12K_SPECTRAL_FFT_SIZE_MIN,
+			.fft_size_max = {
+				[ATH12K_SPECTRAL_BW_20MHZ]  = 9,
+				[ATH12K_SPECTRAL_BW_40MHZ]  = 10,
+				[ATH12K_SPECTRAL_BW_80MHZ]  = 11,
+				[ATH12K_SPECTRAL_BW_160MHZ] = 11,
+				[ATH12K_SPECTRAL_BW_320MHZ] = 11,
+			},
 			.fragment_160mhz = false,
 			.supports_320mhz = true,
 		},
@@ -1218,6 +1253,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.wmi_init = &ath12k_wifi7_wmi_init_qcn9274,
 
 		.hal_ops = &hal_qcn9274_ops,
+		.cp_arch_ops = &ath12k_wifi7_cp_ops,
 
 		.qmi_cnss_feature_bitmap = BIT(CNSS_QDSS_CFG_MISS_V01),
 
@@ -1252,6 +1288,14 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 			.summary_pad_sz = 16,
 			.fft_hdr_len = 24,
 			.max_fft_bins = 1024,
+			.fft_size_min = ATH12K_SPECTRAL_FFT_SIZE_MIN,
+			.fft_size_max = {
+				[ATH12K_SPECTRAL_BW_20MHZ]  = 9,
+				[ATH12K_SPECTRAL_BW_40MHZ]  = 10,
+				[ATH12K_SPECTRAL_BW_80MHZ]  = 11,
+				[ATH12K_SPECTRAL_BW_160MHZ] = 11,
+				[ATH12K_SPECTRAL_BW_320MHZ] = 11,
+			},
 			.fragment_160mhz = false,
 			.supports_320mhz = true,
 		},
@@ -1421,11 +1465,11 @@ static void ath12k_wifi7_mgmt_handler(struct ieee80211_hw *hw,
  *
  * Returns: 0 on success, negative on error
  */
-static int ath12k_wifi7_tx_setup_link(struct ieee80211_vif *vif,
-				      struct ieee80211_sta *sta,
-				      struct ieee80211_tx_info *info,
-				      struct sk_buff *skb,
-				      u8 *link_id)
+int ath12k_wifi7_tx_setup_link(struct ieee80211_vif *vif,
+			       struct ieee80211_sta *sta,
+			       struct ieee80211_tx_info *info,
+			       struct sk_buff *skb,
+			       u8 *link_id)
 {
 	u32 info_flags = info->flags;
 
@@ -1694,7 +1738,7 @@ void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 
 	/* Get link virtual interface */
 	arvif = rcu_dereference(ahvif->link[link_id]);
-	if (!arvif || !arvif->ar) {
+	if (!arvif) {
 		ath12k_mac_ieee80211_free_txskb(hw, skb, NULL, sta, dp_vif,
 						DP_TX_ENQ_DROP_INV_ARVIF,
 						0, false);
@@ -1702,6 +1746,13 @@ void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 	}
 
 	ar = arvif->ar;
+	if (!ar) {
+		ath12k_mac_ieee80211_free_txskb(hw, skb, NULL, sta, dp_vif,
+						DP_TX_ENQ_DROP_INV_ARVIF,
+						0, false);
+		return;
+	}
+
 	/* Setup SKB control block */
 	skb_cb->u.ar = ar;
 	skb_cb->link_id = link_id;
@@ -1809,6 +1860,7 @@ static const struct ieee80211_ops ath12k_ops_wifi7 = {
 	.cancel_hw_scan                 = ath12k_mac_op_cancel_hw_scan,
 	.set_key                        = ath12k_mac_op_set_key,
 	.set_rekey_data	                = ath12k_mac_op_set_rekey_data,
+	.sta_pre_rcu_remove             = ath12k_mac_op_sta_pre_rcu_remove,
 	.sta_state                      = ath12k_mac_op_sta_state,
 	.sta_set_txpwr			= ath12k_mac_op_sta_set_txpwr,
 	.link_sta_rc_update		= ath12k_mac_op_link_sta_rc_update,
@@ -1899,8 +1951,8 @@ ath12k_mem_profile_based_param_wifi7[] = {
 			.tx_comp_ppeds_ring_size	= 32768,
 			.num_pool_tx_desc		= 32768,
 			.ppe_wbm2sw_ring_size		= 32768,
-			.rxdma_monitor_buf_ring_size	= 8192,
-			.rxdma_monitor_dst_ring_size	= 8192,
+			.rxdma_monitor_buf_ring_size	= 4096,
+			.rxdma_monitor_dst_ring_size	= 1024,
 			.smart_mon_filter_default	= DP_SMART_MON_PROFILE_1G,
 			.mon_num_ppdu_desc		= 128,
 			.rx_desc_count			= 12288,
@@ -1909,6 +1961,12 @@ ath12k_mem_profile_based_param_wifi7[] = {
 			.ppeds_hotlist_len_max		= 1024,
 			.dp_num_clients_max		= 64,
 			.dp_mon_status_buf		= 320,
+			.tx_monitor_buf_ring_size	= 8192,
+			.tx_monitor_buf_ring_fill_lvl	= 8192,
+			.tx_monitor_dst_ring_size	= 8192,
+			.tx_monitor_num_ppdu_desc	= 128,
+			.tx_monitor_num_status_buf	= 320,
+			.tx_monitor_spc_bitmap		= 63,
 			.reo_dst_ring_size		= { 8192, 8192, 8192,
 							    8192, 8192 },
 			.tcl_data_ring_size		= { 2048, 2048, 2048,
@@ -1949,7 +2007,13 @@ ath12k_mem_profile_based_param_wifi7[] = {
 			.num_pool_ppeds_tx_desc		= 0x8000,
 			.ppeds_hotlist_len_max		= 1024,
 			.dp_num_clients_max		= 64,
-			.dp_mon_status_buf		= 320,
+			.dp_mon_status_buf		= 200,
+			.tx_monitor_buf_ring_size	= 256,
+			.tx_monitor_buf_ring_fill_lvl	= 256,
+			.tx_monitor_dst_ring_size	= 256,
+			.tx_monitor_num_ppdu_desc	= 8,
+			.tx_monitor_num_status_buf	= 32,
+			.tx_monitor_spc_bitmap		= 63,
 			.reo_dst_ring_size		= { 8192, 8192, 8192,
 							    8192, 8192 },
 			.tcl_data_ring_size		= { 2048, 2048, 2048,
@@ -1991,6 +2055,12 @@ ath12k_mem_profile_based_param_wifi7[] = {
 			.ppeds_hotlist_len_max		= 256,
 			.dp_num_clients_max		= 56,
 			.dp_mon_status_buf		= 20,
+			.tx_monitor_buf_ring_size	= 256,
+			.tx_monitor_buf_ring_fill_lvl	= 256,
+			.tx_monitor_dst_ring_size	= 256,
+			.tx_monitor_num_ppdu_desc	= 8,
+			.tx_monitor_num_status_buf	= 32,
+			.tx_monitor_spc_bitmap		= 63,
 			.reo_dst_ring_size		= { 2048, 2048, 2048, 512, 512 },
 			.tcl_data_ring_size		= { 512, 512, 512, 128, 128 },
 			.tx_compl_ring_size		= { 8192, 8192, 8192,
@@ -2042,7 +2112,9 @@ int ath12k_wifi7_hw_init(struct ath12k_base *ab)
 	ab->ath12k_ops = &ath12k_ops_wifi7;
 	ab->map_event_required = true;
 
+#ifdef CPTCFG_QCN_EXTN
 	ath12k_wifi7_hw_init_extn(ab);
+#endif /* CPTCFG_QCN_EXTN */
 
 	ath12k_info(ab, "WiFi7 Hardware name: %s\n", ab->hw_params->name);
 

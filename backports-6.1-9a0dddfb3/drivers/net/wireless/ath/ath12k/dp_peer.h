@@ -103,6 +103,8 @@ struct ath12k_dp_link_peer {
 	bool is_bridge_peer;
 	u8 hw_link_id;
 
+	struct ath12k_dp *dp;
+
 	/* link stats */
 	struct rate_info txrate;
 	struct rate_info rxrate;
@@ -165,6 +167,16 @@ struct ath12k_dp_peer {
 	bool is_mlo;
 	bool is_vdev_peer;
 	bool is_sta_bss_peer;
+	bool is_epp_peer;
+	/* Set on the SAP peer when SMD BSS Transition EXEC completes: TXQ
+	 * queues have been re-pointed to the target peer_id via tqm-update,
+	 * and peer_ext_ctx has been NULLed. Used in peer-cleanup-ind to skip
+	 * TQM_SYNC, TQM no longer holds queues for this peer_id and will not
+	 * generate a status response and free the dp_peer directly instead.
+	 *
+	 * Protected by dp_hw->peer_hash_lock.
+	 */
+	bool smd_exec_transferred;
 	/* hw_link_id of the radio, valid only for self bss peer */
 	u8 hw_link_id;
 
@@ -236,6 +248,9 @@ struct ath12k_dp_peer {
 
 	/* Hash table node for MAC address lookup */
 	struct hlist_node hash_node;
+
+	bool pre_rcu_remove_done;
+	struct ath12k_dp_link_peer *teardown_link_peers[ATH12K_DP_PEER_MAX_MLO_LINKS];
 };
 
 #define QOS_MSDUQ_MAX ((QOS_TID_MDSUQ_MAX * QOS_TID_MAX) + MSDUQ_MAX_DEF)
@@ -303,6 +318,8 @@ void ath12k_dp_link_peer_htbl_add(struct ath12k_pdev_dp *dp_pdev,
 				  struct ath12k_dp_link_peer *peer);
 void ath12k_dp_link_peer_htbl_delete(struct ath12k_pdev_dp *dp_pdev,
 				     struct ath12k_dp_link_peer *peer);
+struct ath12k_dp_link_peer *
+ath12k_dp_link_peer_htbl_find_by_addr(struct ath12k_dp *dp, const u8 *addr);
 struct ath12k_dp_peer *ath12k_dp_peer_find_by_peerid_index(struct ath12k_dp *dp,
 							   struct ath12k_pdev_dp *dp_pdev,
 							   u16 peer_id);
@@ -392,6 +409,7 @@ struct ath12k_dp_peer *ath12k_dp_vdev_peer_find(struct ath12k_dp_hw *dp_hw,
 struct ath12k_dp_peer *ath12k_dp_vdev_peer_check(struct ath12k_dp_hw *dp_hw,
 						 u8 *addr, u8 hw_link_id);
 u8 ath12k_dp_validate_hw_link_id(u8 hw_link_id);
+void ath12k_dp_peer_pre_rcu_remove(struct ieee80211_hw *hw, struct ath12k_sta *ahsta);
 
 /*
  * Peer Walk API - Walks across DP peers and performs the desired action.
@@ -501,4 +519,15 @@ void ath12k_dp_peer_hash_table_add(struct ath12k_dp_hw *dp_hw,
 				   struct ath12k_dp_peer *dp_peer);
 void ath12k_dp_peer_hash_table_delete(struct ath12k_dp_hw *dp_hw,
 				      struct ath12k_dp_peer *dp_peer);
+u16 ath12k_dp_link_peer_get_peer_id(struct ath12k_base *ab,
+				    struct ath12k_dp_link_peer *link_peer);
+void ath12k_dp_peer_unauthorize(struct ath12k *ar, struct ieee80211_sta *sta,
+				u8 link_id);
+void ath12k_dp_peer_cleanup_by_addr(struct ath12k *ar, int vdev_id,
+				    const u8 *addr, struct ieee80211_sta *sta);
+int ath12k_dp_peer_clear_keys(struct ath12k *ar, struct ieee80211_sta *sta,
+			      union ath12k_config_param *key_params);
+struct ath12k_dp_link_peer *
+ath12k_dp_link_peer_find_by_addr_post_rcu_remove(struct ath12k_dp_peer *dp_peer,
+						 const char *addr);
 #endif

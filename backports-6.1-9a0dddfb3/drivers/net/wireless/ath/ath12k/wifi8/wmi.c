@@ -19,7 +19,7 @@ void ath12k_wifi8_wmi_init_qcn9625(struct ath12k_base *ab,
 	total_vdevs = ath12k_core_get_total_num_vdevs(ab);
 	config->num_vdevs = ab->num_radios * total_vdevs;
 	config->num_peers = ab->num_radios *
-		ath12k_core_get_max_peers_per_radio(ab);
+		ath12k_core_get_def_max_peers_per_radio(ab);
 	config->num_tids = ath12k_core_get_max_num_tids(ab);
 	config->num_offload_peers = TARGET_NUM_OFFLD_PEERS;
 	config->num_offload_reorder_buffs = TARGET_NUM_OFFLD_REORDER_BUFFS;
@@ -72,15 +72,29 @@ void ath12k_wifi8_wmi_init_qcn9625(struct ath12k_base *ab,
 
 	if (test_bit(WMI_TLV_SERVICE_ATF, ab->wmi_ab.svc_map)) {
 		config->atf_config |= WMI_RSRC_CFG_FLAG1_ATF_OFFLOAD_ENABLE;
+#ifdef CPTCFG_QCN_EXTN
 		config->carrier_config = ath12k_cfg_get(ab,
 							ATH12K_CFG_CARRIER_PROFILE_CFG);
+#endif /* CPTCFG_QCN_EXTN */
 	}
 
+#ifdef CPTCFG_QCN_EXTN
 	config->max_beacon_size = ath12k_cfg_get(ab, ATH12K_CFG_AP_MAX_MGMT_FRM_SZ);
+#else
+	config->max_beacon_size = 1500;
+#endif /* CPTCFG_QCN_EXTN */
 	config->max_num_group_keys = ATH12K_GROUP_KEYS_NUM_MAX;
+#ifdef CPTCFG_QCN_EXTN
 	config->rep_ul_resp = ath12k_cfg_get(ab, ATH12K_CFG_REP_UL_RESP);
+#else
+	config->rep_ul_resp = 0;
+#endif /* CPTCFG_QCN_EXTN */
+#ifdef CPTCFG_QCN_EXTN
 	config->host_reo_mgmt_support =
 		!ath12k_cfg_get(ab, ATH12K_CFG_REO_MGMT_PATH_DISABLE);
+#else
+	config->host_reo_mgmt_support = 1;
+#endif /* CPTCFG_QCN_EXTN */
 }
 
 void ath12k_wifi8_cu_notify(struct ath12k *ar,

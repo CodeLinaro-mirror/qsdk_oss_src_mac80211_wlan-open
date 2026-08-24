@@ -7,7 +7,9 @@
 #define HAL_MON_CMN_H
 
 #include "hw.h"
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/ath12k_cmn_extn.h"
+#endif /* CPTCFG_QCN_EXTN */
 
 #define HAL_RX_MON_MAX_AGGR_SIZE	128
 #define HAL_RX_MAX_MPDU				256
@@ -615,6 +617,42 @@ struct hal_rx_user_ctrl_frm_info {
 		 ndpa : 1;
 };
 
+/**
+ * struct hal_rx_ppdu_cfr_info - CFR metadata extracted from PPDU TLVs
+ * @bb_captured_channel: Channel capture was triggered and freeze TLV was sent
+ * @bb_captured_timeout: Capture condition met, but freeze TLV timed out
+ * @bb_captured_reason: Capture trigger reason from RXPCU PPDU END TLV
+ * @rx_location_info_valid: PHYRX_LOCATION RTT/CFR DMA pointer validity
+ * @chan_capture_status: Capture status reported by ucode
+ * @rtt_che_buffer_pointer_high8: High 8 bits of 40-bit RTT CHE buffer pointer
+ * @rtt_che_buffer_pointer_low32: Low 32 bits of 40-bit RTT CHE buffer pointer
+ * @rtt_cfo_measurement: Signed raw CFO value from PHYRX_LOCATION TLV
+ * @agc_gain_info0: Chain0/1 AGC gain information
+ * @agc_gain_info1: Chain2/3 AGC gain information
+ * @agc_gain_info2: Reserved for higher chains
+ * @agc_gain_info3: Reserved for higher chains
+ * @rx_start_ts: Rx start timestamp from PHYRX_LOCATION TLV
+ * @mcs_rate: MCS/rate indication from PHYRX_LOCATION TLV
+ * @gi_type: Guard interval indication from PHYRX_LOCATION TLV
+ */
+struct hal_rx_ppdu_cfr_info {
+	bool bb_captured_channel;
+	bool bb_captured_timeout;
+	u8 bb_captured_reason;
+	bool rx_location_info_valid;
+	u8 chan_capture_status;
+	u8 rtt_che_buffer_pointer_high8;
+	u32 rtt_che_buffer_pointer_low32;
+	s16 rtt_cfo_measurement;
+	u32 agc_gain_info0;
+	u32 agc_gain_info1;
+	u32 agc_gain_info2;
+	u32 agc_gain_info3;
+	u32 rx_start_ts;
+	u32 mcs_rate;
+	u32 gi_type;
+};
+
 struct hal_rx_mon_ppdu_info {
 	u16 ppdu_id;
 	u16 last_ppdu_id;
@@ -638,6 +676,7 @@ struct hal_rx_mon_ppdu_info {
 	u16 vht_flag_values6;
 	u8 gi;
 	u8 rssi_comb;
+	u8 rssi_chain_pri20[HAL_RX_MAX_NSS];
 	u16 tid;
 	u8 fc_valid;
 	u32 ht_flags : 1,
@@ -740,12 +779,39 @@ struct hal_rx_mon_ppdu_info {
 	u16 punctured_pattern;
 	u16 punc_bw;
 	struct hal_rx_user_ctrl_frm_info ctrl_frm_info[HAL_MAX_UL_MU_USERS];
+	struct hal_rx_ppdu_cfr_info cfr_info;
+#ifdef CPTCFG_QCN_EXTN
 	struct hal_mon_ppdu_info_extn ppdu_info_extn;
+#endif /* CPTCFG_QCN_EXTN */
 	u8 ampdu_flag;
 	u8 band;
 	u32 rx_antenna;
 	u8 num_non_ofdma_users;
 };
+
+#define HAL_RX_MON_OFFSET(block, field) block##_##field##_OFFSET
+#define HAL_RX_MON_LSB(block, field) block##_##field##_LSB
+#define HAL_RX_MON_MASK(block, field) block##_##field##_MASK
+
+static inline u32 hal_rx_mon_get(const void *ptr, u32 offset, u32 mask, u8 lsb)
+{
+	const u32 *reg;
+
+	reg = (const u32 *)ptr + (offset >> 2);
+	return ((*reg) & mask) >> lsb;
+}
+
+#define HAL_RX_MON_UPDATE_PRI20_RSSI_PER_CHAIN(chain, ppdu_info, rssi_info_tlv) \
+	( \
+		(ppdu_info)->rssi_chain_pri20[(chain)] = \
+			hal_rx_mon_get((rssi_info_tlv), \
+				       HAL_RX_MON_OFFSET(RECEIVE_RSSI_INFO, \
+							 RSSI_PRI20_CHAIN##chain), \
+				       HAL_RX_MON_MASK(RECEIVE_RSSI_INFO, \
+						       RSSI_PRI20_CHAIN##chain), \
+				       HAL_RX_MON_LSB(RECEIVE_RSSI_INFO, \
+						      RSSI_PRI20_CHAIN##chain)) \
+	)
 
 /* in the bitmap 0 indicates no puncturing and 1 indicate that sub channel is punctured */
 #define PUNCTURE_NONE    0x0000
@@ -982,7 +1048,8 @@ struct hal_tx_mon_status_info {
 	u8  addr2[ETH_ALEN];
 	u8  addr3[ETH_ALEN];
 	u8  addr4[ETH_ALEN];
-	u8  dp_tx_pkt_cap_cookie[8];
+	u8  dp_tx_pkt_cap_cookie;
+	u8  spc_pkt_id;
 };
 
 struct hal_mon_tx_usig_cmn {

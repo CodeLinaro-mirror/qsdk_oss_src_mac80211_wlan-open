@@ -1446,6 +1446,10 @@
  * @NL80211_CMD_SET_SMD_CTX: Set UHR SMD dynamic context on the target AP MLD
  *	for the non-AP MLD.
  *
+ * @NL80211_CMD_GET_SMD_CTX: Get UHR SMD dynamic context on the current AP MLD
+ *	for the non-AP MLD on behalf of the target AP MLD. This command is sent
+ *	as an event back to user-space to transport the data.
+ *
  * @NL80211_CMD_MAX: highest used command number
  * @__NL80211_CMD_AFTER_LAST: internal use
  */
@@ -1741,6 +1745,7 @@ enum nl80211_commands {
 	NL80211_CMD_SMD_ROAM,
 
 	NL80211_CMD_SET_SMD_CTX,
+	NL80211_CMD_GET_SMD_CTX,
 
 	/* add new commands above here */
 
@@ -3317,6 +3322,15 @@ enum nl80211_commands {
  * @NL80211_ATTR_SMD_CTX: Nested attribute associated with UHR SMD BSS
  *	Transition data. See &enum nl80211_smd_ctx.
  *
+ * @NL80211_ATTR_STA_MAPC: Nested attribute carrying MAPC parameters for a
+ *	particular peer. See &enum nl80211_sta_mapc_attr.
+ *
+ * @NL80211_ATTR_MAPC_HW_CAPS: u32. MAPC hardware capability bitmap
+ *	reported by the driver. 0 = not supported.
+ *
+ * @NL80211_ATTR_MAPC_MAX_CTDMA_PEERS: u8. Maximum number of Co-TDMA peers
+ *	supported by the hardware. 0 = not reported.
+ *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  *
  * @NL80211_ATTR_MAX: highest attribute number currently defined
@@ -4003,6 +4017,10 @@ enum nl80211_attrs {
 
 	NL80211_ATTR_SMD_CTX,
 
+	NL80211_ATTR_STA_MAPC,
+	NL80211_ATTR_MAPC_HW_CAPS,
+	NL80211_ATTR_MAPC_MAX_CTDMA_PEERS,
+
 	/* add attributes here, update the policy in nl80211.c */
 	__NL80211_ATTR_AFTER_LAST,
 	NUM_NL80211_ATTR = __NL80211_ATTR_AFTER_LAST,
@@ -4167,6 +4185,7 @@ enum nl80211_iftype {
  * @NL80211_STA_FLAG_FT_AUTH: station uses FT authentication
  * @NL80211_STA_FLAG_CFP: station uses control frame protection
  * @NL80211_STA_FLAG_SMD: station created via SMD roaming request
+ * @NL80211_STA_FLAG_MAPC_PEER: station is a MAPC peer
  * @NL80211_STA_FLAG_MAX: highest station flag number currently defined
  * @__NL80211_STA_FLAG_AFTER_LAST: internal use
  */
@@ -4183,6 +4202,7 @@ enum nl80211_sta_flags {
 	NL80211_STA_FLAG_FT_AUTH,
 	NL80211_STA_FLAG_CFP,
 	NL80211_STA_FLAG_SMD,
+	NL80211_STA_FLAG_MAPC_PEER,
 
 	/* keep last */
 	__NL80211_STA_FLAG_AFTER_LAST,
@@ -4410,12 +4430,15 @@ enum nl80211_cu_type {
  *	has ended; the post notification window has elapsed.
  * @NL80211_CU_STATE_ECU_END: ECU session is complete; the driver has
  *	finished transmitting CU beacons and cleared the CU indication bit.
+ * @NL80211_CU_STATE_ABORT: ECU session was aborted before completion,
+ *	e.g. due to CSA or driver recovery.
  */
 enum nl80211_cu_state {
 	NL80211_CU_STATE_STARTED,
 	NL80211_CU_STATE_ADV_NOTIFICATION_END,
 	NL80211_CU_STATE_POST_NOTIFICATION_END,
 	NL80211_CU_STATE_ECU_END,
+	NL80211_CU_STATE_ABORT,
 };
 
 /**
@@ -7169,6 +7192,53 @@ enum nl80211_sta_wme_attr {
 };
 
 /**
+ * enum nl80211_sta_mapc_attr - MAPC station parameter attributes
+ *
+ * These are the attributes used inside %NL80211_ATTR_STA_MAPC.
+ *
+ * @NL80211_STA_MAPC_REMOTE_APID: u16, APID assigned by the remote AP
+ * @NL80211_STA_MAPC_CAPABILITY_BITMAP: u16, peer capability bitmap
+ *	(B0=AP-TB-PPDU, B1=Co-BF, B2=Co-SR, B3=Co-TDMA,
+ *	B4=Co-RTWT, B5=Co-CR, B6=Security)
+ * @NL80211_STA_MAPC_COTDMA: nested, Co-TDMA profile.
+ *	See &enum nl80211_sta_mapc_cotdma_attr.
+ */
+enum nl80211_sta_mapc_attr {
+	__NL80211_STA_MAPC_INVALID,
+	NL80211_STA_MAPC_APID,
+	NL80211_STA_MAPC_REMOTE_APID,
+	NL80211_STA_MAPC_CAPABILITY_BITMAP,
+	NL80211_STA_MAPC_COTDMA,
+
+	/* keep last */
+	__NL80211_STA_MAPC_AFTER_LAST,
+	NL80211_STA_MAPC_MAX = __NL80211_STA_MAPC_AFTER_LAST - 1
+};
+
+/**
+ * enum nl80211_sta_mapc_cotdma_attr - Co-TDMA profile attributes
+ *
+ * @NL80211_STA_MAPC_COTDMA_CHANNEL_WIDTH: u8, channel width
+ *	(0=20MHz, 1=40MHz, 2=80MHz, 3=160MHz, 4=320MHz)
+ * @NL80211_STA_MAPC_COTDMA_CCFS: u8, center channel frequency segment
+ * @NL80211_STA_MAPC_COTDMA_DISABLE_SUBCHAN_BITMAP: u16, punctured subchannels
+ * @NL80211_STA_MAPC_COTDMA_BSS_COLOR: u8, BSS color
+ * @NL80211_STA_MAPC_COTDMA_RX_TXOP_RETURN: flag, Rx TXOP return support
+ */
+enum nl80211_sta_mapc_cotdma_attr {
+	__NL80211_STA_MAPC_COTDMA_INVALID,
+	NL80211_STA_MAPC_COTDMA_CHANNEL_WIDTH,
+	NL80211_STA_MAPC_COTDMA_CCFS,
+	NL80211_STA_MAPC_COTDMA_DISABLE_SUBCHAN_BITMAP,
+	NL80211_STA_MAPC_COTDMA_BSS_COLOR,
+	NL80211_STA_MAPC_COTDMA_RX_TXOP_RETURN,
+
+	/* keep last */
+	__NL80211_STA_MAPC_COTDMA_AFTER_LAST,
+	NL80211_STA_MAPC_COTDMA_MAX = __NL80211_STA_MAPC_COTDMA_AFTER_LAST - 1
+};
+
+/**
  * enum nl80211_pmksa_candidate_attr - attributes for PMKSA caching candidates
  * @__NL80211_PMKSA_CANDIDATE_INVALID: invalid number for nested attributes
  * @NL80211_PMKSA_CANDIDATE_INDEX: candidate index (u32; the smaller, the higher
@@ -7692,6 +7762,12 @@ enum nl80211_ext_feature_index {
 	NL80211_EXT_FEATURE_SMD_SUPPORT_DL_PKT_FRWRD,
 	NL80211_EXT_FEATURE_EPPKE,
 	NL80211_EXT_FEATURE_ASSOC_FRAME_ENCRYPTION,
+
+	/* Parallel hardware scan: driver supports concurrent hw_scan contexts
+	 * on different radios simultaneously.  Enabled via the
+	 * "parallel_hw_scan" INI key in global.ini.
+	 */
+	NL80211_EXT_FEATURE_PARALLEL_HW_SCAN,
 
 	/* add new features before the definition below */
 	NUM_NL80211_EXT_FEATURES,
@@ -9756,7 +9832,7 @@ enum nl80211_smd_ctx_type {
  * @NL80211_SMD_CTX_BA_ATTR_BUFF_SIZE: Required (u16) attribute to report
  *	BA buffer size.
  *
- * @NL80211_SMD_CTX_BA_ATTR_POLICY: Required (flag) attribute to report
+ * @NL80211_SMD_CTX_BA_ATTR_POLICY: Required (u8) attribute to report
  *	BA policy.
  *
  * @NL80211_SMD_CTX_BA_ATTR_AMSDU_SUPPORT: Required (flag) attribute to report
@@ -9888,6 +9964,9 @@ enum nl80211_smd_ctx_qos {
  * @NL80211_SMD_CTX_ATTR_VENDOR: Optional (binary) attribute to report any
  *	vendor-specific information. This will be parsed only in driver layers
  *	while nl80211 just relays this as a blob.
+ *
+ * @NL80211_SMD_CTX_ATTR_VALID_CTX: Required (u8) bitmap attribute to request a set of
+ *	context details, used with %NL80211_CMD_GET_SMD_CTX.
  */
 enum nl80211_smd_ctx {
 	__NL80211_SMD_CTX_ATTR_INVALID,
@@ -9897,6 +9976,7 @@ enum nl80211_smd_ctx {
 	NL80211_SMD_CTX_ATTR_UL,
 	NL80211_SMD_CTX_ATTR_QOS,
 	NL80211_SMD_CTX_ATTR_VENDOR,
+	NL80211_SMD_CTX_ATTR_VALID_CTX,
 
 	__NL80211_SMD_CTX_ATTR_LAST,
 	NL80211_SMD_CTX_ATTR_MAX = __NL80211_SMD_CTX_ATTR_LAST - 1

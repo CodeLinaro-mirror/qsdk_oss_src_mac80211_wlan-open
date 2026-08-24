@@ -62,6 +62,7 @@ enum ath12k_debug_mask {
 	ATH12K_DBG_IPA			= BIT_ULL(45),
 	ATH12K_DBG_SPECTRAL		= BIT_ULL(46),
 	ATH12K_DBG_SMD			= BIT_ULL(47),
+	ATH12K_DBG_RTT			= BIT_ULL(48),
 
 	ATH12K_DBG_ANY			= GENMASK_ULL(63, 0),
 };
@@ -155,9 +156,10 @@ enum ath12k_crit_event {
 	ATH12K_FW_LOAD_FAILURE = 3,
 	ATH12K_BDF_LOAD_FAILURE = 4,
 	ATH12K_CRIT_MVR_FAILURE = 5,
+	ATH12K_CRIT_SCAN_FAILURE = 6,
 };
 
-#ifdef CPTCFG_ATHDEBUG
+#if defined(CPTCFG_ATHDEBUG) && defined(CPTCFG_ATHDEBUG_UIO_LOGGING)
 void athdbg_uio_critical_failure_trigger(struct ath12k_base *ab, uint32_t crit_enum);
 
 #define ath12k_critical_failure_trigger(ab, crit_enum) \

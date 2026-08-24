@@ -447,6 +447,12 @@ enum hal_ring_type {
 	HAL_PEER_RX_TELEMETRY,
 	HAL_REO_FLUSH,
 	HAL_TQM2PPE,
+	/*
+	 * HAL_TQM2SW_FW_COMPLETION: dedicated TQM2SW ring for FW-owned buffer
+	 * completions.  Maps to ring_mask->fw_tqm2sw[] so the MSI fires on the
+	 * correct interrupt group (group 14) rather than the regular TX group.
+	 */
+	HAL_TQM2SW_FW_COMPLETION,
 	HAL_MAX_RING_TYPES,
 };
 
@@ -1476,6 +1482,10 @@ struct ath12k_hal {
 	int num_shadow_reg_configured;
 
 	u32 hal_desc_sz;
+	u32 rx_mpdu_start_offset;
+	u32 rx_msdu_end_offset;
+	u32 rx_msdu_end_wmask;
+	u16 rx_mpdu_start_wmask;
 
 	const struct ath12k_hal_tcl_to_cmp_rbm_map *tcl_to_cmp_rbm_map;
 	const struct ath12k_hal_rdi_mapping *rdi_mapping;
@@ -1754,6 +1764,13 @@ struct hal_ops {
 					     enum hal_ring_type);
 	bool (*hal_rx_reo_status)(struct hal_reo_status *reo_status);
 	bool (*hal_rx_reo_1k_status)(struct hal_reo_status *reo_status);
+	u32 (*rx_get_fse_metadata)(struct hal_rx_desc *desc);
+	u16 (*rx_get_cce_metadata)(struct hal_rx_desc *desc);
+	bool (*rx_get_cce_match_bit)(struct hal_rx_desc *desc);
+	void (*rx_get_flow_params)(struct hal_rx_desc *desc,
+				   u32 *flow_idx,
+				   bool *flow_idx_invalid,
+				   bool *flow_idx_timeout);
 };
 
 static inline
@@ -1839,10 +1856,15 @@ void *ath12k_hal_srng_dst_peek_nolock(struct hal_srng *srng)
 static inline
 void *ath12k_hal_srng_dst_next_peek_nolock(struct hal_srng *srng)
 {
-	if ((srng->u.dst_ring.tp +  srng->entry_size) != srng->u.dst_ring.cached_hp)
-		return (srng->ring_base_vaddr + (srng->u.dst_ring.tp + srng->entry_size));
+	u32 next_tp = srng->u.dst_ring.tp + srng->entry_size;
 
-	return NULL;
+	if (next_tp == srng->ring_size)
+		next_tp = 0;
+
+	if (next_tp == srng->u.dst_ring.cached_hp)
+		return NULL;
+
+	return srng->ring_base_vaddr + next_tp;
 }
 
 static inline void ath12k_hal_dma_free_coherent(struct device *dev, size_t size,

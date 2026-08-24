@@ -1168,13 +1168,11 @@ err_free_cont_rdp:
 err_hal:
 	return ret;
 }
+EXPORT_SYMBOL(ath12k_hal_srng_init);
 
 void ath12k_hal_srng_deinit(struct ath12k_base *ab)
 {
 	struct ath12k_hal *hal = &ab->hal;
-
-	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
-		return;
 
 	if (test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags)) {
 		ath12k_info(ab, "Skip HAL deinit during Q6 BCR RESET\n");
@@ -1195,6 +1193,9 @@ void ath12k_hal_dump_srng_stats(struct ath12k_base *ab)
 	struct ath12k_ext_irq_grp *irq_grp;
 	struct ath12k_ce_pipe *ce_pipe;
 	int i;
+
+	if (ab->is_bypassed)
+		return;
 
 	ath12k_err(ab, "Last interrupt received for each CE:\n");
 	for (i = 0; i < ab->hw_params->ce_count; i++) {

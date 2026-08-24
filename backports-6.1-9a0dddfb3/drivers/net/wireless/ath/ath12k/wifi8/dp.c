@@ -5,6 +5,8 @@
  */
 
 #include "../core.h"
+#include <linux/mm.h>
+#include <linux/io.h>
 #include "../debug.h"
 #include "../dp_rx.h"
 #include "../dp_tx.h"
@@ -21,6 +23,7 @@
 #include "hal.h"
 #include "dp_peer.h"
 #include "dp_ast.h"
+#include "dp_pool.h"
 #include "dp_htt.h"
 #include "dp_tx_flow_info.h"
 #include "dp_mon.h"
@@ -29,7 +32,9 @@
 #include "dp_peer.h"
 #include "hal_queue.h"
 #include "ppeds.h"
+#ifdef CPTCFG_QCN_EXTN
 #include "../qcn_extns/ipa/dp_ipa_pub.h"
+#endif /* CPTCFG_QCN_EXTN */
 
 extern struct ppe_ds_wlan_ops_v2 ppeds_wifi8_wlanops_v2;
 
@@ -136,6 +141,21 @@ static int ath12k_wifi8_cumac_dp_service_srng(struct ath12k_dp *dp,
 
 	if (dp->hw_params->ring_mask->tqm_status[grp_id]) {
 		work_done = ath12k_wifi8_dp_tx_process_tqm_status(dp, budget);
+		budget -= work_done;
+		tot_work_done += work_done;
+		if (budget <= 0)
+			goto done;
+	}
+
+	/*
+	 * Group 14: dedicated interrupt for fw_tqm2sw_ring.
+	 * C-TQM routes FW-owned buffer completions here when
+	 * HAL_TQM_HOST_STATUS_RING=1 is set in the SW2TQM sync command.
+	 * This is a V1-only hardware WAR; skip entirely on V2 and later.
+	 */
+	if (dp->hw_params->tqm2sw_fw_war &&
+	    dp->hw_params->ring_mask->tqm2sw_fw[grp_id]) {
+		work_done = ath12k_wifi8_dp_tqm2sw_fw_handler(dp, budget);
 		budget -= work_done;
 		tot_work_done += work_done;
 		if (budget <= 0)
@@ -318,6 +338,8 @@ static void ath12k_wifi8_dp_umac_deinit(struct ath12k_dp *dp)
 	ath12k_wifi8_dp_tx_congestion_control_deinit(dp);
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	if (ab->dp->ppe.ppe_ops && dp->ppe.ppe_ops->ath12k_ppeds_stop)
+		dp->ppe.ppe_ops->ath12k_ppeds_stop(ab);
 	if (ab->dp->ppe.ppe_ops && dp->ppe.ppe_ops->ath12k_ppeds_detach)
 		dp->ppe.ppe_ops->ath12k_ppeds_detach(ab);
 	ath12k_nss_plugin_unregister_ops(ab);
@@ -756,11 +778,13 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 	ab->dp->ppe.ppe_ops->ath12k_ppeds_interrupt_start(ab);
 #endif
 
+#ifdef CPTCFG_QCN_EXTN
 	ret = ath12k_wifi8_dp_ipa_init(ab);
 	if (ret) {
 		ath12k_err(ab, "IPA: ipa init failed");
 		goto fail_congestion_control;
 	}
+#endif /* CPTCFG_QCN_EXTN */
 
 	dp_wifi8->init_done = true;
 	ath12k_info(ab, "CUMAC init successful");
@@ -913,7 +937,7 @@ static void ath12k_wifi8_dp_op_device_deinit(struct ath12k_dp *dp)
 	struct ath12k_base *ab = dp->ab;
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
 
-	if (!ab)
+	if (!ab || ab->is_bypassed)
 		return;
 
 	ath12k_dp_srng_cleanup(ab, &dp_wifi8->rx_ase_status_ring);
@@ -925,7 +949,11 @@ static int ath12k_wifi8_dp_op_mlo_init(struct ath12k_dp *dp)
 {
 	int ret;
 
+	if (dp->ab->is_bypassed)
+		return 0;
+
 	ret = ath12k_wifi8_dp_umac_setup(dp);
+
 	if (ret) {
 		ath12k_warn(dp, "dp umac setup failed %d\n", ret);
 		return ret;
@@ -1089,6 +1117,7 @@ static void ath12k_wifi8_dp_link_vif_configure(struct ath12k_dp *dp,
 		return;
 
 	if (optype == ATH12K_DP_OP_INIT) {
+		dp_link_vif->ab = dp->ab;
 		dp_link_vif->vdev_id = arvif->vdev_id;
 		dp_link_vif->lmac_id = ar->lmac_id;
 		dp_link_vif->pdev_idx = ar->pdev_idx;
@@ -1169,8 +1198,11 @@ static ssize_t ath12k_wifi8_dump_device_dp_stats(struct ath12k_dp *dp,
 			 stats->buf_len_err);
 
 	len += scnprintf(buf + len, size - len,
-			 "\nRx flush count: %u\nRx mgmt flush count: %u\n",
-			 rx_stats->rx_flush_pkts, rx_stats->rx_mgmt_flush_pkts);
+			 "\nRx flush count: %u\nRx mgmt flush count: %u\n"
+			 " NULL desc: %u\n",
+			 rx_stats->rx_flush_pkts,
+			 rx_stats->rx_mgmt_flush_pkts,
+			 rx_stats->rx_flush_null_descs);
 
 	len += ath12k_wifi8_global_ast_stats(dp, buf + len, size - len);
 	return len;
@@ -1488,6 +1520,240 @@ int ath12k_wifi8_fetch_smd_ctx(struct ath12k_base *ab, struct ath12k_dp_hw *dp_h
 	return 0;
 }
 
+static int ath12k_wifi8_dp_pool_coredump_seg_count(struct pool_ctxt_t *ctxt)
+{
+	struct mem_page_t *page;
+	int i, cnt = 0;
+
+	if (!ctxt || !ctxt->pages.mem_pages || !ctxt->pages.num_pages)
+		return 0;
+
+	for (i = 0; i < ctxt->pages.num_pages; i++) {
+		page = &ctxt->pages.mem_pages[i];
+		if (page->page_v_addr_start && page->page_p_addr)
+			cnt++;
+	}
+
+	return cnt;
+}
+
+static
+bool ath12k_wifi8_dp_ast_coredump_ready(struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8,
+					struct ath12k_dp_global_ast_table **out_ast_base)
+{
+	struct ath12k_dp_global_ast_table *ast_base = &dp_hw_grp_wifi8->dp_ast_base;
+
+	*out_ast_base = ast_base;
+
+	return ast_base->ast_vaddr_aligned && ast_base->ast_paddr &&
+	       ast_base->hw_ast_table_size;
+}
+
+static u64 ath12k_wifi8_dp_ast_who_classify_paddr(struct hal_ast_entry *hw_ast_entry)
+{
+	u64 paddr_hi = le32_get_bits(hw_ast_entry->info3,
+				     HAL_AST_ENTRY_INFO3_WHO_CLASSIFY_INFO_39_32);
+	u32 paddr_lo = le32_get_bits(hw_ast_entry->info2,
+				     HAL_AST_ENTRY_INFO2_WHO_CLASSIFY_INFO_31_0);
+
+	return (paddr_hi << 32) | paddr_lo;
+}
+
+static int
+ath12k_wifi8_dp_who_classify_seg_count(struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8)
+{
+	struct ath12k_dp_global_ast_table *ast_base = &dp_hw_grp_wifi8->dp_ast_base;
+	struct hal_ast_entry *ast_table;
+	struct hal_ast_entry *entry;
+	u64 paddr;
+	int cnt = 0;
+	u16 i;
+
+	if (!ast_base->ast_vaddr_aligned)
+		return 0;
+
+	ast_table = (struct hal_ast_entry *)ast_base->ast_vaddr_aligned;
+
+	for (i = 0; i < ast_base->num_ast_entries; i++) {
+		entry = &ast_table[i];
+		paddr = ath12k_wifi8_dp_ast_who_classify_paddr(entry);
+		if (!paddr || !pfn_valid(PHYS_PFN(paddr)))
+			continue;
+
+		cnt++;
+	}
+
+	return cnt;
+}
+
+static int
+ath12k_wifi8_dp_who_classify_get_segs(struct ath12k_base *ab,
+				      struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8,
+				      struct ath12k_dump_segment *seg_arr,
+				      int max_segs)
+{
+	struct ath12k_dp_global_ast_table *ast_base = &dp_hw_grp_wifi8->dp_ast_base;
+	struct hal_ast_entry *ast_table;
+	struct hal_ast_entry *entry;
+	void *vaddr;
+	u64 paddr;
+	int cnt = 0;
+	int skipped_paddr = 0;
+	int skipped_vaddr = 0;
+	u16 i;
+
+	if (!ast_base->ast_vaddr_aligned || max_segs < 1)
+		return 0;
+
+	ast_table = (struct hal_ast_entry *)ast_base->ast_vaddr_aligned;
+
+	for (i = 0; i < ast_base->num_ast_entries && cnt < max_segs; i++) {
+		entry = &ast_table[i];
+		paddr = ath12k_wifi8_dp_ast_who_classify_paddr(entry);
+		if (!paddr || !pfn_valid(PHYS_PFN(paddr))) {
+			skipped_paddr++;
+			continue;
+		}
+
+		vaddr = phys_to_virt(paddr);
+		if (!vaddr || !virt_addr_valid(vaddr)) {
+			skipped_vaddr++;
+			ath12k_dbg(ab, ATH12K_DBG_DP_TX,
+				   "who_classify coredump: ast_idx=%u paddr=0x%llx invalid vaddr=%p, skipping\n",
+				   i, paddr, vaddr);
+			continue;
+		}
+
+		seg_arr[cnt].vaddr = vaddr;
+		seg_arr[cnt].addr  = paddr;
+		seg_arr[cnt].len   = ATH12K_NUM_TX_CLASSIFY_BANKS *
+				     ATH12K_TX_CLASSIFY_INFO_SIZE_SINGLE;
+		seg_arr[cnt].type  = FW_CRASH_DUMP_WHO_CLASSIFY_DATA;
+		ath12k_dbg(ab, ATH12K_DBG_DP_TX,
+			   "who_classify coredump: ast_idx=%u vaddr=%p paddr=0x%llx len=0x%x\n",
+			   i, vaddr, paddr, seg_arr[cnt].len);
+		cnt++;
+	}
+
+	ath12k_dbg(ab, ATH12K_DBG_DP_TX,
+		   "who_classify coredump: collected %d segments, skipped %d (bad paddr) %d (bad vaddr)\n",
+		   cnt, skipped_paddr, skipped_vaddr);
+
+	return cnt;
+}
+
+static int ath12k_wifi8_dp_get_coredump_seg_count(struct ath12k_dp *dp)
+{
+	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8;
+	struct ath12k_dp_global_ast_table *ast_base;
+	int seg_cnt = 0;
+
+	if (!dp->dp_hw_grp)
+		return 0;
+
+	dp_hw_grp_wifi8 = ath12k_get_dp_hw_group_wifi8(dp->dp_hw_grp);
+	if (!dp_hw_grp_wifi8)
+		return 0;
+
+	if (ath12k_wifi8_dp_ast_coredump_ready(dp_hw_grp_wifi8, &ast_base))
+		seg_cnt++;
+
+	seg_cnt += ath12k_wifi8_dp_pool_coredump_seg_count(dp_hw_grp_wifi8->msduq_ctxt);
+	seg_cnt += ath12k_wifi8_dp_pool_coredump_seg_count(dp_hw_grp_wifi8->mpduq_ctxt);
+	seg_cnt += ath12k_wifi8_dp_who_classify_seg_count(dp_hw_grp_wifi8);
+
+	ath12k_dbg(dp->ab, ATH12K_DBG_DP_TX,
+		   "coredump seg count query: total required=%d\n", seg_cnt);
+
+	return seg_cnt;
+}
+
+static int ath12k_wifi8_dp_pool_get_coredump_segs(struct ath12k_base *ab,
+						  struct pool_ctxt_t *ctxt,
+						  enum ath12k_fw_crash_dump_type type,
+						  const char *tag,
+						  struct ath12k_dump_segment *seg_arr,
+						  int max_segs)
+{
+	struct mem_page_t *page;
+	int i, cnt = 0;
+
+	if (!ctxt || !ctxt->pages.mem_pages || !ctxt->pages.num_pages)
+		return 0;
+
+	for (i = 0; i < ctxt->pages.num_pages && cnt < max_segs; i++) {
+		page = &ctxt->pages.mem_pages[i];
+		if (!page->page_v_addr_start || !page->page_p_addr)
+			continue;
+
+		seg_arr[cnt].vaddr = page->page_v_addr_start;
+		seg_arr[cnt].addr  = page->page_p_addr;
+		seg_arr[cnt].len   = ctxt->pages.page_size;
+		seg_arr[cnt].type  = type;
+		cnt++;
+	}
+
+	ath12k_dbg(ab, ATH12K_DBG_DP_TX,
+		   "%s coredump: collected %d of %u pages (page_size=%zu)\n",
+		   tag, cnt, ctxt->pages.num_pages, ctxt->pages.page_size);
+
+	return cnt;
+}
+
+static int ath12k_wifi8_dp_get_coredump_segs(struct ath12k_dp *dp,
+					     struct ath12k_dump_segment *seg_arr,
+					     int max_segs)
+{
+	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8;
+	struct ath12k_dp_global_ast_table *ast_base;
+	struct device *dev = dp->dev;
+	dma_addr_t paddr;
+	int seg_cnt = 0;
+
+	if (!max_segs || !dp->dp_hw_grp)
+		return 0;
+
+	dp_hw_grp_wifi8 = ath12k_get_dp_hw_group_wifi8(dp->dp_hw_grp);
+	if (!dp_hw_grp_wifi8)
+		return 0;
+
+	if (ath12k_wifi8_dp_ast_coredump_ready(dp_hw_grp_wifi8, &ast_base)) {
+		paddr = ast_base->ast_paddr;
+		ath12k_core_dma_sync_single_for_cpu(dev, paddr,
+						    ast_base->hw_ast_table_size,
+						    DMA_BIDIRECTIONAL);
+
+		seg_arr[seg_cnt].vaddr = ast_base->ast_vaddr_aligned;
+		seg_arr[seg_cnt].addr  = paddr;
+		seg_arr[seg_cnt].len   = ast_base->hw_ast_table_size;
+		seg_arr[seg_cnt].type  = FW_CRASH_DUMP_AST_DATA;
+		seg_cnt++;
+	} else {
+		ath12k_dbg(dp->ab, ATH12K_DBG_DP_TX,
+			   "AST coredump: table not ready, skipping AST segment\n");
+	}
+
+	seg_cnt += ath12k_wifi8_dp_pool_get_coredump_segs(dp->ab,
+							  dp_hw_grp_wifi8->msduq_ctxt,
+							  FW_CRASH_DUMP_MSDU_DATA,
+							  "MSDU",
+							  &seg_arr[seg_cnt],
+							  max_segs - seg_cnt);
+	seg_cnt += ath12k_wifi8_dp_pool_get_coredump_segs(dp->ab,
+							  dp_hw_grp_wifi8->mpduq_ctxt,
+							  FW_CRASH_DUMP_MPDU_DATA,
+							  "MPDU",
+							  &seg_arr[seg_cnt],
+							  max_segs - seg_cnt);
+	seg_cnt += ath12k_wifi8_dp_who_classify_get_segs(dp->ab, dp_hw_grp_wifi8,
+							  &seg_arr[seg_cnt],
+							  max_segs - seg_cnt);
+
+	ath12k_dbg(dp->ab, ATH12K_DBG_DP_TX,
+		   "coredump segs filled: total=%d\n", seg_cnt);
+
+	return seg_cnt;
+}
 static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 	.dp_op_device_init = ath12k_wifi8_dp_op_device_init,
 	.dp_op_device_deinit = ath12k_wifi8_dp_op_device_deinit,
@@ -1521,6 +1787,7 @@ static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 	.dp_link_peer_assign_id = ath12k_wifi8_dp_link_peer_assign_id,
 	.dp_link_peer_unassign_id = ath12k_wifi8_dp_link_peer_unassign_id,
 	.peer_cleanup_indication = ath12k_dp_htt_peer_cleanup_indication,
+	.peer_drv_cleanup_indication = ath12k_dp_peer_cleanup_indication,
 	.dp_ppeds_tx_completion_handler = ath12k_wifi8_ppeds_tx_completion_handler,
 	.dp_link_peer_assoc = ath12k_wifi8_dp_link_peer_assoc,
 	.dp_get_peer_mgmt_flowq = ath12k_wifi8_get_mgmt_flowq,
@@ -1568,8 +1835,11 @@ static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 	.dp_smd_prep_rx_tid = ath12k_wifi8_dp_smd_prep_rx_tid,
 	.dp_smd_exec_rx_tid = ath12k_wifi8_dp_smd_exec_rx_tid,
 	.dp_smd_clear_old_peer_rx_lut = ath12k_wifi8_dp_smd_clear_old_peer_rx_lut,
+	.dp_smd_abort_prep = ath12k_wifi8_dp_smd_abort_prep,
 	.peer_tx_tid_sn_reset = ath12k_wifi8_peer_tx_tid_sn_reset,
 	.peer_rx_tid_svld_reset = ath12k_wifi8_peer_rx_tid_svld_reset,
+	.get_coredump_seg_count = ath12k_wifi8_dp_get_coredump_seg_count,
+	.get_coredump_segs = ath12k_wifi8_dp_get_coredump_segs,
 };
 
 struct ath12k_dp *ath12k_wifi8_dp_init(struct ath12k_base *ab)
@@ -1658,7 +1928,14 @@ void ath12k_wifi8_dp_tx_tqm_cmd_list_cleanup(struct ath12k_base *ab)
 	spin_lock_bh(&dp->tqm_cmd_lock);
 	list_for_each_entry_safe(cmd, tmp, &dp->tqm_cmd_list, list) {
 		list_del(&cmd->list);
+		spin_unlock_bh(&dp->tqm_cmd_lock);
+		/* Drive forced cleanup so peer_ext_ctx is freed even when
+		 * the TQM status response never arrived (e.g. wifi down).
+		 */
+		if (cmd->handler)
+			cmd->handler(dp, (void *)&cmd->data, NULL);
 		kfree(cmd);
+		spin_lock_bh(&dp->tqm_cmd_lock);
 	}
 	spin_unlock_bh(&dp->tqm_cmd_lock);
 }

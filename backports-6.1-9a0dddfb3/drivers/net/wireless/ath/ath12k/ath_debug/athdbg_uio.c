@@ -4,7 +4,9 @@
 #include "athdbg_uio.h"
 #include "athdbg_core.h"
 #include <linux/notifier.h>
+#ifdef CPTCFG_ATHDEBUG_UIO_LOGGING
 #include <qca-debug-uio/debug_uio_public.h>
+#endif
 
 extern struct ath_debug_base *athdbg_base;
 

@@ -795,7 +795,7 @@ const struct ce_attr ath12k_wifi7_host_ce_config_qcn9274[] = {
 		.flags = CE_ATTR_FLAGS,
 		.src_nentries = 0,
 		.src_sz_max = 2048,
-		.dest_nentries = 512,
+		.dest_nentries = 128,
 		.recv_cb = ath12k_htc_rx_completion_handler,
 	},
 

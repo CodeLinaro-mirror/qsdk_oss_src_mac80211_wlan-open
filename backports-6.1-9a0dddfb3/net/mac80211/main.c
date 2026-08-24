@@ -1019,6 +1019,7 @@ struct ieee80211_hw *ieee80211_alloc_hw_nm(size_t priv_data_len,
 	local->airtime_flags = AIRTIME_USE_TX | AIRTIME_USE_RX;
 	local->aql_threshold = IEEE80211_AQL_THRESHOLD;
 	atomic_set(&local->aql_total_pending_airtime, 0);
+	local->addba_req_enable = true;
 
 	spin_lock_init(&local->handle_wake_tx_queue_lock);
 
@@ -1126,18 +1127,13 @@ struct ieee80211_hw *ieee80211_alloc_hw_nm(size_t priv_data_len,
 
 	return &local->hw;
  err_free:
-	if (this_cpu_ptr(local->tx_pending_tasklet))
-		free_percpu(local->tx_pending_tasklet);
-	if (this_cpu_ptr(local->queue_stop_reason_lock))
-		free_percpu(local->queue_stop_reason_lock);
+	free_percpu(local->tx_pending_tasklet);
+	free_percpu(local->queue_stop_reason_lock);
 	for (i = 0; i < IEEE80211_MAX_QUEUES; i++) {
-		if (this_cpu_ptr(local->pending[i]))
-			free_percpu(local->pending[i]);
-		if (this_cpu_ptr(local->queue_stop_reasons[i]))
-			free_percpu(local->queue_stop_reasons[i]);
+		free_percpu(local->pending[i]);
+		free_percpu(local->queue_stop_reasons[i]);
 		for (j = 0; j < IEEE80211_QUEUE_STOP_REASONS; j++)
-			if (this_cpu_ptr(local->q_stop_reasons[i][j]))
-				free_percpu(local->q_stop_reasons[i][j]);
+			free_percpu(local->q_stop_reasons[i][j]);
 	}
 
 	wiphy_free(wiphy);
@@ -1400,6 +1396,8 @@ int ieee80211_register_hw(struct ieee80211_hw *hw)
 			 * Assign the first enabled channel to dflt_chandef
 			 * from the list of channels
 			 */
+			if (!sband->n_channels)
+				continue;
 			for (i = 0; i < sband->n_channels; i++)
 				if (!(sband->channels[i].flags &
 						IEEE80211_CHAN_DISABLED))

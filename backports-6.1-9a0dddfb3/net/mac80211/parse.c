@@ -33,7 +33,9 @@
 #include "wme.h"
 #include "led.h"
 #include "wep.h"
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/cmn_extn.h"
+#endif /* CPTCFG_QCN_EXTN */
 
 struct ieee80211_elems_parse {
 	/* must be first for kfree to work */
@@ -206,6 +208,15 @@ ieee80211_parse_extension_element(u32 *crc,
 		if (ieee80211_uhr_capa_size_ok(data, len, true)) {
 			elems->uhr_cap = data;
 			elems->uhr_cap_len = len;
+		}
+		break;
+	case WLAN_EID_EXT_UHR_PARAM_UPD:
+		if (params->mode < IEEE80211_CONN_MODE_UHR)
+			break;
+		calc_crc = true;
+		if (ieee80211_uhr_param_upd_size_ok(data, len)) {
+			elems->uhr_params_update = data;
+			elems->uhr_params_update_len = len;
 		}
 		break;
 	case WLAN_EID_EXT_SMD:
@@ -490,8 +501,10 @@ _ieee802_11_parse_elems_full(struct ieee80211_elems_parse_params *params,
 			else {
 				if (calc_crc)
 					crc = crc32_be(crc, pos - 2, elen + 2);
+#ifdef CPTCFG_QCN_EXTN
 				ieee802_11_parse_elems_vendor_qcn_extn(pos,
 								       elen, elems);
+#endif /* CPTCFG_QCN_EXTN */
 			}
 
 			break;
@@ -768,8 +781,7 @@ _ieee802_11_parse_elems_full(struct ieee80211_elems_parse_params *params,
 			ieee80211_parse_tpe(&elems->tpe, pos, elen);
 			break;
 		case WLAN_EID_EXTENSION:
-			ieee80211_parse_extension_element(calc_crc ?
-								&crc : NULL,
+			ieee80211_parse_extension_element(calc_crc ? &crc : NULL,
 							  elem, elems_parse,
 							  params);
 			break;

@@ -1250,8 +1250,8 @@ ath12k_dp_rx_ppeds_fse_add_flow_entry(struct ppe_drv_fse_rule_info *ppe_flow_inf
 
 	/* TODO: protect ag->ab[] by spin lock */
 	/* NOTE: ag->ab[0] can be any arbitirary ab but first ab is used to cover non-MLO */
-	if (!ab) {
-		pr_warn("FSE flow rule addition failed ab = NULL \n");
+	if (!ab || ab->is_bypassed) {
+		pr_warn("FSE flow rule addition failed ab = NULL or ab is bypassed\n");
 		return false;
 	}
 
@@ -1311,6 +1311,12 @@ ath12k_dp_rx_ppeds_fse_del_flow_entry(struct ppe_drv_fse_rule_info *ppe_flow_inf
 		pr_warn("FSE flow rule deletion failed ab = NULL \n");
 		return false;
 	}
+
+	if ((test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags) ||
+	     test_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags)) &&
+	    !test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags))
+
+		return false;
 
 	/* Populate both flow_info and event in one call (no redundant ntohl) */
 	ath12k_dp_rx_ppeds_fse_update_flow_info(ab, &flow_info, &ev, ppe_flow_info,

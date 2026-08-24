@@ -4386,7 +4386,13 @@ static void ath12k_qmi_free_mlo_mem_chunk(struct ath12k_base *ab,
 			       mlo_chunk->paddr,
 			       DMA_ATTR_FORCE_CONTIGUOUS);
 #else
-		iounmap(mlo_chunk->v.ioaddr);
+		if (ab->mlo_mem_dev.rmem_inited)
+			dma_free_coherent(dev,
+					  mlo_chunk->size,
+					  mlo_chunk->v.ioaddr,
+					  mlo_chunk->paddr);
+		else
+			iounmap(mlo_chunk->v.ioaddr);
 #endif
 		mlo_chunk->v.ioaddr = NULL;
 	} else if (mlo_chunk->v.addr) {
@@ -4451,12 +4457,9 @@ void ath12k_qmi_free_target_mem_chunk(struct ath12k_base *ab)
 					ab->qmi.target_mem[i].v.ioaddr = NULL;
 				}
 #else
-				if ((ab->qmi.target_mem[i].type == AFC_REGION_TYPE &&
+				if (ab->qmi.target_mem[i].type == AFC_REGION_TYPE &&
 				     ab->hif.bus != ATH12K_BUS_HYBRID &&
-				     ab->qmi.target_mem[i].v.addr) ||
-				     (ab->qmi.target_mem[i].type ==
-				      MLO_GLOBAL_MEM_REGION_TYPE &&
-				      ab->mlo_mem_dev.rmem_inited)){
+				     ab->qmi.target_mem[i].v.addr) {
 					dma_free_coherent(dev,
 							  ab->qmi.target_mem[i].size,
 							  ab->qmi.target_mem[i].v.addr,
@@ -4470,6 +4473,31 @@ void ath12k_qmi_free_target_mem_chunk(struct ath12k_base *ab)
 			} else {
 				if (!ab->qmi.target_mem[i].v.addr)
 					continue;
+				/* Park persistent chunks into the pool so they
+				 * survive recovery and cold-boot power cycles.
+				 * ath12k_qmi_alloc_target_mem_chunk() will reuse
+				 * them on the next FW mem request, matched by type
+				 * and size regardless of request order.
+				 */
+				if (ab->qmi.target_mem[i].persist) {
+					if (ab->qmi.persist_mem_count >=
+					    ATH12K_QMI_MAX_PERSIST_MEM_CHUNKS) {
+						ath12k_warn(ab, "qmi persist pool full, freeing chunk type %u size %u\n",
+							    ab->qmi.target_mem[i].type,
+							    ab->qmi.target_mem[i].size);
+						dma_free_coherent(dev,
+							ab->qmi.target_mem[i].prev_size,
+							ab->qmi.target_mem[i].v.addr,
+							ab->qmi.target_mem[i].paddr);
+						ab->qmi.target_mem[i].v.addr = NULL;
+						continue;
+					}
+
+					ab->qmi.persist_mem[ab->qmi.persist_mem_count++] =
+						ab->qmi.target_mem[i];
+					ab->qmi.target_mem[i].v.addr = NULL;
+					continue;
+				}
 				dma_free_coherent(dev,
 						  ab->qmi.target_mem[i].prev_size,
 						  ab->qmi.target_mem[i].v.addr,
@@ -4511,7 +4539,7 @@ static int ath12k_qmi_alloc_chunk(struct ath12k_base *ab,
 	chunk->v.addr = dma_alloc_coherent(dev,
 					   chunk->size,
 					   &chunk->paddr,
-					   GFP_KERNEL | __GFP_NOWARN);
+					   GFP_KERNEL);
 	if (!chunk->v.addr) {
 		if (!ab->qmi_mem_dev.rmem_inited &&
 		    chunk->size > ATH12K_QMI_MAX_CHUNK_SIZE) {
@@ -4624,10 +4652,11 @@ static int ath12k_qmi_alloc_target_mem_chunk(struct ath12k_base *ab,
 {
 	struct target_mem_chunk *chunk, *mlo_chunk;
 	struct ath12k_hw_group *ag = ab->ag;
-	int i, mlo_idx, ret;
+	int i, j, mlo_idx, ret;
 	int mlo_size = 0;
 	int old_seg_cnt = ab->qmi.mem_seg_count;
 	int seg_cnt = old_seg_cnt;
+	bool from_pool;
 	struct device *dev;
 
 	mutex_lock(&ag->mutex);
@@ -4664,13 +4693,49 @@ static int ath12k_qmi_alloc_target_mem_chunk(struct ath12k_base *ab,
 			     !chunk->size) {
 				chunk->paddr = 0;
 				chunk->v.addr = NULL;
+				seg_cnt++;
 				break;
 			}
-			dev = ab->qmi_mem_dev.rmem_inited ?
-			      &ab->qmi_mem_dev.dev : ab->dev;
-			ret = ath12k_qmi_alloc_chunk(ab, chunk, dev);
-			if (ret)
-				goto err;
+			/* Search the persistent pool before allocating. Pool
+			 * entries are parked across recovery and cold-boot power
+			 * cycles. Match on type and size — request order may
+			 * differ between boots so slot position is unreliable.
+			 */
+			from_pool = false;
+			for (j = 0; j < ab->qmi.persist_mem_count; j++) {
+				struct target_mem_chunk *c =
+					&ab->qmi.persist_mem[j];
+
+				if (c->type != chunk->type ||
+				    c->size != chunk->size)
+					continue;
+				/* Transplant into the active table */
+				*chunk = *c;
+				/* Compact the pool */
+				if (j + 1 < ab->qmi.persist_mem_count)
+					ab->qmi.persist_mem[j] =
+						ab->qmi.persist_mem[
+							ab->qmi.persist_mem_count - 1];
+				memset(&ab->qmi.persist_mem[
+						ab->qmi.persist_mem_count - 1],
+				       0, sizeof(*c));
+				ab->qmi.persist_mem_count--;
+				ath12k_dbg(ab, ATH12K_DBG_QMI,
+					   "qmi reusing persist pool entry type %u size %u paddr %pad\n",
+					   chunk->type, chunk->size,
+					   &chunk->paddr);
+				from_pool = true;
+				break;
+			}
+			if (!from_pool) {
+				dev = ab->qmi_mem_dev.rmem_inited ?
+				      &ab->qmi_mem_dev.dev : ab->dev;
+				ret = ath12k_qmi_alloc_chunk(ab, chunk, dev);
+				if (ret)
+					goto err;
+				if (chunk->type == CALDB_MEM_REGION_TYPE)
+					chunk->persist = true;
+			}
 			seg_cnt++;
 			break;
 		case MLO_GLOBAL_MEM_REGION_TYPE:
@@ -4742,14 +4807,6 @@ err:
 	ath12k_qmi_free_target_mem_chunk_range(ab, old_seg_cnt, seg_cnt);
 
 	mutex_unlock(&ag->mutex);
-
-	/* The firmware will attempt to request memory in smaller chunks
-	 * on the next try. However, the current caller should be notified
-	 * that this instance of request parsing was successful.
-	 * Therefore, return 0 only.
-	 */
-	if (ret == -EAGAIN)
-		ret = 0;
 
 	return ret;
 }
@@ -5080,11 +5137,17 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab,
 						dma_alloc_coherent(dev,
 								   mlo_chunk->size,
 								   &mlo_chunk->paddr,
-								   GFP_KERNEL |
-								   __GFP_NOWARN);
+								   GFP_KERNEL);
 				} else {
 					mlo_chunk->v.ioaddr = ioremap(mlo_chunk->paddr,
 								      mlo_chunk->size);
+				}
+
+				if (!mlo_chunk->v.ioaddr) {
+					ath12k_err(ab, "MLO memory allocation failed\n");
+					mlo_chunk->paddr = 0;
+					ret = -ENOMEM;
+					goto out;
 				}
 				memset_io(mlo_chunk->v.ioaddr, 0, mlo_chunk->size);
 			}
@@ -6296,6 +6359,7 @@ void ath12k_qmi_firmware_stop(struct ath12k_base *ab)
 		return;
 	}
 }
+EXPORT_SYMBOL(ath12k_qmi_firmware_stop);
 
 int ath12k_qmi_firmware_start(struct ath12k_base *ab,
 			      u32 mode)
@@ -6708,9 +6772,14 @@ static int ath12k_qmi_request_device_info(struct ath12k_base *ab)
 	int ret = 0;
 
 	/*device info message only supported for internal-PCI devices */
+#ifdef CPTCFG_QCN_EXTN
 	if (ab->hw_rev != ATH12K_HW_QCN6432_HW10 &&
 		ab->hw_rev != ATH12K_HW_QCN9160_HW10)
 		return 0;
+#else
+	if (ab->hw_rev != ATH12K_HW_QCN6432_HW10)
+		return 0;
+#endif /* CPTCFG_QCN_EXTN */
 
 	memset(&req, 0, sizeof(req));
 	memset(&resp, 0, sizeof(resp));
@@ -6893,7 +6962,7 @@ static void ath12k_qmi_msg_mem_request_cb(struct qmi_handle *qmi_hdl,
 		ret = req_mem_seg_count;
 	} else {
 		ret = ath12k_qmi_alloc_target_mem_chunk(ab, req_mem, req_mem_seg_count);
-		if (ret != req_mem_seg_count) {
+		if (ret != -EAGAIN && ret != req_mem_seg_count) {
 			ath12k_warn(ab, "qmi failed to alloc target memory: %d\n",
 				    ret);
 			kfree(event_data);
@@ -7174,6 +7243,7 @@ static void ath12k_qmi_driver_event_work(struct work_struct *work)
 					      event_work);
 	struct ath12k_qmi_driver_event *event;
 	struct ath12k_base *ab = qmi->ab;
+	bool is_ready = false;
 	int ret;
 
 	spin_lock(&qmi->event_lock);
@@ -7232,11 +7302,17 @@ static void ath12k_qmi_driver_event_work(struct work_struct *work)
 						break;
 				}
 
-				ret = ath12k_core_qmi_firmware_ready(ab, NULL);
+				ret = ath12k_core_qmi_firmware_ready(ab, &is_ready);
 				if (!ret)
 					set_bit(ATH12K_FLAG_QMI_FW_READY_COMPLETE,
 						&ab->dev_flags);
+
+				if (ret || !is_ready)
+					break;
+
+				ath12k_core_en_ssr(ab, ATH12K_FW_RECOVERY_ENABLE_MODE2);
 			}
+
 			break;
 		case ATH12K_QMI_EVENT_HOST_CAP:
 			ret = ath12k_qmi_event_host_cap(qmi);
@@ -7315,6 +7391,9 @@ int ath12k_qmi_init_service(struct ath12k_base *ab)
 
 void ath12k_qmi_deinit_service(struct ath12k_base *ab)
 {
+	struct device *dev;
+	int i;
+
 	if (!ab->qmi.ab)
 		return;
 
@@ -7326,7 +7405,24 @@ void ath12k_qmi_deinit_service(struct ath12k_base *ab)
 	destroy_workqueue(ab->qmi.event_wq);
 	ath12k_qmi_m3_free(ab);
 	ath12k_qmi_ext_fw_bin_clear(ab);
+	/* Park active persist chunks into the pool first, then free the
+	 * entire pool. This order matters: free_target_mem_chunk() parks
+	 * persist chunks into persist_mem[] instead of freeing them, so
+	 * the pool must be freed afterwards or those chunks leak on unload.
+	 */
 	ath12k_qmi_free_resource(ab);
+
+	dev = ab->qmi_mem_dev.rmem_inited ? &ab->qmi_mem_dev.dev : ab->dev;
+	for (i = 0; i < ab->qmi.persist_mem_count; i++) {
+		if (!ab->qmi.persist_mem[i].v.addr)
+			continue;
+		dma_free_coherent(dev,
+				  ab->qmi.persist_mem[i].prev_size,
+				  ab->qmi.persist_mem[i].v.addr,
+				  ab->qmi.persist_mem[i].paddr);
+		ab->qmi.persist_mem[i].v.addr = NULL;
+	}
+	ab->qmi.persist_mem_count = 0;
 	ab->qmi.ab = NULL;
 }
 
@@ -7337,3 +7433,4 @@ void ath12k_qmi_free_resource(struct ath12k_base *ab)
 	athdbg_if_get_service(ab, ATHDBG_SRV_QDSS_MEM_FREE);
 #endif
 }
+EXPORT_SYMBOL(ath12k_qmi_free_resource);

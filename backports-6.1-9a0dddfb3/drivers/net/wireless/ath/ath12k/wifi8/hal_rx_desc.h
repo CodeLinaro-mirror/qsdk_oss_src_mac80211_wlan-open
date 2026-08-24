@@ -33,6 +33,7 @@ struct hal_rxpt_classify_info {
 #define RX_MPDU_INFO_INFO2_MAC_ADDR_AD4_VALID				BIT(5)
 #define RX_MPDU_INFO_INFO2_MPDU_SEQUENCE_CONTROL_VALID			BIT(6)
 #define RX_MPDU_INFO_INFO2_FRAME_ENCRYPTION_INFO_VALID			BIT(9)
+#define RX_MPDU_INFO_INFO2_ENCRYPTED					BIT(18)
 #define RX_MPDU_INFO_INFO2_MPDU_SEQUENCE_NUMBER				GENMASK(31, 20)
 #define RX_MPDU_INFO_INFO4_KEY_ID_OCTET					GENMASK(7, 0)
 
@@ -73,12 +74,10 @@ struct rx_mpdu_start_qcn9625 {
 
 
 /* TODO: CORE_DP change this */
-#define QCN9625_MPDU_START_SELECT_INFO0                                BIT(1)
-#define QCN9625_MPDU_START_SELECT_REO_QUEUE_DESC_INFO1                 BIT(2)
-#define QCN9625_MPDU_START_SELECT_PN_63_0                              BIT(3)
-#define QCN9625_MPDU_START_SELECT_PN_127_64                            BIT(4)
-#define QCN9625_MPDU_START_SELECT_PEER_MDATA_INFO2                     BIT(5)
-#define QCN9625_MPDU_START_SELECT_AST_IDX_SW_PEER_ID_INFO3             BIT(6)
+#define QCN9625_MPDU_START_SELECT_PN_31_0                              BIT(2)
+#define QCN9625_MPDU_START_SELECT_PN_95_32                             BIT(3)
+#define QCN9625_MPDU_START_SELECT_INFO2                                BIT(5)
+#define QCN9625_MPDU_START_SELECT_PEER_MDATA                           BIT(6)
 #define QCN9625_MPDU_START_SELECT_INFO4_INFO5                          BIT(7)
 #define QCN9625_MPDU_START_SELECT_FRAME_CTRL_DURATION_ADDR1_31_0       BIT(8)
 #define QCN9625_MPDU_START_SELECT_ADDR2_47_0_ADDR1_47_32               BIT(9)
@@ -86,9 +85,10 @@ struct rx_mpdu_start_qcn9625 {
 #define QCN9625_MPDU_START_SELECT_ADDR4_47_0_QOS_CTRL                  BIT(11)
 
 #define QCN9625_MPDU_START_WMASK					\
-		(QCN9625_MPDU_START_SELECT_PN_63_0 |			\
-		 QCN9625_MPDU_START_SELECT_PN_127_64 |			\
-		 QCN9625_MPDU_START_SELECT_PEER_MDATA_INFO2 |		\
+		(QCN9625_MPDU_START_SELECT_PN_31_0 |			\
+		 QCN9625_MPDU_START_SELECT_PN_95_32 |			\
+		 QCN9625_MPDU_START_SELECT_INFO2 |			\
+		 QCN9625_MPDU_START_SELECT_PEER_MDATA |			\
 		 QCN9625_MPDU_START_SELECT_INFO4_INFO5 |		\
 		 QCN9625_MPDU_START_SELECT_FRAME_CTRL_DURATION_ADDR1_31_0 | \
 		 QCN9625_MPDU_START_SELECT_ADDR2_47_0_ADDR1_47_32 |	\
@@ -100,9 +100,12 @@ struct rx_mpdu_start_qcn9625 {
  */
 
 struct rx_mpdu_start_qcn9625_compact {
-	__le32 pn[4];
+	__le32 reserved_1;
+	__le32 pn[3];
 	__le32 info2;
+	__le32 reserved_2;
 	__le32 peer_meta_data;
+	__le32 reserved_3;
 	__le32 info4;
 	__le32 info5;
 	__le16 frame_ctrl;
@@ -554,6 +557,8 @@ struct rx_mpdu_start_qcn9625_compact {
 #define RX_MSDU_END_INFO5_FR_DS						BIT(14)
 #define RX_MSDU_END_INFO8_FLOW_IDX_TIMEOUT				BIT(12)
 #define RX_MSDU_END_INFO8_FLOW_IDX_INVALID				BIT(13)
+#define RX_MSDU_END_INFO8_CCE_MATCH					BIT(14)
+#define RX_MSDU_END_INFO7_FLOW_IDX					GENMASK(25, 6)
 #define RX_MSDU_END_INFO11_MSDU_LENGTH					GENMASK(13, 0)
 #define RX_MSDU_END_INFO12_DECAP_FORMAT					GENMASK(9, 8)
 #define RX_MSDU_END_INFO12_IPV4_PROTO					BIT(10)
@@ -633,16 +638,14 @@ struct rx_msdu_end_qcn9625 {
 #define QCN9625_MSDU_END_SELECT_INFO7_FSE_METADATA			BIT(7)
 #define QCN9625_MSDU_END_SELECT_CCE_MDATA_TCP_UDP_CSUM_INFO8_IP_LEN	BIT(8)
 #define QCN9625_MSDU_END_SELECT_INFO11_INFO12				BIT(10)
-#define QCN9625_MSDU_END_SELECT_INFO13_AND_FLOW_ID_TOEPLITZ		BIT(12)
-#define QCN9625_MSDU_END_SELECT_PPDU_START_TS_63_32_PHY_MDATA		BIT(13)
+#define QCN9625_MSDU_END_SELECT_INFO13_AND_PHY_MDATA			BIT(12)
 #define QCN9625_MSDU_END_SELECT_INFO14_INFO15				BIT(16)
 
 /* TODO: CORE DP RX: update this */
 #define QCN9625_MSDU_END_WMASK (QCN9625_MSDU_END_SELECT_MSDU_END_TAG | \
 		QCN9625_MSDU_END_SELECT_SA_SW_PER_ID_INFO5_INFO6_DA_ID | \
 		QCN9625_MSDU_END_SELECT_INFO11_INFO12 |			\
-		QCN9625_MSDU_END_SELECT_INFO13_AND_FLOW_ID_TOEPLITZ |	\
-		QCN9625_MSDU_END_SELECT_PPDU_START_TS_63_32_PHY_MDATA |	\
+		QCN9625_MSDU_END_SELECT_INFO13_AND_PHY_MDATA |		\
 		QCN9625_MSDU_END_SELECT_INFO14_INFO15 |			\
 		QCN9625_MSDU_END_SELECT_CCE_MDATA_TCP_UDP_CSUM_INFO8_IP_LEN | \
 		QCN9625_MSDU_END_SELECT_INFO7_FSE_METADATA)
@@ -667,8 +670,6 @@ struct rx_msdu_end_qcn9625_compact {
 	__le32 info11;
 	__le32 info12;
 	__le32 info13;
-	__le32 flow_id_toeplitz;
-	__le32 ppdu_start_timestamp_63_32;
 	__le32 phy_meta_data;
 	__le32 info14;
 	__le32 info15;
@@ -1291,6 +1292,92 @@ struct hal_rx_desc_qcn9625_compact {
 	u8 msdu_payload[];
 } __packed;
 
+/* V1 compact descriptor sub-structures
+ * (tied to QCN9625_MSDU_END_WMASK / QCN9625_MPDU_START_WMASK for HW1.0)
+ */
+
+#define QCN9625_MPDU_START_SELECT_PN_63_0_V1				BIT(3)
+#define QCN9625_MPDU_START_SELECT_PN_127_64_V1				BIT(4)
+#define QCN9625_MPDU_START_SELECT_PEER_MDATA_INFO2_V1			BIT(5)
+#define QCN9625_MPDU_START_SELECT_INFO4_INFO5_V1			BIT(7)
+#define QCN9625_MPDU_START_SELECT_FRAME_CTRL_DURATION_ADDR1_31_0_V1	BIT(8)
+#define QCN9625_MPDU_START_SELECT_ADDR2_47_0_ADDR1_47_32_V1		BIT(9)
+#define QCN9625_MPDU_START_SELECT_ADDR3_47_0_SEQ_CTRL_V1		BIT(10)
+#define QCN9625_MPDU_START_SELECT_ADDR4_47_0_QOS_CTRL_V1		BIT(11)
+
+#define QCN9625_MPDU_START_WMASK_V1\
+	(QCN9625_MPDU_START_SELECT_PN_63_0_V1 |\
+	 QCN9625_MPDU_START_SELECT_PN_127_64_V1 |\
+	 QCN9625_MPDU_START_SELECT_PEER_MDATA_INFO2_V1 |\
+	 QCN9625_MPDU_START_SELECT_INFO4_INFO5_V1 |\
+	 QCN9625_MPDU_START_SELECT_FRAME_CTRL_DURATION_ADDR1_31_0_V1 | \
+	 QCN9625_MPDU_START_SELECT_ADDR2_47_0_ADDR1_47_32_V1 |\
+	 QCN9625_MPDU_START_SELECT_ADDR3_47_0_SEQ_CTRL_V1 |\
+	 QCN9625_MPDU_START_SELECT_ADDR4_47_0_QOS_CTRL_V1)
+
+#define QCN9625_MSDU_END_SELECT_MSDU_END_TAG_V1				BIT(0)
+#define QCN9625_MSDU_END_SELECT_SA_SW_PER_ID_INFO5_INFO6_DA_ID_V1	BIT(6)
+#define QCN9625_MSDU_END_SELECT_INFO11_INFO12_V1			BIT(10)
+#define QCN9625_MSDU_END_SELECT_INFO13_AND_FLOW_ID_TOEPLITZ_V1		BIT(12)
+#define QCN9625_MSDU_END_SELECT_PPDU_START_TS_63_32_PHY_MDATA_V1	BIT(13)
+#define QCN9625_MSDU_END_SELECT_INFO14_INFO15_V1			BIT(16)
+#define QCN9625_MSDU_END_SELECT_CCE_MDATA_TCP_UDP_CSUM_INFO8_IP_LEN_V1	BIT(8)
+#define QCN9625_MSDU_END_SELECT_INFO7_FSE_METADATA_V1			BIT(7)
+
+#define QCN9625_MSDU_END_WMASK_V1\
+	(QCN9625_MSDU_END_SELECT_MSDU_END_TAG_V1 |\
+	 QCN9625_MSDU_END_SELECT_SA_SW_PER_ID_INFO5_INFO6_DA_ID_V1 | \
+	 QCN9625_MSDU_END_SELECT_INFO11_INFO12_V1 |\
+	 QCN9625_MSDU_END_SELECT_INFO13_AND_FLOW_ID_TOEPLITZ_V1 | \
+	 QCN9625_MSDU_END_SELECT_PPDU_START_TS_63_32_PHY_MDATA_V1 | \
+	 QCN9625_MSDU_END_SELECT_INFO14_INFO15_V1 |\
+	 QCN9625_MSDU_END_SELECT_CCE_MDATA_TCP_UDP_CSUM_INFO8_IP_LEN_V1 | \
+	 QCN9625_MSDU_END_SELECT_INFO7_FSE_METADATA_V1)
+
+struct rx_msdu_end_qcn9625_compact_v1 {
+	__le64 msdu_end_tag;
+	__le16 sa_sw_peer_id;
+	__le16 info5;
+	__le16 info6;
+	__le16 da_idx_or_sw_peer_id;
+	__le32 info7;
+	__le32 fse_metadata;
+	__le16 cce_metadata;
+	__le16 rsvd_0;
+	__le16 info8;
+	__le16 rsvd_1;
+	__le32 info11;
+	__le32 info12;
+	__le32 info13;
+	__le32 flow_id_toeplitz;
+	__le32 ppdu_start_timestamp_63_32;
+	__le32 phy_meta_data;
+	__le32 info14;
+	__le32 info15;
+} __packed;
+
+struct rx_mpdu_start_qcn9625_compact_v1 {
+	__le32 pn[4];
+	__le32 info2;
+	__le32 peer_meta_data;
+	__le32 info4;
+	__le32 info5;
+	__le16 frame_ctrl;
+	__le16 duration;
+	u8 addr1[ETH_ALEN];
+	u8 addr2[ETH_ALEN];
+	u8 addr3[ETH_ALEN];
+	__le16 seq_ctrl;
+	u8 addr4[ETH_ALEN];
+	__le16 qos_ctrl;
+} __packed;
+
+struct hal_rx_desc_qcn9625_compact_v1 {
+	struct rx_msdu_end_qcn9625_compact_v1  msdu_end;
+	struct rx_mpdu_start_qcn9625_compact_v1 mpdu_start;
+	u8 msdu_payload[];
+} __packed;
+
 
 #define HAL_RX_BE_PKT_HDR_TLV_LEN		112
 
@@ -1304,6 +1391,8 @@ struct hal_rx_desc {
 	union {
 		struct hal_rx_desc_qcn9625 qcn9625;
 		struct hal_rx_desc_qcn9625_compact qcn9625_compact;
+		/* V1 compact descriptor (HW1.0) */
+		struct hal_rx_desc_qcn9625_compact_v1 qcn9625_compact_v1;
 	} u;
 } __packed;
 

@@ -448,6 +448,15 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.max_size = HAL_TQM2PPE_RELEASE_RING_BASE_MSB_RING_SIZE,
 		.name = "hbm_tx_completion",
 	},
+	[HAL_TQM2SW_FW_COMPLETION] = {
+		.start_ring_id = HAL_SRNG_RING_ID_TQM2SW5_RELEASE,
+		.max_rings = 1,
+		.entry_size = sizeof(struct hal_tqm2sw_completion_ring) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_DST,
+		.max_size = HAL_TQM2SW_RELEASE_RING_BASE_MSB_RING_SIZE,
+		.name = "tqm2sw_fw",
+	},
 };
 
 const struct ath12k_hw_regs qcn9625_regs = {
@@ -553,7 +562,6 @@ const struct ath12k_hw_hal_params ath12k_wifi8_hw_hal_params_qcn9625 = {
 			     HAL_TQM_SW_COOKIE_CONV_CFG_TQM2SW2_EN |
 			     HAL_TQM_SW_COOKIE_CONV_CFG_TQM2SW3_EN |
 			     HAL_TQM_SW_COOKIE_CONV_CFG_TQM2SW4_EN |
-			     HAL_TQM_SW_COOKIE_CONV_CFG_TQM2SW5_EN |
 			     HAL_TQM_SW_COOKIE_CONV_CFG_TQM2SW6_EN,
 	.tqm2sw_cc_enable2 = HAL_TQM_SW_COOKIE_CONV_CFG2_TQM2SW7_EN |
 			     HAL_TQM_SW_COOKIE_CONV_CFG2_TQM2SW8_EN |
@@ -1214,8 +1222,21 @@ void ath12k_wifi8_hal_extract_rx_spd_data_qcn9625(struct hal_rx_spd_data *rx_inf
 	rx_info->tlv_info.nss =
 		hweight8(ath12k_wifi8_hal_rx_h_nss_qcn9625(rx_desc));
 	rx_info->tlv_info.sgi = ath12k_wifi8_hal_rx_h_sgi_qcn9625(rx_desc);
+	rx_info->tlv_info.is_decrypted =
+		ath12k_wifi8_hal_rx_h_is_decrypted_qcn9625(rx_desc);
+	rx_info->tlv_info.encrypt_info_valid =
+		ath12k_wifi8_hal_encrypt_valid_qcn9625(rx_desc);
+	rx_info->tlv_info.mpdu_frame_control_valid =
+		!!(le32_get_bits(rx_desc->u.qcn9625_compact.mpdu_start.info2,
+				 RX_MPDU_INFO_INFO2_MPDU_FRAME_CONTROL_VALID));
+	rx_info->tlv_info.encrypted =
+		!!(le32_get_bits(rx_desc->u.qcn9625_compact.mpdu_start.info2,
+				 RX_MPDU_INFO_INFO2_ENCRYPTED));
 	rx_info->cce_metadata =
 		__le16_to_cpu(rx_desc->u.qcn9625_compact.msdu_end.cce_metadata);
+	rx_info->cce_match =
+		le16_get_bits(rx_desc->u.qcn9625_compact.msdu_end.info8,
+			      RX_MSDU_END_INFO8_CCE_MATCH);
 
 	rx_info->rx_mpdu_info.flow_idx_timeout =
 		le32_get_bits(flow_idx_info, RX_MSDU_END_INFO8_FLOW_IDX_TIMEOUT);
@@ -1446,6 +1467,11 @@ int ath12k_wifi8_hal_srng_create_config_qcn9625(struct ath12k_hal *hal)
 	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_TQM_REG + HAL_TQM2PPE_RELEASE_RING_BASE_LSB;
 	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_TQM_REG + HAL_TQM2PPE_RELEASE_RING_HP;
 
+	/* TQM2SW5 ring 5 for FW-owned buffer completions. */
+	s = &hal->srng_config[HAL_TQM2SW_FW_COMPLETION];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_TQM_REG + HAL_TQM2SW5_RELEASE_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_TQM_REG + HAL_TQM2SW5_RELEASE_RING_HP;
+
 	return 0;
 }
 
@@ -1549,13 +1575,37 @@ int ath12k_wifi8_hal_init_qcn9625(struct ath12k_hal *hal, u8 hw_version)
 {
 	struct ath12k_hal_wifi8 *hal_wifi8;
 
+
 	switch (hw_version) {
 	case ATH12K_HW_QCN9625_HW10:
 	case ATH12K_HW_QCN9589_HW10:
+		ath12k_wifi8_hal_init_v1_ops();
+		hal->regs = &qcn9625_regs;
+		hal->hal_params = &ath12k_wifi8_hw_hal_params_qcn9625;
+		hal->hal_ops = &hal_qcn9625_v1_ops;
+		hal->hal_desc_sz = ath12k_wifi8_hal_get_rx_desc_size_qcn9625_v1();
+		hal->rx_mpdu_start_offset =
+			ath12k_wifi8_hal_rx_desc_get_mpdu_start_offset_qcn9625_v1();
+		hal->rx_msdu_end_offset =
+			ath12k_wifi8_hal_rx_desc_get_msdu_end_offset_qcn9625_v1();
+		hal->rx_mpdu_start_wmask =
+				ath12k_wifi8_hal_rx_mpdu_start_wmask_get_qcn9625_v1();
+		hal->rx_msdu_end_wmask =
+				ath12k_wifi8_hal_rx_msdu_end_wmask_get_qcn9625_v1();
+		break;
 	case ATH12K_HW_QCN9625_HW20:
 		hal->regs = &qcn9625_regs;
 		hal->hal_params = &ath12k_wifi8_hw_hal_params_qcn9625;
 		hal->hal_ops = &hal_qcn9625_ops;
+		hal->hal_desc_sz = ath12k_wifi8_hal_get_rx_desc_size_qcn9625();
+		hal->rx_mpdu_start_offset =
+			ath12k_wifi8_hal_rx_desc_get_mpdu_start_offset_qcn9625();
+		hal->rx_msdu_end_offset =
+			ath12k_wifi8_hal_rx_desc_get_msdu_end_offset_qcn9625();
+		hal->rx_mpdu_start_wmask =
+				ath12k_wifi8_hal_rx_mpdu_start_wmask_get_qcn9625();
+		hal->rx_msdu_end_wmask =
+				ath12k_wifi8_hal_rx_msdu_end_wmask_get_qcn9625();
 		break;
 	default:
 		return -EINVAL;
@@ -1563,7 +1613,6 @@ int ath12k_wifi8_hal_init_qcn9625(struct ath12k_hal *hal, u8 hw_version)
 
 	hal->tcl_to_cmp_rbm_map = ath12k_wifi8_hal_tcl_to_cmp_rbm_map_qcn9625;
 	hal->rdi_mapping = ath12k_wifi8_hal_rdi_mapping_qcn9625;
-	hal->hal_desc_sz = ath12k_wifi8_hal_get_rx_desc_size_qcn9625();
 	hal_wifi8 = kzalloc(sizeof(*hal_wifi8), GFP_KERNEL);
 	if (!hal_wifi8)
 		return -ENOMEM;
@@ -1705,6 +1754,10 @@ const struct hal_ops hal_qcn9625_ops = {
 	.get_hw_hptp = ath12k_wifi8_hal_get_hw_hptp,
 	.rx_h_peer_meta_data = ath12k_wifi8_hal_rx_h_peer_meta_data_qcn9625,
 	.rx_desc_get_fse_info = ath12k_wifi8_hal_rx_desc_get_fse_info_qcn9625,
+	.rx_get_fse_metadata = ath12k_wifi8_hal_rx_get_fse_metadata_qcn9625,
+	.rx_get_cce_metadata = ath12k_wifi8_hal_rx_get_cce_metadata_qcn9625,
+	.rx_get_cce_match_bit = ath12k_wifi8_hal_rx_get_cce_match_bit_qcn9625,
+	.rx_get_flow_params = ath12k_wifi8_hal_rx_get_flow_params_qcn9625,
 	.hal_tx_ppe2tcl_ring_halt_get = ath12k_wifi8_hal_tx_ppe2tcl_ring_halt_get,
 	.hal_tx_ppe2tcl_ring_halt_set = ath12k_wifi8_hal_tx_ppe2tcl_ring_halt_set,
 	.hal_tx_ppe2tcl_ring_halt_reset = ath12k_wifi8_hal_tx_ppe2tcl_ring_halt_reset,

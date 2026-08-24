@@ -661,6 +661,15 @@ void ath12k_wifi8_hal_ppeds_tx_configure_skip_hdr_fetch(struct ath12k_base *ab)
 	ath12k_hif_write32(ab, HAL_TCL1_CMN_CONFIG1_PPE, val);
 }
 
+void ath12k_wifi8_hal_tx_configure_cmn_reg(struct ath12k_base *ab)
+{
+	u32 reg_val;
+
+	reg_val = ath12k_hif_read32(ab, HAL_TCL1_CMN_CONFIG);
+	reg_val &= ~HAL_TCL1_CMN_CONFIG_CLFY_INVALID_PPE_DESC;
+	ath12k_hif_write32(ab, HAL_TCL1_CMN_CONFIG, reg_val);
+}
+
 void ath12k_wifi8_hal_tx_configure_bank_register(struct ath12k_base *ab,
 						 u32 bank_config,
 						 u8 bank_id)
@@ -1175,6 +1184,9 @@ u32 ath12k_hal_srng_get_cmd_size(struct ath12k_base *ab, enum hal_tlv_tag_be typ
 	else if (type == HAL_SAM_PEER_CLEAR_PROGRAMMING_BO)
 		return ((sizeof(struct hal_tlv_64_hdr) +
 			sizeof(struct hal_sam_peer_clear_programming)) >> 2);
+	else if (type == HAL_TQM_FW_COMPLETION_BO)
+		return ((sizeof(struct hal_tlv_64_hdr) +
+			sizeof(struct hal_tqm2sw_completion_ring)) >> 2);
 	return 0;
 }
 

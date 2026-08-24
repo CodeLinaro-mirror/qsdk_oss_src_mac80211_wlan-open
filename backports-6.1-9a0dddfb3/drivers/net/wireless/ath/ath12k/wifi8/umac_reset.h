@@ -18,6 +18,7 @@ void ath12k_wifi8_umac_reset_handle_init_recovery(struct ath12k_base *ab);
 int ath12k_cumac_hw_pre_reset(struct ath12k_base *ab);
 int ath12k_cumac_hw_post_reset(struct ath12k_base *ab);
 int ath12k_cumac_hw_reset(struct ath12k_base *ab);
+void ath12k_wifi8_update_tqm_status_ring_tp(struct ath12k_base *ab, bool enable);
 int ath12k_wifi8_umcmn_irq_config(struct ath12k_base *ab);
 void ath12k_wifi8_umcmn_irq_free(struct ath12k_base *ab);
 void ath12k_wifi8_umcmn_irq_enable(struct ath12k_base *ab);
@@ -27,6 +28,7 @@ void ath12k_wifi8_umcmn_timer_enable(struct ath12k_base *ab);
 void ath12k_wifi8_umcmn_timer_free(struct ath12k_base *ab);
 
 #define ATH12K_UMCMN_TIMER_INTERVAL_MS 100
+#define ATH12K_TQM_TP_TIMER_INTERVAL_MS 10
 
 #define HAL_UMAC_UMCMN_R0_ISR_P			0xF1E034
 #define HAL_UMAC_UMCMN_R0_ISR_S0		0xF1E038
@@ -59,6 +61,14 @@ void ath12k_wifi8_umcmn_timer_free(struct ath12k_base *ab);
 #define HAL_UMAC_UMCMN_R0_ISR_S28		0xF1E258
 #define HAL_UMAC_UMCMN_R0_ISR_S29		0xF1E25C
 #define HAL_UMAC_UMCMN_R0_ISR_S30		0xF1E260
+
+#define HAL_UMCMN_ISR_S14_INDEX			14
+#define HAL_UMCMN_ISR_S14_TQM_WATCHDOG		BIT(2)
+
+struct ath12k_tqm_sm_state {
+	u32 sm;
+	u32 bank;
+};
 
 /* CUMAC HW Reset Step Enumerations */
 
@@ -104,15 +114,15 @@ enum {
  */
 enum {
 	CUMAC_HW_POST_RESET_START,
+	CUMAC_HW_POST_RESET_ENABLE_TQM,
 	CUMAC_HW_POST_RESET_CLEAR_INTERRUPTS,
+	CUMAC_HW_POST_RESET_ENABLE_SAM,
 	CUMAC_HW_POST_RESET_ENABLE_WBM,
 	CUMAC_HW_POST_RESET_ENABLE_REO,
 	CUMAC_HW_POST_RESET_UNPAUSE_GLOBAL_WSI,
 	CUMAC_HW_POST_RESET_UNHALT_MLO_DOORBELLS,
 	CUMAC_HW_POST_RESET_ENABLE_RXDMA_PREFETCH,
 	CUMAC_HW_POST_RESET_UNHALT_TCL,
-	CUMAC_HW_POST_RESET_ENABLE_TQM,
-	CUMAC_HW_POST_RESET_ENABLE_SAM,
 	CUMAC_HW_POST_RESET_END,
 	CUMAC_HW_POST_RESET_MAX,
 };
@@ -128,6 +138,30 @@ struct ath12k_cumac_hw_reset_timestamps {
 	u64 cumac_hw_reset_ts[CUMAC_HW_RESET_MAX];
 	u64 cumac_hw_post_reset_ts[CUMAC_HW_POST_RESET_MAX];
 };
+
+/**
+ * struct ath12k_cumac_hw_reset_errors - CUMAC HW reset idle-check failure stats
+ *
+ * Stores error/idle check failure stats
+ */
+struct ath12k_cumac_hw_reset_errors {
+	u32 pmac_idle_fail;
+	u32 dmac_idle_fail;
+	u32 umac_idle_fail;
+	u32 wsi_idle_fail;
+	u32 hwsch_flush_fail;
+	u32 pmac_rx_flush_fail;
+	u32 rxdma_flush_fail;
+	u32 tcl_idle_fail;
+	u32 sam_idle_fail;
+	u32 tqm_prefetch_idle_fail;
+	u32 tqm_sm_idle_fail;
+	u32 mlo_ring_idle_fail;
+	u32 ring_idle_fail;
+};
+
+#define ATH12K_CUMAC_RESET_ERR_INC(ab, field) \
+	((ath12k_get_hal_wifi8(&(ab)->hal)->reset_errors.field)++)
 
 /**
  * typedef cumac_hw_reset_fn - Function pointer type for reset step handlers

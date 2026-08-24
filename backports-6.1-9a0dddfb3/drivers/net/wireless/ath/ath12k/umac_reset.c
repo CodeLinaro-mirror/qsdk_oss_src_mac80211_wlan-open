@@ -646,6 +646,28 @@ int ath12k_umac_reset_notify_target(struct ath12k_base *ab, int tx_event)
 	return 0;
 }
 
+static bool ath12k_dp_umac_reset_fallback_needed(struct ath12k_base *ab)
+{
+	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ag->mlo_umac_reset;
+	bool fb_needed = false;
+
+	if (!ab->hw_params->support_umac_reset)
+		return fb_needed;
+
+	spin_lock_bh(&mlo_umac_reset->lock);
+
+	if ((mlo_umac_reset->umac_reset_info & ATH12K_IS_UMAC_RESET_IN_PROGRESS) &&
+	    !(mlo_umac_reset->umac_reset_info & ATH12K_IS_UMAC_RESET_FB_IN_PROGRESS)) {
+		mlo_umac_reset->umac_reset_info |= ATH12K_IS_UMAC_RESET_FB_IN_PROGRESS;
+		fb_needed = true;
+	}
+
+	spin_unlock_bh(&mlo_umac_reset->lock);
+
+	return fb_needed;
+}
+
 bool ath12k_dp_umac_reset_in_progress(struct ath12k_base *ab)
 {
 	struct ath12k_hw_group *ag = ab->ag;
@@ -706,7 +728,8 @@ int ath12k_umac_reset_initiate_recovery(struct ath12k_base *ab,
 		struct ath12k_base *partner_ab = ag->ab[i];
 
 		if (partner_ab->is_bypassed ||
-		    test_bit(ATH12K_FLAG_RECOVERY, &partner_ab->dev_flags))
+		    (test_bit(ATH12K_FLAG_RECOVERY, &partner_ab->dev_flags) &&
+		    !partner_ab->skip_cumac_hw_reset))
 			continue;
 
 		/* Transition to INIT state */
@@ -1245,8 +1268,8 @@ void ath12k_dp_umac_reset_handle(struct ath12k_base *ab)
 
 	/* All chips have sent requests - process event for entire group serially */
 	ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET,
-		   "All chips ready: request_chip=%d, processing event for entire group\n",
-		   atomic_read(&mlo_umac_reset->request_chip));
+		   "All chips ready: request_chip=%d num_started=%d, processing event for entire group\n",
+		   atomic_read(&mlo_umac_reset->request_chip), ag->num_started);
 
 	/* set the reserved bit 0 to hold the premature execution of enqueued tasks.
 	 * Without this there is a possibility of task_map becoming 0 before other tasks
@@ -1263,7 +1286,8 @@ void ath12k_dp_umac_reset_handle(struct ath12k_base *ab)
 		partner_ab = ag->ab[i];
 
 		if (partner_ab->is_bypassed ||
-		    test_bit(ATH12K_FLAG_RECOVERY, &partner_ab->dev_flags))
+		    (test_bit(ATH12K_FLAG_RECOVERY, &partner_ab->dev_flags) &&
+		     !partner_ab->skip_cumac_hw_reset))
 			continue;
 
 		if (umac_reset_handlers[rx_event])
@@ -1417,7 +1441,9 @@ static void ath12k_umac_reset_cleanup_from_state(struct ath12k_base *ab,
 						 enum ath12k_umac_reset_state state)
 {
 	struct ath12k_hw_group *ag = ab->ag;
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	struct dp_ppe_ds_idxs idx;
+#endif
 
 	ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET,
 		   "Performing fallback cleanup from state: %s\n",
@@ -1437,9 +1463,12 @@ static void ath12k_umac_reset_cleanup_from_state(struct ath12k_base *ab,
 		/* A dummy registration is needed to avoid breaking
 		 * the state machine at the DS module
 		 */
-		if (ab->dp->ppe.ppe_ops &&
-			ab->dp->ppe.ppe_ops->ath12k_ppeds_register_soc)
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+		if (test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags) ||
+		    (ab->dp->ppe.ppe_ops &&
+		     (ab->dp->ppe.ppe_ops->ath12k_ppeds_register_soc)))
 			ab->dp->ppe.ppe_ops->ath12k_ppeds_register_soc(ab->dp, &idx);
+#endif
 		ath12k_umac_reset_restore_irqs(ab, state);
 		break;
 
@@ -1565,18 +1594,18 @@ static void ath12k_umac_reset_clear_mlo_flags(struct ath12k_base *ab)
  * 6. Clears MLO reset flags
  * 7. Calls ath12k_umac_reset_completion() to finish cleanup
  */
-void ath12k_umac_reset_fallback_cleanup(struct ath12k_base *ab)
+static void __ath12k_umac_reset_fallback_cleanup(struct ath12k_base *ab)
 {
 	struct ath12k_hw_group *ag = ab->ag;
 	enum ath12k_umac_reset_state current_state;
 	bool was_in_progress = false;
 
 	if (!ab->hw_params->support_umac_reset)
-		goto complete;
+		return;
 
 	if (!ag) {
 		ath12k_warn(ab, "Hardware group not available for fallback cleanup\n");
-		goto complete;
+		return;
 	}
 
 	/* Get current state */
@@ -1596,18 +1625,29 @@ void ath12k_umac_reset_fallback_cleanup(struct ath12k_base *ab)
 		/* Transition state machine to IDLE */
 		ath12k_umac_reset_transition_to_idle(ab, current_state);
 
-		/* Clear MLO reset flags */
-		ath12k_umac_reset_clear_mlo_flags(ab);
-
 		/* Clear the UMAC recovery in progress flag */
 		clear_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags);
 
 		ath12k_info(ab, "UMAC reset fallback cleanup completed\n");
 	}
+}
 
-complete:
-	/* Always call completion to clear MLO reset info */
-	ath12k_umac_reset_completion(ab);
+void ath12k_umac_reset_fallback_cleanup(struct ath12k_base *ab)
+{
+	struct ath12k_base *partner_ab;
+	struct ath12k_hw_group *ag = ab->ag;
+	int i;
+
+	if (!ath12k_dp_umac_reset_fallback_needed(ab))
+		return;
+
+	for (i = 0; i < ag->num_devices; i++) {
+		partner_ab = ag->ab[i];
+		__ath12k_umac_reset_fallback_cleanup(partner_ab);
+	}
+
+	/* Clear MLO reset flags */
+	ath12k_umac_reset_clear_mlo_flags(ab);
 }
 EXPORT_SYMBOL(ath12k_umac_reset_fallback_cleanup);
 

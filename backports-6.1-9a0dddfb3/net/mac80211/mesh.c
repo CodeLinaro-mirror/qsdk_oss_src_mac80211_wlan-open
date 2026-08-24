@@ -13,6 +13,9 @@
 #include "mesh.h"
 #include "wme.h"
 #include "driver-ops.h"
+#ifdef CPTCFG_QCN_EXTN
+#include "qcn_extns/cmn_extn.h"
+#endif /* CPTCFG_QCN_EXTN */
 
 #define IS_HW_CSUM_NOT_ENABLED(dev)             (!((dev)->features & NETIF_F_HW_CSUM))
 
@@ -30,6 +33,7 @@ void ieee80211s_init(void)
 	mesh_allocated = 1;
 	rm_cache = kmem_cache_create("mesh_rmc", sizeof(struct rmc_entry),
 				     0, 0, NULL);
+	WARN_ON(!rm_cache);
 }
 
 void ieee80211s_stop(void)
@@ -70,6 +74,9 @@ bool mesh_matches_local(struct ieee80211_sub_if_data *sdata,
 	struct cfg80211_chan_def sta_chan_def;
 	struct ieee80211_supported_band *sband;
 	u32 vht_cap_info = 0;
+
+	if (!ie->mesh_id || !ie->mesh_config)
+		return false;
 
 	/*
 	 * As support for each feature is added, check for matching
@@ -164,6 +171,9 @@ out:
  */
 bool mesh_peer_accepts_plinks(struct ieee802_11_elems *ie)
 {
+	if (!ie->mesh_config)
+		return false;
+
 	return (ie->mesh_config->meshconf_cap &
 			IEEE80211_MESHCONF_CAPAB_ACCEPT_PLINKS) != 0;
 }
@@ -1297,6 +1307,16 @@ int ieee80211_start_mesh(struct ieee80211_sub_if_data *sdata)
 	ieee80211_recalc_dtim(local, sdata);
 	ieee80211_link_info_change_notify(sdata, &sdata->deflink, changed);
 
+#ifdef CPTCFG_QCN_EXTN
+	if (cfg80211_bootup_cac_is_5g_dfs_chan_extn(local->hw.wiphy,
+						    &sdata->deflink.conf->chanreq.oper)) {
+		sdata_info(sdata,
+			   "boot-up CAC in progress: deferring netif_carrier_on for mesh %s\n",
+			   sdata->name);
+		return 0;
+	}
+#endif /* CPTCFG_QCN_EXTN */
+
 	netif_carrier_on(sdata->dev);
 	return 0;
 }
@@ -1695,6 +1715,11 @@ static int mesh_fwd_csa_frame(struct ieee80211_sub_if_data *sdata,
 	skb_reserve(skb, local->tx_headroom);
 	mgmt_fwd = skb_put(skb, len);
 
+	if (!elems->mesh_chansw_params_ie) {
+		kfree_skb(skb);
+		return -EINVAL;
+	}
+
 	elems->mesh_chansw_params_ie->mesh_ttl--;
 	elems->mesh_chansw_params_ie->mesh_flags &=
 		~WLAN_EID_CHAN_SWITCH_PARAM_INITIATOR;
@@ -1725,6 +1750,8 @@ static void mesh_rx_csa_frame(struct ieee80211_sub_if_data *sdata,
 	pos = mgmt->u.action.u.chan_switch.variable;
 	baselen = offsetof(struct ieee80211_mgmt,
 			   u.action.u.chan_switch.variable);
+	if (len < baselen)
+		return;
 	elems = ieee802_11_parse_elems(pos, len - baselen,
 				       IEEE80211_FTYPE_MGMT |
 				       IEEE80211_STYPE_ACTION,
@@ -1733,6 +1760,9 @@ static void mesh_rx_csa_frame(struct ieee80211_sub_if_data *sdata,
 		return;
 
 	if (!mesh_matches_local(sdata, elems))
+		goto free;
+
+	if (!elems->mesh_chansw_params_ie)
 		goto free;
 
 	ifmsh->chsw_ttl = elems->mesh_chansw_params_ie->mesh_ttl;

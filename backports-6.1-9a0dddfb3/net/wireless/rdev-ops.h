@@ -82,6 +82,9 @@ static inline int rdev_add_key(struct cfg80211_registered_device *rdev,
 			       struct key_params *params)
 {
 	int ret;
+	if (!params)
+		return -EINVAL;
+
 	trace_rdev_add_key(&rdev->wiphy, netdev, link_id, key_index, pairwise,
 			   mac_addr, params->mode);
 	ret = rdev->ops->add_key(&rdev->wiphy, netdev, link_id, key_index,
@@ -185,6 +188,18 @@ static inline int rdev_start_ap(struct cfg80211_registered_device *rdev,
 	trace_rdev_return_int(&rdev->wiphy, ret);
 	return ret;
 }
+
+#ifdef CPTCFG_QCN_EXTN
+static inline void rdev_bootup_cac_handle_ap(struct cfg80211_registered_device *rdev,
+					     struct net_device *dev,
+					     struct cfg80211_ap_settings *settings)
+{
+	if (!rdev->ops->bootup_cac_handle_ap)
+		return;
+
+	rdev->ops->bootup_cac_handle_ap(&rdev->wiphy, dev, settings);
+}
+#endif /* CPTCFG_QCN_EXTN */
 
 static inline int rdev_update_ap(struct cfg80211_registered_device *rdev,
 				     struct net_device *dev,
@@ -907,6 +922,9 @@ rdev_sched_scan_start(struct cfg80211_registered_device *rdev,
 		      struct cfg80211_sched_scan_request *request)
 {
 	int ret;
+	if (!request)
+		return -EINVAL;
+
 	trace_rdev_sched_scan_start(&rdev->wiphy, dev, request->reqid);
 	ret = rdev->ops->sched_scan_start(&rdev->wiphy, dev, request);
 	trace_rdev_return_int(&rdev->wiphy, ret);
@@ -970,7 +988,10 @@ static inline int rdev_probe_client(struct cfg80211_registered_device *rdev,
 	int ret;
 	trace_rdev_probe_client(&rdev->wiphy, dev, peer);
 	ret = rdev->ops->probe_client(&rdev->wiphy, dev, peer, cookie);
-	trace_rdev_return_int_cookie(&rdev->wiphy, ret, *cookie);
+	if (cookie)
+		trace_rdev_return_int_cookie(&rdev->wiphy, ret, *cookie);
+	else
+		trace_rdev_return_int(&rdev->wiphy, ret);
 	return ret;
 }
 
@@ -1379,6 +1400,9 @@ rdev_start_pmsr(struct cfg80211_registered_device *rdev,
 {
 	int ret = -EOPNOTSUPP;
 
+	if (!request)
+		return -EINVAL;
+
 	trace_rdev_start_pmsr(&rdev->wiphy, wdev, request->cookie);
 	if (rdev->ops->start_pmsr)
 		ret = rdev->ops->start_pmsr(&rdev->wiphy, wdev, request);
@@ -1391,6 +1415,9 @@ rdev_abort_pmsr(struct cfg80211_registered_device *rdev,
 		struct wireless_dev *wdev,
 		struct cfg80211_pmsr_request *request)
 {
+	if (!request)
+		return;
+
 	trace_rdev_abort_pmsr(&rdev->wiphy, wdev, request->cookie);
 	if (rdev->ops->abort_pmsr)
 		rdev->ops->abort_pmsr(&rdev->wiphy, wdev, request);
@@ -1817,6 +1844,21 @@ static inline int rdev_set_smd_ctx(struct cfg80211_registered_device *rdev,
 
 	trace_rdev_set_smd_ctx(&rdev->wiphy, wdev, addr, st_info);
 	ret = rdev->ops->set_smd_ctx(&rdev->wiphy, wdev, addr, st_info);
+	trace_rdev_return_int(&rdev->wiphy, ret);
+	return ret;
+}
+
+static inline int rdev_get_smd_ctx(struct cfg80211_registered_device *rdev,
+				   struct wireless_dev *wdev, const u8 *addr,
+				   struct cfg80211_smd_transition_info *st_info)
+{
+	int ret;
+
+	if (!rdev->ops->get_smd_ctx)
+		return -EOPNOTSUPP;
+
+	trace_rdev_get_smd_ctx(&rdev->wiphy, wdev, addr, st_info);
+	ret = rdev->ops->get_smd_ctx(&rdev->wiphy, wdev, addr, st_info);
 	trace_rdev_return_int(&rdev->wiphy, ret);
 	return ret;
 }

@@ -26,9 +26,13 @@
 #include <ppe_vp_public.h>
 #include <ppe_vp_tx.h>
 #endif
+#ifdef CPTCFG_QCN_EXTN
 #include "../qcn_extns/mesh_util.h"
+#endif /* CPTCFG_QCN_EXTN */
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
+#ifdef CPTCFG_QCN_EXTN
 #include "../qcn_extns/ipa/dp_ipa.h"
+#endif /* CPTCFG_QCN_EXTN */
 #endif
 #include "../fse.h"
 
@@ -578,6 +582,7 @@ void ath12k_wifi7_dp_rx_h_undecap_eth(struct ath12k_pdev_dp *dp_pdev,
 	status->flag &= ~RX_FLAG_8023;
 }
 
+#define ETH_P_1905 0x893a
 static
 int ath12k_wifi7_dp_rx_h_undecap(struct ath12k_pdev_dp *dp_pdev,
 				 struct sk_buff *msdu,
@@ -593,7 +598,9 @@ int ath12k_wifi7_dp_rx_h_undecap(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct hal_rx_desc_data rx_desc_data = {0};
 	struct ath12k_dp_peer *dp_peer;
+#ifdef CPTCFG_QCN_EXTN
 	struct ath12k_dp_vif *dp_vif;
+#endif /* CPTCFG_QCN_EXTN */
 	u8 allow_3addr_mc = false;
 	struct ath12k_vif *ahvif;
 	u32 pkt_reason;
@@ -611,8 +618,7 @@ int ath12k_wifi7_dp_rx_h_undecap(struct ath12k_pdev_dp *dp_pdev,
 	case DP_RX_DECAP_TYPE_RAW:
 		pkt_reason = ATH_RX_RAW_PKTS;
 		ath12k_dp_rx_h_undecap_raw(dp_pdev, msdu, desc, enctype, status,
-					   decrypted, peer_id, rx_msdu_info->first_msdu,
-					   rx_msdu_info->last_msdu);
+					   decrypted, peer_id);
 		break;
 	case DP_RX_DECAP_TYPE_ETHERNET2_DIX:
 		pkt_reason = ATH_RX_ETH_PKTS;
@@ -639,9 +645,9 @@ int ath12k_wifi7_dp_rx_h_undecap(struct ath12k_pdev_dp *dp_pdev,
 			break;
 		}
 
-
 		/* Drop the 3addr da_mcbc packets if allow_3addr_mc is not set
 		 * for 4addr sta as it will double the packet for connected clients.
+		 * Allow only 3addr IEEE1905 packets which are required for Easymesh.
 		 */
 #ifdef CPTCFG_QCN_EXTN
 		if (peer && peer->vif) {
@@ -652,7 +658,8 @@ int ath12k_wifi7_dp_rx_h_undecap(struct ath12k_pdev_dp *dp_pdev,
 #endif
 
 		if (is_4addr_sta && rx_msdu_info->da_is_mcbc &&
-		    !rx_msdu_info->to_ds && !allow_3addr_mc) {
+		    !rx_msdu_info->to_ds && !allow_3addr_mc &&
+		    ehdr->h_proto != cpu_to_be16(ETH_P_1905)) {
 			if (ath12k_dp_stats_enabled(dp_pdev) &&
 			    ath12k_tid_stats_enabled(dp_pdev)) {
 				rcu_read_lock();
@@ -1114,6 +1121,22 @@ ath12k_wifi7_dp_process_reo_rx_packets(struct ath12k_dp *dp,
 						    spd_desc_l,
 						    (struct hal_rx_desc *)rx_tlv_hdr);
 
+		{
+			struct dp_rx_tag_params tag = {
+				.cce_match        = spd_desc_l->cce_match,
+				.cce_metadata     = spd_desc_l->cce_metadata,
+				.flow_idx_invalid =
+				spd_desc_l->rx_mpdu_info.flow_idx_invalid,
+				.flow_idx_timeout =
+				spd_desc_l->rx_mpdu_info.flow_idx_timeout,
+				.flow_metadata    =
+				spd_desc_l->rx_mpdu_info.flow_info.flow_metadata,
+			};
+			if (tag.cce_match && dp_pdev->protocol_tag_active_count)
+				dp_rx_update_protocol_tag(dp_pdev, msdu, &tag);
+			dp_rx_update_flow_tag(dp_pdev, msdu, &tag);
+		}
+
 		if (likely(msdu_idx + 1 < num_msdus)) {
 			struct hal_rx_spd_data *spd_desc_next = &rx_spd[msdu_idx + 1];
 
@@ -1123,29 +1146,30 @@ ath12k_wifi7_dp_process_reo_rx_packets(struct ath12k_dp *dp,
 			prefetch(&vaddr[128]);
 		}
 
-		if (likely(peer->rx_decap_type ==
-			   DP_RX_DECAP_TYPE_ETHERNET2_DIX)) {
-			if (unlikely(ath12k_dp_stats_enabled(dp_pdev))) {
-				if (ath12k_proto_stats_enabled(dp_pdev))
-					ath12k_dp_rx_update_protocol_stats(peer,
-						hw_link_id, msdu,
-						RX_SENT_TO_STACK, ring_id);
+		if (unlikely(ath12k_dp_stats_enabled(dp_pdev))) {
+			if (ath12k_proto_stats_enabled(dp_pdev) &&
+			    peer->rx_decap_type == DP_RX_DECAP_TYPE_ETHERNET2_DIX)
+				ath12k_dp_rx_update_protocol_stats(peer,
+					hw_link_id, msdu,
+					RX_SENT_TO_STACK, ring_id);
 
-				if (ath12k_dp_vow_stats_enabled(dp_pdev)) {
-					u8 da_is_mcbc = rx_msdu_info->da_is_mcbc;
+			if (ath12k_dp_vow_stats_enabled(dp_pdev)) {
+				u8 da_is_mcbc = rx_msdu_info->da_is_mcbc;
 
-					ath12k_dp_rx_update_vow_delay_stats(dp_pdev, stats,
-									    msdu,
-									    da_is_mcbc,
-									    tid,
-									    tid_rx_stats_ring);
-				}
-
-				if (is_delay_enabled)
-					ath12k_dp_rx_update_delay_stats(peer, msdu,
-									tid, ring_id);
+				ath12k_dp_rx_update_vow_delay_stats(dp_pdev, stats,
+								    msdu,
+								    da_is_mcbc,
+								    tid,
+								    tid_rx_stats_ring);
 			}
 
+			if (is_delay_enabled)
+				ath12k_dp_rx_update_delay_stats(peer, msdu,
+								tid, ring_id);
+		}
+
+		if (likely(peer->rx_decap_type ==
+			   DP_RX_DECAP_TYPE_ETHERNET2_DIX)) {
 			ath12k_wifi7_deliver_ethernet_frame(dp_pdev, spd_desc_l,
 							    peer, &rx_status,
 							    napi, stats,
@@ -2625,7 +2649,6 @@ ath12k_wifi7_dp_rx_flow_alloc_entry(struct ath12k_base *ab,
 	fse = ath12k_dp_rx_flow_get_fse(fst, flow_idx);
 	fse->flow_hash = flow_hash;
 	fse->flow_id = flow_idx;
-	fse->is_valid = true;
 
 	return fse;
 }
@@ -2648,6 +2671,7 @@ int ath12k_wifi7_dp_rx_flow_add_entry(struct ath12k_dp *dp,
 	struct hal_rx_flow flow = { 0 };
 	struct dp_rx_fst *fst = dp->dp_hw_grp->fst;
 	struct dp_rx_fse *fse;
+	bool is_new;
 
 	/* Allocate entry in DP FST */
 	fse = ath12k_wifi7_dp_rx_flow_alloc_entry(ab, fst, flow_info, &flow);
@@ -2655,6 +2679,11 @@ int ath12k_wifi7_dp_rx_flow_add_entry(struct ath12k_dp *dp,
 		ath12k_dbg(ab, ATH12K_DBG_DP_FST, "RX FSE alloc failed");
 		return -ENOMEM;
 	}
+
+	/* is_new is true only for a genuinely fresh slot; alloc_entry no longer
+	 * sets is_valid, so we can detect re-programs (EEXIST path) here.
+	 */
+	is_new = !fse->is_valid;
 
 	flow.drop = flow_info->drop;
 
@@ -2686,8 +2715,12 @@ int ath12k_wifi7_dp_rx_flow_add_entry(struct ath12k_dp *dp,
 		return -EEXIST;
 	}
 
-	fst->num_entries++;
-	fst->flows_per_reo[fse->reo_indication - 1]++;
+	fse->is_valid = true;
+	if (is_new) {
+		fst->num_entries++;
+		if (fse->reo_indication)
+			fst->flows_per_reo[fse->reo_indication - 1]++;
+	}
 
 	ath12k_dbg(ab, ATH12K_DBG_DP_FST,
 		   "FST num_entries = %d, reo_dest_ind = %d, reo_dest_hand = %u",
@@ -2719,7 +2752,8 @@ int ath12k_wifi7_dp_rx_flow_delete_entry(struct ath12k_dp *dp,
 
 	/* Decrement number of valid entries in table */
 	fst->num_entries--;
-	fst->flows_per_reo[fse->reo_indication - 1]--;
+	if (fse->reo_indication)
+		fst->flows_per_reo[fse->reo_indication - 1]--;
 
 	ath12k_dbg(ab, ATH12K_DBG_DP_FST,
 		   "FST num_entries = %d", fst->num_entries);
@@ -2747,7 +2781,8 @@ int ath12k_wifi7_dp_rx_flow_delete_all_entries(struct ath12k_dp *dp)
 		fse->is_valid = false;
 
 		fst->num_entries--;
-		fst->flows_per_reo[fse->reo_indication - 1]--;
+		if (fse->reo_indication)
+			fst->flows_per_reo[fse->reo_indication - 1]--;
 	}
 
 	ath12k_dbg(ab, ATH12K_DBG_DP_FST,
@@ -2886,8 +2921,14 @@ int ath12k_wifi7_dp_rx_flow_fse_cache_operation(struct ath12k_base *ab,
 		if (!partner_ab || partner_ab->is_bypassed)
 			continue;
 
-		/* Skip sending HTT command when recovery in progress */
-		if (test_bit(ATH12K_FLAG_RECOVERY, &partner_ab->dev_flags))
+		/* Skip sending HTT command during recovery, crash flush, or
+		 * when CE pipes are not yet initialized. Accessing an
+		 * uninitialized CE source ring causes a NULL dereference in
+		 * __ath12k_hal_srng_access_begin via the HTT CE send path.
+		 */
+		if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &partner_ab->dev_flags) ||
+		    test_bit(ATH12K_FLAG_RECOVERY, &partner_ab->dev_flags) ||
+		    !partner_ab->ce_pipe_init_done)
 			continue;
 
 		ret = ath12k_dp_htt_rx_flow_fse_operation(partner_ab,
@@ -2895,7 +2936,7 @@ int ath12k_wifi7_dp_rx_flow_fse_cache_operation(struct ath12k_base *ab,
 							  tuple_info);
 		if (ret) {
 			ath12k_err(partner_ab, "Unable to invalidate cache entry ret %d",
-					ret);
+				   ret);
 			return ret;
 		}
 	}

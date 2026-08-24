@@ -19,9 +19,13 @@
 #include "dp_peer.h"
 #include "hal.h"
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/ipa/dp_ipa.h"
+#endif /* CPTCFG_QCN_EXTN */
 #endif
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/ipa/dp_ipa_pub.h"
+#endif /* CPTCFG_QCN_EXTN */
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 #include "ppe.h"
 #endif
@@ -229,6 +233,9 @@ void ath12k_dp_peer_cleanup(struct ath12k *ar, void *ptr, int vdev_id, const u8 
 
 	rcu_read_lock();
 	peer = ath12k_dp_link_peer_find_by_mac_addr(dp_peer, addr);
+	if (!peer)
+		peer = ath12k_dp_link_peer_find_by_addr_post_rcu_remove(dp_peer, addr);
+
 	if (!peer) {
 		ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
 				 "failed to lookup peer %pM on vdev %d\n",
@@ -245,7 +252,9 @@ void ath12k_dp_peer_cleanup(struct ath12k *ar, void *ptr, int vdev_id, const u8 
 		return;
 	}
 
+#ifdef CPTCFG_QCN_EXTN
 	ath12k_dp_ipa_peer_notify(ar, peer, NULL, vdev_id, false);
+#endif /* CPTCFG_QCN_EXTN */
 	ath12k_dp_arch_smd_clear_old_peer_rx_lut(dp, peer->dp_peer);
 
 	ath12k_dp_rx_peer_tid_cleanup(ar, peer);
@@ -256,6 +265,106 @@ void ath12k_dp_peer_cleanup(struct ath12k *ar, void *ptr, int vdev_id, const u8 
 	rcu_read_unlock();
 }
 
+int ath12k_dp_peer_epp_setup_mgmt_tids(struct ath12k *ar, void *ptr,
+				       struct ath12k_link_vif *arvif,
+				       struct ath12k_link_sta *arsta)
+{
+	struct ath12k_dp_peer *dp_peer = (struct ath12k_dp_peer *)ptr;
+	struct ieee80211_sta *sta = ath12k_dp_peer_get_sta(dp_peer);
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp_link_peer *link_peer;
+	struct ieee80211_key_conf *key = NULL;
+	struct ath12k_dp_rx_tid *rx_tid;
+	u32 vdev_id = arvif->vdev_id;
+	int i, ret, link_id;
+	u32 ba_win_size;
+	u16 ssn;
+	u8 tid;
+
+	if (!dp_peer || !sta)
+		return -ENOENT;
+
+	if (!ab->hw_params->hw_ops->is_mgmt_reoq_tid)
+		return 0;
+
+	/* only EPP peers need queue setup early */
+	if (!sta->epp_peer)
+		return 0;
+
+	link_id = arsta->link_id;
+
+	rcu_read_lock();
+	link_peer = ath12k_dp_link_peer_find_by_logical_link_id(dp_peer, link_id);
+	if (!link_peer) {
+		ath12k_err(ab, "failed to find link peer (link=%d) to setup mgmt rx tid",
+			   link_id);
+		rcu_read_unlock();
+		return -ENOLINK;
+	}
+
+	if (!link_peer->primary_link) {
+		rcu_read_unlock();
+		return 0;
+	}
+
+	ath12k_info(ab, "Setting up mgmt rx TIDs for EPP peer %pM on primary link: %u",
+		    arsta->addr, link_id);
+
+	for (tid = 0; tid < ab->hal.hal_params->num_tids; tid++) {
+		if (!ath12k_hw_is_mgmt_reoq_tid(ab->hw_params, tid))
+			continue;
+
+		ath12k_dp_rx_peer_tid_ba_config(dp, tid, &ba_win_size, &ssn);
+		ret = ath12k_dp_rx_peer_tid_setup(ar, dp_peer, arsta->addr, vdev_id, tid,
+						  ba_win_size, ssn, HAL_PN_TYPE_NONE);
+		if (ret) {
+			ath12k_err(ab, "failed to setup mgmt rx tid queue for tid %u: %d",
+				   tid, ret);
+			goto tid_clean;
+		}
+	}
+
+	spin_lock_bh(&dp_peer->keys_lock);
+	for (i = 0; i < ARRAY_SIZE(dp_peer->keys); i++) {
+		if (!dp_peer->keys[i] ||
+		    !(dp_peer->keys[i]->flags & IEEE80211_KEY_FLAG_PAIRWISE))
+			continue;
+
+		key = dp_peer->keys[i];
+		break;
+	}
+
+	if (key) {
+		ret = ath12k_dp_rx_peer_pn_replay_config(arvif, arsta->addr, SET_KEY,
+							 key, sta,
+							 ATH12K_RXTID_PN_CHECK_MGMT_TIDS);
+		if (ret) {
+			spin_unlock_bh(&dp_peer->keys_lock);
+			ath12k_err(ab, "failed to configure PN Replay check for mgmt rx tids: %d",
+				   ret);
+			goto tid_clean;
+		}
+	}
+	spin_unlock_bh(&dp_peer->keys_lock);
+
+	rcu_read_unlock();
+	return 0;
+
+tid_clean:
+	for (tid--; (int)tid >= 0; tid--) {
+		if (!ath12k_hw_is_mgmt_reoq_tid(ab->hw_params, tid))
+			continue;
+		rx_tid = &link_peer->dp_peer->rx_tid[tid];
+		spin_lock_bh(&rx_tid->tid_lock);
+		ath12k_dp_arch_rx_peer_tid_delete(ab->dp, ar, link_peer, tid);
+		spin_unlock_bh(&rx_tid->tid_lock);
+	}
+
+	rcu_read_unlock();
+	return ret;
+}
+
 int ath12k_dp_peer_setup(struct ath12k *ar, void *ptr, struct ath12k_link_vif *arvif,
 			 const u8 *addr, u8 link_id)
 {
@@ -263,7 +372,7 @@ int ath12k_dp_peer_setup(struct ath12k *ar, void *ptr, struct ath12k_link_vif *a
 	struct ath12k_dp_link_peer *link_peer;
 	u32 reo_dest, vdev_id = arvif->vdev_id;
 	struct ieee80211_vif *vif = arvif->ahvif->vif;
-	int ret = 0, tid;
+	int ret = 0, tid, tid_start = 0;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ieee80211_sta *sta;
 	struct ath12k_sta *ahsta;
@@ -272,6 +381,7 @@ int ath12k_dp_peer_setup(struct ath12k *ar, void *ptr, struct ath12k_link_vif *a
 	u16 ssn;
 	struct ath12k_dp_rx_tid *rx_tid;
 	struct ath12k_dp_peer *dp_peer = (struct ath12k_dp_peer *)ptr;
+	bool is_mgmt;
 
 	if (!dp_peer)
 		return -ENOENT;
@@ -287,7 +397,9 @@ int ath12k_dp_peer_setup(struct ath12k *ar, void *ptr, struct ath12k_link_vif *a
 	if (ar->radio_cfg.pdev_to_reo_dest)
 		reo_dest = ar->radio_cfg.pdev_to_reo_dest;
 
+#ifdef CPTCFG_QCN_EXTN
 	reo_dest = ath12k_dp_ipa_arch_op_rx_default_routing(ab, reo_dest);
+#endif /* CPTCFG_QCN_EXTN */
 
 	ret = ath12k_wmi_set_peer_param(ar, addr, vdev_id,
 					WMI_PEER_SET_DEFAULT_ROUTING,
@@ -316,6 +428,13 @@ int ath12k_dp_peer_setup(struct ath12k *ar, void *ptr, struct ath12k_link_vif *a
 
 	sta = ath12k_dp_link_peer_get_sta(link_peer);
 	ahsta = ath12k_sta_to_ahsta(sta);
+
+	/* MAPC peers are management-only: skip data TIDs 0..N-2, set up
+	 * only the management TID (num_tids - 1 = TID 16).
+	 */
+	if (sta->mapc)
+		tid_start = ab->hal.hal_params->num_tids - 1;
+
 	if (link_peer->mlo && link_peer->link_id != ahsta->primary_link_id) {
 		link_peer->primary_link = false;
 		arvif->primary_sta_link = false;
@@ -340,7 +459,11 @@ int ath12k_dp_peer_setup(struct ath12k *ar, void *ptr, struct ath12k_link_vif *a
 		ath12k_dp_tx_ppeds_cfg_astidx_cache_mapping(ar->ab, arvif, true);
 #endif
 
-	for (tid = 0; tid < ab->hal.hal_params->num_tids; tid++) {
+	for (tid = tid_start; tid < ab->hal.hal_params->num_tids; tid++) {
+		is_mgmt = ath12k_hw_is_mgmt_reoq_tid(ab->hw_params, tid);
+		if (is_mgmt && dp_peer->is_epp_peer)
+			continue;
+
 		ath12k_dp_rx_peer_tid_ba_config(dp, tid, &ba_win_size, &ssn);
 		ret = ath12k_dp_rx_peer_tid_setup(ar, dp_peer, addr, vdev_id, tid,
 						  ba_win_size, ssn, HAL_PN_TYPE_NONE);
@@ -359,7 +482,9 @@ int ath12k_dp_peer_setup(struct ath12k *ar, void *ptr, struct ath12k_link_vif *a
 		goto tid_clean;
 	}
 
+#ifdef CPTCFG_QCN_EXTN
 	ath12k_dp_ipa_peer_notify(ar, link_peer, arvif, vdev_id, true);
+#endif /* CPTCFG_QCN_EXTN */
 	spin_unlock_bh(&dp->dp_lock);
 
 	/* TODO: Setup other peer specific resource used in data path */
@@ -368,7 +493,11 @@ int ath12k_dp_peer_setup(struct ath12k *ar, void *ptr, struct ath12k_link_vif *a
 	return 0;
 
 tid_clean:
-	for (tid--; tid >= 0; tid--) {
+	for (tid--; tid >= tid_start; tid--) {
+		is_mgmt = ath12k_hw_is_mgmt_reoq_tid(ab->hw_params, tid);
+		if (is_mgmt && dp_peer->is_epp_peer)
+			continue;
+
 		rx_tid = &link_peer->dp_peer->rx_tid[tid];
 
 		spin_lock_bh(&rx_tid->tid_lock);
@@ -515,6 +644,9 @@ static int ath12k_dp_srng_calculate_msi_group(struct ath12k_base *ab,
 	case HAL_ASE_STATUS_RING:
 		grp_mask = &ab->hw_params->ring_mask->ase_status[0];
 		break;
+	case HAL_TQM2SW_FW_COMPLETION:
+		grp_mask = &ab->hw_params->ring_mask->tqm2sw_fw[0];
+		break;
 	case HAL_REO_FLUSH:
 		grp_mask = &ab->hw_params->ring_mask->reo_flush[0];
 		break;
@@ -614,6 +746,7 @@ int ath12k_dp_srng_alloc(struct ath12k_base *ab, struct dp_srng *ring,
 		case HAL_REO_DST:
 		case HAL_REO_DST_ROAMING:
 		case HAL_WBM2SW_RELEASE:
+		case HAL_TX_COMPLETION:
 #ifndef PLATFORM_SDX
 			cached = true;
 			break;
@@ -695,7 +828,10 @@ int ath12k_dp_srng_init(struct ath12k_base *ab, struct dp_srng *ring,
 		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_TX_EXCEPTION;
 		break;
 	case HAL_TX_MONITOR_BUF:
-		params.low_threshold = ring->num_entries >> 1;
+		if (ring->num_entries > DP_TX_MON_BUF_RING_FILL_LVL(ab))
+			params.low_threshold = DP_TX_MON_BUF_RING_FILL_LVL(ab) >> 1;
+		else
+			params.low_threshold = ring->num_entries >> 1;
 		params.flags |= HAL_SRNG_FLAGS_LOW_THRESH_INTR_EN;
 		params.intr_batch_cntr_thres_entries = 0;
 		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_RX;
@@ -758,6 +894,11 @@ int ath12k_dp_srng_init(struct ath12k_base *ab, struct dp_srng *ring,
 		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_TX;
 		break;
 	case HAL_TQM2PPE:
+		params.intr_batch_cntr_thres_entries =
+			HAL_SRNG_INT_BATCH_THRESHOLD_TX;
+		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_TX;
+		break;
+	case HAL_TQM2SW_FW_COMPLETION:
 		params.intr_batch_cntr_thres_entries =
 			HAL_SRNG_INT_BATCH_THRESHOLD_TX;
 		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_TX;
@@ -1917,6 +2058,7 @@ void ath12k_dp_ppeds_tx_desc_cleanup(struct ath12k_base *ab)
 {
 	struct ath12k_ppeds_tx_desc_info *ppeds_tx_descs;
 	struct ath12k_dp_hw_group *dp_hw_grp = ath12k_ab_to_dp(ab)->dp_hw_grp;
+	u32 tx_desc_free_cnt = 0;
 	struct sk_buff *skb;
 	int i, j;
 
@@ -1947,8 +2089,11 @@ void ath12k_dp_ppeds_tx_desc_cleanup(struct ath12k_base *ab)
 
 			list_add_tail(&ppeds_tx_descs[j].list,
 				      &dp_hw_grp->ppeds_tx_desc_free_list);
+			tx_desc_free_cnt++;
 		}
 	}
+
+	this_cpu_sub(dp_hw_grp->pcpu_tx->ppeds_cnt, tx_desc_free_cnt);
 
 	dp_hw_grp->ppeds_tx_desc_reuse_list_len = 0;
 
@@ -2805,7 +2950,9 @@ void ath12k_dp_cmn_hw_group_unassign(struct ath12k_dp *dp,
 		dp_hw_grp->fst = NULL;
 	}
 
+#ifdef CPTCFG_QCN_EXTN
 	ath12k_dp_ipa_hw_group_deinit(dp_hw_grp);
+#endif /* CPTCFG_QCN_EXTN */
 
 	if (dp_hw_grp->tx_desc_initialized && dp->dev == dp_hw_grp->tx_spt_dev)
 		ath12k_dp_tx_spt_free_and_deinit(dp->ab, dp_hw_grp);
@@ -2878,10 +3025,12 @@ void ath12k_dp_cmn_hw_group_assign(struct ath12k_dp *dp,
 	if (ret)
 		ath12k_warn(ab, "failed to alloc and init PPEDS SPT pages %d\n", ret);
 #endif
+#ifdef CPTCFG_QCN_EXTN
 	ret = ath12k_dp_ipa_hw_group_init(ab, dp_hw_grp);
 	if (ret) {
 		ath12k_err(ab, "Failed to allocate IPA global context: %d\n", ret);
 	}
+#endif /* CPTCFG_QCN_EXTN */
 }
 
 int ath12k_dp_srng_alloc_aligned(struct ath12k_base *ab,
@@ -3032,7 +3181,6 @@ void ath12k_dp_umac_tx_desc_cleanup(struct ath12k_base *ab)
 	dp = ath12k_ab_to_dp(ab);
 	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
 	int cpu;
-	u32 *tx_desc_used_cnt;
 
 	/* TX Descriptor cleanup */
 	for (pool_id = 0; pool_id < ATH12K_HW_MAX_QUEUES; pool_id++) {
@@ -3097,10 +3245,9 @@ void ath12k_dp_umac_tx_desc_cleanup(struct ath12k_base *ab)
 
 	rcu_read_unlock();
 
-	for_each_possible_cpu(cpu) {
-		tx_desc_used_cnt = per_cpu_ptr(dp_hw_grp->tx_desc_used_cnt, cpu);
-		*tx_desc_used_cnt = 0;
-	}
+	for_each_possible_cpu(cpu)
+		per_cpu(dp_hw_grp->pcpu_tx->cnt, cpu) = 0;
+
 }
 EXPORT_SYMBOL(ath12k_dp_umac_tx_desc_cleanup);
 
@@ -3262,7 +3409,7 @@ ath12k_dp_aggr_proto_peer_rx_stats(struct ath12k_dp_peer_stats *dst_peer_stats,
 static void ath12k_dp_aggr_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 					      struct ath12k_dp_peer_stats *dst_peer_stats,
 					      struct ath12k_dp_peer_stats *src_peer_stats,
-					      bool is_vdev_peer, bool is_ds_wds_peer)
+					      bool is_vdev_peer)
 {
 	int i, j;
 
@@ -3389,15 +3536,6 @@ static void ath12k_dp_aggr_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 				ath12k_dp_aggr_proto_peer_rx_stats(dst_peer_stats,
 								   src_peer_stats, i);
 		}
-		/*
-		 * For DS VIFs, the RX packets are accounted at peer level by the
-		 * ppe sync stats callback on DP_REO_PPEDS_RING_IDX for wds peers only.
-		 * Skip other rings aggregation and present only the stats accounted
-		 * on DP_REO_PPEDS_RING_IDX for WDS peers.
-		 */
-		if (is_ds_wds_peer && i < DP_REO_PPEDS_RING_IDX)
-			continue;
-
 		dst_peer_stats->rx[i].sent_to_stack.packets +=
 			src_peer_stats->rx[i].sent_to_stack.packets;
 		dst_peer_stats->rx[i].sent_to_stack.bytes +=
@@ -3470,7 +3608,7 @@ ath12k_dp_update_tx_ppdu_stats(struct ath12k_htt_tx_ppdu_stats *dst_tx_ppdu_stat
 static void ath12k_dp_update_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 						struct ath12k_dp_peer_stats *dst_peer_stats,
 						struct ath12k_dp_peer_stats *src_peer_stats,
-						bool is_vdev_peer, bool is_ds_wds_peer)
+						bool is_vdev_peer)
 {
 	int i, j;
 
@@ -3598,20 +3736,10 @@ static void ath12k_dp_update_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 				ath12k_dp_update_proto_peer_rx_stats(dst_peer_stats,
 								     src_peer_stats, i);
 		}
-		/*
-		 * For DS VIFs, the RX packets are accounted at peer level by the
-		 * ppe sync stats callback on DP_REO_PPEDS_RING_IDX for wds peers only.
-		 * Skip other rings aggregation and present only the stats accounted
-		 * on DP_REO_PPEDS_RING_IDX for WDS peers.
-		 */
-		if (is_ds_wds_peer && i < DP_REO_PPEDS_RING_IDX)
-			continue;
-
 		dst_peer_stats->rx[i].sent_to_stack.packets =
 			src_peer_stats->rx[i].sent_to_stack.packets;
 		dst_peer_stats->rx[i].sent_to_stack.bytes =
 			src_peer_stats->rx[i].sent_to_stack.bytes;
-
 	}
 
 	/*rx error stats*/
@@ -3623,94 +3751,23 @@ static void ath12k_dp_update_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 			src_peer_stats->wbm_err.reo_error[i];
 }
 
-/**
- * ath12k_dp_aggr_link_rx_rate_stats() - Aggregate RX rate statistics
- * @dst: Destination rate statistics structure
- * @src: Source rate statistics structure
- *
- * Helper function to aggregate RX rate statistics from source to destination.
- * This includes MCS counts, NSS counts, bandwidth counts, GI counts, legacy
- * rate counts, and the rx_rate array.
- *
- * Used by ath12k_dp_aggregate_link_rx_mon_stats() to aggregate both packet
- * and byte rate statistics without code duplication.
- */
 static void
-ath12k_dp_aggr_link_rx_rate_stats(struct ath12k_rx_peer_rate_stats *dst,
-				  const struct ath12k_rx_peer_rate_stats *src)
-{
-	int i, j, k, l;
-
-	/* Aggregate MCS counts for different standards */
-	for (i = 0; i < HAL_RX_MAX_MCS_HT + 1; i++)
-		dst->ht_mcs_count[i] += src->ht_mcs_count[i];
-	for (i = 0; i < HAL_RX_MAX_MCS_VHT + 1; i++)
-		dst->vht_mcs_count[i] += src->vht_mcs_count[i];
-	for (i = 0; i < HAL_RX_MAX_MCS_HE + 1; i++)
-		dst->he_mcs_count[i] += src->he_mcs_count[i];
-	for (i = 0; i < HAL_RX_MAX_MCS_BE + 1; i++)
-		dst->be_mcs_count[i] += src->be_mcs_count[i];
-	for (i = 0; i < HAL_RX_MAX_MCS_BN + 1; i++)
-		dst->bn_mcs_count[i] += src->bn_mcs_count[i];
-
-	/* Aggregate NSS, bandwidth, and GI counts */
-	for (i = 0; i < HAL_RX_MAX_NSS; i++)
-		dst->nss_count[i] += src->nss_count[i];
-	for (i = 0; i < HAL_RX_BW_MAX; i++)
-		dst->bw_count[i] += src->bw_count[i];
-	for (i = 0; i < HAL_RX_GI_MAX; i++)
-		dst->gi_count[i] += src->gi_count[i];
-
-	/* Aggregate legacy rate counts */
-	for (i = 0; i < HAL_RX_MAX_NUM_LEGACY_RATES; i++)
-		dst->legacy_count[i] += src->legacy_count[i];
-
-	/* Aggregate rx_rate array [BW][GI][NSS][MCS] */
-	for (i = 0; i < HAL_RX_BW_MAX; i++)
-		for (j = 0; j < HAL_RX_GI_MAX; j++)
-			for (k = 0; k < HAL_RX_MAX_NSS; k++)
-				for (l = 0; l < HAL_RX_MAX_MCS_HT + 1; l++)
-					dst->rx_rate[i][j][k][l] +=
-						src->rx_rate[i][j][k][l];
-}
-
-static void
-ath12k_dp_aggregate_link_rx_mon_stats(struct ath12k_rx_peer_stats *dst,
-				      const struct ath12k_rx_peer_stats *src)
+ath12k_dp_aggregate_link_rx_ppdu_stats(struct ath12k_rx_ppdu_stats *dst,
+				       const struct ath12k_rx_ppdu_stats *src)
 {
 	int i, j, k;
 
 	if (!dst || !src)
 		return;
 
-	dst->num_msdu += src->num_msdu;
 	dst->num_mpdu_fcs_ok += src->num_mpdu_fcs_ok;
 	dst->num_mpdu_fcs_err += src->num_mpdu_fcs_err;
-	dst->tcp_msdu_count += src->tcp_msdu_count;
-	dst->udp_msdu_count += src->udp_msdu_count;
-	dst->other_msdu_count += src->other_msdu_count;
 	dst->ampdu_msdu_count += src->ampdu_msdu_count;
 	dst->non_ampdu_msdu_count += src->non_ampdu_msdu_count;
-	dst->stbc_count += src->stbc_count;
-	dst->beamformed_count += src->beamformed_count;
-	dst->dcm_count += src->dcm_count;
 
-	for (i = 0; i < HAL_RX_SU_MU_CODING_MAX; i++)
-		dst->coding_count[i] += src->coding_count[i];
-	for (i = 0; i < IEEE80211_NUM_TIDS + 1; i++)
-		dst->tid_count[i] += src->tid_count[i];
-	for (i = 0; i < HAL_RX_PREAMBLE_MAX; i++)
-		dst->pream_cnt[i] += src->pream_cnt[i];
 	for (i = 0; i < HAL_RX_RECEPTION_TYPE_MAX; i++)
 		dst->reception_type[i] += src->reception_type[i];
-	for (i = 0; i < HAL_RX_RU_ALLOC_TYPE_MAX; i++)
-		dst->ru_alloc_cnt[i] += src->ru_alloc_cnt[i];
-	/* Aggregate packet rate statistics */
-	ath12k_dp_aggr_link_rx_rate_stats(&dst->pkt_stats, &src->pkt_stats);
-	/* Aggregate byte rate statistics */
-	ath12k_dp_aggr_link_rx_rate_stats(&dst->byte_stats, &src->byte_stats);
 
-	dst->num_msdu_bytes += src->num_msdu_bytes;
 	dst->num_mpdus += src->num_mpdus;
 	dst->num_ppdus += src->num_ppdus;
 	dst->num_bar += src->num_bar;
@@ -3727,13 +3784,20 @@ ath12k_dp_aggregate_link_rx_mon_stats(struct ath12k_rx_peer_stats *dst,
 	for (i = 0; i < MAX_PUNCTURED_MODE; i++)
 		dst->punc_bw[i] += src->punc_bw[i];
 
+	for (i = 0; i < HAL_RX_GI_MAX; i++)
+		dst->gi_count[i] += src->gi_count[i];
+	for (i = 0; i < HAL_RX_MAX_NSS; i++)
+		dst->nss_count[i] += src->nss_count[i];
+	for (i = 0; i < HAL_RX_BW_MAX; i++)
+		dst->bw_count[i] += src->bw_count[i];
 
 	for (i = 0; i < WME_NUM_AC; i++) {
-		dst->wme_ac_type[i].total_pkts += src->wme_ac_type[i].total_pkts;
-		dst->wme_ac_type[i].total_bytes += src->wme_ac_type[i].total_bytes;
+		dst->wme_ac_type_pkts[i] += src->wme_ac_type_pkts[i];
+		dst->wme_ac_type_bytes[i] += src->wme_ac_type_bytes[i];
 	}
 
-	for (i = 0; i < DOT11_MAX; i++) {
+	/* su_ppdu_count is sized ATH12K_RX_PPDU_PROTO_MAX (11AX/11BE/11BN) */
+	for (i = 0; i < ATH12K_RX_PPDU_PROTO_MAX; i++) {
 		for (j = 0; j < MAX_MCS; j++)
 			dst->su_ppdu_count[i].mcs_count[j] +=
 				src->su_ppdu_count[i].mcs_count[j];
@@ -3745,7 +3809,8 @@ ath12k_dp_aggregate_link_rx_mon_stats(struct ath12k_rx_peer_stats *dst,
 				src->proto_type[i].mcs_count[j];
 	}
 
-	for (k = 0; k < DOT11_MAX; k++) {
+	/* rx_mu first dimension is ATH12K_RX_PPDU_PROTO_MAX (11AX/11BE/11BN) */
+	for (k = 0; k < ATH12K_RX_PPDU_PROTO_MAX; k++) {
 		for (j = 0; j < TXRX_TYPE_MU_MAX; j++) {
 			for (i = 0; i < HAL_RX_MAX_NSS; i++)
 				dst->rx_mu[k][j].ppdu_nss[i] +=
@@ -3964,28 +4029,9 @@ ath12k_dp_update_hw_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 	ath12k_dp_update_hw_peer_rx_stats(dp_pdev, peer, mld_stats);
 }
 
-/* ath12k_dp_override_ppeds_rx() - Override PPEDS ring sent_to_stack with
- * extended RX monitor MSDU totals to account
- * non PPE traffic also if extended rx stats is enabled.
- * PPE sync credits DS VIF WDS peer traffic exclusively on DP_REO_PPEDS_RING_IDX.
- */
-static void ath12k_dp_override_ppeds_rx(struct ath12k_dp_peer_stats *peer_stats,
-					struct ath12k_rx_peer_stats *rx_stats,
-					bool is_ds_wds_peer)
-{
-	if (!is_ds_wds_peer || !peer_stats || !rx_stats)
-		return;
-
-	peer_stats->rx[DP_REO_PPEDS_RING_IDX].sent_to_stack.packets =
-							rx_stats->num_msdu;
-	peer_stats->rx[DP_REO_PPEDS_RING_IDX].sent_to_stack.bytes =
-							rx_stats->num_msdu_bytes;
-}
-
 static void ath12k_dp_aggr_peer_stats(struct ath12k_link_vif *arvif,
 				      struct ath12k_dp_link_peer *link_peer,
-				      struct ath12k_dp_aggr_vif_stats *aggr_vif_stats,
-				      bool is_ds_vif)
+				      struct ath12k_dp_aggr_vif_stats *aggr_vif_stats)
 {
 	struct ath12k_dp_peer *peer;
 	struct ath12k_pdev_dp *dp_pdev = &arvif->ar->dp;
@@ -3994,12 +4040,12 @@ static void ath12k_dp_aggr_peer_stats(struct ath12k_link_vif *arvif,
 	int stats_link_id;
 	struct ath12k_htt_tx_ppdu_stats *src_tx_ppdu_stats = NULL;
 	struct ath12k_htt_tx_ppdu_stats *dst_tx_ppdu_stats = NULL;
-	struct ath12k_rx_peer_stats *rx_peer_stats = NULL;
+	struct ath12k_rx_ppdu_stats *rx_peer_stats = NULL;
+	struct ath12k_rx_ppdu_stats *dst = NULL;
 	struct ath12k_dp_link_peer_hw_tx_stats *src_hw_link_tx = NULL;
 	struct ath12k_dp_link_peer_hw_rx_stats *src_hw_link_rx = NULL;
 	struct ath12k_dp_link_peer_hw_tx_stats *dst_hw_link_tx = NULL;
 	struct ath12k_dp_link_peer_hw_rx_stats *dst_hw_link_rx = NULL;
-	bool is_ds_wds_peer = false;
 
 	if (!link_peer->dp_peer)
 		return;
@@ -4007,22 +4053,31 @@ static void ath12k_dp_aggr_peer_stats(struct ath12k_link_vif *arvif,
 	peer = link_peer->dp_peer;
 	stats_link_id = ar->hw_link_id;
 	link_peer_stats = &aggr_vif_stats->link_peer_stats;
-	is_ds_wds_peer = is_ds_vif && peer->use_4addr;
+
+	/* RX packets/bytes derived from PPDU, independent of extended RX
+	 * stats knob (DP_ENABLE_EXT_RX_STATS)
+	 */
+	aggr_vif_stats->rx_pkt_ppdu_stats.rx_packets += link_peer->rx_packets;
+	aggr_vif_stats->rx_pkt_ppdu_stats.rx_bytes += link_peer->rx_bytes;
+
 	if (stats_link_id < ATH12K_DP_PEER_MAX_MLO_LINKS) {
 		ath12k_dp_aggr_per_pkt_peer_stats(dp_pdev, &aggr_vif_stats->peer_stats,
 						  &peer->stats[stats_link_id],
-						  peer->is_vdev_peer,
-						  is_ds_wds_peer);
+						  peer->is_vdev_peer);
 		dst_tx_ppdu_stats = link_peer_stats->tx_ppdu_stats;
 		src_tx_ppdu_stats = link_peer->peer_stats.tx_ppdu_stats;
-		rx_peer_stats =  link_peer->peer_stats.rx_stats;
+		rx_peer_stats =  link_peer->peer_stats.rx_ppdu_stats;
 		if (ath12k_htt_tx_ppdu_stats_enabled(dp_pdev))
 			ath12k_dp_update_tx_ppdu_stats_aggr(dp_pdev,
 							    dst_tx_ppdu_stats,
 							    src_tx_ppdu_stats);
-		if (ath12k_extd_rx_stats_enabled(dp_pdev))
-			ath12k_dp_aggregate_link_rx_mon_stats(link_peer_stats->rx_stats,
-							      rx_peer_stats);
+		if (ath12k_dp_rx_ppdu_stats_enabled(dp_pdev) &&
+		    link_peer_stats->rx_ppdu_stats &&
+		    rx_peer_stats) {
+			dst = link_peer_stats->rx_ppdu_stats;
+			ath12k_dp_aggregate_link_rx_ppdu_stats(dst, rx_peer_stats);
+		}
+
 		if (ath12k_dp_hw_peer_stats_enabled(dp_pdev) &&
 		    link_peer->peer_stats.hw_link_stats &&
 		    link_peer_stats->hw_link_stats) {
@@ -4038,15 +4093,6 @@ static void ath12k_dp_aggr_peer_stats(struct ath12k_link_vif *arvif,
 							     src_hw_link_rx);
 		}
 	}
-	/* For non-WDS peers on a DS VIF, the PPE sync callback
-	 * does not populate the DS stats. Skip updating the counters
-	 *  from monitor as well for non wds cases. override only for
-	 *  the WDS peers.
-	 */
-	if (ath12k_extd_rx_stats_enabled(dp_pdev))
-		ath12k_dp_override_ppeds_rx(&aggr_vif_stats->peer_stats,
-					    link_peer_stats->rx_stats,
-					    is_ds_wds_peer);
 }
 
 /**
@@ -4069,7 +4115,7 @@ ath12k_dp_aggr_link_vif_del_stats(struct ath12k_link_vif *arvif,
 
 	/* Aggregate preserved stats from deleted link peers of this VIF */
 	ath12k_dp_aggr_del_stats(&aggr_vif_stats->peer_stats,
-				 &aggr_vif_stats->link_peer_stats,
+				 &aggr_vif_stats->rx_pkt_ppdu_stats,
 				 &dp_link_vif->link_peer_delete_stats,
 				 "link_peer_delete_stats");
 }
@@ -4082,7 +4128,6 @@ ath12k_dp_aggr_link_vif_del_stats(struct ath12k_link_vif *arvif,
  * @hw_link_id:   hardware link ID of the radio
  * @arvif:        link VIF (bridge: needed by ath12k_dp_aggr_peer_stats)
  * @aggr_vif_stats: destination stats buffer
- * @is_ds_vif:    true if this is a DS VIF
  *
  * Called with ar->arsta_lock held (BH-disabled).
  * Acquires dp_hw->peer_hash_lock internally (arsta_lock -> peer_hash_lock ordering).
@@ -4093,8 +4138,7 @@ ath12k_dp_vif_peer_stats_update(struct ath12k_dp_hw *dp_hw,
 				const u8 *dp_peer_addr,
 				u8 hw_link_id,
 				struct ath12k_link_vif *arvif,
-				struct ath12k_dp_aggr_vif_stats *aggr_vif_stats,
-				bool is_ds_vif)
+				struct ath12k_dp_aggr_vif_stats *aggr_vif_stats)
 {
 	struct ath12k_dp_peer      *dp_peer;
 	struct ath12k_dp_link_peer *dp_link_peer;
@@ -4117,7 +4161,7 @@ ath12k_dp_vif_peer_stats_update(struct ath12k_dp_hw *dp_hw,
 	}
 
 	/* DP: aggregate per-link peer stats */
-	ath12k_dp_aggr_peer_stats(arvif, dp_link_peer, aggr_vif_stats, is_ds_vif);
+	ath12k_dp_aggr_peer_stats(arvif, dp_link_peer, aggr_vif_stats);
 
 	/* DP: aggregate MLD-level HW stats exactly once via the primary link peer */
 	if (dp_link_peer->primary_link) {
@@ -4212,7 +4256,6 @@ void ath12k_dp_get_pdev_stats(struct ath12k_pdev_dp *pdev,
 	struct ath12k_link_vif *arvif;
 	struct ath12k_dp_aggr_pdev_stats *aggr_pdev_stats =
 					&telemetry_radio->aggr_pdev_stats;
-	bool is_ds_vif = false;
 
 	if (ath12k_dp_stats_enabled(&ar->dp) &&
 	    ath12k_dp_debug_stats_enabled(&ar->dp))
@@ -4222,19 +4265,18 @@ void ath12k_dp_get_pdev_stats(struct ath12k_pdev_dp *pdev,
 	if (aggr_vif_stats) {
 		aggr_vif_stats->link_peer_stats.tx_ppdu_stats =
 					aggr_pdev_stats->link_peer_stats.tx_ppdu_stats;
+		aggr_vif_stats->link_peer_stats.rx_ppdu_stats =
+					aggr_pdev_stats->link_peer_stats.rx_ppdu_stats;
 		aggr_vif_stats->link_peer_stats.rx_stats =
 					aggr_pdev_stats->link_peer_stats.rx_stats;
 		list_for_each_entry(arvif, &ar->arvifs, list) {
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-			is_ds_vif = (arvif->ahvif->dp_vif.ppe_vp_type ==
-					  PPE_VP_USER_TYPE_DS);
-#endif
-			ath12k_vif_iterate_peer(arvif, aggr_vif_stats, is_ds_vif);
+			ath12k_vif_iterate_peer(arvif, aggr_vif_stats);
 			/* Include deleted link peer stats stored at link VIF */
 			ath12k_dp_aggr_link_vif_del_stats(arvif, aggr_vif_stats);
 		}
 		memcpy(&aggr_pdev_stats->peer_stats, &aggr_vif_stats->peer_stats,
 		       sizeof(aggr_pdev_stats->peer_stats));
+		aggr_pdev_stats->rx_pkt_ppdu_stats = aggr_vif_stats->rx_pkt_ppdu_stats;
 
 		vfree(aggr_vif_stats);
 	}
@@ -4250,11 +4292,6 @@ void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 	unsigned long links_map = ahvif->links_map;
 	struct ath12k_dp_aggr_vif_stats *aggr_vif_stats =
 						&telemetry_vif->aggr_vif_stats;
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	bool is_ds_vif = (ahvif->dp_vif.ppe_vp_type == PPE_VP_USER_TYPE_DS);
-#else
-	bool is_ds_vif = false;
-#endif
 
 	if (ath12k_dp_stats_enabled(&ar->dp) &&
 	    ath12k_dp_debug_stats_enabled(&ar->dp))
@@ -4271,7 +4308,7 @@ void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 		arvif = rcu_dereference(ahvif->link[link_id]);
 
 		if (arvif && arvif->is_started) {
-			ath12k_vif_iterate_peer(arvif, aggr_vif_stats, is_ds_vif);
+			ath12k_vif_iterate_peer(arvif, aggr_vif_stats);
 			/* Include deleted link peer stats for specific link VIF */
 			ath12k_dp_aggr_link_vif_del_stats(arvif, aggr_vif_stats);
 		}
@@ -4285,7 +4322,7 @@ void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 			arvif =  &ahvif->deflink;
 
 			if (arvif && arvif->is_started) {
-				ath12k_vif_iterate_peer(arvif, aggr_vif_stats, is_ds_vif);
+				ath12k_vif_iterate_peer(arvif, aggr_vif_stats);
 				/* Include deleted link peer stats for legacy VIF */
 				ath12k_dp_aggr_link_vif_del_stats(arvif, aggr_vif_stats);
 			}
@@ -4298,7 +4335,7 @@ void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 					rcu_read_unlock();
 					continue;
 				}
-				ath12k_vif_iterate_peer(arvif, aggr_vif_stats, is_ds_vif);
+				ath12k_vif_iterate_peer(arvif, aggr_vif_stats);
 				/* Include deleted link peer stats of each link VIF
 				 * in MLD VIF
 				 */
@@ -4307,7 +4344,7 @@ void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 			}
 			/* Aggregate stats from deleted link VIFs into MLD VIF */
 			ath12k_dp_aggr_del_stats(&aggr_vif_stats->peer_stats,
-						 &aggr_vif_stats->link_peer_stats,
+						 &aggr_vif_stats->rx_pkt_ppdu_stats,
 						 &dp_vif->link_vif_delete_stats,
 						 "link_vif_delete_stats");
 		}
@@ -4363,14 +4400,14 @@ ath12k_update_peer_rx_signal_stats(struct ath12k_dp_link_peer *link_peer,
  *         -EINVAL if parameters are NULL or if RX stats not available in link peer
  */
 int ath12k_update_peer_rx_mon_stats(struct ath12k_dp_link_peer *link_peer,
-				    struct ath12k_rx_peer_stats *rx_mon_stats)
+				    struct ath12k_rx_ppdu_stats *rx_mon_stats)
 {
-	const struct ath12k_rx_peer_stats *src;
+	const struct ath12k_rx_ppdu_stats *src;
 
 	if (!link_peer || !rx_mon_stats)
 		return -EINVAL;
 
-	src = link_peer->peer_stats.rx_stats;
+	src = link_peer->peer_stats.rx_ppdu_stats;
 	if (!src) {
 		ath12k_dbg(NULL, ATH12K_DBG_TELEMETRY,
 			   "RX stats not available for link peer %pM\n",
@@ -4443,7 +4480,7 @@ ath12k_dp_update_hw_link_stats(struct ath12k_pdev_dp *dp_pdev,
 		return;
 
 	rcu_read_lock();
-	tmp_peer = rcu_dereference(dp_peer->link_peers[link_id]);
+	tmp_peer = ath12k_dp_link_peer_find_by_hw_link_id(dp_peer, link_id);
 	if (!tmp_peer || !tmp_peer->peer_stats.hw_link_stats)
 		goto unlock;
 
@@ -4464,7 +4501,6 @@ unlock:
  * @dp_peer: DP peer structure
  * @hw_link_id: hardware link ID
  * @telemetry_peer: output telemetry peer stats structure
- * @is_ds_vif: flag to check if the vif is configured in DS mode
  *
  * Core stats collection logic operating only on DP objects.
  * Called by ath12k_get_link_peer_stats() after non-DP lookups.
@@ -4474,8 +4510,7 @@ int
 ath12k_dp_get_link_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 			      struct ath12k_dp_peer *dp_peer,
 			      int hw_link_id,
-			      struct ath12k_telemetry_dp_peer *telemetry_peer,
-			      bool is_ds_vif)
+			      struct ath12k_telemetry_dp_peer *telemetry_peer)
 {
 	struct ath12k_dp_peer_stats *peer_stats = &telemetry_peer->peer_stats;
 	struct ath12k_dp_link_peer_stats *link_peer_stats =
@@ -4484,9 +4519,8 @@ ath12k_dp_get_link_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 
 	struct ath12k_htt_tx_ppdu_stats *dsc_tx_ppdu_stats = NULL;
 	struct ath12k_htt_tx_ppdu_stats *src_tx_ppdu_stats = NULL;
-	struct ath12k_rx_peer_stats *dst_stats = link_peer_stats->rx_stats;
+	struct ath12k_rx_ppdu_stats *dst_stats = link_peer_stats->rx_ppdu_stats;
 	int ret = 0;
-	bool is_ds_wds_peer = is_ds_vif && dp_peer->use_4addr;
 
 	link_peer = ath12k_dp_link_peer_find_by_hw_link_id(dp_peer, hw_link_id);
 	if (!link_peer) {
@@ -4494,14 +4528,19 @@ ath12k_dp_get_link_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 		return -EINVAL;
 	}
 
+	/* RX packets/bytes derived from PPDU, independent of extended RX
+	 * stats knob (DP_ENABLE_EXT_RX_STATS)
+	 */
+	telemetry_peer->rx_pkt_ppdu_stats.rx_packets += link_peer->rx_packets;
+	telemetry_peer->rx_pkt_ppdu_stats.rx_bytes += link_peer->rx_bytes;
+
 	if (hw_link_id < ATH12K_DP_PEER_MAX_MLO_LINKS) {
 		dsc_tx_ppdu_stats = link_peer_stats->tx_ppdu_stats;
 		src_tx_ppdu_stats = link_peer->peer_stats.tx_ppdu_stats;
 		/* Per packet Counters */
 		ath12k_dp_update_per_pkt_peer_stats(dp_pdev, peer_stats,
 						    &dp_peer->stats[hw_link_id],
-						    dp_peer->is_vdev_peer,
-						    is_ds_wds_peer);
+						    dp_peer->is_vdev_peer);
 		/* HW link stats */
 		ath12k_dp_update_hw_link_stats(dp_pdev, dp_peer, hw_link_id,
 					       link_peer_stats);
@@ -4512,15 +4551,30 @@ ath12k_dp_get_link_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 						       src_tx_ppdu_stats);
 
 		/* Rx Mon stats */
-		if (ath12k_extd_rx_stats_enabled(dp_pdev)) {
+		if (ath12k_dp_rx_ppdu_stats_enabled(dp_pdev)) {
 			ret = ath12k_update_peer_rx_mon_stats(link_peer,
 							      dst_stats);
-			ath12k_dp_override_ppeds_rx(&dp_peer->stats[hw_link_id],
-						    dst_stats,
-						    is_ds_wds_peer);
 		}
 	}
 	return ret;
+}
+
+void ath12k_dp_update_rx_msdu_counters(struct ath12k_dp_peer *peer,
+				       u8 link_id,
+				       struct ath12k_dp_rx_pkt_ppdu_stats *rx_pkt_stats)
+{
+	struct ath12k_dp_link_peer *tmp_peer;
+
+	rcu_read_lock();
+	tmp_peer = ath12k_dp_link_peer_find_by_hw_link_id(peer, link_id);
+	if (!tmp_peer) {
+		rcu_read_unlock();
+		return;
+	}
+
+	rx_pkt_stats->rx_packets += tmp_peer->rx_packets;
+	rx_pkt_stats->rx_bytes += tmp_peer->rx_bytes;
+	rcu_read_unlock();
 }
 
 void ath12k_update_ext_stats(struct ath12k_pdev_dp *dp_pdev,
@@ -4531,7 +4585,7 @@ void ath12k_update_ext_stats(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_dp_link_peer *tmp_peer = NULL;
 	int ret = 0;
 	if (!ath12k_htt_tx_ppdu_stats_enabled(dp_pdev) &&
-	    !ath12k_extd_rx_stats_enabled(dp_pdev))
+	    !ath12k_dp_rx_ppdu_stats_enabled(dp_pdev))
 		return;
 
 	rcu_read_lock();
@@ -4544,9 +4598,9 @@ void ath12k_update_ext_stats(struct ath12k_pdev_dp *dp_pdev,
 		ath12k_dp_update_tx_ppdu_stats(link_peer_stats->tx_ppdu_stats,
 					       tmp_peer->peer_stats.tx_ppdu_stats);
 
-	if (ath12k_extd_rx_stats_enabled(dp_pdev)) {
+	if (ath12k_dp_rx_ppdu_stats_enabled(dp_pdev)) {
 		ret = ath12k_update_peer_rx_mon_stats(tmp_peer,
-						      link_peer_stats->rx_stats);
+						      link_peer_stats->rx_ppdu_stats);
 		if (ret)
 			ath12k_dbg(NULL, ATH12K_DBG_TELEMETRY,
 				   "Link peer RX stats fetch failed for link peer %pM.\n",
@@ -4587,10 +4641,11 @@ void ath12k_dp_aggr_rx_mon_stats(struct ath12k_pdev_dp *dp_pdev,
 				 struct ath12k_dp_link_peer_stats *link_peer_stats)
 {
 	struct ath12k_dp_link_peer *tmp_peer = NULL;
+	struct ath12k_rx_ppdu_stats *dst = NULL;
+	struct ath12k_rx_ppdu_stats *rx_peer_stats = NULL;
 	u8 tmp_link_id;
-	struct ath12k_rx_peer_stats *rx_peer_stats = NULL;
 
-	if (!ath12k_extd_rx_stats_enabled(dp_pdev))
+	if (!ath12k_dp_rx_ppdu_stats_enabled(dp_pdev))
 		return;
 
 	rcu_read_lock();
@@ -4599,11 +4654,34 @@ void ath12k_dp_aggr_rx_mon_stats(struct ath12k_pdev_dp *dp_pdev,
 		if (!tmp_peer)
 			continue;
 
-		rx_peer_stats = tmp_peer->peer_stats.rx_stats;
-		ath12k_dp_aggregate_link_rx_mon_stats(link_peer_stats->rx_stats,
-						      rx_peer_stats);
+		dst = link_peer_stats->rx_ppdu_stats;
+		rx_peer_stats = tmp_peer->peer_stats.rx_ppdu_stats;
+		if (dst && rx_peer_stats)
+			ath12k_dp_aggregate_link_rx_ppdu_stats(dst,
+							       rx_peer_stats);
 	}
 	rcu_read_unlock();
+}
+
+/**
+ * ath12k_dp_aggr_rx_pkt_ppdu_stats() - Aggregate RX packet/byte counters
+ *				      derived from PPDU across all MLO
+ *				      links of an MLD peer.
+ * @peer: MLD dp_peer whose link peers are summed
+ * @rx_pkt_stats: destination RX packet/byte counters derived from PPDU
+ *
+ * Independent of extended RX stats knob (DP_ENABLE_EXT_RX_STATS);
+ * iterates every live link peer of the MLD peer and accumulates their raw
+ * ath12k_dp_link_peer rx_packets/rx_bytes counters into rx_pkt_stats.
+ */
+static void
+ath12k_dp_aggr_rx_pkt_ppdu_stats(struct ath12k_dp_peer *peer,
+				 struct ath12k_dp_rx_pkt_ppdu_stats *rx_pkt_stats)
+{
+	u8 tmp_link_id;
+
+	for (tmp_link_id = 0; tmp_link_id < ATH12K_DP_PEER_MAX_MLO_LINKS; tmp_link_id++)
+		ath12k_dp_update_rx_msdu_counters(peer, tmp_link_id, rx_pkt_stats);
 }
 
 /**
@@ -4785,54 +4863,54 @@ skip_delay:
 }
 
 void ath12k_dp_get_sojourn_stats(struct ath12k_dp_peer *peer,
-				 struct ath12k_dp_peer_stats *peer_stats)
+				 struct ath12k_dp_mld_peer_stats *stats)
 {
 	struct ath12k_dp_mld_peer_stats *mld_stats;
 	struct ath12k_dp_peer_sojourn_stats *sojourn;
 	struct ath12k_dp_peer_tid_agg_sojourn_stats *tid_sojourn;
 
-	if (!peer || !peer_stats)
+	if (!peer || !stats)
 		return;
 
 	mld_stats = &peer->mld_stats;
 
 	sojourn = mld_stats->sojourn_stats;
-	tid_sojourn = peer_stats->sojourn;
+	tid_sojourn = &stats->agg_mld_stats->sojourn;
 
 	ath12k_dp_accumulate_sojourn_stats(sojourn, tid_sojourn);
 }
 
 void ath12k_dp_get_jitter_stats(struct ath12k_dp_peer *peer,
-				struct ath12k_dp_peer_stats *peer_stats)
+				struct ath12k_dp_mld_peer_stats *stats)
 {
 	struct ath12k_dp_mld_peer_stats *mld_stats;
 	struct ath12k_dp_peer_jitter_stats *jitter;
 	struct ath12k_dp_peer_tid_agg_jitter_stats *tid_jitter;
 
-	if (!peer || !peer_stats)
+	if (!peer || !stats)
 		return;
 
 	mld_stats = &peer->mld_stats;
 
 	jitter = mld_stats->jitter_stats;
-	tid_jitter = peer_stats->jitter;
+	tid_jitter = &stats->agg_mld_stats->jitter;
 
 	ath12k_dp_accumulate_jitter_stats(jitter, tid_jitter);
 }
 
 void ath12k_dp_get_delay_stats(struct ath12k_dp_peer *peer,
-			       struct ath12k_dp_peer_stats *peer_stats)
+			       struct ath12k_dp_mld_peer_stats *stats)
 {
 	struct ath12k_dp_mld_peer_stats *mld_stats;
 	struct ath12k_dp_peer_delay_stats *per_ring_stats;
 	struct ath12k_dp_peer_tid_agg_delay_stats *all_rings_stats;
 
-	if (!peer || !peer_stats)
+	if (!peer || !stats)
 		return;
 
 	mld_stats = &peer->mld_stats;
 	per_ring_stats = mld_stats->delay_stats;
-	all_rings_stats = peer_stats->delay;
+	all_rings_stats = &stats->agg_mld_stats->delay;
 
 	ath12k_dp_accumulate_stats_per_tid(per_ring_stats, all_rings_stats);
 }
@@ -4842,8 +4920,7 @@ ath12k_dp_update_legacy_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 				   struct ath12k_dp_peer *peer,
 				   struct ath12k_telemetry_dp_peer *telemetry_peer,
 				   struct ath12k_dp_peer_stats *peer_stats,
-				   struct ath12k_dp_link_peer_stats *link_stats,
-				   bool is_ds_wds_peer)
+				   struct ath12k_dp_link_peer_stats *link_stats)
 {
 	u8 link_id;
 
@@ -4855,22 +4932,19 @@ ath12k_dp_update_legacy_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 		ath12k_dp_aggr_per_pkt_peer_stats(dp_pdev,
 						  peer_stats,
 						  &peer->stats[link_id],
-						  peer->is_vdev_peer,
-						  is_ds_wds_peer);
+						  peer->is_vdev_peer);
 		ath12k_dp_update_hw_link_stats(dp_pdev, peer, link_id,
 					       link_stats);
+		ath12k_dp_update_rx_msdu_counters(peer, link_id,
+						  &telemetry_peer->rx_pkt_ppdu_stats);
 		ath12k_update_ext_stats(dp_pdev, peer, link_id, link_stats);
 	}
 
-	if (ath12k_extd_rx_stats_enabled(dp_pdev))
-		ath12k_dp_override_ppeds_rx(peer_stats, link_stats->rx_stats,
-					    is_ds_wds_peer);
-
 	if (ath12k_dp_stats_enabled(dp_pdev) &&
 	    ath12k_dp_latency_stats_enabled(dp_pdev)) {
-		ath12k_dp_get_delay_stats(peer, peer_stats);
-		ath12k_dp_get_jitter_stats(peer, peer_stats);
-		ath12k_dp_get_sojourn_stats(peer, peer_stats);
+		ath12k_dp_get_delay_stats(peer, &telemetry_peer->mld_stats);
+		ath12k_dp_get_jitter_stats(peer, &telemetry_peer->mld_stats);
+		ath12k_dp_get_sojourn_stats(peer, &telemetry_peer->mld_stats);
 	}
 }
 
@@ -4884,7 +4958,6 @@ ath12k_dp_update_legacy_peer_stats(struct ath12k_pdev_dp *dp_pdev,
  * @links_map: bitmap of active links
  * @stats_link_id: hw_link_id for the specific link (derived from arvif->ar->hw_link_id
  *                 in the wrapper); meaningful only when valid_link is true
- * @is_ds_vif: flag to check if the vif is configured in DS mode
  *
  * Core stats collection logic for the MLD/legacy peer path, operating only
  * on DP objects. Called by ath12k_get_peer_stats() after non-DP lookups.
@@ -4896,13 +4969,15 @@ ath12k_dp_get_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 			 u8 link_id,
 			 bool valid_link,
 			 unsigned long links_map,
-			 int stats_link_id, bool is_ds_vif)
+			 int stats_link_id)
 {
 	struct ath12k_dp_peer_stats *peer_stats = &telemetry_peer->peer_stats;
 	struct ath12k_dp_link_peer_stats *link_stats = &telemetry_peer->link_peer_stats;
 	struct ath12k_dp_mld_peer_stats *mld_stats = &telemetry_peer->mld_stats;
+	struct ath12k_dp_rx_pkt_ppdu_stats *rx_pkt_stats;
 	int i, ret = 0;
-	bool ds_wds_peer = false;
+
+	rx_pkt_stats = &telemetry_peer->rx_pkt_ppdu_stats;
 
 	/* Error case handling for legacy peer */
 	if (!dp_peer->is_mlo && valid_link) {
@@ -4911,12 +4986,10 @@ ath12k_dp_get_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 	/* Error case handling for non-associated links */
-	if (valid_link && !(dp_peer->peer_links_map & BIT(link_id))) {
+	if (valid_link && !(dp_peer->peer_links_map & BIT(stats_link_id))) {
 		ath12k_err(NULL, "Error MLO peer with invalid link id");
 		return -EINVAL;
 	}
-
-	ds_wds_peer = is_ds_vif && dp_peer->use_4addr;
 
 	/* Peer stats for requested link id */
 	if (valid_link) {
@@ -4925,18 +4998,15 @@ ath12k_dp_get_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 			ath12k_dp_update_per_pkt_peer_stats(dp_pdev,
 							    peer_stats,
 							    &dp_peer->stats[stats_link_id],
-							    dp_peer->is_vdev_peer,
-							    ds_wds_peer);
+							    dp_peer->is_vdev_peer);
+			ath12k_dp_update_rx_msdu_counters(dp_peer, stats_link_id,
+							  rx_pkt_stats);
 			ath12k_update_ext_stats(dp_pdev, dp_peer, stats_link_id,
 						link_stats);
 			ath12k_dp_update_hw_link_stats(dp_pdev,
 						       dp_peer,
 						       stats_link_id,
 						       link_stats);
-			if (ath12k_extd_rx_stats_enabled(dp_pdev))
-				ath12k_dp_override_ppeds_rx(peer_stats,
-							    link_stats->rx_stats,
-							    ds_wds_peer);
 		}
 	} else {
 		/*
@@ -4954,40 +5024,38 @@ ath12k_dp_get_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 			ath12k_dp_update_legacy_peer_stats(dp_pdev, dp_peer,
 							   telemetry_peer,
 							   peer_stats,
-							   link_stats,
-							   ds_wds_peer);
+							   link_stats);
 		} else {
 			telemetry_peer->peer_type = ATH12K_MLD_PEER;
 			/* Aggregated peer stats of all links in MLD peer */
-			for (i = 0; i < ATH12K_DP_PEER_MAX_MLO_LINKS; i++)
+			for (i = 0; i < ATH12K_DP_PEER_MAX_MLO_LINKS; i++) {
 				ath12k_dp_aggr_per_pkt_peer_stats(dp_pdev,
 								  peer_stats,
-							  &dp_peer->stats[i],
-							  dp_peer->is_vdev_peer,
-								  ds_wds_peer);
+								  &dp_peer->stats[i],
+								  dp_peer->is_vdev_peer);
+			}
+			/* RX packets/bytes derived from PPDU, independent of
+			 * extended RX stats knob
+			 * (DP_ENABLE_EXT_RX_STATS)
+			 */
+			ath12k_dp_aggr_rx_pkt_ppdu_stats(dp_peer, rx_pkt_stats);
 			/* Include preserved stats of deleted link peers
 			 * when reporting MLD peer stats
 			 */
-			ath12k_dp_aggr_del_stats(peer_stats, link_stats,
+			ath12k_dp_aggr_del_stats(peer_stats,
+						 rx_pkt_stats,
 						 &dp_peer->link_peer_delete_stats,
 						 "link_peer_delete_stats");
 			ath12k_dp_aggr_htt_stats(dp_pdev, dp_peer, link_stats);
 			ath12k_dp_aggr_rx_mon_stats(dp_pdev, dp_peer, link_stats);
 			ath12k_dp_update_hw_peer_stats(dp_pdev, dp_peer, mld_stats);
 			ath12k_dp_aggr_hw_link_stats(dp_pdev, dp_peer, link_stats);
-			/* Replace PPE-synced PPEDS ring counter with extended
-			 * RX monitor MSDU totals for DS VIF WDS peers in MLD.
-			 */
-			if (ath12k_extd_rx_stats_enabled(dp_pdev))
-				ath12k_dp_override_ppeds_rx(peer_stats,
-							    link_stats->rx_stats,
-							     ds_wds_peer);
 
 			if (ath12k_dp_stats_enabled(dp_pdev) &&
 			    ath12k_dp_latency_stats_enabled(dp_pdev)) {
-				ath12k_dp_get_delay_stats(dp_peer, peer_stats);
-				ath12k_dp_get_jitter_stats(dp_peer, peer_stats);
-				ath12k_dp_get_sojourn_stats(dp_peer, peer_stats);
+				ath12k_dp_get_delay_stats(dp_peer, mld_stats);
+				ath12k_dp_get_jitter_stats(dp_peer, mld_stats);
+				ath12k_dp_get_sojourn_stats(dp_peer, mld_stats);
 			}
 		}
 	}

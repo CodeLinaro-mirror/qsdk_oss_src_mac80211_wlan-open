@@ -19,6 +19,9 @@
 
 #define DP_TX_EXCEPTION_RING_SIZE      512
 #define DP_WBM_REFILL_RING_MAX         4
+
+/* Dedicated TQM2SW ring for FW-owned buffer completions during recovery */
+#define DP_FW_TQM2SW_RING_SIZE		1024
 #define DP_FSE_CMD_RING_SIZE		8192
 #define DP_PPE2WBM_REFILL_RING_MAX     3
 #define DP_PPE2WBM_SFE_POOL_REFILL_RING_NUM	5
@@ -35,7 +38,7 @@
 #define ATH12K_MAX_DGCAST_STATS_ID	1616
 
 #ifndef CPTCFG_QCN_EXTN
-#define DP_WBM_IDLE_BUF_RING_SIZE	12288
+#define DP_WBM_IDLE_BUF_PER_SOC		8192
 #define DP_PPE2WBM_IDLE_BUF_RING_SIZE	12288
 #define DP_WBM_REFILL_RING_SIZE		512
 #define DP_WBM_SFE_HIGH_WATERMARK	0x1000
@@ -43,7 +46,7 @@
 #define DP_WBM_PPE_HIGH_WATERMARK	0x1000
 #define DP_PPE2WBM_DEDICATED_POOL	0
 #else
-#define DP_WBM_IDLE_BUF_RING_SIZE	ATH12K_DP_INI_GET(WBM_IDLE_BUF_RING_SIZE)
+#define DP_WBM_IDLE_BUF_PER_SOC		ATH12K_DP_INI_GET(WBM_IDLE_BUF_PER_SOC)
 #define DP_PPE2WBM_IDLE_BUF_RING_SIZE	ATH12K_DP_INI_GET(PPE2WBM_IDLE_BUF_RING_SIZE)
 #define DP_WBM_REFILL_RING_SIZE		ATH12K_DP_INI_GET(WBM_REFILL_RING_SIZE)
 #define DP_WBM_SFE_HIGH_WATERMARK	ATH12K_DP_INI_GET(WBM_SFE_HIGH_WATERMARK)
@@ -92,6 +95,7 @@ struct ath12k_wifi8_tx_exc_stats {
 struct ath12k_wifi8_rx_stats {
 	u32 rx_flush_pkts;
 	u32 rx_mgmt_flush_pkts;
+	u32 rx_flush_null_descs;
 };
 
 struct ath12k_wifi8_dp_stats {
@@ -105,7 +109,9 @@ struct ath12k_wifi8_dp_stats {
  * struct ath12k_wifi8_congstn_history_entry - single congestion recovery event record
  * @timestamp:         jiffies at the time of the handler invocation
  * @used_cnt:          tx_desc_used_cnt at the time of the invocation
+ * @ppeds_used_cnt:    ppeds_tx_desc_used_cnt at the time of the invocation
  * @used_threshold:    congestion threshold configured
+ * @ppeds_used_threshold:    congestion threshold for PPEDS configured
  * @total_active_msdu: total active MSDUs across all service categories
  * @target_drop:       number of MSDUs targeted for removal
  * @num_drop_flows:    number of flows selected for drop
@@ -117,8 +123,10 @@ struct ath12k_wifi8_congstn_history_entry {
 	unsigned long timestamp;
 	u32 total_active_msdu;
 	u32 used_threshold;
+	u32 ppeds_used_threshold;
 	u32 target_drop;
 	u32 used_cnt;
+	u32 ppeds_used_cnt;
 	u8  num_drop_flows;
 	u8  svc_num_flows[HAL_TQM_SERVICE_CATEGORY_MAX];
 	u32 svc_total_msdu[HAL_TQM_SERVICE_CATEGORY_MAX];
@@ -135,6 +143,7 @@ struct ath12k_wifi8_dp_congestion_control {
 	bool start;
 	u32 interval;
 	u32 used_threshold;
+	u32 ppeds_used_threshold;
 	u32 max_used;
 	u8 flow_drop_grace_percent;
 	u32 weights[HAL_TQM_SERVICE_CATEGORY_MAX];
@@ -181,6 +190,7 @@ struct ath12k_dp_wifi8 {
 	struct dp_srng tqm_cmd_ring;
 	struct dp_srng tqm_status_ring;
 	struct dp_srng fse_cmd_ring;
+	struct dp_srng tqm2sw_fw_ring;
 	struct dp_srng sam_cmd_ring;
 	struct dp_srng sam_status_ring;
 	struct dp_srng rx_ase_cmd_ring;

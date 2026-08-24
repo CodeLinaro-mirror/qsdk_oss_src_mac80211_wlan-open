@@ -23,7 +23,9 @@
 #include <net/codel.h>
 #include <net/ieee80211_radiotap.h>
 #include <asm/unaligned.h>
+#ifdef CPTCFG_QCN_EXTN
 #include "../../net/mac80211/qcn_extns/cmn_extn.h"
+#endif /* CPTCFG_QCN_EXTN */
 
 /**
  * DOC: Introduction
@@ -846,6 +848,9 @@ struct ieee80211_uhr_config {
  * @smd_params: advertised SMD feature params.
  * @cu_info: Critical Update session state, tracks the type and progress
  *	of an ongoing Critical Update for this BSS link.
+ * @npca_mode_update: true if NPCA was already enabled and this is a
+ *	parameter-only update (switch_delay or switch_back_delay changed)
+ *	rather than a fresh enable, disable, or no-op re-send
  */
 struct ieee80211_bss_conf {
 	struct ieee80211_vif *vif;
@@ -979,6 +984,7 @@ struct ieee80211_bss_conf {
 	enum nl80211_auth_type auth_type;
 	struct cfg80211_smd_params smd_params;
 	struct ieee80211_bss_npca_params npca;
+	bool npca_mode_update;
 };
 
 /**
@@ -1292,7 +1298,7 @@ struct ieee80211_tx_rate {
 
 static inline bool ieee80211_rate_valid(struct ieee80211_tx_rate *rate)
 {
-	return rate->idx >= 0 && rate->count > 0;
+	return rate->idx >= 0 && rate->count >= 0;
 }
 
 static inline void ieee80211_rate_set_vht(struct ieee80211_tx_rate *rate,
@@ -2711,32 +2717,38 @@ enum ieee80211_sta_state {
 };
 
 /**
- * enum ieee80211_uhr_reconfig_action - UHR Link reconfiguration actions
+ * DOC: UHR link reconfiguration changed flags
  *
- * Actions for 802.11bn UHR link reconfiguration operations,
- * including SMD BSS Transition.
+ * These flags are set in &ieee80211_uhr_link_reconfig_info.changed to indicate
+ * which operations the driver should perform, analogous to BSS_CHANGED_* flags
+ * passed to @bss_info_changed.  Multiple bits may be set in one call.
  *
- * @IEEE80211_UHR_LINK_RECONFIG_PREPARE: Prepare partner links for transition.
- *	Called after ST Prepare Response SUCCESS.
- * @IEEE80211_UHR_LINK_RECONFIG_EXECUTE: Execute the BSS transition.
- *	Called after ST Execution Response SUCCESS.
- * @IEEE80211_UHR_LINK_RECONFIG_DYNAMIC_CONTEXT: Notify driver that all links
- *	have completed transition to the target AP MLD and the association
- *	context has been fully updated. Called after ieee80211_set_associated()
- *	and old STA teardown in the DL drain completion path. At this point
- *	current_sta is the newly-active (target) STA; target_sta is NULL.
- * @IEEE80211_UHR_LINK_RECONFIG_ABORT: Abort transition and rollback.
- *	Called on failure, timeout, or explicit abort.
+ * @IEEE80211_UHR_CHANGED_PREPARE_REQ: ST Prep Request sent.
+ * @IEEE80211_UHR_CHANGED_PREPARE_RESP: ST Prep Response received; driver
+ *	should park TIDs, allocate ext_ctx and prepare target link resources.
+ * @IEEE80211_UHR_CHANGED_EXECUTE_REQ: ST Exec Request sent.
+ * @IEEE80211_UHR_CHANGED_EXECUTE_RESP: ST Exec Response received; driver
+ *	should send roam_config EXEC per radio (using @dl_drain_links_mask to
+ *	differentiate the actual drain time from zero) and execute the
+ *	link transition.
+ * @IEEE80211_UHR_CHANGED_DYNAMIC_CTX: Driver should send dynamic_context WMI
+ *	command to TAP AP links identified by @tap_links_mask.  Set at exec
+ *	resp time (early, TAP links only) and again at post-state-4 (all TAP).
+ * @IEEE80211_UHR_CHANGED_REMAP_LINKS: Driver should remap ahvif/ahsta link
+ *	pointers according to @tap_to_sap_link[].
+ * @IEEE80211_UHR_CHANGED_ABORT: Transition aborted; driver should roll back.
+ * @IEEE80211_UHR_CHANGED_TERMINATION: Post-state-4 teardown; driver should
+ *	send WMI_SMD_ROAM_CONFIG_CMD_TERMINATION to all radios so firmware
+ *	transmits the UHR notification frame.
  */
-enum ieee80211_uhr_link_reconfig_action {
-	IEEE80211_UHR_LINK_RECONFIG_PREPARE_REQ,
-	IEEE80211_UHR_LINK_RECONFIG_PREPARE_RESP,
-	IEEE80211_UHR_LINK_RECONFIG_EXECUTE_REQ,
-	IEEE80211_UHR_LINK_RECONFIG_EXECUTE_RESP,
-	IEEE80211_UHR_LINK_RECONFIG_DYNAMIC_CONTEXT,
-	IEEE80211_UHR_LINK_RECONFIG_ABORT,
-	IEEE80211_UHR_LINK_RECONFIG_REMAP_LINKS,
-};
+#define IEEE80211_UHR_CHANGED_PREPARE_REQ	BIT(0)
+#define IEEE80211_UHR_CHANGED_PREPARE_RESP	BIT(1)
+#define IEEE80211_UHR_CHANGED_EXECUTE_REQ	BIT(2)
+#define IEEE80211_UHR_CHANGED_EXECUTE_RESP	BIT(3)
+#define IEEE80211_UHR_CHANGED_DYNAMIC_CTX	BIT(4)
+#define IEEE80211_UHR_CHANGED_REMAP_LINKS	BIT(5)
+#define IEEE80211_UHR_CHANGED_ABORT		BIT(6)
+#define IEEE80211_UHR_CHANGED_TERMINATION	BIT(7)
 
 /**
  * struct ieee80211_uhr_link_transfer_info - Per-link transfer parameters
@@ -2780,24 +2792,36 @@ struct ieee80211_uhr_link_transfer_info {
 
 /**
  * struct ieee80211_uhr_link_reconfig_info - UHR link reconfiguration parameters
+ * @changed: Bitmap of IEEE80211_UHR_CHANGED_* flags indicating which
+ *	operations the driver should perform for this call.
  * @transitioning_links: Bitmap of links being transitioned
  * @primary_link_id: Primary Link ID (preserved during prep)
  * @target_aid: AID for target AP MLD
  * @target_ap_mld_addr: Target AP MLD address
+ * @exec_path: Indicates the roam execution path (0 = SAP roam, 1 = TAP roam)
  * @dl_drain_time_tu: DL Drain period in TUs
+ * @tap_links_mask: Bitmap of TAP AP link IDs; used by DYNAMIC_CTX and
+ *	TERMINATION to restrict per-link WMI commands to TAP links only.
+ * @dl_drain_links_mask: Bitmap of links that carry the actual @dl_drain_time_tu;
+ *	links NOT in this mask should use drain time 0 in roam_config EXEC.
  * @links: Per-link configuration
+ * @is_exec_via_tap: to check of the ST exec is via target AP
  */
 struct ieee80211_uhr_link_reconfig_info {
+	u32 changed;
 	u16 target_aid;
 	u16 transitioning_links;
+	u16 tap_links_mask;
+	u16 dl_drain_links_mask;
 	u8 primary_link_id;
 	u8 target_ap_mld_addr[ETH_ALEN];
+	u8 exec_path;
 	u32 dl_drain_time_tu;
 	bool request_dl_sn_not_transferred;
 	bool request_ul_sn_not_transferred;
-
+	bool is_exec_via_tap;
 	/*
-	 * REMAP_LINKS action: tap_to_sap_link[tap_lid] = sap_lid (-1 = unmapped).
+	 * REMAP_LINKS: tap_to_sap_link[tap_lid] = sap_lid (-1 = unmapped).
 	 * Driver swaps ahvif->link[] pointers so ahvif->link[tap_lid] points to
 	 * the arvif that was previously at ahvif->link[sap_lid].
 	 */
@@ -2834,6 +2858,23 @@ void ieee80211_smd_dl_drain_complete(struct ieee80211_vif *vif,
  */
 void ieee80211_smd_dl_drain_complete_irqsafe(struct ieee80211_vif *vif,
 					     const u8 *target_mld_addr);
+
+/**
+ * ieee80211_get_smd_ctx_done - Deliver async get_smd_ctx result to cfg80211/nl80211
+ * @vif: virtual interface
+ * @sta_addr: non-AP MLD address the context was collected for
+ * @st_info: SMD BSS Transition Info (@st_info->ctx==NULL if collection failed)
+ *
+ * Called by the driver from BH/softirq context after the async
+ * NL80211_CMD_GET_SMD_CTX collection completes. mac80211 forwards the
+ * result to cfg80211 which finds the pending nl80211 request and sends
+ * the unicast reply to hostapd.
+ *
+ * Context: Any context. No locks required. Does not acquire wiphy mutex.
+ */
+void ieee80211_get_smd_ctx_done(struct ieee80211_vif *vif,
+				const u8 *sta_addr,
+				struct cfg80211_smd_transition_info *st_info);
 
 /**
  * enum ieee80211_sta_rx_bandwidth - station RX bandwidth
@@ -2940,8 +2981,10 @@ struct ieee80211_sta_aggregates {
  * @eht_cap: EHT capabilities of this STA
  * @uhr_cap: UHR capabilities of this STA
  * @punctured: RU Puncturing bitmap of this STA
- * @npca_offset: NPCA primary channel offset from the primary channel, derived
- *	from IEEE80211_UHR_NPCA_PARAMS_PRIMARY_CHAN_OFFS in the UHR operation Element
+ * @npca_primary_channel: NPCA primary channel number, derived from
+ *	IEEE80211_UHR_NPCA_PARAMS_PRIMARY_CHAN in the UHR Operation
+ *	Element (IEEE P802.11bn/D1.5: the field carries a real channel
+ *	number, not an offset)
  * @npca_puncture_bitmap: NPCA disabled sub-channel bitmap; 0 if the
  *	DIS_SUBCH_BMAP_PRES flag is not set in the NPCA Element
  * @agg: per-link data for multi-link aggregation
@@ -2951,7 +2994,6 @@ struct ieee80211_sta_aggregates {
  *	notifications and capabilities. The value is only valid after
  *	the station moves to associated state.
  * @txpwr: the station tx power configuration
- * @npca: current NPCA (Non-Primary Channel Access) parameters for this link
  *
  */
 struct ieee80211_link_sta {
@@ -2970,7 +3012,7 @@ struct ieee80211_link_sta {
 	struct ieee80211_sta_uhr_cap uhr_cap;
 	struct ieee80211_sta_uhr_npca_info npca_info;
 	u32 punctured;
-	u8 npca_offset;
+	u8 npca_primary_channel;
 	u16 npca_puncture_bitmap;
 
 	struct ieee80211_sta_aggregates agg;
@@ -2979,8 +3021,6 @@ struct ieee80211_link_sta {
 	enum ieee80211_sta_rx_bandwidth bandwidth;
 	enum ieee80211_sta_rx_bandwidth sta_max_bandwidth;
 	struct ieee80211_sta_txpwr txpwr;
-
-	struct cfg80211_uhr_npca_params npca;
 };
 
 /**
@@ -3012,6 +3052,7 @@ struct ieee80211_link_sta {
  * @tdls: indicates whether the STA is a TDLS peer
  * @tdls_initiator: indicates the STA is an initiator of the TDLS link. Only
  *	valid if the STA is a TDLS peer in the first place.
+ * @mapc: indicates whether the STA is a MAPC peer
  * @mfp: indicates whether the STA uses management frame protection or not.
  * @cfp: indicated whether the STA used control frame protection or not.
  * @mlo: indicates whether the STA is MLO station.
@@ -3058,6 +3099,7 @@ struct ieee80211_sta {
 	struct ieee80211_sta_rates __rcu *rates;
 	bool tdls;
 	bool tdls_initiator;
+	bool mapc;
 	bool mfp;
 	bool cfp;
 	bool mlo;
@@ -4396,6 +4438,16 @@ enum ieee80211_ampdu_mlme_action {
 #define IEEE80211_AMPDU_TX_START_DELAY_ADDBA 2
 
 /**
+ * enum ieee80211_ba_policy - BlockAck Policy
+ * @IEEE80211_BLOCKACK_DELAYED: Block ACK sent to the BAR sender in next TXOP
+ * @IEEE80211_BLOCKACK_IMMEDIATE: Block ACK sent to the BAR sender immediately
+ */
+enum ieee80211_ba_policy {
+	IEEE80211_BLOCKACK_DELAYED,
+	IEEE80211_BLOCKACK_IMMEDIATE,
+};
+
+/**
  * struct ieee80211_ampdu_params - AMPDU action parameters
  *
  * @action: the ampdu action, value from %ieee80211_ampdu_mlme_action.
@@ -4407,7 +4459,7 @@ enum ieee80211_ampdu_mlme_action {
  * @buf_size: reorder buffer size  (number of subframes). Valid only when the
  *	action is set to %IEEE80211_AMPDU_RX_START or
  *	%IEEE80211_AMPDU_TX_OPERATIONAL
- * @policy: BlockAck policy (0=delayed, 1=immediate)
+ * @policy: BlockAck policy of type @enum ieee80211_ba_policy
  * @amsdu: indicates the peer's ability to receive A-MSDU within A-MPDU.
  *	valid when the action is set to %IEEE80211_AMPDU_TX_OPERATIONAL
  * @timeout: BA session timeout. Valid only when the action is set to
@@ -4419,7 +4471,7 @@ struct ieee80211_ampdu_params {
 	u16 tid;
 	u16 ssn;
 	u16 buf_size;
-	bool policy;
+	enum ieee80211_ba_policy policy;
 	bool amsdu;
 	u16 timeout;
 };
@@ -5132,6 +5184,9 @@ struct ieee80211_ppe_vp_ds_params {
  *	This callback may sleep.
  * @sta_set_4addr: Called to notify the driver when a station starts/stops using
  *	4-address mode
+ * @sta_set_mapc_params: Notify the driver of MAPC coordination parameters
+ *	for a peer station. Only called for stations with @ieee80211_sta.mapc
+ *	set. Drivers that do not implement MAPC may leave this NULL.
  * @set_dscp_tid: Notify the driver when receive qos_map_set events from mac80211.
  * @set_sar_specs: Update the SAR (TX power) settings.
  * @sta_set_decap_offload: Called to notify the driver when a station is allowed
@@ -5210,7 +5265,7 @@ struct ieee80211_ppe_vp_ds_params {
  * @ap_power_save: Introduces infrastructure in mac80211 to support forwarding of
  *	AP Powersave configuration parameters from user space to driver.
  * @uhr_mode_update: Update per-link UHR mode parameters (NPCA) for the
- *	given station. Called after link_sta npca fields have been updated.
+ *	given VIF. Called after bss_conf npca fields have been updated.
  *	@sta may be NULL if no associated station was found.
  * @critical_update: Initiate a Critical Update session on @link_id.
  *	The driver or firmware must stitch @element into subsequent beacons and
@@ -5218,23 +5273,20 @@ struct ieee80211_ppe_vp_ds_params {
  *	at each ECU phase boundary.
  *
  * @uhr_link_reconfig: Drive the UHR Link Reconfiguration state machine for
- *	an SMD BSS Transition. Called at each phase of the transition:
- *	@IEEE80211_UHR_LINK_RECONFIG_PREPARE_REQ — ST Prep Request sent;
- *	@IEEE80211_UHR_LINK_RECONFIG_PREPARE_RESP — ST Prep Response received,
- *	driver should allocate target vdev/peer resources;
- *	@IEEE80211_UHR_LINK_RECONFIG_EXECUTE_REQ — ST Exec Request sent;
- *	@IEEE80211_UHR_LINK_RECONFIG_EXECUTE_RESP — ST Exec Response received,
- *	driver should commit the link switch;
- *	@IEEE80211_UHR_LINK_RECONFIG_DYNAMIC_CONTEXT — post-transition context
- *	update (group key, dynamic BA parameters);
- *	@IEEE80211_UHR_LINK_RECONFIG_REMAP_LINKS — remap vdev link IDs from SAP
- *	to TAP space for diff-links transitions;
- *	@IEEE80211_UHR_LINK_RECONFIG_ABORT — transition aborted, driver should
- *	release any resources allocated at PREPARE_RESP time.
- *	@current_sta is the current (serving AP) peer; @target_sta is the
- *	target AP peer (NULL for ABORT). @info carries per-phase parameters.
+ *	an SMD BSS Transition. The operation(s) to perform are indicated by the
+ *	set bits in @info->changed (IEEE80211_UHR_CHANGED_* flags), analogous
+ *	to BSS_CHANGED_* in @bss_info_changed. Multiple bits may be set in a
+ *	single call. @current_sta is the current (serving AP) peer;
+ *	@target_sta is the target AP peer (NULL for TERMINATION/ABORT).
+ *	@info carries per-phase parameters including @tap_links_mask and
+ *	@dl_drain_links_mask for drain-aware EXEC_RESP handling.
  * @set_smd_ctx: Set the UHR SMD context for the non-AP MLD. This is used in
  *	the target AP MLD side to program dynamic context.
+ * @get_smd_ctx: Get the UHR SMD context for the non-AP MLD. This is used in
+ *	the current AP MLD side on behalf of the target AP MLD to collect dynamic
+ *	context, when the non-AP MLD sends ST Execute frame directly to the target.
+ *	This op shall post the request to the driver and the response will be sent
+ *	later asynchronously. An immediate response may also be sent as a reply.
  */
 struct ieee80211_ops {
 	void (*tx)(struct ieee80211_hw *hw,
@@ -5364,7 +5416,6 @@ struct ieee80211_ops {
 				 struct ieee80211_vif *vif,
 				 struct ieee80211_sta *current_sta,
 				 struct ieee80211_sta *target_sta,
-				 enum ieee80211_uhr_link_reconfig_action action,
 				 struct ieee80211_uhr_link_reconfig_info *info);
 	void (*sta_pre_rcu_remove)(struct ieee80211_hw *hw,
 				   struct ieee80211_vif *vif,
@@ -5610,6 +5661,10 @@ struct ieee80211_ops {
 				   struct ieee80211_vif *vif);
 	void (*sta_set_4addr)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 			      struct ieee80211_sta *sta, bool enabled);
+	int (*sta_set_mapc_params)(struct ieee80211_hw *hw,
+				   struct ieee80211_vif *vif,
+				   struct ieee80211_sta *sta,
+				   const struct cfg80211_sta_mapc_params *params);
 	void (*set_dscp_tid)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 			     struct cfg80211_qos_map *qos_map, unsigned int link_id);
 	int (*set_sar_specs)(struct ieee80211_hw *hw,
@@ -5706,6 +5761,9 @@ struct ieee80211_ops {
 			       u8 muedca_mode);
 #endif /* CPTCFG_QCN_EXTN */
 	int (*set_smd_ctx)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+			   struct ieee80211_sta *sta,
+			   struct cfg80211_smd_transition_info *st_info);
+	int (*get_smd_ctx)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 			   struct ieee80211_sta *sta,
 			   struct cfg80211_smd_transition_info *st_info);
 };
@@ -8927,6 +8985,22 @@ void ieee80211_cu_notify(struct ieee80211_hw *hw,
 			 unsigned int link_id,
 			 enum nl80211_cu_state cu_state);
 
+/**
+ * ieee80211_update_npca_configs - update NPCA channel parameters for a link
+ * @vif: virtual interface
+ * @link_id: the link whose NPCA configuration is being updated
+ * @npca_freq: NPCA primary channel frequency in MHz; 0 to clear
+ * @npca_punct_bitmap: NPCA disabled sub-channel puncture bitmap; 0 if unused
+ *
+ * Called by the driver to push a new NPCA frequency and puncture bitmap into
+ * the link's channel definition and notify mac80211 of the change via
+ * %BSS_CHANGED_NPCA.  Must be called with the wiphy mutex held.
+ */
+void ieee80211_update_npca_configs(struct ieee80211_vif *vif,
+				   unsigned int link_id,
+				   u32 npca_freq,
+				   u16 npca_punct_bitmap);
+
 /*
  * ieee80211_gstrings_stats - stats for ethtool interface
  */
@@ -9046,6 +9120,25 @@ bool ieee80211_cac_started_any_5ghz_link(struct ieee80211_vif *vif,
  */
 void ieee80211_tx_monitor_offload(struct ieee80211_hw *hw,
 				  struct ieee80211_tx_status *status);
+
+/**
+ * ieee80211_tx_monitor_offload_ni - h/w offloaded tx monitor callback
+ *				     (in process context)
+ *
+ * Like ieee80211_tx_monitor_offload() but can be called in process context
+ * (internally disables bottom halves).
+ *
+ * @hw: the hardware the frame was transmitted by
+ * @status: tx status information
+ */
+static inline void
+ieee80211_tx_monitor_offload_ni(struct ieee80211_hw *hw,
+				struct ieee80211_tx_status *status)
+{
+	local_bh_disable();
+	ieee80211_tx_monitor_offload(hw, status);
+	local_bh_enable();
+}
 
 /**
  * ieee80211_set_repurpose_link - Mark a link for repurposing

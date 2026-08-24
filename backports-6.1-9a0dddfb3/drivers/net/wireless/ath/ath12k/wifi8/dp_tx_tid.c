@@ -198,8 +198,16 @@ u32 ath12k_wifi8_dp_tx_get_he_header_length(struct ath12k_dp_hw_group *dp_hw_grp
 
 	ht_he_cap = ath12k_tx_get_he_mac_cap(dp_hw_grp, link_peer);
 	ar = arsta->arvif->ar;
+	if (!ar) {
+		rcu_read_unlock();
+		return 0;
+	}
+#ifdef CPTCFG_QCN_EXTN
 	rep_ul_resp = ((ath12k_cfg_get(ab, ATH12K_CFG_REP_UL_RESP) >>
 			ar->pdev->pdev_id) & 01);
+#else
+	rep_ul_resp = 0;
+#endif /* CPTCFG_QCN_EXTN */
 	//do we need STA check if we are checking sta_bss_peer
 	if (arsta->arvif->ahvif->vif->type == NL80211_IFTYPE_STATION &&
 	    peer->is_sta_bss_peer && ath12k_dp_peer_get_sta(peer)->wme &&
@@ -236,6 +244,8 @@ u32 ath12k_wifi8_dp_tx_get_header_length(struct ath12k_dp_hw_group *dp_hw_grp,
 
 	header_len += ath12k_wifi8_dp_tx_get_he_header_length(dp_hw_grp,
 							      peer, tid_num);
+	if (peer->is_epp_peer)
+		header_len += ath12k_dp_tx_get_mpdu_encap_hdr_len(peer->sec_type);
 	return header_len;
 }
 
@@ -275,7 +285,6 @@ int ath12k_tx_send_mpduq_init(struct ath12k_dp_hw_group *dp_hw_grp,
 		ti.tid = (tid_num < NON_QOS_TID) ? tid_num : TQM_NON_DATA_TID;
 	}
 	ti.encap_type = tx_encap_type;
-	//TBD: ti.wapi
 	if (peer->is_vdev_peer)
 		ti.assoc_link_id = peer->hw_link_id;
 	else

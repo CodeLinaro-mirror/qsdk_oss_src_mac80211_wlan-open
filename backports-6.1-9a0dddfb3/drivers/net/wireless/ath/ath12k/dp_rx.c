@@ -24,7 +24,9 @@
 #include "erp.h"
 #include "fse.h"
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/ipa/dp_ipa.h"
+#endif /* CPTCFG_QCN_EXTN */
 #endif
 #include "vendor.h"
 
@@ -387,18 +389,12 @@ void ath12k_dp_rx_h_undecap_raw(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *
 				struct hal_rx_desc *rx_desc,
 				enum hal_encrypt_type enctype,
 				struct ieee80211_rx_status *status, bool decrypted,
-				u16 peer_id, bool is_first_msdu, bool is_last_msdu)
+				u16 peer_id)
 {
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ieee80211_hdr *hdr;
 	size_t hdr_len;
 	size_t crypto_len;
-
-	if (!is_first_msdu || !(is_first_msdu && is_last_msdu)) {
-		/* TODO: Change below stats increment back to WARN_ON_ONCE(1) */
-		dp->device_stats.first_and_last_msdu_bit_miss++;
-		return;
-	}
 
 	pskb_trim(msdu, msdu->len - FCS_LEN);
 
@@ -597,6 +593,9 @@ static int ath12k_dp_rx_ipa_smmu_buf_map(struct ath12k_base *ab,
 static inline struct sk_buff *ath12k_dp_alloc_rx_skb(struct ath12k_base *ab,
 						     struct ath12k_rx_desc_info *rx_desc)
 {
+#if defined(CONFIG_SKB_RECYCLE_SIZE) && (CONFIG_SKB_RECYCLE_SIZE == 1664)
+	return ath12k_dp_alloc_skb(DP_RX_BUFFER_SIZE - NET_SKB_PAD);
+#endif
 	return ath12k_dp_alloc_skb(DP_RX_BUFFER_SIZE);
 }
 
@@ -652,6 +651,9 @@ void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 			if (unlikely(!skb))
 				break;
 
+#if defined(CONFIG_SKB_RECYCLE_SIZE) && (CONFIG_SKB_RECYCLE_SIZE == 1664)
+			skb_reserve(skb, -NET_SKB_PAD);
+#endif
 			rx_desc->skb = skb;
 			rx_desc->vaddr = skb->data;
 			rx_desc->is_frag = 0;
@@ -1147,7 +1149,8 @@ int ath12k_dp_rx_peer_pn_replay_config(struct ath12k_link_vif *arvif,
 				       const u8 *peer_addr,
 				       enum set_key_cmd key_cmd,
 				       struct ieee80211_key_conf *key,
-				       struct ieee80211_sta *sta)
+				       struct ieee80211_sta *sta,
+				       enum ath12k_rxtid_pn_check cfg)
 {
 	struct ath12k_hal_reo_cmd cmd = {0};
 	struct ath12k *ar = arvif->ar;
@@ -1159,6 +1162,7 @@ int ath12k_dp_rx_peer_pn_replay_config(struct ath12k_link_vif *arvif,
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_dp_hw *dp_hw = ar->dp.dp_hw;
 	struct ath12k_dp_peer *dp_peer;
+	bool is_mgmt;
 
 	/* NOTE: Enable PN/TSC replay check offload only for unicast frames.
 	 * We use mac80211 PN/TSC replay check functionality for bcast/mcast
@@ -1191,10 +1195,17 @@ int ath12k_dp_rx_peer_pn_replay_config(struct ath12k_link_vif *arvif,
 	}
 
 	for (tid = 0; tid < ab->hal.hal_params->num_tids; tid++) {
+		is_mgmt = ath12k_hw_is_mgmt_reoq_tid(ab->hw_params, tid);
+
+		if (ath12k_dp_rx_peer_tid_skip_pn_replay(dp, tid) ||
+		    (cfg == ATH12K_RXTID_PN_CHECK_DATA_TIDS && is_mgmt) ||
+		    (cfg == ATH12K_RXTID_PN_CHECK_MGMT_TIDS && !is_mgmt))
+			continue;
+
 		rx_tid = &dp_peer->rx_tid[tid];
 
 		spin_lock_bh(&rx_tid->tid_lock);
-		if (!rx_tid->active || ath12k_dp_rx_peer_tid_skip_pn_replay(dp, tid)) {
+		if (!rx_tid->active) {
 			spin_unlock_bh(&rx_tid->tid_lock);
 			continue;
 		}
@@ -1215,6 +1226,40 @@ int ath12k_dp_rx_peer_pn_replay_config(struct ath12k_link_vif *arvif,
 
 	spin_unlock_bh(&dp_hw->peer_hash_lock);
 	rcu_read_unlock();
+
+	return ret;
+}
+
+int ath12k_dp_rx_peer_epp_pn_replay_config(struct ath12k_dp_peer *dp_peer,
+					   struct ath12k_link_vif *arvif,
+					   const u8 *peer_addr,
+					   enum set_key_cmd key_cmd,
+					   enum ath12k_rxtid_pn_check cfg)
+{
+	struct ieee80211_sta *sta = ath12k_dp_peer_get_sta(dp_peer);
+	struct ieee80211_key_conf *key = NULL;
+	int i, ret = 0;
+
+	if (!dp_peer || !sta)
+		return -ENOENT;
+
+	if (!dp_peer->is_epp_peer)
+		return 0;
+
+	spin_lock_bh(&dp_peer->keys_lock);
+	for (i = 0; i < ARRAY_SIZE(dp_peer->keys); i++) {
+		if (!dp_peer->keys[i] ||
+		    !(dp_peer->keys[i]->flags & IEEE80211_KEY_FLAG_PAIRWISE))
+			continue;
+
+		key = dp_peer->keys[i];
+		break;
+	}
+
+	if (key)
+		ret = ath12k_dp_rx_peer_pn_replay_config(arvif, peer_addr, key_cmd, key,
+							 sta, cfg);
+	spin_unlock_bh(&dp_peer->keys_lock);
 
 	return ret;
 }
@@ -1568,6 +1613,8 @@ int ath12k_dp_rx_flow_add_entry(struct ath12k_base *ab,
 	else
 		fst->ipv6_fse_rule_cnt++;
 
+	dp->dp_hw_grp->fse_active_count++;
+
 out:
 	return ret;
 }
@@ -1614,6 +1661,9 @@ int ath12k_dp_rx_flow_delete_entry(struct ath12k_base *ab,
 	else
 		fst->ipv6_fse_rule_cnt--;
 
+	if (dp->dp_hw_grp->fse_active_count)
+		dp->dp_hw_grp->fse_active_count--;
+
 out:
 	return ret;
 }
@@ -1647,12 +1697,76 @@ int ath12k_dp_rx_flow_delete_all_entries(struct ath12k_base *ab)
 
 	fst->ipv4_fse_rule_cnt = 0;
 	fst->ipv6_fse_rule_cnt = 0;
+	dp->dp_hw_grp->fse_active_count = 0;
 
 	ath12k_dbg(ab, ATH12K_DBG_DP_FST,
 		   "FST num_entries = %d", fst->num_entries);
 out:
 	return ret;
 }
+
+/**
+ * dp_rx_update_protocol_tag() - stamp rxcb->protocol_tag from CCE metadata
+ *
+ * Called in the REO hot path for every MSDU after MPDU validation.  Reads
+ * cce_match from the scratchpad; if set, copies cce_metadata into
+ * rxcb->protocol_tag and increments the per-protocol CCE hit counter.
+ * No-op when CCE_MATCH is clear or no protocols are configured.
+ */
+void dp_rx_update_protocol_tag(struct ath12k_pdev_dp *dp_pdev,
+			       struct sk_buff *msdu,
+			       const struct dp_rx_tag_params *tag)
+{
+	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(msdu);
+	u16 cce_meta;
+	int i;
+
+	if (!tag->cce_match)
+		return;
+
+	if (!dp_pdev->protocol_tag_active_count)
+		return;
+
+	cce_meta = tag->cce_metadata;
+	rxcb->protocol_tag = cce_meta;
+
+	for (i = 0; i < ATH12K_PKT_TYPE_MAX; i++) {
+		if (dp_pdev->protocol_tag_map[i].enabled &&
+		    dp_pdev->protocol_tag_map[i].tag == cce_meta) {
+			dp_pdev->fse_cce_stats.cce_tagged_pkts[i]++;
+			break;
+		}
+	}
+}
+EXPORT_SYMBOL_GPL(dp_rx_update_protocol_tag);
+
+/**
+ * dp_rx_update_flow_tag() - stamp rxcb->flow_tag from FSE metadata
+ *
+ * Called in the REO hot path for every MSDU after MPDU validation.  Copies
+ * the lower 16 bits of fse_metadata (the user-programmed flow tag) into
+ * rxcb->flow_tag and increments the FSE hit counter when non-zero.
+ */
+void dp_rx_update_flow_tag(struct ath12k_pdev_dp *dp_pdev,
+			   struct sk_buff *msdu,
+			   const struct dp_rx_tag_params *tag)
+{
+	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(msdu);
+	u16 flow_tag;
+
+	if (!dp_pdev->dp->dp_hw_grp->fse_active_count)
+		return;
+
+	if (tag->flow_idx_invalid || tag->flow_idx_timeout)
+		return;
+
+	flow_tag = tag->flow_metadata;
+	rxcb->flow_tag = flow_tag;
+
+	if (flow_tag)
+		dp_pdev->fse_cce_stats.fse_tagged_pkts++;
+}
+EXPORT_SYMBOL_GPL(dp_rx_update_flow_tag);
 
 void ath12k_dp_fst_core_map_init(struct ath12k_base *ab)
 {
@@ -1695,6 +1809,7 @@ void ath12k_dp_rx_fst_init(struct ath12k_base *ab)
 
 	fst->ipv4_fse_rule_cnt = 0;
 	fst->ipv6_fse_rule_cnt = 0;
+	dp->dp_hw_grp->fse_active_count = 0;
 	dp->fst_config.fst_core_mask = 0x7;
 	dp->fst_config.fst_num_cores = 0;
 

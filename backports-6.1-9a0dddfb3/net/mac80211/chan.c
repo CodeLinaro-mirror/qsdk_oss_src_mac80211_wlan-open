@@ -1790,6 +1790,24 @@ err:
 	return err;
 }
 
+static void ieee80211_dump_reservation_failure(struct ieee80211_local *local,
+						struct ieee80211_chanctx *ctx,
+						int n_assigned, int n_reserved,
+						int n_ready)
+{
+	struct ieee80211_link_data *link;
+
+	wiphy_err(local->hw.wiphy,
+		  "channel context reservation cannot be finalized: n_assigned=%d n_reserved=%d n_ready=%d\n",
+		  n_assigned, n_reserved, n_ready);
+
+	list_for_each_entry(link, &ctx->replace_ctx->assigned_links,
+			     assigned_chanctx_list)
+		link_err(link, "CSA-FAIL type=%d has_resv=%d ready=%d\n",
+			 link->sdata->vif.type, !!link->reserved_chanctx,
+			 link->reserved_ready);
+}
+
 static int ieee80211_vif_use_reserved_switch(struct ieee80211_local *local)
 {
 	struct ieee80211_chanctx *ctx, *ctx_tmp, *old_ctx;
@@ -1845,6 +1863,8 @@ static int ieee80211_vif_use_reserved_switch(struct ieee80211_local *local)
 			if (n_ready != n_reserved)
 				return -EAGAIN;
 
+			ieee80211_dump_reservation_failure(local, ctx, n_assigned,
+							    n_reserved, n_ready);
 			wiphy_info(local->hw.wiphy,
 				   "channel context reservation cannot be finalized because some interfaces aren't switching\n");
 			err = -EBUSY;

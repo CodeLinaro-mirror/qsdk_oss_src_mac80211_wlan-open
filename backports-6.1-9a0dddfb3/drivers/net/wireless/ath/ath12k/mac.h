@@ -11,8 +11,11 @@
 #include <net/cfg80211.h>
 #include "wmi.h"
 #include "smd.h"
+#include "ranging.h"
 
+#ifdef CPTCFG_QCN_EXTN
 #include "../../net/mac80211/qcn_extns/cmn_extn.h"
+#endif /* CPTCFG_QCN_EXTN */
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 extern unsigned int ath12k_ppe_ds_enabled;
@@ -55,6 +58,11 @@ struct ath12k_generic_iter {
 
 #define ATH12K_PDEV_TX_POWER_INVALID		((u32)-1)
 #define ATH12K_PDEV_TX_POWER_REFRESH_TIME_MSECS	5000 /* msecs */
+#define ATH12K_PDEV_STATS_TIMER_DEFAULT_MS		1000 /* msecs */
+
+#define ATH12K_MAPC_CAP_COTDMA_SUPPORT		2
+#define ATH12K_MAPC_CAP_AP_TB_PPDU_RESPONSE	14
+#define ATH12K_MAPC_CAP_COTDMA_RX_TXOP_RETURN	16
 
 /* FIXME: should these be in ieee80211.h? */
 #define IEEE80211_VHT_MCS_SUPPORT_0_11_MASK	GENMASK(23, 16)
@@ -66,6 +74,8 @@ struct ath12k_generic_iter {
 
 #define ATH12K_OBSS_PD_MAX_THRESHOLD			-82
 #define ATH12K_OBSS_PD_THRESHOLD_DISABLED		-128
+#define ATH12K_OBSS_PD_TX_PWR_REF_3SS_UNSUPPORTED	21
+#define ATH12K_OBSS_PD_TX_PWR_REF_DEFAULT		25
 #define ATH12K_OBSS_PD_THRESHOLD_IN_DBM			BIT(29)
 #define ATH12K_OBSS_PD_SRG_EN				BIT(30)
 #define ATH12K_OBSS_PD_NON_SRG_EN			BIT(31)
@@ -332,6 +342,19 @@ enum rate_info_bw ath12k_mac_bw_to_mac80211_bw(enum ath12k_supported_bw bw);
 enum ath12k_supported_bw ath12k_mac_mac80211_bw_to_ath12k_bw(enum rate_info_bw bw);
 u8 ath12k_mac_get_bw_offset(enum ieee80211_sta_rx_bandwidth bandwidth);
 enum hal_encrypt_type ath12k_dp_tx_get_encrypt_type(u32 cipher);
+
+/**
+ * ath12k_dp_tx_get_mpdu_encap_hdr_len() - get per-MPDU security encap overhead
+ * @enctype: HAL encryption type (enum hal_encrypt_type)
+ *
+ * Returns the total per-MPDU security overhead in bytes (IV + MIC + ICV)
+ * This accounts for the extra bytes added to each MPDU when computing
+ * the MPDU queue (mpduq) header length.
+ *
+ * Return: overhead in bytes, or 0 for open/unknown types.
+ */
+int ath12k_dp_tx_get_mpdu_encap_hdr_len(enum hal_encrypt_type enctype);
+
 int ath12k_mac_rfkill_enable_radio(struct ath12k *ar, bool enable);
 int ath12k_mac_rfkill_config(struct ath12k *ar);
 int ath12k_mac_wait_tx_complete(struct ath12k *ar);
@@ -351,6 +374,20 @@ void ath12k_mac_get_any_chanctx_conf_iter(struct ieee80211_hw *hw,
 					  void *data);
 int ath12k_mac_mlo_teardown_with_umac_reset(struct ath12k_base *ab,
 					    enum wmi_mlo_tear_down_reason_code_type reason_code);
+int ath12k_mac_populate_recovery_t2lm_params(struct ath12k_link_vif *arvif,
+				struct ath12k_base *assert_ab,
+				struct ath12k_wmi_tid_to_link_map_ap_params *params,
+				bool set);
+void ath12k_mode3_set_dp_recovery_flag(struct ath12k_base *ab,
+				       struct ath12k_link_sta *arsta,
+				       bool set);
+void ath12k_mac_migrate_assoc_link(struct ath12k_sta *ahsta, u8 new_link_id);
+int ath12k_install_key(struct ath12k_link_vif *arvif, struct ieee80211_key_conf *key,
+		       enum set_key_cmd cmd, const u8 *macaddr, u32 flags,
+		       struct ath12k_vif *vlan_ahvif);
+int ath12k_mac_station_authorize(struct ath12k *ar,
+				 struct ath12k_link_vif *arvif,
+				 struct ath12k_link_sta *arsta);
 enum nl80211_he_gi ath12k_mac_he_gi_to_nl80211_he_gi(u8 sgi);
 u16 ath12k_mac_he_convert_tones_to_ru_tones(u16 tones);
 enum nl80211_eht_ru_alloc ath12k_mac_eht_ru_tones_to_nl80211_eht_ru_alloc(u16 ru_tones);
@@ -369,6 +406,7 @@ void ath12k_peer_assoc_prepare(struct ath12k *ar,
 			       struct ieee80211_link_sta *link_sta);
 #endif
 int ath12k_mac_get_fw_stats(struct ath12k *ar, struct ath12k_fw_stats_req_params *param);
+void ath12k_pdev_stats_timer_work(struct wiphy *wiphy, struct wiphy_work *work);
 int ath12k_mac_get_fw_stats_per_vif(struct ath12k *ar,
 				    struct ath12k_fw_stats_req_params *param);
 int ath12k_mac_op_start(struct ieee80211_hw *hw);
@@ -425,6 +463,9 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 			    struct ieee80211_sta *sta,
 			    enum ieee80211_sta_state old_state,
 			    enum ieee80211_sta_state new_state);
+void ath12k_mac_op_sta_pre_rcu_remove(struct ieee80211_hw *hw,
+				      struct ieee80211_vif *vif,
+				      struct ieee80211_sta *sta);
 int ath12k_mac_op_sta_set_txpwr(struct ieee80211_hw *hw,
 				struct ieee80211_vif *vif,
 				struct ieee80211_sta *sta);
@@ -432,6 +473,10 @@ void ath12k_mac_op_link_going_down(struct ieee80211_hw *hw,
 				   struct ieee80211_vif *vif,
 				   struct ieee80211_bss_conf *link_conf,
 				   bool is_netdev_going_down);
+int ath12k_mac_op_sta_set_mapc_params(struct ieee80211_hw *hw,
+				      struct ieee80211_vif *vif,
+				      struct ieee80211_sta *sta,
+				      const struct cfg80211_sta_mapc_params *p);
 void ath12k_mac_op_link_sta_rc_update(struct ieee80211_hw *hw,
 				      struct ieee80211_vif *vif,
 				      struct ieee80211_link_sta *link_sta,
@@ -519,6 +564,8 @@ int ath12k_mac_op_erp(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 		      int link_id, struct cfg80211_erp_params *params);
 int ath12k_mac_mgmt_tx(struct ath12k *ar, struct sk_buff *skb,
 		       bool is_prb_rsp);
+bool ath12k_mgmt_has_ml_link_info_ie(struct ath12k_base *ab,
+				     struct sk_buff *skb);
 int ath12k_mac_op_uhr_smd_update(struct ieee80211_hw *hw,
 				 struct ieee80211_vif *vif,
 				 struct ieee80211_sta *peer,
@@ -532,7 +579,6 @@ int ath12k_mac_op_uhr_link_reconfig(struct ieee80211_hw *hw,
 				    struct ieee80211_vif *vif,
 				    struct ieee80211_sta *current_sta,
 				    struct ieee80211_sta *target_sta,
-				    enum ieee80211_uhr_link_reconfig_action action,
 				    struct ieee80211_uhr_link_reconfig_info *info);
 int ath12k_mac_op_smd_remap_links(struct ath12k_vif *ahvif,
 				  struct ath12k_sta *ahsta_target,
@@ -904,8 +950,15 @@ u8 ath12k_get_nss_160mhz(struct ath12k *ar, u8 max_nss);
 u8 ath12k_get_nss_320mhz(struct ath12k *ar, u8 max_nss);
 int ath12k_mac_set_vht_txbf_conf(struct ath12k_link_vif *arvif,
 				 u32 *val);
+#define ATH12K_GREEN_AP_PS_TIMEOUT_DEFAULT	20 /* seconds */
+#define ATH12K_GREEN_AP_PS_TIMEOUT_MIN		20 /* seconds */
+#define ATH12K_GREEN_AP_PS_TIMEOUT_MAX		65534 /* seconds */
+
 void ath12k_mac_ap_ps_recalc(struct ath12k *ar);
+void ath12k_mac_ap_ps_seed_multistream_count(struct ath12k *ar,
+					     struct ath12k_link_sta *exclude);
 void ath12k_ap_ps_recalc_work(struct wiphy *wiphy, struct wiphy_work *work);
+void ath12k_ap_ps_timer_work(struct wiphy *wiphy, struct wiphy_work *work);
 int ath12k_setup_peer_smps(struct ath12k *ar, struct ath12k_link_vif *arvif,
 			   const u8 *addr,
 			   const struct ieee80211_sta_ht_cap *ht_cap,
@@ -935,4 +988,6 @@ struct ath12k_netstats_iter_ctx {
 
 bool ath12k_mac_mgmt_need_smd_sta_session_ctx(struct sk_buff *skb);
 
+struct ieee80211_chanctx_conf*
+ath12k_mac_get_ctx_for_bridge_recovery(struct ath12k *ar);
 #endif

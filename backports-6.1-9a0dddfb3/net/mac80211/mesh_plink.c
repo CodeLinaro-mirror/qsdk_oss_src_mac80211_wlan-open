@@ -649,8 +649,10 @@ mesh_sta_info_get(struct ieee80211_sub_if_data *sdata,
 
 		mesh_sta_info_init(sdata, sta, elems);
 
-		if (sta_info_insert_rcu(sta))
+		if (sta_info_insert_rcu(sta)) {
+			rcu_read_lock();
 			return NULL;
+		}
 	}
 
 	return sta;
@@ -728,6 +730,9 @@ void mesh_neighbour_update(struct ieee80211_sub_if_data *sdata,
 
 	sta = mesh_sta_info_get(sdata, hw_addr, elems, rx_status);
 	if (!sta)
+		goto out;
+
+	if (!elems->mesh_config)
 		goto out;
 
 	sta->mesh->connected_to_gate = elems->mesh_config->meshconf_form &

@@ -220,6 +220,11 @@ void ath12k_pcic_free_ext_irq(struct ath12k_base *ab)
 		for (j = 0; j < irq_grp->num_irq; j++)
 			devm_free_irq(ab->dev, ab->irq_num[irq_grp->irqs[j]], irq_grp);
 
+		if (irq_grp->napi_enabled) {
+			napi_disable(&irq_grp->napi);
+			irq_grp->napi_enabled = false;
+		}
+
 		netif_napi_del(&irq_grp->napi);
 #if LINUX_VERSION_IS_GEQ(6,10,0)
 		free_netdev(irq_grp->napi_ndev);

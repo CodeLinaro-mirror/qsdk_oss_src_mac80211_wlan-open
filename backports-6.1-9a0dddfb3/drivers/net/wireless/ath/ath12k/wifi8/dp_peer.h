@@ -35,7 +35,8 @@ int ath12k_wifi8_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 void ath12k_wifi8_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 *addr,
 				 struct ieee80211_sta *sta, u8 hw_link_id);
 int ath12k_wifi8_dp_peer_assoc(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
-			       struct ath12k_dp_vif *dp_vif, u8 *addr);
+			       struct ath12k_dp_vif *dp_vif, u8 *addr,
+			       struct ath12k_dp_peer_create_params *params);
 void ath12k_wifi8_dp_link_peer_assign_id(struct ath12k_dp *dp, struct ath12k *ar,
 					 struct ath12k_dp_link_peer *peer);
 void ath12k_wifi8_dp_link_peer_unassign_id(struct ath12k_dp *dp, struct ath12k *ar,
@@ -79,6 +80,7 @@ int ath12k_wifi8_dp_smd_prep_transfer_ext_ctx(
 	struct ath12k_dp_peer *current_dp_peer,
 	const u8 *target_mld_addr,
 	u16 transitioning_links);
+void ath12k_wifi8_dp_smd_abort_prep(struct ath12k_dp *dp);
 void ath12k_wifi8_dp_smd_exec_activate_links(
 	struct ath12k_dp *dp,
 	struct ath12k_dp_hw *dp_hw,

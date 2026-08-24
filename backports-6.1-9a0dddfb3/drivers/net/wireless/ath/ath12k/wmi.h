@@ -34,6 +34,7 @@ struct ath12k_reg_tpc_power_info;
 struct ath12k_qos_params;
 struct ath12k_atf_peer_params;
 struct ath12k_mbssid_info;
+struct cfr_rcc_param;
 
 extern const char *mgmt_frame_name[];
 
@@ -518,6 +519,7 @@ enum wmi_cmd_group {
 	WMI_GRP_TDMA           = 0x4c,
 	WMI_GRP_ENERGY_MGMT    = 0x4e,
 	WMI_GRP_SMD	       = 0x4f,
+	WMI_GRP_MAPC           = 0x51,
 };
 
 #define WMI_CMD_GRP(grp_id) (((grp_id) << 12) | 0x1)
@@ -602,9 +604,11 @@ enum wmi_tlv_cmd_id {
 	WMI_PDEV_MULTIPLE_VDEV_SET_PARAM_CMDID = 0x4048,
 	WMI_PDEV_MEC_AGING_TIMER_CONFIG_CMDID = 0x4049,
 	WMI_PDEV_SET_BIOS_INTERFACE_CMDID = 0x404A,
+	WMI_PDEV_SET_TGTR2P_TABLE_CMDID = 0x404F,
 	WMI_PDEV_SET_RF_PATH_CMDID = 0x4050,
 	WMI_PDEV_WSI_STATS_INFO_CMDID = 0x4051,
 	WMI_PDEV_SET_CUMAC_CHIP_CMDID = 0x405D,
+	WMI_PDEV_DOWNLOAD_RTT_BLOB_CMDID = 0x405F,
 	WMI_VDEV_CREATE_CMDID = WMI_TLV_CMD(WMI_GRP_VDEV),
 	WMI_VDEV_DELETE_CMDID,
 	WMI_VDEV_START_REQUEST_CMDID,
@@ -718,6 +722,7 @@ enum wmi_tlv_cmd_id {
 	WMI_PEER_RX_PN_REQUEST_CMDID,
 	WMI_PEER_TX_FILTER_CMDID,
 	WMI_PEER_FLUSH_POLICY_CMDID,
+	WMI_SOC_TX_PACKET_CUSTOM_CLASSIFY_CMDID = 0x32006,
 	WMI_PEER_SCHED_MODE_DISABLE_CMDID,
 	WMI_PEER_BULK_SET_CMDID,
 	WMI_PEER_MULTIPLE_REORDER_QUEUE_SETUP_CMDID,
@@ -819,6 +824,8 @@ enum wmi_tlv_cmd_id {
 	WMI_WOW_SET_ACTION_WAKE_UP_CMDID,
 	WMI_RTT_MEASREQ_CMDID = WMI_TLV_CMD(WMI_GRP_RTT),
 	WMI_RTT_TSF_CMDID,
+	WMI_RTT_PASN_AUTH_STATUS_CMD,
+	WMI_RTT_PASN_DEAUTH_CMD,
 	WMI_VDEV_SPECTRAL_SCAN_CONFIGURE_CMDID = WMI_TLV_CMD(WMI_GRP_SPECTRAL),
 	WMI_VDEV_SPECTRAL_SCAN_ENABLE_CMDID,
 	WMI_REQUEST_STATS_CMDID = WMI_TLV_CMD(WMI_GRP_STATS),
@@ -1043,6 +1050,8 @@ enum wmi_tlv_cmd_id {
 	/** Command to Handle Energy Management OEM's opaque data */
 	WMI_ENERGY_MGMT_OEM_DATA_CMDID,
 	WMI_ROAM_CONFIG_CMDID = WMI_TLV_CMD(WMI_GRP_SMD),
+	/** WMI cmds for MAPC (Multi-AP Coordination, IEEE 802.11bn) */
+	WMI_PEER_SET_MAPC_PARAMS_CMDID = WMI_TLV_CMD(WMI_GRP_MAPC),
 };
 
 enum wmi_tlv_event_id {
@@ -1090,13 +1099,20 @@ enum wmi_tlv_event_id {
 	WMI_PDEV_MULTIPLE_VDEV_RESTART_RESP_EVENTID,
 	WMI_PDEV_GET_HALPHY_CAL_STATUS_EVENTID =
 					WMI_SERVICE_READY_EXT2_EVENTID + 4,
+	/* Event to get AOA phasedelta values from HALPHY for only default gain table */
+	WMI_PDEV_AOA_PHASEDELTA_EVENTID =
+		WMI_PDEV_GET_HALPHY_CAL_STATUS_EVENTID + 2,
 	WMI_PDEV_PKTLOG_DECODE_INFO_EVENTID =
 		WMI_PDEV_GET_HALPHY_CAL_STATUS_EVENTID + 4,
 	WMI_PDEV_RSSI_DBM_CONVERSION_PARAMS_INFO_EVENTID =
 					WMI_PDEV_GET_HALPHY_CAL_STATUS_EVENTID + 5,
 	WMI_PDEV_SET_RF_PATH_RESP_EVENTID =
 					WMI_PDEV_GET_HALPHY_CAL_STATUS_EVENTID + 8,
+	/* Event to get AOA phasedelta values for all gain tables from HALPHY */
+	WMI_PDEV_ENHANCED_AOA_PHASEDELTA_EVENTID =
+					WMI_PDEV_GET_HALPHY_CAL_STATUS_EVENTID + 9,
 	WMI_PDEV_UHR_CU_EVENTID = 0x4036,
+	WMI_PDEV_SET_TGTR2P_TABLE_EVENTID = 0x4037,
 	WMI_PDEV_SET_CUMAC_CHIP_ID_CONFIRMATION_EVENTID = 0x4038,
 	WMI_VDEV_START_RESP_EVENTID = WMI_TLV_CMD(WMI_GRP_VDEV),
 	WMI_VDEV_STOPPED_EVENTID,
@@ -1165,6 +1181,8 @@ enum wmi_tlv_event_id {
 	WMI_RTT_MEASUREMENT_REPORT_EVENTID = WMI_TLV_CMD(WMI_GRP_RTT),
 	WMI_TSF_MEASUREMENT_REPORT_EVENTID,
 	WMI_RTT_ERROR_REPORT_EVENTID,
+	WMI_RTT_PASN_PEER_CREATE_REQ_EVENTID,
+	WMI_RTT_PASN_PEER_DELETE_EVENTID,
 	WMI_STATS_EXT_EVENTID = WMI_TLV_CMD(WMI_GRP_STATS),
 	WMI_IFACE_LINK_STATS_EVENTID,
 	WMI_PEER_LINK_STATS_EVENTID,
@@ -1301,6 +1319,7 @@ enum wmi_tlv_event_id {
 	WMI_ESP_ESTIMATE_EVENTID = WMI_EVT_GRP_START_ID(WMI_GRP_ESP),
 	WMI_ENERGY_MGMT_OEM_DATA_EVENTID = WMI_EVT_GRP_START_ID(WMI_GRP_ENERGY_MGMT),
 	WMI_SMD_ROAM_CONFIG_EVENTID = WMI_TLV_CMD(WMI_GRP_SMD),
+	WMI_PEER_MAPC_SETUP_STATUS_EVENTID = WMI_EVT_GRP_START_ID(WMI_GRP_MAPC),
 };
 
 enum wmi_tlv_pdev_param {
@@ -1649,6 +1668,7 @@ enum wmi_tlv_vdev_param {
 	WMI_VDEV_PARAM_HWCTS2SELF_OFDMA = 0xC5,
 	WMI_VDEV_PARAM_2XLDPC = 0xCA,
 	WMI_VDEV_PARAM_UHR_ELR = 0xD1,
+	WMI_VDEV_PARAM_EXTRA_EHT_LTF = 0x8011,
 };
 
 enum wmi_tlv_peer_flags {
@@ -2518,6 +2538,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_PDEV_SET_BIOS_INTERFACE_CMD = 0x3FB,
 	WMI_TAG_PEER_CONFIG_PPEDS_ROUTING = 0x3EA,
 	WMI_TAG_TWT_CAPS_PARAMS = 0x3ED,
+	WMI_TAG_PDEV_AOA_PHASEDELTA_EVENT_FIXED_PARAM = 0x3F0,
 	WMI_TAG_SAWF_SERVICE_CLASS_CFG_CMD_FIXED_PARAM = 0x40A,
 	WMI_TAG_SAWF_SERVICE_CLASS_DISABLE_CMD_FIXED_PARAM = 0x40B,
 	WMI_TAG_PDEV_PKTLOG_DECODE_INFO = 0x414,
@@ -2525,6 +2546,14 @@ enum wmi_tlv_tag {
 	WMI_TAG_SPECTRAL_FFT_SIZE_CAPABILITIES,
 	WMI_TAG_PDEV_SSCAN_CHAN_INFO = 0x417,
 	WMI_TAG_PDEV_SSCAN_PER_DETECTOR_INFO,
+	WMI_TAG_VDEV_SET_LTF_KEY_SEED_CMD_FIXED_PARAM = 0x41b,
+	WMI_TAG_RTT_PASN_PEER_CREATE_REQ_EVENT_FIXED_PARAM = 0x41c,
+	WMI_TAG_RTT_PASN_PEER_CREATE_REQ_PARAM = 0x41d,
+	WMI_TAG_RTT_PASN_AUTH_STATUS_CMD_FIXED_PARAM = 0x41e,
+	WMI_TAG_RTT_PASN_AUTH_STATUS_PARAM = 0x41f,
+	WMI_TAG_RTT_PASN_PEER_DELETE_EVENT_FIXED_PARAM = 0x420,
+	WMI_TAG_RTT_PASN_PEER_DELETE_PARAM = 0x421,
+	WMI_TAG_RTT_PASN_DEAUTH_CMD_FIXED_PARAM = 0x422,
 	WMI_TAG_REG_CHAN_PRIORITY = 0x426,
 	WMI_TAG_RSSI_DBM_CONVERSION_PARAMS_INFO_FIXED_PARAM = 0x427,
 	WMI_TAG_RSSI_DBM_CONVERSION_PARAMS_INFO,
@@ -2532,6 +2561,7 @@ enum wmi_tlv_tag {
 	WMI_CTRL_PATH_AFC_STATS = 0x42A,
 	WMI_TAG_VDEV_PN_MGMT_RX_FILTER_CMD = 0x42E,
 	WMI_TAG_BCN_TMPL_ML_INFO_CMD = 0x436,
+	WMI_TAG_PEER_TX_FILTER_CMD = 0x437,
 	WMI_TAG_MLO_MGMT_RX_CU_PARAMS = 0x439,
 	WMI_TAG_MLO_PARAMS_PEER_DELETE = 0x43E,
 	WMI_TAG_HALPHY_CTRL_PATH_CMD_FIXED_PARAM = 0x442,
@@ -2543,7 +2573,11 @@ enum wmi_tlv_tag {
 	WMI_TAG_MLO_LINK_REMOVAL_CMD_FIXED_PARAM = 0x464,
 	WMI_CTRL_PATH_PMLO_STATS = 0x479,
 	WMI_TAG_TDMA_SCHEDULE_REQUEST_CMD = 0x47f,
+	WMI_TAG_PDEV_SET_TGTR2P_TABLE_CMD_FIXED_PARAM = 0x482,
+	WMI_TAG_PDEV_SET_TGTR2P_TABLE_EVENT_FIXED_PARAM = 0x483,
+	WMI_TAG_PEER_BULK_SET_CMD_FIXED_PARAM = 0x484,
 	WMI_TAG_SCAN_BLANKING_PARAMS_INFO = 0x486,
+	WMI_TAG_PEER_LIST = 0x487,
 	WMI_CTRL_PATH_BLANKING_STATS = 0x493,
 	WMI_TAG_PDEV_SET_RF_PATH_CMD_FIXED_PARAM = 0x494,
 	WMI_TAG_PDEV_SET_RF_PATH_RESP_EVENT_FIXED_PARAM = 0x49E,
@@ -2568,6 +2602,10 @@ enum wmi_tlv_tag {
 	WMI_TAG_MLO_TID_TO_LINK_MAPPING_EVENT_FIXED_PARAM,
 	WMI_TAG_MLO_TID_TO_LINK_MAPPING_IE_INFO,
 	WMI_TAG_MLO_PEER_LINK_CONTROL_PARAM = 0x48F,
+	WMI_TAG_PDEV_ENHANCED_AOA_PHASEDELTA_EVENT_FIXED_PARAM = 0x4AE,
+	WMI_TAG_ENHANCED_AOA_GAIN_PHASE_DATA_HDR,
+	WMI_TAG_ENHANCED_AOA_CAPS_PARAM = 0x4B2,
+	WMI_TAG_ENHANCED_AOA_PER_BAND_CAPS_PARAM,
 	WMI_TAG_TWT_VDEV_CONFIG_CMD = 0x4DE,
 	WMI_TAG_MLO_TLT_SELECTION_FOR_TID_SPRAY_EVENT_FIXED_PARAM = 0x4e0,
 	WMI_TAG_HW_BLACKLIST_CHAN_FIXED_PARAM = 0x507,
@@ -2614,6 +2652,16 @@ enum wmi_tlv_tag {
 	WMI_TAG_PEER_UHR_OMP_NPCA_PARAMS,
 	WMI_TAG_ANOMALY_REPORT_HDR = 0x588,
 	WMI_TAG_ANOMALY_ENTRY = 0x589,
+	WMI_TAG_PDEV_DOWNLOAD_RTT_BLOB_CMD = 0x5B8,
+	WMI_TAG_SOC_TX_PACKET_CUSTOM_CLASSIFY_CMD = 0x4DA,
+	WMI_TAG_PEER_SET_MAPC_PARAMS_CMD_FIXED_PARAM = 0x0594,
+	WMI_TAG_MAPC_CMN_PARAMS = 0x0595,
+	WMI_TAG_MAPC_COTDMA_PARAMS = 0x0596, /* deprecated, reserved */
+	WMI_TAG_MAPC_COSR_PARAMS = 0x0597,
+	WMI_TAG_MAPC_COBF_PARAMS = 0x0598,
+	WMI_TAG_MAPC_CORTWT_PARAMS = 0x0599,
+	WMI_TAG_MAPC_CTDMA_PROFILE = 0x05AD,
+	WMI_TAG_MAPC_PEER_SETUP_STATUS_EVENT_FIXED_PARAM = 0x05AF,
 	WMI_TAG_MAX
 };
 
@@ -2857,10 +2905,20 @@ enum wmi_tlv_service {
 	WMI_TLV_SERVICE_11BE = 289,
 	WMI_TLV_SERVICE_AFC_SUPPORT = 295,
 
+	WMI_SERVICE_AOA_FOR_RCC_SUPPORTED = 302,
 	WMI_TLV_SERVICE_SDWF_LEVEL0 = 311,
+	WMI_TLV_SERVICE_RTT_11AZ_NTB_SUPPORT = 312,
+	WMI_TLV_SERVICE_RTT_11AZ_TB_SUPPORT = 313,
+	WMI_TLV_SERVICE_RTT_11AZ_MAC_SEC_SUPPORT = 314,
+	WMI_TLV_SERVICE_RTT_11AZ_MAC_PHY_SEC_SUPPORT = 315,
+	/* Info corresponding to each Spectral scan session will be sent by
+	 * the FW before the reports corresponding to that session are sent.
+	 */
+	WMI_TLV_SERVICE_SPECTRAL_SESSION_INFO_SUPPORT = 316,
 	WMI_TLV_SERVICE_PKTLOG_DECODE_INFO_SUPPORT = 320,
 	WMI_TLV_SERVICE_BANG_RADAR_320_SUPPORT = 346,
 	WMI_TLV_SERVICE_EIRP_PREFERRED_SUPPORT = 352,
+	WMI_TLV_SERVICE_RTT_11AZ_TB_RSTA_SUPPORT = 356,
 	WMI_TLV_SERVICE_WMSK_COMPACTION_RX_TLVS = 361,
 
 	WMI_TLV_SERVICE_PEER_METADATA_V1A_V1B_SUPPORT = 365,
@@ -2900,6 +2958,13 @@ enum wmi_tlv_service {
 	WMI_TLV_SERVICE_SHARED_CU_MEM_MODEL_COUNT_DOWN = 497,
 	WMI_SERVICE_ML_PEER_MASTER_MIGRATION_SUPPORT = 500,
 	WMI_SERVICE_PDEV_SET_CUMAC_CHIP_CMD_SUPPORT = 520,
+	WMI_SERVICE_MLO_MODE3_RECOVERY_SUPPORTED = 524,
+
+	/* MAPC / C-TDMA (802.11bn) service bits, per FW wmi_services.h */
+	WMI_TLV_SERVICE_UHR_MAX_CO_AP_PEERS = 511,
+	WMI_TLV_SERVICE_UHR_CO_AP_CTDMA_TB_PPDU_SUPPORT = 512,
+	WMI_TLV_SERVICE_UHR_CO_AP_CTDMA_TXOP_RETURN_SUPPORT = 513,
+	WMI_TLV_SERVICE_UHR_MAX_CTDMA_AP_PEERS_SUPPORT = 521,
 
 	WMI_MAX_EXT2_SERVICE,
 };
@@ -3564,6 +3629,7 @@ struct ath12k_wmi_soc_hal_reg_caps_params {
 
 #define WMI_MAX_UHRCAP_MAC_SIZE  4
 #define WMI_MAX_UHRCAP_PHY_SIZE  8
+#define WMI_MAX_UHRCAP_DBE_SIZE  2
 
 /* Used for EHT MCS-NSS array. Data at each array index follows the format given
  * in IEEE P802.11be/D2.0, May 20229.4.2.313.4.
@@ -3591,6 +3657,22 @@ struct ath12k_wmi_soc_hal_reg_caps_params {
 /**
  * struct wmi_service_ready_ext2_event - extended service ready event params
  * @afc_deployment_type: AFC deployment type indicated by FW (indoor,outdoor)
+ * @hw_bd_status: board data check report
+ * @tx_aggr_ba_win_size_max: max TX block-ack window FW supports
+ * @rx_aggr_ba_win_size_max: max RX block-ack window FW supports
+ * @num_max_mlo_link_per_ml_bss_supp: max links per STA MLD
+ * @num_max_mlo_link_per_ml_sap_supp: max links per SAP MLD
+ * @supported_wifi_generations: Wi-Fi generation capability bitmap
+ * @supported_wifi_certified_generations: Wi-Fi Alliance certification bitmap
+ * @max_cfr_filter_groups_supp: max CFR filter groups
+ * @sam_capability_1: SAM peer/MSDUQ capability word 0
+ * @sam_capability_2: SAM MPDUQ capability word 1
+ * @uhr_cap_mac_info: UHR MAC capability bitmap array [WMI_MAX_UHRCAP_MAC_SIZE]
+ * @uhr_cap_dbe_info: UHR DBE capability bitmap array [WMI_MAX_UHRCAP_DBE_SIZE]
+ * @max_uhr_co_ap_peers: max general co-AP peers;
+ *   valid when WMI_TLV_SERVICE_UHR_MAX_CO_AP_PEERS svc set
+ * @max_uhr_ctdma_ap_peers: max Co-TDMA peers;
+ *   valid when UHR_MAX_CTDMA_AP_PEERS_SUPPORT svc set
  */
 struct wmi_service_ready_ext2_event {
 	__le32 reg_db_version;
@@ -3606,6 +3688,20 @@ struct wmi_service_ready_ext2_event {
 	__le32 max_num_msduq_supported_per_tid;
 	__le32 default_num_msduq_supported_per_tid;
 	__le32 afc_deployment_type;
+	__le32 hw_bd_status;
+	__le32 tx_aggr_ba_win_size_max;
+	__le32 rx_aggr_ba_win_size_max;
+	__le32 num_max_mlo_link_per_ml_bss_supp;
+	__le32 num_max_mlo_link_per_ml_sap_supp;
+	__le32 supported_wifi_generations;
+	__le32 supported_wifi_certified_generations;
+	__le32 max_cfr_filter_groups_supp;
+	__le32 sam_capability_1;
+	__le32 sam_capability_2;
+	__le32 uhr_cap_mac_info[WMI_MAX_UHRCAP_MAC_SIZE];
+	__le32 uhr_cap_dbe_info[WMI_MAX_UHRCAP_DBE_SIZE];
+	__le32 max_uhr_co_ap_peers;
+	__le32 max_uhr_ctdma_ap_peers;
 } __packed;
 
 struct ath12k_wmi_caps_ext_params {
@@ -3876,12 +3972,18 @@ struct wmi_vdev_start_smd_params {
 	__le32 flags;
 } __packed;
 
-#define WMI_NPCA_PEER_CAP1_CHAN_OFFSET       GENMASK(3, 0)
-#define WMI_NPCA_PEER_CAP1_MIN_THRESHOLD     GENMASK(7, 4)
-#define WMI_NPCA_PEER_CAP1_SWITCH_DELAY      GENMASK(13, 8)
-#define WMI_NPCA_PEER_CAP1_SWITCH_BACK_DELAY GENMASK(19, 14)
-#define WMI_NPCA_PEER_CAP1_INITIAL_QSRC      GENMASK(21, 20)
-#define WMI_NPCA_PEER_CAP1_MOPLEN            BIT(22)
+/*
+ * Per IEEE P802.11bn D1.5: NPCA Primary Channel (WMI_NPCA_PEER_CAP1_CHAN_OFFSET)
+ * widened from 4 to 8 bits, shifting all subsequent NPCA Operation
+ * Parameters subfields by 4 bits relative to D1.4.
+ */
+#define WMI_NPCA_PEER_CAP1_CHAN_OFFSET            GENMASK(7, 0)
+#define WMI_NPCA_PEER_CAP1_MIN_THRESHOLD          GENMASK(11, 8)
+#define WMI_NPCA_PEER_CAP1_SWITCH_DELAY           GENMASK(17, 12)
+#define WMI_NPCA_PEER_CAP1_SWITCH_BACK_DELAY      GENMASK(23, 18)
+#define WMI_NPCA_PEER_CAP1_INITIAL_QSRC           GENMASK(25, 24)
+#define WMI_NPCA_PEER_CAP1_MOPLEN                 BIT(26)
+#define WMI_NPCA_PEER_CAP1_DIS_SUBCHAN_BMAP_PRESENT BIT(27)
 
 #define WMI_NPCA_PEER_CAP2_PUNCTURE_BITMAP   GENMASK(15, 0)
 
@@ -4068,9 +4170,13 @@ struct wmi_vdev_start_request_cmd {
 /* omp_npca_caps field bit definitions:
  *   Bit 0:3  - NPCA hw_link_id
  *   Bit 4    - Enable (1) / Disable (0) NPCA
+ *   Bit 5    - Mode Update: 1 if NPCA was already enabled on this link
+ *              and this is a parameter update, 0 for a fresh enable or
+ *              for disable (reserved/meaningless when Enable is 0)
  */
 #define WMI_PEER_UHR_OMP_NPCA_CAPS_HW_LINK_ID   GENMASK(3, 0)
 #define WMI_PEER_UHR_OMP_NPCA_CAPS_ENABLE        BIT(4)
+#define WMI_PEER_UHR_OMP_NPCA_CAPS_MODE_UPDATE   BIT(5)
 
 /* omp_npca_param field bit definitions:
  *   Bit 0:5  - NPCA Switch Delay (ms)
@@ -4097,6 +4203,7 @@ struct ath12k_wmi_uhr_omp_link_params {
 	bool npca_enable;
 	u8 npca_switch_delay;
 	u8 npca_switch_back_delay;
+	bool npca_mode_update;
 };
 
 #define MGMT_TX_DL_FRM_LEN		     64
@@ -4319,6 +4426,83 @@ struct wmi_peer_create_mlo_params {
 	__le32 flags;
 };
 
+/* Bitmask constants for param_set_mask — aligned with FW MAPC_SET_* bit positions */
+#define ATH12K_WMI_MAPC_SET_CAPS    BIT(0)  /* wmi_mapc_cmn_params — cap bitmap */
+#define ATH12K_WMI_MAPC_SET_IDS     BIT(1)  /* wmi_mapc_cmn_params — APID pair */
+#define ATH12K_WMI_MAPC_SET_CMN     (ATH12K_WMI_MAPC_SET_CAPS | ATH12K_WMI_MAPC_SET_IDS)
+#define ATH12K_WMI_MAPC_SET_PROFILE BIT(3)  /* wmi_mapc_ctdma_profile */
+
+struct ath12k_wmi_peer_mapc_params_arg {
+	u8  peer_addr[ETH_ALEN];
+	u32 vdev_id;
+	u32 param_set_mask;
+	u32 apid_to_neighbor_peer;
+	u32 apid_from_neighbor_peer;
+	u32 mapc_capability_bitmap;
+	u32 channel_width;
+	u32 ccfs;
+	u32 disable_subchannel_bitmap;
+	u32 bss_color;
+	bool rx_txop_return_support;
+};
+
+/* Scheme enable bitmap — bit per scheme */
+#define WMI_MAPC_SCHEME_COBF    BIT(0)  /* Co-BF   (future) */
+#define WMI_MAPC_SCHEME_COSR    BIT(1)  /* Co-SR   (future) */
+#define WMI_MAPC_SCHEME_COTDMA  BIT(2)  /* Co-TDMA (implemented) */
+#define WMI_MAPC_SCHEME_CORTWT  BIT(3)  /* Co-rTWT (future) */
+#define WMI_MAPC_SCHEME_COCR    BIT(4)  /* Co-CR   (future) */
+
+struct wmi_peer_set_mapc_params_cmd_fixed_param {
+	__le32 tlv_header;
+	__le32 vdev_id;
+	struct ath12k_wmi_mac_addr_params peer_macaddr;
+	__le32 mapc_scheme_enable_bitmap;
+} __packed;
+
+struct wmi_mapc_cmn_params {
+	__le32 tlv_header;
+	__le32 mapc_capability_bitmap;
+	__le32 apid_to_neighbor_peer;
+	__le32 apid_from_neighbor_peer;
+} __packed;
+
+struct wmi_mapc_ctdma_profile {
+	__le32 tlv_header;
+	__le32 channel_width;
+	__le32 ccfs;
+	__le32 bss_color;
+	__le32 rx_txop_return_support;
+	__le32 disable_subchannel_bitmap;
+} __packed;
+
+struct wmi_mapc_cosr_params   { __le32 tlv_header; __le32 reserved; } __packed;
+struct wmi_mapc_cobf_params   { __le32 tlv_header; __le32 reserved; } __packed;
+struct wmi_mapc_cortwt_params { __le32 tlv_header; __le32 reserved; } __packed;
+
+struct wmi_mapc_peer_setup_status_event_fixed_param {
+	__le32 tlv_header;
+	__le32 vdev_id;
+	struct ath12k_wmi_mac_addr_params peer_macaddr;
+	__le32 scheme_enable_bitmap;
+	__le32 param_sets_recvd;
+	__le32 param_sets_missing;
+} __packed;
+
+struct wmi_peer_get_mapc_params_cmd_fixed_param {
+	__le32 tlv_header;
+	__le32 vdev_id;
+	struct ath12k_wmi_mac_addr_params peer_macaddr;
+} __packed;
+
+struct wmi_mapc_peer_get_params_event_fixed_param {
+	__le32 tlv_header;
+	__le32 vdev_id;
+	struct ath12k_wmi_mac_addr_params peer_macaddr;
+	__le32 scheme_enable_bitmap;
+	__le32 param_sets_recvd;
+} __packed;
+
 struct ath12k_wmi_pdev_set_regdomain_arg {
 	u16 current_rd_in_use;
 	u16 current_rd_2g;
@@ -4442,7 +4626,9 @@ enum wmi_peer_type {
 	WMI_PEER_TYPE_DEFAULT = 0,
 	WMI_PEER_TYPE_BSS = 1,
 	WMI_PEER_TYPE_TDLS = 2,
+	WMI_PEER_TYPE_PASN = 6,
 	WMI_PEER_TYPE_MLO_BRIDGE = 7,
+	WMI_PEER_TYPE_MAPC = 8,
 };
 
 #define ATH12K_WMI_FLAG_STA_ID_VALID	BIT(0)
@@ -5175,6 +5361,7 @@ enum wmi_sta_ps_mode {
 #define WMI_SMPS_PARAM_VALUE_SHIFT 29
 
 #define ATH12K_WMI_FW_HANG_ASSERT_TYPE 1
+#define ATH12K_WMI_Q6_BCR_ASSERT_TYPE 0xA
 #define ATH12K_WMI_FW_HANG_DELAY 0
 
 enum wmi_fw_hang_recovery_mode_type {
@@ -5182,6 +5369,7 @@ enum wmi_fw_hang_recovery_mode_type {
 	ATH12K_WMI_FW_HANG_RECOVERY_MODE0,
 	ATH12K_WMI_FW_HANG_RECOVERY_MODE1,
 	ATH12K_WMI_FW_HANG_RECOVERY_MODE2,
+	ATH12K_WMI_FW_HANG_RECOVERY_MODE3 = 204,
 };
 
 /* type, 0:unused 1: ASSERT 2: not respond detect command
@@ -5401,6 +5589,8 @@ struct peer_assoc_mlo_params {
 	bool ml_reconfig;
 	bool mlo_link_add;
 	bool mlo_link_del;
+	bool ml_recovery_reconfig;
+	u8   new_master_ll_id;
 };
 
 struct wmi_rate_set_arg {
@@ -5605,7 +5795,7 @@ struct peer_assoc_holq_params {
 
 struct peer_assoc_npca_params {
 	bool enabled;
-	u8 npca_offset;
+	u8 npca_primary_channel;
 	u16 npca_punct_bitmap;
 	u8 npca_min_dur_threshold;
 	u8 npca_switch_delay;
@@ -5638,12 +5828,15 @@ enum smd_roam_config_flags {
 	SMD_ROAM_CONFIG_FLAG_DL_SN_NOT_TRANSFERRED = 0x1,
 	SMD_ROAM_CONFIG_FLAG_UL_SN_NOT_TRANSFERRED = 0x2,
 	SMD_ROAM_CONFIG_FLAG_DISABLE_LINK	= 0x4,
+	SMD_ROAM_CONFIG_FLAG_EXEC_VIA_TAP	= 0x8,
 };
 
 #define WMI_SMD_NUM_TIDS 8
 struct ath12k_wmi_smd_roam_tid_ba_info {
 	u32 tx_buf_size;
 	u32 rx_buf_size;
+	u32 mlsn;
+	u32 offset;
 };
 
 #define WMI_SMD_CTX_NUM_TIDS 8 /* Match it to ATH12K_SMD_CTX_NUM_TIDS */
@@ -5787,11 +5980,24 @@ struct wmi_peer_assoc_mlo_params {
 	__le32 max_num_simultaneous_links;
 	__le32 nstr_indication_bitmap;
 	__le32 recommended_max_num_simultaneous_links;
-	struct {
-		__le32 ml_reconfig: 1,
-		       unused: 31;
+	union {
+		__le32 ml_reconfig__word;
+		struct {
+			__le32 ml_reconfig:          1; /* bit 0: dynamic ML reconfig */
+			__le32 ml_recovery_reconfig: 1; /* bit 1: Mode3 reconfig */
+			__le32 unused:              30;
+		};
 	};
+	__le32 new_master_ll_id;
 } __packed;
+
+/* Accessor macros matching FW wmi_unified.h definitions */
+#define WMI_ASSOC_MLO_PEER_ML_RECONFIG_GET(w)             WMI_GET_BITS(w, 0, 1)
+#define WMI_ASSOC_MLO_PEER_ML_RECONFIG_SET(w, v)          WMI_SET_BITS(w, 0, 1, v)
+#define WMI_ASSOC_MLO_PEER_ML_RECOVERY_RECONFIG_GET(w)    WMI_GET_BITS(w, 1, 1)
+#define WMI_ASSOC_MLO_PEER_ML_RECOVERY_RECONFIG_SET(w, v) WMI_SET_BITS(w, 1, 1, v)
+
+#define WMI_MLO_INVALID_MASTER_LL_ID	0xFF
 
 #define WMI_MGMTQ_LINK_ID	GENMASK(2, 0)
 #define WMI_MGMTQ_MSDU_TYPE	GENMASK(7, 3)
@@ -5830,7 +6036,7 @@ struct wmi_peer_assoc_hol_q_params {
 /* TBD: Remaining 4 bits is reserved */
 
 #define WMI_SMD_ROAM_CONFIG_PEER_TID_INFO_MLSN		GENMASK(15, 0)
-#define WMI_SMD_ROAM_CONFIG_PEER_TID_INFO_OFFSET	GENMASK(31, 16)
+#define WMI_SMD_ROAM_CONFIG_PEER_TID_INFO_OFFS		GENMASK(31, 16)
 
 struct wmi_smd_roam_config_peer_tid_info {
 	__le32 tlv_header;
@@ -6532,7 +6738,7 @@ struct wmi_vdev_install_key_compl_event {
 
 struct wmi_vdev_install_key_complete_arg {
 	u32 vdev_id;
-	const u8 *macaddr;
+	u8 macaddr[ETH_ALEN];
 	u32 key_idx;
 	u32 key_flags;
 	u32 status;
@@ -6589,7 +6795,7 @@ struct wmi_peer_assoc_conf_event {
 
 struct wmi_peer_assoc_conf_arg {
 	u32 vdev_id;
-	const u8 *macaddr;
+	u8 macaddr[ETH_ALEN];
 	u32 status; /* 0 - Pass; 1 - Failure */
 };
 
@@ -6635,6 +6841,10 @@ struct wmi_pdev_check_cal_version_event {
 	u8 board_mcn_detail[WMI_BOARD_MCN_STRING_BUF_SIZE];
 	__le32 pdev_id;
 } __packed;
+
+struct ath12k_wmi_csa_vdev_ids_parse_state {
+	u16 vdev_ids_len;
+};
 
 struct ath12k_wmi_pdev_csa_event {
 	__le32 pdev_id;
@@ -8698,6 +8908,7 @@ struct wmi_pdev_multiple_vdev_restart_req_arg {
 	u16 ru_punct_bitmap;
 	u32 width_device;
 	u32 center_freq_device;
+	struct wmi_npca_arg npca_arg;     /* common NPCA config for all vdevs */
 };
 
 struct wmi_pdev_multiple_vdev_restart_request_cmd {
@@ -8783,6 +8994,96 @@ struct wmi_chan_width_peer_list {
 	struct ath12k_wmi_mac_addr_params mac_addr;
 	__le32 chan_width;
 	__le32 puncture_20mhz_bitmap;
+} __packed;
+
+/**
+ * struct wmi_peer_bulk_set_cmd - WMI_PEER_BULK_SET_CMDID fixed params
+ * @tlv_header: TLV header (tag + length)
+ * @vdev_var: vdev_id in bits [7:0], bit[31] = valid-vdev-id flag
+ *
+ * Followed by a WMI_TAG_ARRAY_STRUCT TLV containing wmi_peer_list entries.
+ */
+struct wmi_peer_bulk_set_cmd {
+	__le32 tlv_header;
+	__le32 vdev_var;
+} __packed;
+
+/**
+ * struct wmi_peer_list - per-peer entry for WMI_PEER_BULK_SET_CMDID
+ * @tlv_header: TLV header (tag + length)
+ * @peer_macaddr: peer MAC address
+ * @param_id: WMI_PEER_USE_FIXED_PWR (14) for TX power control
+ * @param_value: power limit in firmware units
+ */
+struct wmi_peer_list {
+	__le32 tlv_header;
+	struct ath12k_wmi_mac_addr_params peer_macaddr;
+	__le32 param_id;
+	__le32 param_value;
+} __packed;
+
+/**
+ * struct ath12k_sta_peer_table_entry - kernel-internal per-STA power entry
+ * @peer_macaddr: 6-byte MAC address
+ * @peer_pwr_limit: signed TX power limit
+ */
+struct ath12k_sta_peer_table_entry {
+	u8 peer_macaddr[ETH_ALEN];
+	s32 peer_pwr_limit;
+} __packed;
+
+/**
+ * struct wmi_pdev_set_tgtr2p_table_cmd - WMI_PDEV_SET_TGTR2P_TABLE_CMDID
+ * @tlv_header: TLV header (tag + length)
+ * @pdev_id: pdev identifier
+ * @freq_band: 0=5GHz, 1=2.4GHz, 2=6GHz
+ * @sub_band: sub-band index within the selected frequency band
+ * @is_ext: 0=default R2P table, 1=extension fields (11be targets only)
+ * @target_type: chip identifier (0=Alder/IPQ95xx, 1=Pine/QCN90xx,
+ *               0x10=Waikiki/QCN92xx)
+ * @r2p_array_len: byte length of the power table that follows in the TLV
+ * @end_of_r2ptable_update: 1 signals FW to commit the update after this
+ *                          is the last sub-band message for the frequency band
+ *
+ * Followed by a WMI_TAG_ARRAY_BYTE TLV containing r2p_array_len bytes of
+ * s8 power values (unit: 0.25 dBm).
+ */
+struct wmi_pdev_set_tgtr2p_table_cmd {
+	__le32 tlv_header;
+	__le32 pdev_id;
+	__le32 freq_band;
+	__le32 sub_band;
+	__le32 is_ext;
+	__le32 target_type;
+	__le32 r2p_array_len;
+	__le32 end_of_r2ptable_update;
+} __packed;
+
+/**
+ * enum wmi_pdev_tgtr2p_event_status - status codes returned in
+ * WMI_PDEV_SET_TGTR2P_TABLE_EVENTID
+ */
+enum wmi_pdev_tgtr2p_event_status {
+	WMI_PDEV_TGTR2P_SUCCESS = 0,
+	WMI_PDEV_TGTR2P_SUCCESS_WAITING_FOR_END_OF_UPDATE,
+	WMI_PDEV_TGTR2P_ERROR_INVALID_FREQ_BAND,
+	WMI_PDEV_TGTR2P_ERROR_INVALID_SUB_BAND,
+	WMI_PDEV_TGTR2P_ERROR_EXTENSION_FIELDS_NOT_ENABLED_IN_BDF,
+	WMI_PDEV_TGTR2P_ERROR_INVALID_TARGET_TYPE,
+	WMI_PDEV_TGTR2P_ERROR_R2P_ARRAY_LEN_MISMATCH,
+};
+
+/**
+ * struct wmi_pdev_set_tgtr2p_table_event - FW response for
+ *	WMI_PDEV_SET_TGTR2P_TABLE_CMDID
+ * @tlv_header: TLV header (tag + length)
+ * @status:   see enum wmi_pdev_tgtr2p_event_status
+ * @pdev_id:  pdev the response is for
+ */
+struct wmi_pdev_set_tgtr2p_table_event {
+	__le32 tlv_header;
+	__le32 status;
+	__le32 pdev_id;
 } __packed;
 
 struct wmi_bcn_tmpl_ml_params {
@@ -9967,6 +10268,9 @@ enum ath12k_wmi_tpc_stats_ctl_array {
 enum ath12k_wmi_tpc_stats_events {
 	ATH12K_TPC_STATS_CONFIG_REG_PWR_EVENT,
 	ATH12K_TPC_STATS_RATES_EVENT1,
+	/* event 2: EHT rates array; UHR target powers are identical so the
+	 * host reuses this same array for all UHR preambles as well.
+	 */
 	ATH12K_TPC_STATS_RATES_EVENT2,
 	ATH12K_TPC_STATS_CTL_TABLE_EVENT
 };
@@ -10385,6 +10689,31 @@ struct ath12k_set_neighbor_rx_params {
 	u8 nrp_addr[ETH_ALEN];
 };
 
+enum wmi_peer_tx_filter_action {
+	WMI_PEER_TX_FILTER_ACTION_ADD                           = 0x1,
+	WMI_PEER_TX_FILTER_ACTION_REMOVE                        = 0x2,
+	WMI_PEER_TX_FILTER_ACTION_ADD_AND_ENABLE_FILTERING      = 0x3,
+	WMI_PEER_TX_FILTER_ACTION_REMOVE_AND_CLEAR_FILTERING    = 0x4,
+};
+
+struct wmi_vdev_set_tx_peer_filter_cmd {
+	__le32 tlv_header;
+	__le32 vdev_id;
+	struct ath12k_wmi_mac_addr_params macaddr;
+	__le32 action;
+} __packed;
+
+struct ath12k_set_tx_peer_filter_params {
+	u32 vdev_id;
+	u8 mac_addr[ETH_ALEN];
+	u32 action;
+};
+
+struct wmi_tx_mon_pkt_cap_set_config_cmd {
+	__le32 tlv_header;
+	__le32 pkt_type_bitmap;
+} __packed;
+
 enum ath12k_wmi_frame_tx_status {
 	WMI_FRAME_TX_STATUS_OK,
 	WMI_FRAME_TX_STATUS_XRETRY,
@@ -10490,6 +10819,241 @@ struct ath12k_wmi_peer_cfr_capture_conf {
 	u32 bandwidth;
 	u32 capture_method;
 };
+
+#define WMI_CFR_DIRECTED_FTM_ACK_EN BIT(0)
+#define WMI_CFR_ALL_FTM_ACK_EN BIT(1)
+#define WMI_CFR_NDPA_NDP_DIRECTED_EN BIT(2)
+#define WMI_CFR_NDPA_NDP_ALL_EN BIT(3)
+#define WMI_CFR_TA_RA_TYPE_FILTER_EN BIT(4)
+#define WMI_CFR_ALL_PACKET_EN BIT(5)
+#define WMI_CFR_FILTER_IN_AS_FP_TA_RA_TYPE BIT(6)
+
+#define WMI_CFR_CAPTURE_INTERVAL GENMASK(23, 0)
+#define WMI_CFR_CAPTURE_DURATION GENMASK(23, 0)
+#define WMI_CFR_FILTER_GROUP_BITMAP GENMASK(15, 0)
+#define WMI_CFR_UL_MU_USER_UPPER GENMASK(4, 0)
+#define WMI_CFR_FREEZE_DELAY_CNT_EN GENMASK(0, 0)
+#define WMI_CFR_FREEZE_DELAY_CNT_THR GENMASK(8, 1)
+#define WMI_CFR_CAPTURE_COUNT GENMASK(15, 0)
+#define WMI_CFR_CAPTURE_INTERVAL_MODE_SEL GENMASK(16, 16)
+
+#define WMI_CFR_FILTER_GRP_CFG_VALID_TA BIT(0)
+#define WMI_CFR_FILTER_GRP_CFG_VALID_TA_MASK BIT(1)
+#define WMI_CFR_FILTER_GRP_CFG_VALID_RA BIT(2)
+#define WMI_CFR_FILTER_GRP_CFG_VALID_RA_MASK BIT(3)
+#define WMI_CFR_FILTER_GRP_CFG_VALID_BW BIT(4)
+#define WMI_CFR_FILTER_GRP_CFG_VALID_NSS BIT(5)
+#define WMI_CFR_FILTER_GRP_CFG_VALID_MGMT_SUBTYPE BIT(6)
+#define WMI_CFR_FILTER_GRP_CFG_VALID_CTRL_SUBTYPE BIT(7)
+#define WMI_CFR_FILTER_GRP_CFG_VALID_DATA_SUBTYPE BIT(8)
+
+#define WMI_CFR_FILTER_GRP_CFG_BW GENMASK(4, 0)
+#define WMI_CFR_FILTER_GRP_CFG_NSS GENMASK(23, 16)
+
+struct wmi_cfr_filter_group_config {
+	/* tlv tag and len */
+	__le32 tlv_header;
+	/* Filter group number for which the below filters needs to be applied */
+	__le32 filter_group_id;
+	/* Indicates which of the below filter's value is valid
+	 * Bit 0: Ta_addr is valid if set
+	 * Bit 1: Ta_addr_mask is valid if set
+	 * Bit 2: Ra_addr is valid if set
+	 * Bit 3: Ra_addr_mask is valid if set
+	 * Bit 4: Bandwidth is valid if set
+	 * Bit 5: NSS is valid if set
+	 * Bit 6: Mgmt_subtype is valid if set
+	 * Bit 7: Ctrl_subtype is valid if set
+	 * Bit 8: Data_subtype is valid if set
+	 * Bits 31:9 Reserved for future use
+	 */
+	__le32 filter_set_valid_mask;
+	/* ta_addr: Packets matching the TA_mac addr will be filtered in by MAC
+	 * for CFR capture.
+	 */
+	struct ath12k_wmi_mac_addr_params ta_addr;
+	/* ta_addr_mask:
+	 * Packets matching the TA_mac addr Mask will be filtered in by MAC
+	 * for CFR capture.
+	 */
+	struct ath12k_wmi_mac_addr_params ta_addr_mask;
+	/* ra_addr:
+	 * Packets matching the RA_mac addr will be filtered in by MAC
+	 * for CFR capture.
+	 */
+	struct ath12k_wmi_mac_addr_params ra_addr;
+	/* ra_addr_mask:
+	 * Packets matching the RA_mac addr Mask will be filtered in by MAC
+	 * for CFR capture.
+	 */
+	struct ath12k_wmi_mac_addr_params ra_addr_mask;
+	/* bw_nss_filter:
+	 * Indicates which bw and nss packets will be filtered for CFR capture
+	 * Bits 4:0   CFR capture will be done for packets matching the bandwidths
+	 *	specified within this bitmask
+	 * Bits 15:5  Reserved for future
+	 * Bits 23:16 CFR capture will be done for packets matching the Nss
+	 *	specified within this bitmask
+	 * Bits 31:24 Reserved for future
+	 */
+	__le32 bw_nss_filter;
+	/* mgmt_subtype_filter:
+	 * Managments Packets matching the subtype filter categories will be
+	 * filtered in by MAC for CFR capture.
+	 */
+	__le32 mgmt_subtype_filter;
+	/* ctrl_subtype_filter:
+	 * Control Packets matching the subtype filter category will be filtered
+	 * in by MAC for CFR capture.
+	 */
+	__le32 ctrl_subtype_filter;
+	/* data_subtype_filter:
+	 * Data Packets matching the subtype filter category will be filtered in
+	 * by MAC for CFR capture.
+	 */
+	__le32 data_subtype_filter;
+} __packed;
+
+struct wmi_cfr_capture_filter_cmd_fixed_param {
+	/* TLV tag & len */
+	__le32 tlv_header;
+	/* pdev_id for identifying the MAC */
+	__le32 pdev_id;
+	/* filter_type:
+	 * Indicates the type of filter to be enabled
+	 * Bit 0:    Filter Directed FTM ACK frames for CFR capture
+	 * Bit 1:    Filter All FTM ACK frames for CFR capture
+	 * Bit 2:    Filter NDPA NDP Directed Frames for CFR capture
+	 * Bit 3:    Filter NDPA NDP All Frames for CFR capture
+	 * Bit 4:    Filter Frames based on TA/RA/Subtype as provided in CFR Group config
+	 * Bit 5:    Filter in All packets for CFR Capture
+	 * Bit 6:    Filter in TA/RA frames as FP if this bit is set else as MO
+	 * Bits 31:7 Reserved for future use
+	 */
+	__le32 filter_type;
+	/* capture_interval:
+	 * Capture interval field which is time in between consecutive
+	 * CFR capture, in microsecond units
+	 * Bits 23:0  Capture interval
+	 * Bits 31:24 Reserved for future use
+	 */
+	__le32 capture_interval;
+	/* capture_duration:
+	 * Capture Duration field for which CFR capture has to happen,
+	 * in microsecond units
+	 * Bits 23:0  Capture Duration
+	 * Bits 31:24 Reserved for future use
+	 */
+	__le32 capture_duration;
+	/* Bitfields set indicates which of the CFR group config is enabled
+	 * Bits 15:0 Filter Group enable bitmap
+	 * Bits 31:16 Reserved for future use
+	 * If Bit 0 is set, then CFR filter group 0 alone is enabled and so on
+	 */
+	__le32 filter_group_bitmap;
+	/* ul_mu_user_mask_lower:
+	 * Bitfields indicates which of the users in the current UL MU
+	 * transmission are enabled for CFR capture.
+	 * Bits 31 to 0 indicates user indexes for 32 users in a UL MU transmission.
+	 * If bit 0 is set, then the CFR capture will happen for user index 0
+	 * in the current UL MU Transmission.
+	 * If bits 0,2 are set, then CFR capture for UL MU TX corresponds to
+	 * user indices 0 and 2.
+	 */
+	__le32 ul_mu_user_mask_lower;
+	/* ul_mu_user_mask_upper:
+	 * This is continuation of the above lower mask.
+	 * Bits 4:0  Bitfields indicates user indices from 33 to 37 users.
+	 * Bits 31:5 Reserved for future use
+	 * If bit 0 is set, then CFR capture is enabled for user index 33
+	 * in a UL MU transmission.
+	 */
+	__le32 ul_mu_user_mask_upper;
+	/* freeze_tlv_delay_cnt
+	 * Indicates the number of consecutive Rx packets to be skipped
+	 * before CFR capture is enabled again.
+	 * Bit 0: Flag indicating if freeze_tlv_delay_cnt threshold need to be
+	 * enabled or not.
+	 * Bits 8:1   Freeze Delay Count value
+	 * Bits 31:9  Reserved for future use
+	 */
+	__le32 freeze_tlv_delay_cnt;
+	/* capture_count:
+	 * Indicates the number of consecutive packets for which CFR capture
+	 * is to be enabled.
+	 * Interpretation of capture_interval_mode_select (bit 16):
+	 *	Value 0: capture_interval + capture_duration fields are used
+	 *		 to capture CFR for capture_duration after every
+	 *		 capture_interval.
+	 *	Value 1: capture_interval + capture_count fields are used to
+	 *		 capture CFR for capture_count+1 number of packets
+	 *		 after every capture interval
+	 * Bit 15:0   : capture_count
+	 * Bit 16     : capture_interval_mode_select
+	 * Bits 31:17 : Reserved
+	 */
+	__le32 capture_count;
+
+	/* unassoc_capture_config:
+	 * Bit 0:    Enable unassociated capture mode
+	 * Bits 31:1 Reserved
+	 */
+	__le32 unassoc_capture_config;
+
+	/* Target channel frequency in MHz */
+	__le32 unassoc_channel_mhz;
+
+	/* Target channel phy_mode */
+	__le32 unassoc_phy_mode; /* WLAN_PHY_MODE */
+
+	/* A variable-length TLV array of wmi_cfr_filter_group_config will
+	 * follow this fixed_param TLV
+	 * wmi_cfr_filter_group_config filter_group_config[];
+	 */
+} __packed;
+
+#define WMI_AOA_MAX_GAIN_TABLE_IDX 8
+
+struct ath12k_wmi_enh_aoa_caps_arg {
+	u32 max_agc_gain_tbls;
+	u16 max_agc_gain_per_tbl_2g[WMI_AOA_MAX_GAIN_TABLE_IDX];
+	u16 max_agc_gain_per_tbl_5g[WMI_AOA_MAX_GAIN_TABLE_IDX];
+	u16 max_agc_gain_per_tbl_6g[WMI_AOA_MAX_GAIN_TABLE_IDX];
+	u8 max_bdf_entries_per_tbl[WMI_AOA_MAX_GAIN_TABLE_IDX];
+	bool valid;
+};
+
+#define WMI_AOA_BDF_NUM_GAIN_TBL_ELEMS_PER_WORD 4
+#define WMI_AOA_BDF_NUM_WORD_ENTRIES_FOR_MAX_NUM_AGC_TBL_IDX \
+	(WMI_AOA_MAX_GAIN_TABLE_IDX / WMI_AOA_BDF_NUM_GAIN_TBL_ELEMS_PER_WORD)
+
+struct ath12k_wmi_enhanced_aoa_caps_param {
+	/* Maximum number of Rx AGC gain tables supported */
+	__le32 max_agc_gain_tbls;
+	/* 1 byte is used to store bdf max number of elements in each gain tables */
+	__le32 max_bdf_gain_entries[WMI_AOA_BDF_NUM_WORD_ENTRIES_FOR_MAX_NUM_AGC_TBL_IDX];
+
+	/* This TLV is followed by TLV array - ath12k_wmi_enhanced_aoa_per_band_caps_param
+	 * containing band specific agc gain table information.
+	 */
+} __packed;
+
+enum ath12k_wmi_aoa_supported_bands {
+	WMI_AOA_2G = 0,
+	WMI_AOA_5G,
+	WMI_AOA_6G,
+};
+
+#define WMI_AOA_NUM_GAIN_TBL_ELEMS_PER_WORD 2
+#define WMI_AOA_NUM_WORD_ENTRIES_FOR_MAX_NUM_AGC_TBL_ELEMS \
+	(WMI_AOA_MAX_GAIN_TABLE_IDX / WMI_AOA_NUM_GAIN_TBL_ELEMS_PER_WORD)
+
+struct ath12k_wmi_enhanced_aoa_per_band_caps_param {
+	/* Band information - ath12k_wmi_aoa_supported_bands */
+	__le32 band_info;
+	/* 2 bytes are used to store agc max number of elements in each gain tables */
+	__le32 max_agc_gain[WMI_AOA_NUM_WORD_ENTRIES_FOR_MAX_NUM_AGC_TBL_ELEMS];
+} __packed;
 
 struct wmi_atf_ssid_grp_request_fixed_param {
 	__le32 tlv_header;
@@ -10640,6 +11204,23 @@ struct wmi_pdev_set_ctl_table_cmd_fixed_param {
 	__le32 ctl_len;
 } __packed;
 
+/**
+ * struct wmi_pdev_download_rtt_blob_cmd_fixed_param - WMI command to download
+ * the RTT blob to firmware for a PDEV.
+ * @tlv_header: TLV tag equals WMI_TAG_PDEV_DOWNLOAD_RTT_BLOB_CMD; len is
+ *   sizeof(*cmd) - TLV_HDR_SIZE.
+ * @pdev_id: PDEV identifier. See macros starting with WMI_PDEV_ID_.
+ * @rtt_len: Length in bytes of the RTT blob fragment (including fragment header).
+ *
+ * Followed by TLV: A_UINT32 rtt_info[]; variable-length array holding the
+ * RTT blob fragment data (length rounded up to word boundary).
+ */
+struct wmi_pdev_download_rtt_blob_cmd_fixed_param {
+	__le32 tlv_header;
+	__le32 pdev_id;
+	__le32 rtt_len;
+} __packed;
+
 enum wmi_pcie_gen_lane_config_type {
 	/* Channel bandwidth based semi static PCIe config */
 	WMI_PCIE_CHANNEL_BANDWIDTH,
@@ -10667,6 +11248,91 @@ struct wmi_energy_mgmt_pcie_lpm_cmd {
 	__le32 enable;
 	__le32 config;
 } __packed;
+
+struct ath12k_wmi_mac_addr_params_rtt {
+	u8 addr[ETH_ALEN];
+	u8 padding[2];
+} __packed;
+
+struct ath12k_wmi_rtt_pasn_peer_create_req_event {
+	__le32 vdev_id;
+} __packed;
+
+struct ath12k_wmi_rtt_pasn_peer_create_req_param {
+	__le32 tlv_header;
+	struct ath12k_wmi_mac_addr_params_rtt self_mac_addr;
+	struct ath12k_wmi_mac_addr_params_rtt dest_mac_addr;
+	__le32 control_flag;
+	__le32 akm;
+	__le32 cipher_suite;
+	u8 pmk_id[WLAN_PMKID_LEN];
+	__le32 passphrase_len;
+	u8 passphrase[64];
+	__le32 cookie_len;
+} __packed;
+
+struct ath12k_wmi_rtt_pasn_deauth_cmd {
+	__le32 tlv_header;
+	struct ath12k_wmi_mac_addr_params_rtt peer_mac_addr;
+} __packed;
+
+struct ath12k_wmi_rtt_pasn_auth_status_cmd {
+	__le32 tlv_header;
+} __packed;
+
+struct ath12k_wmi_rtt_pasn_auth_status_param {
+	__le32 tlv_header;
+	struct ath12k_wmi_mac_addr_params_rtt peer_mac_addr;
+	__le32 status;
+	struct ath12k_wmi_mac_addr_params_rtt source_mac_addr;
+	__le32 akm;
+	__le32 cipher_suite;
+	__le32 timeout_value;
+	__le32 cookie_len;
+} __packed;
+
+struct ath12k_wmi_rtt_pasn_auth_status_arg {
+	u8 source_mac[ETH_ALEN];
+	u8 peer_mac[ETH_ALEN];
+	u32 status;
+	u32 akm;
+	u32 cipher;
+	u32 comeback_after;
+};
+
+struct ath12k_wmi_rtt_pasn_peer_delete_event {
+	__le32 vdev_id;
+} __packed;
+
+struct ath12k_wmi_rtt_pasn_peer_delete_param {
+	__le32 tlv_header;
+	struct ath12k_wmi_mac_addr_params_rtt peer_mac_addr;
+	__le32 control_flag;
+} __packed;
+
+struct ath12k_wmi_rtt_pasn_tlv_parse {
+	u16 fixed_tag;
+	size_t fixed_min_len;
+	const void *fixed;
+	const void *peers;
+	u16 peers_len;
+};
+
+struct ath12k_wmi_vdev_set_ltf_key_seed_cmd {
+	__le32 tlv_header;
+	__le32 vdev_id;
+	struct ath12k_wmi_mac_addr_params_rtt peer_macaddr;
+	__le32 rsn_authmode;
+	__le32 key_seed_len;
+} __packed;
+
+struct ath12k_wmi_ltf_keyseed_arg {
+	u32 vdev_id;
+	u8 peer_mac[ETH_ALEN];
+	u32 rsn_authmode;
+	const u8 *keyseed;
+	u32 keyseed_len;
+};
 
 enum wmi_dcvs_config_type {
 	/* Enable clock and voltage scaling */
@@ -11010,6 +11676,8 @@ int ath12k_wmi_send_smd_roam_config(struct ath12k *ar,
 				    struct ath12k_wmi_smd_roam_config_arg *arg);
 int ath12k_wmi_send_peer_assoc_cmd(struct ath12k *ar,
 				   struct ath12k_wmi_peer_assoc_arg *arg);
+int ath12k_wmi_send_peer_set_mapc_params_cmd(struct ath12k *ar,
+				const struct ath12k_wmi_peer_mapc_params_arg *arg);
 int ath12k_wmi_vdev_install_key(struct ath12k *ar,
 				struct wmi_vdev_install_key_arg *arg);
 int ath12k_wmi_pdev_bss_chan_info_request(struct ath12k *ar,
@@ -11209,6 +11877,8 @@ int ath12k_wmi_send_wsi_stats_info(struct ath12k *ar,
 				   struct ath12k_wmi_wsi_stats_info_param *param);
 int ath12k_wmi_vdev_set_neighbor_rx_cmd(struct ath12k *ar,
 					struct ath12k_set_neighbor_rx_params *param);
+int ath12k_wmi_vdev_set_tx_peer_filter_cmd(struct ath12k *ar,
+					struct ath12k_set_tx_peer_filter_params *param);
 int ath12k_wmi_vdev_tsf_tstamp_action_cmd(struct ath12k *ar, u8 vdev_id);
 int ath12k_wmi_vdev_set_pn_mgmt_rx_filter_cmd(struct ath12k *ar, u32 vdev_id,
 					      u32 pn_rx_filter);
@@ -11233,6 +11903,19 @@ int ath12k_wmi_send_vdev_set_tpc_power(struct ath12k *ar,
 				       struct ath12k_reg_tpc_power_info *param);
 int ath12k_wmi_send_vdev_get_tpc_ie_power(struct ath12k *ar, u32 vdev_id,
 					  u32 mgmt_rate);
+void ath12k_wmi_rtt_pasn_peer_create_req_event(struct ath12k_base *ab,
+					       struct sk_buff *skb);
+void ath12k_wmi_rtt_pasn_peer_delete_event(struct ath12k_base *ab,
+					   struct sk_buff *skb);
+int ath12k_wmi_send_rtt_pasn_deauth(struct ath12k *ar, const u8 *peer_mac);
+int ath12k_wmi_pasn_peer_delete_all(struct ath12k_link_vif *arvif);
+int ath12k_vendor_install_secure_ranging_tk(struct ath12k_link_vif *arvif,
+					    struct nlattr **tb);
+int ath12k_wmi_send_ltf_key_seed(struct ath12k *ar,
+				 struct ath12k_wmi_ltf_keyseed_arg *arg);
+int
+ath12k_wmi_send_pasn_auth_status(struct ath12k *ar,
+				 const struct ath12k_wmi_rtt_pasn_auth_status_arg *arg);
 int ath12k_wmi_dl_qos_profile_create(struct ath12k_base *ab,
 				     struct ath12k_qos_params *param,
 				     u8 qos_profile_id);
@@ -11260,6 +11943,7 @@ int ath12k_wmi_send_afc_cmd_tlv(struct ath12k *ar, int data_type,
 int ath12k_wmi_peer_set_cfr_capture_conf(struct ath12k *ar,
 					 u32 vdev_id, const u8 *mac,
 					 struct wmi_peer_cfr_capture_conf_arg *arg);
+int ath12k_wmi_send_cfr_rcc_cmd(struct ath12k *ar, struct cfr_rcc_param *rcc);
 int ath12k_wmi_send_mlo_peer_tid_to_link_map_cmd(struct ath12k *ar,
 						 struct ath12k_wmi_ttlm_peer_params *params,
 						 bool ttlm_info);
@@ -11291,4 +11975,5 @@ int ath12k_wmi_send_pdev_get_nfcal_power_cmd(struct ath12k *ar);
 int ath12k_wmi_multi_vdev_set_param(struct ath12k *ar,
 				    const struct ath12k_mbssid_info *mbssid_info,
 				    u32 param_id, u32 param_value);
+int ath12k_wmi_tx_mon_pkt_cap_set_config(struct ath12k *ar, u32 bitmap);
 #endif

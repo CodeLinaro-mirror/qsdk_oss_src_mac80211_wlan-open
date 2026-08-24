@@ -82,6 +82,8 @@ struct cfg80211_registered_device {
 	struct list_head sched_scan_req_list;
 	time64_t suspend_at;
 	struct wiphy_work scan_done_wk;
+	struct cfg80211_scan_request *parallel_scan_reqs[CFG80211_MAX_PARALLEL_SCANS];
+	struct wiphy_work parallel_scan_done_wk;
 
 	struct genl_info *cur_cmd_info;
 
@@ -443,6 +445,8 @@ int cfg80211_validate_key_settings(struct cfg80211_registered_device *rdev,
 void __cfg80211_scan_done(struct wiphy *wiphy, struct wiphy_work *wk);
 void ___cfg80211_scan_done(struct cfg80211_registered_device *rdev,
 			   bool send_message);
+void cfg80211_parallel_scan_done_work(struct wiphy *wiphy,
+				      struct wiphy_work *wk);
 void cfg80211_add_sched_scan_req(struct cfg80211_registered_device *rdev,
 				 struct cfg80211_sched_scan_request *req);
 int cfg80211_sched_scan_req_possible(struct cfg80211_registered_device *rdev,

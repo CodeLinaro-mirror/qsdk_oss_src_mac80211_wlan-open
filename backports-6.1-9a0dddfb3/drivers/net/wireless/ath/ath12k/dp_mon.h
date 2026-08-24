@@ -13,11 +13,13 @@
 #include "pktlog.h"
 
 #include "hal_mon_cmn.h"
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/ath12k_cmn_extn.h"
 #include "qcn_extns/dp_stats_extn.h"
-#include "dp_tx_mon.h"
 #include "qcn_extns/dp_mon_extn.h"
 #include "qcn_extns/ini.h"
+#endif /* CPTCFG_QCN_EXTN */
+#include "dp_tx_mon.h"
 
 #define DP_RXDMA_MONITOR_BUF_RING_SIZE(ab) \
 	((ab)->mem_params.dp_params.rxdma_monitor_buf_ring_size)
@@ -25,11 +27,23 @@
 	((ab)->mem_params.dp_params.rxdma_monitor_dst_ring_size)
 #define DP_MON_NUM_PPDU_DESC(ab) \
 	((ab)->mem_params.dp_params.mon_num_ppdu_desc)
+#define DP_TX_MON_BUF_RING_SIZE(ab) \
+	((ab)->mem_params.dp_params.tx_monitor_buf_ring_size)
+#define DP_TX_MON_BUF_RING_FILL_LVL(ab) \
+	((ab)->mem_params.dp_params.tx_monitor_buf_ring_fill_lvl)
+#define DP_TX_MON_DST_RING_SIZE(ab) \
+	((ab)->mem_params.dp_params.tx_monitor_dst_ring_size)
+#define DP_TX_MON_NUM_PPDU_DESC(ab) \
+	((ab)->mem_params.dp_params.tx_monitor_num_ppdu_desc)
+#define DP_TX_MON_NUM_STATUS_BUF(ab) \
+	((ab)->mem_params.dp_params.tx_monitor_num_status_buf)
+#define DP_TX_MON_SPC_BITMAP(ab) \
+	((ab)->mem_params.dp_params.tx_monitor_spc_bitmap)
 
 #ifndef CPTCFG_QCN_EXTN
 
-#define DP_RXDMA_MON_STATUS_RING_SIZE	1024
-#define DP_RXDMA_MONITOR_DESC_RING_SIZE	4096
+#define DP_RXDMA_MON_STATUS_RING_SIZE(ab)	({ (void)(ab); 1024; })
+#define DP_RXDMA_MONITOR_DESC_RING_SIZE(ab)	({ (void)(ab); 4096; })
 
 #else
 #define DP_RXDMA_MON_STATUS_RING_SIZE(ab)	ath12k_cfg_get(ab, \
@@ -56,13 +70,10 @@
 #define	ATH12K_DP_MON_KEYIV			0x20
 #define ATH12K_DP_MON_ETH_TYPE_VLAN_LEN		4
 #define ATH12K_DP_MON_ETH_TYPE_DOUBLE_VLAN_LEN	8
-#define DP_RXDMA_MONITOR_DEFAULT_RING_FILL_LVL 1024
+#define DP_RXDMA_MONITOR_DEFAULT_RING_FILL_LVL 512
 
 #define ATH12K_DP_SMART_MON_FILTER_DEFAULT \
 	((ab)->mem_params.dp_params.smart_mon_filter_default)
-
-#define DP_TX_MONITOR_BUF_RING_SIZE	8192
-#define DP_TX_MONITOR_DEST_RING_SIZE	8192
 
 #define DP_TX_MONITOR_BUF_SIZE		2048
 #define DP_TX_MONITOR_BUF_SIZE_MIN	48
@@ -94,7 +105,15 @@
 
 #define ATH12K_DP_MON_STATUS_BUF   (ab->mem_params.dp_params.dp_mon_status_buf)
 
+#ifndef CPTCFG_QCN_EXTN
 #define ATH12K_EXT_MON_MAX_PEERS	16
+#define ATH12K_EXT_MON_NUM_PEERS(ab)	((void)(ab), ATH12K_EXT_MON_MAX_PEERS)
+#else
+#define ATH12K_EXT_MON_MAX_PEERS	ATH12K_DP_EXT_MON_NUM_PEER_MAX
+#define ATH12K_EXT_MON_NUM_PEERS(ab)	ath12k_cfg_get(ab, \
+	ATH12K_CFG_DP_EXT_MON_NUM_PEER)
+#endif
+
 #define ATH12K_EXT_MON_FILTER_ALL	0xFFFFU
 
 #define ATH12K_EXT_MON_METADATA_RTAP_HDR	BIT(0)
@@ -106,6 +125,8 @@
 	 ATH12K_EXT_MON_METADATA_OFFCHAN_PKT)
 
 #define ATH12K_EXT_MON_DEFAULT_PEER_BITMAP	0xFF
+#define ATH12K_EXT_MON_PKT_CAP_ALL_PROTOS	0x3F
+#define ATH12K_EXT_MON_MPDU_TLV_FILTER_MAX	0xF
 
 #define ATH12K_FC0_TYPE_SHIFT		2
 #define ATH12K_FC0_SUBTYPE_SHIFT	4
@@ -114,6 +135,9 @@ struct ath12k_mon_data;
 struct dp_mon_rx_filter;
 struct dp_mon_tx_filter;
 struct ath12k_ext_mon_config;
+struct ath12k_dp_tx_ext_mon_config;
+struct ath12k_ext_mon_pkt_config;
+struct ath12k_dp_rx_ext_mon;
 
 struct ath12k_dp_mon_pad_params {
 	u32 frag_size;
@@ -183,9 +207,6 @@ struct ath12k_dp_arch_mon_ops {
 	void (*rx_srng_cleanup)(struct ath12k_dp *dp);
 	int (*rx_ring_init)(struct ath12k_dp *dp);
 	void (*rx_ring_deinit)(struct ath12k_dp *dp);
-	int (*rx_buf_setup)(struct ath12k_dp *dp);
-	void (*rx_buf_free)(struct ath12k_dp *dp);
-
 	int (*rx_htt_srng_setup)(struct ath12k_dp *dp);
 	int (*mon_pdev_alloc)(struct ath12k_pdev_dp *dp_pdev);
 	void (*mon_pdev_free)(struct ath12k_pdev_dp *dp_pdev);
@@ -220,11 +241,14 @@ struct ath12k_dp_arch_mon_ops {
 	int (*setup_ppdu_desc)(struct ath12k_pdev_dp *pdev_dp);
 	void (*cleanup_ppdu_desc)(struct ath12k_pdev_dp *pdev_dp);
 	int (*mon_rx_wq_init)(struct ath12k_pdev_dp *pdev_dp);
-	void (*mon_rx_wq_deinit)(struct ath12k_pdev_dp *pdev_dp);
+	void (*mon_rx_wq_deinit)(struct ath12k_pdev_dp *pdev_dp, bool destroy);
 	void (*rx_nrp_set)(struct ath12k_pdev_dp *dp_pdev);
 	void (*rx_nrp_reset)(struct ath12k_pdev_dp *dp_pdev);
 	void (*rx_smart_mon_set)(struct ath12k_pdev_dp *dp_pdev);
 	void (*rx_smart_mon_reset)(struct ath12k_pdev_dp *dp_pdev);
+	void (*rx_cfr_rcc_config)(struct ath12k_pdev_dp *dp_pdev,
+				  bool enable, u8 rcc_type);
+	bool (*rx_get_cfr_rcc_filter_valid)(struct ath12k_pdev_dp *dp_pdev);
 	void (*mon_rx_wmask)(void *ptr, struct htt_rx_ring_tlv_filter *tlv_filter);
 	void (*rx_enable_packet_filters)(void *ptr,
 						struct htt_rx_ring_tlv_filter *filter);
@@ -239,6 +263,8 @@ struct ath12k_dp_arch_mon_ops {
 					const struct ath12k_ext_mon_config *req);
 	int (*ext_mon_alloc)(struct ath12k_pdev_dp *dp_pdev);
 	void (*ext_mon_free)(struct ath12k_pdev_dp *dp_pdev);
+	void (*ext_mon_setup_rx_filter)(struct htt_rx_ring_tlv_filter *tlv_filter,
+					const struct ath12k_dp_rx_ext_mon *rx_ext_mon);
 
 	/* Below are TxMonitor ops */
 	int (*mon_tx_srng_alloc_setup)(struct ath12k_dp *dp);
@@ -263,6 +289,13 @@ struct ath12k_dp_arch_mon_ops {
 
 	int (*ext_mon_tx_alloc)(struct ath12k_pdev_dp *dp_pdev);
 	void (*ext_mon_tx_free)(struct ath12k_pdev_dp *dp_pdev);
+	int (*ext_mon_filter)(struct sk_buff *mpdu,
+				struct ath12k_dp_tx_ext_mon_config *tx_ext_mon);
+	int (*ext_mon_add_wmi_tx_peers)(struct ath12k_pdev_dp *dp_pdev,
+				struct ath12k_dp_ext_mon_tx_peer_params *peer_param);
+	int (*ext_mon_remove_wmi_tx_peers)(struct ath12k_pdev_dp *dp_pdev,
+				struct ath12k_dp_ext_mon_tx_peer_params *peer_param);
+	u32 (*mon_tx_get_spc_bitmap)(struct ath12k_base *ab);
 };
 
 /**
@@ -442,6 +475,8 @@ struct dp_mon_tx_ppdu_info {
 	u32 num_mpdu_fcs_ok;
 	void *buffer_addr;
 	u32 buffer_length;
+	u32 frag_offset;
+	struct page *page;
 	bool msdu_continuation;
 	bool truncated;
 	bool has_buffer_data;
@@ -671,6 +706,7 @@ struct ath12k_dp_tx_ext_mon {
  * @tx_mon_ppdu_desc_initialized: TX monitor PPDU descriptor pool init state
  * @tx_mon_wq_initialized: TX monitor workqueue init state
  * @tx_pktlog_hybrid: TX pktlog hybrid mode state
+ * @tx_mon_teardown: TX monitor teardown state
  * @tx_ext_mon: Wrapper embedding the TX extended monitor config pointer and
  *		its protecting spinlock.
  */
@@ -694,6 +730,7 @@ struct ath12k_pdev_tx_mon {
 	bool tx_mon_ppdu_desc_initialized:1;
 	bool tx_mon_wq_initialized:1;
 	bool tx_pktlog_hybrid;
+	bool tx_mon_teardown;
 };
 
 /**
@@ -866,7 +903,9 @@ struct ath12k_pdev_mon_dp {
 	u8 smart_mon_filter;
 	enum ath12k_dp_smart_mon_state smart_mon_state;
 
+#ifdef CPTCFG_QCN_EXTN
 	struct ath12k_pdev_mon_dp_extn pdev_mon_dp_extn;
+#endif /* CPTCFG_QCN_EXTN */
 	struct ath12k_dp_rx_ext_mon *rx_ext_mon_config;
 	spinlock_t rx_ext_mon_lock;
 	bool rx_pktlog_cbf;
@@ -936,16 +975,26 @@ enum ath12k_ext_mon_peer_action {
 enum ath12k_ext_mon_monitor_flags {
 	ATH12K_EXT_MON_DEFAULT = 0,
 	ATH12K_EXT_MON_PKT_CAP,
+	ATH12K_EXT_MON_MAX
+};
+
+struct ath12k_ext_mon_data_mpdu_tlv_config {
+	u8 mcast;
+	u8 ucast;
+	u8 null_frm;
+	bool tlv_configured;
 };
 
 struct ath12k_ext_mon_pkt_config {
 	u32 filter[ATH12K_EXT_MON_FRAME_MAX];
 	u8 len[ATH12K_EXT_MON_FRAME_MAX];
+	struct ath12k_ext_mon_data_mpdu_tlv_config data_mpdu_tlv;
 };
 
 struct ath12k_ext_mon_filter_config {
 	enum ath12k_ext_mon_filter_level level;
 	bool disable;
+	enum ath12k_ext_mon_monitor_flags monitor_flags;
 	struct ath12k_ext_mon_pkt_config all_peer;
 	struct ath12k_ext_mon_pkt_config all_neighbor;
 	struct ath12k_ext_mon_pkt_config target_peer;
@@ -993,6 +1042,7 @@ struct ath12k_dp_rx_ext_mon {
 	bool mo_enabled;
 	bool fpmo_enabled;
 	bool md_enabled;
+	bool short_pkt_en;
 	struct ath12k_ext_mon_pkt_config fp;
 	struct ath12k_ext_mon_pkt_config mo;
 	struct ath12k_ext_mon_pkt_config fpmo;
@@ -1165,6 +1215,9 @@ void ath12k_dp_mon_rx_process_dest_pktlog(struct ath12k_pdev_dp *dp_pdev,
 					  struct hal_rx_mon_ppdu_info *ppdu_info);
 int ath12k_dp_mon_rx_wq_init_common(struct ath12k_pdev_dp *dp_pdev,
 				    void (*work_handler)(struct work_struct *));
+int
+ath12k_dp_ext_mon_subtype_check(struct ath12k_ext_mon_pkt_config *config,
+				u8 type, u8 sub_type, bool is_mcast);
 
 
 static inline
@@ -1184,18 +1237,6 @@ int ath12k_dp_mon_rx_alloc(struct ath12k_dp *dp)
 			return ret;
 	}
 
-	/* This is required only for wifi6, remove this after wifi6
-	 * memory optimization
-	 */
-	if (mon_ops && mon_ops->rx_buf_setup) {
-		ret = mon_ops->rx_buf_setup(dp);
-		if (ret) {
-			if (mon_ops->rx_srng_cleanup)
-				mon_ops->rx_srng_cleanup(dp);
-			return ret;
-		}
-	}
-
 	return 0;
 }
 
@@ -1212,11 +1253,6 @@ void ath12k_dp_mon_rx_free(struct ath12k_dp *dp)
 	if (mon_ops && mon_ops->rx_srng_cleanup)
 		mon_ops->rx_srng_cleanup(dp);
 
-	/* This is required only for wifi6, remove this after wifi6
-	 * memory optimization
-	 */
-	if (mon_ops && mon_ops->rx_buf_free)
-		mon_ops->rx_buf_free(dp);
 }
 
 static inline
@@ -1286,8 +1322,10 @@ int ath12k_dp_mon_pdev_init(struct ath12k_pdev_dp *dp_pdev)
 	if (mon_ops && mon_ops->mon_pdev_alloc)
 		ret = mon_ops->mon_pdev_alloc(dp_pdev);
 
+#ifdef CPTCFG_QCN_EXTN
 	if (ath12k_dp_mon_pdev_tlv_logger_init(dp_pdev))
 		ath12k_warn(dp, "failed to init TLV logger for mon pdev\n");
+#endif /* CPTCFG_QCN_EXTN */
 
 	return ret;
 }
@@ -1304,7 +1342,9 @@ void ath12k_dp_mon_pdev_deinit(struct ath12k_pdev_dp *dp_pdev)
 	dp = dp_pdev->dp;
 	mon_ops = ath12k_dp_mon_ops_get(dp);
 
+#ifdef CPTCFG_QCN_EXTN
 	ath12k_dp_mon_pdev_tlv_logger_deinit(dp_pdev);
+#endif /* CPTCFG_QCN_EXTN */
 
 	if (mon_ops && mon_ops->mon_pdev_free)
 		mon_ops->mon_pdev_free(dp_pdev);
@@ -1334,7 +1374,7 @@ int ath12k_dp_mon_pdev_rx_alloc(struct ath12k_pdev_dp *dp_pdev,
 						      mac_id);
 		if (ret) {
 			ath12k_warn(dp, "failed to setup HAL_RXDMA_MONITOR_DST\n");
-			return -ENOMEM;
+			goto srng_cleanup;
 		}
 	}
 
@@ -1343,7 +1383,7 @@ int ath12k_dp_mon_pdev_rx_alloc(struct ath12k_pdev_dp *dp_pdev,
 		if (ret) {
 			ath12k_warn(dp, "failed to setup ppdu desc ret = %d\n",
 				    ret);
-			return ret;
+			goto cleanup;
 		}
 	}
 
@@ -1370,12 +1410,13 @@ int ath12k_dp_mon_pdev_rx_alloc(struct ath12k_pdev_dp *dp_pdev,
 
 free_rx_wq:
 	if (mon_ops && mon_ops->mon_rx_wq_deinit)
-		mon_ops->mon_rx_wq_deinit(dp_pdev);
+		mon_ops->mon_rx_wq_deinit(dp_pdev, true);
 
 cleanup:
 	if (mon_ops && mon_ops->cleanup_ppdu_desc)
 		mon_ops->cleanup_ppdu_desc(dp_pdev);
 
+srng_cleanup:
 	if (mon_ops && mon_ops->mon_pdev_rx_srng_cleanup)
 		mon_ops->mon_pdev_rx_srng_cleanup(dp_pdev);
 
@@ -1443,7 +1484,7 @@ void ath12k_dp_mon_pdev_rx_free(struct ath12k_pdev_dp *dp_pdev)
 	ath12k_dp_mon_pdev_rx_detach(dp_pdev);
 
 	if (mon_ops->mon_rx_wq_deinit)
-		mon_ops->mon_rx_wq_deinit(dp_pdev);
+		mon_ops->mon_rx_wq_deinit(dp_pdev, true);
 
 	if (mon_ops->rx_filter_free)
 		mon_ops->rx_filter_free(dp_pdev);
@@ -1694,6 +1735,59 @@ ath12k_dp_mon_pktlog_config(struct ath12k *ar, bool enable,
 }
 
 static inline void
+ath12k_dp_mon_cfr_rcc_config(struct ath12k *ar, bool enable, u8 rcc_type)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
+
+	if (unlikely(!dp_pdev || !dp_pdev->dp_mon_pdev))
+		return;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (mon_ops && mon_ops->rx_cfr_rcc_config)
+		mon_ops->rx_cfr_rcc_config(dp_pdev, enable, rcc_type);
+}
+
+static inline bool
+ath12k_dp_mon_get_cfr_rcc_filter_valid(struct ath12k *ar)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
+
+	if (unlikely(!dp_pdev || !dp_pdev->dp_mon_pdev))
+		return false;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (mon_ops && mon_ops->rx_get_cfr_rcc_filter_valid)
+		return mon_ops->rx_get_cfr_rcc_filter_valid(dp_pdev);
+
+	return false;
+}
+
+static inline void
+ath12k_dp_mon_rx_flush_wq(struct ath12k *ar)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
+
+	if (unlikely(!dp_pdev || !dp_pdev->dp_mon_pdev))
+		return;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (mon_ops && mon_ops->mon_rx_wq_deinit)
+		mon_ops->mon_rx_wq_deinit(dp_pdev, false);
+}
+
+static inline void
 ath12k_dp_mon_desc_reset(struct ath12k_dp_mon_desc *desc)
 {
 	memset((u8 *)desc + sizeof(desc->list), 0, sizeof(*desc) - sizeof(desc->list));
@@ -1815,8 +1909,10 @@ ath12k_dp_rx_scan_radio_stats_reset(struct ath12k_hw *ah)
 		if (!ar->dp.dp_mon_pdev)
 			continue;
 
+#ifdef CPTCFG_QCN_EXTN
 		memset(&ar->dp.dp_mon_pdev->pdev_mon_dp_extn, 0,
 		       sizeof(ar->dp.dp_mon_pdev->pdev_mon_dp_extn));
+#endif /* CPTCFG_QCN_EXTN */
 	}
 	wiphy_unlock(ah->hw->wiphy);
 }
@@ -1825,7 +1921,9 @@ static inline void
 ath12k_dp_mon_rx_scan_radio_stats_update(struct ath12k *ar,
 					 struct ath12k_telemetry_dp_vif *telemetry_vif)
 {
+#ifdef CPTCFG_QCN_EXTN
 	struct ath12k_pdev_mon_dp_extn *mon_dp_extn;
+#endif /* CPTCFG_QCN_EXTN */
 
 	if (unlikely(!ar || !telemetry_vif))
 		return;
@@ -1833,9 +1931,11 @@ ath12k_dp_mon_rx_scan_radio_stats_update(struct ath12k *ar,
 	if (!ar->dp.dp_mon_pdev)
 		return;
 
+#ifdef CPTCFG_QCN_EXTN
 	mon_dp_extn = &ar->dp.dp_mon_pdev->pdev_mon_dp_extn;
 	ath12k_dp_rx_scan_radio_stats_update(telemetry_vif,
 					     &mon_dp_extn->rx_scan_radio_stats);
+#endif /* CPTCFG_QCN_EXTN */
 }
 
 static inline bool
@@ -1914,6 +2014,31 @@ ath12k_dp_get_avg_snr(u8 snr, u8 avg_snr)
 	}
 
 	return avg_snr;
+}
+
+static inline void
+ath12k_dp_get_ext_mon_peers(struct ath12k_pdev_dp *dp_pdev,
+			    struct list_head *peer_list,
+			    struct ath12k_ext_mon_config *resp,
+			    spinlock_t *lock)
+{
+	struct ath12k_dp_ext_mon_peer *peer;
+	u8 count = 0;
+
+	lockdep_assert_held(lock);
+	list_for_each_entry(peer, peer_list, list) {
+		if (count >=
+			ATH12K_EXT_MON_NUM_PEERS(dp_pdev->dp->ab)) {
+			ath12k_err(NULL,
+				   "Number of peers exceeded max limit: %d",
+				   ATH12K_EXT_MON_NUM_PEERS(dp_pdev->dp->ab));
+			break;
+		}
+
+		resp->peer.peer_info[count] = peer->peer_info;
+		count++;
+	}
+	resp->peer.count = count;
 }
 
 void ath12k_dp_mon_peer_telemetry_stats(const struct ath12k_dp_link_peer *peer,

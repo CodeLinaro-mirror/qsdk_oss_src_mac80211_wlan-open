@@ -22,7 +22,9 @@
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 #include "qcn_extns/ipa/dp_ipa.h"
 #endif
+#if defined(CPTCFG_EXT_IPA_OFFLOAD) && defined(CPTCFG_QCN_EXTN)
 #include "../qcn_extns/ipa/dp_ipa_pub.h"
+#endif /* CPTCFG_EXT_IPA_OFFLOAD && CPTCFG_QCN_EXTN */
 
 static int ath12k_wifi7_dp_service_srng(struct ath12k_dp *dp,
 					struct ath12k_ext_irq_grp *irq_grp,
@@ -259,8 +261,10 @@ static int ath12k_wifi7_dp_op_device_init(struct ath12k_dp *dp)
 	if (ret)
 		return ret;
 
+#ifdef CPTCFG_QCN_EXTN
 	if (ath12k_cfg_get(ab, ATH12K_INI_DP_UCAST_ENABLE_AST_OVERRIDE))
 		set_bit(ATH12K_FLAG_UCAST_ENABLE_AST_OVERRIDE, &ab->dev_flags);
+#endif /* CPTCFG_QCN_EXTN */
 
 	dp->reo_cmd_cache_flush_count = 0;
 	dp->idle_link_rbm =
@@ -359,11 +363,13 @@ static int ath12k_wifi7_dp_op_device_init(struct ath12k_dp *dp)
 		ab->dp->ppe.ppe_ops->ath12k_ppeds_interrupt_start(ab);
 #endif
 
+#if defined(CPTCFG_EXT_IPA_OFFLOAD) && defined(CPTCFG_QCN_EXTN)
 	ret = ath12k_wifi7_dp_ipa_init(ab);
 	if (ret) {
 		ath12k_err(dp->ab, "IPA: ipa init failed");
 		goto fail_dp_mon_rx_deinit;
 	}
+#endif /* CPTCFG_EXT_IPA_OFFLOAD && CPTCFG_QCN_EXTN */
 
 	return 0;
 
@@ -481,10 +487,10 @@ static void ath12k_wifi7_dp_link_vif_configure(struct ath12k_dp *dp,
 		ath12k_mac_vif_unref(dp, ahvif->vif);
 		return;
 	} else if (optype == ATH12K_DP_OP_INIT) {
+		dp_link_vif->ab = ab;
 		dp_link_vif->vdev_id = arvif->vdev_id;
 		dp_link_vif->lmac_id = ar->lmac_id;
 		dp_link_vif->pdev_idx = ar->pdev_idx;
-		dp_link_vif->map_id = arvif->map_id;
 
 		dp_link_vif->tcl_metadata = u32_encode_bits(1, HTT_TCL_META_DATA_TYPE) |
 			u32_encode_bits(arvif->vdev_id,

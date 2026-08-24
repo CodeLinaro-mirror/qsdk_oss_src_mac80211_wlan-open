@@ -233,6 +233,23 @@ void ath12k_dp_mon_rx_display_filters(struct ath12k_dp *dp,
 			   tlv_filter->fpmo_packet_ctrl_filter);
 		ath12k_dbg(ab, ATH12K_DBG_DATA, "fpmo_packet_data_filter: 0x%x",
 			   tlv_filter->fpmo_packet_data_filter);
+		ath12k_dbg(ab, ATH12K_DBG_DATA, "rx_mon_enable_hdr_per_ppdu: %d",
+			   tlv_filter->rx_mon_enable_hdr_per_ppdu);
+		ath12k_dbg(ab, ATH12K_DBG_DATA,
+			   "fp_fpmo_data_mpdu_filter_in_en: %d",
+			   tlv_filter->fp_fpmo_data_mpdu_filter_in_en);
+		ath12k_dbg(ab, ATH12K_DBG_DATA,
+			   "fp_data_mpdu_tlv_filter0: 0x%x",
+			   tlv_filter->fp_data_mpdu_tlv_filter0);
+		ath12k_dbg(ab, ATH12K_DBG_DATA,
+			   "fpmo_data_mpdu_tlv_filter0: 0x%x",
+			   tlv_filter->fpmo_data_mpdu_tlv_filter0);
+		ath12k_dbg(ab, ATH12K_DBG_DATA,
+			   "fp_data_mpdu_tlv_filter1: 0x%x",
+			   tlv_filter->fp_data_mpdu_tlv_filter1);
+		ath12k_dbg(ab, ATH12K_DBG_DATA,
+			   "fpmo_data_mpdu_tlv_filter1: 0x%x",
+			   tlv_filter->fpmo_data_mpdu_tlv_filter1);
 	}
 }
 EXPORT_SYMBOL(ath12k_dp_mon_rx_display_filters);
@@ -259,6 +276,16 @@ ath12k_dp_mon_rx_setup_stats_filter(struct ath12k_dp *dp,
 					FILTER_CTRL_CFEND_CFACK;
 	rx_tlv_filter->fp_data_filter = FILTER_DATA_NULL | FILTER_DATA_MCAST |
 					FILTER_DATA_UCAST;
+
+	rx_tlv_filter->enable_fpmo = 1;
+	rx_tlv_filter->fpmo_mgmt_filter = FILTER_MGMT_ALL;
+	rx_tlv_filter->fpmo_ctrl_filter = FILTER_CTRL_CTRLWRAP | FILTER_CTRL_BA_REQ |
+					  FILTER_CTRL_BA | FILTER_CTRL_PSPOLL |
+					  FILTER_CTRL_RTS | FILTER_CTRL_CTS |
+					  FILTER_CTRL_ACK | FILTER_CTRL_CFEND |
+					  FILTER_CTRL_CFEND_CFACK;
+	rx_tlv_filter->fpmo_data_filter = FILTER_DATA_NULL | FILTER_DATA_MCAST |
+					  FILTER_DATA_UCAST;
 
 	rx_tlv_filter->rx_mon_mpdu_start_wmask =
 		ath12k_hal_mon_rx_mpdu_start_wmask(dp->hal);
@@ -317,7 +344,8 @@ void ath12k_dp_mon_rx_prepare_filter(struct ath12k_dp *dp,
 			continue;
 
 		rx_mon_filter->valid = true;
-		if (mode == DP_MON_FILTER_MONITOR_MODE)
+		if (mode == DP_MON_FILTER_MONITOR_MODE ||
+				mode == DP_MON_FILTER_EXT_MON_MODE)
 			dst_tlv_filter->is_monitor_mode = true;
 
 		dst_tlv_filter->offset_valid |= src_tlv_filter->offset_valid;
@@ -431,6 +459,16 @@ void ath12k_dp_mon_rx_prepare_filter(struct ath12k_dp *dp,
 					src_tlv_filter->phy_err_mask_cont;
 		dst_tlv_filter->phy_err_filter_valid |=
 					src_tlv_filter->phy_err_filter_valid;
+		dst_tlv_filter->fp_fpmo_data_mpdu_filter_in_en |=
+					src_tlv_filter->fp_fpmo_data_mpdu_filter_in_en;
+		dst_tlv_filter->fp_data_mpdu_tlv_filter0 |=
+					src_tlv_filter->fp_data_mpdu_tlv_filter0;
+		dst_tlv_filter->fpmo_data_mpdu_tlv_filter0 |=
+					src_tlv_filter->fpmo_data_mpdu_tlv_filter0;
+		dst_tlv_filter->fp_data_mpdu_tlv_filter1 |=
+					src_tlv_filter->fp_data_mpdu_tlv_filter1;
+		dst_tlv_filter->fpmo_data_mpdu_tlv_filter1 |=
+					src_tlv_filter->fpmo_data_mpdu_tlv_filter1;
 
 		ath12k_dbg(ab, ATH12K_DBG_DATA, "Updated Rx filters for mode: %d", mode);
 		ath12k_dp_mon_rx_display_filters(dp, mode, rx_mon_filter);
@@ -448,6 +486,10 @@ ath12k_dp_mon_rx_config_filters(struct ath12k_dp *dp,
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
 	int i, ret;
 	struct ath12k_base *ab = dp->ab;
+
+#ifndef CPTCFG_QCN_EXTN
+	(void)ab;
+#endif
 
 	for (i = 0; i < dp->hw_params->num_rxdma_per_pdev; i++) {
 		int ring_buf_size, mac_id, ring_id;
@@ -734,6 +776,7 @@ ath12k_dp_ext_mon_setup_rx_filters(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_dp_rx_ext_mon *rx_ext_mon;
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
 	enum ath12k_ext_mon_frame_len max_short_pkt_len;
+	const struct ath12k_dp_arch_mon_ops *mon_ops = ath12k_dp_mon_ops_get(dp);
 	u32 rx_mon_tlv_filter_flags = HTT_RX_EXT_MON_FILTER_TLV_FLAGS;
 	bool mgmt_full_pkt, ctrl_full_pkt, data_full_pkt;
 
@@ -816,8 +859,7 @@ ath12k_dp_ext_mon_setup_rx_filters(struct ath12k_pdev_dp *dp_pdev,
 			tlv_filter->enable_fpmo_packet = 1;
 	}
 
-	if (rx_ext_mon->mo_enabled ||
-	    (rx_ext_mon->fp_enabled && tlv_filter->fp_ctrl_filter)) {
+	if (rx_ext_mon->mo_enabled) {
 		tlv_filter->enable_mo = 1;
 		tlv_filter->mo_mgmt_filter =
 			rx_ext_mon->mo.filter[ATH12K_EXT_MON_FRAME_MGMT];
@@ -932,6 +974,9 @@ ath12k_dp_ext_mon_setup_rx_filters(struct ath12k_pdev_dp *dp_pdev,
 		ath12k_hal_mon_rx_msdu_end_wmask(dp->hal);
 	tlv_filter->rx_mon_ppdu_end_usr_stats_wmask =
 		ath12k_hal_mon_rx_ppdu_end_usr_stats_wmask(dp->hal);
+
+	if (mon_ops && mon_ops->ext_mon_setup_rx_filter)
+		mon_ops->ext_mon_setup_rx_filter(tlv_filter, rx_ext_mon);
 
 	spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
 }
@@ -1117,6 +1162,98 @@ ath12k_dp_mon_rx_setup_pktlog_lite(struct ath12k_pdev_dp *dp_pdev)
 	ath12k_dp_mon_rx_display_filters(dp, mode, &rx_filter);
 	dp_mon_pdev->rx_filter[mode][srng_type] = rx_filter;
 }
+
+static void
+ath12k_dp_mon_rx_setup_cfr_rcc_status(struct htt_rx_ring_tlv_filter *tlv_filter,
+				      u8 rcc_type)
+{
+	tlv_filter->offset_valid = false;
+
+	if (rcc_type & DP_MON_RCC_TYPE_M_ALL_FTM_ACK) {
+		tlv_filter->enable_fp = 1;
+		tlv_filter->enable_mo = 1;
+
+		tlv_filter->fp_mgmt_filter = FILTER_MGMT_ACTION;
+		tlv_filter->mo_mgmt_filter = FILTER_MGMT_ACTION;
+	}
+
+	if (rcc_type & DP_MON_RCC_TYPE_M_NDPA_NDP_ALL) {
+		tlv_filter->enable_fp = 1;
+		tlv_filter->enable_mo = 1;
+
+		tlv_filter->fp_ctrl_filter |= FILTER_CTRL_VHT_NDP;
+		tlv_filter->mo_ctrl_filter |= FILTER_CTRL_VHT_NDP;
+	}
+
+	if (rcc_type & DP_MON_RCC_TYPE_M_ALL_PACKET) {
+		tlv_filter->enable_fp = 1;
+		tlv_filter->enable_mo = 1;
+
+		tlv_filter->fp_mgmt_filter |= FILTER_MGMT_ALL;
+		tlv_filter->mo_mgmt_filter |= FILTER_MGMT_ALL;
+		tlv_filter->fp_ctrl_filter |= FILTER_CTRL_ALL;
+		tlv_filter->mo_ctrl_filter |= FILTER_CTRL_ALL;
+		tlv_filter->fp_data_filter |= FILTER_DATA_ALL;
+		tlv_filter->mo_data_filter |= FILTER_DATA_ALL;
+	}
+
+	if (rcc_type & DP_MON_RCC_TYPE_M_TA_RA_FILTER) {
+		tlv_filter->enable_fp = 1;
+		tlv_filter->enable_mo = 1;
+
+		tlv_filter->fp_mgmt_filter |= FILTER_MGMT_ALL;
+		tlv_filter->mo_mgmt_filter |= FILTER_MGMT_ALL;
+		tlv_filter->fp_ctrl_filter |= FILTER_CTRL_ALL;
+		tlv_filter->mo_ctrl_filter |= FILTER_CTRL_ALL;
+		tlv_filter->fp_data_filter |= FILTER_DATA_ALL;
+		tlv_filter->mo_data_filter |= FILTER_DATA_ALL;
+	}
+
+	if (rcc_type & DP_MON_RCC_TYPE_M_DIRECTED_FTM) {
+		tlv_filter->enable_fp = 1;
+
+		tlv_filter->fp_mgmt_filter |= FILTER_MGMT_ACTION;
+	}
+
+	if (rcc_type & DP_MON_RCC_TYPE_M_NDPA_NDP_DIRECTED) {
+		tlv_filter->enable_fp = 1;
+
+		tlv_filter->fp_ctrl_filter |= FILTER_CTRL_VHT_NDP;
+	}
+}
+
+void ath12k_dp_mon_rx_cfr_rcc_config_filter(struct ath12k_pdev_dp *dp_pdev,
+					    bool enable, u8 rcc_type)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct ath12k_dp *dp = dp_pdev->dp;
+	struct dp_mon_rx_filter rx_filter = {0};
+	enum dp_mon_filter_mode mode = DP_MON_FILTER_CFR_RCC_MODE;
+	enum dp_mon_filter_srng_type srng_type = DP_MON_FILTER_SRNG_TYPE_RXMON_DEST;
+	struct htt_rx_ring_tlv_filter *rx_tlv_filter = &rx_filter.rx_tlv_filter;
+
+	if (enable) {
+		rx_filter.valid = true;
+		rx_tlv_filter->rx_filter = HTT_RX_FILTER_TLV_CFR_RCC;
+		ath12k_dp_mon_rx_setup_cfr_rcc_status(rx_tlv_filter,
+						      rcc_type);
+	}
+
+	ath12k_dp_mon_rx_display_filters(dp, mode, &rx_filter);
+	dp_mon_pdev->rx_filter[mode][srng_type] = rx_filter;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_rx_cfr_rcc_config_filter);
+
+bool ath12k_dp_mon_get_rx_cfr_rcc_filter_valid(struct ath12k_pdev_dp *dp_pdev)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	enum dp_mon_filter_mode mode = DP_MON_FILTER_CFR_RCC_MODE;
+	enum dp_mon_filter_srng_type srng_type = DP_MON_FILTER_SRNG_TYPE_RXMON_DEST;
+	struct dp_mon_rx_filter *rx_filter = &dp_mon_pdev->rx_filter[mode][srng_type];
+
+	return rx_filter->valid;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_get_rx_cfr_rcc_filter_valid);
 
 static void
 ath12k_dp_mon_rx_pktlog_reset(struct ath12k_pdev_dp *dp_pdev,

@@ -12,6 +12,7 @@
 #include "qcn_extns/ath12k_cmn_extn.h"
 #endif
 #include <linux/hashtable.h>
+#include <linux/kernel.h>
 
 /* Max number of links for MLO connection */
 #define ATH12K_DP_PEER_MAX_MLO_LINKS 5
@@ -36,20 +37,26 @@ struct ath12k_dp_hw_link {
 	u8 device_id;
 	u8 pdev_idx;
 };
-#if defined(CONFIG_ATH12K_MEM_PROFILE_512M) || defined(CPTCFG_ATH12K_MEM_PROFILE_512M)
-/* TODO: revisit this count during testing */
-#define DP_RX_BUFFER_SIZE		1856
-#elif defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
-/* TODO: revisit this count during testing */
-#define DP_RX_BUFFER_SIZE       1856
-#else
-/* TODO: revisit this count during testing */
-#if BITS_PER_LONG == 32
-#define DP_RX_BUFFER_SIZE		1856
-#else
-#define DP_RX_BUFFER_SIZE		2048
+
+/* skb_active_profile in linux skbuff.h used to set DP_RX_BUFFER_SIZE
+ * Recycler with ipq52xx or ipq96xx non-minent
+ *                --> headroom removed --> NET_SKB_PAD added
+ *                --> 1664+64 = 1728
+ * Recycler without above case
+ *                --> headroom present --> padding not added
+ *                --> 1856 (32-bit) or 1984 (64-bit)
+ * Recycler not enabled --> (1664 + NET_SKB_PAD) allocated
+ */
+#ifdef CONFIG_SKB_RECYCLER
+#if (CONFIG_SKB_RECYCLE_SIZE == 1664)	/* ipq52xx or ipq96xx non-minent */
+#define DP_RX_BUFFER_SIZE		((skb_active_profile->value) + NET_SKB_PAD)
+#else					/* other profiles */
+#define DP_RX_BUFFER_SIZE		(skb_active_profile->value)
 #endif
+#else					/* recycler not enabled */
+#define DP_RX_BUFFER_SIZE		(1664 + NET_SKB_PAD)
 #endif
+
 #define ATH12K_PAGE_SIZE	PAGE_SIZE
 
 #define ATH12K_NUM_POOL_TX_DESC		(ab->mem_params.dp_params.num_pool_tx_desc)
@@ -151,10 +158,17 @@ struct ath12k_dp_hw {
 	DECLARE_HASHTABLE(peer_hash, ATH12K_DP_PEER_HASH_BITS);
 };
 
+struct ath12k_dp_desc_used_stats_pcpu {
+	u32 cnt;
+	u32 ppeds_cnt;
+};
+
 struct ath12k_dp_hw_group {
 	struct ath12k_dp_hw_link hw_links[ATH12K_GROUP_MAX_RADIO];
 	struct ath12k_dp *dp[ATH12K_MAX_SOCS];
 	struct dp_rx_fst *fst;
+	/* Number of active FSE rules; shared across all SoCs in the group */
+	u32 fse_active_count;
 	u8 *tx_status_buf[ATH12K_HW_MAX_QUEUES];
 	u8 *rx_status_buf[DP_TOTAL_REO_DST_RINGS];
 	struct ath12k_spt_info *spt_info;
@@ -162,7 +176,7 @@ struct ath12k_dp_hw_group {
 	struct ath12k_tx_desc_info **txbaddr;
 	struct list_head tx_desc_free_list[ATH12K_HW_MAX_QUEUES];
 	struct list_head tx_spl_desc_free_list[ATH12K_HW_MAX_QUEUES];
-	u32 __percpu *tx_desc_used_cnt;
+	struct ath12k_dp_desc_used_stats_pcpu __percpu *pcpu_tx;
 	/* protects the free and used desc lists */
 	spinlock_t tx_desc_lock[ATH12K_HW_MAX_QUEUES];
 	bool tx_desc_initialized;
@@ -248,6 +262,7 @@ struct ath12k_dp_peer_create_params {
 	bool is_sta_bss_peer;
 	u16 peer_id;
 	u16 sta_id;
+	bool is_epp_peer;
 };
 
 struct ath12k_dp_link_peer_rate_info {
@@ -333,6 +348,30 @@ enum ath12k_dp_link_peer_param {
 	ATH12K_DP_LINK_PEER_TID_WEIGHT_PARAM,
 	ATH12K_DP_LINK_PEER_TXRATE_PARAM,
 	ATH12k_DP_LINK_PEER_MAX_PARAM,
+};
+
+/* different supported pkt types for routing */
+enum ath12k_routing_pkt_type {
+	ATH12K_PKT_TYPE_ARP_IPV4,
+	ATH12K_PKT_TYPE_NS_IPV6,
+	ATH12K_PKT_TYPE_IGMP_IPV4,
+	ATH12K_PKT_TYPE_MLD_IPV6,
+	ATH12K_PKT_TYPE_DHCP_IPV4,
+	ATH12K_PKT_TYPE_DHCP_IPV6,
+	ATH12K_PKT_TYPE_DNS_TCP_IPV4,
+	ATH12K_PKT_TYPE_DNS_TCP_IPV6,
+	ATH12K_PKT_TYPE_DNS_UDP_IPV4,
+	ATH12K_PKT_TYPE_DNS_UDP_IPV6,
+	ATH12K_PKT_TYPE_ICMP_IPV4,
+	ATH12K_PKT_TYPE_ICMP_IPV6,
+	ATH12K_PKT_TYPE_TCP_IPV4,
+	ATH12K_PKT_TYPE_TCP_IPV6,
+	ATH12K_PKT_TYPE_UDP_IPV4,
+	ATH12K_PKT_TYPE_UDP_IPV6,
+	ATH12K_PKT_TYPE_IPV4,
+	ATH12K_PKT_TYPE_IPV6,
+	ATH12K_PKT_TYPE_EAP,
+	ATH12K_PKT_TYPE_MAX
 };
 
 struct ath12k_config_atf_params {
@@ -517,6 +556,5 @@ void ath12k_dp_vif_peer_stats_update(struct ath12k_dp_hw *dp_hw,
 				     const u8 *dp_peer_addr,
 				     u8 hw_link_id,
 				     struct ath12k_link_vif *arvif,
-				     struct ath12k_dp_aggr_vif_stats *aggr_vif_stats,
-				     bool is_ds_vif);
+				     struct ath12k_dp_aggr_vif_stats *aggr_vif_stats);
 #endif

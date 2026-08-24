@@ -128,7 +128,6 @@ void ath12k_wifi7_dp_extract_rx_spd_data(struct ath12k_hal *hal,
 {
 	hal->hal_ops->extract_rx_spd_data(rx_info, rx_desc);
 }
-
 static inline
 void ath12k_wifi7_dp_extract_rx_desc_data(struct ath12k_dp *dp,
 					  struct hal_rx_desc_data *rx_desc_data,
@@ -173,6 +172,7 @@ void ath12k_wifi7_dp_rx_h_undecap_eth(struct ath12k_pdev_dp *dp_pdev,
 void ath12k_wifi7_dp_adjust_skb(struct hal_rx_spd_data *spd_desc_l,
 				struct link_peer_rx_tid_stats *stats,
 				int *msdu_idx, u32 hal_rx_desc_sz);
+static inline void ath12k_wifi7_convert_eth_2_80211_frame(struct hal_rx_spd_data *rx_spd);
 static inline u8 ath12k_wifi7_dp_rx_get_msdu_src_link(struct ath12k_dp *dp,
 						      struct hal_rx_desc *desc)
 {
@@ -400,6 +400,7 @@ int ath12k_wifi7_deliver_raw_frame(struct ath12k_pdev_dp *dp_pdev,
 				   struct link_peer_rx_tid_stats *stats,
 				   struct rx_tlv_info_1 *prev_tlv_info)
 {
+	enum hal_encrypt_type enctype = HAL_ENCRYPT_TYPE_OPEN;
 	struct rx_msdu_desc_info *rx_msdu_info;
 	struct rx_mpdu_desc_info *rx_mpdu_info;
 	struct rx_tlv_info_1 *tlv_info;
@@ -410,8 +411,11 @@ int ath12k_wifi7_deliver_raw_frame(struct ath12k_pdev_dp *dp_pdev,
 	struct hal_rx_desc *rx_tlv_hdr;
 	bool is_mcbc = false;
 	bool ret, decrypted;
-	bool ra_mcbc = rx_spd->rx_msdu_info.da_is_mcbc &&
-				!peer->is_reset_mcbc;
+	bool ra_mcbc = rx_spd->rx_msdu_info.da_is_mcbc;
+	u16 peer_id = ATH12K_PEER_ID_INVALID;
+
+	if (peer)
+		ra_mcbc = ra_mcbc && !peer->is_reset_mcbc;
 
 	is_mcbc = is_ieee80211_frame_da_mcast(msdu);
 
@@ -428,7 +432,14 @@ int ath12k_wifi7_deliver_raw_frame(struct ath12k_pdev_dp *dp_pdev,
 			  RX_FLAG_IV_STRIPPED |
 			  RX_FLAG_MMIC_STRIPPED);
 
-	pubsta = peer->sta;
+	if (!peer) {
+		status->link_valid = 0;
+	} else {
+		pubsta = peer->sta;
+		enctype = ra_mcbc ? peer->sec_type_grp : peer->sec_type;
+		peer_id = peer->peer_id;
+	}
+
 	if (pubsta && pubsta->valid_links) {
 		status->link_valid = 1;
 		status->link_id = ath12k_dp_peer_convert_hw_to_logical_link_id(
@@ -442,13 +453,15 @@ int ath12k_wifi7_deliver_raw_frame(struct ath12k_pdev_dp *dp_pdev,
 
 	decrypted = ath12k_hal_rx_h_is_decrypted(hal, rx_tlv_hdr);
 
-	if (decrypted) {
+	if (decrypted && enctype != HAL_ENCRYPT_TYPE_OPEN) {
 		status->flag |= RX_FLAG_DECRYPTED | RX_FLAG_MMIC_STRIPPED;
 
 		if (ra_mcbc)
 			status->flag |= RX_FLAG_MIC_STRIPPED | RX_FLAG_ICV_STRIPPED;
 		else
 			status->flag |= RX_FLAG_IV_STRIPPED | RX_FLAG_PN_VALIDATED;
+	} else {
+		decrypted = false;
 	}
 
 	/* copy from scratch_pad to ieee80211_rx_status */
@@ -462,10 +475,8 @@ int ath12k_wifi7_deliver_raw_frame(struct ath12k_pdev_dp *dp_pdev,
 
 	ath12k_dp_rx_h_undecap_raw(dp_pdev, msdu,
 				   (struct hal_rx_desc *)rx_tlv_hdr,
-				   peer->sec_type,
-				   status, 1, peer->peer_id,
-				   rx_msdu_info->first_msdu,
-				   rx_msdu_info->last_msdu);
+				   enctype,
+				   status, decrypted, peer_id);
 
 	rx_status = IEEE80211_SKB_RXCB(msdu);
 	*rx_status = *status;
@@ -491,6 +502,7 @@ int ath12k_wifi7_deliver_nwifi_frame(struct ath12k_pdev_dp *dp_pdev,
 				     struct link_peer_rx_tid_stats *stats,
 				     struct rx_tlv_info_1 *prev_tlv_info)
 {
+	enum hal_encrypt_type enctype = HAL_ENCRYPT_TYPE_OPEN;
 	struct rx_msdu_desc_info *rx_msdu_info;
 	struct rx_mpdu_desc_info *rx_mpdu_info;
 	struct rx_tlv_info_1 *tlv_info;
@@ -502,6 +514,11 @@ int ath12k_wifi7_deliver_nwifi_frame(struct ath12k_pdev_dp *dp_pdev,
 	struct ieee80211_hdr *hdr;
 	u32 hdr_len;
 	bool ret;
+	bool ra_mcbc = rx_spd->rx_msdu_info.da_is_mcbc;
+	u16 peer_id = ATH12K_PEER_ID_INVALID;
+
+	if (peer)
+		ra_mcbc = ra_mcbc && !peer->is_reset_mcbc;
 
 	/* ideally driver should not be doing this check.
 	 * instead HW should flag this with error_code
@@ -528,7 +545,14 @@ int ath12k_wifi7_deliver_nwifi_frame(struct ath12k_pdev_dp *dp_pdev,
 			RX_FLAG_SKIP_MONITOR |
 			RX_FLAG_DUP_VALIDATED;
 
-	pubsta = peer->sta;
+	if (!peer) {
+		status->link_valid = 0;
+	} else {
+		pubsta = peer->sta;
+		enctype = ra_mcbc ? peer->sec_type_grp : peer->sec_type;
+		peer_id = peer->peer_id;
+	}
+
 	if (pubsta && pubsta->valid_links) {
 		status->link_valid = 1;
 		status->link_id = ath12k_dp_peer_convert_hw_to_logical_link_id(
@@ -553,7 +577,7 @@ int ath12k_wifi7_deliver_nwifi_frame(struct ath12k_pdev_dp *dp_pdev,
 		return 1;
 	}
 
-	ath12k_wifi7_dp_rx_h_undecap_nwifi(dp_pdev, msdu, peer->sec_type,
+	ath12k_wifi7_dp_rx_h_undecap_nwifi(dp_pdev, msdu, enctype,
 					   status,
 					   (struct hal_rx_desc *)rx_tlv_hdr,
 					   rx_spd->tlv_info.mesh_ctrl_present,
@@ -733,12 +757,14 @@ void ath12k_wifi7_rx_sw_desc_sanity_check(struct ath12k_rx_desc_info *sw_desc)
 	}
 
 	if (unlikely(sw_desc->magic != ATH12K_DP_RX_DESC_MAGIC)) {
-		pr_err("Check HW CC implementation");
+		pr_err("Check HW CC implementation, vaddr = 0x%p",
+			(void *)sw_desc->vaddr);
 			WARN_ON(1);
 	}
 
 	if (unlikely(!sw_desc->in_use)) {
-		pr_err("The SW descriptor is in free pool (!in_use), yet HW released it to host");
+		pr_err("The SW descriptor is in free pool (!in_use), yet HW released it to host, vaddr = 0x%p",
+			(void *)sw_desc->vaddr);
 		WARN_ON(1);
 	}
 }

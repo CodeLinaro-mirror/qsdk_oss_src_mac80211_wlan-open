@@ -360,6 +360,7 @@ ath12k_dp_htt_process_stats_common_tlv(const u32 *tlv_desc,
 	case HTT_STATS_FTYPE_SGEN_MU_BAR:
 	case HTT_STATS_FTYPE_SGEN_BAR:
 	case HTT_STATS_FTYPE_SGEN_BE_MU_BAR:
+	case HTT_STATS_FTYPE_SGEN_BN_MU_BAR:
 		ppdu_info->frame_type = HTT_STATS_PPDU_FTYPE_BAR;
 		break;
 	default:
@@ -554,7 +555,7 @@ ath12k_dp_htt_process_usr_compltn_flush(struct ath12k_pdev_dp *dp_pdev,
 	/* No need to use these stats when SW is already
 	 * doing it on a per packet basis
 	 */
-	if (!ab->stats_disable)
+	if (dp_pdev->dp_stats_mask & DP_ENABLE_STATS)
 		return -EINTR;
 
 	ath12k_dp_ppdu_stats_flush_tlv_parse(ab, dp_pdev, msg, ppdu_info);
@@ -845,7 +846,8 @@ ath12k_update_tx_ppdu_ru_mpdu_tried(struct ath12k *ar,
 	if ((ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_MU_OFDMA ||
 	     ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_MU_MIMO_OFDMA) &&
 	    (txrate->flags & RATE_INFO_FLAGS_HE_MCS ||
-	     txrate->flags & RATE_INFO_FLAGS_EHT_MCS)) {
+	     txrate->flags & RATE_INFO_FLAGS_EHT_MCS ||
+	     txrate->flags & RATE_INFO_FLAGS_UHR_MCS)) {
 		int ru_loc_idx;
 
 		if (txrate->flags & RATE_INFO_FLAGS_HE_MCS)
@@ -874,7 +876,8 @@ ath12k_dp_update_tx_ppdu_ru_num_mpdu(struct ath12k *ar,
 	if ((ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_MU_OFDMA ||
 	     ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_MU_MIMO_OFDMA) &&
 	    (txrate->flags & RATE_INFO_FLAGS_HE_MCS ||
-	     txrate->flags & RATE_INFO_FLAGS_EHT_MCS)) {
+	     txrate->flags & RATE_INFO_FLAGS_EHT_MCS ||
+	     txrate->flags & RATE_INFO_FLAGS_UHR_MCS)) {
 		int ru_loc_idx;
 
 		if (txrate->flags & RATE_INFO_FLAGS_HE_MCS)
@@ -909,7 +912,7 @@ ath12k_update_tx_ppdu_basic_stats(struct ath12k_pdev_dp *dp_pdev,
 
 	is_mcast = HTT_PPDU_STATS_USR_CMN_IS_MCAST(usr_stats->common.info);
 
-	DP_STATS_INCC(tx_ppdu_stats, tx_ucast_success.num, peer_stats->succ_pkts,
+	DP_STATS_INCC(tx_ppdu_stats, tx_ucast_success.packets, peer_stats->succ_pkts,
 		      !is_mcast);
 	DP_STATS_INCC(tx_ppdu_stats, tx_ucast_success.bytes, peer_stats->succ_bytes,
 		      !is_mcast);
@@ -1150,6 +1153,9 @@ ath12k_htt_update_tx_rate_stats(struct ath12k_dp_link_peer *peer,
 {
 	struct ath12k_htt_tx_ppdu_stats *tx_ppdu_stats;
 	u32 ratekbps;
+	u16 peer_id;
+	u8 pdev_id;
+	u8 soc_id;
 
 	tx_ppdu_stats = peer->peer_stats.tx_ppdu_stats;
 	if (!tx_ppdu_stats)
@@ -1164,10 +1170,13 @@ ath12k_htt_update_tx_rate_stats(struct ath12k_dp_link_peer *peer,
 
 	if (IS_VALID_RSSI(tx_ppdu_stats->last_ack_rssi) &&
 	    IS_VALID_RATE(tx_ppdu_stats->tx_rate)) {
-		u8 soc_id = ath12k_get_ab_device_id(dp_pdev->ar->ab);
+		soc_id = ath12k_get_ab_device_id(dp_pdev->ar->ab);
+		pdev_id = ath12k_get_pdev_id(dp_pdev->ar->pdev);
+		peer_id = ath12k_dp_link_peer_get_peer_id(dp_pdev->ar->ab, peer);
 
 		ath12k_telemetry_update_rssi_rate_breach(soc_id,
-							 peer->peer_id,
+							 pdev_id,
+							 peer_id,
 							 peer->addr,
 							 PATH_TYPE_TX,
 							 tx_ppdu_stats->last_ack_rssi,
@@ -1523,14 +1532,17 @@ ath12k_ppdu_per_user_stats_phy_tx_time_update(struct ath12k_base *ab,
 		phy_tx_time_us = (phy_ppdu_tx_time_us *
 				  user->nss * user->ru_tones) / ru_nss_width_sum;
 
-	if (tx_ppdu_stats)
-		DP_STATS_INCR(tx_ppdu_stats, tx_ppdu_duration, phy_tx_time_us);
-
 	peer->tx_duration += phy_tx_time_us;
 	tid = user->rate.tid_num;
 	ac = ath12k_tid_to_ac(tid);
 	stats = &peer->peer_stats.dp_mon_stats;
 	stats->mon_stats.tx_airtime_consumption[ac].consumption += phy_tx_time_us;
+
+	if (tx_ppdu_stats) {
+		DP_STATS_INCR(tx_ppdu_stats, tx_ppdu_duration, phy_tx_time_us);
+		DP_STATS_INCR(tx_ppdu_stats, tx_dur_ac[ac], phy_tx_time_us);
+	}
+
 	ath12k_dbg(ab, ATH12K_DBG_DP_HTT, "ppdu info id: %d tid: %d htt frame type: %d  ppdu frame type: %d time: %d nss: %d tones: %d sum [nss: %d tone: %d consum: %d]\n",
 		   ppdu_info->ppdu_id, user->rate.tid_num, ppdu_info->htt_frame_type,
 		   ppdu_info->frame_type, phy_ppdu_tx_time_us, user->nss,
@@ -1590,13 +1602,15 @@ void ath12k_htt_update_peer_telemetry_stats(struct ath12k_pdev_dp *dp_pdev,
 {
 	struct ath12k_base *ab = dp_pdev->ar->ab;
 	struct ath12k_dp_link_peer *peer;
-	struct htt_ppdu_stats *ppdu_stats = &ppdu_info->ppdu_stats;
+	struct htt_ppdu_stats *ppdu_stats;
 	struct htt_ppdu_user_stats *user_stats = NULL;
 	u32 tlv_bitmap;
 	u8 uid;
 
 	if (!ppdu_info)
 		return;
+
+	ppdu_stats = &ppdu_info->ppdu_stats;
 
 	if (ppdu_info->frame_type != HTT_STATS_PPDU_FTYPE_DATA)
 		return;
@@ -1806,7 +1820,7 @@ ath12k_dp_htt_ppdu_stats_update_tx_comp_stats(struct ath12k_pdev_dp *dp_pdev,
 	/* Update below stats when msdu update path is disabled, It is likely
 	 * the case when KPI is enabled
 	 */
-	if (!ab->stats_disable)
+	if (dp_pdev->dp_stats_mask & DP_ENABLE_STATS)
 		return;
 
 	for (i = 0; i < ppdu_info->ppdu_stats.common.num_users; i++) {
@@ -2205,6 +2219,9 @@ static void ath12k_htt_t2h_ppdu_id_fmt_handler(struct ath12k_dp *dp,
 {
 	u8 valid, bits, offset;
 	struct ath12k_htt_ppdu_id_fmt_info *msg;
+
+	if (skb->len < sizeof(struct ath12k_htt_ppdu_id_fmt_info))
+		return;
 
 	msg = (struct ath12k_htt_ppdu_id_fmt_info *)skb->data;
 	valid = le32_get_bits(msg->link_id, HTT_PPDU_ID_FMT_VALID_BITS);
@@ -3606,6 +3623,18 @@ int ath12k_dp_tx_htt_rx_filter_setup(struct ath12k_base *ab, u32 ring_id,
 			HTT_RX_RING_SEL_CFG_CMD_INFO4_RXMON_MD_MGMT_HDRLEN);
 	cmd->info4 |= le32_encode_bits(tlv_filter->rx_mon_enable_hdr_per_ppdu,
 			HTT_RX_RING_SEL_CFG_CMD_INFO4_RXMON_ENABLE_HDR_PER_PPDU);
+	cmd->info4 |= le32_encode_bits(tlv_filter->fp_fpmo_data_mpdu_filter_in_en,
+			HTT_RX_RING_SEL_CFG_CMD_INFO4_FP_FPMO_DATA_MPDU_FILTER_IN_EN);
+
+	cmd->fp_data_mpdu_tlv_filter0 =
+		cpu_to_le32(tlv_filter->fp_data_mpdu_tlv_filter0);
+	cmd->fpmo_data_mpdu_tlv_filter0 =
+		cpu_to_le32(tlv_filter->fpmo_data_mpdu_tlv_filter0);
+
+	cmd->info5 = le32_encode_bits(tlv_filter->fp_data_mpdu_tlv_filter1,
+			HTT_RX_RING_SEL_CFG_CMD_INFO5_FP_DATA_MPDU_TLV_FILTER_1);
+	cmd->info5 |= le32_encode_bits(tlv_filter->fpmo_data_mpdu_tlv_filter1,
+			HTT_RX_RING_SEL_CFG_CMD_INFO5_FPMO_DATA_MPDU_TLV_FILTER_1);
 
 	ret = ath12k_htt_send(ab, dp, skb, HTT_H2T_MSG_TYPE_RX_RING_SELECTION_CFG,
 			      (u8 *)cmd);

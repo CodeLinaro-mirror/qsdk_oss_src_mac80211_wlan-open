@@ -22,11 +22,6 @@ const struct ath12k_dp_arch_mon_ops ath12k_wifi8_dp_arch_mon_dual_ring_ops = {
 	.rx_srng_cleanup = ath12k_dp_mon_rx_srng_cleanup,
 	.rx_ring_init = ath12k_dp_mon_rx_ring_init,
 	.rx_ring_deinit = ath12k_dp_mon_rx_ring_deinit,
-	/* The below 2 ops are required only for wifi6, remove this after wifi6
-	 * memory optimization
-	 */
-	.rx_buf_setup = NULL,
-	.rx_buf_free = NULL,
 	.rx_htt_srng_setup = ath12k_dp_mon_rx_htt_srng_setup,
 	.mon_pdev_alloc = ath12k_dp_mon_pdev_alloc,
 	.mon_pdev_free = ath12k_dp_mon_pdev_free,
@@ -42,10 +37,14 @@ const struct ath12k_dp_arch_mon_ops ath12k_wifi8_dp_arch_mon_dual_ring_ops = {
 	.rx_filter_update = ath12k_dp_mon_rx_update_ring_filter,
 	.rx_monitor_mode_set = ath12k_dp_mon_rx_monitor_mode_set,
 	.rx_monitor_mode_reset = ath12k_dp_mon_rx_monitor_mode_reset,
+	.rx_nrp_set = ath12k_dp_mon_rx_nrp_set,
+	.rx_nrp_reset = ath12k_dp_mon_rx_nrp_reset,
 	.setup_ppdu_desc = ath12k_wifi8_dp_mon_rx_dual_ring_setup_ppdu_desc,
 	.cleanup_ppdu_desc = ath12k_wifi8_dp_mon_rx_dual_ring_cleanup_ppdu_desc,
 	.mon_rx_wq_init = ath12k_wifi8_dp_mon_rx_wq_init,
 	.mon_rx_wq_deinit = ath12k_wifi8_dp_mon_rx_wq_deinit,
+	.rx_cfr_rcc_config = ath12k_dp_mon_rx_cfr_rcc_config_filter,
+	.rx_get_cfr_rcc_filter_valid = ath12k_dp_mon_get_rx_cfr_rcc_filter_valid,
 	.mon_rx_wmask = ath12k_dp_mon_rx_wmask_subscribe,
 	.rx_enable_packet_filters = ath12k_dp_mon_rx_enable_packet_filters,
 	.pktlog_config = ath12k_dp_mon_pktlog_config_filter,
@@ -58,6 +57,8 @@ const struct ath12k_dp_arch_mon_ops ath12k_wifi8_dp_arch_mon_dual_ring_ops = {
 	.rx_undecoded_metadata_reset_filter = NULL,
 	.rx_undecoded_metadata_capture_set = NULL,
 	.rx_undecoded_phy_err_mask_set = NULL,
+	.ext_mon_setup_rx_filter = ath12k_wifi8_dp_ext_mon_setup_rx_filter,
+
 	/* Below are TxMonitor Ops */
 	/* At Device Init/Exit */
 	.mon_tx_srng_alloc_setup = ath12k_dp_mon_tx_srng_alloc_setup,
@@ -258,6 +259,11 @@ ath12k_wifi8_dp_mon_rx_parse_status_buf(struct ath12k_pdev_dp *dp_pdev,
 			msdu_info->last_buffer = true;
 	}
 
+	/* Buffer address TLV is subscribed only when a full packet is
+	 * requested; it is not subscribed for short packets.
+	 */
+	ppdu_info->mpdu_info[user_id].full_pkt = true;
+
 	if (unlikely(packet_info->truncated)) {
 		mon_stats->pkt_tlv_truncated++;
 		ppdu_info->mpdu_info[user_id].truncated = true;
@@ -280,13 +286,15 @@ ath12k_wifi8_dp_mon_parse_status_rx_hdr(struct ath12k_pdev_dp *dp_pdev,
 	struct hal_rx_mon_ppdu_info *ppdu_info = &pmon->mon_ppdu_info;
 	struct sk_buff *skb, *tmp_skb;
 	struct ath12k_pdev_mon_dp_stats *mon_stats = &dp_pdev->dp_mon_pdev->mon_stats;
+	struct ath12k_dp_rx_ext_mon *ext_mon_config =
+				dp_pdev->dp_mon_pdev->rx_ext_mon_config;
 	const void *tlv_data = tlv_parsed_hdr->data;
 	int offset, frag_len = tlv_parsed_hdr->len - ATH12K_MON_RX_PKT_OFFSET;
 	u8 user_id = ppdu_info->user_id;
 
 	offset = (const u8 *)tlv_data - (const u8 *)mon_buf;
 	offset += ATH12K_MON_RX_PKT_OFFSET;
-	if (unlikely(frag_len <= 0) || frag_len > DP_MON_RX_HDR_LEN) {
+	if (unlikely(frag_len <= 0) || frag_len > ATH12K_WIFI8_DP_MON_RX_HDR_LEN) {
 		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON,
 			   "invalid rx header length: %d", frag_len);
 		return 0;
@@ -303,7 +311,9 @@ ath12k_wifi8_dp_mon_parse_status_rx_hdr(struct ath12k_pdev_dp *dp_pdev,
 		mon_stats->num_skb_alloc++;
 		skb_queue_tail(&ppdu_info->mpdu_q[user_id], skb);
 
-		if (ppdu_info->mpdu_info[user_id].decap_type != DP_RX_DECAP_TYPE_RAW)
+		if (ppdu_info->mpdu_info[user_id].decap_type != DP_RX_DECAP_TYPE_RAW ||
+		    (ext_mon_config && ext_mon_config->enable &&
+				ext_mon_config->short_pkt_en))
 			ath12k_dp_mon_add_rx_frag(skb, mon_buf, offset, frag_len, true);
 
 		ppdu_info->mpdu_info[user_id].mpdu_start_received = true;
@@ -389,9 +399,12 @@ ath12k_wifi8_dp_mon_rx_parse_mpdu_end(struct ath12k_pdev_dp *dp_pdev,
 
 	mpdu_meta = (struct ath12k_dp_mon_mpdu_meta *)skb->data;
 	mpdu_meta->truncated = ppdu_info->mpdu_info[user_id].truncated;
+	mpdu_meta->fcs_err = ppdu_info->mpdu_info[user_id].fcs_err;
+	mpdu_meta->full_pkt = ppdu_info->mpdu_info[user_id].full_pkt;
 
 reset_mpdu_info:
 	ppdu_info->mpdu_info[user_id].truncated = false;
+	ppdu_info->mpdu_info[user_id].full_pkt = false;
 	ppdu_info->mpdu_info[user_id].mpdu_start_received = false;
 }
 
@@ -625,7 +638,10 @@ ath12k_wifi8_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
 	struct ath12k_dp_rx_ext_mon *config;
 	struct ieee80211_hdr *hdr;
-	u8 filter_category, type;
+	struct ath12k_ext_mon_pkt_config *pkt_config = NULL;
+	u8 filter_category, type, sub_type;
+	bool is_mcast = false;
+	int ret = 0;
 
 	spin_lock(&dp_mon_pdev->rx_ext_mon_lock);
 	config = dp_mon_pdev->rx_ext_mon_config;
@@ -652,18 +668,55 @@ ath12k_wifi8_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 	switch (filter_category) {
+	case DP_MPDU_FILTER_CATEGORY_FP:
+		if (config->fp_enabled) {
+			pkt_config = &config->fp;
+			/* When FP statistics are enabled and extended monitor filters
+			 * are ORed in, extra frame type/subtypes may be received;
+			 * explicitly filter out those unintended frames here.
+			 */
+			sub_type = ((__le16_to_cpu(hdr->frame_control) &
+				     IEEE80211_FCTL_STYPE) >> ATH12K_FC0_SUBTYPE_SHIFT);
+			is_mcast = is_multicast_ether_addr(hdr->addr1);
+			ret = ath12k_dp_ext_mon_subtype_check(pkt_config, type,
+							      sub_type, is_mcast);
+			if (unlikely(ret)) {
+				spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
+				ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON,
+					   "Filtered subtype %x\n", sub_type);
+				return -EINVAL;
+			}
+		}
+		break;
 	case DP_MPDU_FILTER_CATEGORY_MD:
 		if (config->md_enabled) {
+			pkt_config = &config->md;
 			if (config->peer_count && ppdu_info->nrp_info.fc_valid &&
 			    ppdu_info->nrp_info.to_ds_flag &&
 			    ppdu_info->nrp_info.mac_addr2_valid)
 				ath12k_dp_ext_mon_update_snr(ppdu_info, config);
 		}
 		break;
+	case DP_MPDU_FILTER_CATEGORY_MO:
+		if (config->mo_enabled)
+			pkt_config = &config->mo;
+		break;
+	case DP_MPDU_FILTER_CATEGORY_FP_MO:
+		if (config->fpmo_enabled)
+			pkt_config = &config->fpmo;
+		break;
 	default:
 		spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
 		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON,
-			   "Filter category not handled in wifi8 ext mon: %x\n",
+			   "Unknown filter category in wifi8 ext mon: %x\n",
+			   filter_category);
+		return -EINVAL;
+	}
+
+	if (unlikely(!pkt_config)) {
+		spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON,
+			   "Filter category %x not enabled in current ext_mon config\n",
 			   filter_category);
 		return -EINVAL;
 	}
@@ -703,7 +756,7 @@ ath12k_wifi8_dp_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	if (skb_shinfo(mpdu)->nr_frags)
 		rxs.flag |= RX_FLAG_AMSDU_MORE;
 
-	if (ppdu_info->mpdu_info[ppdu_info->user_id].err_bitmap & HAL_RX_MPDU_ERR_FCS)
+	if (ppdu_info->mpdu_info[ppdu_info->user_id].fcs_err)
 		rxs.flag |= RX_FLAG_FAILED_FCS_CRC;
 
 	if (!(dp_mon_pdev->rx_ext_mon_config &&
@@ -1191,38 +1244,41 @@ void ath12k_wifi8_dp_mon_rx_process_mpdu_queue(struct ath12k_pdev_dp *dp_pdev,
 		}
 
 		if (mpdu_meta->decap_type == DP_RX_DECAP_TYPE_RAW) {
-			fcs_len_left = FCS_LEN;
-			last_frag_idx = skb_shinfo(mpdu)->nr_frags - 1;
-			if (skb_shinfo(mpdu)->nr_frags >= 2) {
-				last_frag_size =
-				ath12k_dp_mon_get_frag_size_by_idx(dp_pdev->dp,
-								   mpdu,
-								   last_frag_idx);
-				if (last_frag_size > 0 && last_frag_size <= FCS_LEN) {
-					ath12k_dp_mon_skb_remove_frag(dp_pdev->dp, mpdu,
-								      last_frag_idx,
-								      buf_size);
-					fcs_len_left -= last_frag_size;
+			if (mpdu_meta->full_pkt) {
+				fcs_len_left = FCS_LEN;
+				last_frag_idx = skb_shinfo(mpdu)->nr_frags - 1;
+				if (skb_shinfo(mpdu)->nr_frags >= 2) {
+					last_frag_size =
+					ath12k_dp_mon_get_frag_size_by_idx(
+								dp_pdev->dp,
+								mpdu, last_frag_idx);
+					if (last_frag_size > 0 && last_frag_size <=
+					    FCS_LEN) {
+						ath12k_dp_mon_skb_remove_frag(
+								dp_pdev->dp,
+								mpdu, last_frag_idx,
+								buf_size);
+						fcs_len_left -= last_frag_size;
+					}
+				}
+
+				last_frag_idx = skb_shinfo(mpdu)->nr_frags - 1;
+				if (fcs_len_left > 0) {
+					last_frag_size =
+					ath12k_dp_mon_get_frag_size_by_idx(
+								dp_pdev->dp, mpdu,
+								last_frag_idx);
+					if (last_frag_size <= fcs_len_left) {
+						dev_kfree_skb_any(mpdu);
+						mon_stats->num_skb_free++;
+						num_skb = 0;
+						pkt_tlv = 0;
+						goto next_mpdu;
+					}
+					skb_coalesce_rx_frag(mpdu, last_frag_idx,
+							-fcs_len_left, 0);
 				}
 			}
-
-			last_frag_idx = skb_shinfo(mpdu)->nr_frags - 1;
-			if (fcs_len_left > 0) {
-				last_frag_size =
-					ath12k_dp_mon_get_frag_size_by_idx(dp_pdev->dp,
-									   mpdu,
-									   last_frag_idx);
-				if (last_frag_size <= fcs_len_left) {
-					dev_kfree_skb_any(mpdu);
-					mon_stats->num_skb_free++;
-					num_skb = 0;
-					pkt_tlv = 0;
-					goto next_mpdu;
-				}
-				skb_coalesce_rx_frag(mpdu, last_frag_idx,
-						     -fcs_len_left, 0);
-			}
-
 			ath12k_dp_mon_cnt_skb_and_frags(mpdu, &num_skb, &pkt_tlv);
 			mon_stats->num_skb_raw += num_skb;
 			mon_stats->num_frag_raw += pkt_tlv;
@@ -1231,14 +1287,16 @@ void ath12k_wifi8_dp_mon_rx_process_mpdu_queue(struct ath12k_pdev_dp *dp_pdev,
 							&pkt_tlv);
 			mon_stats->num_skb_eth += num_skb;
 			mon_stats->num_frag_eth += pkt_tlv;
-			ret = ath12k_wifi8_dp_mon_restitch_frags(mpdu, dp_pdev);
-			if (unlikely(ret)) {
-				dev_kfree_skb_any(mpdu);
-				mon_stats->num_skb_free += num_skb;
-				mon_stats->pkt_tlv_free += pkt_tlv;
-				num_skb = 0;
-				pkt_tlv = 0;
-				goto next_mpdu;
+			if (mpdu_meta->full_pkt) {
+				ret = ath12k_wifi8_dp_mon_restitch_frags(mpdu, dp_pdev);
+				if (unlikely(ret)) {
+					dev_kfree_skb_any(mpdu);
+					mon_stats->num_skb_free += num_skb;
+					mon_stats->pkt_tlv_free += pkt_tlv;
+					num_skb = 0;
+					pkt_tlv = 0;
+					goto next_mpdu;
+				}
 			}
 		}
 
@@ -1287,6 +1345,7 @@ static void ath12k_wifi8_dp_mon_h_flush_tlv(struct ath12k_pdev_dp *pdev_dp,
 
 	mon_stats->status_buf_free++;
 	page_frag_free(mon_buf);
+	status_desc->mon_buf = NULL;
 }
 
 static inline void
@@ -1436,6 +1495,7 @@ static int ath12k_wifi8_dp_mon_rx_add_ppdu_desc(struct list_head *mon_desc_used_
 }
 
 static void ath12k_dp_rx_mon_ppdu_notify(struct ath12k_dp *dp,
+					 struct ath12k_pdev_dp *pdev_dp,
 					 struct hal_rx_mon_ppdu_info *ppdu_info)
 {
 	struct ath12k_ppdu_event event;
@@ -1447,8 +1507,10 @@ static void ath12k_dp_rx_mon_ppdu_notify(struct ath12k_dp *dp,
 	if (!ath12k_ppdu_notifier_has_listeners(ATH12K_EVENT_PPDU_RX_COMPLETE))
 		return;
 
-	if (ppdu_info->peer_id == HAL_INVALID_PEERID)
-		return;
+	if (ppdu_info->peer_id == HAL_INVALID_PEERID) {
+		if (unlikely(!ath12k_dp_mon_get_rx_cfr_rcc_filter_valid(pdev_dp)))
+			return;
+	}
 
 	/* Send PPDU notification to registered listeners */
 	ppdu_info->device_id = ath12k_get_ab_device_id(dp->ab);
@@ -1658,12 +1720,17 @@ ath12k_wifi8_dp_mon_rx_process_ppdu(struct work_struct *work)
 			if (!list_empty(&dp->neighbor_peers)) {
 				list_for_each_entry_safe(nrp, tmp,
 							 &dp->neighbor_peers, list) {
+					u8 avg = nrp->avg_rssi;
+					u8 snr = ppdu_info->rssi_comb;
+
 					is_addr_equal =
 					ether_addr_equal(nrp->addr,
 							 ppdu_info->nrp_info.mac_addr2);
 					if (filter_category ==
 					    DP_MPDU_FILTER_CATEGORY_MD && is_addr_equal) {
+						avg = ath12k_dp_get_avg_snr(snr, avg);
 						nrp->rssi = ppdu_info->rssi_comb;
+						nrp->avg_rssi = avg;
 						nrp->timestamp =
 							ktime_to_ms(ktime_get_real());
 						goto unlock;
@@ -1694,7 +1761,7 @@ ath12k_wifi8_dp_mon_rx_process_ppdu(struct work_struct *work)
 unlock:
 			spin_unlock_bh(&dp->dp_lock);
 			rcu_read_unlock_bh();
-			ath12k_dp_rx_mon_ppdu_notify(dp, ppdu_info);
+			ath12k_dp_rx_mon_ppdu_notify(dp, pdev_dp, ppdu_info);
 free_buf:
 			page_frag_free(status_desc->mon_buf);
 			mon_stats->status_buf_free++;
@@ -1720,7 +1787,7 @@ int ath12k_wifi8_dp_mon_rx_dual_ring_process(struct ath12k_pdev_dp *pdev_dp, int
 	struct ath12k_dp *dp = pdev_dp->dp;
 	struct ath12k_base *ab = dp->ab;
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = pdev_dp->dp_mon_pdev;
-	struct hal_mon_dest_desc *mon_dst_desc;
+	struct hal_mon_dest_desc *mon_dst_desc, *next_desc;
 	struct dp_srng *mon_dst_ring;
 	struct hal_srng *srng;
 	struct ath12k_dp_mon_desc *mon_desc;
@@ -1750,14 +1817,15 @@ int ath12k_wifi8_dp_mon_rx_dual_ring_process(struct ath12k_pdev_dp *pdev_dp, int
 		 */
 		info0 = le32_to_cpu(mon_dst_desc->info0);
 		if (u32_get_bits(info0, HAL_MON_DEST_INFO0_EMPTY_DESC)) {
-			/* If empty descriptor gets received after the end of ppdu
-			 * flush the last received ppdu along with the msdus in status
-			 * buffer
-			 */
-			spin_lock_bh(&dp_mon_pdev->ppdu_desc_lock);
-			if (!list_empty(mon_desc_used_list))
-				ath12k_wifi8_dp_mon_rx_h_empty_desc(pdev_dp);
-			spin_unlock_bh(&dp_mon_pdev->ppdu_desc_lock);
+			if (!list_empty(mon_desc_used_list)) {
+				ath12k_wifi8_dp_mon_flush_used_list(pdev_dp,
+								    mon_desc_used_list);
+			} else {
+				spin_lock_bh(&dp_mon_pdev->ppdu_desc_lock);
+				if (!list_empty(&dp_mon_pdev->ppdu_desc_used_list))
+					ath12k_wifi8_dp_mon_rx_h_empty_desc(pdev_dp);
+				spin_unlock_bh(&dp_mon_pdev->ppdu_desc_lock);
+			}
 
 			mon_stats->ring_desc_empty++;
 			goto move_next;
@@ -1840,17 +1908,22 @@ int ath12k_wifi8_dp_mon_rx_dual_ring_process(struct ath12k_pdev_dp *pdev_dp, int
 		 * reaped. This helps to efficiently utilize the NAPI budget.
 		 */
 		if (end_reason == HAL_MON_END_OF_PPDU) {
-			*budget -= 1;
 			mon_desc->end_of_ppdu = true;
 			mon_stats->num_ppdu_reaped++;
-			ret = ath12k_wifi8_dp_mon_rx_add_ppdu_desc(mon_desc_used_list,
-								   dp_mon_pdev);
-			if (ret) {
-				ath12k_dbg(dp->ab, ATH12K_DBG_DP_MON,
-					   "mon_dest: Failed to add mon desc to ppdu ret %d",
-					   ret);
-				ath12k_wifi8_dp_mon_flush_used_list(pdev_dp,
-								    mon_desc_used_list);
+			next_desc = ath12k_hal_srng_dst_next_peek_nolock(srng);
+			if (!next_desc ||
+			    !u32_get_bits(le32_to_cpu(next_desc->info0),
+					  HAL_MON_DEST_INFO0_EMPTY_DESC)) {
+				*budget -= 1;
+				ret = ath12k_wifi8_dp_mon_rx_add_ppdu_desc(
+						mon_desc_used_list, dp_mon_pdev);
+				if (unlikely(ret)) {
+					ath12k_dbg(dp->ab, ATH12K_DBG_DP_MON,
+						   "mon_dest: Failed to add mon desc to ppdu ret %d",
+						   ret);
+					ath12k_wifi8_dp_mon_flush_used_list(
+							pdev_dp, mon_desc_used_list);
+				}
 			}
 		}
 
@@ -1972,15 +2045,17 @@ static void ath12k_wifi8_dp_mon_rx_drain_wq(struct ath12k_pdev_dp *dp_pdev)
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ath12k_dp_mon_ppdu_desc *ppdu_desc;
 	struct ath12k_dp_mon_status_desc *status_desc;
+	struct list_head local_list;
 	int desc_cnt;
 
-	spin_lock_bh(&dp_mon_pdev->ppdu_desc_lock);
-	list_splice_init(&dp_mon_pdev->ppdu_desc_used_list,
-			 &dp_mon_pdev->ppdu_desc_free_list);
+	INIT_LIST_HEAD(&local_list);
 
-	list_splice_init(&dp_mon_pdev->ppdu_desc_proc_list,
-			 &dp_mon_pdev->ppdu_desc_free_list);
-	list_for_each_entry(ppdu_desc, &dp_mon_pdev->ppdu_desc_free_list, list) {
+	spin_lock_bh(&dp_mon_pdev->ppdu_desc_lock);
+	list_splice_init(&dp_mon_pdev->ppdu_desc_used_list, &local_list);
+	list_splice_init(&dp_mon_pdev->ppdu_desc_proc_list, &local_list);
+	spin_unlock_bh(&dp_mon_pdev->ppdu_desc_lock);
+
+	list_for_each_entry(ppdu_desc, &local_list, list) {
 		for (desc_cnt = 0; desc_cnt < ppdu_desc->status_desc_cnt; desc_cnt++) {
 			status_desc = &ppdu_desc->status_desc[desc_cnt];
 			if (!status_desc->mon_buf)
@@ -1990,11 +2065,15 @@ static void ath12k_wifi8_dp_mon_rx_drain_wq(struct ath12k_pdev_dp *dp_pdev)
 						   DMA_FROM_DEVICE);
 			ath12k_wifi8_dp_mon_h_flush_tlv(dp_pdev, status_desc);
 		}
+		ath12k_dp_mon_reset_ppdu_desc(ppdu_desc);
 	}
+
+	spin_lock_bh(&dp_mon_pdev->ppdu_desc_lock);
+	list_splice_init(&local_list, &dp_mon_pdev->ppdu_desc_free_list);
 	spin_unlock_bh(&dp_mon_pdev->ppdu_desc_lock);
 }
 
-void ath12k_wifi8_dp_mon_rx_wq_deinit(struct ath12k_pdev_dp *dp_pdev)
+void ath12k_wifi8_dp_mon_rx_wq_deinit(struct ath12k_pdev_dp *dp_pdev, bool destroy)
 {
 	struct ath12k_pdev_mon_dp *mon_pdev = dp_pdev->dp_mon_pdev;
 
@@ -2003,7 +2082,53 @@ void ath12k_wifi8_dp_mon_rx_wq_deinit(struct ath12k_pdev_dp *dp_pdev)
 	ath12k_wifi8_dp_mon_rx_drain_wq(dp_pdev);
 
 	flush_workqueue(mon_pdev->rxmon_wq);
-	destroy_workqueue(mon_pdev->rxmon_wq);
+
+	if (destroy)
+		destroy_workqueue(mon_pdev->rxmon_wq);
+}
+
+static int
+ath12k_wifi8_ext_mon_validate_pkt_data_mpdu_tlv(struct ath12k_dp *dp,
+						const struct
+						ath12k_ext_mon_pkt_config *pkt)
+{
+	const struct {
+		u32 filter_bit;
+		u8  mask;
+	} subtypes[] = {
+		{ FILTER_DATA_MCAST, pkt->data_mpdu_tlv.mcast       },
+		{ FILTER_DATA_UCAST, pkt->data_mpdu_tlv.ucast       },
+		{ FILTER_DATA_NULL,  pkt->data_mpdu_tlv.null_frm    },
+	};
+	u32 data_filter = pkt->filter[ATH12K_EXT_MON_FRAME_DATA];
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(subtypes); i++) {
+		bool in_filter = !!(data_filter & subtypes[i].filter_bit);
+
+		/* in_filter: subtype for which tlv subscription is configured is also
+		 * subscribed for Packet Delivery.
+		 * If subtype is in_filter: only mask 0xD (mpdu_start+mpdu_end+rx_header)
+		 * or 0xF (all four TLVs) allowed; as the other MPDU TLVs are needed
+		 * for packet construction.
+		 */
+		if (in_filter &&
+		    subtypes[i].mask != 0xD && subtypes[i].mask != 0xF) {
+			ath12k_warn(dp, "only mask 0xD/0xF allowed for mpdu_tlv stype %d",
+				    i);
+			return -EINVAL;
+		}
+		/* If subtype is not in_filter: BIT(3) (rx_header) must be unset.
+		 * As subtype is not subscribed for packet deliver, Rx Header is not
+		 * needed.
+		 */
+		if (!in_filter && (subtypes[i].mask & BIT(3))) {
+			ath12k_warn(dp, "rx_hdr not allowed for mpdu_tlv stype %d", i);
+			return -EINVAL;
+		}
+	}
+
+	return 0;
 }
 
 int ath12k_wifi8_dp_ext_mon_validate_request(struct ath12k_pdev_dp *dp_pdev,
@@ -2011,55 +2136,12 @@ int ath12k_wifi8_dp_ext_mon_validate_request(struct ath12k_pdev_dp *dp_pdev,
 {
 	struct ath12k_pdev_mon_dp *dp_mon_pdev;
 	const struct ath12k_ext_mon_peer_info *peer = NULL;
-	int i;
+	int i, ret;
 
 	dp_mon_pdev = dp_pdev->dp_mon_pdev;
 	if (!dp_mon_pdev) {
 		ath12k_warn(dp_pdev->dp, "monitor pdev is null");
 		return -EINVAL;
-	}
-
-	if (req->cmd_type == ATH12K_EXT_MON_CMD_TYPE_SET_FILTER &&
-	    !req->filter.disable) {
-		/*
-		 * For wifi8, only MSDU level is supported. MPDU and PPDU levels
-		 * are not supported yet.
-		 */
-		if (req->filter.level != ATH12K_EXT_MON_FILTER_LEVEL_MSDU) {
-			ath12k_warn(dp_pdev->dp,
-				    "only MSDU level is supported");
-			return -EINVAL;
-		}
-
-		/*
-		 * For wifi8, as of now only target_neighbor pkt config is supported.
-		 * A pkt config is considered active when any filter[] entry is non-zero.
-		 * Reject upfront if all_peer, all_neighbor or target_peer are
-		 * active so the caller is informed that these modes are not
-		 * supported.
-		 */
-		if (ath12k_dp_ext_mon_is_mode_enabled(&req->filter.all_peer) ||
-		    ath12k_dp_ext_mon_is_mode_enabled(&req->filter.all_neighbor) ||
-		    ath12k_dp_ext_mon_is_mode_enabled(&req->filter.target_peer)) {
-			ath12k_warn(dp_pdev->dp,
-				    "only target_neighbor pkt config is supported");
-			return -EINVAL;
-		}
-
-		/*
-		 * For wifi8, only full packet length is supported. Short packet
-		 * lengths (64B, 128B, 256B) are not supported. Any configured
-		 * frame type length must be ATH12K_EXT_MON_LEN_FULL_PKT.
-		 */
-		for (i = 0; i < ATH12K_EXT_MON_FRAME_MAX; i++) {
-			if (req->filter.target_neighbor.len[i] &&
-			    req->filter.target_neighbor.len[i] !=
-					ATH12K_EXT_MON_LEN_FULL_PKT) {
-				ath12k_warn(dp_pdev->dp,
-					    "only full packet length is supported");
-				return -EINVAL;
-			}
-		}
 	}
 
 	if (req->cmd_type == ATH12K_EXT_MON_CMD_TYPE_SET_PEER) {
@@ -2077,6 +2159,30 @@ int ath12k_wifi8_dp_ext_mon_validate_request(struct ath12k_pdev_dp *dp_pdev,
 						    peer->ra_addr, peer->bitmap);
 					return -EINVAL;
 				}
+			}
+		}
+	}
+
+	if (req->cmd_type == ATH12K_EXT_MON_CMD_TYPE_SET_FILTER) {
+		if (req->filter.all_peer.data_mpdu_tlv.tlv_configured ||
+		    req->filter.target_peer.data_mpdu_tlv.tlv_configured) {
+			if (req->direction == QCA_VENDOR_EXT_MON_DIRECTION_TX) {
+				ath12k_warn(dp_pdev->dp,
+					    "data MPDU TLV filter not supported for TX");
+				return -EINVAL;
+			}
+
+			if (req->filter.all_peer.data_mpdu_tlv.tlv_configured) {
+				ret = ath12k_wifi8_ext_mon_validate_pkt_data_mpdu_tlv(
+						dp_pdev->dp, &req->filter.all_peer);
+				if (ret)
+					return ret;
+			}
+			if (req->filter.target_peer.data_mpdu_tlv.tlv_configured) {
+				ret = ath12k_wifi8_ext_mon_validate_pkt_data_mpdu_tlv(
+						dp_pdev->dp, &req->filter.target_peer);
+				if (ret)
+					return ret;
 			}
 		}
 	}
@@ -2101,4 +2207,150 @@ void ath12k_wifi8_htt_tx_mon_cfg_fill_extended_wmask(
 				 HTT_TX_FILTER_MASK_IN4_UPSTREAM_TLV_FLAGS3) |
 		le32_encode_bits(htt_tlv_filter->tx_mon_downstream_tlv_flags1,
 				 HTT_TX_FILTER_MASK_IN4_DOWNSTREAM_TLV_FLAGS1);
+}
+
+void
+ath12k_wifi8_dp_ext_mon_setup_rx_filter(struct htt_rx_ring_tlv_filter *tlv_filter,
+					const struct ath12k_dp_rx_ext_mon *rx_ext_mon)
+{
+	const struct ath12k_ext_mon_data_mpdu_tlv_config *fp_mpdu_tlv =
+							&rx_ext_mon->fp.data_mpdu_tlv;
+	const struct ath12k_ext_mon_data_mpdu_tlv_config *fpmo_mpdu_tlv =
+							&rx_ext_mon->fpmo.data_mpdu_tlv;
+	u8 hdr_bits;
+
+	tlv_filter->rx_mon_fp_mgmt_hdrlen   = HTT_RX_HDR_LEN_64_BYTES;
+	tlv_filter->rx_mon_fp_ctrl_hdrlen   = HTT_RX_HDR_LEN_64_BYTES;
+	tlv_filter->rx_mon_fp_data_hdrlen   = HTT_RX_HDR_LEN_64_BYTES;
+	tlv_filter->rx_mon_fpmo_mgmt_hdrlen = HTT_RX_HDR_LEN_64_BYTES;
+	tlv_filter->rx_mon_fpmo_ctrl_hdrlen = HTT_RX_HDR_LEN_64_BYTES;
+	tlv_filter->rx_mon_fpmo_data_hdrlen = HTT_RX_HDR_LEN_64_BYTES;
+	tlv_filter->rx_mon_mo_mgmt_hdrlen   = HTT_RX_HDR_LEN_64_BYTES;
+	tlv_filter->rx_mon_mo_ctrl_hdrlen   = HTT_RX_HDR_LEN_64_BYTES;
+	tlv_filter->rx_mon_mo_data_hdrlen   = HTT_RX_HDR_LEN_64_BYTES;
+	tlv_filter->rx_mon_md_mgmt_hdrlen   = HTT_RX_HDR_LEN_64_BYTES;
+	tlv_filter->rx_mon_md_ctrl_hdrlen   = HTT_RX_HDR_LEN_64_BYTES;
+	tlv_filter->rx_mon_md_data_hdrlen   = HTT_RX_HDR_LEN_64_BYTES;
+
+	if (rx_ext_mon->fp_enabled) {
+		if (rx_ext_mon->fp.len[ATH12K_EXT_MON_FRAME_MGMT] !=
+				ATH12K_EXT_MON_LEN_FULL_PKT)
+			tlv_filter->rx_mon_fp_mgmt_hdrlen =
+				rx_ext_mon->fp.len[ATH12K_EXT_MON_FRAME_MGMT];
+		if (rx_ext_mon->fp.len[ATH12K_EXT_MON_FRAME_CTRL] !=
+				ATH12K_EXT_MON_LEN_FULL_PKT)
+			tlv_filter->rx_mon_fp_ctrl_hdrlen =
+				rx_ext_mon->fp.len[ATH12K_EXT_MON_FRAME_CTRL];
+		if (rx_ext_mon->fp.len[ATH12K_EXT_MON_FRAME_DATA] !=
+				ATH12K_EXT_MON_LEN_FULL_PKT)
+			tlv_filter->rx_mon_fp_data_hdrlen =
+				rx_ext_mon->fp.len[ATH12K_EXT_MON_FRAME_DATA];
+	}
+
+	if (rx_ext_mon->fpmo_enabled) {
+		if (rx_ext_mon->fpmo.len[ATH12K_EXT_MON_FRAME_MGMT] !=
+				ATH12K_EXT_MON_LEN_FULL_PKT)
+			tlv_filter->rx_mon_fpmo_mgmt_hdrlen =
+				rx_ext_mon->fpmo.len[ATH12K_EXT_MON_FRAME_MGMT];
+		if (rx_ext_mon->fpmo.len[ATH12K_EXT_MON_FRAME_CTRL] !=
+				ATH12K_EXT_MON_LEN_FULL_PKT)
+			tlv_filter->rx_mon_fpmo_ctrl_hdrlen =
+				rx_ext_mon->fpmo.len[ATH12K_EXT_MON_FRAME_CTRL];
+		if (rx_ext_mon->fpmo.len[ATH12K_EXT_MON_FRAME_DATA] !=
+				ATH12K_EXT_MON_LEN_FULL_PKT)
+			tlv_filter->rx_mon_fpmo_data_hdrlen =
+				rx_ext_mon->fpmo.len[ATH12K_EXT_MON_FRAME_DATA];
+	}
+
+	if (rx_ext_mon->mo_enabled) {
+		if (rx_ext_mon->mo.len[ATH12K_EXT_MON_FRAME_MGMT] !=
+				ATH12K_EXT_MON_LEN_FULL_PKT)
+			tlv_filter->rx_mon_mo_mgmt_hdrlen =
+				rx_ext_mon->mo.len[ATH12K_EXT_MON_FRAME_MGMT];
+		if (rx_ext_mon->mo.len[ATH12K_EXT_MON_FRAME_CTRL] !=
+				ATH12K_EXT_MON_LEN_FULL_PKT)
+			tlv_filter->rx_mon_mo_ctrl_hdrlen =
+				rx_ext_mon->mo.len[ATH12K_EXT_MON_FRAME_CTRL];
+		if (rx_ext_mon->mo.len[ATH12K_EXT_MON_FRAME_DATA] !=
+				ATH12K_EXT_MON_LEN_FULL_PKT)
+			tlv_filter->rx_mon_mo_data_hdrlen =
+				rx_ext_mon->mo.len[ATH12K_EXT_MON_FRAME_DATA];
+	}
+
+	if (rx_ext_mon->md_enabled) {
+		if (rx_ext_mon->md.len[ATH12K_EXT_MON_FRAME_MGMT] !=
+				ATH12K_EXT_MON_LEN_FULL_PKT)
+			tlv_filter->rx_mon_md_mgmt_hdrlen =
+				rx_ext_mon->md.len[ATH12K_EXT_MON_FRAME_MGMT];
+		if (rx_ext_mon->md.len[ATH12K_EXT_MON_FRAME_CTRL] !=
+				ATH12K_EXT_MON_LEN_FULL_PKT)
+			tlv_filter->rx_mon_md_ctrl_hdrlen =
+				rx_ext_mon->md.len[ATH12K_EXT_MON_FRAME_CTRL];
+		if (rx_ext_mon->md.len[ATH12K_EXT_MON_FRAME_DATA] !=
+				ATH12K_EXT_MON_LEN_FULL_PKT)
+			tlv_filter->rx_mon_md_data_hdrlen =
+				rx_ext_mon->md.len[ATH12K_EXT_MON_FRAME_DATA];
+	}
+
+	if (rx_ext_mon->level == ATH12K_EXT_MON_FILTER_LEVEL_PPDU)
+		tlv_filter->rx_mon_enable_hdr_per_ppdu = 1;
+
+	/* Data MPDU TLV filtering is supported only for FP and FPMO modes;
+	 * MO and MD modes have no corresponding hardware filter register.
+	 *
+	 * filter0 (30 bits): packs 5 data subtypes at 6 bits each:
+	 *   bit 0 = rx_mpdu_start
+	 *   bit 1 = rx_msdu_end
+	 *   bit 2 = rx_mpdu_end
+	 *   bit 3 = rx_header
+	 *   bit 4 = rx_header_per_msdu
+	 *   bit 5 = rx_header_per_ppdu
+	 * Bit layout in the 30-bit word matches RXDMA
+	 * FP_DATA_MPDU_TLV_FILTER_IN_CONTROL:
+	 *   [5:0]   = mcast
+	 *   [11:6]  = ucast
+	 *   [17:12] = null
+	 *   [23:18] = qos_null
+	 *   [29:24] = qos_null_tb
+	 *
+	 * filter1: NDP subtype TLV bitmask (same 6-bit layout as above).
+	 * Both FP and FP_MO NDP masks are packed into the same HTT info5
+	 * word via HTT_RX_RING_SEL_CFG_CMD_INFO5_FP_DATA_MPDU_TLV_FILTER_1
+	 * (GENMASK(5,0)) and
+	 * HTT_RX_RING_SEL_CFG_CMD_INFO5_FPMO_DATA_MPDU_TLV_FILTER_1
+	 * (GENMASK(11,6)).
+	 *
+	 * Bits 4 and 5 are only set for slots that are already active (non-zero
+	 * lower 4 bits). A zero slot means the subtype is not subscribed, so
+	 * per-msdu/per-ppdu header generation for it serves no purpose.
+	 *
+	 * Rx Monitor Stats do not subscribe for QoS_Null and QoS_Null_TB.
+	 * As enabling this for any data subtype enables the FP FPMO Data MPDU TLV
+	 * for all FP/FPMO data subtypes subscription, we need to subscribe for all
+	 * TLVs for these subtypes as they will be needed if QoS_Null and
+	 * QoS_Null_TB are enabled for packet delivery.
+	 */
+	hdr_bits = (tlv_filter->rx_filter &
+		    HTT_RX_FILTER_TLV_FLAGS_PER_MSDU_HEADER) ? 0x10 : 0;
+	hdr_bits |= (tlv_filter->rx_mon_enable_hdr_per_ppdu) ? 0x20 : 0;
+
+	if (fp_mpdu_tlv->tlv_configured || fpmo_mpdu_tlv->tlv_configured) {
+		tlv_filter->fp_data_mpdu_tlv_filter0 =
+			HTT_FP_DATA_TLV_SUBTYPE(fp_mpdu_tlv->mcast, 0, hdr_bits) |
+			HTT_FP_DATA_TLV_SUBTYPE(fp_mpdu_tlv->ucast, 6, hdr_bits) |
+			HTT_FP_DATA_TLV_SUBTYPE(fp_mpdu_tlv->null_frm, 12, hdr_bits) |
+			(0xFu | hdr_bits) << 18 |  /* qos_null */
+			(0xFu | hdr_bits) << 24;   /* qos_null_tb */
+		tlv_filter->fp_data_mpdu_tlv_filter1 = 0xFu | hdr_bits; /* ndp */
+
+		tlv_filter->fpmo_data_mpdu_tlv_filter0 =
+			HTT_FP_DATA_TLV_SUBTYPE(fpmo_mpdu_tlv->mcast, 0, hdr_bits) |
+			HTT_FP_DATA_TLV_SUBTYPE(fpmo_mpdu_tlv->ucast, 6, hdr_bits) |
+			HTT_FP_DATA_TLV_SUBTYPE(fpmo_mpdu_tlv->null_frm, 12, hdr_bits) |
+			(0xFu | hdr_bits) << 18 |  /* qos_null */
+			(0xFu | hdr_bits) << 24;   /* qos_null_tb */
+		tlv_filter->fpmo_data_mpdu_tlv_filter1 = 0xFu | hdr_bits; /* ndp */
+
+		tlv_filter->fp_fpmo_data_mpdu_filter_in_en = 1;
+	}
 }

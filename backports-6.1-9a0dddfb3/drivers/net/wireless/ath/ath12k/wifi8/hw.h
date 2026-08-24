@@ -66,6 +66,18 @@
 
 #define ATH12K_REO_FLUSH_RING_MASK_0   0x1
 
+/* Dedicated interrupt group for fw_tqm2sw ring (FW-owned buffer WAR) */
+#define ATH12K_FW_TQM2SW_RING_MASK_0   0x1
+
+/*
+ * Per-group CPU affinity for the wifi8 extended IRQ groups.
+ *
+ * Group 14 is required: the fw_tqm2sw WAR ring (TQM2SW7) fires on a
+ * dedicated MSI vector (HAL_TQM_HOST_STATUS_RING=1), separate from the
+ * regular tqm_status ring.  It must have its own interrupt group so that
+ * ath12k_wifi8_dp_fw_tqm2sw_handler() is only invoked when that specific
+ * ring has completions, rather than on every group-9 (tqm_status) fire.
+ */
 static const int ath12k_wifi8_ext_irq_grp_affinity[] = {
 	0, /* grp0  -> cpu0 */
 	1, /* grp1  -> cpu1 */
@@ -81,6 +93,7 @@ static const int ath12k_wifi8_ext_irq_grp_affinity[] = {
 	1, /* grp11 -> cpu1 */
 	2, /* grp12 -> cpu2 */
 	0, /* grp13 -> cpu0 (roaming RX ring) */
+	1, /* grp14 -> cpu1 (fw_tqm2sw WAR ring - dedicated MSI, see above) */
 };
 
 struct ath12k_base;

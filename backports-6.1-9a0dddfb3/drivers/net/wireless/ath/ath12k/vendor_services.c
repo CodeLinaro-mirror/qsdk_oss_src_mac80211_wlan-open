@@ -12,6 +12,8 @@
 
 static struct ath12k_vendor_service_info vendor_info;
 static bool resources_created;
+/* Variable to track the ath12k vendor services initialization */
+static bool ath12k_vendor_services_init_done;
 
 /* These macros directly access the fields of the provided vendor_info structure.
  * This is necessary for functions like ath12k_telemetry_destroy_resources that
@@ -591,6 +593,9 @@ void ath12k_vendor_services_init(void)
 	if (!ath12k_mlo_capable)
 		return;
 
+	if (ath12k_vendor_services_init_done)
+		return;
+
 	memset(&vendor_info, 0, sizeof(struct ath12k_vendor_service_info));
 	resources_created = false;
 
@@ -621,6 +626,8 @@ void ath12k_vendor_services_init(void)
 	ath12k_vendor_service_deinit[ATH12K_VENDOR_APP_QOS_OPTIMIZER] =
 		ath12k_vendor_dynamic_service_deinit;
 	/* Initialize other serives as needed */
+
+	ath12k_vendor_services_init_done = true;
 }
 EXPORT_SYMBOL(ath12k_vendor_services_init);
 
@@ -632,6 +639,9 @@ void ath12k_vendor_services_deinit(void)
 	int id;
 
 	if (!ath12k_mlo_capable)
+		return;
+
+	if (!ath12k_vendor_services_init_done)
 		return;
 
 	info.id = ATH12K_RM_MAIN_SERVICE;
@@ -651,6 +661,7 @@ void ath12k_vendor_services_deinit(void)
 		kfree(soc_info);
 	}
 	memset(&vendor_info, 0, sizeof(struct ath12k_vendor_service_info));
+	ath12k_vendor_services_init_done = false;
 }
 EXPORT_SYMBOL(ath12k_vendor_services_deinit);
 

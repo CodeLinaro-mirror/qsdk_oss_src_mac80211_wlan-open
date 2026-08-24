@@ -28,7 +28,9 @@ void ath12k_wifi8_srng_hw_mgmt_rings_disable(struct ath12k_base *ab)
 
 	ath12k_mgmt_srng_hw_disable(ab, &mgmt_wifi8->reo_dst_rx_ring);
 	ath12k_mgmt_srng_hw_disable(ab, &mgmt_wifi8->reo_dst_rx_err_ring);
+#ifdef CPTCFG_QCN_EXTN
 	ath12k_mgmt_srng_hw_disable_extn(ab);
+#endif /* CPTCFG_QCN_EXTN */
 }
 
 void ath12k_wifi8_mgmt_rx_replenish_buffs(struct ath12k_mgmt *mgmt,
@@ -280,7 +282,7 @@ void ath12k_wifi8_mgmt_rx_desc_copy_end_tlv(struct ath12k_base *ab,
 					    struct hal_rx_desc *fdesc,
 					    struct hal_rx_desc *ldesc)
 {
-	ab->hw_params->hal_ops->rx_desc_copy_end_tlv(fdesc, ldesc);
+	ab->hal.hal_ops->rx_desc_copy_end_tlv(fdesc, ldesc);
 }
 
 static int
@@ -1357,10 +1359,10 @@ void ath12k_wifi8_mgmt_workqueue(struct work_struct *w)
 
 	if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags) ||
 	    ab->ag->wsi_remap_in_progress || ab->is_bypassed)
-		return;
+		goto exit;
 
 	ath12k_wifi8_mgmt_service_srng(ab, irq_grp);
-
+exit:
 	ath12k_mgmt_irq_grp_enable(irq_grp);
 }
 #else
@@ -1371,10 +1373,10 @@ void ath12k_wifi8_mgmt_tasklet(struct tasklet_struct *t)
 
 	if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags) ||
 	    ab->ag->wsi_remap_in_progress || ab->is_bypassed)
-		return;
+		goto exit;
 
 	ath12k_wifi8_mgmt_service_srng(ab, irq_grp);
-
+exit:
 	ath12k_mgmt_irq_grp_enable(irq_grp);
 }
 #endif
@@ -1622,15 +1624,11 @@ int ath12k_wifi8_mgmt_wbm_ring_sel_config_qcn9625(struct ath12k_base *ab)
 	tlv_filter.offset_valid = true;
 	tlv_filter.rx_packet_offset = hal_rx_desc_sz;
 
-	tlv_filter.rx_mpdu_start_offset =
-		ath12k_wifi8_hal_rx_desc_get_mpdu_start_offset_qcn9625();
-	tlv_filter.rx_msdu_end_offset =
-		ath12k_wifi8_hal_rx_desc_get_msdu_end_offset_qcn9625();
+	tlv_filter.rx_mpdu_start_offset = ab->hal.rx_mpdu_start_offset;
+	tlv_filter.rx_msdu_end_offset = ab->hal.rx_msdu_end_offset;
 
-	tlv_filter.rx_mpdu_start_wmask =
-		ath12k_wifi8_hal_rx_mpdu_start_wmask_get_qcn9625();
-	tlv_filter.rx_msdu_end_wmask =
-		ath12k_wifi8_hal_rx_msdu_end_wmask_get_qcn9625();
+	tlv_filter.rx_mpdu_start_wmask = ab->hal.rx_mpdu_start_wmask;
+	tlv_filter.rx_msdu_end_wmask = ab->hal.rx_msdu_end_wmask;
 
 	/* WBM Idle Buffer Pool 1 is used for mgmt */
 	tlv_filter.rdi_based_source_cfg =
@@ -1687,7 +1685,7 @@ ath12k_wifi8_mgmt_dump_ring_stats(struct ath12k_mgmt *mgmt, char *buf, int size)
 						  buf + len, size - len);
 
 #ifdef CPTCFG_QCN_EXTN
-	len = ath12k_wifi8_mgmt_dump_ring_stats_extn(mgmt, buf, len, size);
+	len = ath12k_wifi8_mgmt_dump_ring_stats_extn(mgmt, buf, size, len);
 #endif
 
 	return len;

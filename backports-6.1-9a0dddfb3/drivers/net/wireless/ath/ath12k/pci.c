@@ -21,7 +21,9 @@
 #include "umac_reset.h"
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 #include <linux/iommu.h>
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/ipa/dp_ipa.h"
+#endif /* CPTCFG_QCN_EXTN */
 #endif
 
 #define ATH12K_PCI_BAR_NUM		0
@@ -250,10 +252,14 @@ static void ath12k_pci_sw_reset(struct ath12k_base *ab, bool power_on)
 	if (!power_on) {
 		if (!ab->in_panic &&
 		    test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags)) {
+			if (ab->hw_params->hw_ops->update_tqm_status_ring_tp)
+				ab->hw_params->hw_ops->update_tqm_status_ring_tp(ab,
+										 false);
 			/* Disable umcmn interrupt/timer before issuing reset */
 			ath12k_umcmn_irq_disable(ab);
 			ath12k_umcmn_timer_free(ab);
 			ath12k_pci_q6_only_reset(ab);
+			ab->skip_cumac_hw_reset = true;
 		} else {
 			ath12k_pci_soc_global_reset(ab);
 		}
@@ -449,7 +455,9 @@ static int ath12k_pci_claim(struct ath12k_pci *ab_pci, struct pci_dev *pdev)
 		goto release_region;
 	}
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
+#ifdef CPTCFG_QCN_EXTN
 	ab->ath12k_base_extn.mem_pa = pci_resource_start(pdev, ATH12K_PCI_BAR_NUM);
+#endif /* CPTCFG_QCN_EXTN */
 #endif
 
 	ab->mem_pa = pci_resource_start(pdev, ATH12K_PCI_BAR_NUM);
@@ -1436,12 +1444,14 @@ static int ath12k_pci_probe(struct pci_dev *pdev,
 
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 	/* Init smmu for SDX */
+#ifdef CPTCFG_QCN_EXTN
 	ret = ath12k_pci_init_smmu_extn(ab_pci);
 	if (ret) {
 		ath12k_err(ab, "failed to SMMU_INIT device: %d\n", ret);
 		goto err_pci_free_region;
 	}
-#endif
+#endif /* CPTCFG_QCN_EXTN */
+#endif /* CPTCFG_EXT_IPA_OFFLOAD */
 	/* Call device specific probe. This is the callback that can
 	 * be used to override any ops in future
 	 */
@@ -1493,6 +1503,12 @@ static int ath12k_pci_probe(struct pci_dev *pdev,
 		goto err_irq_affinity_cleanup;
 	}
 
+#if defined(CPTCFG_EXT_IPA_OFFLOAD) && defined(CPTCFG_QCN_EXTN)
+	ret = ath12k_dp_ipa_plugin_register_ops_extn(ab);
+	if (ret)
+		goto err_mhi_unregister;
+	ath12k_info(ab, "IPA: ipa plugin are registered");
+#endif /* CPTCFG_EXT_IPA_OFFLOAD && CPTCFG_QCN_EXTN */
 	ret = ath12k_hal_srng_init(ab);
 	if (ret)
 		goto err_mhi_unregister;
@@ -1577,6 +1593,13 @@ err_ce_free:
 err_hal_srng_deinit:
 	ath12k_hal_srng_deinit(ab);
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+ipa_plugin_unregister:
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_dp_ipa_plugin_deregister_ops_extn(ab);
+#endif /* CPTCFG_EXT_IPA_OFFLOAD && CPTCFG_QCN_EXTN */
+#endif
+
 err_mhi_unregister:
 	ath12k_mhi_unregister(ab_pci);
 
@@ -1588,7 +1611,9 @@ err_pci_msi_free:
 
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 err_pci_deinit_smmu:
+#ifdef CPTCFG_QCN_EXTN
 	ath12k_pci_deinit_smmu_extn(ab_pci);
+#endif /* CPTCFG_QCN_EXTN */
 #endif
 
 err_pci_free_region:
@@ -1650,7 +1675,9 @@ qmi_fail:
 		ab_pci->device_ops->dp_deinit(ab->dp);
 
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
+#ifdef CPTCFG_QCN_EXTN
 	ath12k_dp_ipa_plugin_deregister_ops_extn(ab);
+#endif /* CPTCFG_QCN_EXTN */
 #endif
 	ath12k_pci_msi_free(ab_pci);
 #ifdef CONFIG_IO_COHERENCY
@@ -1675,6 +1702,7 @@ static void ath12k_pci_shutdown(struct pci_dev *pdev)
 	struct ath12k_base *ab = pci_get_drvdata(pdev);
 	struct ath12k_pci *ab_pci = ath12k_pci_priv(ab);
 
+	set_bit(ATH12K_GROUP_FLAG_SHUTDOWN, &ab->ag->flags);
 	ath12k_pci_set_irq_affinity_hint(ab_pci, NULL);
 
 	if (ath12k_check_erp_power_down(ab->ag) &&

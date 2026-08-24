@@ -229,7 +229,8 @@ void ath12k_wifi8_umac_reset_handle_pre_reset(struct ath12k_base *ab)
 
 	cumac_ab = ath12k_dp_get_ab_from_dp_hw_group(ag->dp_hw_grp);
 
-	if (test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &cumac_ab->dev_flags)) {
+	if (test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &cumac_ab->dev_flags) &&
+	    !cumac_ab->skip_cumac_hw_reset) {
 		ret = ath12k_cumac_hw_pre_reset(cumac_ab);
 		if (ret) {
 			ath12k_err(ab, "CUMAC HW pre reset failed");
@@ -262,7 +263,6 @@ void ath12k_wifi8_umac_reset_handle_pre_reset(struct ath12k_base *ab)
 
 void ath12k_wifi8_dp_rx_init(struct ath12k_base *ab)
 {
-	ath12k_wifi8_dp_rx_ase_htt_srng_setup(ab);
 	ath12k_wifi8_dp_rx_ring_init(ab);
 	ath12k_dp_umac_rx_desc_cleanup(ab);
 	ath12k_wifi8_dp_rx_wbm_buf_ring_init(ab);
@@ -373,8 +373,9 @@ void ath12k_wifi8_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
 	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset;
 	struct ath12k_hw_group *ag = ab->ag;
 	struct ath12k_base *cumac_ab;
+	struct ath12k_base *partner_ab;
 	unsigned long end;
-	int ret;
+	int i, ret;
 
 	if (!ag)
 		return;
@@ -387,10 +388,11 @@ void ath12k_wifi8_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
 
 	cumac_ab = ath12k_dp_get_ab_from_dp_hw_group(ag->dp_hw_grp);
 
-	if (test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &cumac_ab->dev_flags)) {
+	if (test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &cumac_ab->dev_flags) &&
+	    !cumac_ab->skip_cumac_hw_reset) {
 		ret = ath12k_cumac_hw_reset(cumac_ab);
 		if (ret) {
-			ath12k_err(ab, "CUMAC HW post reset failed");
+			ath12k_err(ab, "CUMAC HW reset failed");
 			return;
 		}
 	}
@@ -414,7 +416,12 @@ void ath12k_wifi8_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
 	ath12k_q_post_reset_task(cumac_ab, ath12k_wifi8_dp_wbm_idle_init);
 	ath12k_q_post_reset_task(cumac_ab, ath12k_wifi8_dp_rx_mgmt_init);
 	ath12k_q_post_reset_task(cumac_ab, ath12k_wifi8_clean_pending_ast_entries);
-	ath12k_q_post_reset_task(cumac_ab, ath12k_dp_tid_cleanup);
+	for (i = 0; i < ag->num_devices; i++) {
+		partner_ab = ag->ab[i];
+		if (!partner_ab)
+			continue;
+		ath12k_q_post_reset_task(partner_ab, ath12k_dp_tid_cleanup);
+	}
 	/* Telemetry UMAC setup must run after ring setup tasks are queued. */
 	ath12k_q_post_reset_task(cumac_ab,
 				 ath12k_wifi8_dp_telemetry_umac_setup_wrapper);
@@ -480,7 +487,8 @@ void ath12k_wifi8_umac_reset_handle_post_reset_complete(struct ath12k_base *ab)
 
 	/* Handle only once */
 	if (mlo_umac_reset->initiator_chip == ab->device_id &&
-	    test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &cumac_ab->dev_flags)) {
+	    test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &cumac_ab->dev_flags) &&
+	    !cumac_ab->skip_cumac_hw_reset) {
 		ret = ath12k_cumac_hw_post_reset(cumac_ab);
 		if (ret) {
 			ath12k_err(ab, "CUMAC HW post reset failed");
@@ -494,6 +502,9 @@ void ath12k_wifi8_umac_reset_handle_post_reset_complete(struct ath12k_base *ab)
 		ath12k_dp_tid_map_precedence(ab->ag->dp_hw_grp);
 		ath12k_hif_irq_enable(cumac_ab);
 		ath12k_hif_mgmt_irq_enable(cumac_ab);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+		ath12k_wifi8_umac_reset_ppeds_start(cumac_ab);
+#endif
 		clear_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &cumac_ab->dev_flags);
 	}
 
@@ -677,19 +688,19 @@ static int ath12k_check_umac_reset_prerequisites(struct ath12k_base *ab, u32 arg
 	ret = ath12k_check_pmac_idle(ab);
 	if (ret) {
 		ath12k_err(ab, "pmac idle check failed");
-		return ret;
+		ATH12K_CUMAC_RESET_ERR_INC(ab, pmac_idle_fail);
 	}
 
 	ret = ath12k_check_dmac_idle(ab);
 	if (ret) {
 		ath12k_err(ab, "dmac idle check failed");
-		return ret;
+		ATH12K_CUMAC_RESET_ERR_INC(ab, dmac_idle_fail);
 	}
 
 	ret = ath12k_check_mxi_idle(ab, HAL_SEQ_WCSS_UMAC_MXI_REG);
 	if (ret) {
 		ath12k_err(ab, "umxi idle check failed");
-		return ret;
+		ATH12K_CUMAC_RESET_ERR_INC(ab, umac_idle_fail);
 	}
 
 	return 0;
@@ -745,6 +756,7 @@ static int ath12k_pause_global_wsi(struct ath12k_base *ab, u32 pause)
 				    HAL_SEQ_WCSS_MAC_WSIB_REG + HAL_MAC_WSIB_IDLE_STATUS,
 				    ath12k_hif_read32(ab, HAL_SEQ_WCSS_MAC_WSIB_REG +
 						      HAL_MAC_WSIB_IDLE_STATUS));
+			ATH12K_CUMAC_RESET_ERR_INC(ab, wsi_idle_fail);
 			/* Read the value of CFG and write back after WSI reset */
 			value = ath12k_hif_read32(ab, HAL_SEQ_WCSS_MAC_WSIB_REG +
 						  HAL_MAC_WSIB_CFG);
@@ -788,6 +800,7 @@ static int ath12k_pmac_tx_flush(struct ath12k_base *ab, int pmac_hwsch_base,
 			   pmac_hwsch_base + HAL_PMAC_HWSCH_FLUSH_STATUS,
 			   ath12k_hif_read32(ab, pmac_hwsch_base +
 					     HAL_PMAC_HWSCH_FLUSH_STATUS));
+		ATH12K_CUMAC_RESET_ERR_INC(ab, hwsch_flush_fail);
 		return ret;
 	}
 
@@ -863,6 +876,7 @@ static int ath12k_pmac_rx_flush(struct ath12k_base *ab, int pmac_rxpcu_base, int
 			   pmac_rxpcu_base + HAL_PMAC_RXPCU_RX_FLUSH_CTRL,
 			   ath12k_hif_read32(ab, pmac_rxpcu_base +
 					     HAL_PMAC_RXPCU_RX_FLUSH_CTRL));
+		ATH12K_CUMAC_RESET_ERR_INC(ab, pmac_rx_flush_fail);
 		return ret;
 	}
 
@@ -873,6 +887,7 @@ static int ath12k_pmac_rx_flush(struct ath12k_base *ab, int pmac_rxpcu_base, int
 		ath12k_err(ab, "rxdma flush failed at address 0x%x value 0x%x\n",
 			   HAL_SEQ_WCSS_DMAC_DMCMN_REG + isr,
 			   ath12k_hif_read32(ab, HAL_SEQ_WCSS_DMAC_DMCMN_REG + isr));
+		ATH12K_CUMAC_RESET_ERR_INC(ab, rxdma_flush_fail);
 		return ret;
 	}
 
@@ -1043,6 +1058,7 @@ static int ath12k_tcl_idle_check(struct ath12k_base *ab)
 			return 0;
 		ath12k_err(ab, "TCL is idle but HALT_STAT mismatch (expected:0x%lx got:0x%x)",
 			   HAL_TCL_RING_HALT_STAT_MASK, halt_stat);
+		ATH12K_CUMAC_RESET_ERR_INC(ab, tcl_idle_fail);
 		return -EINVAL;
 	}
 
@@ -1050,11 +1066,13 @@ static int ath12k_tcl_idle_check(struct ath12k_base *ab)
 	if (halt_stat == HAL_TCL_RING_HALT_STAT_MASK) {
 		ath12k_err(ab, "TCL HALT_STAT set but TCL not idle (halt_stat:0x%x)",
 			   halt_stat);
+		ATH12K_CUMAC_RESET_ERR_INC(ab, tcl_idle_fail);
 		return -EINVAL;
 	}
 
 	ath12k_err(ab, "TCL not idle and HALT_STAT not set (halt_stat:0x%x)",
 		   halt_stat);
+	ATH12K_CUMAC_RESET_ERR_INC(ab, tcl_idle_fail);
 	/* TODO: Check ARB WAIT state for the rings */
 	return 0;
 }
@@ -1083,9 +1101,42 @@ static int ath12k_halt_tcl(struct ath12k_base *ab, u32 is_halt)
 	return 0;
 }
 
-static int ath12k_enable_sam(struct ath12k_base *ab, u32 arg)
+static int ath12k_sam_idle_check(struct ath12k_base *ab)
 {
-	/* TODO: Implement SAM disable and enable */
+	int ret;
+
+	ret = ath12k_hif_poll32(ab, HAL_SEQ_WCSS_UMAC_UMCMN_REG +
+				HAL_UMCMN_R0_IDLE_SIGNAL,
+				HAL_SAM_IDLE_VALUE, HAL_SAM_IDLE_MASK,
+				HAL_MAC_IDLE_CHECK_DELAY_USEC,
+				HAL_MAC_IDLE_CHECK_TIMEOUT_USEC);
+	if (ret) {
+		ath12k_err(ab, "SAM idle check failed at address 0x%x value 0x%x",
+			   HAL_SEQ_WCSS_UMAC_UMCMN_REG + HAL_UMCMN_R0_IDLE_SIGNAL,
+			   ath12k_hif_read32(ab, HAL_SEQ_WCSS_UMAC_UMCMN_REG +
+					     HAL_UMCMN_R0_IDLE_SIGNAL));
+		ATH12K_CUMAC_RESET_ERR_INC(ab, sam_idle_fail);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int ath12k_enable_sam(struct ath12k_base *ab, u32 enable)
+{
+	int ret;
+
+	ath12k_hif_rmw32(ab, HAL_SEQ_WCSS_UMAC_SAM_REG + HAL_SAM_R0_CONFIG,
+			 HAL_SAM_ENABLE, enable);
+
+	if (!enable) {
+		ret = ath12k_sam_idle_check(ab);
+		if (ret) {
+			ath12k_err(ab, "SAM idle check failed");
+			return ret;
+		}
+	}
+
 	return 0;
 }
 
@@ -1270,56 +1321,15 @@ static int ath12k_tqm_idle_check(struct ath12k_base *ab)
 	ret = ath12k_is_tqm_prefetch_idle(ab);
 	if (ret) {
 		ath12k_err(ab, "TQM prefetch is busy");
+		ATH12K_CUMAC_RESET_ERR_INC(ab, tqm_prefetch_idle_fail);
 		return ret;
 	}
 
 	ret = ath12k_is_tqm_sm_idle(ab);
 	if (ret) {
 		ath12k_err(ab, "TQM state machine is not idle");
+		ATH12K_CUMAC_RESET_ERR_INC(ab, tqm_sm_idle_fail);
 		return ret;
-	}
-
-	return 0;
-}
-
-static int ath12k_reo_idle_check(struct ath12k_base *ab)
-{
-	int ret;
-
-	ret = ath12k_hif_poll32(ab, HAL_SEQ_WCSS_UMAC_REO_REG +	HAL_REO_SM_ALL_IDLE,
-				HAL_REO_SM_ALL_IDLE_VALUE, HAL_REO_SM_ALL_IDLE_MASK,
-				HAL_MAC_IDLE_CHECK_DELAY_USEC,
-				HAL_MAC_IDLE_CHECK_TIMEOUT_USEC);
-	if (ret) {
-		ath12k_err(ab, "REO state machine all idle check failed at address 0x%x value 0x%x",
-			   HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO_SM_ALL_IDLE,
-			   ath12k_hif_read32(ab, HAL_SEQ_WCSS_UMAC_REO_REG +
-					     HAL_REO_SM_ALL_IDLE));
-		return -EINVAL;
-	}
-
-	ret = ath12k_hif_poll32(ab, HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO_IDLE_STATES_IX0,
-				HAL_REO_IDLE_STATES_VALUE, HAL_REO_IDLE_STATES_MASK,
-				HAL_MAC_IDLE_CHECK_DELAY_USEC,
-				HAL_MAC_IDLE_CHECK_TIMEOUT_USEC);
-	if (ret) {
-		ath12k_err(ab, "REO idle states IX0 check failed at address 0x%x value 0x%x",
-			   HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO_IDLE_STATES_IX0,
-			   ath12k_hif_read32(ab, HAL_SEQ_WCSS_UMAC_REO_REG +
-					     HAL_REO_IDLE_STATES_IX0));
-		return -EINVAL;
-	}
-
-	ret = ath12k_hif_poll32(ab, HAL_SEQ_WCSS_UMAC_REO_REG +	HAL_REO_IDLE_STATES_IX1,
-				HAL_REO_IDLE_STATES_VALUE, HAL_REO_IDLE_STATES_MASK,
-				HAL_MAC_IDLE_CHECK_DELAY_USEC,
-				HAL_MAC_IDLE_CHECK_TIMEOUT_USEC);
-	if (ret) {
-		ath12k_err(ab, "REO idle states IX1 check failed at address 0x%x value 0x%x",
-			   HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO_IDLE_STATES_IX1,
-			   ath12k_hif_read32(ab, HAL_SEQ_WCSS_UMAC_REO_REG +
-					     HAL_REO_IDLE_STATES_IX1));
-		return -EINVAL;
 	}
 
 	return 0;
@@ -1366,18 +1376,8 @@ static int ath12k_enable_wbm(struct ath12k_base *ab, u32 enable)
 
 static int ath12k_enable_reo(struct ath12k_base *ab, u32 enable)
 {
-	int ret;
-
 	ath12k_hif_rmw32(ab, HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO1_GEN_ENABLE,
 			 HAL_REO_ENABLE_MASK, enable);
-
-	if (!enable) {
-		ret = ath12k_reo_idle_check(ab);
-		if (ret) {
-			ath12k_err(ab, "REO idle check failed");
-			return ret;
-		}
-	}
 
 	return 0;
 }
@@ -1442,25 +1442,38 @@ static int ath12k_ring_idle_check(struct ath12k_base *ab, int i,
 	return 0;
 }
 
-/* TRSLONE-601: WAR
- * Update the TP of the TQM status ring to ring_size + 32 so that TQM would
- * not backpressure due to FW not reaping the TQM status ring. In Trestles V2,
- * the TQM status would be routed only to the chips indicated by status required
- * bits. And hence this WAR is not required for Trestles V2.
- */
-static void ath12k_update_tqm_status_ring_tp(struct ath12k_base *ab)
+static void ath12k_tqm_tp_timer_handler(struct timer_list *t)
 {
+	struct ath12k_base *ab = from_timer(ab, t, tqm_tp_timer);
 	struct ath12k_hal_wifi8 *hal_wifi8 = ath12k_get_hal_wifi8(&ab->hal);
 	const struct ath12k_hal_reset_rings *reset_ring;
-	u32 ring_base_msb;
-	u32 ring_size;
+	u32 hp;
 
 	reset_ring = &hal_wifi8->reset_rings[HAL_TQM_LOWPRI_STATUS_RING];
 
-	ring_base_msb = ath12k_hif_read32(ab, reset_ring->srng_misc_reg - 12);
-	ring_size = u32_get_bits(ring_base_msb, HAL_TCL1_RING_BASE_MSB_RING_SIZE);
+	/* Mirror the ring HP into the TP so the TQM always sees the ring as
+	 * drained while the FW is not reaping it.
+	 */
+	hp = ath12k_hif_read32(ab, reset_ring->hp);
+	ath12k_hif_write32(ab, reset_ring->hp + 4, hp);
 
-	ath12k_hif_write32(ab, reset_ring->hp + 4, ring_size + 32);
+	mod_timer(&ab->tqm_tp_timer,
+		  jiffies + msecs_to_jiffies(ATH12K_TQM_TP_TIMER_INTERVAL_MS));
+}
+
+void ath12k_wifi8_update_tqm_status_ring_tp(struct ath12k_base *ab, bool enable)
+{
+	if (!ab->hw_params->tqm_status_war)
+		return;
+
+	if (!enable) {
+		del_timer_sync(&ab->tqm_tp_timer);
+		return;
+	}
+
+	timer_setup(&ab->tqm_tp_timer, ath12k_tqm_tp_timer_handler, 0);
+	mod_timer(&ab->tqm_tp_timer,
+		  jiffies + msecs_to_jiffies(ATH12K_TQM_TP_TIMER_INTERVAL_MS));
 }
 
 
@@ -1532,6 +1545,23 @@ static const u32 umcmn_isr_s_fatal_mask[] = {
 	[30] = 0x00000AAA,
 };
 
+static const struct ath12k_tqm_sm_state tqm_sm_pairs[] = {
+	{ HAL_TQM_SM_STATES_IX0, HAL_TQM_BANK_SM_STATES_IX0 },
+	{ HAL_TQM_SM_STATES_IX1, HAL_TQM_BANK_SM_STATES_IX1 },
+	{ HAL_TQM_SM_STATES_IX2, HAL_TQM_BANK_SM_STATES_IX2 },
+	{ HAL_TQM_SM_STATES_IX3, HAL_TQM_BANK_SM_STATES_IX3 },
+	{ HAL_TQM_SM_STATES_IX4, HAL_TQM_BANK_SM_STATES_IX4 },
+	{ HAL_TQM_SM_STATES_IX5, HAL_TQM_BANK_SM_STATES_IX5 },
+	{ HAL_TQM_SM_STATES_IX6, HAL_TQM_BANK_SM_STATES_IX6 },
+	{ HAL_TQM_SM_STATES_IX7, HAL_TQM_BANK_SM_STATES_IX7 },
+	{ HAL_TQM_SM_STATES_IX8, HAL_TQM_BANK_SM_STATES_IX8 },
+	{ HAL_TQM_SM_STATES_IX9, HAL_TQM_BANK_SM_STATES_IX9 },
+	{ HAL_TQM_SM_STATES_IX10, HAL_TQM_BANK_SM_STATES_IX10 },
+	{ HAL_TQM_SM_STATES_IX11, HAL_TQM_BANK_SM_STATES_IX11 },
+	{ HAL_TQM_SM_STATES_IX12, HAL_TQM_BANK_SM_STATES_IX12 },
+	{ HAL_TQM_SM_STATES_IX13, HAL_TQM_BANK_SM_STATES_IX13 },
+};
+
 static void ath12k_clear_isr_registers(struct ath12k_base *ab)
 {
 	int i;
@@ -1556,9 +1586,6 @@ static void ath12k_clear_isr_registers(struct ath12k_base *ab)
 
 static int ath12k_clear_pending_interrupts(struct ath12k_base *ab, u32 arg)
 {
-	/* TRSLONE-601: WAR */
-	ath12k_update_tqm_status_ring_tp(ab);
-
 	ath12k_clear_isr_registers(ab);
 
 	ath12k_umcmn_irq_enable(ab);
@@ -1570,12 +1597,18 @@ static int ath12k_clear_pending_interrupts(struct ath12k_base *ab, u32 arg)
 static int ath12k_umac_ring_enable(struct ath12k_base *ab, u32 enable)
 {
 	int i, ret;
+	u32 val;
 
 	struct ath12k_hal_wifi8 *hal_wifi8 = ath12k_get_hal_wifi8(&ab->hal);
 	const struct ath12k_hal_reset_rings *reset_rings;
 
 	for (i = 0; i < HAL_RESET_RING_TYPE_MAX; i++) {
 		reset_rings = &hal_wifi8->reset_rings[i];
+
+		/* If LSB is not programmed, skip enable and disable of the ring */
+		val = ath12k_hif_read32(ab, reset_rings->srng_misc_reg - 16);
+		if (!val)
+			continue;
 
 		if (reset_rings->consumer_prefetch_timer)
 			ath12k_hif_write32(ab, reset_rings->consumer_prefetch_timer,
@@ -1592,6 +1625,8 @@ static int ath12k_umac_ring_enable(struct ath12k_base *ab, u32 enable)
 				if (ret) {
 					ath12k_err(ab, "MLO %d ring idle check failed",
 						   i);
+					ATH12K_CUMAC_RESET_ERR_INC(ab,
+								   mlo_ring_idle_fail);
 					return -EINVAL;
 				}
 			}
@@ -1599,6 +1634,7 @@ static int ath12k_umac_ring_enable(struct ath12k_base *ab, u32 enable)
 			ret = ath12k_ring_idle_check(ab, i, reset_rings);
 			if (ret) {
 				ath12k_err(ab, "%d ring idle check failed", i);
+				ATH12K_CUMAC_RESET_ERR_INC(ab, ring_idle_fail);
 				return -EINVAL;
 			}
 		}
@@ -1611,6 +1647,7 @@ static int ath12k_umac_ring_enable(struct ath12k_base *ab, u32 enable)
 static int ath12k_umac_ring_reset(struct ath12k_base *ab)
 {
 	int i, ret;
+	u32 val;
 
 	struct ath12k_hal_wifi8 *hal_wifi8 = ath12k_get_hal_wifi8(&ab->hal);
 	const struct ath12k_hal_reset_rings *reset_rings;
@@ -1618,10 +1655,16 @@ static int ath12k_umac_ring_reset(struct ath12k_base *ab)
 	for (i = 0; i < HAL_RESET_RING_TYPE_MAX; i++) {
 		reset_rings = &hal_wifi8->reset_rings[i];
 
+		/* If LSB is not programmed, skip reset of the ring */
+		val = ath12k_hif_read32(ab, reset_rings->srng_misc_reg - 16);
+		if (!val)
+			continue;
+
 		if (reset_rings->consumer_producer_mlo) {
 			ret = ath12k_mlo_ring_idle_check(ab, i, reset_rings);
 			if (ret) {
 				ath12k_err(ab, "MLO %d ring idle check failed", i);
+				ATH12K_CUMAC_RESET_ERR_INC(ab, mlo_ring_idle_fail);
 				return -EINVAL;
 			}
 			ath12k_hif_write32(ab, reset_rings->mlo_doorbell_press, 0);
@@ -1629,6 +1672,7 @@ static int ath12k_umac_ring_reset(struct ath12k_base *ab)
 			ret = ath12k_ring_idle_check(ab, i, reset_rings);
 			if (ret) {
 				ath12k_err(ab, "%d ring idle check failed", i);
+				ATH12K_CUMAC_RESET_ERR_INC(ab, ring_idle_fail);
 				return -EINVAL;
 			}
 		}
@@ -1666,15 +1710,15 @@ static int ath12k_umac_apply_soft_reset(struct ath12k_base *ab, u32 arg)
 	soft_reset_val |= HAL_UMAC_UMRCM_SOFTRESET_VALUE;
 	ath12k_hif_write32(ab, HAL_UMAC_UMRCM_SOFTRESET, soft_reset_val);
 
-	ret = ath12k_enable_tqm(ab, 0);
-	if (ret) {
-		ath12k_err(ab, "RESET: Enable TQM during soft reset failed\n");
-		return ret;
-	}
-
 	ret = ath12k_pause_tqm(ab, 0);
 	if (ret) {
 		ath12k_err(ab, "RESET: Unpause TQM during soft reset failed\n");
+		return ret;
+	}
+
+	ret = ath12k_enable_tqm(ab, 0);
+	if (ret) {
+		ath12k_err(ab, "RESET: Enable TQM during soft reset failed\n");
 		return ret;
 	}
 
@@ -1859,10 +1903,20 @@ static const struct cumac_hw_reset_step post_reset_steps[] = {
 		0,
 		"CUMAC HW Post-reset start"
 	},
+	[CUMAC_HW_POST_RESET_ENABLE_TQM] = {
+		ath12k_enable_tqm,
+		1,
+		"CUMAC HW Enable TQM"
+	},
 	[CUMAC_HW_POST_RESET_CLEAR_INTERRUPTS] = {
 		ath12k_clear_pending_interrupts,
 		0,
 		"CUMAC HW Clear pending interrupts"
+	},
+	[CUMAC_HW_POST_RESET_ENABLE_SAM] = {
+		ath12k_enable_sam,
+		1,
+		"CUMAC HW Enable SAM"
 	},
 	[CUMAC_HW_POST_RESET_ENABLE_WBM] = {
 		ath12k_enable_wbm,
@@ -1893,16 +1947,6 @@ static const struct cumac_hw_reset_step post_reset_steps[] = {
 		ath12k_halt_tcl,
 		0,
 		"CUMAC HW Unhalt TCL"
-	},
-	[CUMAC_HW_POST_RESET_ENABLE_TQM] = {
-		ath12k_enable_tqm,
-		1,
-		"CUMAC HW Enable TQM"
-	},
-	[CUMAC_HW_POST_RESET_ENABLE_SAM] = {
-		ath12k_enable_sam,
-		1,
-		"CUMAC HW Enable SAM"
 	},
 	[CUMAC_HW_POST_RESET_END] = {
 		ath12k_dummy_step,
@@ -1996,11 +2040,31 @@ void ath12k_wifi8_umcmn_irq_enable(struct ath12k_base *ab)
 	ath12k_hif_umcmn_irq_enable(ab);
 }
 
+static bool ath12k_tqm_watchdog_nonfatal(struct ath12k_base *ab)
+{
+	u32 sm_state, bank_state;
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(tqm_sm_pairs); i++) {
+		sm_state = ath12k_hif_read32(ab, HAL_SEQ_WCSS_UMAC_TQM_REG +
+					     tqm_sm_pairs[i].sm);
+		udelay(HAL_MAC_IDLE_CHECK_DELAY_USEC);
+		bank_state = ath12k_hif_read32(ab, HAL_SEQ_WCSS_UMAC_TQM_REG +
+					       tqm_sm_pairs[i].bank);
+
+		/* TQM states are still processing. wdog is non-fatal */
+		if (sm_state != bank_state)
+			return true;
+	}
+
+	return false;
+}
+
 irqreturn_t ath12k_wifi8_umcmn_interrupt_handler(int irq, void *arg)
 {
 	struct ath12k_base *ab = arg;
 	unsigned long isr_p_long;
-	u32 isr_p, isr_s;
+	u32 isr_p, isr_s, fatal;
 	int bit;
 
 	/* Step 1: Read ISR_P to determine which block triggered the interrupt */
@@ -2018,9 +2082,16 @@ irqreturn_t ath12k_wifi8_umcmn_interrupt_handler(int irq, void *arg)
 			continue;
 
 		isr_s = ath12k_hif_read32(ab, umcmn_isr_s_regs[bit]);
+		fatal = isr_s & umcmn_isr_s_fatal_mask[bit];
+
+		if (ab->hw_params->tqm_status_war &&
+		    bit == HAL_UMCMN_ISR_S14_INDEX &&
+		    (fatal & HAL_UMCMN_ISR_S14_TQM_WATCHDOG) &&
+		    ath12k_tqm_watchdog_nonfatal(ab))
+			fatal &= ~HAL_UMCMN_ISR_S14_TQM_WATCHDOG;
 
 		/* Step 3: Check for fatal errors */
-		if (isr_s & umcmn_isr_s_fatal_mask[bit]) {
+		if (fatal) {
 			ath12k_err(ab,
 				   "umcmn fatal error: ISR_P bit %d, ISR_S%d: 0x%08x, fatal_mask: 0x%08x\n",
 				   bit, bit, isr_s, umcmn_isr_s_fatal_mask[bit]);
