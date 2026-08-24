@@ -21548,6 +21548,25 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 		link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_BITRATE);
 	}
 
+	if (rate_info.rxrate.legacy || rate_info.rxrate.nss) {
+		if (rate_info.rxrate.legacy) {
+			link_sinfo->rxrate.legacy = rate_info.rxrate.legacy;
+		} else {
+			link_sinfo->rxrate.mcs = rate_info.rxrate.mcs;
+			link_sinfo->rxrate.nss = rate_info.rxrate.nss;
+			link_sinfo->rxrate.bw = rate_info.rxrate.bw;
+			link_sinfo->rxrate.he_gi = rate_info.rxrate.he_gi;
+			link_sinfo->rxrate.he_dcm = rate_info.rxrate.he_dcm;
+			link_sinfo->rxrate.he_ru_alloc =
+				rate_info.rxrate.he_ru_alloc;
+			link_sinfo->rxrate.eht_gi = rate_info.rxrate.eht_gi;
+			link_sinfo->rxrate.eht_ru_alloc =
+				rate_info.rxrate.eht_ru_alloc;
+		}
+		link_sinfo->rxrate.flags = rate_info.rxrate.flags;
+		link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_RX_BITRATE);
+	}
+
 	rssi_offset = rate_info.rssi_comb + ar->rssi_offsets.avg_nf_dbm;
 	rssi_signal = rate_info.rssi_comb > ar->rssi_offsets.xlna_bypass_threshold ?
 		      rssi_offset + ar->rssi_offsets.xlna_bypass_offset :
@@ -21650,6 +21669,23 @@ void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 		}
 		sinfo->txrate.flags = rate_info.txrate.flags;
 		sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_BITRATE);
+	}
+
+	if (rate_info.rxrate.legacy || rate_info.rxrate.nss) {
+		if (rate_info.rxrate.legacy) {
+			sinfo->rxrate.legacy = rate_info.rxrate.legacy;
+		} else {
+			sinfo->rxrate.mcs = rate_info.rxrate.mcs;
+			sinfo->rxrate.nss = rate_info.rxrate.nss;
+			sinfo->rxrate.bw = rate_info.rxrate.bw;
+			sinfo->rxrate.he_gi = rate_info.rxrate.he_gi;
+			sinfo->rxrate.he_dcm = rate_info.rxrate.he_dcm;
+			sinfo->rxrate.he_ru_alloc = rate_info.rxrate.he_ru_alloc;
+			sinfo->rxrate.eht_gi = rate_info.rxrate.eht_gi;
+			sinfo->rxrate.eht_ru_alloc = rate_info.rxrate.eht_ru_alloc;
+		}
+		sinfo->rxrate.flags = rate_info.rxrate.flags;
+		sinfo->filled |= BIT_ULL(NL80211_STA_INFO_RX_BITRATE);
 	}
 
 	rssi_offset = rate_info.rssi_comb + ar->rssi_offsets.avg_nf_dbm;

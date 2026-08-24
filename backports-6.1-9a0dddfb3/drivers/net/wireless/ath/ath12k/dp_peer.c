@@ -861,6 +861,18 @@ void ath12k_link_peer_get_sta_rate_info_stats(struct ath12k_dp *dp, const u8 *ad
 	rate_info->txrate.he_dcm = link_peer->txrate.he_dcm;
 	rate_info->txrate.he_ru_alloc = link_peer->txrate.he_ru_alloc;
 	rate_info->txrate.flags = link_peer->txrate.flags;
+
+	rate_info->rxrate.legacy = link_peer->rxrate.legacy;
+	rate_info->rxrate.mcs = link_peer->rxrate.mcs;
+	rate_info->rxrate.nss = link_peer->rxrate.nss;
+	rate_info->rxrate.bw = link_peer->rxrate.bw;
+	rate_info->rxrate.he_gi = link_peer->rxrate.he_gi;
+	rate_info->rxrate.he_dcm = link_peer->rxrate.he_dcm;
+	rate_info->rxrate.he_ru_alloc = link_peer->rxrate.he_ru_alloc;
+	rate_info->rxrate.eht_gi = link_peer->rxrate.eht_gi;
+	rate_info->rxrate.eht_ru_alloc = link_peer->rxrate.eht_ru_alloc;
+	rate_info->rxrate.flags = link_peer->rxrate.flags;
+
 	rate_info->rssi_comb = link_peer->rssi_comb;
 	rate_info->signal_avg = ewma_avg_rssi_read(&link_peer->avg_rssi);
 	rate_info->tx_retry_count = link_peer->tx_retry_count;
