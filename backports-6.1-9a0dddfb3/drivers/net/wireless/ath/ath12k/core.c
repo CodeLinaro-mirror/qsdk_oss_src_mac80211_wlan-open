@@ -1849,7 +1849,14 @@ static int ath12k_core_start(struct ath12k_base *ab)
 	/* Indicate the core start in the appropriate group */
 	ath12k_core_to_group_ref_get(ab);
 
-	ath12k_dp_rx_fst_init(ab);
+	/* Skip FST init when IPA arch overrides per-peer RDI routing.
+	 * With IX-register-based routing (WiFi8 IPA), all data traffic is
+	 * steered to reo2sw5 via IX_0 without per-flow FSE rules.  Sending
+	 * HTT_H2T_MSG_TYPE_RX_FSE_SETUP_CFG would needlessly enable the FSE
+	 * cache in firmware, interfering with the IX-based approach.
+	 */
+	if (ath12k_cfg_get(ab, ATH12K_INI_DP_IPA_SFE_ENABLE))
+		ath12k_dp_rx_fst_init(ab);
 	ath12k_wsi_load_info_wsiorder_update(ab);
 
 	ath12k_core_dump_mem_profile_info(ab);

@@ -1741,6 +1741,9 @@ const struct hal_ops hal_qcn9625_ops = {
 	.reo_qdesc_setup = ath12k_wifi8_hal_reo_qdesc_setup,
 	.reo_init_cmd_ring = ath12k_wifi8_hal_reo_init_cmd_ring,
 	.reo_hw_setup = ath12k_wifi8_hal_reo_hw_setup,
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	.reo_hw_setup_ipa = ath12k_wifi8_hal_reo_ring_ipa_ctrl_hash_ix0_setup,
+#endif
 	.cc_config = ath12k_wifi8_hal_cc_config,
 	.srng_hw_disable = ath12k_wifi8_hal_srng_hw_disable,
 	.reset_rx_reo_tid_q = ath12k_wifi8_hal_reset_rx_reo_tid_q,
