@@ -24349,6 +24349,26 @@ ath12k_mac_update_vif_chan_extras(struct ath12k *ar,
                 }
         }
 	spin_unlock_bh(&ar->data_lock);
+
+#ifdef CPTCFG_QCN_EXTN
+	if (ath12k_scan_radio_supported(ar->pdev) &&
+	    ath12k_cfg_get(ar->ab, ATH12K_CFG_RESET_SCAN_SPCL_VAP_STATS_ENABLE)) {
+		struct ath12k_link_vif *arvif;
+
+		spin_lock_bh(&ar->data_lock);
+		list_for_each_entry(arvif, &ar->arvifs, list) {
+			if (!arvif->ahvif)
+				continue;
+			if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR)
+				continue;
+			ath12k_mgmt_stats_scan_radio_tx_reset(arvif->ahvif);
+		}
+		spin_unlock_bh(&ar->data_lock);
+
+		if (ar->dp.dp_mon_pdev)
+			ath12k_dp_mon_pdev_rx_scan_radio_stats_reset(ar->dp.dp_mon_pdev);
+	}
+#endif /* CPTCFG_QCN_EXTN */
 }
 
 static void
