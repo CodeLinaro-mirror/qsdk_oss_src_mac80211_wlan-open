@@ -11346,11 +11346,24 @@ void ath12k_pdev_stats_timer_work(struct wiphy *wiphy, struct wiphy_work *work)
 	 * wiphy workqueue context, causing a deadlock.  The response arrives
 	 * asynchronously via ath12k_update_stats_event() which caches the
 	 * counters in ar->pdev_{rx_clear_count,cycle_count,chan_nf}.
+	 *
+	 * Set pdev_stats_timer_req_pending under data_lock so the event
+	 * handler can distinguish this periodic request from a synchronous
+	 * one and avoid touching shared vdev/bcn lists or signalling
+	 * unrelated fw_stats_done waiters.
 	 */
+	spin_lock_bh(&ar->data_lock);
+	ar->pdev_stats_timer_req_pending = true;
+	spin_unlock_bh(&ar->data_lock);
+
 	ret = ath12k_wmi_send_stats_request_cmd(ar, WMI_REQUEST_PDEV_STAT,
 						 0, ar->pdev->pdev_id);
-	if (ret)
+	if (ret) {
 		ath12k_warn(ar->ab, "pdev stats timer: wmi send failed: %d\n", ret);
+		spin_lock_bh(&ar->data_lock);
+		ar->pdev_stats_timer_req_pending = false;
+		spin_unlock_bh(&ar->data_lock);
+	}
 
 	/* Re-arm for the next interval. */
 	wiphy_delayed_work_queue(wiphy, &ar->pdev_stats_timer,
