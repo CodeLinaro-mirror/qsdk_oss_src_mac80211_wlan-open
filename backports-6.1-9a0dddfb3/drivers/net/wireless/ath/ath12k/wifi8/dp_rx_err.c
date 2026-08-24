@@ -1623,6 +1623,13 @@ ath12k_wifi8_dp_process_reo_rx_err_packets(struct ath12k_dp *dp,
 				&rx_spd[msdu_idx + 1];
 			struct sk_buff *next_msdu = spd_desc_next->msdu;
 
+			/* In case of fragment packets or link descriptor released vaddr
+			 * and next_msdu would not be valid avoid prefetch
+			 */
+			if ((spd_desc_next->rx_mpdu_info.reo_dest_buffer_type !=
+			     HAL_REO_DEST_RING_BUFFER_TYPE_MSDU) || !next_msdu)
+				continue;
+
 			vaddr = spd_desc_next->vaddr;
 
 			prefetch(vaddr);
