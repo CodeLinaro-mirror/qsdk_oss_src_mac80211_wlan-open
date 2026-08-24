@@ -17325,6 +17325,8 @@ ath12k_vendor_pasn_peer_policy[QCA_WLAN_VENDOR_ATTR_PASN_PEER_MAX + 1] = {
 		NLA_POLICY_EXACT_LEN_WARN(WLAN_PMKID_LEN),
 	[QCA_WLAN_VENDOR_ATTR_PASN_PEER_COMEBACK_AFTER] = { .type = NLA_U16 },
 	[QCA_WLAN_VENDOR_ATTR_PASN_PEER_COOKIE] = { .type = NLA_BINARY },
+	[QCA_WLAN_VENDOR_ATTR_PASN_PEER_TYPE] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_PASN_PEER_CONTROL_FLAG] = { .type = NLA_U16 },
 };
 
 static int ath12k_vendor_parse_pasn_peer(struct nlattr *peer_attr,
@@ -17510,6 +17512,155 @@ static int ath12k_vendor_pasn_delete_peer(struct ath12k_link_vif *arvif,
 	return ret;
 }
 
+static int ath12k_vendor_pasn_peer_action(struct ath12k_link_vif *arvif,
+						 struct nlattr **tb, u32 action)
+{
+	const int peer_mac_attr =
+		QCA_WLAN_VENDOR_ATTR_PASN_PEER_MAC_ADDR;
+	const int peer_type_attr =
+		QCA_WLAN_VENDOR_ATTR_PASN_PEER_TYPE;
+	const int ltf_keyseed_attr =
+		QCA_WLAN_VENDOR_ATTR_PASN_PEER_LTF_KEYSEED_REQUIRED;
+	const int control_flag_attr =
+		QCA_WLAN_VENDOR_ATTR_PASN_PEER_CONTROL_FLAG;
+	struct nlattr *peer[QCA_WLAN_VENDOR_ATTR_PASN_PEER_MAX + 1];
+	struct nlattr *peer_attr;
+	int rem;
+
+	if (!tb[QCA_WLAN_VENDOR_ATTR_PASN_PEERS])
+		return -EINVAL;
+
+	ath12k_dbg(arvif->ar->ab, ATH12K_DBG_RTT,
+		   "RTT PASN vendor peer action %u vdev %u\n",
+		   action, arvif->vdev_id);
+
+	nla_for_each_nested(peer_attr,
+			    tb[QCA_WLAN_VENDOR_ATTR_PASN_PEERS], rem) {
+		bool ltf;
+		const u8 *peer_addr;
+		int ret;
+
+		ret = ath12k_vendor_parse_pasn_peer(peer_attr, peer);
+		if (ret) {
+			ath12k_dbg(arvif->ar->ab, ATH12K_DBG_RTT,
+				   "RTT PASN peer parse failed action %u ret %d\n",
+				   action, ret);
+			return ret;
+		}
+
+		peer_addr = nla_data(peer[peer_mac_attr]);
+		if (is_zero_ether_addr(peer_addr)) {
+			ath12k_dbg(arvif->ar->ab, ATH12K_DBG_RTT,
+				   "RTT PASN invalid zero peer addr action %u\n",
+				   action);
+			return -EINVAL;
+		}
+
+		if (action == QCA_WLAN_VENDOR_PASN_ACTION_PEER_CREATE) {
+			u32 peer_type;
+			u8 sec;
+
+			if (!peer[peer_type_attr]) {
+				ath12k_dbg(arvif->ar->ab, ATH12K_DBG_RTT,
+					   "RTT PASN create missing peer type %pM\n",
+					   peer_addr);
+				return -EINVAL;
+			}
+
+			peer_type = nla_get_u32(peer[peer_type_attr]);
+			if (peer_type != ATH12K_PASN_PEER_TYPE_UNSECURE &&
+			    peer_type != ATH12K_PASN_PEER_TYPE_SECURE) {
+				ath12k_dbg(arvif->ar->ab, ATH12K_DBG_RTT,
+					   "RTT PASN create invalid type %u peer %pM\n",
+					   peer_type, peer_addr);
+				return -EINVAL;
+			}
+
+			ltf = peer[ltf_keyseed_attr];
+			if (ltf && peer_type == ATH12K_PASN_PEER_TYPE_UNSECURE) {
+				ath12k_dbg(arvif->ar->ab, ATH12K_DBG_RTT,
+					   "RTT PASN LTF requested for open peer %pM\n",
+					   peer_addr);
+				return -EINVAL;
+			}
+
+			sec = peer_type == ATH12K_PASN_PEER_TYPE_SECURE ?
+				ATH12K_WMI_RTT_PASN_SECURITY_MODE_MAC_SEC :
+				ATH12K_WMI_RTT_PASN_SECURITY_MODE_NONE;
+			if (ltf)
+				sec = ATH12K_WMI_RTT_PASN_SECURITY_MODE_MAC_PHY_SEC;
+
+			ath12k_dbg(arvif->ar->ab, ATH12K_DBG_RTT,
+				   "RTT PASN create peer %pM type %u ltf %u sec %u\n",
+				   peer_addr, peer_type, ltf, sec);
+
+			ret = ath12k_pasn_peer_create_or_update(arvif, NULL,
+								peer_addr, ltf, sec);
+			if (ret) {
+				ath12k_dbg(arvif->ar->ab, ATH12K_DBG_RTT,
+					   "RTT PASN create SW peer failed %pM ret %d\n",
+					   peer_addr, ret);
+				return ret;
+			}
+
+			ret = ath12k_pasn_fw_peer_create(arvif, peer_addr);
+			if (ret) {
+				ath12k_dbg(arvif->ar->ab, ATH12K_DBG_RTT,
+					   "RTT PASN create FW peer failed %pM ret %d\n",
+					   peer_addr, ret);
+				ath12k_pasn_peer_delete(arvif, peer_addr);
+				return ret;
+			}
+
+			continue;
+		}
+
+		if (action == QCA_WLAN_VENDOR_PASN_ACTION_PEER_DELETE) {
+			bool skip_peer_del = false;
+			u16 control_flag;
+
+			if (!peer[control_flag_attr]) {
+				ath12k_dbg(arvif->ar->ab, ATH12K_DBG_RTT,
+					   "RTT PASN delete missing control flag %pM\n",
+					   peer_addr);
+				return -EINVAL;
+			}
+
+			control_flag = nla_get_u16(peer[control_flag_attr]);
+			switch (control_flag) {
+			case ATH12K_PASN_PEER_DELETE_NORMAL:
+			case ATH12K_PASN_PEER_DELETE_FLUSH_KEYS:
+				break;
+			case ATH12K_PASN_PEER_DELETE_ALREADY_DELETED:
+				skip_peer_del = true;
+				break;
+			default:
+				ath12k_dbg(arvif->ar->ab, ATH12K_DBG_RTT,
+					   "RTT PASN delete invalid flag %u peer %pM\n",
+					   control_flag, peer_addr);
+				return -EINVAL;
+			}
+
+			ath12k_dbg(arvif->ar->ab, ATH12K_DBG_RTT,
+				   "RTT PASN delete peer %pM control 0x%x skip %u\n",
+				   peer_addr, control_flag, skip_peer_del);
+
+			ret = ath12k_pasn_fw_peer_delete(arvif, peer_addr,
+							 skip_peer_del);
+			if (ret) {
+				ath12k_dbg(arvif->ar->ab, ATH12K_DBG_RTT,
+					   "RTT PASN delete FW peer failed %pM ret %d\n",
+					   peer_addr, ret);
+				return ret;
+			}
+
+			ath12k_pasn_peer_delete(arvif, peer_addr);
+		}
+	}
+
+	return 0;
+}
+
 static int ath12k_vendor_pasn_auth_peer(struct ath12k_link_vif *arvif,
 					struct nlattr *peer[])
 {
@@ -17580,7 +17731,7 @@ static int ath12k_vendor_pasn_cmd(struct wiphy *wiphy,
 
 	if (tb[QCA_WLAN_VENDOR_ATTR_PASN_ACTION]) {
 		action = nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_PASN_ACTION]);
-		if (action > QCA_WLAN_VENDOR_PASN_ACTION_DELETE_SECURE_RANGING_CONTEXT)
+		if (action > QCA_WLAN_VENDOR_PASN_ACTION_PEER_DELETE)
 			return -EINVAL;
 	}
 
@@ -17593,6 +17744,11 @@ static int ath12k_vendor_pasn_cmd(struct wiphy *wiphy,
 	arvif = ath12k_pasn_arvif_from_wdev(wdev, link_id);
 	if (!arvif || !arvif->ar)
 		return -ENOLINK;
+
+	if (action == QCA_WLAN_VENDOR_PASN_ACTION_PEER_CREATE ||
+	    action == QCA_WLAN_VENDOR_PASN_ACTION_PEER_DELETE)
+		return ath12k_vendor_pasn_peer_action(arvif,
+			(struct nlattr **)tb, action);
 
 	if (!tb[QCA_WLAN_VENDOR_ATTR_PASN_PEERS])
 		return -EINVAL;
