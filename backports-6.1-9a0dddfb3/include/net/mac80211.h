@@ -985,6 +985,7 @@ struct ieee80211_bss_conf {
 	struct cfg80211_smd_params smd_params;
 	struct ieee80211_bss_npca_params npca;
 	bool npca_mode_update;
+	struct cfg80211_uhr_dso_params dso;
 };
 
 /**

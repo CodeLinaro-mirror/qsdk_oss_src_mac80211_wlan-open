@@ -5642,6 +5642,26 @@ struct cfg80211_uhr_npca_params {
 };
 
 /**
+ * struct cfg80211_uhr_dso_params - DSO (Dynamic Subband Operation) params
+ * @enable: enable (true) or disable (false) DSO feature
+ * @mode_update: true if DSO was already enabled on this link before this
+ *	update, i.e. this is a parameter update rather than a fresh enable.
+ *	Computed internally from the link's previous DSO state;
+ *	not set by the caller.
+ * @subband: preferred 80 MHz subband index (0-3) for DSO operation
+ * @padding_delay: DSO padding delay; indicates the time in units of 4 μs (0 = not set)
+ * @switch_back_delay: DSO switching back delay; indicates the time
+ *	in units of 4 μs (0 = not set)
+ */
+struct cfg80211_uhr_dso_params {
+	bool enable;
+	bool mode_update;
+	u8 subband;
+	u8 padding_delay;
+	u8 switch_back_delay;
+};
+
+/**
  * struct cfg80211_uhr_mode_update_params - UHR mode update parameters
  *
  * Parameters for the %NL80211_CMD_UHR_MODE_UPDATE command, used to
@@ -5649,10 +5669,14 @@ struct cfg80211_uhr_npca_params {
  *
  * @npca_update: per-link flags indicating which links have NPCA params to update
  * @npca: per-link NPCA parameters, indexed by link ID
+ * @dso_update: per-link flags indicating which links have DSO params to update
+ * @dso: per-link DSO parameters, indexed by link ID
  */
 struct cfg80211_uhr_mode_update_params {
 	bool npca_update[IEEE80211_MLD_MAX_NUM_LINKS];
 	struct cfg80211_uhr_npca_params npca[IEEE80211_MLD_MAX_NUM_LINKS];
+	bool dso_update[IEEE80211_MLD_MAX_NUM_LINKS];
+	struct cfg80211_uhr_dso_params dso[IEEE80211_MLD_MAX_NUM_LINKS];
 };
 
 /**

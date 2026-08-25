@@ -1412,7 +1412,12 @@
  *	optional NPCA (Non-Primary Channel Access) feature parameters such as
  *	%NL80211_UHR_MODE_UPDATE_ATTR_NPCA_ENABLE,
  *	%NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCH_DELAY and
- *	%NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCHBACK_DELAY.
+ *	%NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCHBACK_DELAY, plus the DSO
+ *	(Dynamic Subband Operation) feature parameters
+ *	%NL80211_UHR_MODE_UPDATE_ATTR_DSO_ENABLE,
+ *	%NL80211_UHR_MODE_UPDATE_ATTR_DSO_SUBBAND,
+ *	%NL80211_UHR_MODE_UPDATE_ATTR_DSO_PADDING_DELAY,
+ *	%NL80211_UHR_MODE_UPDATE_ATTR_DSO_SWITCH_BACK_DELAY.
  *
  * @NL80211_CMD_CRITICAL_UPDATE: Command sent by hostapd to initiate a
  *	Critical Update (CU) session on an AP link. Requires
@@ -3243,7 +3248,7 @@ enum nl80211_commands {
  *
  * @NL80211_ATTR_UHR_MODE_UPDATE_PARAMS: Nested attribute carrying per-link
  *	UHR mode update parameters for %NL80211_CMD_UHR_MODE_UPDATE. Each
- *	nested element contains a link ID and optional NPCA sub-attributes
+ *	nested element contains a link ID and optional NPCA/DSO sub-attributes
  *	(see &enum nl80211_uhr_mode_update_attrs).
  *
  * @NL80211_ATTR_CU_TYPE: (u8) Critical Update type, see &enum nl80211_cu_type.
@@ -9720,6 +9725,16 @@ enum nl80211_dcvs_attrs {
  * @NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCHBACK_DELAY: (u8) Delay in
  *	milliseconds before switching back to the primary channel.
  *
+ * DSO (Dynamic Subband Operation) feature attribute:
+ * @NL80211_UHR_MODE_UPDATE_ATTR_DSO_ENABLE: (u8) Enable/disable DSO
+ *	feature. 0 = disable, 1 = enable.
+ * @NL80211_UHR_MODE_UPDATE_ATTR_DSO_SUBBAND: (u8) Preferred 80 MHz
+ *	subband index (0-3) for DSO operation.
+ * @NL80211_UHR_MODE_UPDATE_ATTR_DSO_PADDING_DELAY: (u8) DSO padding delay
+ *	in units of 4 us,
+ * @NL80211_UHR_MODE_UPDATE_ATTR_DSO_SWITCH_BACK_DELAY: (u8) DSO switch-back
+ *	delay in units of 4 us,
+ *
  * @__NL80211_UHR_MODE_UPDATE_ATTR_LAST: internal use
  * @NL80211_UHR_MODE_UPDATE_ATTR_MAX: highest UHR mode update attribute
  */
@@ -9731,6 +9746,11 @@ enum nl80211_uhr_mode_update_attrs {
 	NL80211_UHR_MODE_UPDATE_ATTR_NPCA_ENABLE,
 	NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCH_DELAY,
 	NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCHBACK_DELAY,
+
+	NL80211_UHR_MODE_UPDATE_ATTR_DSO_ENABLE,
+	NL80211_UHR_MODE_UPDATE_ATTR_DSO_SUBBAND,
+	NL80211_UHR_MODE_UPDATE_ATTR_DSO_PADDING_DELAY,
+	NL80211_UHR_MODE_UPDATE_ATTR_DSO_SWITCH_BACK_DELAY,
 
 	/* keep last */
 	__NL80211_UHR_MODE_UPDATE_ATTR_LAST,

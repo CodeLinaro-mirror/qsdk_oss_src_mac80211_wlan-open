@@ -1294,6 +1294,13 @@ nl80211_uhr_mode_update_policy[NL80211_UHR_MODE_UPDATE_ATTR_MAX + 1] = {
 		NLA_POLICY_RANGE(NLA_U8, 0, 63),
 	[NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCHBACK_DELAY] =
 		NLA_POLICY_RANGE(NLA_U8, 0, 63),
+	[NL80211_UHR_MODE_UPDATE_ATTR_DSO_ENABLE] = NLA_POLICY_RANGE(NLA_U8, 0, 1),
+	[NL80211_UHR_MODE_UPDATE_ATTR_DSO_SUBBAND] =
+		NLA_POLICY_RANGE(NLA_U8, 0, 3),
+	[NL80211_UHR_MODE_UPDATE_ATTR_DSO_PADDING_DELAY] =
+		NLA_POLICY_RANGE(NLA_U8, 0, 63),
+	[NL80211_UHR_MODE_UPDATE_ATTR_DSO_SWITCH_BACK_DELAY] =
+		NLA_POLICY_RANGE(NLA_U8, 0, 63),
 };
 
 /* policy for the key default flags */
@@ -21294,14 +21301,16 @@ static int nl80211_uhr_mode_update(struct sk_buff *skb, struct genl_info *info)
 	/*
 	 * NL80211_ATTR_UHR_MODE_UPDATE_PARAMS is a nested array where each
 	 * element contains per-link UHR mode parameters. Each element must
-	 * have NL80211_UHR_MODE_UPDATE_ATTR_LINK_ID plus optional NPCA
+	 * have NL80211_UHR_MODE_UPDATE_ATTR_LINK_ID plus optional NPCA/DSO
 	 * attributes.
 	 */
 	nla_for_each_nested(attr, info->attrs[NL80211_ATTR_UHR_MODE_UPDATE_PARAMS],
 			    rem) {
 		struct nlattr *tb[NL80211_UHR_MODE_UPDATE_ATTR_MAX + 1];
 		struct nlattr *sw_delay, *swbk_delay;
+		struct nlattr *dso_en, *dso_sb, *dso_pd, *dso_sbd;
 		const struct ieee80211_sta_uhr_npca_info *npca_info;
+		const struct ieee80211_sta_uhr_cap *uhr_cap;
 		struct cfg80211_internal_bss *intbss;
 		enum nl80211_band band;
 		u8 link_id;
@@ -21361,6 +21370,37 @@ static int nl80211_uhr_mode_update(struct sk_buff *skb, struct genl_info *info)
 			if (swbk_delay)
 				params.npca[link_id].switch_back_delay =
 					nla_get_u8(swbk_delay);
+		}
+
+		dso_en  = tb[NL80211_UHR_MODE_UPDATE_ATTR_DSO_ENABLE];
+		dso_sb  = tb[NL80211_UHR_MODE_UPDATE_ATTR_DSO_SUBBAND];
+		dso_pd  = tb[NL80211_UHR_MODE_UPDATE_ATTR_DSO_PADDING_DELAY];
+		dso_sbd = tb[NL80211_UHR_MODE_UPDATE_ATTR_DSO_SWITCH_BACK_DELAY];
+
+		if (dso_en) {
+			uhr_cap = ieee80211_get_uhr_iftype_cap(rdev->wiphy.bands[band],
+							       wdev->iftype);
+			if (!uhr_cap ||
+			    !(uhr_cap->mac.mac_cap[1] &
+			      IEEE80211_UHR_MAC_CAP1_DSO_SUPP))
+				return -EOPNOTSUPP;
+
+			params.dso_update[link_id] = true;
+
+			params.dso[link_id].enable =
+				nla_get_u8(dso_en);
+
+			if (dso_sb)
+				params.dso[link_id].subband =
+					nla_get_u8(dso_sb);
+
+			if (dso_pd)
+				params.dso[link_id].padding_delay =
+					nla_get_u8(dso_pd);
+
+			if (dso_sbd)
+				params.dso[link_id].switch_back_delay =
+					nla_get_u8(dso_sbd);
 		}
 	}
 
