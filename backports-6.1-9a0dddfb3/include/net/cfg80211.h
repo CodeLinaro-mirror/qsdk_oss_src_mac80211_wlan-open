@@ -1300,6 +1300,21 @@ int cfg80211_chandef_dfs_required(struct wiphy *wiphy,
 				  enum nl80211_iftype iftype);
 
 /**
+ * cfg80211_get_chans_dfs_required - check if DFS-required radar channels exist
+ * @wiphy: the wiphy to validate against
+ * @chandef: the channel definition to check. The caller should ensure the
+ *	validity of the chandef being passed
+ * @iftype: the interface type as specified in &enum nl80211_iftype
+ *
+ * Returns:
+ *	1 if any sub-channel is marked %IEEE80211_CHAN_RADAR and is not
+ *	DFS-permissive for @iftype, 0 if none are, or %-EINVAL on error
+ */
+int cfg80211_get_chans_dfs_required(struct wiphy *wiphy,
+				    const struct cfg80211_chan_def *chandef,
+				    enum nl80211_iftype iftype);
+
+/**
  * cfg80211_chandef_dfs_usable - checks if chandef is DFS usable and we
  *				 can/need start CAC on such channel
  * @wiphy: the wiphy to validate against
