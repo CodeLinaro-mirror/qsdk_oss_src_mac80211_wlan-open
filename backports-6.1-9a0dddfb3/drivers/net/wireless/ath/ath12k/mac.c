@@ -33165,8 +33165,8 @@ int ath12k_mac_dynamic_wsi_remap(struct ath12k_base *ab)
 	return ret;
 }
 
-static struct ath12k *ath12k_mac_get_ar_by_center_freq(struct ieee80211_hw *hw,
-						       u16 center_freq)
+struct ath12k *ath12k_mac_get_ar_by_center_freq(struct ieee80211_hw *hw,
+						u16 center_freq)
 {
 	struct ath12k_hw *ah = hw->priv;
 	struct ath12k *ar;
@@ -33180,6 +33180,10 @@ static struct ath12k *ath12k_mac_get_ar_by_center_freq(struct ieee80211_hw *hw,
 
 	return NULL;
 }
+#ifdef CPTCFG_QCN_EXTN
+EXPORT_SYMBOL(ath12k_mac_get_ar_by_center_freq);
+#endif /* CPTCFG_QCN_EXTN */
+
 
 int ath12k_mac_op_get_afc_eirp_pwr(struct ieee80211_hw *hw,
 				   u32 freq,

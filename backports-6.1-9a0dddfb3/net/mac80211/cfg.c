@@ -7620,6 +7620,16 @@ void ieee80211_get_smd_ctx_done(struct ieee80211_vif *vif,
 }
 EXPORT_SYMBOL(ieee80211_get_smd_ctx_done);
 
+#ifdef CPTCFG_QCN_EXTN
+static void ieee80211_nol_regdom_update_locked(struct wiphy *wiphy,
+					       struct ieee80211_channel *channel)
+{
+	struct ieee80211_local *local = wiphy_priv(wiphy);
+
+	ieee80211_nol_regdom_change_locked_extn(local, channel);
+}
+#endif /* CPTCFG_QCN_EXTN */
+
 const struct cfg80211_ops mac80211_config_ops = {
 	.add_virtual_intf = ieee80211_add_iface,
 	.del_virtual_intf = ieee80211_del_iface,
@@ -7758,6 +7768,9 @@ const struct cfg80211_ops mac80211_config_ops = {
 	.critical_update = ieee80211_critical_update_cmd,
 	.set_smd_ctx = ieee80211_set_smd_ctx,
 	.get_smd_ctx = ieee80211_get_smd_ctx,
+#ifdef CPTCFG_QCN_EXTN
+	.nol_regdom_update_locked = ieee80211_nol_regdom_update_locked,
+#endif /* CPTCFG_QCN_EXTN */
 };
 
 void ieee80211_cu_notify(struct ieee80211_hw *hw,

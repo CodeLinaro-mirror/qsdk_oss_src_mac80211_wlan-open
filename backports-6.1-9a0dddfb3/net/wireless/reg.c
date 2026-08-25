@@ -2788,6 +2788,16 @@ static void handle_band_custom(struct wiphy *wiphy,
 	for (i = 0; i < sband->n_channels; i++)
 		handle_channel_custom(wiphy, &sband->channels[i], regd,
 				      MHZ_TO_KHZ(20), 0);
+
+#ifdef CPTCFG_QCN_EXTN
+	if (sband->band == NL80211_BAND_5GHZ && sband->n_channels > 0) {
+		struct cfg80211_registered_device *rdev = wiphy_to_rdev(wiphy);
+
+		if (rdev->ops->nol_regdom_update_locked)
+			rdev->ops->nol_regdom_update_locked(wiphy,
+					&sband->channels[0]);
+	}
+#endif /* CPTCFG_QCN_EXTN */
 }
 
 void
