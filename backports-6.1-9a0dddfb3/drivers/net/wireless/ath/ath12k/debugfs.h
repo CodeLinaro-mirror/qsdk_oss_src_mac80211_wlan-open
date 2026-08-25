@@ -130,6 +130,24 @@ ath12k_dp_latency_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
 	return (dp_pdev->dp_stats_mask & DP_ENABLE_LATENCY_STATS);
 }
 
+static inline bool
+ath12k_dp_qos_msduq_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
+{
+	return (dp_pdev->dp_stats_mask & DP_ENABLE_QOS_MSDUQ_STATS);
+}
+
+static inline bool
+ath12k_dp_scs_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
+{
+	return (dp_pdev->dp_stats_mask & DP_ENABLE_SCS_STATS);
+}
+
+static inline bool
+ath12k_dp_fetch_reo_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
+{
+	return (dp_pdev->dp_stats_mask & DP_ENABLE_FETCH_REO_STATS);
+}
+
 static inline u8 ath12k_debugfs_is_qos_stats_enabled(struct ath12k *ar)
 {
 	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
@@ -396,6 +414,24 @@ ath12k_tid_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
 	return false;
 }
 
+static inline bool
+ath12k_dp_qos_msduq_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
+{
+	return false;
+}
+
+static inline bool
+ath12k_dp_scs_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
+{
+	return false;
+}
+
+static inline bool
+ath12k_dp_fetch_reo_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
+{
+	return false;
+}
+
 static inline u8 ath12k_debugfs_is_qos_stats_enabled(struct ath12k *ar)
 {
 	return 0;
@@ -424,6 +460,7 @@ struct dentry *ath12k_debugfs_erp_create(void)
 #endif /* CPTCFG_ATH12K_DEBUGFS */
 
 void ath12k_init_pktlog(struct ath12k *ar);
+
 void ath12k_deinit_pktlog(struct ath12k *ar);
 void ath12k_htt_pktlog_process(struct ath12k *ar, u8 *data, u32 len);
 void ath12k_htt_ppdu_pktlog_process(struct ath12k *ar, u8 *data, u32 len);

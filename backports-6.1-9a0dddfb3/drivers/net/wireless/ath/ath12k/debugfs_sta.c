@@ -1366,7 +1366,6 @@ void ath12k_debugfs_sta_op_add(struct ieee80211_hw *hw, struct ieee80211_vif *vi
 	debugfs_create_file("delba", 0200, dir, sta, &fops_delba);
 	debugfs_create_file("primary_link_id", 0400, dir, sta, &fops_primary_link_id);
 	debugfs_create_file("primary_link_info", 0400, dir, sta, &fops_primary_link_info);
-	debugfs_create_file("fetch_reo_ctx", 0200, dir, sta, &fops_fetch_reo_ctx);
 }
 EXPORT_SYMBOL(ath12k_debugfs_sta_op_add);
 
@@ -2175,12 +2174,17 @@ void ath12k_debugfs_link_sta_op_add(struct ieee80211_hw *hw,
 		debugfs_create_file("htt_peer_stats_reset", 0600, dir, link_sta,
 				    &fops_htt_peer_stats_reset);
 
+	if (ath12k_dp_qos_msduq_stats_enabled(&ar->dp))
+		debugfs_create_file("qos_msduq", 0400, dir, link_sta->sta,
+				    &fops_qos_msduq);
 
-	debugfs_create_file("qos_msduq", 0400, dir, link_sta->sta,
-			    &fops_qos_msduq);
+	if (ath12k_dp_scs_stats_enabled(&ar->dp))
+		debugfs_create_file("scs", 0400, dir, link_sta->sta,
+				    &fops_scs);
 
-	debugfs_create_file("scs", 0400, dir, link_sta->sta,
-			    &fops_scs);
+	if (ath12k_dp_fetch_reo_stats_enabled(&ar->dp))
+		debugfs_create_file("fetch_reo_ctx", 0200, dir, link_sta->sta,
+				    &fops_fetch_reo_ctx);
 
 #ifdef CPTCFG_ATH12K_CFR
 	if (test_bit(WMI_TLV_SERVICE_CFR_CAPTURE_SUPPORT,
