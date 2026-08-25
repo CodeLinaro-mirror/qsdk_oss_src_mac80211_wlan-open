@@ -5570,6 +5570,7 @@ struct peer_assoc_smd_params {
 	u8 smd_mac_addr[ETH_ALEN];
 	bool dl_data_fwd;
 	bool is_tap;
+	u32 role;
 };
 
 struct peer_assoc_mlo_params {
@@ -5954,8 +5955,7 @@ struct wmi_peer_assoc_mlo_partner_info_params {
 #define ATH12K_WMI_FLAG_PEER_SMD_ENABLED			BIT(0)
 #define ATH12K_WMI_FLAG_PEER_SMD_DL_DATA_FWD			BIT(1)
 #define ATH12K_WMI_FLAG_PEER_SMD_UL_DATA_FWD			BIT(2)
-#define ATH12K_WMI_FLAG_PEER_SMD_ADD_LINK			BIT(3)
-#define ATH12K_WMI_FLAG_PEER_SMD_TAP_LINK			BIT(4)
+#define ATH12K_WMI_FLAG_PEER_SMD_ROLE				GENMASK(6, 3)
 
 struct wmi_peer_assoc_smd_params {
 	__le32 tlv_header;
