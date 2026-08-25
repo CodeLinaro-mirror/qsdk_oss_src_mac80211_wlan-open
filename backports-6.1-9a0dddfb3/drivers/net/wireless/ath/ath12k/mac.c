@@ -23675,21 +23675,19 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 	}
 
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_AP ||
-	    (ahvif->vdev_type == WMI_VDEV_TYPE_STA && arg.is_stadfs_en)) {
-
-		/* For now allow DFS in AP mode/STA mode (when sta_dfs enabled)
-		 * for vdevs except bridge vdev.
+	    ahvif->vdev_type == WMI_VDEV_TYPE_STA) {
+		/* For Scan Radio, disable radar detection and CAC
+		 * by forcing chan_radar and freq2_radar to false.
+		 * This prevents host from starting CAC timers on DFS
+		 * channels for Scan Radio
 		 */
-		if (chandef && !is_bridge_vdev) {
-			/* For Scan Radio, disable radar detection and CAC
-			 * by forcing chan_radar and freq2_radar to false.
-			 * This prevents host from starting CAC timers on DFS
-			 * channels for Scan Radio
-			 */
-			arg.chan_radar = !ath12k_scan_radio_supported(ar->pdev) &&
-				!!(chandef->chan->flags & IEEE80211_CHAN_RADAR);
-			arg.freq2_radar = !ath12k_scan_radio_supported(ar->pdev) &&
-				ctx->radar_enabled;
+		if (chandef && !is_bridge_vdev &&
+		    !ath12k_scan_radio_supported(ar->pdev)) {
+			arg.chan_radar = !!(chandef->chan->flags & IEEE80211_CHAN_RADAR);
+			arg.freq2_radar =
+				cfg80211_get_chans_dfs_required(hw->wiphy,
+								chandef,
+								ahvif->vif->type);
 		}
 
 		arg.passive = arg.chan_radar;
@@ -23697,8 +23695,6 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 		spin_lock_bh(&ab->base_lock);
 		arg.regdomain = ar->ab->dfs_region;
 		spin_unlock_bh(&ab->base_lock);
-
-		/* TODO: Notify if secondary 80Mhz also needs radar detection */
 	}
 
 	if (is_bridge_vdev)
