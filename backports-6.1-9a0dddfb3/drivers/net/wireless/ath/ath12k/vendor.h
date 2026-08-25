@@ -7242,10 +7242,14 @@ enum qca_wlan_vendor_attr_get_sta_info {
  *
  * @QCA_VENDOR_OEM_DEVICE_PHYSICAL: The command is intended for
  * a physical device.
+ *
+ * @QCA_VENDOR_OEM_DEVICE_RANGING: The command is intended for
+ * a ranging device.
  */
 enum qca_vendor_oem_device_type {
 	QCA_VENDOR_OEM_DEVICE_VIRTUAL = 0,
 	QCA_VENDOR_OEM_DEVICE_PHYSICAL = 1,
+	QCA_VENDOR_OEM_DEVICE_RANGING = 2,
 };
 
 /**
@@ -7272,12 +7276,35 @@ enum qca_vendor_oem_device_type {
  * @QCA_WLAN_VENDOR_ATTR_OEM_DATA_RESPONSE_EXPECTED: This NLA_FLAG attribute
  * is set when the userspace queries data from the firmware. This attribute
  * should not be set when userspace sets the OEM data to the firmware.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_OEM_DATA_CMD_TYPE: This mandatory NLA_U32 attribute
+ * carries RTT ranging command or event type exchanged between userspace
+ * and driver.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_OEM_DATA_LINK_ID: This NLA_U8 attribute carries the
+ * MLO link ID a ranging command applies to. It is mandatory when the
+ * target wireless_dev has more than one valid link and must be omitted for
+ * a non-MLO (legacy) wireless_dev.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_OEM_DATA_IFINDEX: This optional NLA_U32 attribute
+ * carries the network interface index of the target wireless_dev. It is
+ * used to resolve the wireless_dev for the command.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_OEM_DATA_RADIO_IDX: This optional NLA_U8 attribute
+ * carries the physical radio index a ranging command should be
+ * directed to. It is used as a fallback to select the target radio when
+ * the radio cannot be resolved from the MLO link ID alone.
+ * Ex: STA Un Assoc case
  */
 enum qca_wlan_vendor_attr_oem_data_params {
 	QCA_WLAN_VENDOR_ATTR_OEM_DATA_INVALID = 0,
 	QCA_WLAN_VENDOR_ATTR_OEM_DATA_CMD_DATA = 1,
 	QCA_WLAN_VENDOR_ATTR_OEM_DEVICE_INFO = 2,
 	QCA_WLAN_VENDOR_ATTR_OEM_DATA_RESPONSE_EXPECTED = 3,
+	QCA_WLAN_VENDOR_ATTR_OEM_DATA_CMD_TYPE = 4,
+	QCA_WLAN_VENDOR_ATTR_OEM_DATA_LINK_ID = 5,
+	QCA_WLAN_VENDOR_ATTR_OEM_DATA_IFINDEX = 6,
+	QCA_WLAN_VENDOR_ATTR_OEM_DATA_RADIO_IDX = 7,
 
 	/* keep last */
 	QCA_WLAN_VENDOR_ATTR_OEM_DATA_PARAMS_AFTER_LAST,
