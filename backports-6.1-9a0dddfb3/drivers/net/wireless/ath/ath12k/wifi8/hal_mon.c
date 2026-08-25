@@ -2289,7 +2289,9 @@ ath12k_wifi8_hal_mon_parse_user_info(const struct hal_receive_user_info *rx_usr_
 		ru_size += ru_type_80_0;
 		ru_index_per80mhz = ru_start_index_80_0;
 		ru_index = ru_index_per80mhz;
-		ru_index_320mhz |= HAL_RU_PER80(ru_type_80_0, 0, ru_index_per80mhz);
+		if (ru_type_80_0 >= HAL_EHT_RU_484)
+			ru_index_320mhz |= HAL_RU_PER80(ru_type_80_0, 0,
+							ru_index_per80mhz);
 		num_80mhz_with_ru++;
 	}
 
@@ -2300,7 +2302,9 @@ ath12k_wifi8_hal_mon_parse_user_info(const struct hal_receive_user_info *rx_usr_
 		ru_size += ru_type_80_1;
 		ru_index_per80mhz = ru_start_index_80_1;
 		ru_index = ru_index_per80mhz;
-		ru_index_320mhz |= HAL_RU_PER80(ru_type_80_1, 1, ru_index_per80mhz);
+		if (ru_type_80_1 >= HAL_EHT_RU_484)
+			ru_index_320mhz |= HAL_RU_PER80(ru_type_80_1, 1,
+							ru_index_per80mhz);
 		num_80mhz_with_ru++;
 	}
 
@@ -2311,7 +2315,9 @@ ath12k_wifi8_hal_mon_parse_user_info(const struct hal_receive_user_info *rx_usr_
 		ru_size += ru_type_80_2;
 		ru_index_per80mhz = ru_start_index_80_2;
 		ru_index = ru_index_per80mhz;
-		ru_index_320mhz |= HAL_RU_PER80(ru_type_80_2, 2, ru_index_per80mhz);
+		if (ru_type_80_2 >= HAL_EHT_RU_484)
+			ru_index_320mhz |= HAL_RU_PER80(ru_type_80_2, 2,
+							ru_index_per80mhz);
 		num_80mhz_with_ru++;
 	}
 
@@ -2322,7 +2328,9 @@ ath12k_wifi8_hal_mon_parse_user_info(const struct hal_receive_user_info *rx_usr_
 		ru_size += ru_type_80_3;
 		ru_index_per80mhz = ru_start_index_80_3;
 		ru_index = ru_index_per80mhz;
-		ru_index_320mhz |= HAL_RU_PER80(ru_type_80_3, 3, ru_index_per80mhz);
+		if (ru_type_80_3 >= HAL_EHT_RU_484)
+			ru_index_320mhz |= HAL_RU_PER80(ru_type_80_3, 3,
+							ru_index_per80mhz);
 		num_80mhz_with_ru++;
 	}
 
