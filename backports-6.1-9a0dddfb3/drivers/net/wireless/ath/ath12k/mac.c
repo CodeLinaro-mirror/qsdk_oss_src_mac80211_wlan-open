@@ -19684,9 +19684,11 @@ check_rm_action_frame:
 			break;
 		default:
 			/* Beaon Report Response should go in requested frequency */
+#ifdef CPTCFG_QCN_EXTN
 			if (ath12k_is_beacon_report_elem(action_code, buf,
 							 skb->data + skb->len))
 				MGMT_RESET_LINK_AGNOSTIC(can_override_mld_tx, skb_cb);
+#endif /* CPTCFG_QCN_EXTN */
 			return -EINVAL;
 		}
 		break;

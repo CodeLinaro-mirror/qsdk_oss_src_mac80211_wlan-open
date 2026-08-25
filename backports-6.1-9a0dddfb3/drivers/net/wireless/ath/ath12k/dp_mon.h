@@ -1899,8 +1899,10 @@ ath12k_dp_smart_mon_enabled(struct ath12k *ar)
 static inline void
 ath12k_dp_mon_pdev_rx_scan_radio_stats_reset(struct ath12k_pdev_mon_dp *dp_mon_pdev)
 {
+#ifdef CPTCFG_QCN_EXTN
 	memset(&dp_mon_pdev->pdev_mon_dp_extn.rx_scan_radio_stats, 0,
 	       sizeof(dp_mon_pdev->pdev_mon_dp_extn.rx_scan_radio_stats));
+#endif /* CPTCFG_QCN_EXTN */
 }
 
 static inline void

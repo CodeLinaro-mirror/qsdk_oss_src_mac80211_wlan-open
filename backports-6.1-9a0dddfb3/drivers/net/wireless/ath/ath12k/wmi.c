@@ -7879,8 +7879,10 @@ ath12k_fill_band_to_mac_param(struct ath12k_base  *soc,
 			break;
 		}
 
+#ifdef CPTCFG_QCN_EXTN
 		if (ath12k_scan_radio_supported(pdev))
 			pdev->phy_name = ATH12K_PHY_SCAN_RADIO;
+#endif /* CPTCFG_QCN_EXTN */
 	}
 }
 
