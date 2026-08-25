@@ -33751,6 +33751,13 @@ int ath12k_mac_op_sta_uhr_mode_update(struct ieee80211_hw *hw,
 			link_conf->npca.switch_back_delay;
 		link_params[num_links].npca_mode_update = link_conf->npca_mode_update;
 
+		link_params[num_links].dso_enable = link_conf->dso.enable;
+		link_params[num_links].dso_mode_update = link_conf->dso.mode_update;
+		link_params[num_links].dso_subband = link_conf->dso.subband;
+		link_params[num_links].dso_padding_delay = link_conf->dso.padding_delay;
+		link_params[num_links].dso_switch_back_delay =
+			link_conf->dso.switch_back_delay;
+
 		ath12k_dbg(arvif->ar->ab, ATH12K_DBG_WMI,
 			   "UHR OMP: link_id=%u bssid=%pM vdev_id=%u pdev_id=%u hw_link_id=%u npca_en=%u sw_delay=%u swb_delay=%u mode_update=%u\n",
 			   link_id, arvif->bssid, arvif->vdev_id,
