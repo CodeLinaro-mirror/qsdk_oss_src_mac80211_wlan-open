@@ -3700,7 +3700,9 @@ static int ath12k_get_vap_cp_attr_len(void)
 
 	payload_size = nla_total_size(sizeof(u32)) +
 		(nla_total_size(sizeof(u64)) * (QCA_VENDOR_ATTR_TELEMETRY_CP_MAX - 1));
+#ifdef CPTCFG_QCN_EXTN
 	payload_size += ath12k_get_cp_tx_scan_radio_stats_len();
+#endif /* CPTCFG_QCN_EXTN */
 
 	return nla_total_size_nested(payload_size);
 }
@@ -7541,11 +7543,13 @@ static int ath12k_send_cp_event(struct ath12k_telemetry_command *cmd,
 	}
 
 	if (ath12k_scan_radio_supported(ar->pdev)) {
+#ifdef CPTCFG_QCN_EXTN
 		ret = ath12k_fill_cp_tx_scan_radio_stats(vendor_event, mgmt_stats);
 		if (ret) {
 			nla_nest_cancel(vendor_event, attr);
 			return ret;
 		}
+#endif /* CPTCFG_QCN_EXTN */
 		nla_nest_end(vendor_event, attr);
 		return 0;
 	}
