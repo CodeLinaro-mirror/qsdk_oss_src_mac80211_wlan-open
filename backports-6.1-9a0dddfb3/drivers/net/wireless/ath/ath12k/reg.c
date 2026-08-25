@@ -1638,13 +1638,7 @@ ath12k_is_reg_rule_subset_of_chip_range(struct ieee80211_freq_range rule_range,
 	return false;
 }
 
-/**
- * ath12k_get_current_regd() - Get the current regulatory domain
- * @ar: pointer to ath12k
- *
- * Return: pointer to the current regulatory domain or NULL in case of error
- */
-static struct ieee80211_regdomain *ath12k_get_current_regd(struct ath12k *ar)
+struct ieee80211_regdomain *ath12k_get_current_regd(struct ath12k *ar)
 {
 	struct ath12k_base *ab = ar->ab;
 	struct ieee80211_regdomain *regd;

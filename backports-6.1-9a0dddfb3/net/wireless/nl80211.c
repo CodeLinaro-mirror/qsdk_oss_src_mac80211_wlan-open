@@ -23833,7 +23833,8 @@ void nl80211_send_sched_scan(struct cfg80211_sched_scan_request *req, u32 cmd)
 }
 
 static bool nl80211_reg_change_event_fill(struct sk_buff *msg,
-					  struct regulatory_request *request)
+					  struct regulatory_request *request,
+					  struct wiphy *wiphy)
 {
 	/* Userspace can always count this one always being set */
 	if (nla_put_u8(msg, NL80211_ATTR_REG_INITIATOR, request->initiator))
@@ -23861,7 +23862,8 @@ static bool nl80211_reg_change_event_fill(struct sk_buff *msg,
 	}
 
 	if (request->wiphy_idx != WIPHY_IDX_INVALID) {
-		struct wiphy *wiphy = wiphy_idx_to_wiphy(request->wiphy_idx);
+		if (!wiphy)
+			wiphy = wiphy_idx_to_wiphy(request->wiphy_idx);
 
 		if (wiphy &&
 		    nla_put_u32(msg, NL80211_ATTR_WIPHY, request->wiphy_idx))
@@ -23879,10 +23881,6 @@ nla_put_failure:
 	return false;
 }
 
-/*
- * This can happen on global regulatory changes or device specific settings
- * based on custom regulatory domains.
- */
 void nl80211_common_reg_change_event(enum nl80211_commands cmd_id,
 				     struct regulatory_request *request)
 {
@@ -23897,11 +23895,11 @@ void nl80211_common_reg_change_event(enum nl80211_commands cmd_id,
 	if (!hdr)
 		goto nla_put_failure;
 
-	if (!nl80211_reg_change_event_fill(msg, request))
+	if (!nl80211_reg_change_event_fill(msg, request, NULL))
 		goto nla_put_failure;
 
 	genlmsg_end(msg, hdr);
-#if LINUX_VERSION_IS_GEQ(6,6,59)
+#if LINUX_VERSION_IS_GEQ(6, 6, 59)
 	genlmsg_multicast_allns(&nl80211_fam, msg, 0,
 				NL80211_MCGRP_REGULATORY);
 #else
@@ -23914,6 +23912,38 @@ void nl80211_common_reg_change_event(enum nl80211_commands cmd_id,
 nla_put_failure:
 	nlmsg_free(msg);
 }
+void nl80211_wiphy_reg_change_event(struct wiphy *wiphy,
+				    struct regulatory_request *request)
+{
+	struct sk_buff *msg;
+	void *hdr;
+
+	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
+	if (!msg)
+		return;
+
+	hdr = nl80211hdr_put(msg, 0, 0, 0, NL80211_CMD_WIPHY_REG_CHANGE);
+	if (!hdr)
+		goto nla_put_failure;
+
+	if (!nl80211_reg_change_event_fill(msg, request, wiphy))
+		goto nla_put_failure;
+
+	genlmsg_end(msg, hdr);
+#if LINUX_VERSION_IS_GEQ(6, 6, 59)
+	genlmsg_multicast_allns(&nl80211_fam, msg, 0,
+				NL80211_MCGRP_REGULATORY);
+#else
+	genlmsg_multicast_allns(&nl80211_fam, msg, 0,
+				NL80211_MCGRP_REGULATORY,
+				GFP_KERNEL);
+#endif
+	return;
+
+nla_put_failure:
+	nlmsg_free(msg);
+}
+EXPORT_SYMBOL(nl80211_wiphy_reg_change_event);
 
 struct nl80211_mlme_event {
 	enum nl80211_commands cmd;
@@ -24849,7 +24879,7 @@ void nl80211_send_beacon_hint_event(struct wiphy *wiphy,
 	nla_nest_end(msg, nl_freq);
 
 	genlmsg_end(msg, hdr);
-#if LINUX_VERSION_IS_GEQ(6,6,59)
+#if LINUX_VERSION_IS_GEQ(6, 6, 59)
 	genlmsg_multicast_allns(&nl80211_fam, msg, 0,
 				NL80211_MCGRP_REGULATORY);
 #else

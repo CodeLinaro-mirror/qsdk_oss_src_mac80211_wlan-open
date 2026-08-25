@@ -44,6 +44,18 @@ void nl80211_send_scan_msg(struct cfg80211_registered_device *rdev,
 void nl80211_send_sched_scan(struct cfg80211_sched_scan_request *req, u32 cmd);
 void nl80211_common_reg_change_event(enum nl80211_commands cmd_id,
 				     struct regulatory_request *request);
+/**
+ * nl80211_wiphy_reg_change_event - send a per-wiphy reg change event
+ * @wiphy: the wiphy whose channel list changed
+ * @request: the regulatory request describing the change
+ *
+ * Variant of nl80211_common_reg_change_event() for callers that already
+ * hold the wiphy pointer.  Passes @wiphy directly into
+ * nl80211_reg_change_event_fill(), bypassing the wiphy_idx_to_wiphy()
+ * lookup that requires rtnl.  Safe to call with only wiphy_lock held.
+ */
+void nl80211_wiphy_reg_change_event(struct wiphy *wiphy,
+				    struct regulatory_request *request);
 
 static inline void
 nl80211_send_reg_change_event(struct regulatory_request *request)
