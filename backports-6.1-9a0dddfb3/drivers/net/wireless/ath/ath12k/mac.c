@@ -13795,11 +13795,6 @@ static int ath12k_mac_station_assoc(struct ath12k *ar,
 		link_sta = NULL;
 	}
 
-	if (peer_arg->peer_nss < 1) {
-		ath12k_warn(ar->ab,
-			    "invalid peer NSS %d\n", peer_arg->peer_nss);
-		return -EINVAL;
-	}
 	peer_arg->is_assoc = true;
 	ret = ath12k_wmi_send_peer_assoc_cmd(ar, peer_arg);
 	if (ret) {
