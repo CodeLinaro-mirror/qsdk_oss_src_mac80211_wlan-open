@@ -2255,6 +2255,13 @@ struct ath12k {
 	 */
 	struct wiphy_delayed_work pdev_stats_timer;
 	u32 pdev_stats_timer_interval;
+	/* Set while a periodic fire-and-forget PDEV stats request is
+	 * in-flight.  The event handler uses this to distinguish periodic
+	 * requests from synchronous ones so it can update only the pdev
+	 * cache without touching shared vdev/bcn lists or signalling
+	 * unrelated waiters.  Protected by data_lock.
+	 */
+	bool pdev_stats_timer_req_pending;
 	/* Cached pdev counters updated by the periodic stats event.
 	 * Protected by data_lock.  Consumers read these instead of
 	 * issuing a blocking WMI request.

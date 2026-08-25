@@ -14867,6 +14867,7 @@ static void ath12k_update_stats_event(struct ath12k_base *ab, struct sk_buff *sk
 {
 	struct ath12k_fw_stats stats = {};
 	struct ath12k *ar;
+	bool is_timer_req = false;
 	int ret;
 
 	INIT_LIST_HEAD(&stats.pdevs);
@@ -14897,12 +14898,33 @@ static void ath12k_update_stats_event(struct ath12k_base *ab, struct sk_buff *sk
 	if (stats.stats_id == WMI_REQUEST_PDEV_STAT) {
 		struct ath12k_fw_stats_pdev *pdev_entry;
 
-		/* Discard any previously cached pdev entries before splicing
-		 * in the new ones.  Without this, periodic timer firings would
-		 * accumulate entries in ar->fw_stats.pdevs indefinitely.
-		 * data_lock is already held here so this is safe.
-		 */
-		ath12k_fw_stats_free(&ar->fw_stats);
+		/* Capture and clear the periodic-request flag. */
+		is_timer_req = ar->pdev_stats_timer_req_pending;
+		ar->pdev_stats_timer_req_pending = false;
+
+		if (is_timer_req) {
+			/* Periodic timer path: only replace the pdev list.
+			 * Save vdev/bcn/vdev_extd lists, free all stats
+			 * (clears only pdevs since others are detached),
+			 * then restore saved lists.
+			 */
+			LIST_HEAD(saved_vdevs);
+			LIST_HEAD(saved_bcn);
+			LIST_HEAD(saved_vdev_extds);
+
+			list_splice_init(&ar->fw_stats.vdevs, &saved_vdevs);
+			list_splice_init(&ar->fw_stats.bcn, &saved_bcn);
+			list_splice_init(&ar->fw_stats.vdev_extds, &saved_vdev_extds);
+
+			ath12k_fw_stats_free(&ar->fw_stats);
+
+			list_splice(&saved_vdevs, &ar->fw_stats.vdevs);
+			list_splice(&saved_bcn, &ar->fw_stats.bcn);
+			list_splice(&saved_vdev_extds, &ar->fw_stats.vdev_extds);
+		} else {
+			/* Synchronous path: free all stats as before. */
+			ath12k_fw_stats_free(&ar->fw_stats);
+		}
 
 		list_splice_tail_init(&stats.pdevs, &ar->fw_stats.pdevs);
 
@@ -14923,7 +14945,8 @@ static void ath12k_update_stats_event(struct ath12k_base *ab, struct sk_buff *sk
 			ath12k_warn(ar->ab, "pdev stats timer: event received but pdev_entry is NULL\n");
 		}
 
-		complete(&ar->fw_stats_done);
+		if (!is_timer_req)
+			complete(&ar->fw_stats_done);
 		goto complete;
 	}
 
@@ -14931,7 +14954,9 @@ static void ath12k_update_stats_event(struct ath12k_base *ab, struct sk_buff *sk
 	ath12k_wmi_fw_stats_process(ar, &stats);
 
 complete:
-	complete(&ar->fw_stats_complete);
+	/* Only signal fw_stats_complete for synchronous requests. */
+	if (!is_timer_req)
+		complete(&ar->fw_stats_complete);
 	spin_unlock_bh(&ar->data_lock);
 	rcu_read_unlock();
 
