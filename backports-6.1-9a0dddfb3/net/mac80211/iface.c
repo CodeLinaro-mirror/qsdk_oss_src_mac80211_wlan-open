@@ -654,7 +654,8 @@ static void ieee80211_do_stop(struct ieee80211_sub_if_data *sdata, bool going_do
 	 */
 	on_each_cpu((void (*)(void *))ieee80211_unlink_all_skbs, sdata, 1);
 
-	if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN)
+	if (!ieee80211_hw_check(&local->hw, HAS_TX_QUEUE) &&
+		sdata->vif.type == NL80211_IFTYPE_AP_VLAN)
 		ieee80211_txq_remove_vlan(local, sdata);
 
 	sdata->bss = NULL;
@@ -2298,7 +2299,9 @@ int ieee80211_if_add(struct ieee80211_local *local, const char *name,
 				 sizeof(void *));
 		int txq_size = 0;
 
-		if (type != NL80211_IFTYPE_AP_VLAN &&
+
+		if (!ieee80211_hw_check(&local->hw, HAS_TX_QUEUE) &&
+		    type != NL80211_IFTYPE_AP_VLAN &&
 		    (type != NL80211_IFTYPE_MONITOR ||
 		     (params->flags & MONITOR_FLAG_ACTIVE)))
 			txq_size += sizeof(struct txq_info) +
@@ -2353,10 +2356,11 @@ int ieee80211_if_add(struct ieee80211_local *local, const char *name,
 		memcpy(sdata->name, ndev->name, IFNAMSIZ);
 		sdata_info(sdata, "Address assigned:%pM name:%s\n", sdata->vif.addr, sdata->name);
 
-		if (txq_size) {
-			txqi = netdev_priv(ndev) + size;
-			ieee80211_txq_init(sdata, NULL, txqi, 0);
-		}
+		if (!ieee80211_hw_check(&local->hw, HAS_TX_QUEUE))
+			if (txq_size) {
+				txqi = netdev_priv(ndev) + size;
+				ieee80211_txq_init(sdata, NULL, txqi, 0);
+			}
 
 		sdata->dev = ndev;
 	}
