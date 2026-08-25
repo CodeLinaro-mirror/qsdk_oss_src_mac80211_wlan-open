@@ -44,6 +44,8 @@ const struct hal_mon_ops hal_qcn9625_mon_ops_base = {
 		ath12k_wifi8_hal_mon_tx_queue_ext_info_parse,
 	.tx_mpdu_start_info_get =
 		ath12k_wifi8_hal_mon_tx_mpdu_start_info_parse,
+	.tx_msdu_start_info_get =
+		ath12k_wifi8_hal_mon_tx_msdu_start_info_parse,
 	.tx_fes_status_info_get =
 		ath12k_wifi8_hal_mon_tx_fes_status_end_info_parse,
 	.tx_response_end_status_info_get =

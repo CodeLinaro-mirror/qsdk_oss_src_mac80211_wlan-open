@@ -949,6 +949,10 @@ struct hal_tx_mon_packet_info {
  * @packet_info: packet information
  * @rx_status: monitor mode rx status information
  * @rx_user_status: per user status
+ * @spc_pkt_valid: flag set from TX_MPDU_START's txmon_special_pkt bit; gates
+ *	whether the following TX_MSDU_START's metadata is used
+ * @spc_pkt_id: special-packet id derived from TX_MSDU_START metadata, valid
+ *	only when @spc_pkt_valid is set
  */
 struct hal_tx_mon_ppdu_info {
 	u32 ppdu_id;
@@ -963,6 +967,8 @@ struct hal_tx_mon_ppdu_info {
 	    is_sw_filter_done :1,
 	    reserved       :8;
 	u32 prot_tlv_status;
+	u8  spc_pkt_valid;
+	u8  spc_pkt_id;
 	u8  ack_rssi;
 	u8  ba_user_id;
 	struct hal_tx_mon_packet_info packet_info;
@@ -1335,6 +1341,9 @@ struct hal_mon_ops {
 	void (*tx_mpdu_start_info_get)(const void *tlv_data, u32 userid,
 				       struct hal_tx_mon_ppdu_info *info,
 				       u16 tlv_len);
+	void (*tx_msdu_start_info_get)(const void *tlv_data, u32 userid,
+				       struct hal_tx_mon_ppdu_info *info,
+				       u16 tlv_len);
 	void (*tx_fes_status_info_get)(const void *tlv_data, u32 userid,
 				       struct hal_tx_mon_ppdu_info *info,
 				       struct hal_tx_mon_status_info *tx_status_info,
@@ -1542,6 +1551,18 @@ ath12k_hal_mon_tx_mpdu_start_info_get(struct ath12k_hal *hal,
 {
 	if (hal->hal_mon_ops->tx_mpdu_start_info_get)
 		hal->hal_mon_ops->tx_mpdu_start_info_get(tlv, userid,
+							 info, tlv_len);
+}
+
+static inline void
+ath12k_hal_mon_tx_msdu_start_info_get(struct ath12k_hal *hal,
+				      const void *tlv,
+				      u32 userid,
+				      struct hal_tx_mon_ppdu_info *info,
+				      u16 tlv_len)
+{
+	if (hal->hal_mon_ops->tx_msdu_start_info_get)
+		hal->hal_mon_ops->tx_msdu_start_info_get(tlv, userid,
 							 info, tlv_len);
 }
 

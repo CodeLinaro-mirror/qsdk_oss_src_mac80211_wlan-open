@@ -6,6 +6,9 @@
 #ifndef ATH12K_WIFI8_DP_TX_MON_H
 #define ATH12K_WIFI8_DP_TX_MON_H
 
+/* Wi-Fi 8 supports ARP, EAPOL, DHCP, DNS, and ICMP (bits 0 through 4). */
+#define ATH12K_WIFI8_EXT_MON_PKT_CAP_SUPPORTED_PROTOS       0x1F
+
 u8 ath12k_wifi8_get_ext_mon_peer_filter_mode_locked(struct ath12k_pdev_dp *dp_pdev);
 int ath12k_wifi8_dp_ext_mon_filter(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *mpdu);
 void
@@ -21,5 +24,7 @@ int
 ath12k_wifi8_dp_ext_mon_remove_wmi_tx_peers(struct ath12k_pdev_dp *dp_pdev,
 					    struct ath12k_dp_ext_mon_tx_peer_params
 					    *peer_param);
+u32
+ath12k_wifi8_dp_mon_tx_handle_spc_bitmap(struct ath12k_base *ab);
 
 #endif

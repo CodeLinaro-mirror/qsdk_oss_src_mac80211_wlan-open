@@ -213,7 +213,6 @@ ath12k_wifi8_htt_tx_mon_cfg_fill_extended_wmask(struct htt_tx_mon_ring_selection
 		le32_encode_bits(htt_tlv_filter->stat_subtype_data,
 				 HTT_TX_MON_TYPE_EN_STATUS_SUBTYPE_MASK);
 
-
 	/* wifi8-only info0 control bits (BITs 28-29). Safe here: this op is
 	 * only installed on the wifi8 arch-ops, where the HTT skb is sized to
 	 * the full struct. pkt_buf_cnt_en (BIT 31) is encoded unconditionally
@@ -352,6 +351,54 @@ ath12k_wifi8_dp_mon_tx_setup_ext_mon_filter(struct ath12k_pdev_dp *dp_pdev,
 	spin_unlock(&tx_ext_mon->tx_ext_mon_lock);
 }
 
+/* Special packet capture uses the normal full-monitor TLV subscription.
+ * Wi-Fi 8 additionally enables its FW/HW special-packet classifier; retain
+ * the capture lengths requested through the ext-monitor configuration.
+ */
+static void
+ath12k_wifi8_dp_mon_tx_setup_spl_pkt_cap_filter(struct ath12k_pdev_dp *dp_pdev,
+						struct htt_tx_ring_tlv_filter *f)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct ath12k_dp_tx_ext_mon *tx_ext_mon =
+		&dp_mon_pdev->dp_pdev_tx_mon->tx_ext_mon;
+	struct ath12k_dp_tx_ext_mon_config *cfg;
+	struct ath12k_ext_mon_pkt_config ext_mon_filter;
+	u8 mgmt_len, ctrl_len, data_len;
+
+	ath12k_dp_mon_tx_setup_mon_mode_filter(dp_pdev->dp, f);
+	f->mac_addr_filter_en = true;
+	f->special_pkt_filter_en = true;
+	f->mpdu_stat_type_filter_en = false;
+	f->pkt_subtype_mgmt = 0;
+	f->pkt_subtype_ctrl = 0;
+	f->pkt_subtype_data = 0;
+	f->stat_subtype_mgmt = 0;
+	f->stat_subtype_ctrl = 0;
+	f->stat_subtype_data = 0;
+
+	spin_lock(&tx_ext_mon->tx_ext_mon_lock);
+	cfg = tx_ext_mon->tx_ext_mon_config;
+	if (!cfg || (!cfg->fp_enabled && !cfg->fpmo_enabled)) {
+		spin_unlock(&tx_ext_mon->tx_ext_mon_lock);
+		return;
+	}
+
+	/* fp and fpmo use identical capture lengths. */
+	ext_mon_filter = cfg->fp;
+
+	mgmt_len = ext_mon_filter.len[ATH12K_EXT_MON_FRAME_MGMT];
+	f->tx_mon_mgmt_pkt_dma_len =
+		ath12k_dp_mon_tx_get_ext_mon_filter_len(mgmt_len);
+	ctrl_len = ext_mon_filter.len[ATH12K_EXT_MON_FRAME_CTRL];
+	f->tx_mon_ctrl_pkt_dma_len =
+		ath12k_dp_mon_tx_get_ext_mon_filter_len(ctrl_len);
+	data_len = ext_mon_filter.len[ATH12K_EXT_MON_FRAME_DATA];
+	f->tx_mon_data_pkt_dma_len =
+		ath12k_dp_mon_tx_get_ext_mon_filter_len(data_len);
+	spin_unlock(&tx_ext_mon->tx_ext_mon_lock);
+}
+
 /* wifi8 mode-aware TX monitor filter config. Mirrors the wifi7 version:
  * FULL_MONITOR / PKTLOG_HYBRID use the full-monitor filter, EXT_MON_MODE
  * uses the subtype-aware ext-mon filter, and SPL_PKT_CAP does exhaustive
@@ -396,8 +443,8 @@ int ath12k_wifi8_dp_mon_tx_config_filter(struct ath12k_pdev_dp *dp_pdev,
 								    src_tlv_filter);
 			break;
 		case DP_MON_TX_FILTER_SPL_PKT_CAP:
-			ath12k_dp_mon_tx_setup_mon_mode_filter(dp, src_tlv_filter);
-			src_tlv_filter->mac_addr_filter_en = 1;
+			ath12k_wifi8_dp_mon_tx_setup_spl_pkt_cap_filter(dp_pdev,
+									src_tlv_filter);
 			break;
 		default:
 			ath12k_err(NULL, "Tx monitor mode invalid - skipping tx mon mode config\n");
@@ -507,4 +554,14 @@ ath12k_wifi8_dp_ext_mon_remove_wmi_tx_peers(struct ath12k_pdev_dp *dp_pdev,
 		}
 	}
 	return ret;
+}
+
+u32
+ath12k_wifi8_dp_mon_tx_handle_spc_bitmap(struct ath12k_base *ab)
+{
+	u32 bitmap = DP_TX_MON_SPC_BITMAP(ab);
+
+	if (!bitmap || bitmap > ATH12K_WIFI8_EXT_MON_PKT_CAP_SUPPORTED_PROTOS)
+		bitmap = ATH12K_WIFI8_EXT_MON_PKT_CAP_SUPPORTED_PROTOS;
+	return bitmap;
 }

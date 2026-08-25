@@ -72,6 +72,7 @@ const struct ath12k_dp_arch_mon_ops ath12k_wifi8_dp_arch_mon_dual_ring_ops = {
 	.mon_tx_htt_srng_cleanup = ath12k_dp_mon_tx_htt_srng_cleanup,
 	.mon_tx_filter_configure = ath12k_wifi8_dp_mon_tx_config_filter,
 	.mon_tx_filter_update = ath12k_dp_mon_tx_update_ring_filter,
+	.mon_tx_handle_spc_bitmap = ath12k_wifi8_dp_mon_tx_handle_spc_bitmap,
 	/* At Pdev Init/Exit */
 	.mon_tx_dst_ring_alloc_setup = ath12k_dp_mon_tx_dst_ring_alloc_setup,
 	.mon_tx_dst_ring_cleanup = ath12k_dp_mon_tx_dst_ring_cleanup,

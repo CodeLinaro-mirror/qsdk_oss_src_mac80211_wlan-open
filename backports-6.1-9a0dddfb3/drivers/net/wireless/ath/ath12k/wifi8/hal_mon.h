@@ -30,6 +30,8 @@
 	sizeof(struct hal_tx_mon_queue_ext)
 #define HAL_MON_TX_MPDU_START_TLV_SIZE		\
 	sizeof(struct hal_tx_mon_mpdu_start)
+#define HAL_MON_TX_MSDU_START_TLV_SIZE		\
+	sizeof(struct hal_tx_mon_msdu_start)
 #define HAL_MON_TX_FES_STATUS_END_TLV_SIZE	\
 	sizeof(struct hal_tx_mon_fes_status_end)
 #define HAL_MON_TX_RESPONSE_END_TLV_SIZE	\
@@ -1132,25 +1134,53 @@ struct hal_tx_mon_queue_ext_compact {
 } __packed;
 
 #define HAL_TX_MON_MPDU_START_INFO0_SEQ			GENMASK(27, 16)
+#define HAL_TX_MON_MPDU_START_INFO1_TX_NOTIFY_FRAME	GENMASK(8, 6)
+#define HAL_TX_MON_MPDU_START_INFO1_TXMON_SPECIAL_PKT	BIT(13)
 
 struct hal_tx_mon_mpdu_start {
 	__le32 rsvd0[2];
 	__le32 info0;
-	__le32 rsvd1[7];
+	__le32 rsvd1[5];
+	__le32 info1;
+	__le32 rsvd2;
 } __packed;
 
 /* The below hal_tx_mon_mpdu_start_compact structure is tied with the mask value
  * HAL_TX_MON_WMASK_MPDU_START_CFG. If the mask value changes the structure will also
  * change.
- * ipq5424/5332, qcn6432/9274 uses common compact structure as they share same
- * mpdu start wmask.
  */
 
 #define HAL_TX_MON_MPDU_START_INFO0_SEQ_CMPCT		GENMASK(27, 16)
 
 struct hal_tx_mon_mpdu_start_compact {
-	__le32 rsvd0[2];
 	__le32 info0;
+	__le32 rsvd0;
+	__le32 info1;
+	__le32 rsvd1;
+} __packed;
+
+#define HAL_TX_MON_MSDU_START_INFO1_TX_NOTIFY_FRAME_META	GENMASK(31, 17)
+
+/* tx_msdu_start: 8 DWORDs (4 qwords). info1 is at DWORD 6 (qword 3). */
+struct hal_tx_mon_msdu_start {
+	__le32 info0;
+	__le32 rsvd0[5];
+	__le32 info1;
+	__le32 rsvd1;
+} __packed;
+
+/*
+ * The below hal_tx_mon_msdu_start_compact structure is tied with the mask
+ * value HAL_TX_MON_WMASK_MSDU_START_CFG. If the mask value changes the
+ * structure will also change.
+ * Qword-subscription model: bit 0 → qword 0 (DWORDs 0-1), bit 3 → qword 3
+ * (DWORDs 6-7).  The two selected qwords appear consecutively in the TLV.
+ */
+
+struct hal_tx_mon_msdu_start_compact {
+	__le32 info0;
+	__le32 rsvd0;
+	__le32 info1;
 	__le32 rsvd1;
 } __packed;
 
@@ -1900,6 +1930,10 @@ ath12k_wifi8_hal_mon_tx_queue_ext_info_parse(const void *tlv_data, u32 userid,
 					     u16 tlv_len);
 void
 ath12k_wifi8_hal_mon_tx_mpdu_start_info_parse(const void *tlv_data, u32 userid,
+					      struct hal_tx_mon_ppdu_info *ppdu_info,
+					      u16 tlv_len);
+void
+ath12k_wifi8_hal_mon_tx_msdu_start_info_parse(const void *tlv_data, u32 userid,
 					      struct hal_tx_mon_ppdu_info *ppdu_info,
 					      u16 tlv_len);
 void
