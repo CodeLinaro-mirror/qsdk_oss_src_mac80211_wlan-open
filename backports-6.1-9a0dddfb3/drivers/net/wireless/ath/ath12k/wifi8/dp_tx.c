@@ -117,15 +117,16 @@ int ath12k_wifi8_dp_tqm_cmd_send(struct ath12k_base *ab,
 		kfree(dp_cmd);
 		return cmd_num;
 	}
+
+	if (!dp_cmd)
+		return 0;
+
 	//cmd_num starts from 1
 	if (cmd_num == 0) {
 		ath12k_warn(ab, "TQM command returned zero cmd_num");
 		kfree(dp_cmd);
 		return -EINVAL;
 	}
-
-	if (!dp_cmd)
-		return 0;
 
 	dp_cmd->cmd_num = cmd_num;
 	spin_lock_bh(&dp->tqm_cmd_lock);

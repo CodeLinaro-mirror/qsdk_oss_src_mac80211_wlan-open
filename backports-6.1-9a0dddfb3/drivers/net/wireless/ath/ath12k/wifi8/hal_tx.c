@@ -753,8 +753,8 @@ int ath12k_wifi8_hal_tqm_cmd_send(struct ath12k_base *ab, struct hal_srng *srng,
 	struct hal_tlv_64_hdr *tqm_desc;
 	struct hal_tlv_64_hdr *tlv_desc;
 	u32 cmd_size;
-	int ret;
-	int err;
+	int ret = 0;
+	int err = 0;
 
 	if (!ab->tqm_cmd_staging) {
 		ath12k_err(ab, "TQM staging buffer not allocated\n");
