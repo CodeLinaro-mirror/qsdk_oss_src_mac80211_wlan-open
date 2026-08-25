@@ -12,7 +12,7 @@
 #define minidump_crash_type (MINIDUMP_CRASH_TYPE_HOST | MINIDUMP_CRASH_TYPE_FW)
 enum athdbg_minidump_status minidump_state = ENABLE_MINIDUMP;
 
-const char *ath12k_dump_list[] = {
+const char * const ath12k_dump_list[] = {
 	"ath12k",
 	"ath12k_base",
 	"ath12k_dp",
@@ -38,8 +38,12 @@ const char *ath12k_dump_list[] = {
 	"ath12k_dcs_wlan_interference",
 	"wmi_cmd_debug",
 	"wmi_cmd_comp_debug",
-	"wmi_event_debug"
+	"wmi_event_debug",
+	"ieee80211_vif",
+	"ath12k_vif",
 };
+
+const size_t ath12k_dump_list_size = ARRAY_SIZE(ath12k_dump_list);
 
 struct list_head athdbg_minidump_list = LIST_HEAD_INIT(athdbg_minidump_list);
 
@@ -82,10 +86,9 @@ void athdbg_iterate_minidump_list(void)
 void athdbg_create_minidump_struct_list(void)
 {
 	struct athdbg_minidump_info *minidump_node;
-	size_t num_structs = sizeof(ath12k_dump_list) / sizeof(ath12k_dump_list[0]);
 	int i;
 
-	for (i = 0; i < num_structs; i++) {
+	for (i = 0; i < ath12k_dump_list_size; i++) {
 		minidump_node = kzalloc(sizeof(*minidump_node), GFP_ATOMIC);
 		if (minidump_node) {
 			minidump_node->struct_name = ath12k_dump_list[i];

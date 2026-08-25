@@ -33,6 +33,11 @@ struct minidump_file_handler {
 extern struct minidump_file_handler athdbg_debugfs_handlers[];
 extern struct ath_debug_base *athdbg_base;
 
+#if !defined(CPTCFG_MAC80211_ATHMEMDEBUG) && defined(CONFIG_QCA_MINIDUMP)
+extern const char * const ath12k_dump_list[];
+extern const size_t ath12k_dump_list_size;
+#endif
+
 struct athdbg_minidump_info {
 	const char *struct_name;
 	void *start_addr;

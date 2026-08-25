@@ -25,6 +25,35 @@ atomic_t athmem_flag_init_done;
 static struct rb_root athmem_obj_tree_root = RB_ROOT;
 static DEFINE_SPINLOCK(athmem_spinlock);
 
+/* Module-name get local table — pointers into ath_debug __rodata, valid for the
+ * lifetime of this module.  Struct names are not duplicated here; they are
+ * resolved dynamically from ath12k_dump_list (defined in athdbg_minidump.c)
+ * so that any addition to that list is automatically reflected without
+ * touching this file.
+ */
+static const char * const athmem_module_names[] = {
+	"ath12k", "ath12k_wifi6", "ath12k_wifi7", "ath12k_wifi8",
+	"cfg80211", "mac80211",
+};
+
+static const char *athmem_get_local_name(const char *name)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(athmem_module_names); i++) {
+		if (strcmp(name, athmem_module_names[i]) == 0)
+			return athmem_module_names[i];
+	}
+#if !defined(CPTCFG_MAC80211_ATHMEMDEBUG) && defined(CONFIG_QCA_MINIDUMP)
+	for (i = 0; i < ath12k_dump_list_size; i++) {
+		if (strcmp(name, ath12k_dump_list[i]) == 0)
+			return ath12k_dump_list[i];
+	}
+#endif
+	/* Unknown name: fall back to a heap copy so the node still owns it. */
+	return kstrdup(name, GFP_ATOMIC);
+}
+
 struct athmem_debug_object {
 	struct rb_node rb_node;
 	unsigned long long pointer;
@@ -174,6 +203,23 @@ static struct athmem_debug_object *athmem_find_and_remove_obj(unsigned long ptr)
 	return object;
 }
 
+static void athmem_free_name(const char *name)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(athmem_module_names); i++) {
+		if (name == athmem_module_names[i])
+			return;
+	}
+#if !defined(CPTCFG_MAC80211_ATHMEMDEBUG) && defined(CONFIG_QCA_MINIDUMP)
+	for (i = 0; i < ath12k_dump_list_size; i++) {
+		if (name == ath12k_dump_list[i])
+			return;
+	}
+#endif
+	kfree(name);
+}
+
 static char *athmem_delete_obj_full(unsigned long ptr)
 {
 	struct athmem_debug_object *object;
@@ -183,6 +229,10 @@ static char *athmem_delete_obj_full(unsigned long ptr)
 	if (!object)
 		return NULL;
 	struct_name  = object->struct_name ? kstrdup(object->struct_name, GFP_ATOMIC) : NULL;
+	athmem_free_name(object->struct_name);
+	athmem_free_name(object->module_name);
+	object->struct_name = NULL;
+	object->module_name = NULL;
 	kfree(object);
 	return struct_name;
 }
@@ -469,6 +519,8 @@ void athmem_clear_minidump_and_rb_tree(void)
 		obj = rb_entry(node, struct athmem_debug_object, rb_node);
 		if ((obj->struct_name) && (strlen(obj->struct_name) > 0))
 			athdbg_remove_minidump_segment((void *)(uintptr_t)obj->pointer);
+		athmem_free_name(obj->struct_name);
+		athmem_free_name(obj->module_name);
 		rb_erase(node, &athmem_obj_tree_root);
 		kfree(obj);
 	}
@@ -494,8 +546,8 @@ static void athmem_create_object(unsigned long long ptr, size_t size,
 
 	object->pointer = ptr;
 	object->size = size;
-	object->struct_name = struct_name;
-	object->module_name = module_name;
+	object->struct_name = athmem_get_local_name(struct_name);
+	object->module_name = athmem_get_local_name(module_name);
 
 	spin_lock_irqsave(&athmem_spinlock, flags);
 
@@ -513,6 +565,8 @@ static void athmem_create_object(unsigned long long ptr, size_t size,
 			spin_unlock_irqrestore(&athmem_spinlock, flags);
 			pr_debug("dup ptr incrementing struct name %s ptr = %p",
 				 struct_name, (void *)(uintptr_t)ptr);
+			athmem_free_name(object->struct_name);
+			athmem_free_name(object->module_name);
 			kfree(object);
 			return;
 		}
