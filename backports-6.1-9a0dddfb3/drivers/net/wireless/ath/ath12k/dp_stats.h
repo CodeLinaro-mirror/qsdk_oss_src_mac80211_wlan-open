@@ -379,6 +379,25 @@ static inline u8 ath12k_preamble_to_rx_mon_proto_idx(u8 preamble_type)
 			DP_PEER_STATS_INC(_handle, _dir, _ring, _field, _link, _delta); \
 	} while (0)
 
+/* PEER DEBUG STATS MACROS */
+#define DP_PEER_DBG_STATS_INC(_handle, _dir, _field, _link, _delta) \
+	do { \
+		if (likely(_handle)) \
+			_handle->stats[_link]._dir._field += _delta; \
+	} while (0)
+
+#define DP_PEER_DBG_STATS_PKT_LEN(_handle, _dir, _field, _link, _count, _bytes) \
+	do { \
+		DP_PEER_DBG_STATS_INC(_handle, _dir, _field.packets, _link, _count); \
+		DP_PEER_DBG_STATS_INC(_handle, _dir, _field.bytes, _link, _bytes); \
+	} while (0)
+
+#define DP_PEER_DBG_STATS_COND_INC(_handle, _dir, _field, _link, _cond, _delta) \
+	do { \
+		if (_cond) \
+			DP_PEER_DBG_STATS_INC(_handle, _dir, _field, _link, _delta); \
+	} while (0)
+
 #define DP_PEER_STATS_FIELD_INC(_handle, _field, _delta) \
 	do { \
 		if (likely(_handle)) \
@@ -1031,13 +1050,15 @@ struct ath12k_dp_peer_rx_stats {
 	struct ath12k_dp_pkt_info sent_to_stack_fast;
 	struct ath12k_dp_pkt_info sent_to_stack_ucast_fast;
 	struct ath12k_dp_pkt_info sent_to_stack_mcast_fast;
+};
 
+struct ath12k_dp_peer_rx_dbg_stats {
 	/* Debug and Advance */
-	struct ath12k_dp_pkt_info mcast;
-	struct ath12k_dp_pkt_info ucast;
 	u32 non_amsdu;
 	u32 msdu_part_of_amsdu;
 	u32 mpdu_retry;
+	struct ath12k_dp_pkt_info mcast;
+	struct ath12k_dp_pkt_info ucast;
 	struct ath12k_dp_pkt_info sg;
 };
 
@@ -1045,9 +1066,11 @@ struct ath12k_dp_peer_tx_stats {
 	/* Basic */
 	struct ath12k_dp_pkt_info comp_pkt;
 	struct ath12k_dp_pkt_info tx_success;
-	u32 tx_failed;
 	struct ath12k_dp_pkt_info tx_dropped;
+	u32 tx_failed;
+};
 
+struct ath12k_dp_peer_tx_dbg_stats {
 	/* Debug and Advance */
 	u32 wbm_rel_reason[HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX];
 	u32 tqm_rel_reason[HAL_WBM_TQM_REL_REASON_MAX];
@@ -1094,6 +1117,8 @@ struct ath12k_dp_peer_mmesh_stats {
 struct ath12k_dp_peer_stats {
 	struct ath12k_dp_peer_tx_stats tx[DP_TCL_NUM_RING_MAX];
 	struct ath12k_dp_peer_rx_stats rx[DP_REO_DST_RING_MAX];
+	struct ath12k_dp_peer_tx_dbg_stats tx_dbg;
+	struct ath12k_dp_peer_rx_dbg_stats rx_dbg;
 	struct ath12k_wbm_rx_stats wbm_err;
 	struct ath12k_dp_proto_stats_peer *proto;
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
@@ -1537,6 +1562,8 @@ struct ath12k_rx_peer_stats {
 struct ath12k_dp_preserved_stats {
 	struct ath12k_dp_peer_tx_stats per_pkt_tx[DP_TCL_NUM_RING_MAX];
 	struct ath12k_dp_peer_rx_stats per_pkt_rx[DP_REO_DST_RING_MAX];
+	struct ath12k_dp_peer_tx_dbg_stats tx_dbg;
+	struct ath12k_dp_peer_rx_dbg_stats rx_dbg;
 	struct ath12k_wbm_rx_stats wbm_err;
 	struct ath12k_dp_pkt_info rx_counters;
 };
@@ -1546,6 +1573,12 @@ void ath12k_dp_aggr_per_pkt_tx_stats(struct ath12k_dp_peer_tx_stats *dst,
 				     struct ath12k_dp_peer_tx_stats *src);
 void ath12k_dp_aggr_per_pkt_rx_stats(struct ath12k_dp_peer_rx_stats *dst,
 				     struct ath12k_dp_peer_rx_stats *src);
+void
+ath12k_dp_aggr_per_pkt_tx_dbg_stats(struct ath12k_dp_peer_tx_dbg_stats *dst,
+				    const struct ath12k_dp_peer_tx_dbg_stats *src);
+void
+ath12k_dp_aggr_per_pkt_rx_dbg_stats(struct ath12k_dp_peer_rx_dbg_stats *dst,
+				    const struct ath12k_dp_peer_rx_dbg_stats *src);
 void
 ath12k_dp_update_tx_ppdu_stats_aggr(struct ath12k_pdev_dp *dp_pdev,
 				    struct ath12k_htt_tx_ppdu_stats *dst,
