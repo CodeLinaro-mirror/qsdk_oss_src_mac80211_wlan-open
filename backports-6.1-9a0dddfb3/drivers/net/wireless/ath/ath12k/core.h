@@ -867,6 +867,7 @@ struct ath12k_link_vif {
 	struct ath12k *ar;
 
 	struct wmi_wmm_params_all_arg wmm_params;
+	struct wmi_wmm_params_all_arg muedca_params;
 	struct list_head list;
 
 	bool is_created;

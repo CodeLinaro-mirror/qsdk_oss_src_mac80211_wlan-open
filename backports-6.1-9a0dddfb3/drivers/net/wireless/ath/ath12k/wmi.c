@@ -6057,7 +6057,8 @@ int ath12k_wmi_send_scan_chan_list_cmd(struct ath12k *ar,
 }
 
 int ath12k_wmi_send_wmm_update_cmd(struct ath12k *ar, u32 vdev_id,
-				   struct wmi_wmm_params_all_arg *param)
+				   struct wmi_wmm_params_all_arg *param,
+				   u32 wmm_param_type)
 {
 	struct ath12k_wmi_pdev *wmi = ar->wmi;
 	struct wmi_vdev_set_wmm_params_cmd *cmd;
@@ -6075,7 +6076,7 @@ int ath12k_wmi_send_wmm_update_cmd(struct ath12k *ar, u32 vdev_id,
 						 sizeof(*cmd));
 
 	cmd->vdev_id = cpu_to_le32(vdev_id);
-	cmd->wmm_param_type = 0;
+	cmd->wmm_param_type = cpu_to_le32(wmm_param_type);
 
 	for (ac = 0; ac < WME_NUM_AC; ac++) {
 		switch (ac) {
