@@ -859,6 +859,10 @@ int ath12k_cfr_parse_enh_dma_hdr(struct ath12k *ar, u8 *data,
 				 struct ath12k_cfr_look_up_table *lut,
 				 u32 *length);
 int ath12k_cfr_get_enhanced_aoa_caps(struct ath12k *ar);
+void
+ath12k_wmi_cfr_handle_aoa_data(struct ath12k *ar,
+			       struct ath12k_wmi_enhanced_aoa_phasedelta_parse *parse);
+
 #else
 static inline int ath12k_cfr_init(struct ath12k_base *ab)
 {
@@ -915,5 +919,12 @@ static inline int ath12k_cfr_get_enhanced_aoa_caps(struct ath12k *ar)
 {
 	return 0;
 }
+
+static inline void
+ath12k_wmi_cfr_handle_aoa_data(struct ath12k *ar,
+			       struct ath12k_wmi_enhanced_aoa_phasedelta_parse *parse)
+{
+}
+
 #endif /* CPTCFG_ATH12K_CFR */
 #endif /* ATH12K_CFR_H */

@@ -19083,6 +19083,63 @@ static void ath12k_wmi_parse_cfr_capture_event(struct ath12k_base *ab,
 			   "failed to process cfr cpature ret = %d\n", ret);
 }
 
+static int
+ath12k_wmi_tlv_enh_aoa_phasedelta_parse(struct ath12k_base *ab,
+					u16 tag, u16 len,
+					const void *ptr,
+					void *data)
+{
+	struct ath12k_wmi_enhanced_aoa_phasedelta_parse *parse = data;
+
+	switch (tag) {
+	case WMI_TAG_PDEV_ENHANCED_AOA_PHASEDELTA_EVENT_FIXED_PARAM:
+		memcpy(&parse->fixed_param, ptr, sizeof(parse->fixed_param));
+		break;
+	case WMI_TAG_ARRAY_STRUCT:
+		parse->data_hdr = ptr;
+		parse->num_data_hdr = len / sizeof(*parse->data_hdr);
+		break;
+	case WMI_TAG_ARRAY_UINT32:
+		parse->data_buf = ptr;
+		parse->data_buf_len = len;
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+
+static void
+ath12k_wmi_pdev_enh_aoa_phasedelta_event(struct ath12k_base *ab,
+					 struct sk_buff *skb)
+{
+	struct ath12k_wmi_enhanced_aoa_phasedelta_parse parse = {};
+	struct ath12k *ar;
+
+	if (ath12k_wmi_tlv_iter(ab, skb->data, skb->len,
+				ath12k_wmi_tlv_enh_aoa_phasedelta_parse,
+				&parse)) {
+		ath12k_warn(ab, "Failed to parse enhanced aoa phase delta event");
+		return;
+	}
+
+	if (!parse.data_hdr || !parse.data_buf) {
+		ath12k_warn(ab, "failed to get the enhanced aoa data");
+		return;
+	}
+
+	ar = ath12k_mac_get_ar_by_pdev_id(ab,
+					  __le32_to_cpu(parse.fixed_param.pdev_id));
+	if (!ar) {
+		ath12k_warn(ab, "failed to get the pdev to parse enhanced aoa");
+		return;
+	}
+
+	ath12k_wmi_cfr_handle_aoa_data(ar, &parse);
+}
+
 static void ath12k_process_ocac_complete_event(struct ath12k_base *ab,
 					       struct sk_buff *skb)
 {
@@ -20516,6 +20573,9 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 		break;
 	case WMI_PEER_CFR_CAPTURE_EVENTID:
 		ath12k_wmi_parse_cfr_capture_event(ab, skb);
+		break;
+	case WMI_PDEV_ENHANCED_AOA_PHASEDELTA_EVENTID:
+		ath12k_wmi_pdev_enh_aoa_phasedelta_event(ab, skb);
 		break;
 	case WMI_PDEV_RSSI_DBM_CONVERSION_PARAMS_INFO_EVENTID:
 		ath12k_wmi_rssi_dbm_conversion_param_info(ab, skb);
