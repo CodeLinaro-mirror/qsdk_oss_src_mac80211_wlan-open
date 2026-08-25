@@ -7986,7 +7986,8 @@ static int ath12k_stats_peer_setup(struct ath12k_telemetry_command *cmd)
 	}
 
 	if (cmd->link_id != INVALID_LINK_ID &&
-	    !(ahvif->links_map & BIT(cmd->link_id))) {
+	    (cmd->link_id >= ATH12K_NUM_MAX_LINKS ||
+	     !(ahvif->links_map & BIT(cmd->link_id)))) {
 		ath12k_err(NULL, "Invalid link_id %d in peer stats setup",
 			   cmd->link_id);
 		return -EINVAL;
@@ -8550,7 +8551,8 @@ static int ath12k_stats_vif_setup(struct ath12k_telemetry_command *cmd)
 	}
 
 	if (cmd->link_id != INVALID_LINK_ID &&
-	    !(ahvif->links_map & BIT(cmd->link_id))) {
+	    (cmd->link_id >= ATH12K_NUM_MAX_LINKS ||
+	     !(ahvif->links_map & BIT(cmd->link_id)))) {
 		ath12k_err(NULL, "Invalid link_id");
 		return -EINVAL;
 	}
