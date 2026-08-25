@@ -1235,7 +1235,8 @@ ath12k_dp_netstats_peer_update(struct ath12k_dp_hw *dp_hw,
 			       const u8 *dp_peer_addr,
 			       u8 hw_link_id,
 			       const u8 *peer_mac_filter,
-			       struct rtnl_link_stats64 *stats)
+			       struct rtnl_link_stats64 *stats,
+			       struct ieee80211_vif *vif)
 {
 	struct ath12k_dp_peer *dp_peer = NULL;
 	struct ath12k_dp_link_peer *link_peer = NULL;
@@ -1250,7 +1251,7 @@ ath12k_dp_netstats_peer_update(struct ath12k_dp_hw *dp_hw,
 
 	/* DP: find MLD/legacy peer by MAC address */
 	spin_lock_bh(&dp_hw->peer_hash_lock);
-	dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, dp_peer_addr);
+	dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, dp_peer_addr, vif);
 	if (!dp_peer) {
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		return;

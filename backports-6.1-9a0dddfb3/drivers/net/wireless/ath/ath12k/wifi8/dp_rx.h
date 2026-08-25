@@ -131,15 +131,18 @@ int ath12k_wifi8_dp_rx_process_reo_flush_err(struct ath12k_dp *dp,
 int
 ath12k_wifi8_peer_rx_tid_reo_update_for_smd(struct ath12k_base *ab,
 					    struct ath12k_dp_hw *dp_hw,
+					    struct ieee80211_vif *vif,
 					    const u8 *peer_addr,
 					    struct ath12k_rx_smd_ctx_per_tid *rx_tid_ctx);
 int ath12k_wifi8_peer_rx_tid_svld_reset(struct ath12k_base *ab,
 					struct ath12k_dp_hw *dp_hw,
+					struct ieee80211_vif *vif,
 					const u8 *peer_addr);
 void ath12k_wifi8_peer_rx_tid_reo_clear_vld_cmd_init(struct ath12k_dp_rx_tid *rx_tid,
 						     struct ath12k_hal_reo_cmd *cmd);
 int ath12k_wifi8_peer_rx_tid_reo_clear_vld(struct ath12k_base *ab,
 					   struct ath12k_dp_hw *dp_hw,
+					   struct ieee80211_vif *vif,
 					   const u8 *peer_addr,
 					   u8 tid);
 /* Module parameter: controls whether REO VLD is cleared after fetching SMD ctx.
@@ -153,9 +156,11 @@ int ath12k_wifi8_dp_rx_ase_htt_srng_setup(struct ath12k_base *ab);
 /* SMD BSS Transition: Rx Q Info park / restore */
 int ath12k_wifi8_dp_smd_prep_rx_tid(struct ath12k_dp *dp,
 				    struct ath12k_dp_hw *dp_hw,
+				    struct ieee80211_vif *vif,
 				    const u8 *addr);
 int ath12k_wifi8_dp_smd_exec_rx_tid(struct ath12k_dp *dp,
 				    struct ath12k_dp_hw *dp_hw,
+				    struct ieee80211_vif *vif,
 				    const u8 *addr);
 void ath12k_wifi8_dp_smd_clear_old_peer_rx_lut(struct ath12k_dp *dp,
 					       struct ath12k_dp_peer *dp_peer);

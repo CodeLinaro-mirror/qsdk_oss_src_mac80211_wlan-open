@@ -959,7 +959,7 @@ static bool ath12k_stats_update_ppe_vp(struct net_device *dev, ppe_vp_hw_stats_t
 
 		ah = ahvif->ah;
 		spin_lock_bh(&ah->dp_hw.peer_hash_lock);
-		dp_peer = ath12k_dp_peer_find_by_addr(&ah->dp_hw, sta->addr);
+		dp_peer = ath12k_dp_peer_find_by_addr(&ah->dp_hw, sta->addr, vif);
 		if (dp_peer) {
 			if (dp_peer->assoc_hw_link_id < ATH12K_DP_PEER_MAX_MLO_LINKS)
 				DP_PEER_STATS_PKT_LEN(dp_peer, rx, DP_REO_PPEDS_RING_IDX,

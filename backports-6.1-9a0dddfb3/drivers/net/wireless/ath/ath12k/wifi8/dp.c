@@ -1407,7 +1407,7 @@ int ath12k_wifi8_dp_fetch_replenish_ring_id(struct ath12k_dp *dp)
 }
 
 int ath12k_wifi8_fetch_smd_ctx(struct ath12k_base *ab, struct ath12k_dp_hw *dp_hw,
-			       struct ath12k_dp_smd_ctx *ctx,
+			       struct ieee80211_vif *vif, struct ath12k_dp_smd_ctx *ctx,
 			       void (*rx_cb)(struct ath12k_dp *dp, void *ctx,
 					     struct hal_reo_status *reo_status),
 			       void (*tx_cb)(struct ath12k_dp *dp, void *ctx,
@@ -1424,7 +1424,7 @@ int ath12k_wifi8_fetch_smd_ctx(struct ath12k_base *ab, struct ath12k_dp_hw *dp_h
 			 ctx->in.rx_tid_bitmap == 0xff;
 
 	spin_lock_bh(&dp_hw->peer_hash_lock);
-	dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, ctx->peer_addr);
+	dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, ctx->peer_addr, vif);
 
 	if (!dp_peer) {
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
