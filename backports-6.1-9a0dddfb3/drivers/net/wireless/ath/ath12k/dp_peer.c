@@ -657,6 +657,10 @@ ath12k_dp_capture_link_peer_stats(struct ath12k *ar,
 	for (i = 0; i < DP_REO_DST_RING_MAX; i++)
 		ath12k_dp_aggr_per_pkt_rx_stats(&aggr_stats->per_pkt_rx[i],
 						&dp_peer->stats[stats_link_id].rx[i]);
+	ath12k_dp_aggr_per_pkt_tx_dbg_stats(&aggr_stats->tx_dbg,
+					    &dp_peer->stats[stats_link_id].tx_dbg);
+	ath12k_dp_aggr_per_pkt_rx_dbg_stats(&aggr_stats->rx_dbg,
+					    &dp_peer->stats[stats_link_id].rx_dbg);
 	ath12k_dp_aggr_wbm_rx_stats(&aggr_stats->wbm_err,
 				    &dp_peer->stats[stats_link_id].wbm_err);
 	aggr_stats->rx_counters.packets += peer->rx_packets;

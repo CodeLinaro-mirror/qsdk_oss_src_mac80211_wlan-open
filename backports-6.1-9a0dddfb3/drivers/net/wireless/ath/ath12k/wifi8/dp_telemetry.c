@@ -107,6 +107,7 @@ ath12k_wifi8_dp_update_tx_link_telemetry(struct ath12k_dp_peer *dp_peer,
 {
 	struct ath12k_dp_link_peer_hw_tx_stats *hw_link_tx;
 	struct ath12k_dp_peer_tx_stats *tx;
+	struct ath12k_dp_peer_tx_dbg_stats *tx_dbg;
 	u32 success_packets;
 
 	if (!link_peer->peer_stats.hw_link_stats)
@@ -114,9 +115,10 @@ ath12k_wifi8_dp_update_tx_link_telemetry(struct ath12k_dp_peer *dp_peer,
 
 	/* Use Ring idx 0 to store the stats update from HW desc */
 	tx = &dp_peer->stats[link_id].tx[0];
+	tx_dbg = &dp_peer->stats[link_id].tx_dbg;
 	hw_link_tx = &link_peer->peer_stats.hw_link_stats->hw_link_tx;
 
-	tx->total_msdu_retries +=
+	tx_dbg->total_msdu_retries +=
 		le32_get_bits(band->info2,
 			      TX_PEER_BAND_TELEMETRY_STATS_INFO2_NUM_RETRANSMISSIONS);
 
@@ -134,12 +136,12 @@ ath12k_wifi8_dp_update_tx_link_telemetry(struct ath12k_dp_peer *dp_peer,
 		if (success_packets)
 			WRITE_ONCE(link_peer->peer_stats.last_ack, jiffies);
 
-		tx->ucast.bytes +=
+		tx_dbg->ucast.bytes +=
 			(u64)le32_to_cpu(band->info0) |
 			((u64)le32_get_bits(band->info1,
 			 TX_PEER_BAND_TELEMETRY_STATS_INFO1_UPPER_SUCCESS_BYTES) << 32);
 
-		tx->ucast.packets +=
+		tx_dbg->ucast.packets +=
 		le32_get_bits(band->info1,
 			      TX_PEER_BAND_TELEMETRY_STATS_INFO1_NUM_SUCCESS_PACKETS);
 	} else {
@@ -179,6 +181,7 @@ ath12k_wifi8_dp_update_tx_peer_telemetry(struct ath12k_dp_peer *dp_peer,
 	struct ath12k_dp_pkt_info comp_pkt = {0};
 	struct ath12k_dp_link_peer *link_peer;
 	struct ath12k_dp_peer_tx_stats *tx;
+	struct ath12k_dp_peer_tx_dbg_stats *tx_dbg;
 	int link_id, primary_link_id = -1;
 	u32 failed_pkts, retried_pkts, drop1_pkts;
 	u64 drop_bytes;
@@ -279,10 +282,11 @@ ath12k_wifi8_dp_update_tx_peer_telemetry(struct ath12k_dp_peer *dp_peer,
 	}
 	/* Store MLD-level stats into primary link's stats[primary_link_id].tx[0] */
 	tx = &dp_peer->stats[primary_link_id].tx[0];
+	tx_dbg = &dp_peer->stats[primary_link_id].tx_dbg;
 	tx->comp_pkt.packets += comp_pkt.packets;
 	tx->comp_pkt.bytes   += comp_pkt.bytes;
 	tx->tx_failed        += failed_pkts;
-	tx->retry_count      += retried_pkts;
+	tx_dbg->retry_count += retried_pkts;
 }
 
 /**
@@ -304,21 +308,22 @@ ath12k_wifi8_dp_update_rx_link_telemetry(struct ath12k_dp_peer *dp_peer,
 {
 	struct ath12k_dp_peer_rx_stats *rx;
 	struct ath12k_dp_link_peer_hw_rx_stats *hw_link_rx;
+	struct ath12k_dp_peer_rx_dbg_stats *rx_dbg;
 
 	if (!link_peer->peer_stats.hw_link_stats)
 		return;
 
-	/* Use Ring idx 0 to store the stats update from HW desc */
 	rx = &dp_peer->stats[link_id].rx[0];
+	rx_dbg = &dp_peer->stats[link_id].rx_dbg;
 	hw_link_rx = &link_peer->peer_stats.hw_link_stats->hw_link_rx;
 
 	if (!dp_peer->is_vdev_peer) {
-		rx->ucast.bytes +=
+		rx_dbg->ucast.bytes +=
 		(u64)le32_to_cpu(band->info0) |
 		((u64)le32_get_bits(band->info1,
 		RX_PEER_BAND_TELEMETRY_STATS_INFO1_UPPER_SUCCESS_BYTES) << 32);
 
-		rx->ucast.packets +=
+		rx_dbg->ucast.packets +=
 		le32_get_bits(band->info4,
 		RX_PEER_BAND_TELEMETRY_STATS_INFO4_NUM_SUCES_FST_TRY_UCAST_PKT) +
 		le32_get_bits(band->info5,
