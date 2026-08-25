@@ -4443,6 +4443,7 @@ static int ath12k_open_vdev_stats(struct inode *inode, struct file *file)
 	struct ath12k *ar = inode->i_private;
 	struct ath12k_fw_stats_req_params param;
 	struct ath12k_hw *ah = ath12k_ar_to_ah(ar);
+	void *buf;
 	int ret;
 
 	if (ar->ab->is_bypassed) {
@@ -4458,7 +4459,7 @@ static int ath12k_open_vdev_stats(struct inode *inode, struct file *file)
 	if (ah->state != ATH12K_HW_STATE_ON)
 		return -ENETDOWN;
 
-	void *buf __free(kfree) = kzalloc(ATH12K_FW_STATS_BUF_SIZE, GFP_KERNEL);
+	buf = vzalloc(ATH12K_FW_STATS_BUF_SIZE);
 	if (!buf)
 		return -ENOMEM;
 
@@ -4470,20 +4471,21 @@ static int ath12k_open_vdev_stats(struct inode *inode, struct file *file)
 	ret = ath12k_mac_get_fw_stats(ar, &param);
 	if (ret) {
 		ath12k_warn(ar->ab, "failed to request fw vdev stats: %d\n", ret);
+		vfree(buf);
 		return ret;
 	}
 
 	ath12k_wmi_fw_stats_dump(ar, &ar->fw_stats, param.stats_id,
 				 buf);
 
-	file->private_data = no_free_ptr(buf);
+	file->private_data = buf;
 
 	return 0;
 }
 
 static int ath12k_release_vdev_stats(struct inode *inode, struct file *file)
 {
-	kfree(file->private_data);
+	vfree(file->private_data);
 
 	return 0;
 }
@@ -4511,6 +4513,7 @@ static int ath12k_open_vdev_extd_stats(struct inode *inode, struct file *file)
 	struct ath12k *ar = inode->i_private;
 	struct ath12k_fw_stats_req_params param;
 	struct ath12k_hw *ah = ath12k_ar_to_ah(ar);
+	void *buf;
 	int ret;
 
 	if (ar->ab->is_bypassed) {
@@ -4526,7 +4529,7 @@ static int ath12k_open_vdev_extd_stats(struct inode *inode, struct file *file)
 	if (ah->state != ATH12K_HW_STATE_ON)
 		return -ENETDOWN;
 
-	void *buf __free(kfree) = kzalloc(ATH12K_FW_STATS_BUF_SIZE, GFP_KERNEL);
+	buf = vzalloc(ATH12K_FW_STATS_BUF_SIZE);
 	if (!buf)
 		return -ENOMEM;
 
@@ -4538,20 +4541,21 @@ static int ath12k_open_vdev_extd_stats(struct inode *inode, struct file *file)
 	ret = ath12k_mac_get_fw_stats(ar, &param);
 	if (ret) {
 		ath12k_warn(ar->ab, "failed to request fw vdev extd stats: %d\n", ret);
+		vfree(buf);
 		return ret;
 	}
 
 	ath12k_wmi_fw_stats_dump(ar, &ar->fw_stats, param.stats_id,
 				 buf);
 
-	file->private_data = no_free_ptr(buf);
+	file->private_data = buf;
 
 	return 0;
 }
 
 static int ath12k_release_vdev_extd_stats(struct inode *inode, struct file *file)
 {
-	kfree(file->private_data);
+	vfree(file->private_data);
 
 	return 0;
 }
@@ -4580,6 +4584,7 @@ static int ath12k_open_bcn_stats(struct inode *inode, struct file *file)
 	struct ath12k_link_vif *arvif;
 	struct ath12k_fw_stats_req_params param;
 	struct ath12k_hw *ah = ath12k_ar_to_ah(ar);
+	void *buf;
 	int ret;
 
 	if (ar->ab->is_bypassed) {
@@ -4592,7 +4597,7 @@ static int ath12k_open_bcn_stats(struct inode *inode, struct file *file)
 	if (ah && ah->state != ATH12K_HW_STATE_ON)
 		return -ENETDOWN;
 
-	void *buf __free(kfree) = kzalloc(ATH12K_FW_STATS_BUF_SIZE, GFP_KERNEL);
+	buf = vzalloc(ATH12K_FW_STATS_BUF_SIZE);
 	if (!buf)
 		return -ENOMEM;
 
@@ -4622,14 +4627,14 @@ static int ath12k_open_bcn_stats(struct inode *inode, struct file *file)
 	ath12k_fw_stats_bcn_free(&ar->fw_stats.bcn);
 	spin_unlock_bh(&ar->data_lock);
 
-	file->private_data = no_free_ptr(buf);
+	file->private_data = buf;
 
 	return 0;
 }
 
 static int ath12k_release_bcn_stats(struct inode *inode, struct file *file)
 {
-	kfree(file->private_data);
+	vfree(file->private_data);
 
 	return 0;
 }
@@ -4658,6 +4663,7 @@ static int ath12k_open_pdev_stats(struct inode *inode, struct file *file)
 	struct ath12k_hw *ah = ath12k_ar_to_ah(ar);
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_fw_stats_req_params param;
+	void *buf;
 	int ret;
 
 	if (ar->ab->is_bypassed) {
@@ -4670,7 +4676,7 @@ static int ath12k_open_pdev_stats(struct inode *inode, struct file *file)
 	if (ah && ah->state != ATH12K_HW_STATE_ON)
 		return -ENETDOWN;
 
-	void *buf __free(kfree) = kzalloc(ATH12K_FW_STATS_BUF_SIZE, GFP_KERNEL);
+	buf = vzalloc(ATH12K_FW_STATS_BUF_SIZE);
 	if (!buf)
 		return -ENOMEM;
 
@@ -4681,20 +4687,21 @@ static int ath12k_open_pdev_stats(struct inode *inode, struct file *file)
 	ret = ath12k_mac_get_fw_stats(ar, &param);
 	if (ret) {
 		ath12k_warn(ab, "failed to request fw pdev stats: %d\n", ret);
+		vfree(buf);
 		return ret;
 	}
 
 	ath12k_wmi_fw_stats_dump(ar, &ar->fw_stats, param.stats_id,
 				 buf);
 
-	file->private_data = no_free_ptr(buf);
+	file->private_data = buf;
 
 	return 0;
 }
 
 static int ath12k_release_pdev_stats(struct inode *inode, struct file *file)
 {
-	kfree(file->private_data);
+	vfree(file->private_data);
 
 	return 0;
 }
