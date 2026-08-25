@@ -41,6 +41,9 @@ static void ath12k_wifi8_pci_read_hw_version(struct ath12k_base *ab,
 	soc_hw_version = ath12k_pci_read32(ab, TCSR_SOC_HW_VERSION);
 	*major = u32_get_bits(soc_hw_version, TCSR_SOC_HW_VERSION_MAJOR_MASK);
 	*minor = u32_get_bits(soc_hw_version, TCSR_SOC_HW_VERSION_MINOR_MASK);
+
+	ath12k_info(ab, "SOC HW version major %u minor %u\n",
+		    *major, *minor);
 }
 
 static int ath12k_wifi8_pci_probe(struct pci_dev *pdev,
