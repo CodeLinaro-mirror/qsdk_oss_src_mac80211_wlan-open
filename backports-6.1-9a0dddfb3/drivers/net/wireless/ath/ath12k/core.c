@@ -3533,28 +3533,31 @@ void ath12k_core_radio_cleanup(struct ath12k *ar)
 static void ath12k_arvif_abort_cu_notify(struct ath12k_hw *ah,
 					 struct ath12k_link_vif *arvif)
 {
-	enum nl80211_cu_state notify_state;
+	struct ath12k_uhr_cu_info *ecu = &arvif->uhr_ecu;
+	bool in_progress;
 
-	if (!arvif->uhr_ecu.started)
+	if (!ecu->started)
 		return;
 
 	wiphy_work_cancel(ah->hw->wiphy, &arvif->uhr_cu_notify_work);
 
-	switch (arvif->uhr_ecu.cu_state) {
-	case NL80211_CU_STATE_STARTED:
-		notify_state = NL80211_CU_STATE_ABORT;
-		break;
-	case NL80211_CU_STATE_ADV_NOTIFICATION_END:
-	case NL80211_CU_STATE_POST_NOTIFICATION_END:
-	case NL80211_CU_STATE_ECU_END:
-	case NL80211_CU_STATE_ABORT:
-		notify_state = NL80211_CU_STATE_ECU_END;
-		break;
-	}
+	/* Determine whether the session had progressed past STARTED.
+	 * If any state beyond STARTED is pending the session is already
+	 * in progress and ECU_END is the correct termination; otherwise
+	 * send ABORT.  Clear all pending bits unconditionally.
+	 */
+	in_progress =
+		test_bit(NL80211_CU_STATE_ADV_NOTIFICATION_END,
+			 ecu->pending_states) |
+		test_bit(NL80211_CU_STATE_POST_NOTIFICATION_END,
+			 ecu->pending_states) |
+		test_bit(NL80211_CU_STATE_ECU_END,
+			 ecu->pending_states);
 
-	ieee80211_cu_notify(ah->hw, arvif->ahvif->vif,
-			    arvif->link_id, notify_state);
-	arvif->uhr_ecu.cu_state = notify_state;
+	ieee80211_cu_notify(ah->hw, arvif->ahvif->vif, arvif->link_id,
+			    in_progress ? NL80211_CU_STATE_ECU_END
+					: NL80211_CU_STATE_ABORT);
+	memset(ecu, 0, sizeof(*ecu));
 }
 
 static void ath12k_core_pre_reconfigure_recovery(struct ath12k_base *ab)
