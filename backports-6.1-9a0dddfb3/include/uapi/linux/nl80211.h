@@ -3331,6 +3331,13 @@ enum nl80211_commands {
  * @NL80211_ATTR_MAPC_MAX_CTDMA_PEERS: u8. Maximum number of Co-TDMA peers
  *	supported by the hardware. 0 = not reported.
  *
+ * @NL80211_ATTR_SMD_ROAM_STA: Flag attribute indicating this station was
+ *	created via SMD Station Transition Preparation (IAP) at the Target
+ *	AP-MLD, not via a regular association. Unlike %NL80211_ATTR_PEER_SMD_*
+ *	attributes (which describe peer capabilities and are sent on
+ *	%NL80211_CMD_SET_STATION), this flag is sent on %NL80211_CMD_NEW_STA
+ *	and %NL80211_CMD_ADD_LINK_STA to indicate an in-progress BSS transition.
+ *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  *
  * @NL80211_ATTR_MAX: highest attribute number currently defined
@@ -4020,6 +4027,7 @@ enum nl80211_attrs {
 	NL80211_ATTR_STA_MAPC,
 	NL80211_ATTR_MAPC_HW_CAPS,
 	NL80211_ATTR_MAPC_MAX_CTDMA_PEERS,
+	NL80211_ATTR_SMD_ROAM_STA,
 
 	/* add attributes here, update the policy in nl80211.c */
 	__NL80211_ATTR_AFTER_LAST,
