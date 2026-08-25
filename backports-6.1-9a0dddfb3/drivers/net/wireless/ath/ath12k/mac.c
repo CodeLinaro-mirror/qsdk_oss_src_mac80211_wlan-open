@@ -20202,7 +20202,7 @@ int ath12k_mac_start(struct ath12k *ar)
 			    ret);
 
 	ret = ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_SET_CONG_CTRL_MAX_MSDUS,
-					ATH12K_NUM_POOL_TX_DESC, pdev->pdev_id);
+					DP_TX_DESC_COUNT_POOL0, pdev->pdev_id);
 	if (ret) {
 		ath12k_err(ab, "[vdev_id : %s radio_idx : %u] failed to set congestion control MAX MSDUS: %d\n",
 			   ATH12K_INVALID_VDEV_ID, ar->radio_idx, ret);
@@ -22320,7 +22320,6 @@ EXPORT_SYMBOL(ath12k_mac_op_add_interface);
 
 void ath12k_mac_vif_unref(struct ath12k_dp *dp, struct ieee80211_vif *vif)
 {
-	struct ath12k_base *ab = dp->ab;
 	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
 	struct ath12k_tx_desc_info *tx_desc_info;
 	struct ath12k_skb_cb *skb_cb;
@@ -22331,8 +22330,8 @@ void ath12k_mac_vif_unref(struct ath12k_dp *dp, struct ieee80211_vif *vif)
 	for (i = 0; i < ATH12K_HW_MAX_QUEUES; i++) {
 		spin_lock_bh(&dp_hw_grp->tx_desc_lock[i]);
 
-		for (j = 0; j < ATH12K_TX_SPT_PAGES_PER_POOL; j++) {
-			tx_spt_page = j + i * ATH12K_TX_SPT_PAGES_PER_POOL;
+		for (j = 0; j < ath12k_dp_tx_spt_pages_per_pool(i); j++) {
+			tx_spt_page = j + ath12k_dp_tx_spt_page_offset(i);
 			if (!dp_hw_grp->txbaddr || !dp_hw_grp->txbaddr[tx_spt_page])
 				continue;
 			tx_desc_info = dp_hw_grp->txbaddr[tx_spt_page];

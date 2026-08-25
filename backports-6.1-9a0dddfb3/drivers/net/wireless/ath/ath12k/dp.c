@@ -189,6 +189,12 @@ EXPORT_SYMBOL(ath12k_dp_tcl_data_ring_size);
 u32 ath12k_dp_tx_comp_ring_size[DP_TCL_NUM_RING_MAX];
 EXPORT_SYMBOL(ath12k_dp_tx_comp_ring_size);
 
+u32 ath12k_dp_tx_desc_count[DP_TCL_NUM_RING_MAX];
+EXPORT_SYMBOL(ath12k_dp_tx_desc_count);
+
+u32 ath12k_dp_num_ppeds_tx_spt_pages;
+EXPORT_SYMBOL(ath12k_dp_num_ppeds_tx_spt_pages);
+
 enum ath12k_dp_desc_type {
 	ATH12K_DP_TX_DESC,
 	ATH12K_DP_RX_DESC,
@@ -1865,8 +1871,8 @@ void ath12k_dp_tx_cc_cleanup(struct ath12k_base *ab)
 	/* TX Descriptor cleanup */
 	for (pool_id = 0; pool_id < ATH12K_HW_MAX_QUEUES; pool_id++) {
 		spin_lock_bh(&dp_hw_grp->tx_desc_lock[pool_id]);
-		for (j = 0; j < ATH12K_TX_SPT_PAGES_PER_POOL; j++) {
-			tx_spt_page = j + pool_id * ATH12K_TX_SPT_PAGES_PER_POOL;
+		for (j = 0; j < ath12k_dp_tx_spt_pages_per_pool(pool_id); j++) {
+			tx_spt_page = j + ath12k_dp_tx_spt_page_offset(pool_id);
 			tx_desc_info = dp_hw_grp->txbaddr[tx_spt_page];
 			if (!tx_desc_info)
 				continue;
@@ -1956,7 +1962,7 @@ struct ath12k_rx_desc_info *ath12k_dp_get_rx_desc(struct ath12k_dp *dp,
 	ppt_idx = u32_get_bits(cookie, ATH12K_DP_CC_COOKIE_PPT);
 	spt_idx = u32_get_bits(cookie, ATH12K_DP_CC_COOKIE_SPT);
 
-	start_ppt_idx = dp->rx_ppt_base + ATH12K_RX_SPT_PAGE_OFFSET;
+	start_ppt_idx = dp->rx_ppt_base + ath12k_dp_rx_spt_page_offset();
 	end_ppt_idx = start_ppt_idx + ATH12K_NUM_RX_SPT_PAGES;
 
 	if (ppt_idx < start_ppt_idx ||
@@ -1964,7 +1970,7 @@ struct ath12k_rx_desc_info *ath12k_dp_get_rx_desc(struct ath12k_dp *dp,
 	    spt_idx > ATH12K_MAX_SPT_ENTRIES)
 		return NULL;
 
-	rx_spt_offset = ppt_idx - dp->rx_ppt_base - ATH12K_RX_SPT_OFFSET;
+	rx_spt_offset = ppt_idx - dp->rx_ppt_base - ath12k_dp_rx_spt_page_offset();
 	desc_addr_ptr = ath12k_dp_cc_get_desc_addr_ptr(dp->spt_info,
 						       rx_spt_offset, spt_idx);
 
@@ -1986,8 +1992,7 @@ struct ath12k_tx_desc_info *ath12k_dp_get_tx_desc(struct ath12k_dp *dp,
 	spt_idx = u32_get_bits(cookie, ATH12K_DP_CC_COOKIE_SPT);
 
 	start_ppt_idx = ATH12K_TX_SPT_PAGE_OFFSET;
-	end_ppt_idx = start_ppt_idx +
-		      (ATH12K_TX_SPT_PAGES_PER_POOL * ATH12K_HW_MAX_QUEUES);
+	end_ppt_idx = start_ppt_idx + ath12k_dp_tx_spt_page_offset(ATH12K_HW_MAX_QUEUES);
 
 	if (ppt_idx < start_ppt_idx ||
 	    ppt_idx >= end_ppt_idx ||
@@ -2322,12 +2327,12 @@ static int ath12k_dp_cmem_init(struct ath12k_base *ab, struct ath12k_dp *dp,
 	case ATH12K_DP_TX_DESC:
 		spt_info = dp->dp_hw_grp->spt_info;
 		start = ATH12K_TX_SPT_PAGE_OFFSET;
-		end = start + ATH12K_NUM_TX_SPT_PAGES;
+		end = start + ath12k_dp_tx_spt_page_offset(ATH12K_HW_MAX_QUEUES);
 		break;
 	case ATH12K_DP_RX_DESC:
 		spt_info = dp->spt_info;
 		cmem_base += ATH12K_PPT_ADDR_OFFSET(dp->rx_ppt_base);
-		start = ATH12K_RX_SPT_PAGE_OFFSET;
+		start = ath12k_dp_rx_spt_page_offset();
 		end = start + ATH12K_NUM_RX_SPT_PAGES;
 		break;
 	default:
@@ -2362,7 +2367,7 @@ static int ath12k_dp_cc_tx_desc_init(struct ath12k_base *ab)
 
 	for (pool_id = 0; pool_id < ATH12K_HW_MAX_QUEUES; pool_id++) {
 		spin_lock_bh(&dp_hw_grp->tx_desc_lock[pool_id]);
-		for (i = 0; i < ATH12K_TX_SPT_PAGES_PER_POOL; i++) {
+		for (i = 0; i < ath12k_dp_tx_spt_pages_per_pool(pool_id); i++) {
 			tx_descs = kcalloc(ATH12K_MAX_SPT_ENTRIES, sizeof(*tx_descs),
 					   GFP_ATOMIC);
 
@@ -2372,12 +2377,12 @@ static int ath12k_dp_cc_tx_desc_init(struct ath12k_base *ab)
 				return -ENOMEM;
 			}
 
-			tx_spt_page = i + pool_id * ATH12K_TX_SPT_PAGES_PER_POOL;
+			tx_spt_page = i + ath12k_dp_tx_spt_page_offset(pool_id);
 			ppt_idx = ATH12K_TX_SPT_PAGE_OFFSET + tx_spt_page;
 
 			dp_hw_grp->txbaddr[tx_spt_page] = &tx_descs[0];
 
-			if (i == ATH12K_TX_SPT_PAGES_PER_POOL - 1) {
+			if (i == ath12k_dp_tx_spt_pages_per_pool(pool_id) - 1) {
 				free_list = &dp_hw_grp->tx_spl_desc_free_list[pool_id];
 				spl_desc = true;
 			} else {
@@ -2517,7 +2522,7 @@ static int ath12k_dp_cc_rx_desc_init(struct ath12k_base *ab)
 
 		memset(rx_descs, 0, ATH12K_MAX_SPT_ENTRIES * sizeof(*rx_descs));
 
-		cookie_ppt_idx = dp->rx_ppt_base + ATH12K_RX_SPT_PAGE_OFFSET + i;
+		cookie_ppt_idx = dp->rx_ppt_base + ath12k_dp_rx_spt_page_offset() + i;
 
 		for (j = 0; j < ATH12K_MAX_SPT_ENTRIES; j++) {
 			rx_descs[j].cookie = ath12k_dp_cc_cookie_gen(cookie_ppt_idx, j);
@@ -2816,8 +2821,8 @@ static void ath12k_dp_tx_spt_free_and_deinit(struct ath12k_base *ab,
 
 	for (pool_id = 0; pool_id < ATH12K_HW_MAX_QUEUES; pool_id++) {
 		spin_lock_bh(&dp_hw_grp->tx_desc_lock[pool_id]);
-		for (j = 0; j < ATH12K_TX_SPT_PAGES_PER_POOL; j++) {
-			tx_spt_page = j + pool_id * ATH12K_TX_SPT_PAGES_PER_POOL;
+		for (j = 0; j < ath12k_dp_tx_spt_pages_per_pool(pool_id); j++) {
+			tx_spt_page = j + ath12k_dp_tx_spt_page_offset(pool_id);
 			if (!dp_hw_grp->txbaddr || !dp_hw_grp->txbaddr[tx_spt_page])
 				continue;
 			kfree(dp_hw_grp->txbaddr[tx_spt_page]);
@@ -2858,13 +2863,21 @@ static int ath12k_dp_tx_spt_alloc_and_init(struct ath12k_base *ab)
 	if (dp_hw_grp->tx_desc_initialized)
 		goto unlock;
 
+	ath12k_dp_tx_desc_count[0] = DP_TX_DESC_COUNT_POOL0;
+	ath12k_dp_tx_desc_count[1] = DP_TX_DESC_COUNT_POOL1;
+	ath12k_dp_tx_desc_count[2] = DP_TX_DESC_COUNT_POOL2;
+	ath12k_dp_tx_desc_count[3] = DP_TX_DESC_COUNT_POOL3;
+	ath12k_dp_tx_desc_count[4] = DP_TX_DESC_COUNT_POOL4;
+	ath12k_dp_num_ppeds_tx_spt_pages = ATH12K_NUM_PPEDS_TX_SPT_PAGES;
+
 	for (i = 0; i < ATH12K_HW_MAX_QUEUES; i++) {
 		INIT_LIST_HEAD(&dp_hw_grp->tx_desc_free_list[i]);
 		INIT_LIST_HEAD(&dp_hw_grp->tx_spl_desc_free_list[i]);
 		spin_lock_init(&dp_hw_grp->tx_desc_lock[i]);
 	}
 
-	dp_hw_grp->num_spt_pages = ATH12K_NUM_TX_SPT_PAGES;
+	dp_hw_grp->num_spt_pages = ath12k_dp_tx_spt_page_offset(ATH12K_HW_MAX_QUEUES);
+
 	if (dp_hw_grp->num_spt_pages > ATH12K_MAX_PPT_ENTRIES)
 		dp_hw_grp->num_spt_pages = ATH12K_MAX_PPT_ENTRIES;
 
@@ -3185,8 +3198,8 @@ void ath12k_dp_umac_tx_desc_cleanup(struct ath12k_base *ab)
 	for (pool_id = 0; pool_id < ATH12K_HW_MAX_QUEUES; pool_id++) {
 		spin_lock_bh(&dp_hw_grp->tx_desc_lock[pool_id]);
 
-		for (j = 0; j < ATH12K_TX_SPT_PAGES_PER_POOL; j++) {
-			tx_spt_page = j + pool_id * ATH12K_TX_SPT_PAGES_PER_POOL;
+		for (j = 0; j < ath12k_dp_tx_spt_pages_per_pool(pool_id); j++) {
+			tx_spt_page = j + ath12k_dp_tx_spt_page_offset(pool_id);
 			if (!dp_hw_grp->txbaddr || !dp_hw_grp->txbaddr[tx_spt_page])
 				continue;
 			tx_desc_info = dp_hw_grp->txbaddr[tx_spt_page];

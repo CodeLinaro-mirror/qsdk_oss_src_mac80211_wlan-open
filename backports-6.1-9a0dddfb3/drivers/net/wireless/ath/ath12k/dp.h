@@ -50,6 +50,12 @@
 #define DP_TX_COMP_RING3_SIZE		(ab->mem_params.dp_params.tx_compl_ring_size[3])
 #define DP_TX_COMP_RING4_SIZE		(ab->mem_params.dp_params.tx_compl_ring_size[4])
 
+#define DP_TX_DESC_COUNT_POOL0		(ab->mem_params.dp_params.tx_desc_count[0])
+#define DP_TX_DESC_COUNT_POOL1		(ab->mem_params.dp_params.tx_desc_count[1])
+#define DP_TX_DESC_COUNT_POOL2		(ab->mem_params.dp_params.tx_desc_count[2])
+#define DP_TX_DESC_COUNT_POOL3		(ab->mem_params.dp_params.tx_desc_count[3])
+#define DP_TX_DESC_COUNT_POOL4		(ab->mem_params.dp_params.tx_desc_count[4])
+
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 #define ATH12K_NUM_POOL_PPEDS_TX_DESC_DEFAULT \
 	(ab->mem_params.dp_params.num_pool_ppeds_tx_desc)
@@ -59,6 +65,52 @@
 
 #define ATH12K_NUM_RX_SPT_PAGES \
 	(ATH12K_RX_DESC_COUNT / ATH12K_MAX_SPT_ENTRIES)
+
+extern u32 ath12k_dp_tx_desc_count[DP_TCL_NUM_RING_MAX];
+extern u32 ath12k_dp_num_ppeds_tx_spt_pages;
+
+/**
+ * ath12k_dp_tx_spt_pages_per_pool - SPT pages needed for a given TX pool
+ * @pool_id: TX pool index (0 .. ATH12K_HW_MAX_QUEUES-1)
+ *
+ * Returns the number of SPT pages required for @pool_id, derived from
+ * ath12k_dp_tx_desc_count[pool_id] (initialized at DP setup time).
+ */
+static inline u32 ath12k_dp_tx_spt_pages_per_pool(u32 pool_id)
+{
+	return ath12k_dp_tx_desc_count[pool_id] / ATH12K_MAX_SPT_ENTRIES;
+}
+
+/**
+ * ath12k_dp_tx_spt_page_offset - flat SPT page index of the first page for a pool
+ * @pool_id: TX pool index
+ *
+ * Returns the cumulative SPT page offset for @pool_id, i.e. the sum of SPT
+ * pages for all pools with index < @pool_id.
+ */
+static inline u32 ath12k_dp_tx_spt_page_offset(u32 pool_id)
+{
+	u32 offset = 0, i;
+
+	for (i = 0; i < pool_id; i++)
+		offset += ath12k_dp_tx_spt_pages_per_pool(i);
+
+	return offset;
+}
+
+/**
+ * ath12k_dp_rx_spt_page_offset - PPT index of the first RX SPT page
+ *
+ * The RX SPT region starts immediately after the PPEDS TX pages and the
+ * per-pool TX SPT pages.  Uses the runtime total so that variable per-pool
+ * tx_desc_count values are accounted for correctly.
+ */
+static inline u32 ath12k_dp_rx_spt_page_offset(void)
+{
+	return ath12k_dp_num_ppeds_tx_spt_pages +
+		ath12k_dp_tx_spt_page_offset(ATH12K_HW_MAX_QUEUES);
+}
+
 /* Macros parsing INI */
 #ifndef CPTCFG_QCN_EXTN
 #define DP_UMAC_RESET_TIMEOUT_IN_MS	1000
