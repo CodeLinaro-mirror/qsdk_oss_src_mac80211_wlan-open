@@ -162,6 +162,11 @@ static inline void ath12k_coredump_ahb_collect(struct ath12k_base *ab)
 {
 }
 static inline void
+ath12k_coredump_dump_segment(struct ath12k_base *ab,
+			     struct ath12k_dump_segment *segments, size_t seg_len)
+{
+}
+static inline void
 ath12k_coredump_m3_dump(struct ath12k_base *ab,
                         struct ath12k_qmi_m3_dump_upload_req_data *event_data)
 {

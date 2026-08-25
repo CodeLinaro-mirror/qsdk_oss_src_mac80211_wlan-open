@@ -6,6 +6,7 @@
 #include "ath_debug/athdbg_mhi.h"
 #include "ath_debug/athdbg_wmi_recording.h"
 #include "debug.h"
+#include "coredump.h"
 #include "debugfs.h"
 #include "mhi.h"
 #include "pci.h"
