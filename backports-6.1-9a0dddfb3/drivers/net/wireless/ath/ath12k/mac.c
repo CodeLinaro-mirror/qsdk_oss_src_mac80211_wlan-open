@@ -22168,13 +22168,15 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 			ath12k_info(NULL, "failed to allocate ahvif id %d", ret);
 	}
 
-	if (!ah->free_map_id) {
-		ath12k_err(NULL, "no free map_id available");
-		return -EINVAL;
+	if (vif->type != NL80211_IFTYPE_AP_VLAN) {
+		if (!ah->free_map_id) {
+			ath12k_err(NULL, "no free map_id available");
+			return -EINVAL;
+		}
+		map_id = __ffs(ah->free_map_id);
+		ah->free_map_id &= ~(1 << map_id);
+		ahvif->map_id = map_id;
 	}
-	map_id = __ffs(ah->free_map_id);
-	ah->free_map_id &= ~(1 << map_id);
-	ahvif->map_id = map_id;
 
 	/*
 	 * Will be removed later. Added for debug purpose during development.
@@ -22643,7 +22645,8 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 		ahvif->dp_vif.ahvif_id = ATH12K_INVALID_AHVIF_ID;
 	}
 
-	ah->free_map_id |= 1 << ahvif->map_id;
+	if (vif->type != NL80211_IFTYPE_AP_VLAN)
+		ah->free_map_id |= 1 << ahvif->map_id;
 
 	ath12k_dp_arch_dp_vif_configure(ah->ag->dp_hw_grp, ahvif,
 					ATH12K_DP_OP_DEINIT);
