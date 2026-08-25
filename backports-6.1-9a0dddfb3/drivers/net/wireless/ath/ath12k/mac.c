@@ -9934,7 +9934,7 @@ static bool ath12k_mac_fill_reg_tpc(struct ath12k *ar, struct wireless_dev *wdev
 						&decision);
 	reg_6g_power_mode = decision.reg_6g_power_mode;
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_MAC, " reg_6g_power_mode %d\n", reg_6g_power_mode);
+	ath12k_dbg(ar->ab, ATH12K_DBG_REG, "reg_6g_power_mode %d\n", reg_6g_power_mode);
 
 	if (test_bit(WMI_TLV_SERVICE_BOTH_PSD_EIRP_FOR_AP_SP_CLIENT_SP_SUPPORT,
 		     ar->ab->wmi_ab.svc_map) &&
