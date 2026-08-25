@@ -14213,9 +14213,11 @@ static int ath12k_vendor_me_dump(struct wiphy *wiphy,
 	case IEEE80211_ME_STATS_PRINT_INFO:
 		ret = ath12k_me_info_print_extn(me_db, dp_vif);
 		break;
+#if defined(CONFIG_BRIDGE_MCAST_OFFLOAD)
 	case IEEE80211_ME_STATS_PRINT_SNOOP:
 		ret = ath12k_me_snoop_print_extn(ab, me_db);
 		break;
+#endif /*CONFIG_BRIDGE_MCAST_OFFLOAD*/
 	default:
 		ret = -EINVAL;
 	}
