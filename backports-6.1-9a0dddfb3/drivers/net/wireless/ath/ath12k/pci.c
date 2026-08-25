@@ -128,6 +128,8 @@ static void ath12k_pci_soc_global_reset(struct ath12k_base *ab)
 	val = ath12k_pci_read32(ab, PCIE_SOC_GLOBAL_RESET);
 	if (val == 0xffffffff)
 		ath12k_warn(ab, "link down error during global reset\n");
+
+	ath12k_info(ab, "Triggered SOC Global Reset\n");
 }
 
 static void ath12k_pci_clear_dbg_registers(struct ath12k_base *ab)
@@ -236,6 +238,8 @@ static void ath12k_pci_q6_only_reset(struct ath12k_base *ab)
 		ath12k_err(ab, "Failed to switch to PBL after BCR reset\n");
 		WARN_ON(1);
 	}
+
+	ath12k_info(ab, "Triggered Q6 BCR Reset\n");
 }
 
 static void ath12k_pci_sw_reset(struct ath12k_base *ab, bool power_on)
@@ -251,7 +255,8 @@ static void ath12k_pci_sw_reset(struct ath12k_base *ab, bool power_on)
 
 	if (!power_on) {
 		if (!ab->in_panic &&
-		    test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags)) {
+		    (test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags) ||
+		     ab->umcmn_fatal_received)) {
 			if (ab->hw_params->hw_ops->update_tqm_status_ring_tp)
 				ab->hw_params->hw_ops->update_tqm_status_ring_tp(ab,
 										 false);
@@ -263,6 +268,8 @@ static void ath12k_pci_sw_reset(struct ath12k_base *ab, bool power_on)
 		} else {
 			ath12k_pci_soc_global_reset(ab);
 		}
+	} else if (!test_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags)) {
+		ath12k_pci_soc_global_reset(ab);
 	}
 
 	ath12k_mhi_set_mhictrl_reset(ab);

@@ -3101,6 +3101,7 @@ struct ath12k_base {
 	u32 mapc_hw_cap_bitmap;
 	u8 mapc_max_co_ap_peers;
 	u8 mapc_max_ctdma_peers;
+	bool umcmn_fatal_received;
 
 	struct ath12k_wmi_enh_aoa_caps_arg enh_aoa_caps;
 
@@ -3764,5 +3765,6 @@ int ath12k_core_mlo_setup(struct ath12k_hw_group *ag);
 int ath12k_core_wsi_mlo_teardown_umac_reset(struct ath12k_base *ab);
 void ath12k_core_send_fw_hang_cmd(struct ath12k_base *ab, unsigned int value);
 void ath12k_core_en_ssr(struct ath12k_base *ab, unsigned int value);
+void ath12k_recovery_skip_partner_dump_collection(struct ath12k_base *ab);
 
 #endif /* _CORE_H_ */

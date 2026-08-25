@@ -1183,7 +1183,8 @@ void ath12k_core_cleanup(struct ath12k_base *ab)
 	mutex_lock(&ab->core_lock);
 	ath12k_core_pdev_deinit(ab);
 	ath12k_dp_arch_pdev_free(ab->dp);
-	if (!test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags))
+	if (!test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags) &&
+	    !ab->umcmn_fatal_received)
 		ath12k_ce_cleanup_pipes(ab);
 	ath12k_wmi_detach(ab);
 	mutex_unlock(&ab->core_lock);
@@ -1334,7 +1335,8 @@ static void ath12k_core_stop(struct ath12k_base *ab)
 {
 	ath12k_core_to_group_ref_put(ab);
 	ath12k_acpi_stop(ab);
-	if (!test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags))
+	if (!test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags) &&
+	    !ab->umcmn_fatal_received)
 		ath12k_hif_stop(ab);
 	ath12k_wmi_detach(ab);
 	ath12k_mgmt_device_deinit(ab->mgmt);
@@ -1778,7 +1780,8 @@ static int ath12k_core_start(struct ath12k_base *ab)
 		goto err_wmi_detach;
 	}
 
-	if (!test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags)) {
+	if (!test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags) &&
+	    !ab->umcmn_fatal_received) {
 		ret = ath12k_hif_start(ab);
 		if (ret) {
 			ath12k_err(ab, "failed to start HIF: %d\n", ret);
@@ -2999,7 +3002,8 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 		return 0;
 	}
 
-	if (!test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags)) {
+	if (!test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags) &&
+	    !ab->umcmn_fatal_received) {
 		ret = ath12k_ce_init_pipes(ab);
 		if (ret) {
 			ath12k_err(ab, "failed to initialize CE: %d\n", ret);
@@ -3097,7 +3101,8 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 			    !partner_ab->recovery_start)
 				continue;
 
-			if (!test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags)) {
+			if (!test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags) &&
+			    !ab->umcmn_fatal_received) {
 				ath12k_hif_irq_enable(partner_ab);
 				irq_enabled[i] = true;
 			}
@@ -5566,12 +5571,23 @@ static void ath12k_core_disable_ext_irq_during_recovery(struct ath12k_base *ab)
 	}
 }
 
-static void ath12k_update_recovery_mode(struct ath12k_hw_group *ag,
-					struct ath12k_base *asserted_ab)
+void ath12k_recovery_skip_partner_dump_collection(struct ath12k_base *ab)
 {
 	int i;
 	struct ath12k_base *partner_ab;
 
+	for (i = 0; i < ab->ag->num_devices; i++) {
+		partner_ab = ab->ag->ab[i];
+		if (ab == partner_ab)
+			continue;
+		partner_ab->recovery_skip_dump = true;
+	}
+}
+EXPORT_SYMBOL(ath12k_recovery_skip_partner_dump_collection);
+
+static void ath12k_update_recovery_mode(struct ath12k_hw_group *ag,
+					struct ath12k_base *asserted_ab)
+{
 	if (asserted_ab->recovery_mode_address) {
 		/*get current recovery mode as per FW from shmem*/
 		switch (*asserted_ab->recovery_mode_address) {
@@ -5606,16 +5622,7 @@ static void ath12k_update_recovery_mode(struct ath12k_hw_group *ag,
 	    !test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &asserted_ab->dev_flags)) {
 		ath12k_info(asserted_ab, "Recovery is falling back to Mode0 due to cumac HW assert\n");
 		ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
-		for (i = 0; i < ag->num_devices; i++) {
-			partner_ab = ag->ab[i];
-
-			if (asserted_ab == partner_ab)
-				continue;
-			/* Skip RDDM collection of partner chips if cumac hw error causes
-			 * fallback to mode0
-			 */
-			partner_ab->recovery_skip_dump = true;
-		}
+		ath12k_recovery_skip_partner_dump_collection(asserted_ab);
 	}
 }
 
