@@ -10795,9 +10795,8 @@ static int ath12k_pull_reg_chan_list_ext_update_ev(struct ath12k_base *ab,
 						      ext_wmi_reg_rule);
 
 		if (!reg_info->reg_rules_2g_ptr) {
-			kfree(tb);
 			ath12k_warn(ab, "Unable to Allocate memory for 2g rules\n");
-			return -ENOMEM;
+			goto err_free;
 		}
 	}
 
@@ -10842,9 +10841,8 @@ static int ath12k_pull_reg_chan_list_ext_update_ev(struct ath12k_base *ab,
 						      ext_wmi_reg_rule);
 
 		if (!reg_info->reg_rules_5g_ptr) {
-			kfree(tb);
 			ath12k_warn(ab, "Unable to Allocate memory for 5g rules\n");
-			return -ENOMEM;
+			goto err_free;
 		}
 	}
 
@@ -10863,9 +10861,8 @@ static int ath12k_pull_reg_chan_list_ext_update_ev(struct ath12k_base *ab,
 						      ext_wmi_reg_rule);
 
 		if (!reg_info->reg_rules_6g_ap_ptr[i]) {
-			kfree(tb);
 			ath12k_warn(ab, "Unable to Allocate memory for 6g ap rules\n");
-			return -ENOMEM;
+			goto err_free;
 		}
 
 		ath12k_print_reg_rule(ab, ath12k_6g_ap_type_to_str(i),
@@ -10885,9 +10882,8 @@ static int ath12k_pull_reg_chan_list_ext_update_ev(struct ath12k_base *ab,
 							      ext_wmi_reg_rule);
 
 			if (!reg_info->reg_rules_6g_client_ptr[j][i]) {
-				kfree(tb);
 				ath12k_warn(ab, "Unable to Allocate memory for 6g client rules\n");
-				return -ENOMEM;
+				goto err_free;
 			}
 
 			ath12k_print_reg_rule(ab, ath12k_6g_client_type_to_str(i),
@@ -10932,6 +10928,22 @@ static int ath12k_pull_reg_chan_list_ext_update_ev(struct ath12k_base *ab,
 
 	kfree(tb);
 	return 0;
+
+err_free:
+	kfree(reg_info->reg_rules_2g_ptr);
+	reg_info->reg_rules_2g_ptr = NULL;
+	kfree(reg_info->reg_rules_5g_ptr);
+	reg_info->reg_rules_5g_ptr = NULL;
+	for (i = 0; i < WMI_REG_CURRENT_MAX_AP_TYPE; i++) {
+		kfree(reg_info->reg_rules_6g_ap_ptr[i]);
+		reg_info->reg_rules_6g_ap_ptr[i] = NULL;
+		for (j = 0; j < WMI_REG_MAX_CLIENT_TYPE; j++) {
+			kfree(reg_info->reg_rules_6g_client_ptr[i][j]);
+			reg_info->reg_rules_6g_client_ptr[i][j] = NULL;
+		}
+	}
+	kfree(tb);
+	return -ENOMEM;
 }
 
 static int ath12k_pull_peer_del_resp_ev(struct ath12k_base *ab, struct sk_buff *skb,
@@ -11080,6 +11092,9 @@ static int ath12k_wmi_mgmt_rx_sub_tlv_parse(struct ath12k_base *ab,
 		parse->mgmt_ml_info_done = true;
 		break;
 	case WMI_TAG_MLO_LINK_REMOVAL_TBTT_COUNT:
+		if (parse->num_link_removal_info_count >=
+		    TARGET_NUM_VDEVS * ATH12K_WMI_MLO_MAX_LINKS)
+			return -EINVAL;
 		parse->link_removal_info[parse->num_link_removal_info_count] =
 			(struct ath12k_wmi_mgmt_rx_mlo_link_removal_info *)ptr;
 		parse->num_link_removal_info_count++;
@@ -11239,7 +11254,7 @@ ath12k_update_link_removal_params(struct ath12k_base *ab,
 	for (i = 0; i < num_link_removal_params; i++) {
 		info = &params[i];
 
-		if (info->hw_link_id > ATH12K_GROUP_MAX_RADIO) {
+		if (info->hw_link_id >= ATH12K_GROUP_MAX_RADIO) {
 			ath12k_warn(ab, "Wrong hw_link_id received:%d\n",
 				    info->hw_link_id);
 			continue;
@@ -14369,6 +14384,8 @@ static int ath12k_wmi_tlv_fw_stats_data_parse(struct ath12k_base *ab,
 	}
 
 exit:
+	if (ret)
+		ath12k_fw_stats_free(stats);
 	rcu_read_unlock();
 	return ret;
 }
