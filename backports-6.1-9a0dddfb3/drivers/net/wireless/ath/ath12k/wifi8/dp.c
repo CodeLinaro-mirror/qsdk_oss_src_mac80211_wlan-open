@@ -1435,14 +1435,15 @@ int ath12k_wifi8_fetch_smd_ctx(struct ath12k_base *ab, struct ath12k_dp_hw *dp_h
 		if (!(ctx->in.rx_tid_bitmap & BIT(tid)))
 			continue;
 
-		rx_tid = &dp_peer->rx_tid[tid];
-		spin_lock_bh(&rx_tid->tid_lock);
-		if (!rx_tid->active || !rx_tid->paddr) {
+		spin_lock_bh(&dp_peer->rx_tid_lock);
+		rx_tid = dp_peer->rx_tid[tid];
+		if (!rx_tid || !rx_tid->active || !rx_tid->paddr) {
 			ath12k_dbg(ab, ATH12K_DBG_DP_RX,
 				   "skip smd ctx fetch tid %d peer %pM active %d paddr 0x%llx\n",
-				   tid, ctx->peer_addr, rx_tid->active,
-				   (unsigned long long)rx_tid->paddr);
-			spin_unlock_bh(&rx_tid->tid_lock);
+				   tid, ctx->peer_addr,
+				   rx_tid ? rx_tid->active : 0,
+				   rx_tid ? (unsigned long long)rx_tid->paddr : 0ULL);
+			spin_unlock_bh(&dp_peer->rx_tid_lock);
 			continue;
 		}
 		smd_data.out.tid = tid;
@@ -1486,7 +1487,7 @@ int ath12k_wifi8_fetch_smd_ctx(struct ath12k_base *ab, struct ath12k_dp_hw *dp_h
 			ath12k_warn(ab,
 				    "failed to send fetch smd ctx for rx tid queue, tid %d (%d)\n",
 				    rx_tid->tid, ret);
-			spin_unlock_bh(&rx_tid->tid_lock);
+			spin_unlock_bh(&dp_peer->rx_tid_lock);
 			spin_unlock_bh(&dp_hw->peer_hash_lock);
 			return ret;
 		}
@@ -1497,7 +1498,7 @@ int ath12k_wifi8_fetch_smd_ctx(struct ath12k_base *ab, struct ath12k_dp_hw *dp_h
 			   "smd ctx fetch sent tid %d peer %pM ring REO_CMD1\n",
 			   rx_tid->tid, smd_data.peer_addr);
 
-		spin_unlock_bh(&rx_tid->tid_lock);
+		spin_unlock_bh(&dp_peer->rx_tid_lock);
 	}
 
 
@@ -1783,6 +1784,7 @@ static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 	.sdwf_reinject_handler = ath12k_wifi8_sdwf_reinject_handler,
 	.dp_peer_create = ath12k_wifi8_dp_peer_create,
 	.dp_peer_delete = ath12k_wifi8_dp_peer_delete,
+	.dp_peer_reo_cmd_flush = ath12k_wifi8_dp_peer_reo_cmd_flush,
 	.dp_peer_assoc = ath12k_wifi8_dp_peer_assoc,
 	.dp_link_peer_assign_id = ath12k_wifi8_dp_link_peer_assign_id,
 	.dp_link_peer_unassign_id = ath12k_wifi8_dp_link_peer_unassign_id,

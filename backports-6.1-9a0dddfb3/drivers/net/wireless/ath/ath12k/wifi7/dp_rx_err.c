@@ -200,6 +200,7 @@ static bool ath12k_wifi7_handle_reo_route(struct ath12k_pdev_dp *dp_pdev,
 
 static bool ath12k_wifi7_handle_null_queue(struct ath12k_pdev_dp *dp_pdev,
 					   struct ath12k_dp_peer *peer,
+					   u8 tid,
 					   struct ieee80211_rx_status *rx_status,
 					   struct hal_rx_spd_data *spd_desc_l,
 					   struct napi_struct *napi,
@@ -217,6 +218,43 @@ static bool ath12k_wifi7_handle_null_queue(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_vif *ahvif;
 #endif /* CPTCFG_QCN_EXTN */
 	bool allow_3addr_mc = false;
+
+	/* Packet arrived on a TID whose REO queue was not set up
+	 * (DESC_ADDR_ZERO). Set up the queue now so subsequent packets
+	 * for this TID are routed correctly without hitting this error path.
+	 */
+	if (peer && !peer->is_vdev_peer &&
+	    tid < dp_pdev->ar->ab->hal.hal_params->num_tids) {
+		struct ath12k_dp_rx_tid *rx_tid;
+		bool needs_setup;
+
+		spin_lock_bh(&peer->rx_tid_lock);
+		rx_tid = peer->rx_tid[tid];
+		needs_setup = !rx_tid || !rx_tid->active;
+		spin_unlock_bh(&peer->rx_tid_lock);
+
+		if (needs_setup) {
+			struct ath12k_dp *dp = dp_pdev->dp;
+			struct ath12k_dp_link_peer *link_peer;
+			u32 ba_win_size;
+			u8 hw_link_id = dp_pdev->ar->hw_link_id;
+			u16 ssn;
+
+			rcu_read_lock();
+			link_peer = ath12k_dp_link_peer_find_by_hw_link_id(peer,
+									   hw_link_id);
+			if (link_peer && link_peer->primary_link) {
+				ath12k_dp_rx_peer_tid_ba_config(dp, tid, &ba_win_size,
+								&ssn);
+				ath12k_dp_rx_peer_tid_setup(dp_pdev->ar, peer,
+							    link_peer->addr,
+							    link_peer->vdev_id,
+							    tid, ba_win_size, ssn,
+							    HAL_PN_TYPE_NONE);
+			}
+			rcu_read_unlock();
+		}
+	}
 
 	switch (spd_desc_l->tlv_info.decap) {
 	case DP_RX_DECAP_TYPE_ETHERNET2_DIX:
@@ -482,6 +520,7 @@ ath12k_wifi7_dp_process_wbm_rx_packets(struct ath12k_dp *dp,
 					HAL_REO_DEST_RING_ERROR_CODE_DESC_ADDR_ZERO) {
 					drop = ath12k_wifi7_handle_null_queue(dp_pdev,
 									      peer,
+									      tid,
 									      &rx_status,
 									      spd_desc_l,
 									      napi,

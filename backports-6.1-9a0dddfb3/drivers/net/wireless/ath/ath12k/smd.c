@@ -2171,8 +2171,12 @@ u16 ath12k_smd_ctx_get_rx_ba_bufsize(struct ath12k_base *ab, struct ath12k_hw *a
 	spin_lock_bh(&ah->dp_hw.peer_hash_lock);
 
 	dp_peer = ath12k_dp_peer_find_by_addr(&ah->dp_hw, (u8 *)peer_addr, vif);
-	if (dp_peer && dp_peer->rx_tid[tid].active)
-		ba_win_sz = dp_peer->rx_tid[tid].ba_win_sz;
+	if (dp_peer) {
+		spin_lock_bh(&dp_peer->rx_tid_lock);
+		if (dp_peer->rx_tid[tid] && dp_peer->rx_tid[tid]->active)
+			ba_win_sz = dp_peer->rx_tid[tid]->ba_win_sz;
+		spin_unlock_bh(&dp_peer->rx_tid_lock);
+	}
 
 	spin_unlock_bh(&ah->dp_hw.peer_hash_lock);
 
