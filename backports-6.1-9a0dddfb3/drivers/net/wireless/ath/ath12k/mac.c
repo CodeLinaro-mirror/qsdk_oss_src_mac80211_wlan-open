@@ -7355,6 +7355,8 @@ ath12k_mac_op_change_vif_links(struct ieee80211_hw *hw,
 			}
 
 			if (scan_arvif->is_created) {
+				if (arvif_ar->scan.arvif == scan_arvif)
+					arvif_ar->scan.arvif = NULL;
 				ath12k_mac_remove_link_interface(hw, scan_arvif);
 				ath12k_mac_unassign_link_vif(scan_arvif);
 			} else {
