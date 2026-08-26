@@ -361,15 +361,21 @@ tid_clean:
 	for (tid--; (int)tid >= 0; tid--) {
 		if (!ath12k_hw_is_mgmt_reoq_tid(ab->hw_params, tid))
 			continue;
-		rx_tid = &link_peer->dp_peer->rx_tid[tid];
-		spin_lock_bh(&rx_tid->tid_lock);
+		spin_lock_bh(&link_peer->dp_peer->rx_tid_lock);
+		rx_tid = link_peer->dp_peer->rx_tid[tid];
+		if (!rx_tid) {
+			spin_unlock_bh(&link_peer->dp_peer->rx_tid_lock);
+			continue;
+		}
 		ath12k_dp_arch_rx_peer_tid_delete(ab->dp, ar, link_peer, tid);
-		spin_unlock_bh(&rx_tid->tid_lock);
+		spin_unlock_bh(&link_peer->dp_peer->rx_tid_lock);
 	}
 
 	rcu_read_unlock();
 	return ret;
 }
+
+#define ATH12K_DEFAULT_TID_MASK	(BIT(0) | BIT(6))
 
 int ath12k_dp_peer_setup(struct ath12k *ar, void *ptr, struct ath12k_link_vif *arvif,
 			 const u8 *addr, u8 link_id)
@@ -469,6 +475,13 @@ int ath12k_dp_peer_setup(struct ath12k *ar, void *ptr, struct ath12k_link_vif *a
 		if (is_mgmt && dp_peer->is_epp_peer)
 			continue;
 
+		/* Set up only TID 0 (BE), TID 6 (VO) and NON_QOS TID at peer
+		 * create time. All other data TIDs are set up lazily on ADDBA.
+		 */
+		if (!is_mgmt && !((BIT(tid) & ATH12K_DEFAULT_TID_MASK)) &&
+		    tid != HAL_NON_QOS_TID)
+			continue;
+
 		ath12k_dp_rx_peer_tid_ba_config(dp, tid, &ba_win_size, &ssn);
 		ret = ath12k_dp_rx_peer_tid_setup(ar, dp_peer, addr, vdev_id, tid,
 						  ba_win_size, ssn, HAL_PN_TYPE_NONE);
@@ -503,11 +516,14 @@ tid_clean:
 		if (is_mgmt && dp_peer->is_epp_peer)
 			continue;
 
-		rx_tid = &link_peer->dp_peer->rx_tid[tid];
-
-		spin_lock_bh(&rx_tid->tid_lock);
+		spin_lock_bh(&link_peer->dp_peer->rx_tid_lock);
+		rx_tid = link_peer->dp_peer->rx_tid[tid];
+		if (!rx_tid) {
+			spin_unlock_bh(&link_peer->dp_peer->rx_tid_lock);
+			continue;
+		}
 		ath12k_dp_arch_rx_peer_tid_delete(ab->dp, ar, link_peer, tid);
-		spin_unlock_bh(&rx_tid->tid_lock);
+		spin_unlock_bh(&link_peer->dp_peer->rx_tid_lock);
 	}
 
 free_shash:
