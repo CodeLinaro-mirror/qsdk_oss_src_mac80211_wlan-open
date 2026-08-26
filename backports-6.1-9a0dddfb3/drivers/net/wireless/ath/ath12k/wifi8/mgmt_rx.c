@@ -940,6 +940,22 @@ void ath12k_wifi8_mgmt_rx_deliver_mmpdu(struct ath12k_mgmt *mgmt,
 	rx_status = IEEE80211_SKB_RXCB(mmpdu);
 	*rx_status = *status;
 
+	if (ATH12K_MGMT_MLME_FRAME(hdr->frame_control)) {
+		u16 seq_no = ieee80211_get_sn(hdr);
+		u16 code;
+
+		if (ath12k_mlme_get_status_code(hdr, mmpdu->len, &code))
+			ath12k_dbg_level(partner_ar->ab, ATH12K_DBG_MLME, ATH12K_DBG_L0,
+					 "Received %s frame from STA %pM to %pM seq 0x%03x status_code %u\n",
+					 mgmt_frame_name[frm_stype], hdr->addr2,
+					 hdr->addr1, seq_no, code);
+		else
+			ath12k_dbg_level(partner_ar->ab, ATH12K_DBG_MLME, ATH12K_DBG_L0,
+					 "Received %s frame from STA %pM to %pM seq 0x%03x\n",
+					 mgmt_frame_name[frm_stype], hdr->addr2,
+					 hdr->addr1, seq_no);
+	}
+
 	if (ath12k_mac_mgmt_need_smd_sta_session_ctx(mmpdu) &&
 	    !ath12k_smd_collect_sta_session_ctx(partner_ar, mmpdu))
 		return;

@@ -90,6 +90,8 @@ extern u64 ath12k_debug_mask;
 extern unsigned int ath12k_debug_mask_level;
 extern bool ath12k_ftm_mode;
 
+bool ath12k_mlme_get_status_code(struct ieee80211_hdr *hdr, size_t len, u16 *code);
+
 static inline void ath12k_format_log_prefix(struct ath12k_base *ab,
 					int radio_id,
 					int vdev_id,
