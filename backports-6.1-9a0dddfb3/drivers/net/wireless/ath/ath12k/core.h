@@ -1452,6 +1452,7 @@ struct ath12k_link_sta {
 	u16 ast_idx;
 
 	bool is_bridge_peer;
+	bool smd_roam_sta;
 	/* true when this arsta represents the BSS self peer (vdev peer),
 	 * ahsta is NULL in this case.
 	 */

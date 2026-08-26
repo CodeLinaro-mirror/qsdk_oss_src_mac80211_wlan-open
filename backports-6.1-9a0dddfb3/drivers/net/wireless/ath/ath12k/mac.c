@@ -5606,6 +5606,8 @@ static void ath12k_peer_assoc_h_smd(struct ath12k_link_sta *arsta,
 	memcpy(arg->smd.smd_mac_addr, sta->smd_params.smd_identifier, ETH_ALEN);
 	arg->smd.dl_data_fwd = sta->smd_params.dl_data_fwd;
 	arg->smd.is_tap = ctx && (arsta->ahsta == ctx->target_ahsta);
+	if (arsta->smd_roam_sta)
+		arg->smd.role = SMD_ROAM_CONFIG_ROLE_TARGET_AP;
 }
 
 static void ath12k_peer_assoc_h_flowq(struct ath12k_link_sta *arsta,
@@ -14761,6 +14763,7 @@ static int ath12k_mac_station_add(struct ath12k *ar,
 	peer_param.peer_id = ath12k_dp_peer_get_peer_id(&ar->ah->dp_hw, vif, sta->addr);
 	peer_param.sta_id = ath12k_dp_peer_get_sta_id(&ar->ah->dp_hw, vif, sta->addr);
 	peer_param.epp_peer = sta->epp_peer;
+	arsta->smd_roam_sta = sta->smd_params.smd_roam_sta;
 
 	ret = ath12k_peer_create(ar, arvif, sta, &peer_param);
 	if (ret) {

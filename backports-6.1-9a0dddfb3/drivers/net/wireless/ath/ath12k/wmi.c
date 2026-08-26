@@ -4415,9 +4415,8 @@ static void *ath12k_wmi_peer_assoc_v2_cmd(struct ath12k *ar,
 	if (arg->smd.dl_data_fwd)
 		smd_params->flags |= cpu_to_le32(ATH12K_WMI_FLAG_PEER_SMD_DL_DATA_FWD);
 
-	if (arg->smd.is_tap)
-		smd_params->flags |= cpu_to_le32(ATH12K_WMI_FLAG_PEER_SMD_TAP_LINK);
-	smd_params->flags |= cpu_to_le32(ATH12K_WMI_FLAG_PEER_SMD_ADD_LINK);
+	smd_params->flags |= le32_encode_bits(arg->smd.role,
+					      ATH12K_WMI_FLAG_PEER_SMD_ROLE);
 
 	ptr += sizeof(*smd_params);
 
