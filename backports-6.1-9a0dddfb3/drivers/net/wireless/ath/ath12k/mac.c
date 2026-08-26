@@ -25097,6 +25097,9 @@ ath12k_mac_process_update_vif_chan(struct ath12k *ar,
 						      new_chandef);
 	}
 
+	if (ath12k_dp_ext_mon_is_enabled(ar))
+		ath12k_dp_ext_mon_reset(&ar->dp);
+
 	if (ath12k_wmi_is_mvr_supported(ab))
 		ath12k_mac_update_vif_chan_mvr(ar, vifs, vifs_bridge_link_id, n_vifs);
 	else
