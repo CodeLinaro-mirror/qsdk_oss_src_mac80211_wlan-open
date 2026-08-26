@@ -3266,8 +3266,8 @@ int ath12k_wifi8_dp_pdev_alloc(struct ath12k_base *ab)
 		dp_pdev->dp_hw = &ar->ah->dp_hw;
 		dp_pdev->hw_link_id = ar->hw_link_id;
 
-		/* Enable enable_dp_stats by default */
-		ar->dp.dp_stats_mask |= DP_ENABLE_STATS;
+		/* Restore dp_stats_mask from INI to persist value across reboots */
+		ar->dp.dp_stats_mask = DP_STATS_MASK;
 
 		if (!dp_pdev->dp_mon_pdev_configured) {
 			ret = ath12k_dp_mon_pdev_init(dp_pdev);
