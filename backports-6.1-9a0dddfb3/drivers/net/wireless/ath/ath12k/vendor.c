@@ -18,6 +18,7 @@
 #include "qcn_extns/me_hmmc_extn.h"
 #include "qcn_extns/me_extn.h"
 #include "qcn_extns/me_snoop_extn.h"
+#include "qcn_extns/ranging_extn.h"
 #endif /* CPTCFG_QCN_EXTN */
 #include "mac.h"
 #include "ppe.h"
@@ -16616,6 +16617,9 @@ static int ath12k_vendor_oem_data(struct wiphy *wiphy, struct wireless_dev *wdev
 	const struct oem_vendor_build *packaged;
 	u32 content_type, num_bytes_valid;
 	u8 *data_ptr, radio_id;
+#ifdef CPTCFG_QCN_EXTN
+	u8 device_info;
+#endif
 	int ret, payload_len;
 
 	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_OEM_DATA_PARAMS_MAX,
@@ -16625,6 +16629,18 @@ static int ath12k_vendor_oem_data(struct wiphy *wiphy, struct wireless_dev *wdev
 		ath12k_err(NULL, "Failed to parse OEM Data attributes: %d\n", ret);
 		return ret;
 	}
+
+#ifdef CPTCFG_QCN_EXTN
+	if (tb[QCA_WLAN_VENDOR_ATTR_OEM_DEVICE_INFO]) {
+		device_info = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_OEM_DEVICE_INFO]);
+		if (device_info == QCA_VENDOR_OEM_DEVICE_RANGING) {
+			ret = ath12k_vendor_oem_data_lowi_extn(wiphy, wdev, hw,
+							       ah, tb);
+			if (ret != -EAGAIN)
+				return ret;
+		}
+	}
+#endif /* CPTCFG_QCN_EXTN */
 
 	if (!tb[QCA_WLAN_VENDOR_ATTR_OEM_DATA_CMD_DATA]) {
 		ath12k_err(NULL, "Missing OEM Data buffer attribute\n");
