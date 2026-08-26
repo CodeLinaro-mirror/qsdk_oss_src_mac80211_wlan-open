@@ -2100,16 +2100,20 @@ irqreturn_t ath12k_wifi8_umcmn_interrupt_handler(int irq, void *arg)
 			ath12k_umcmn_irq_disable(ab);
 			ath12k_wifi8_update_tqm_status_ring_tp(ab, false);
 
+#ifdef CPTCFG_QCN_EXTN
 			if (ath12k_cfg_get(ab, ATH12K_CFG_CRASH_ON_UMCMN_FATAL)) {
 				ath12k_err(ab,
 					   "Trigger Q6 BCR Reset and crash for full dump collection\n");
 				ab->umcmn_fatal_received = true;
 			} else {
+#endif /* CPTCFG_QCN_EXTN */
 				ath12k_err(ab,
 					   "Trigger SOC Global Reset and fallback to mode0 recovery by triggering partner crash\n");
 				ath12k_recovery_skip_partner_dump_collection(ab);
 				ath12k_core_trigger_partner_device_crash(ab);
+#ifdef CPTCFG_QCN_EXTN
 			}
+#endif /* CPTCFG_QCN_EXTN */
 			break;
 		}
 	}
