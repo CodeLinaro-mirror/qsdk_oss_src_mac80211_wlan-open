@@ -777,17 +777,24 @@ static inline void ath12k_dp_htt_log_buffer_free(struct htt_logger *htt_logger_h
 	struct htt_log_buf_t *cmd_log_buf = &log_info_p->htt_command_log_buf_info;
 	struct htt_log_buf_t *event_log_buf = &log_info_p->htt_event_log_buf_info;
 
+	/* Serialize against ath12k_dp_htt_message_record() and the debugfs
+	 * readers/fops, which all take these locks before touching buf or
+	 * htt_logging_enable, so the buffers cannot be freed out from under
+	 * a concurrent access.
+	 */
+	spin_lock_bh(&cmd_log_buf->record_lock);
+	spin_lock_bh(&event_log_buf->record_lock);
+
 	log_info_p->htt_logging_enable = 0;
 
-	/* Free allocated buffers after releasing locks and disabling logging.
-	 * At this point, no new records can be added (logging disabled),
-	 * and all in-flight operations have completed (locks released).
-	 */
 	kfree(cmd_log_buf->buf);
 	cmd_log_buf->buf = NULL;
 
 	kfree(event_log_buf->buf);
 	event_log_buf->buf = NULL;
+
+	spin_unlock_bh(&event_log_buf->record_lock);
+	spin_unlock_bh(&cmd_log_buf->record_lock);
 }
 
 /**
@@ -995,14 +1002,21 @@ void ath12k_dp_htt_logging_init(struct htt_logger **phtt_logger_handle,
 		ath12k_err(ab, "Memory allocation for HTT logger buffer failed\n");
 		return;
 	}
+	htt_logger_handle = *phtt_logger_handle;
+
+	/* Locks MUST exist before any path that can reach
+	 * ath12k_dp_htt_log_buffer_free(), including the buffer
+	 * allocation failure path below.
+	 */
+	ath12k_dp_htt_log_lock_alloc(htt_logger_handle);
+
 	/* Allocate Buffer */
-	if (ath12k_dp_htt_log_buffer_alloc(*phtt_logger_handle) != 0) {
+	if (ath12k_dp_htt_log_buffer_alloc(htt_logger_handle) != 0) {
 		ath12k_err(ab, "HTT log buffer allocation failed\n");
-		kfree(*phtt_logger_handle);
+		ath12k_dp_htt_logging_deinit(*phtt_logger_handle);
 		*phtt_logger_handle = NULL;
 		return;
 	}
-	htt_logger_handle = *phtt_logger_handle;
 	cmd_log_buf =
 		&htt_logger_handle->log_info.htt_command_log_buf_info;
 	event_log_buf =
@@ -1021,8 +1035,6 @@ void ath12k_dp_htt_logging_init(struct htt_logger **phtt_logger_handle,
 	ENABLE_COMMAND(htt_logger_handle,
 		       HTT_H2T_MSG_TYPE_RX_RING_SELECTION_CFG);
 	ENABLE_COMMAND(htt_logger_handle,
-		       HTT_H2T_MSG_TYPE_TX_MONITOR_CFG);
-	ENABLE_COMMAND(htt_logger_handle,
 		       HTT_H2T_MSG_TYPE_PRIMARY_LINK_PEER_MIGRATE_RESP);
 
 	/*
@@ -1040,9 +1052,6 @@ void ath12k_dp_htt_logging_init(struct htt_logger **phtt_logger_handle,
 	ENABLE_EVENT(htt_logger_handle, HTT_T2H_MSG_TYPE_PEER_MAP3);
 	ENABLE_EVENT(htt_logger_handle,
 		     HTT_T2H_MSG_TYPE_PRIMARY_LINK_PEER_MIGRATE_IND);
-
-	/* Create lock for all event - MUST be done before debugfs init */
-	ath12k_dp_htt_log_lock_alloc(htt_logger_handle);
 
 	/* Enable HTT logging */
 	ENABLE_HTT_LOGGING(htt_logger_handle);
