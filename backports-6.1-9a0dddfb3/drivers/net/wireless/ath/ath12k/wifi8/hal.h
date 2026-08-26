@@ -110,6 +110,13 @@ enum rdi_based_source_ring_selection {
 #endif
 };
 
+/* RDI value assigned to IPA ring (reo2sw5) — must match
+ * ATH12K_DP_WIFI8_REO2SW5_RDI in wlan-open-extns/ath/wifi8/src/ipa/dp_ipa.h
+ */
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#define HAL_WIFI8_IPA_REO_RDI		5
+#endif
+
 /* calculate the register address from bar0 of shadow register x */
 #define HAL_SHADOW_BASE_ADDR			0x000008fc
 #define HAL_SHADOW_NUM_REGS			40
