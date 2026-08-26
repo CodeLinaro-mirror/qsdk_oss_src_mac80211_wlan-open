@@ -1688,11 +1688,14 @@ struct cfg80211_crypto_settings {
  * @smd_enabled: Peer is SMD capable
  * @smd_identifier: SMD ID associated to the peer
  * @dl_data_fwd: Peer can handle MSDU forwarding
+ * @smd_roam_sta: peer was created via SMD ST Prep (IAP) at Target AP-MLD;
+ *	set only on add_station/add_link_station, not on change_station
  */
 struct cfg80211_peer_smd_params {
 	bool smd_enabled;
 	u8 smd_identifier[ETH_ALEN];
 	bool dl_data_fwd;
+	bool smd_roam_sta;
 };
 
 /**
@@ -2338,6 +2341,12 @@ struct sta_txpwr {
  * @mld_oper: MLD capabilites and operation field of station
  * @uhr_capa: UHR capabilities of the station
  * @uhr_capa_len: the length of the UHR capabilities
+ * @smd_mac_addr: SMD identifier MAC address of the peer STA
+ * @smd_enabled: peer STA has SMD enabled
+ * @smd_dl_data_fwd: peer STA supports SMD DL data forwarding
+ * @smd_roam_sta: station was created via SMD ST Prep (IAP) at Target AP-MLD;
+ *	unlike the smd_enabled/smd_dl_data_fwd fields which are set on
+ *	change_station, this flag is set only on add_station/add_link_station
  */
 struct link_station_parameters {
 	const u8 *mld_mac;
@@ -2364,6 +2373,7 @@ struct link_station_parameters {
 	u8 *smd_mac_addr;
 	u8 smd_enabled;
 	u8 smd_dl_data_fwd;
+	bool smd_roam_sta;
 };
 
 #define NL80211_SMD_MAX_LINKS 16

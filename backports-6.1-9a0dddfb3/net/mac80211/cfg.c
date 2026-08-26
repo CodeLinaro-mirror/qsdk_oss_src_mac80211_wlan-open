@@ -2740,6 +2740,9 @@ static int sta_link_apply_parameters(struct ieee80211_local *local,
 					      sband->band);
 	}
 
+	if (mode == STA_LINK_MODE_NEW && params->smd_roam_sta)
+		sta->sta.smd_params.smd_roam_sta = true;
+
 	return 0;
 }
 
@@ -2842,6 +2845,9 @@ static int sta_apply_parameters(struct ieee80211_local *local,
 		sta->sta.smd_params.dl_data_fwd =
 			params->link_sta_params.smd_dl_data_fwd;
 	}
+
+	if (params->link_sta_params.smd_roam_sta)
+		sta->sta.smd_params.smd_roam_sta = true;
 
 	if (mask & BIT(NL80211_STA_FLAG_SPP_AMSDU))
 		sta->sta.spp_amsdu = set & BIT(NL80211_STA_FLAG_SPP_AMSDU);

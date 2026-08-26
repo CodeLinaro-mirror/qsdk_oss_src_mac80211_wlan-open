@@ -1257,6 +1257,7 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_PEER_SMD_ENABLED] = { .type = NLA_U8 },
 	[NL80211_ATTR_PEER_SMD_DL_DATA_FWD] = { .type = NLA_U8 },
 	[NL80211_ATTR_PEER_SMD_MAC_ADDR] = NLA_POLICY_EXACT_LEN(6),
+	[NL80211_ATTR_SMD_ROAM_STA] = { .type = NLA_FLAG },
 	[NL80211_ATTR_UHR_RECONFIG_TYPE] = NLA_POLICY_MAX(NLA_U8, 1),
 	[NL80211_ATTR_SMD_EXEC_PATH] = NLA_POLICY_MAX(NLA_U8, 1),
 	[NL80211_ATTR_SMD_DL_TID_BITMAP] = { .type = NLA_U8 },
@@ -10560,6 +10561,9 @@ static int nl80211_new_station(struct sk_buff *skb, struct genl_info *info)
 						&lsta_params->txpwr_set);
 	if (err)
 		return err;
+
+	if (info->attrs[NL80211_ATTR_SMD_ROAM_STA])
+		lsta_params->smd_roam_sta = true;
 
 	err = nl80211_parse_sta_channel_info(info, &params);
 	if (err)
@@ -20208,6 +20212,9 @@ nl80211_add_mod_link_station(struct sk_buff *skb, struct genl_info *info,
 						&params.txpwr_set);
 	if (err)
 		return err;
+
+	if (add && info->attrs[NL80211_ATTR_SMD_ROAM_STA])
+		params.smd_roam_sta = true;
 
 	if (add)
 		return rdev_add_link_station(rdev, dev, &params);
