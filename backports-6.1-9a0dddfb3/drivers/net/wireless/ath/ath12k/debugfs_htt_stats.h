@@ -15,6 +15,7 @@
 #define ATH12K_HTT_STATS_MAX_RETRIES		3
 #define ATH12K_HTT_STATS_SUBTYPE_MAX		16
 #define ATH12K_HTT_MAX_STRING_LEN		256
+#define ATH12K_HTT_STATS_MGMT_FRM_TYPE_MAX	16
 
 
 #define ATH12K_HTT_STATS_RESET_BITMAP32_OFFSET(_idx)	((_idx) & 0x1f)
@@ -576,6 +577,7 @@ enum ath12k_dbg_htt_tlv_tag {
 	HTT_STATS_RX_PDEV_UL_MUMIMO_TRIG_STATS_TAG	= 97,
 	HTT_STATS_RX_FSE_STATS_TAG			= 98,
 	HTT_STATS_SCHED_TXQ_SUPERCYCLE_TRIGGER_TAG	= 100,
+	HTT_STATS_PEER_CTRL_PATH_TXRX_STATS_TAG		= 101,
 	HTT_STATS_PDEV_CTRL_PATH_TX_STATS_TAG		= 102,
 	HTT_STATS_RX_PDEV_RATE_EXT_STATS_TAG		= 103,
 	HTT_STATS_TX_PDEV_DL_MU_MIMO_STATS_TAG		= 104,
@@ -943,6 +945,16 @@ struct ath12k_htt_tx_pdev_stats_sifs_tlv {
 
 struct ath12k_htt_pdev_ctrl_path_tx_stats_tlv {
 	__le32 fw_tx_mgmt_subtype[ATH12K_HTT_STATS_SUBTYPE_MAX];
+} __packed;
+
+struct ath12k_htt_peer_ctrl_path_txrx_stats_tlv {
+	/* peer mac address */
+	u8 peer_mac_addr[ETH_ALEN];
+	u8 rsvd[2];
+	/* Num of tx mgmt frames with subtype on peer level */
+	__le32 peer_tx_mgmt_subtype[ATH12K_HTT_STATS_MGMT_FRM_TYPE_MAX];
+	/* Num of rx mgmt frames with subtype on peer level */
+	__le32 peer_rx_mgmt_subtype[ATH12K_HTT_STATS_MGMT_FRM_TYPE_MAX];
 } __packed;
 
 struct ath12k_htt_tx_pdev_stats_sifs_hist_tlv {

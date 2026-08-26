@@ -442,7 +442,7 @@ ath12k_dbg_sta_open_htt_peer_stats(struct inode *inode, struct file *file)
 	type = ar->debug.htt_stats.type;
 	if ((type != ATH12K_DBG_HTT_EXT_STATS_PEER_INFO &&
 	     type != ATH12K_DBG_HTT_EXT_PEER_CTRL_PATH_TXRX_STATS) ||
-	    type == ATH12K_DBG_HTT_EXT_STATS_RESET) {
+	     type == ATH12K_DBG_HTT_EXT_STATS_RESET) {
 		mutex_unlock(&ah->hw_mutex);
 		wiphy_unlock(ah->hw->wiphy);
 		return -EPERM;
@@ -456,7 +456,7 @@ ath12k_dbg_sta_open_htt_peer_stats(struct inode *inode, struct file *file)
 	}
 
 	ar->debug.htt_stats.stats_req = stats_req;
-	stats_req->type = ATH12K_DBG_HTT_EXT_STATS_PEER_INFO;
+	stats_req->type = type;
 	memcpy(stats_req->peer_addr, link_sta->addr, ETH_ALEN);
 	ret = ath12k_debugfs_htt_stats_req(ar);
 	if (ret < 0)
