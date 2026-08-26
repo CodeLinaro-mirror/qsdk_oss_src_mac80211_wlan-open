@@ -10,6 +10,8 @@
 
 extern struct ath_debug_base *athdbg_base;
 
+static bool ath12k_wait_for_dump_upload;
+
 static int athdbg_uio_notify_from_ss_cb(struct notifier_block *nb,
 					 unsigned long action, void *data);
 
@@ -29,6 +31,32 @@ static int athdbg_uio_notify_from_ss_cb(struct notifier_block *nb,
 	/* Perform any driver-specific handling here. */
 	return NOTIFY_OK;
 }
+
+/* App name sent by the debug agent via IOCTL_APP_STATUS. */
+#define ATH12K_DA_APP_NAME     "debug_agent"
+#define ATH12K_DA_APP_NAME_MAX 32
+
+static int athdbg_da_app_status_cb(struct notifier_block *nb,
+				   unsigned long action, void *data)
+{
+	const char *app_name = (const char *)data;
+
+	if (!app_name ||
+	    strncmp(app_name, ATH12K_DA_APP_NAME, ATH12K_DA_APP_NAME_MAX))
+		return NOTIFY_DONE;
+
+	ath12k_wait_for_dump_upload = (action == 1);
+
+	pr_info("ath12k: DA application is available  %s\n",
+		action == 1 ? "up" : "down");
+
+	return NOTIFY_OK;
+}
+
+static struct notifier_block athdbg_da_app_status_nb = {
+	.notifier_call = athdbg_da_app_status_cb,
+	.priority      = 0,
+};
 
 /*
  * athdbg_uio_reset_rings() - Reset HOST data and interrupt ring indices
@@ -90,6 +118,11 @@ int athdbg_uio_register(void)
 		return ret;
 	}
 
+	ret = debug_uio_register_app_status_notifier(&athdbg_da_app_status_nb);
+	if (ret)
+		pr_err("athdbg_uio: DA app status notifier registration failed: %d\n",
+		       ret);
+
 	return ret;
 }
 
@@ -98,6 +131,9 @@ int athdbg_uio_unregister(void)
 	debug_uio_unregister_notifier(&athdbg_ss_handler_nb,
 				      DEBUG_UIO_DEV_HOST,
 				      DEBUG_UIO_MAP_TYPE_INTERRUPT);
+
+	debug_uio_unregister_app_status_notifier(&athdbg_da_app_status_nb);
+	ath12k_wait_for_dump_upload = false;
 
 	return 0;
 }
@@ -171,6 +207,12 @@ void athdbg_uio_buff_write(struct ath12k_crit_record *payload)
 
 	spin_unlock_bh(&athdbg_base->uio_lock);
 }
+
+bool athdbg_uio_check_dump_upload(void)
+{
+	return ath12k_wait_for_dump_upload;
+}
+EXPORT_SYMBOL(athdbg_uio_check_dump_upload);
 
 void athdbg_uio_critical_failure_trigger(struct ath12k_base *ab, uint32_t crit_enum)
 {
