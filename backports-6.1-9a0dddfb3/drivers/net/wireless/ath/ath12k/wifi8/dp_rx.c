@@ -3118,7 +3118,6 @@ int ath12k_wifi8_dp_rx_flow_fse_cache_operation(struct ath12k_base *ab,
 	int ret, i;
 	u32 chips = 0;
 	u32 chip[] = HAL_FSE_CMD_HDR_INFO0_SEND_TO_CHIP_N;
-	struct ath12k_base *partner_ab;
 
 	if (op_code == DP_FST_CACHE_INVALIDATE_ENTRY) {
 
@@ -3152,12 +3151,8 @@ int ath12k_wifi8_dp_rx_flow_fse_cache_operation(struct ath12k_base *ab,
 		return 0;
 	}
 
-	for (i = 0; i < ab->ag->num_devices; i++) {
-		partner_ab = ab->ag->ab[i];
-		if (!partner_ab || partner_ab->is_bypassed)
-			continue;
-		chips |= chip[partner_ab->device_id];
-	}
+	for (i = 0; i < ARRAY_SIZE(chip); i++)
+		chips |= chip[i];
 
 	fse_cmd.cmd.info0 = cpu_to_le16(chips);
 
