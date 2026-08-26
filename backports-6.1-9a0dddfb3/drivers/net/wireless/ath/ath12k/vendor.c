@@ -302,8 +302,12 @@ static const struct nla_policy
 ath12k_oem_data_policy[QCA_WLAN_VENDOR_ATTR_OEM_DATA_PARAMS_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_OEM_DATA_CMD_DATA] = { .type = NLA_BINARY,
 					    .len = QCA_VENDOR_WLAN_OEM_DATA_BUF_MAX_SIZE},
-	[QCA_WLAN_VENDOR_ATTR_OEM_DEVICE_INFO] = { .type = NLA_U8 },
+	[QCA_WLAN_VENDOR_ATTR_OEM_DEVICE_INFO]            = { .type = NLA_U8 },
 	[QCA_WLAN_VENDOR_ATTR_OEM_DATA_RESPONSE_EXPECTED] = { .type = NLA_FLAG },
+	[QCA_WLAN_VENDOR_ATTR_OEM_DATA_CMD_TYPE]          = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_OEM_DATA_LINK_ID]           = { .type = NLA_U8 },
+	[QCA_WLAN_VENDOR_ATTR_OEM_DATA_IFINDEX]           = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_OEM_DATA_RADIO_IDX]         = { .type = NLA_U8 },
 };
 
 /* Inner (level-2) policy: validates each {PCP, TID} entry nested inside TABLE */
