@@ -1533,6 +1533,8 @@ struct ath12k_mode3_recovery_params {
 	u8   asserted_hw_link_id;
 	bool master_crashed;
 	bool asserted_peer_pending;
+	bool mode3_processed;
+	u16  asserted_links;
 	u16  removed_links;
 	u16  added_links;
 };

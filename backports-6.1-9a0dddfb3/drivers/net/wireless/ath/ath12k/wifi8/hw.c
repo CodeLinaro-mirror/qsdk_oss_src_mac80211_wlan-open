@@ -128,6 +128,14 @@ ath12k_dp_peer_migration_qcn9625(struct ath12k_link_vif *arvif,
 	/* The primary_link_id needs to be updated here based on the link_id sent
 	 * in the migration command.
 	 */
+	if (peer_node->ml_peer_id >= MAX_DP_PEER_LIST_SIZE) {
+		ath12k_warn(arvif->ar->ab,
+			    "peer migration: peer_id %u out of range (max %u), skipping\n",
+			    peer_node->ml_peer_id, MAX_DP_PEER_LIST_SIZE);
+		rcu_read_unlock();
+		return;
+	}
+
 	ml_peer = rcu_dereference(ah->dp_hw.dp_peer_list[peer_node->ml_peer_id]);
 	if (ml_peer && ml_peer->dp_peer_state < ATH12K_DP_PEER_LOGICALLY_DELETED) {
 		ahsta = ath12k_sta_to_ahsta(ml_peer->sta);

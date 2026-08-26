@@ -1096,6 +1096,12 @@ int ath12k_peer_mlo_link_peers_delete(struct ath12k_vif *ahvif,
 		 * therefore never sends HTT_T2H_GLOBAL_PEER_ID_UNMAP.  Without that
 		 * event, ath12k_dp_peer_cleanup_indication() is never called, leaving
 		 * TQM queues for the asserted link undrained.  Manually invoke it here.
+		 *
+		 * A peer may have more than one link on the asserted chip (two pdevs
+		 * of one chip); this delete loop walks every link, so each asserted
+		 * link runs this block with its own radio.  Use the current link's
+		 * hw_link_id (ar->pdev->hw_link_id) so the per-pdev HTT unmap targets
+		 * the correct pdev, rather than a single stored value.
 		 */
 		if (sta->mlo &&
 		    ahsta->recov.asserted_peer_pending &&
@@ -1109,12 +1115,12 @@ int ath12k_peer_mlo_link_peers_delete(struct ath12k_vif *ahvif,
 
 			if (dp_peer) {
 				ath12k_info(ar->ab,
-					    "mode3: htt_unmap_manual: dp_peer found peer_id=%u hw_link=%u\n",
+					    "mode3: htt_unmap_manual: dp_peer found peer_id=%u hw_link=%u link_id=%u\n",
 					    dp_peer->peer_id,
-					    ahsta->recov.asserted_hw_link_id);
+					    ar->pdev->hw_link_id, link_id);
 				ath12k_dp_arch_peer_drv_cleanup_indication(
 					ath12k_ab_to_dp(ar->ab), dp_peer->peer_id,
-					ahsta->recov.asserted_hw_link_id);
+					ar->pdev->hw_link_id);
 			}
 		}
 

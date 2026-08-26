@@ -1743,6 +1743,14 @@ void ath12k_mac_peer_hlist_cleanup(void *data,
 	u8 link_id;
 	unsigned long links_map = ahsta->links_map;
 
+	/* Mode3 (client-retaining) recovery: keep MLO client peers' arsta hash
+	 * entries intact so the deferred link_readd phase can walk
+	 * ar->arsta_list and re-add the asserted links.  Legacy/SLO clients are
+	 * still purged (they follow the normal disassoc/re-add path).
+	 */
+	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE3 && ahsta->is_mlo)
+		return;
+
 	for_each_set_bit(link_id, &links_map, IEEE80211_MLD_MAX_NUM_LINKS) {
 		arsta = ahsta->link[link_id];
 		if (!arsta)
@@ -1853,6 +1861,15 @@ void ath12k_mac_dp_peer_cleanup_all(struct ath12k *ar)
 	spin_lock_bh(&ar->arsta_lock);
 	if (ar->arsta_list) {
 		if (!ath12k_link_sta_hlist_empty(ar)) {
+			/* Mode3 (client-retaining) recovery deliberately leaves the
+			 * retained MLO client arstas in the hash for the deferred
+			 * link_readd phase, so a non-empty table here is expected —
+			 * do not destroy/reinit it or the retained peers are lost.
+			 */
+			if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE3) {
+				spin_unlock_bh(&ar->arsta_lock);
+				goto skip_hash_reinit;
+			}
 			ath12k_warn(ar->ab,
 				    "Destroying hash table and has stale entries\n");
 			ath12k_link_sta_hlist_destroy(ar);
@@ -1865,6 +1882,7 @@ void ath12k_mac_dp_peer_cleanup_all(struct ath12k *ar)
 	}
 	spin_unlock_bh(&ar->arsta_lock);
 
+skip_hash_reinit:
 	spin_lock_bh(&ag->ahsta_lock);
 	ath12k_sta_hlist_destroy_with_no_ar(ag);
 	spin_unlock_bh(&ag->ahsta_lock);
@@ -8069,7 +8087,7 @@ int ath12k_mac_populate_recovery_t2lm_params(
 	struct ath12k_vif *ahvif = arvif->ahvif;
 	struct ieee80211_vif *vif = ahvif->vif;
 	struct ath12k_link_vif *arv;
-	u8 asserted_link_id = 0xFF;
+	u16 asserted_links = 0;
 	u16 surviving_links = 0;
 	u16 hw_link_map = 0;
 	unsigned long links;
@@ -8081,15 +8099,17 @@ int ath12k_mac_populate_recovery_t2lm_params(
 		return -ENOENT;
 
 	/*
-	 * Build the asserted and surviving link bitmaps.
+	 * Build the asserted and surviving link bitmaps.  An MLD AP may have
+	 * more than one link on the asserted chip (two pdevs of one chip), so
+	 * the asserted set is a bitmap, not a single link id.
 	 * Repurposed links are permanently excluded from the active link map
 	 * in both set and clear paths — they are no longer part of this MLD.
 	 *
-	 * set=true  (Phase 2 — asserted link down):
+	 * set=true  (Phase 2 — asserted link(s) down):
 	 *   active_links = surviving non-repurposed links only
 	 *   disabled     = asserted + repurposed
 	 *
-	 * set=false (Phase 5 — asserted link back):
+	 * set=false (Phase 5 — asserted link(s) back):
 	 *   active_links = all non-repurposed links (asserted re-included)
 	 *   disabled     = repurposed only
 	 */
@@ -8099,12 +8119,12 @@ int ath12k_mac_populate_recovery_t2lm_params(
 		if (!arv || !arv->ar)
 			continue;
 		if (arv->ar->ab == assert_ab)
-			asserted_link_id = link_id;
+			asserted_links |= BIT(link_id);
 		else if (!(ahvif->repurposed_links & BIT(link_id)))
 			surviving_links |= BIT(link_id);
 	}
 
-	if (asserted_link_id == 0xFF || !surviving_links)
+	if (!asserted_links || !surviving_links)
 		return -ENOENT;
 
 	ar = arvif->ar;
@@ -8120,7 +8140,6 @@ int ath12k_mac_populate_recovery_t2lm_params(
 	params->ie[0].ttlm.mapping_switch_time          = 100;
 	params->ie[0].ttlm.expected_duration_present = 1;
 	if (set) {
-		/* Phase 2: steer all TIDs to surviving links; asserted link disabled */
 		params->ie[0].ttlm.expected_duration = 0xFFFFFF;
 
 		ath12k_mac_get_hw_link_map(vif, surviving_links, &hw_link_map);
@@ -8130,15 +8149,14 @@ int ath12k_mac_populate_recovery_t2lm_params(
 		}
 
 		params->ie[0].disabled_link_bitmap =
-			BIT(asserted_link_id) |
+			asserted_links |
 			(ahvif->repurposed_links &
 			 vif->valid_links);
 	} else {
 		u16 active_links;
 
-		/* Phase 5: restore asserted link; repurposed links still excluded */
 		params->ie[0].ttlm.expected_duration = 100;
-		active_links = surviving_links | BIT(asserted_link_id);
+		active_links = surviving_links | asserted_links;
 
 		ath12k_mac_get_hw_link_map(vif, active_links, &hw_link_map);
 		for (j = 0; j < TTLM_MAX_NUM_TIDS; j++) {
@@ -16197,6 +16215,10 @@ ml_station_remove:
 			cancel_work_sync(&ahsta->migration_wk);
 			ahsta->recov.asserted_peer_pending = false;
 			ahsta->recov.asserted_hw_link_id   = 0xFF;
+			ahsta->recov.mode3_processed       = false;
+			ahsta->recov.asserted_links        = 0;
+			ahsta->recov.removed_links         = 0;
+			ahsta->recov.added_links           = 0;
 		} else {
 			link_id = ffs(ahsta->links_map) - 1;
 			if (is_recovery && link_id >= 0) {
