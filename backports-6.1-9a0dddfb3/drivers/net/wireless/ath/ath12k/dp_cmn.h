@@ -51,7 +51,11 @@ struct ath12k_dp_hw_link {
 #if (CONFIG_SKB_RECYCLE_SIZE == 1664)	/* ipq52xx or ipq96xx non-minent */
 #define DP_RX_BUFFER_SIZE		((skb_active_profile->value) + NET_SKB_PAD)
 #else					/* other profiles */
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#define DP_RX_BUFFER_SIZE		2048
+#else
 #define DP_RX_BUFFER_SIZE		(skb_active_profile->value)
+#endif
 #endif
 #else					/* recycler not enabled */
 #define DP_RX_BUFFER_SIZE		(1664 + NET_SKB_PAD)
