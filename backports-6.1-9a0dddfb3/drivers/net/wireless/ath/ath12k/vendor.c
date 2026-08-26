@@ -352,39 +352,6 @@ ath12k_vendor_green_ap_policy[QCA_WLAN_VENDOR_ATTR_GREEN_AP_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_GREEN_AP_LINK_ID] = { .type = NLA_U8 },
 };
 
-/**
- * ath12k_vendor_cmd_skip_check() - Check if vendor cmd shall be allowed to process
- *
- * Converts a wiphy pointer and an optional radio index (from
- * QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX) into the corresponding
- * struct ath12k pointer.
- *
- * @wiphy:     wiphy associated with the vendor command
- * @radio_idx: radio index parsed from NL attrs
- *
- * Return: 1 for bypass 0 for not bypass.
- */
-static int ath12k_vendor_cmd_skip_check(struct wiphy *wiphy,
-					struct ath12k_wifi_generic_params wifi_params)
-{
-	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
-	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
-	struct ath12k *ar;
-
-	if (wifi_params.radio_idx >= ah->num_radio)
-		return 0;
-
-	ar = ath12k_ah_to_ar(ah, wifi_params.radio_idx);
-	if (ar && ar->ab->is_bypassed &&
-	    wifi_params.value != QCA_WLAN_VENDOR_RADIO_PARAM_WSI_BYPASS) {
-		ath12k_info(ar->ab, "vendor cmd (%d) rejected: device is in bypassed state\n",
-			    wifi_params.value);
-		return 1;
-	}
-
-	return 0;
-}
-
 static int ath12k_vendor_send_multi_bss_vdev_param_wmi_cmd(struct ath12k_link_vif *arvif,
 							   u32 param_id, u32 param_value)
 
@@ -7664,6 +7631,11 @@ static int ath12k_stats_device_setup(struct ath12k_telemetry_command *cmd)
 
 	dp = ar->ab->dp;
 
+	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)) {
+		ath12k_err(ar->ab, "Device stats return. Recovery in progress\n");
+		return -EINVAL;
+	}
+
 	len = ath12k_get_dp_vendor_event_len(cmd,
 					     ath12k_dp_hw_peer_stats_enabled(&ar->dp));
 	ath12k_dbg(ar->ab, ATH12K_DBG_TELEMETRY, "Vendor Event Length = %d\n",
@@ -7924,6 +7896,22 @@ static int ath12k_fill_radio_cp_stats(struct ath12k_telemetry_dp_radio *telemetr
 	return 0;
 }
 
+static struct ath12k_vif *ath12k_get_ahvif_from_wdev(struct wireless_dev *wdev)
+{
+	struct ieee80211_vif *vif;
+	struct ath12k_vif *ahvif;
+
+	vif = wdev_to_ieee80211_vif(wdev);
+	if (!vif)
+		return NULL;
+
+	ahvif = (struct ath12k_vif *)vif->drv_priv;
+	if (!ahvif)
+		return NULL;
+
+	return ahvif;
+}
+
 static int ath12k_stats_peer_setup(struct ath12k_telemetry_command *cmd)
 {
 	struct ath12k_vif *ahvif = NULL;
@@ -7945,6 +7933,12 @@ static int ath12k_stats_peer_setup(struct ath12k_telemetry_command *cmd)
 	}
 
 	ar = ahvif->deflink.ar;
+
+	if (ahvif->deflink.ar && ahvif->deflink.ar->ab &&
+	    test_bit(ATH12K_FLAG_CRASH_FLUSH, &ahvif->deflink.ar->ab->dev_flags)) {
+		ath12k_err(NULL, "Peer stats return. Recovery in progress\n");
+		return -EINVAL;
+	}
 
 	if (cmd->link_id != INVALID_LINK_ID &&
 	    !(ahvif->links_map & BIT(cmd->link_id))) {
@@ -8503,6 +8497,12 @@ static int ath12k_stats_vif_setup(struct ath12k_telemetry_command *cmd)
 	}
 
 	ar = ahvif->deflink.ar;
+
+	if (ahvif->deflink.ar && ahvif->deflink.ar->ab &&
+	    test_bit(ATH12K_FLAG_CRASH_FLUSH, &ahvif->deflink.ar->ab->dev_flags)) {
+		ath12k_err(NULL, "VAP stats return. Recovery in progress\n");
+		return -EINVAL;
+	}
 
 	if (cmd->link_id != INVALID_LINK_ID &&
 	    !(ahvif->links_map & BIT(cmd->link_id))) {
@@ -9668,6 +9668,11 @@ static int ath12k_stats_radio_setup(struct ath12k_telemetry_command *cmd)
 		return -EINVAL;
 	}
 
+	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)) {
+		ath12k_err(ar->ab, "Radio stats return. Recovery in progress\n");
+		return -EINVAL;
+	}
+
 	dp_pdev = &ar->dp;
 	if (!dp_pdev) {
 		ath12k_err(ar->ab, "dp_pdev not present");
@@ -10116,9 +10121,6 @@ static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 			   wiphy, wdev);
 		memset(&wifi_params, 0, sizeof(struct ath12k_wifi_generic_params));
 		ath12k_vendor_wifi_extract_generic_command_params(tb, &wifi_params);
-		if (ath12k_vendor_cmd_skip_check(wiphy, wifi_params))
-			return -EPERM;
-
 		switch (wifi_params.command) {
 		case QCA_NL80211_VENDOR_SUBCMD_WIFI_PARAMS:
 			if (!wifi_params.data) {
@@ -10322,9 +10324,6 @@ static int ath12k_vendor_wiphy_config_handler(struct wiphy *wiphy,
 			   wiphy, wdev);
 		memset(&wifi_params, 0, sizeof(struct ath12k_wifi_generic_params));
 		ath12k_vendor_wifi_extract_generic_command_params(tb, &wifi_params);
-		if (ath12k_vendor_cmd_skip_check(wiphy, wifi_params))
-			return -EPERM;
-
 		switch (wifi_params.command) {
 		case QCA_NL80211_VENDOR_SUBCMD_WIFI_PARAMS:
 			if (!wifi_params.data) {
@@ -10427,9 +10426,6 @@ static int ath12k_vendor_get_wifi_config_handler(struct wiphy *wiphy,
 			   wiphy, wdev);
 		memset(&wifi_params, 0, sizeof(struct ath12k_wifi_generic_params));
 		ath12k_vendor_wifi_extract_generic_command_params(tb, &wifi_params);
-		if (ath12k_vendor_cmd_skip_check(wiphy, wifi_params))
-			return -EPERM;
-
 		switch (wifi_params.command) {
 		case QCA_NL80211_VENDOR_SUBCMD_WIFI_PARAMS:
 #ifdef CPTCFG_QCN_EXTN
@@ -10591,9 +10587,6 @@ static int ath12k_vendor_get_wiphy_config_handler(struct wiphy *wiphy,
 			   wiphy, wdev);
 		memset(&wifi_params, 0, sizeof(struct ath12k_wifi_generic_params));
 		ath12k_vendor_wifi_extract_generic_command_params(tb, &wifi_params);
-		if (ath12k_vendor_cmd_skip_check(wiphy, wifi_params))
-			return -EPERM;
-
 		switch (wifi_params.command) {
 		case QCA_NL80211_VENDOR_SUBCMD_WIFI_PARAMS:
 #ifdef CPTCFG_QCN_EXTN
@@ -10829,25 +10822,6 @@ ath12k_vendor_send_power_update_complete(struct ath12k *ar,
 fail:
 	kfree_skb(vendor_event);
 	return -EINVAL;
-}
-
-#ifndef CPTCFG_QCN_EXTN
-static
-#endif
-struct ath12k_vif *ath12k_get_ahvif_from_wdev(struct wireless_dev *wdev)
-{
-	struct ieee80211_vif *vif;
-	struct ath12k_vif *ahvif;
-
-	vif = wdev_to_ieee80211_vif(wdev);
-	if (!vif)
-		return NULL;
-
-	ahvif = (struct ath12k_vif *)vif->drv_priv;
-	if (!ahvif)
-		return NULL;
-
-	return ahvif;
 }
 
 #ifndef CPTCFG_QCN_EXTN
