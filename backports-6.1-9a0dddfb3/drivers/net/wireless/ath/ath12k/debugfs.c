@@ -1550,41 +1550,48 @@ static bool ath12k_is_target_freq_non_dfs(struct ath12k_base *ab,
 }
 
 static bool ath12k_is_offset_invalid_for_bw(struct ath12k *ar,
-					    s32 freq_offset)
+					    s32 freq_offset, bool agile)
 {
 	struct ieee80211_chanctx_conf *ctx = NULL;
 	struct ath12k_link_vif *arvif;
 	bool sta_dfs_en = ath12k_ar_to_hw(ar)->wiphy->sta_dfs_en;
+	u16 center_freq1;
 	u16 ch_width = 0;
 
-	list_for_each_entry(arvif, &ar->arvifs, list) {
-		u32 vdev_type;
+	if (agile) {
+		ch_width = ath12k_mac_get_chan_width(ar->agile_chandef.width);
+		center_freq1 = ar->agile_chandef.center_freq1;
+	} else {
+		list_for_each_entry(arvif, &ar->arvifs, list) {
+			u32 vdev_type;
 
-		if (!arvif->chanctx.def.chan)
-			continue;
+			if (!arvif->chanctx.def.chan)
+				continue;
 
-		vdev_type = arvif->ahvif->vdev_type;
-		if (vdev_type != WMI_VDEV_TYPE_AP &&
-		    vdev_type != WMI_VDEV_TYPE_STA)
-			continue;
+			vdev_type = arvif->ahvif->vdev_type;
+			if (vdev_type != WMI_VDEV_TYPE_AP &&
+			    vdev_type != WMI_VDEV_TYPE_STA)
+				continue;
 
-		if (vdev_type == WMI_VDEV_TYPE_STA && !sta_dfs_en)
-			continue;
+			if (vdev_type == WMI_VDEV_TYPE_STA && !sta_dfs_en)
+				continue;
 
-		ctx = &arvif->chanctx;
-		break;
+			ctx = &arvif->chanctx;
+			break;
+		}
+
+		if (!ctx) {
+			ath12k_warn(ar->ab, "ctx is NULL");
+			return false;
+		}
+
+		ch_width = ath12k_mac_get_chan_width(ctx->def.width);
+		center_freq1 = ctx->def.center_freq1;
 	}
-
-	if (!ctx) {
-		ath12k_warn(ar->ab, "ctx is NULL");
-		return false;
-	}
-
-	ch_width = ath12k_mac_get_chan_width(ctx->def.width);
 
 	if (ch_width != ATH12K_CHWIDTH_320 &&
 	    ath12k_is_target_freq_non_dfs(ar->ab, ath12k_ar_to_hw(ar)->wiphy,
-					  ctx->def.center_freq1, freq_offset))
+					  center_freq1, freq_offset))
 		return true;
 
 	switch (ch_width) {
@@ -1646,9 +1653,6 @@ static ssize_t ath12k_write_simulate_radar(struct file *file,
 	if (kstrtoint(token, 10, &offset))
 		return -EINVAL;
 
-	if (ath12k_is_offset_invalid_for_bw(ar, offset))
-		return -EINVAL;
-
 	token = strsep(&sptr, " ");
 	if (!token)
 		return -EINVAL;
@@ -1660,6 +1664,9 @@ static ssize_t ath12k_write_simulate_radar(struct file *file,
 		return -EINVAL;
 
 	if (agile && !ar->agile_chandef.chan)
+		return -EINVAL;
+
+	if (ath12k_is_offset_invalid_for_bw(ar, offset, (bool)agile))
 		return -EINVAL;
 
 send_cmd:
