@@ -26,7 +26,6 @@ struct ath12k_dp_link_peer;
 #define ATH12K_EHT_MCS_NUM	16
 #define ATH12K_HE_MCS_NUM       14
 #define ATH12K_VHT_MCS_NUM      10
-#define ATH12K_BW_NUM           5
 #define ATH12K_NSS_NUM          4
 #define ATH12K_LEGACY_NUM       12
 #define ATH12K_GI_NUM           4
@@ -474,7 +473,7 @@ struct ath12k_htt_data_stats {
 	u64 he[ATH12K_COUNTER_TYPE_MAX][ATH12K_HE_MCS_NUM];
 	u64 eht[ATH12K_COUNTER_TYPE_MAX][ATH12K_EHT_MCS_NUM];
 	u64 uhr[ATH12K_COUNTER_TYPE_MAX][ATH12K_UHR_MCS_NUM]; /* UHR (11BN) */
-	u64 bw[ATH12K_COUNTER_TYPE_MAX][ATH12K_BW_NUM];
+	u64 bw[ATH12K_COUNTER_TYPE_MAX][ATH12K_BW_MAX];
 	u64 nss[ATH12K_COUNTER_TYPE_MAX][ATH12K_NSS_NUM];
 	u64 gi[ATH12K_COUNTER_TYPE_MAX][ATH12K_GI_NUM];
 	u64 transmit_type[ATH12K_COUNTER_TYPE_MAX][HTT_PPDU_STATS_PPDU_TYPE_MAX];
@@ -541,7 +540,7 @@ struct ath12k_htt_tx_ppdu_stats {
 	struct pkt_type pkt_type[DOT11_MAX];
 	u32 gi_count[ATH12K_GI_NUM];
 	u32 nss[ATH12K_NSS_NUM];
-	u32 bw[ATH12K_BW_NUM];
+	u32 bw[ATH12K_BW_MAX];
 	u32 ru_start;
 	u32 ru_tones;
 	u32 mu_group[MAX_MU_GROUP_ID];

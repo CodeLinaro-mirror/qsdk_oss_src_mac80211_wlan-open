@@ -961,7 +961,7 @@ ath12k_update_tx_ppdu_basic_stats(struct ath12k_pdev_dp *dp_pdev,
 	DP_STATS_INCC(tx_ppdu_stats, nss[nss], succ_pkts,
 		      nss >= 0 && nss < ATH12K_NSS_NUM);
 	DP_STATS_INCC(tx_ppdu_stats, bw[bw], succ_pkts,
-		      bw < ATH12K_BW_NUM);
+		      bw < ATH12K_BW_MAX);
 
 	DP_STATS_UPD(tx_ppdu_stats, ru_start, peer_stats->ru_start);
 	DP_STATS_UPD(tx_ppdu_stats, ru_tones, peer_stats->ru_tones);
