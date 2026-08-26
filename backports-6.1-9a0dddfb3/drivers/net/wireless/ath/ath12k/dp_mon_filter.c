@@ -350,6 +350,8 @@ void ath12k_dp_mon_rx_prepare_filter(struct ath12k_dp *dp,
 		dst_tlv_filter->mo_ctrl_filter |= src_tlv_filter->mo_ctrl_filter;
 		dst_tlv_filter->mo_data_filter |= src_tlv_filter->mo_data_filter;
 		dst_tlv_filter->enable_md |= src_tlv_filter->enable_md;
+		dst_tlv_filter->enable_mon_mac_filter |=
+					src_tlv_filter->enable_mon_mac_filter;
 		dst_tlv_filter->md_mgmt_filter |= src_tlv_filter->md_mgmt_filter;
 		dst_tlv_filter->md_ctrl_filter |= src_tlv_filter->md_ctrl_filter;
 		dst_tlv_filter->md_data_filter |= src_tlv_filter->md_data_filter;
@@ -854,6 +856,7 @@ ath12k_dp_ext_mon_setup_rx_filters(struct ath12k_pdev_dp *dp_pdev,
 
 	if (rx_ext_mon->md_enabled) {
 		tlv_filter->enable_md = 1;
+		tlv_filter->enable_mon_mac_filter = 1;
 		tlv_filter->md_mgmt_filter |=
 			rx_ext_mon->md.filter[ATH12K_EXT_MON_FRAME_MGMT];
 		tlv_filter->md_ctrl_filter |=

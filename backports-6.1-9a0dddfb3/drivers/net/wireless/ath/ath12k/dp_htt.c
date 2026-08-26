@@ -3473,6 +3473,8 @@ int ath12k_dp_tx_htt_rx_filter_setup(struct ath12k_base *ab, u32 ring_id,
 		cmd->info1 |=
 			le32_encode_bits(tlv_filter->rx_hdr_len,
 					 HTT_RX_RING_SEL_CFG_CMD_INFO1_CONF_HDR_LEN);
+	cmd->info1 |= le32_encode_bits(tlv_filter->enable_mon_mac_filter,
+				       HTT_RX_RING_SEL_CFG_CMD_INFO1_RXPCU_FILTER_EN);
 
 	word = 0;
 	ath12k_dp_tx_htt_rx_mgmt_flag0_filter_set(&word, tlv_filter);

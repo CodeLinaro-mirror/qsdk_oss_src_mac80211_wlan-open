@@ -745,6 +745,7 @@ enum htt_stats_frametype {
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO1_CONF_LEN_CTRL	GENMASK(21, 19)
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO1_CONF_LEN_DATA	GENMASK(24, 22)
 #define HTT_RX_RING_SEL_CFG_CMD_INFO1_CONF_HDR_LEN		GENMASK(26, 25)
+#define HTT_RX_RING_SEL_CFG_CMD_INFO1_RXPCU_FILTER_EN		BIT(27)
 
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO2_DROP_THRESHOLD	GENMASK(9, 0)
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO2_EN_LOG_MGMT_TYPE	BIT(17)
@@ -1121,6 +1122,7 @@ struct htt_rx_ring_tlv_filter {
 	bool enable_fp;
 	bool enable_mo;
 	bool enable_md;
+	bool enable_mon_mac_filter;
 	bool enable_fpmo;
 	bool enable_fp_packet;
 	bool enable_mo_packet;
