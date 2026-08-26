@@ -797,6 +797,13 @@ static int wiphy_verify_combinations(struct wiphy *wiphy)
 		combined_radio = true;
 	}
 
+	/* MLO: per-link DFS CAC uses multi-channel combinations with
+	 * radar detection. Treat as combined-radio to skip the
+	 * single-channel-only DFS constraint check.
+	 */
+	if (wiphy->flags & WIPHY_FLAG_SUPPORTS_MLO)
+		combined_radio = true;
+
 	ret = wiphy_verify_iface_combinations(wiphy,
 					      wiphy->iface_combinations,
 					      wiphy->n_iface_combinations,

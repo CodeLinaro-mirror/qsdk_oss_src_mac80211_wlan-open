@@ -1160,11 +1160,38 @@ static int hwsim_fops_ps_write(void *dat, u64 val)
 DEFINE_DEBUGFS_ATTRIBUTE(hwsim_fops_ps, hwsim_fops_ps_read, hwsim_fops_ps_write,
 			 "%llu\n");
 
+static void hwsim_find_dfs_chan_iter(struct ieee80211_hw *hw,
+				     struct ieee80211_chanctx_conf *conf,
+				     void *data)
+{
+	struct ieee80211_channel **chan = data;
+
+	if (!*chan && conf->def.chan &&
+	    conf->def.chan->flags & IEEE80211_CHAN_RADAR)
+		*chan = conf->def.chan;
+}
+
 static int hwsim_write_simulate_radar(void *dat, u64 val)
 {
 	struct mac80211_hwsim_data *data = dat;
 
-	ieee80211_radar_detected(data->hw, NULL);
+	/* For MLO radios (use_chanctx), ieee80211_radar_detected_bitmap()
+	 * requires a non-NULL radar_channel. Find the DFS channel context
+	 * and pass its primary channel.
+	 */
+	if (data->use_chanctx) {
+		struct ieee80211_channel *dfs_chan = NULL;
+
+		ieee80211_iter_chan_contexts_atomic(data->hw,
+			hwsim_find_dfs_chan_iter, &dfs_chan);
+
+		if (dfs_chan)
+			ieee80211_radar_detected_bitmap(data->hw, 0, dfs_chan);
+		else
+			ieee80211_radar_detected(data->hw, NULL);
+	} else {
+		ieee80211_radar_detected(data->hw, NULL);
+	}
 
 	return 0;
 }
@@ -6128,7 +6155,22 @@ static int mac80211_hwsim_new_radio(struct genl_info *info,
 		data->if_combination.num_different_channels *= n_bands;
 	}
 
-	if (data->use_chanctx)
+	/* For MLO radios, set num_different_channels to the number of
+	 * supported bands so ieee80211_check_combinations() allows
+	 * simultaneous operation on e.g. 2.4 GHz and 5 GHz DFS channels.
+	 */
+	if (param->mlo) {
+		int n_supported_bands = 0;
+		enum nl80211_band b;
+
+		for (b = 0; b < NUM_NL80211_BANDS; b++)
+			if (hw->wiphy->bands[b])
+				n_supported_bands++;
+		if (n_supported_bands > 1)
+			data->if_combination.num_different_channels = n_supported_bands;
+	}
+	/* Do not clear radar_detect_widths for MLO radios. */
+	if (data->use_chanctx && !param->mlo)
 		data->if_combination.radar_detect_widths = 0;
 
 	/* By default all radios belong to the first group */
@@ -6207,7 +6249,10 @@ static int mac80211_hwsim_new_radio(struct genl_info *info,
 			    &hwsim_fops_survey_time_busy);
 	debugfs_create_file("inject_fake_bss", 0200, data->debugfs, data,
 			    &hwsim_fops_fake_bss);
-	if (!data->use_chanctx)
+	/* Create dfs_simulate_radar for both non-chanctx and MLO radios.
+	 * MLO radios use chanctx but still need radar injection for DFS tests.
+	 */
+	if (!data->use_chanctx || param->mlo)
 		debugfs_create_file("dfs_simulate_radar", 0222,
 				    data->debugfs,
 				    data, &hwsim_simulate_radar);

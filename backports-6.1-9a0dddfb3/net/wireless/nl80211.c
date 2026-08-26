@@ -13336,7 +13336,14 @@ static int nl80211_start_radar_detection(struct sk_buff *skb,
 		} else if (wdev->valid_links &&
 			   !wdev->links[link_id].ap.beacon_interval) {
 			/* During MLO other link(s) can beacon, only the current link
-			 * can not already beacon
+			 * can not already beacon.
+			 */
+		} else if (wdev->valid_links &&
+			   wdev->links[link_id].ap.beacon_interval &&
+			   !wdev->links[link_id].cac_started) {
+			/* MLO DFS link: beacon_interval is configured during link
+			 * setup (NL80211_CMD_NEW_BEACON) before CAC starts.  The
+			 * link is not yet transmitting beacons.  Allow CAC to begin.
 			 */
 		} else if (!wdev->valid_links && netif_carrier_ok(dev)) {
 			return -EBUSY;
