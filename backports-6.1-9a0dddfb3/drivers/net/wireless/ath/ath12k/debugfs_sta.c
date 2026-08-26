@@ -1351,7 +1351,6 @@ static ssize_t ath12k_dbg_sta_write_cfr_capture(struct file *file,
 	struct ath12k_hw *ah = ahsta->ahvif->ah;
 	struct ath12k_link_sta *arsta;
 	struct ath12k *ar;
-	struct ath12k_cfr *cfr;
 	struct wmi_peer_cfr_capture_conf_arg arg;
 	u8 link_id = link_sta->link_id;
 	u32 cfr_capture_enable = 0, cfr_capture_bw  = 0;
@@ -1392,47 +1391,23 @@ static ssize_t ath12k_dbg_sta_write_cfr_capture(struct file *file,
 		goto out;
 	}
 
-	if (cfr_capture_enable == arsta->cfr_capture.cfr_enable &&
-	    (cfr_capture_period &&
-	     cfr_capture_period == arsta->cfr_capture.cfr_period) &&
-	    cfr_capture_bw == arsta->cfr_capture.cfr_bandwidth &&
-	    cfr_capture_method == arsta->cfr_capture.cfr_method) {
+	ret = ath12k_cfr_peer_capture_validate(ar, arsta, link_sta->bandwidth,
+					       &cfr_capture_enable,
+					       &cfr_capture_bw,
+					       &cfr_capture_period,
+					       &cfr_capture_method);
+	if (ret == -EINVAL)
+		goto out;
+
+	if (ret == -EALREADY) {
 		ret = count;
 		goto out;
 	}
 
-	if (!cfr_capture_enable &&
-	    cfr_capture_enable == arsta->cfr_capture.cfr_enable) {
-		ret = count;
-		goto out;
-	}
-
-	if (cfr_capture_enable > WMI_PEER_CFR_CAPTURE_ENABLE ||
-	    cfr_capture_bw > link_sta->bandwidth ||
-	    cfr_capture_method > CFR_CAPURE_METHOD_NULL_FRAME_WITH_PHASE ||
-	    cfr_capture_period > WMI_PEER_CFR_PERIODICITY_MAX) {
-		ret = -EINVAL;
-		goto out;
-	}
-
-	if (ar->cfr.cfr_enabled_peer_cnt >= ATH12K_MAX_CFR_ENABLED_CLIENTS &&
-	    !arsta->cfr_capture.cfr_enable) {
-		ret = -EINVAL;
-		ath12k_err(ar->ab, "CFR enable peer threshold reached %u\n",
-			   ar->cfr.cfr_enabled_peer_cnt);
-		goto out;
-	}
-
-	if (!cfr_capture_enable) {
-		cfr_capture_bw = arsta->cfr_capture.cfr_bandwidth;
-		cfr_capture_period = arsta->cfr_capture.cfr_period;
-		cfr_capture_method = arsta->cfr_capture.cfr_method;
-	}
-
-	arg.request = cfr_capture_enable;
-	arg.periodicity = cfr_capture_period;
-	arg.bandwidth = cfr_capture_bw;
-	arg.capture_method = cfr_capture_method;
+	ath12k_cfr_peer_capture_fill_wmi_arg(&arg, cfr_capture_enable,
+					     cfr_capture_bw,
+					     cfr_capture_period,
+					     cfr_capture_method);
 
 	ret = ath12k_wmi_peer_set_cfr_capture_conf(ar, arsta->arvif->vdev_id,
 						   link_sta->addr, &arg);
@@ -1443,19 +1418,9 @@ static ssize_t ath12k_dbg_sta_write_cfr_capture(struct file *file,
 	}
 	ret = count;
 
-	spin_lock_bh(&ar->cfr.lock);
-	cfr = &ar->cfr;
-	if (cfr_capture_enable &&
-	    cfr_capture_enable != arsta->cfr_capture.cfr_enable)
-		cfr->cfr_enabled_peer_cnt++;
-	else if (!cfr_capture_enable)
-		cfr->cfr_enabled_peer_cnt--;
-	spin_unlock_bh(&ar->cfr.lock);
-
-	arsta->cfr_capture.cfr_enable = cfr_capture_enable;
-	arsta->cfr_capture.cfr_period = cfr_capture_period;
-	arsta->cfr_capture.cfr_bandwidth = cfr_capture_bw;
-	arsta->cfr_capture.cfr_method = cfr_capture_method;
+	ath12k_cfr_peer_capture_update(ar, arsta, cfr_capture_enable,
+				       cfr_capture_bw, cfr_capture_period,
+				       cfr_capture_method);
 out:
 	wiphy_unlock(ah->hw->wiphy);
 	return ret;

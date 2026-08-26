@@ -74,6 +74,83 @@ void ath12k_cfr_decrement_peer_count(struct ath12k *ar,
 	spin_unlock_bh(&cfr->lock);
 }
 
+int ath12k_cfr_peer_capture_validate(struct ath12k *ar,
+				     struct ath12k_link_sta *arsta,
+				     u32 link_sta_bw,
+				     u32 *cfr_capture_enable,
+				     u32 *cfr_capture_bw,
+				     u32 *cfr_capture_period,
+				     u32 *cfr_capture_method)
+{
+	if (*cfr_capture_enable == arsta->cfr_capture.cfr_enable &&
+	    (*cfr_capture_period &&
+	     *cfr_capture_period == arsta->cfr_capture.cfr_period) &&
+	    *cfr_capture_bw == arsta->cfr_capture.cfr_bandwidth &&
+	    *cfr_capture_method == arsta->cfr_capture.cfr_method)
+		return -EALREADY;
+
+	if (!*cfr_capture_enable &&
+	    *cfr_capture_enable == arsta->cfr_capture.cfr_enable)
+		return -EALREADY;
+
+	if (*cfr_capture_enable > WMI_PEER_CFR_CAPTURE_ENABLE ||
+	    *cfr_capture_bw > link_sta_bw ||
+	    *cfr_capture_method > CFR_CAPURE_METHOD_NULL_FRAME_WITH_PHASE ||
+	    *cfr_capture_period > WMI_PEER_CFR_PERIODICITY_MAX)
+		return -EINVAL;
+
+	if (ar->cfr.cfr_enabled_peer_cnt >= ATH12K_MAX_CFR_ENABLED_CLIENTS &&
+	    !arsta->cfr_capture.cfr_enable) {
+		ath12k_err(ar->ab, "CFR enable peer threshold reached %u\n",
+			   ar->cfr.cfr_enabled_peer_cnt);
+		return -EINVAL;
+	}
+
+	if (!*cfr_capture_enable) {
+		*cfr_capture_bw = arsta->cfr_capture.cfr_bandwidth;
+		*cfr_capture_period = arsta->cfr_capture.cfr_period;
+		*cfr_capture_method = arsta->cfr_capture.cfr_method;
+	}
+
+	return 0;
+}
+
+void ath12k_cfr_peer_capture_fill_wmi_arg(struct wmi_peer_cfr_capture_conf_arg *arg,
+					  u32 cfr_capture_enable,
+					  u32 cfr_capture_bw,
+					  u32 cfr_capture_period,
+					  u32 cfr_capture_method)
+{
+	arg->request = cfr_capture_enable;
+	arg->periodicity = cfr_capture_period;
+	arg->bandwidth = cfr_capture_bw;
+	arg->capture_method = cfr_capture_method;
+}
+
+void ath12k_cfr_peer_capture_update(struct ath12k *ar,
+				    struct ath12k_link_sta *arsta,
+				    u32 cfr_capture_enable,
+				    u32 cfr_capture_bw,
+				    u32 cfr_capture_period,
+				    u32 cfr_capture_method)
+{
+	struct ath12k_cfr *cfr = &ar->cfr;
+
+	spin_lock_bh(&cfr->lock);
+	if (cfr_capture_enable != arsta->cfr_capture.cfr_enable) {
+		if (cfr_capture_enable)
+			cfr->cfr_enabled_peer_cnt++;
+		else
+			cfr->cfr_enabled_peer_cnt--;
+	}
+	spin_unlock_bh(&cfr->lock);
+
+	arsta->cfr_capture.cfr_enable = cfr_capture_enable;
+	arsta->cfr_capture.cfr_period = cfr_capture_period;
+	arsta->cfr_capture.cfr_bandwidth = cfr_capture_bw;
+	arsta->cfr_capture.cfr_method = cfr_capture_method;
+}
+
 struct ath12k_dbring *ath12k_cfr_get_dbring(struct ath12k *ar)
 {
 	if (ar->cfr.cfr_enabled)
