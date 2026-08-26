@@ -726,7 +726,11 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 
 		.iova_mask = 0,
 
+#ifdef PLATFORM_SDX
+		.supports_aspm = false,
+#else
 		.supports_aspm = true,
+#endif
 
 		.current_cc_support = false,
 
