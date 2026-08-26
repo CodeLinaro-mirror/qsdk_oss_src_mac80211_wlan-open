@@ -19180,13 +19180,20 @@ int ath12k_mac_start(struct ath12k *ar)
 		}
 	}
 
-	ret = ath12k_dp_rx_pkt_type_filter(ar, ATH12K_PKT_TYPE_EAP,
-					   ATH12K_ROUTE_EAP_METADATA);
-	if (ret) {
-		ath12k_err(ar->ab, "[vdev_id : %s radio_idx : %u] failed to configure EAP pkt route: %d\n",
-			   ATH12K_INVALID_VDEV_ID, ar->radio_idx, ret);
-		goto err;
-	}
+	/* Disabled CCE EAPOL routing via WMI_PDEV_UPDATE_PKT_ROUTING_CMDID.
+	 * Without this, firmware routes EAPOL via normal Reo_dst rings instead
+	 * of the exception ring.  This lets us test whether the regular RX path
+	 * can deliver M2/M4 to mac80211 (the regular path does not have the
+	 * "only works once" problem caused by PTK installation changing RXDMA
+	 * routing in LMAC firmware).
+	 *
+	 * ret = ath12k_dp_rx_pkt_type_filter(ar, ATH12K_PKT_TYPE_EAP,
+	 *                                    ATH12K_ROUTE_EAP_METADATA);
+	 * if (ret) {
+	 *     ath12k_err(ar->ab, "failed to configure EAP pkt route: %d\n", ret);
+	 *     goto err;
+	 * }
+	 */
 
 	/* Enable(1)/Disable(0) sub channel marking */
 	if (pdev->cap.supported_bands & WMI_HOST_WLAN_5GHZ_CAP) {
