@@ -1019,7 +1019,7 @@ static void ieee80211_process_smd_exec_resp(struct ieee80211_sub_if_data *sdata,
 	 * Drop AP retransmissions during the async DL-drain window;
 	 * re-entering execute_transition() corrupts the transition FSM.
 	 */
-	if (target->execution_in_progress) {
+	if (!target->exec_path && target->execution_in_progress) {
 		sdata_dbg(sdata,
 			  "smd: duplicate ST Exec Resp from %pM (token=%u), dropping\n",
 			  mgmt->sa,
