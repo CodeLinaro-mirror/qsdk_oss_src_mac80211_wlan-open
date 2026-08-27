@@ -12,6 +12,7 @@
 #include "debugfs.h"
 #include "dp_tx.h"
 #include "dp_rx.h"
+#include "debugfs_sta.h"
 
 #define HTT_MAX_STRING_LEN 256
 #define HTT_MAX_PRINT_CHAR_PER_ELEM 15
@@ -16079,6 +16080,11 @@ static ssize_t ath12k_write_htt_stats_type(struct file *file,
 		wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
 		return -EBUSY;
 	}
+
+	ath12k_debugfs_htt_peer_stats_update(ar,
+					     ar->debug.htt_stats.type,
+					     type);
+
 	ar->debug.htt_stats.type = type;
 	ar->debug.htt_stats.cfg_param[0] = cfg_param[0];
 	ar->debug.htt_stats.cfg_param[1] = cfg_param[1];
