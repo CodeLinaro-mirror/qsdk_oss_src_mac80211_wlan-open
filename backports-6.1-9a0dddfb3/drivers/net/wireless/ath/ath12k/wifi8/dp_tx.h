@@ -177,7 +177,7 @@ void ath12k_wifi8_ucast_handler(struct ath12k_dp_vif *dp_vif, u8 link_id,
 				struct ath12k_link_sta *arsta, struct sk_buff *skb,
 				struct ath12k_dp_skb_ctrl *skb_ctrl, u32 qos_nw_delay,
 				struct ath12k_vif *vlan_ahvif,
-				struct ath12k_dp_peer *dp_peer);
+				struct ath12k_dp_peer *dp_peer, bool htt_mesh);
 void ath12k_wifi8_mcbc_handler(struct ath12k_dp_vif *dp_vif, u8 link_id,
 			       struct ath12k_link_sta *arsta, struct sk_buff *skb,
 			       bool is_eth, bool gsn_valid, bool is_sta,
