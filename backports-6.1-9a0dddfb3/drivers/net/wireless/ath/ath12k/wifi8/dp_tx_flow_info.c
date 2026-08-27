@@ -236,14 +236,17 @@ int ath12k_wifi8_dp_tx_pool_create(struct ath12k_dp_hw_group *dp_hw_grp)
 	 * Set the last 5 queue IDs in every 256-queue block as unsupported queues.
 	 * SAM MSDUQ IDs 251-255, 507-511, 763-767, 1019-1023 .... 3835-3839, 4091-4095
 	 * SAM MPDUQ IDs 251-255, 507-511, 763-767, 1019-1023
-	 * are invalid queue ids in allocated bitmap.
+	 * are invalid queue ids in allocated bitmap in v1 HW.
 	 */
-	for (queue_id = 251; queue_id < MAX_NUM_SAM_MSDU_QUEUES_SUPPORTED;
-	     queue_id += 256) {
-		bitmap_set(dp_hw_grp_wifi8->msduq_sam_id_alloc_map, queue_id, 5);
+	if (ab->hw_rev == ATH12K_HW_QCN9625_HW10) {
+		for (queue_id = 251; queue_id < MAX_NUM_SAM_MSDU_QUEUES_SUPPORTED;
+		     queue_id += 256) {
+			bitmap_set(dp_hw_grp_wifi8->msduq_sam_id_alloc_map, queue_id, 5);
 
-		if (queue_id < MAX_NUM_SAM_MPDU_QUEUES_SUPPORTED)
-			bitmap_set(dp_hw_grp_wifi8->mpduq_sam_id_alloc_map, queue_id, 5);
+			if (queue_id < MAX_NUM_SAM_MPDU_QUEUES_SUPPORTED)
+				bitmap_set(dp_hw_grp_wifi8->mpduq_sam_id_alloc_map,
+					   queue_id, 5);
+		}
 	}
 
 	dp_hw_grp_wifi8->last_msduq_sam_id = MAX_NUM_SAM_MSDU_QUEUES_SUPPORTED - 1;

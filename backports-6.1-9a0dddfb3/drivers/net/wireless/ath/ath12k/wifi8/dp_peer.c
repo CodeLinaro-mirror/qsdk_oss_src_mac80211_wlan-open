@@ -647,8 +647,8 @@ void ath12k_wifi8_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 
 	if (dp_peer->sta_id != ATH12K_STA_ID_INVALID)
 		clear_bit(dp_peer->sta_id, dp_hw->free_sta_id_map);
 
-	/* Send peer clear command over all links.
-	 * TODO: In v2 hardware, a new link_mask field allows a single SAM command
+	/* In v1 hardware, send peer clear command over all links.
+	 * In v2 hardware, a new link_mask field allows a single SAM command
 	 * to be sent for all links, with bits set for each link.
 	 */
 	if (!dp_peer->is_vdev_peer && dp_hw_grp_wifi8 && dp_hw_grp_wifi8->cumac_dp) {
@@ -658,16 +658,27 @@ void ath12k_wifi8_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 
 			srng = &central_ab->hal.srng_list[dp_wifi8->sam_cmd_ring.ring_id];
 
 		if (srng) {
-			for (i = 0; i < HAL_TX_NUM_MAX_LINKS; i++) {
+			if (central_ab->hw_rev == ATH12K_HW_QCN9625_HW10) {
+				for (i = 0; i < HAL_TX_NUM_MAX_LINKS; i++) {
+					ret = ath12k_wifi8_hal_tx_sam_cmd_send
+							(central_ab, srng, i,
+							HAL_SAM_PEER_CLEAR_PROGRAMMING_BO,
+							dp_peer->sta_id, false, false);
+
+					if (ret < 0)
+						ath12k_warn(central_ab,
+							    "failed to send SAM peer clear command for link %d: %d\n",
+							    i, ret);
+				}
+			} else {
 				ret = ath12k_wifi8_hal_tx_sam_cmd_send
-						(central_ab, srng, i,
+						(central_ab, srng, -1,
 						 HAL_SAM_PEER_CLEAR_PROGRAMMING_BO,
 						 dp_peer->sta_id, false, false);
-
 				if (ret < 0)
 					ath12k_warn(central_ab,
-						    "failed to send SAM peer clear command for link %d: %d\n",
-						    i, ret);
+						    "failed to send SAM peer clear command: %d\n",
+						    ret);
 			}
 		}
 	}
