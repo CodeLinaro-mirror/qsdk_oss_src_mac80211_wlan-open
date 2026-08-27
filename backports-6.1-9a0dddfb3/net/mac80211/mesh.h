@@ -218,6 +218,35 @@ struct mesh_rmc {
 	u32 idx_mask;
 };
 
+/**
+ * struct mesh_uhr_probe_entry - tracks an in-flight UHR discovery probe
+ *
+ * @list: linked into &ieee80211_if_mesh.uhr_probe_list
+ * @addr: candidate peer's address
+ * @sdata: mesh subif this probe belongs to
+ * @timer: retransmit/give-up timer for this probe
+ * @probe_count: number of Probe Requests sent so far
+ * @resolved: true once a Probe Response with UHR Cap was seen, or retries
+ *	were exhausted and the peer falls back to EHT-only
+ *
+ * A UHR-capable mesh neighbour omits the UHR Capabilities element from its
+ * Beacon. Before treating such a neighbour as a peer candidate we must
+ * actively probe it for UHR Capabilities, since authentication locks the peer
+ * association's PHY mode in firmware before Peering OPEN/CONFIRM exchange.
+ */
+struct mesh_uhr_probe_entry {
+	struct list_head list;
+	u8 addr[ETH_ALEN];
+	struct ieee80211_sub_if_data *sdata;
+	struct timer_list timer;
+	int freq;
+	u8 probe_count;
+	bool resolved;
+};
+
+#define MESH_UHR_PROBE_MAX_TRIES	5
+#define MESH_UHR_PROBE_INTERVAL		(HZ / 10)
+
 #define IEEE80211_MESH_HOUSEKEEPING_INTERVAL (60 * HZ)
 
 #define MESH_PATH_EXPIRE (600 * HZ)

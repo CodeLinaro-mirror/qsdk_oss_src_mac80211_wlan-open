@@ -1032,6 +1032,11 @@ struct ieee80211_if_mesh {
 	int mesh_paths_generation;
 	int mpp_paths_generation;
 	struct mesh_tx_cache tx_cache;
+
+	/* In-flight UHR discovery probes, keyed by candidate peer address */
+	struct list_head uhr_probe_list;
+	/* Protects uhr_probe_list */
+	spinlock_t uhr_probe_lock;
 };
 
 #ifdef CPTCFG_MAC80211_MESH

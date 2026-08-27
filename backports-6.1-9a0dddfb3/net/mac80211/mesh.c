@@ -7,6 +7,7 @@
  */
 
 #include <linux/slab.h>
+#include <linux/lockdep.h>
 #include <asm/unaligned.h>
 #include <net/sock.h>
 #include "ieee80211_i.h"
@@ -21,6 +22,9 @@
 
 static int mesh_allocated;
 static struct kmem_cache *rm_cache;
+
+static void mesh_uhr_probe_forget(struct ieee80211_sub_if_data *sdata,
+				  const u8 *addr);
 
 bool mesh_action_is_path_sel(struct ieee80211_mgmt *mgmt)
 {
@@ -217,6 +221,7 @@ void mesh_sta_cleanup(struct sta_info *sta)
 	u64 changed = mesh_plink_deactivate(sta);
 
 	del_timer_sync(&sta->mesh->bmiss_timer);
+	mesh_uhr_probe_forget(sdata, sta->sta.addr);
 
 	if (changed)
 		ieee80211_mbss_info_change_notify(sdata, changed);
@@ -797,6 +802,204 @@ static int mesh_add_beacon_uhr_oper_ie(struct ieee80211_sub_if_data *sdata,
 int mesh_add_uhr_oper_ie(struct ieee80211_sub_if_data *sdata, struct sk_buff *skb)
 {
 	return mesh_add_uhr_oper_ie_common(sdata, skb);
+}
+
+static struct mesh_uhr_probe_entry *
+mesh_uhr_probe_find(struct ieee80211_if_mesh *ifmsh, const u8 *addr)
+{
+	struct mesh_uhr_probe_entry *e;
+
+	lockdep_assert_held(&ifmsh->uhr_probe_lock);
+	list_for_each_entry(e, &ifmsh->uhr_probe_list, list) {
+		if (ether_addr_equal(e->addr, addr))
+			return e;
+	}
+
+	return NULL;
+}
+
+static void mesh_send_uhr_probe_req(struct ieee80211_sub_if_data *sdata,
+				    const u8 *addr, int freq)
+{
+	struct ieee80211_if_mesh *ifmsh = &sdata->u.mesh;
+	struct ieee80211_local *local = sdata->local;
+	struct ieee80211_channel *channel;
+	struct sk_buff *skb;
+	u8 meshid_ie[2 + IEEE80211_MAX_MESH_ID_LEN];
+
+	channel = ieee80211_get_channel(local->hw.wiphy, freq);
+	if (!channel)
+		return;
+
+	meshid_ie[0] = WLAN_EID_MESH_ID;
+	meshid_ie[1] = ifmsh->mesh_id_len;
+	memcpy(meshid_ie + 2, ifmsh->mesh_id, ifmsh->mesh_id_len);
+
+	skb = ieee80211_build_probe_req(sdata, sdata->vif.addr, addr,
+					(u32)-1, channel, NULL, 0,
+					meshid_ie, 2 + ifmsh->mesh_id_len,
+					IEEE80211_PROBE_FLAG_DIRECTED);
+	if (skb)
+		ieee80211_tx_skb(sdata, skb);
+}
+
+/*
+ * mesh_uhr_probe_is_resolved - has a UHR discovery probe for @addr concluded?
+ *
+ * Returns true only if this peer has already resolved/timed out. No tracking
+ * entry means this peer has not been probed yet and must be gated.
+ */
+static bool mesh_uhr_probe_is_resolved(struct ieee80211_sub_if_data *sdata,
+				       const u8 *addr)
+{
+	struct ieee80211_if_mesh *ifmsh = &sdata->u.mesh;
+	struct mesh_uhr_probe_entry *e;
+	bool resolved = false;
+
+	spin_lock_bh(&ifmsh->uhr_probe_lock);
+	e = mesh_uhr_probe_find(ifmsh, addr);
+	if (e)
+		resolved = e->resolved;
+	spin_unlock_bh(&ifmsh->uhr_probe_lock);
+
+	return resolved;
+}
+
+static void mesh_uhr_probe_timer(struct timer_list *t)
+{
+	struct mesh_uhr_probe_entry *e = from_timer(e, t, timer);
+	struct ieee80211_sub_if_data *sdata = e->sdata;
+	struct ieee80211_if_mesh *ifmsh = &sdata->u.mesh;
+	u8 probe_count;
+	bool retry;
+
+	spin_lock_bh(&ifmsh->uhr_probe_lock);
+	if (e->resolved) {
+		spin_unlock_bh(&ifmsh->uhr_probe_lock);
+		return;
+	}
+
+	retry = e->probe_count < MESH_UHR_PROBE_MAX_TRIES;
+	if (retry) {
+		probe_count = ++e->probe_count;
+	} else {
+		e->resolved = true;
+		probe_count = e->probe_count;
+	}
+	spin_unlock_bh(&ifmsh->uhr_probe_lock);
+
+	if (retry) {
+		mpl_dbg(sdata, "mesh uhr probe retry %d/%d for %pM\n",
+			probe_count, MESH_UHR_PROBE_MAX_TRIES, e->addr);
+		mesh_send_uhr_probe_req(sdata, e->addr, e->freq);
+		mod_timer(&e->timer, jiffies + MESH_UHR_PROBE_INTERVAL);
+	} else {
+		mpl_dbg(sdata,
+			"mesh uhr probe giving up on %pM after %d tries\n",
+			e->addr, probe_count);
+	}
+	/*
+	 * On give-up, leave the resolved entry so the next Beacon continues to
+	 * the normal peer-candidate path with EHT-only caps.
+	 */
+}
+
+/*
+ * mesh_uhr_probe_start_or_continue - begin (or no-op if already running) a
+ * UHR discovery probe for @addr.
+ */
+static void mesh_uhr_probe_start_or_continue(struct ieee80211_sub_if_data *sdata,
+					     const u8 *addr, int freq)
+{
+	struct ieee80211_if_mesh *ifmsh = &sdata->u.mesh;
+	struct mesh_uhr_probe_entry *e;
+
+	spin_lock_bh(&ifmsh->uhr_probe_lock);
+	e = mesh_uhr_probe_find(ifmsh, addr);
+	if (e) {
+		spin_unlock_bh(&ifmsh->uhr_probe_lock);
+		return;
+	}
+
+	e = kzalloc(sizeof(*e), GFP_ATOMIC);
+	if (!e) {
+		spin_unlock_bh(&ifmsh->uhr_probe_lock);
+		return;
+	}
+
+	memcpy(e->addr, addr, ETH_ALEN);
+	e->sdata = sdata;
+	e->freq = freq;
+	e->probe_count = 1;
+	e->resolved = false;
+	timer_setup(&e->timer, mesh_uhr_probe_timer, 0);
+	list_add(&e->list, &ifmsh->uhr_probe_list);
+	spin_unlock_bh(&ifmsh->uhr_probe_lock);
+
+	mpl_dbg(sdata, "mesh uhr probe start for %pM\n", addr);
+	mesh_send_uhr_probe_req(sdata, addr, freq);
+	mod_timer(&e->timer, jiffies + MESH_UHR_PROBE_INTERVAL);
+}
+
+/*
+ * mesh_uhr_probe_mark_resolved - record that @addr no longer needs gating.
+ *
+ * Called once a frame from @addr carries full UHR Capabilities (probe
+ * succeeded), or on any frame from a peer that was never gated (no-op).
+ */
+static void mesh_uhr_probe_mark_resolved(struct ieee80211_sub_if_data *sdata,
+					 const u8 *addr)
+{
+	struct ieee80211_if_mesh *ifmsh = &sdata->u.mesh;
+	struct mesh_uhr_probe_entry *e;
+	bool was_unresolved = false;
+
+	spin_lock_bh(&ifmsh->uhr_probe_lock);
+	e = mesh_uhr_probe_find(ifmsh, addr);
+	if (e) {
+		was_unresolved = !e->resolved;
+		e->resolved = true;
+	}
+	spin_unlock_bh(&ifmsh->uhr_probe_lock);
+
+	if (was_unresolved)
+		mpl_dbg(sdata, "mesh uhr probe resolved for %pM\n", addr);
+}
+
+static void mesh_uhr_probe_forget(struct ieee80211_sub_if_data *sdata,
+				  const u8 *addr)
+{
+	struct ieee80211_if_mesh *ifmsh = &sdata->u.mesh;
+	struct mesh_uhr_probe_entry *e;
+
+	spin_lock_bh(&ifmsh->uhr_probe_lock);
+	e = mesh_uhr_probe_find(ifmsh, addr);
+	if (e)
+		list_del(&e->list);
+	spin_unlock_bh(&ifmsh->uhr_probe_lock);
+
+	if (!e)
+		return;
+
+	timer_shutdown_sync(&e->timer);
+	kfree(e);
+}
+
+static void mesh_uhr_probe_flush(struct ieee80211_sub_if_data *sdata)
+{
+	struct ieee80211_if_mesh *ifmsh = &sdata->u.mesh;
+	struct mesh_uhr_probe_entry *e, *tmp;
+	LIST_HEAD(freelist);
+
+	spin_lock_bh(&ifmsh->uhr_probe_lock);
+	list_splice_init(&ifmsh->uhr_probe_list, &freelist);
+	spin_unlock_bh(&ifmsh->uhr_probe_lock);
+
+	list_for_each_entry_safe(e, tmp, &freelist, list) {
+		timer_shutdown_sync(&e->timer);
+		list_del(&e->list);
+		kfree(e);
+	}
 }
 
 static void ieee80211_mesh_path_timer(struct timer_list *t)
@@ -1425,6 +1628,7 @@ void ieee80211_stop_mesh(struct ieee80211_sub_if_data *sdata)
 	del_timer_sync(&sdata->u.mesh.housekeeping_timer);
 	del_timer_sync(&sdata->u.mesh.mesh_path_root_timer);
 	del_timer_sync(&sdata->u.mesh.mesh_path_timer);
+	mesh_uhr_probe_flush(sdata);
 
 	/* clear any mesh work (for next join) we may have accrued */
 	ifmsh->wrkq_flags = 0;
@@ -1581,8 +1785,10 @@ ieee80211_mesh_rx_probe_req(struct ieee80211_sub_if_data *sdata,
 	struct ieee80211_if_mesh *ifmsh = &sdata->u.mesh;
 	struct sk_buff *presp;
 	struct beacon_data *bcn;
+	const struct element *uhr_oper;
 	struct ieee80211_mgmt *hdr;
 	struct ieee802_11_elems *elems;
+	size_t tail_off, skip_len;
 	size_t baselen;
 	u8 *pos;
 
@@ -1619,13 +1825,33 @@ ieee80211_mesh_rx_probe_req(struct ieee80211_sub_if_data *sdata,
 		goto out;
 
 	presp = dev_alloc_skb(local->tx_headroom +
-			      bcn->head_len + bcn->tail_len);
+			      bcn->head_len + bcn->tail_len +
+			      ieee80211_ie_len_uhr_cap(sdata) +
+			      2 + 1 + sizeof(struct ieee80211_uhr_operation));
 	if (!presp)
 		goto out;
 
+	uhr_oper = cfg80211_find_ext_elem(WLAN_EID_EXT_UHR_OPER,
+					  bcn->tail, bcn->tail_len);
+	if (uhr_oper) {
+		tail_off = (const u8 *)uhr_oper - bcn->tail;
+		skip_len = 2 + uhr_oper->datalen;
+	} else {
+		tail_off = ieee80211_ie_split_vendor(bcn->tail,
+						     bcn->tail_len, 0);
+		skip_len = 0;
+	}
+
 	skb_reserve(presp, local->tx_headroom);
 	skb_put_data(presp, bcn->head, bcn->head_len);
-	skb_put_data(presp, bcn->tail, bcn->tail_len);
+	skb_put_data(presp, bcn->tail, tail_off);
+	if (mesh_add_uhr_cap_ie(sdata, presp) ||
+	    mesh_add_uhr_oper_ie(sdata, presp)) {
+		dev_kfree_skb(presp);
+		goto out;
+	}
+	skb_put_data(presp, bcn->tail + tail_off + skip_len,
+		     bcn->tail_len - tail_off - skip_len);
 	hdr = (struct ieee80211_mgmt *) presp->data;
 	hdr->frame_control = cpu_to_le16(IEEE80211_FTYPE_MGMT |
 					 IEEE80211_STYPE_PROBE_RESP);
@@ -1647,6 +1873,11 @@ static void ieee80211_mesh_rx_bcn_presp(struct ieee80211_sub_if_data *sdata,
 	struct ieee80211_local *local = sdata->local;
 	struct ieee80211_if_mesh *ifmsh = &sdata->u.mesh;
 	struct ieee802_11_elems *elems;
+	struct ieee80211_elems_parse_params parse_params = {
+		.mode = IEEE80211_CONN_MODE_HIGHEST,
+		.type = type,
+		.link_id = -1,
+	};
 	struct ieee80211_channel *channel;
 	size_t baselen;
 	int freq;
@@ -1661,8 +1892,9 @@ static void ieee80211_mesh_rx_bcn_presp(struct ieee80211_sub_if_data *sdata,
 	if (baselen > len)
 		return;
 
-	elems = ieee802_11_parse_elems(mgmt->u.probe_resp.variable,
-				       len - baselen, type, NULL);
+	parse_params.start = mgmt->u.probe_resp.variable;
+	parse_params.len = len - baselen;
+	elems = ieee802_11_parse_elems_full(&parse_params);
 	if (!elems)
 		return;
 
@@ -1685,18 +1917,35 @@ static void ieee80211_mesh_rx_bcn_presp(struct ieee80211_sub_if_data *sdata,
 	if (mesh_matches_local(sdata, elems)) {
 		mpl_dbg(sdata, "rssi_threshold=%d,rx_status->signal=%d\n",
 			sdata->u.mesh.mshcfg.rssi_threshold, rx_status->signal);
-		if (!sdata->u.mesh.user_mpm ||
-		    sdata->u.mesh.mshcfg.rssi_threshold == 0 ||
-		    sdata->u.mesh.mshcfg.rssi_threshold < rx_status->signal)
-			mesh_neighbour_update(sdata, mgmt->sa, elems,
-					      rx_status);
 
-		if (ifmsh->csa_role != IEEE80211_MESH_CSA_ROLE_INIT &&
-		    !sdata->vif.bss_conf.csa_active)
-			ieee80211_mesh_process_chnswitch(sdata, elems, true);
+		/*
+		 * A UHR-capable neighbour omits UHR Capabilities from its
+		 * Beacon. Authenticating such a peer before we know its UHR
+		 * Capabilities locks the
+		 * peer association into EHT in firmware, since that happens
+		 * before Peering OPEN/CONFIRM ever exchanges UHR caps. So
+		 * actively probe first and withhold peer-candidate creation
+		 * until the probe resolves (caps learned, or retries
+		 * exhausted and we fall back to EHT-only).
+		 */
+		if (elems->uhr_operation && !elems->uhr_cap &&
+		    !mesh_uhr_probe_is_resolved(sdata, mgmt->sa)) {
+			mesh_uhr_probe_start_or_continue(sdata, mgmt->sa, freq);
+		} else {
+			mesh_uhr_probe_mark_resolved(sdata, mgmt->sa);
+
+			if (!sdata->u.mesh.user_mpm ||
+			    sdata->u.mesh.mshcfg.rssi_threshold == 0 ||
+			    sdata->u.mesh.mshcfg.rssi_threshold < rx_status->signal)
+				mesh_neighbour_update(sdata, mgmt->sa, elems,
+						      rx_status);
+		}
 
 		if (type != IEEE80211_STYPE_PROBE_RESP)
 			mesh_bmiss_update(sdata, mgmt, elems, rx_status);
+		if (ifmsh->csa_role != IEEE80211_MESH_CSA_ROLE_INIT &&
+		    !sdata->vif.bss_conf.csa_active)
+			ieee80211_mesh_process_chnswitch(sdata, elems, true);
 	}
 
 	if (ifmsh->sync_ops)
@@ -1997,11 +2246,15 @@ void ieee80211_mesh_init_sdata(struct ieee80211_sub_if_data *sdata)
 	spin_lock_init(&ifmsh->sync_offset_lock);
 	RCU_INIT_POINTER(ifmsh->beacon, NULL);
 
+	INIT_LIST_HEAD(&ifmsh->uhr_probe_list);
+	spin_lock_init(&ifmsh->uhr_probe_lock);
+
 	sdata->vif.bss_conf.bssid = zero_addr;
 }
 
 void ieee80211_mesh_teardown_sdata(struct ieee80211_sub_if_data *sdata)
 {
+	mesh_uhr_probe_flush(sdata);
 	mesh_rmc_free(sdata);
 	mesh_pathtbl_unregister(sdata);
 }
