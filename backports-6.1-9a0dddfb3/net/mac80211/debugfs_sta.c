@@ -1739,10 +1739,13 @@ void ieee80211_sta_debugfs_add(struct sta_info *sta)
 	DEBUGFS_ADD(mac80211_tx_pkts_flow);
 	DEBUGFS_ADD(mac80211_rx_pkts_flow);
 #ifdef CPTCFG_MAC80211_MESH
-        DEBUGFS_ADD(tx_fail_cnt);
+	if (sta->mesh)
+		DEBUGFS_ADD(tx_fail_cnt);
 #endif
 	/* FIXME: Kept here as the statistics are only done on the deflink */
-	DEBUGFS_ADD_COUNTER(tx_filtered, deflink.status_stats.filtered);
+	/* Only meaningful for drivers using mac80211 PS filtering (not full-offload) */
+	if (!ieee80211_hw_check(&local->hw, AP_LINK_PS))
+		DEBUGFS_ADD_COUNTER(tx_filtered, deflink.status_stats.filtered);
 
 	DEBUGFS_ADD(aqm);
 	DEBUGFS_ADD(airtime);
@@ -1801,8 +1804,11 @@ void ieee80211_link_sta_debugfs_add(struct link_sta_info *link_sta)
 	DEBUGFS_ADD(he_capa);
 	DEBUGFS_ADD(eht_capa);
 
-	DEBUGFS_ADD_COUNTER(rx_duplicates, rx_stats.num_duplicates);
-	DEBUGFS_ADD_COUNTER(rx_fragments, rx_stats.fragments);
+	/* Only meaningful for drivers using mac80211 SW RX processing */
+	if (!ieee80211_hw_check(&link_sta->sta->local->hw, SUPPORTS_REORDERING_BUFFER)) {
+		DEBUGFS_ADD_COUNTER(rx_duplicates, rx_stats.num_duplicates);
+		DEBUGFS_ADD_COUNTER(rx_fragments, rx_stats.fragments);
+	}
 }
 
 void ieee80211_link_sta_debugfs_remove(struct link_sta_info *link_sta)
