@@ -2077,11 +2077,11 @@ int ath12k_wifi8_dp_ext_mon_validate_request(struct ath12k_pdev_dp *dp_pdev,
 				 * For wifi8, ra_addr is not supported. Reject any
 				 * request with ra_addr set or a non-default bitmap.
 				 */
-				if (peer->ra_addr || peer->bitmap !=
+				if (peer->ra_addr || peer->ta_info.bitmap !=
 						ATH12K_EXT_MON_DEFAULT_PEER_BITMAP) {
 					ath12k_warn(dp_pdev->dp,
 						    "invalid ra_addr: %d or bitmap: %02x",
-						    peer->ra_addr, peer->bitmap);
+						    peer->ra_addr, peer->ta_info.bitmap);
 					return -EINVAL;
 				}
 			}

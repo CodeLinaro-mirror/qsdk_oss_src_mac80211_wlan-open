@@ -4074,13 +4074,14 @@ void ath12k_dp_ext_mon_update_snr(struct hal_rx_mon_ppdu_info *ppdu_info,
 					 &config->peer_list, list) {
 			if (ether_addr_equal(peer->peer_info.mac_addr,
 					     ppdu_info->nrp_info.mac_addr2)) {
-				peer_avg_snr = peer->peer_info.snr_info.avg_snr;
+				peer_avg_snr = peer->peer_info.ta_info.snr_info.avg_snr;
 				avg_snr =
 					ath12k_dp_get_avg_snr(ppdu_info->rssi_comb,
 								    peer_avg_snr);
-				peer->peer_info.snr_info.avg_snr = avg_snr;
-				peer->peer_info.snr_info.snr = ppdu_info->rssi_comb;
-				peer->peer_info.snr_info.timestamp =
+				peer->peer_info.ta_info.snr_info.avg_snr = avg_snr;
+				peer->peer_info.ta_info.snr_info.snr =
+							ppdu_info->rssi_comb;
+				peer->peer_info.ta_info.snr_info.timestamp =
 						ktime_to_ms(ktime_get_real());
 				break;
 			}
