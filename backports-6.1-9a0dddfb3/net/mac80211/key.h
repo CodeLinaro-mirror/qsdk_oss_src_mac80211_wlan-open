@@ -133,6 +133,7 @@ struct ieee80211_key {
 		struct dentry *stalink;
 		struct dentry *dir;
 		int cnt;
+		bool populated;
 	} debugfs;
 #endif
 
