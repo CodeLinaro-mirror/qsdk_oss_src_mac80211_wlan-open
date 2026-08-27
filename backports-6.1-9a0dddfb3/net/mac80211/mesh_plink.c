@@ -480,6 +480,16 @@ static void mesh_sta_info_init(struct ieee80211_sub_if_data *sdata,
 					    elems->he_cap_len,
 					    elems->eht_cap, elems->eht_cap_len,
 					    &sta->deflink);
+	/*
+	 * UHR mesh beacons intentionally omit UHR Capabilities. Preserve caps
+	 * learned from Probe Response/Peering frames when refreshing an
+	 * existing STA from an Operation-only beacon.
+	 */
+	if (elems->uhr_cap || !elems->uhr_operation)
+		ieee80211_uhr_cap_ie_to_sta_uhr_cap(sdata, sband,
+						    elems->uhr_cap,
+						    elems->uhr_cap_len,
+						    &sta->deflink);
 
 	ieee80211_uhr_cap_ie_to_sta_uhr_cap(sdata, sband, elems->uhr_cap,
 					    elems->uhr_cap_len, &sta->deflink);
