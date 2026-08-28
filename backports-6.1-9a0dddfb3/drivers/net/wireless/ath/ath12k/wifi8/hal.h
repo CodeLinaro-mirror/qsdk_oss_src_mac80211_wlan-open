@@ -2014,6 +2014,35 @@ enum rx_drop_reason_category {
 	HAL_RX_IGNORE_MAP
 };
 
+#define HAL_UMAC_UMCMN_TX_TIMESTAMP_RESOLUTION		0x170
+#define HAL_UMAC_UMCMN_LATENCY_RESOLUTION		0x174
+#define HAL_TX_LATENCY_RESOLUTION_TO_US(res) (1 << (res))
+
+/* The timestamp resolution in tqm and txpcu
+ * registers should always match
+ */
+
+enum hal_tx_ts_resolution {
+	HAL_TX_TS_RESOLUTION_US_1,
+	HAL_TX_TS_RESOLUTION_US_4,
+	HAL_TX_TS_RESOLUTION_US_16,
+	HAL_TX_TS_RESOLUTION_US_32
+};
+
+enum hal_tx_latency_resolution {
+	HAL_TX_LATENCY_RESOLUTION_US_1,
+	HAL_TX_LATENCY_RESOLUTION_US_2,
+	HAL_TX_LATENCY_RESOLUTION_US_4,
+	HAL_TX_LATENCY_RESOLUTION_US_8,
+	HAL_TX_LATENCY_RESOLUTION_US_16,
+	HAL_TX_LATENCY_RESOLUTION_US_32,
+	HAL_TX_LATENCY_RESOLUTION_US_64,
+	HAL_TX_LATENCY_RESOLUTION_US_128,
+	HAL_TX_LATENCY_RESOLUTION_US_256,
+	HAL_TX_LATENCY_RESOLUTION_US_512,
+	HAL_TX_LATENCY_RESOLUTION_US_1024
+};
+
 /* Register address to configure telemetry stats */
 #define HAL_TELEMETRY_PEER_CLK_CYCLE_ADDR		0xF10588
 #define HAL_TELEMETRY_PEER_CLK_CYCLE_DEFAULT_VAL	2097152
@@ -2225,6 +2254,8 @@ bool ath12k_wifi8_hal_ppeds_cfg_ast(struct ath12k_base *ab,
 		u32 ppe_vp_num,
 		u32 ppeds_idx_map_val);
 
+void ath12k_wifi8_hal_umcmn_ts_cfg(struct ath12k_base *ab, u8 ts_resolution,
+				   u8 latency_resolution);
 void ath12k_wifi8_hal_tasc_peer_tx_cfg(struct ath12k_base *ab, bool enable);
 void ath12k_wifi8_hal_tasc_peer_clk_cycle_config(struct ath12k_base *ab);
 void ath12k_wifi8_hal_tasc_peer_tx_max_peer(struct ath12k_base *ab,
