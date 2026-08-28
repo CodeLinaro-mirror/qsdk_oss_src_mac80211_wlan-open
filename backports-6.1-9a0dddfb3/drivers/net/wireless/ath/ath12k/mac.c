@@ -18102,6 +18102,60 @@ exit:
 	return ret;
 }
 
+static int ath12k_mac_conf_tx_mu_edca(struct ath12k_link_vif *arvif, u16 ac,
+				      const struct ieee80211_tx_queue_params *params)
+{
+	struct wmi_wmm_params_arg *mu_p = NULL;
+	struct ath12k *ar = arvif->ar;
+	struct ath12k_base *ab = ar->ab;
+	int ret;
+
+	switch (ac) {
+	case IEEE80211_AC_VO:
+		mu_p = &arvif->muedca_params.ac_vo;
+		break;
+	case IEEE80211_AC_VI:
+		mu_p = &arvif->muedca_params.ac_vi;
+		break;
+	case IEEE80211_AC_BE:
+		mu_p = &arvif->muedca_params.ac_be;
+		break;
+	case IEEE80211_AC_BK:
+		mu_p = &arvif->muedca_params.ac_bk;
+		break;
+	}
+
+	if (WARN_ON(!mu_p))
+		return -EINVAL;
+
+	/* Extract MU-EDCA parameters from the beacon IE.
+	 * The mu_edca_timer and txoplimit share the same field in the
+	 * firmware WMI structure (union), so mu_edca_timer is placed
+	 * in the txop field of wmi_wmm_params_arg.
+	 */
+	/* ecw_min_max encodes ECWmin in bits[3:0] and ECWmax in bits[7:4].
+	 * Convert ECW exponents to actual CW values: CW = 2^ECW - 1.
+	 */
+	mu_p->cwmin = (1 << u8_get_bits(params->mu_edca_param_rec.ecw_min_max,
+					 GENMASK(3, 0))) - 1;
+	mu_p->cwmax = (1 << u8_get_bits(params->mu_edca_param_rec.ecw_min_max,
+					 GENMASK(7, 4))) - 1;
+	mu_p->aifs = u8_get_bits(params->mu_edca_param_rec.aifsn,
+				 GENMASK(3, 0));
+	mu_p->txop = params->mu_edca_param_rec.mu_edca_timer;
+	mu_p->acm = u8_get_bits(params->mu_edca_param_rec.aifsn, BIT(4));
+	mu_p->no_ack = params->noack;
+
+	ret = ath12k_wmi_send_wmm_update_cmd(ar, arvif->vdev_id,
+					     &arvif->muedca_params,
+					     WMI_WMM_PARAM_TYPE_11AX_MU_EDCA);
+	if (ret)
+		ath12k_warn(ab, "pdev idx %d failed to set mu-edca params: %d\n",
+			    ar->pdev_idx, ret);
+
+	return ret;
+}
+
 int ath12k_mac_conf_tx(struct ath12k_link_vif *arvif, u16 ac,
 			      const struct ieee80211_tx_queue_params *params)
 {
@@ -18140,11 +18194,21 @@ int ath12k_mac_conf_tx(struct ath12k_link_vif *arvif, u16 ac,
 	p->no_ack = params->noack;
 
 	ret = ath12k_wmi_send_wmm_update_cmd(ar, arvif->vdev_id,
-					     &arvif->wmm_params);
+					     &arvif->wmm_params,
+					     WMI_WMM_PARAM_TYPE_LEGACY);
 	if (ret) {
 		ath12k_warn(ab, "pdev idx %d failed to set wmm params: %d\n",
 			    ar->pdev_idx, ret);
 		goto exit;
+	}
+
+	if (params->mu_edca) {
+		ret = ath12k_mac_conf_tx_mu_edca(arvif, ac, params);
+		if (ret) {
+			ath12k_warn(ab, "failed to set mu_edca params: %d\n",
+				    ret);
+			goto exit;
+		}
 	}
 
 	ret = ath12k_conf_tx_uapsd(arvif, ac, params->uapsd);

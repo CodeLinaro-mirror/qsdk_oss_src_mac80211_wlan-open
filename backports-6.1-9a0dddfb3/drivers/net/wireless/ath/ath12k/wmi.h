@@ -7702,6 +7702,9 @@ struct wmi_wmm_params_all_arg {
 	struct wmi_wmm_params_arg ac_vo;
 };
 
+#define WMI_WMM_PARAM_TYPE_LEGACY		0
+#define WMI_WMM_PARAM_TYPE_11AX_MU_EDCA	1
+
 #define ATH12K_TWT_DEF_STA_CONG_TIMER_MS		5000
 #define ATH12K_TWT_DEF_DEFAULT_SLOT_SIZE		10
 #define ATH12K_TWT_DEF_CONGESTION_THRESH_SETUP		50
@@ -11762,7 +11765,8 @@ int ath12k_wmi_update_scan_chan_list(struct ath12k *ar,
 int ath12k_wmi_send_scan_stop_cmd(struct ath12k *ar,
 				  struct ath12k_wmi_scan_cancel_arg *arg);
 int ath12k_wmi_send_wmm_update_cmd(struct ath12k *ar, u32 vdev_id,
-				   struct wmi_wmm_params_all_arg *param);
+				   struct wmi_wmm_params_all_arg *param,
+				   u32 wmm_param_type);
 int ath12k_wmi_pdev_suspend(struct ath12k *ar, u32 suspend_opt,
 			    u32 pdev_id);
 int ath12k_wmi_pdev_resume(struct ath12k *ar, u32 pdev_id);
