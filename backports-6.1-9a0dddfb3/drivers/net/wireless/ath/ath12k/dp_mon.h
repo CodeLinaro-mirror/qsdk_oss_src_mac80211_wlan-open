@@ -61,6 +61,7 @@
 #define DP_MON_RXDMA_BUF_COOKIE_BUF_ID		GENMASK(17, 0)
 #define DP_MON_RXDMA_BUF_COOKIE_PDEV_ID 	GENMASK(19, 18)
 #define DP_MON_RX_HDR_LEN			128
+#define DP_RXDMA_MONITOR_DEFAULT_RING_FILL_LVL	1024
 
 struct ath12k_mon_data;
 struct dp_mon_rx_filter;
@@ -79,6 +80,7 @@ struct dp_rxdma_mon_ring {
 	/* Protects bufs_idr */
 	spinlock_t idr_lock;
 	int bufs_max;
+	int bufs_fill_lvl;
 };
 
 enum dp_mon_stats_mode {
@@ -373,7 +375,7 @@ const struct ath12k_dp_arch_mon_ops *ath12k_dp_mon_ops_get(struct ath12k_dp *dp)
 int ath12k_dp_mon_buf_replenish(struct ath12k_dp *dp,
 				struct dp_rxdma_mon_ring *buf_ring,
 				struct list_head *used_list,
-				int req_entries);
+				int req_entries, gfp_t gfp);
 struct sk_buff *ath12k_dp_mon_tx_alloc_skb(void);
 enum hal_tx_mon_status
 ath12k_dp_mon_tx_parse_mon_status(struct ath12k_pdev_dp *dp_pdev,
@@ -436,7 +438,9 @@ size_t ath12k_dp_mon_list_cut_nodes(struct list_head *list, struct list_head *he
 				    size_t count);
 size_t ath12k_dp_mon_get_req_entries_from_buf_ring(struct ath12k_dp *dp,
 						   struct dp_rxdma_mon_ring *rx_ring,
-						   struct list_head *list);
+						   struct list_head *list,
+						   size_t max_entries);
+int ath12k_dp_mon_rx_monitor_mode_buf_setup(struct ath12k *ar);
 void ath12k_dp_mon_rx_deliver_skb(struct ath12k_pdev_dp *dp_pdev,
 				  struct napi_struct *napi, struct sk_buff *msdu,
 				  struct ieee80211_rx_status *status,

@@ -1564,6 +1564,8 @@ void ath12k_mac_peer_cleanup_all(struct ath12k *ar)
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_link_vif *arvif, *tmp_vif;
 	struct ath12k_dp_hw *dp_hw = &ar->ah->dp_hw;
+	struct ath12k_dp_rx_tid *rx_tid;
+	int i;
 	u16 peerid_index;
 
 	INIT_LIST_HEAD(&peers);
@@ -1595,11 +1597,23 @@ void ath12k_mac_peer_cleanup_all(struct ath12k *ar)
 			}
 		}
 #endif
-		/* Skip Rx TID cleanup for self peer */
-		if (peer->sta && peer->dp_peer)
-			ath12k_dp_rx_peer_tid_cleanup(ar, peer);
+		/* Skip Rx TID cleanup for self peer. Tear down the REO
+		 * queues and purge fragments here (peer is still linked
+		 * and dp_lock is held), but defer del_timer_sync() to the
+		 * second pass below, once the peer is unlinked from
+		 * dp->peers/rhash table and past synchronize_rcu(). This
+		 * avoids dropping dp_lock inside this loop, which would
+		 * otherwise let a concurrent disconnect free/NULL this
+		 * peer's dp_peer while del_timer_sync() runs.
+		 */
+		if (peer->sta && peer->dp_peer && peer->primary_link) {
+			for (i = 0; i <= IEEE80211_NUM_TIDS; i++) {
+				rx_tid = &peer->dp_peer->rx_tid[i];
 
-		peer->sta = NULL;
+				ath12k_dp_arch_rx_peer_tid_delete(dp, ar, peer, i);
+				ath12k_dp_rx_frags_cleanup(rx_tid, true);
+			}
+		}
 
 		/* cleanup dp peer */
 		spin_lock_bh(&dp_hw->peer_lock);
@@ -1614,7 +1628,6 @@ void ath12k_mac_peer_cleanup_all(struct ath12k *ar)
 		spin_unlock_bh(&dp_hw->peer_lock);
 
 		ath12k_dp_link_peer_rhash_delete(dp, peer);
-		peer->dp_peer = NULL;
 
 		list_del(&peer->list);
 		list_add(&peer->list, &peers);
@@ -1623,8 +1636,18 @@ void ath12k_mac_peer_cleanup_all(struct ath12k *ar)
 
 	synchronize_rcu();
 
-	list_for_each_entry_safe(peer, tmp, &peers, list)
+	list_for_each_entry_safe(peer, tmp, &peers, list) {
+		if (peer->sta && peer->dp_peer && peer->primary_link) {
+			for (i = 0; i <= IEEE80211_NUM_TIDS; i++) {
+				rx_tid = &peer->dp_peer->rx_tid[i];
+
+				del_timer_sync(&rx_tid->frag_timer);
+			}
+		}
+		peer->sta = NULL;
+		peer->dp_peer = NULL;
 		ath12k_link_peer_free(peer);
+	}
 
 	ath12k_debugfs_nrp_cleanup_all(ar);
 
@@ -1922,6 +1945,12 @@ int ath12k_mac_monitor_start(struct ath12k *ar)
 					    &arg.chanctx_conf->def);
 	if (ret) {
 		ath12k_warn(ar->ab, "failed to start monitor vdev: %d\n", ret);
+		return ret;
+	}
+
+	ret = ath12k_dp_mon_rx_monitor_mode_buf_setup(ar);
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to setup monitor buf ring %d\n", ret);
 		return ret;
 	}
 

@@ -304,7 +304,7 @@ ath12k_dp_mon_handle_mon_desc(struct ath12k_dp *dp, struct ath12k_dp_mon_desc *m
 int ath12k_dp_mon_buf_replenish(struct ath12k_dp *dp,
 				struct dp_rxdma_mon_ring *buf_ring,
 				struct list_head *used_list,
-				int req_entries)
+				int req_entries, gfp_t gfp)
 {
 	struct ath12k_base *ab = dp->ab;
 	struct hal_mon_buf_ring *mon_buf_desc;
@@ -328,7 +328,7 @@ int ath12k_dp_mon_buf_replenish(struct ath12k_dp *dp,
 
 		mon_buf = page_frag_alloc(&dp_mon->rx_mon_pf_cache,
 					  ATH12K_DP_MON_RX_BUF_SIZE,
-					  GFP_ATOMIC);
+					  gfp);
 		if (unlikely(!mon_buf)) {
 			ret = -ENOMEM;
 			goto out;
@@ -445,30 +445,38 @@ out:
 
 size_t ath12k_dp_mon_get_req_entries_from_buf_ring(struct ath12k_dp *dp,
 						   struct dp_rxdma_mon_ring *rx_ring,
-						   struct list_head *list)
+						   struct list_head *list,
+						   size_t max_entries)
 {
 	struct hal_srng *srng;
 	struct ath12k_base *ab = dp->ab;
 	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
-	size_t num_free, req_entries;
+	size_t num_free, num_req_buf, req_entries;
 
 	srng = &dp->hal->srng_list[rx_ring->refill_buf_ring.ring_id];
 	spin_lock_bh(&srng->lock);
+	spin_lock_bh(&dp_mon->mon_desc_lock);
 	ath12k_hal_srng_access_begin(ab, srng);
 	num_free = ath12k_hal_srng_src_num_free(ab, srng, true);
 	if (!num_free) {
 		ath12k_hal_srng_access_end(ab, srng);
+		spin_unlock_bh(&dp_mon->mon_desc_lock);
 		spin_unlock_bh(&srng->lock);
 		return 0;
 	}
 	ath12k_hal_srng_access_end(ab, srng);
-	spin_unlock_bh(&srng->lock);
 
-	spin_lock_bh(&dp_mon->mon_desc_lock);
+	num_req_buf = num_free;
+	if (max_entries && rx_ring->bufs_max >= max_entries)
+		num_req_buf = max_entries;
+	if (num_free < num_req_buf)
+		num_req_buf = num_free;
+
 	req_entries = ath12k_dp_mon_list_cut_nodes(list,
 						   &dp_mon->mon_desc_free_list,
-						   num_free);
+						   num_req_buf);
 	spin_unlock_bh(&dp_mon->mon_desc_lock);
+	spin_unlock_bh(&srng->lock);
 
 	return req_entries;
 }
@@ -1434,6 +1442,7 @@ int ath12k_dp_mon_rx_buf_alloc(struct ath12k_dp *dp)
 	struct dp_rxdma_mon_ring *rx_ring;
 	LIST_HEAD(list);
 	size_t req_entries;
+	size_t ring_lvl = DP_RXDMA_MONITOR_DEFAULT_RING_FILL_LVL;
 	int num_entries, ret = -EINVAL;
 
 	rx_ring = &dp_mon->rxdma_mon_buf_ring;
@@ -1442,11 +1451,22 @@ int ath12k_dp_mon_rx_buf_alloc(struct ath12k_dp *dp)
 		ath12k_hal_srng_get_entrysize(ab, HAL_RXDMA_MONITOR_BUF);
 	rx_ring->bufs_max = num_entries;
 
-	req_entries = ath12k_dp_mon_get_req_entries_from_buf_ring(dp, rx_ring, &list);
-	if (req_entries)
-		ret = ath12k_dp_mon_buf_replenish(dp, rx_ring, &list, req_entries);
-	else
+	req_entries = ath12k_dp_mon_get_req_entries_from_buf_ring(dp, rx_ring, &list,
+								  ring_lvl - 1);
+	if (req_entries) {
+		ret = ath12k_dp_mon_buf_replenish(dp, rx_ring, &list, req_entries,
+						  GFP_KERNEL);
+		if (ret)
+			return ret;
+
+		if (rx_ring->bufs_max > ring_lvl)
+			rx_ring->bufs_fill_lvl = ring_lvl;
+		else
+			rx_ring->bufs_fill_lvl = rx_ring->bufs_max;
+	} else {
 		ath12k_warn(dp, "No required entries available for mon buf ring\n");
+		ret = -ENOMEM;
+	}
 
 	return ret;
 }
@@ -2047,6 +2067,75 @@ void ath12k_dp_mon_add_rx_frag(struct sk_buff *skb, const void *mon_buf,
 }
 EXPORT_SYMBOL(ath12k_dp_mon_add_rx_frag);
 
+static int
+ath12k_dp_mon_rx_set_low_threshold(struct ath12k_dp *dp,
+				   struct dp_rxdma_mon_ring *rx_ring,
+				   u32 low_threshold)
+{
+	struct ath12k_base *ab = dp->ab;
+	u32 ring_id;
+	struct hal_srng *srng;
+	int ret;
+
+	ring_id = rx_ring->refill_buf_ring.ring_id;
+	srng = &dp->hal->srng_list[ring_id];
+	ath12k_hal_set_low_threshold(srng, (low_threshold >> 1));
+	ret = ath12k_dp_tx_htt_srng_setup(ab, ring_id, 0, HAL_RXDMA_MONITOR_BUF);
+	if (ret) {
+		ath12k_info(ab, "failed to send HTT SRNG setup for monitor buf ring %d\n",
+			    ret);
+		return ret;
+	}
+
+	return 0;
+}
+
+int ath12k_dp_mon_rx_monitor_mode_buf_setup(struct ath12k *ar)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
+	struct dp_rxdma_mon_ring *rx_ring;
+	size_t req_entries;
+	LIST_HEAD(list);
+	int ret = 0;
+
+	if (unlikely(!dp_mon))
+		return -EINVAL;
+
+	rx_ring = &dp_mon->rxdma_mon_buf_ring;
+
+	/* Ensure monitor RX ring is fully replenished now that the monitor VAP
+	 * is being started. At boot we only partially filled the ring up to
+	 * DP_RXDMA_MONITOR_DEFAULT_RING_FILL_LVL entries if the ring is large;
+	 * here we replenish the remaining free entries so that the ring is full.
+	 */
+	if (rx_ring->bufs_fill_lvl < rx_ring->bufs_max) {
+		req_entries =
+			ath12k_dp_mon_get_req_entries_from_buf_ring(dp, rx_ring, &list,
+								    (rx_ring->bufs_max -
+								    rx_ring->bufs_fill_lvl - 1));
+		if (req_entries) {
+			ret = ath12k_dp_mon_buf_replenish(dp, rx_ring, &list,
+							  req_entries, GFP_KERNEL);
+			if (ret)
+				return ret;
+
+			rx_ring->bufs_fill_lvl += (rx_ring->bufs_max -
+						   rx_ring->bufs_fill_lvl);
+		} else {
+			ath12k_warn(dp, "No required entries available for mon buf ring\n");
+			return -ENOMEM;
+		}
+
+		ret = ath12k_dp_mon_rx_set_low_threshold(dp, rx_ring, rx_ring->bufs_max);
+		if (ret)
+			return ret;
+	}
+
+	return ret;
+}
+
 void ath12k_dp_mon_rx_process_low_thres(struct ath12k_dp *dp)
 {
 	struct ath12k_base *ab = dp->ab;
@@ -2060,27 +2149,43 @@ void ath12k_dp_mon_rx_process_low_thres(struct ath12k_dp *dp)
 	srng = &dp->hal->srng_list[rx_ring->refill_buf_ring.ring_id];
 
 	spin_lock_bh(&srng->lock);
+	spin_lock_bh(&dp_mon->mon_desc_lock);
 	ath12k_hal_srng_access_begin(ab, srng);
 
 	num_free = ath12k_hal_srng_src_num_free(ab, srng, true);
-	/* if ring is less than half filled need to replenish */
-	if (num_free < (rx_ring->bufs_max / 2)) {
+
+	/* The ring may only be partially posted (bufs_fill_lvl < bufs_max)
+	 * until the monitor VAP is started, so num_free as reported against
+	 * the full ring capacity always includes the deliberately-unposted
+	 * remainder. Discount that remainder before judging fill level.
+	 */
+	if (num_free < (rx_ring->bufs_max - rx_ring->bufs_fill_lvl)) {
 		ath12k_hal_srng_access_end(ab, srng);
+		spin_unlock_bh(&dp_mon->mon_desc_lock);
+		spin_unlock_bh(&srng->lock);
+		return;
+	}
+	num_free = num_free - (rx_ring->bufs_max - rx_ring->bufs_fill_lvl);
+
+	/* if ring is less than half filled need to replenish */
+	if (num_free < (rx_ring->bufs_fill_lvl / 2)) {
+		ath12k_hal_srng_access_end(ab, srng);
+		spin_unlock_bh(&dp_mon->mon_desc_lock);
 		spin_unlock_bh(&srng->lock);
 		return;
 	}
 
 	ath12k_hal_srng_access_end(ab, srng);
-	spin_unlock_bh(&srng->lock);
 
-	spin_lock_bh(&dp_mon->mon_desc_lock);
 	req_entries = ath12k_dp_mon_list_cut_nodes(&list,
 						   &dp->dp_mon->mon_desc_free_list,
 						   num_free);
 	spin_unlock_bh(&dp_mon->mon_desc_lock);
+	spin_unlock_bh(&srng->lock);
 
 	if (req_entries)
-		ath12k_dp_mon_buf_replenish(dp, rx_ring, &list, req_entries);
+		ath12k_dp_mon_buf_replenish(dp, rx_ring, &list, req_entries,
+					    GFP_ATOMIC);
 }
 EXPORT_SYMBOL(ath12k_dp_mon_rx_process_low_thres);
 

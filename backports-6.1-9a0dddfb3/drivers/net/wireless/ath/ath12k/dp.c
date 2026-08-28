@@ -554,7 +554,10 @@ int ath12k_dp_srng_init(struct ath12k_base *ab, struct dp_srng *ring,
 		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_RX;
 		break;
 	case HAL_RXDMA_MONITOR_BUF:
-		params.low_threshold = ring->num_entries >> 1;
+		if (ring->num_entries > DP_RXDMA_MONITOR_DEFAULT_RING_FILL_LVL)
+			params.low_threshold = DP_RXDMA_MONITOR_DEFAULT_RING_FILL_LVL >> 1;
+		else
+			params.low_threshold = ring->num_entries >> 1;
 		params.flags |= HAL_SRNG_FLAGS_LOW_THRESH_INTR_EN;
 		params.intr_batch_cntr_thres_entries = 0;
 		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_RX;
@@ -2344,6 +2347,8 @@ void ath12k_dp_srng_hw_ring_disable(struct ath12k_base *ab)
         ath12k_dp_srng_hw_disable(ab, &dp->reo_cmd_ring);
         ath12k_dp_srng_hw_disable(ab, &dp->reo_status_ring);
         ath12k_dp_srng_hw_disable(ab, &dp->wbm_idle_ring);
+
+        ath12k_dp_ipa_srng_hw_disable(ab);
 }
 
 void ath12k_dp_umac_txrx_desc_cleanup(struct ath12k_base *ab)
@@ -2374,7 +2379,7 @@ void ath12k_dp_umac_txrx_desc_cleanup(struct ath12k_base *ab)
 
 			end = desc_info[j].vaddr + DP_RX_BUFFER_SIZE;
 			ath12k_core_dmac_inv_range(desc_info[j].vaddr, end);
-
+			ath12k_dp_ipa_rx_desc_dma_unmap(ab, skb);
 			dev_kfree_skb_any(skb);
 
 			desc_info[j].skb = NULL;
@@ -2475,12 +2480,15 @@ int ath12k_dp_rxdma_ring_setup(struct ath12k_base *ab)
                 return ret;
         }
 
-        req_entries = ath12k_dp_get_req_entries_from_buf_ring(ab, rx_ring, &list);
-        if (req_entries)
-                ath12k_dp_rx_bufs_replenish(dp, rx_ring, &list);
+        if (!ath12k_dp_ipa_rxdma_ring_setup(ab)) {
+                req_entries = ath12k_dp_get_req_entries_from_buf_ring(ab, rx_ring, &list);
+                if (req_entries)
+                        ath12k_dp_rx_bufs_replenish(dp, rx_ring, &list);
+        }
 
         return 0;
 }
+
 
 void ath12k_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
 {
@@ -2540,6 +2548,11 @@ void ath12k_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
         ath12k_dp_rx_reo_cmd_list_cleanup(ab);
 
         ath12k_dp_tid_cleanup(ab);
+
+	ath12k_dp_ipa_post_reset(ab);
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	ath12k_dp_rxdma_buf_setup(ab);
+#endif
 
         atomic_inc(&mlo_umac_reset->response_chip);
         ath12k_umac_reset_notify_target_sync_and_send(ab, ATH12K_UMAC_RESET_TX_CMD_POST_RESET_START_DONE);
