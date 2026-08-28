@@ -74,7 +74,7 @@ int athdbg_qmi_alloc_qdss_mem(struct athdbg_qmi *dbg_qmi)
 #elif defined(ATH12K_CMA_SUPPORT)
 		if (ab->qmi_mem_dev.rmem_inited) {
 			chunk = &ab->dbg_qmi.qdss_mem[0];
-			chunk->v.ioaddr = dma_alloc_coherent(&ab->qmi_mem_dev.pdev.dev,
+			chunk->v.ioaddr = dma_alloc_coherent(&ab->qmi_mem_dev.dev,
 							     chunk->size,
 							     &chunk->paddr,
 							     GFP_KERNEL | __GFP_NOWARN);

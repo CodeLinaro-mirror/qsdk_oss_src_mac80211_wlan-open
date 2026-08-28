@@ -4418,6 +4418,98 @@ static void ath12k_free_mlo_glb_per_device_crash_info(
 	}
 }
 
+#if defined(ATH12K_CMA_SUPPORT)
+static void ath12k_memdev_release(struct device *dev)
+{
+	/* No-op release callback required by the device core. */
+}
+
+int ath12k_memdev_init(struct ath12k_base *ab, struct ath12k_mem_dev *mem_dev,
+		       const char *name)
+{
+	struct device *dev = &mem_dev->dev;
+	struct device_node *rmem_node;
+	int ret, idx;
+
+	memset(dev, 0, sizeof(*dev));
+
+	device_initialize(dev);
+	dev->parent = ab->dev;
+	dev->release = ath12k_memdev_release;
+	dev->of_node = of_node_get(ab->dev->of_node);
+	dev_set_name(dev, "ath12k_%s.%s", name, dev_name(ab->dev));
+
+	ret = dma_coerce_mask_and_coherent(dev, dma_get_mask(ab->dev));
+	if (ret)
+		goto err_put;
+
+	ret = device_add(dev);
+	if (ret)
+		goto err_put;
+
+	mem_dev->dev_registered = true;
+
+	idx = of_property_match_string(dev->of_node, "memory-region-names", name);
+	if (idx < 0) {
+		ret = idx;
+		goto err_del;
+	}
+
+	rmem_node = of_parse_phandle(dev->of_node, "memory-region", idx);
+	if (!rmem_node || !of_property_read_bool(rmem_node, "reusable")) {
+		if (rmem_node)
+			of_node_put(rmem_node);
+		ath12k_dbg(ab, ATH12K_DBG_QMI,
+			   "reserved mem '%s' is not a shared CMA pool, skipping\n",
+			   name);
+		goto not_cma;
+	}
+	of_node_put(rmem_node);
+
+	ret = of_reserved_mem_device_init_by_idx(dev, dev->of_node, idx);
+	if (ret)
+		goto err_del;
+
+	mem_dev->rmem_inited = true;
+	return 0;
+
+not_cma:
+	ret = 0;
+err_del:
+	device_del(dev);
+	mem_dev->dev_registered = false;
+err_put:
+	of_node_put(dev->of_node);
+	dev->of_node = NULL;
+	put_device(dev);
+	return ret;
+}
+EXPORT_SYMBOL(ath12k_memdev_init);
+
+void ath12k_memdev_deinit(struct ath12k_base *ab, struct ath12k_mem_dev *mem_dev)
+{
+	struct device *dev = &mem_dev->dev;
+
+	if (mem_dev->rmem_inited) {
+		of_reserved_mem_device_release(dev);
+		mem_dev->rmem_inited = false;
+	}
+
+	if (mem_dev->dev_registered) {
+		device_del(dev);
+		mem_dev->dev_registered = false;
+	}
+
+	if (dev->of_node) {
+		of_node_put(dev->of_node);
+		dev->of_node = NULL;
+	}
+
+	put_device(dev);
+}
+EXPORT_SYMBOL(ath12k_memdev_deinit);
+#endif
+
 static void ath12k_qmi_free_mlo_mem_chunk(struct ath12k_base *ab,
 					  struct target_mem_chunk *chunk,
 					  int idx)
@@ -4427,7 +4519,7 @@ static void ath12k_qmi_free_mlo_mem_chunk(struct ath12k_base *ab,
 	struct target_mem_chunk *mlo_chunk;
 	bool fixed_mem;
 	struct device *dev = ab->mlo_mem_dev.rmem_inited ?
-			     &ab->mlo_mem_dev.pdev.dev : ab->dev;
+			     &ab->mlo_mem_dev.dev : ab->dev;
 
 	lockdep_assert_held(&ag->mutex);
 
@@ -4501,7 +4593,7 @@ void ath12k_qmi_free_target_mem_chunk(struct ath12k_base *ab)
 						      mlo_idx++);
 		} else {
 			dev = ab->qmi_mem_dev.rmem_inited ?
-			      &ab->qmi_mem_dev.pdev.dev : ab->dev;
+			      &ab->qmi_mem_dev.dev : ab->dev;
 			if (test_bit(ATH12K_FLAG_FIXED_MEM_REGION, &ab->dev_flags) &&
 			    ab->qmi.target_mem[i].v.ioaddr) {
 #ifdef PLATFORM_SDX
@@ -4627,7 +4719,7 @@ static void ath12k_qmi_free_target_mem_chunk_range(struct ath12k_base *ab,
 						   u32 start_idx, u32 end_idx)
 {
 	struct device *dev = ab->qmi_mem_dev.rmem_inited ?
-			      &ab->qmi_mem_dev.pdev.dev : ab->dev;
+			      &ab->qmi_mem_dev.dev : ab->dev;
 	u32 i;
 
 	for (i = start_idx; i < end_idx; i++) {
@@ -4659,7 +4751,7 @@ static void ath12k_qmi_msg_mem_free_request_cb(struct qmi_handle *qmi_hdl,
 	const struct qmi_wlanfw_request_mem_free_ind_msg_v01 *msg = data;
 	int i;
 	struct device *dev = ab->qmi_mem_dev.rmem_inited ?
-		&ab->qmi_mem_dev.pdev.dev : ab->dev;
+		&ab->qmi_mem_dev.dev : ab->dev;
 	struct target_mem_chunk *chunk;
 
 	ath12k_dbg(ab, ATH12K_DBG_QMI,
@@ -4794,7 +4886,7 @@ static int ath12k_qmi_alloc_target_mem_chunk(struct ath12k_base *ab,
 			}
 			if (!from_pool) {
 				dev = ab->qmi_mem_dev.rmem_inited ?
-				      &ab->qmi_mem_dev.pdev.dev : ab->dev;
+				      &ab->qmi_mem_dev.dev : ab->dev;
 				ret = ath12k_qmi_alloc_chunk(ab, chunk, dev);
 				if (ret)
 					goto err;
@@ -4834,7 +4926,7 @@ static int ath12k_qmi_alloc_target_mem_chunk(struct ath12k_base *ab,
 				}
 			} else {
 				dev = ab->mlo_mem_dev.rmem_inited ?
-				      &ab->mlo_mem_dev.pdev.dev : ab->dev;
+				      &ab->mlo_mem_dev.dev : ab->dev;
 				mlo_chunk->size = chunk->size;
 				mlo_chunk->type = chunk->type;
 				ret = ath12k_qmi_alloc_chunk(ab, mlo_chunk, dev);
@@ -5202,7 +5294,7 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab,
 				mlo_chunk->type = ab->qmi.target_mem[i].type;
 				mlo_chunk->paddr = rmem->base;
 				if (ab->mlo_mem_dev.rmem_inited) {
-					dev = &ab->mlo_mem_dev.pdev.dev;
+					dev = &ab->mlo_mem_dev.dev;
 					mlo_chunk->v.ioaddr =
 						dma_alloc_coherent(dev,
 								   mlo_chunk->size,
@@ -7613,7 +7705,7 @@ void ath12k_qmi_deinit_service(struct ath12k_base *ab)
 	 */
 	ath12k_qmi_free_resource(ab);
 
-	dev = ab->qmi_mem_dev.rmem_inited ? &ab->qmi_mem_dev.pdev.dev : ab->dev;
+	dev = ab->qmi_mem_dev.rmem_inited ? &ab->qmi_mem_dev.dev : ab->dev;
 	for (i = 0; i < ab->qmi.persist_mem_count; i++) {
 		if (!ab->qmi.persist_mem[i].v.addr)
 			continue;
