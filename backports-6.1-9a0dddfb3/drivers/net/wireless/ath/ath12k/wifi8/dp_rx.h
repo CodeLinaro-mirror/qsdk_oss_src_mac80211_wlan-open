@@ -207,7 +207,6 @@ void ath12k_wifi8_convert_n_deliver_nw_frame(struct ath12k_pdev_dp *dp_pdev,
 					     struct rx_tlv_info_1 *prev_tlv_info);
 bool ath12k_wifi8_handle_null_queue(struct ath12k_pdev_dp *dp_pdev,
 				    struct ath12k_dp_peer *peer,
-				    u8 tid,
 				    struct ieee80211_rx_status *rx_status,
 				    struct hal_rx_spd_data *spd_desc_l,
 				    struct napi_struct *napi,

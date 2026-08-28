@@ -16,7 +16,6 @@
 #include "debug.h"
 #include "hw.h"
 #include "dp.h"
-#include "dp_peer.h"
 #include "dp_rx.h"
 #include "dp_tx.h"
 #include "peer.h"
@@ -820,59 +819,6 @@ int ath12k_dp_rx_reo_setup(struct ath12k_base *ab)
 }
 EXPORT_SYMBOL(ath12k_dp_rx_reo_setup);
 
-void ath12k_dp_rx_peer_reo_cmd_flush(struct ath12k_base *ab,
-				     struct ath12k_dp *central_dp,
-				     u16 peer_id)
-{
-	struct dp_reo_update_rx_queue_elem *qelem, *qtmp;
-	struct ath12k_dp_rx_reo_cmd *cmd, *ctmp;
-	struct ath12k_dp_rx_reo_cache_flush_elem *felem, *ftmp;
-	struct ath12k_dp_rx_tid *rx_tid;
-
-	/* Stage 1: entries still waiting for REO cmd ring space */
-	spin_lock_bh(&central_dp->reo_cmd_update_rx_queue_lock);
-	list_for_each_entry_safe(qelem, qtmp, &central_dp->reo_cmd_update_rx_queue_list,
-				 list) {
-		if (qelem->peer_id != peer_id)
-			continue;
-		rx_tid = &qelem->data;
-		if (rx_tid->vaddr)
-			ath12k_dp_rx_tid_free_desc(ab, rx_tid);
-		list_del(&qelem->list);
-		kfree(qelem);
-	}
-	spin_unlock_bh(&central_dp->reo_cmd_update_rx_queue_lock);
-
-	/* Stage 2: REO cmd sent, waiting for HW status ring */
-	spin_lock_bh(&central_dp->reo_cmd_lock);
-	list_for_each_entry_safe(cmd, ctmp, &central_dp->reo_cmd_list, list) {
-		rx_tid = &cmd->u.data;
-		if (rx_tid->peer_id != peer_id)
-			continue;
-		list_del(&cmd->list);
-		if (rx_tid->vaddr)
-			ath12k_dp_rx_tid_free_desc(ab, rx_tid);
-		kfree(cmd);
-	}
-	spin_unlock_bh(&central_dp->reo_cmd_lock);
-
-	/* Stage 3: HW status received, waiting for cache-flush REO cmd */
-	spin_lock_bh(&central_dp->reo_cmd_lock);
-	list_for_each_entry_safe(felem, ftmp, &central_dp->reo_cmd_cache_flush_list,
-				 list) {
-		rx_tid = &felem->data;
-		if (rx_tid->peer_id != peer_id)
-			continue;
-		central_dp->reo_cmd_cache_flush_count--;
-		list_del(&felem->list);
-		if (rx_tid->vaddr)
-			ath12k_dp_rx_tid_free_desc(ab, rx_tid);
-		kfree(felem);
-	}
-	spin_unlock_bh(&central_dp->reo_cmd_lock);
-}
-EXPORT_SYMBOL(ath12k_dp_rx_peer_reo_cmd_flush);
-
 void ath12k_dp_rx_reo_cmd_list_cleanup(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
@@ -947,6 +893,8 @@ void ath12k_dp_rx_frags_cleanup(struct ath12k_dp_rx_tid *rx_tid,
 	struct ath12k_dp *dp = rx_tid->dp;
 	enum hal_wbm_rel_bm_act bm_act;
 
+	lockdep_assert_held(&rx_tid->tid_lock);
+
 	if (rx_tid->desc) {
 		if (rel_link_desc) {
 			bm_act = HAL_WBM_REL_BM_ACT_PUT_IN_IDLE;
@@ -979,27 +927,15 @@ void ath12k_dp_rx_peer_tid_cleanup(struct ath12k *ar,
 		return;
 
 	for (i = 0; i < ab->hal.hal_params->num_tids; i++) {
-		spin_lock_bh(&peer->dp_peer->rx_tid_lock);
-		rx_tid = peer->dp_peer->rx_tid[i];
-		if (!rx_tid) {
-			spin_unlock_bh(&peer->dp_peer->rx_tid_lock);
-			continue;
-		}
+		rx_tid = &peer->dp_peer->rx_tid[i];
+
+		spin_lock_bh(&rx_tid->tid_lock);
 		ath12k_dp_arch_rx_peer_tid_delete(dp, ar, peer, i);
 		ath12k_dp_rx_frags_cleanup(rx_tid, true);
-		peer->dp_peer->rx_tid[i] = NULL;
-		spin_unlock_bh(&peer->dp_peer->rx_tid_lock);
+		spin_unlock_bh(&rx_tid->tid_lock);
 
 		del_timer_sync(&rx_tid->frag_timer);
-		kfree(rx_tid);
 	}
-
-	/* Flush any pending REO cmd list entries for this peer.
-	 * arch_rx_peer_tid_delete enqueues a deferred REO flush cmd;
-	 * if the REO status ring is not drained before the peer is freed
-	 * (e.g. interface down), the vaddr leaks. Drain here by peer_id.
-	 */
-	ath12k_dp_arch_peer_reo_cmd_flush(dp, ab, peer->dp_peer->peer_id);
 }
 
 int ath12k_dp_rx_peer_tid_setup(struct ath12k *ar, struct ath12k_dp_peer *dp_peer,
@@ -1011,7 +947,7 @@ int ath12k_dp_rx_peer_tid_setup(struct ath12k *ar, struct ath12k_dp_peer *dp_pee
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_dp_link_peer *peer;
-	struct ath12k_dp_rx_tid *rx_tid, *new_rx_tid;
+	struct ath12k_dp_rx_tid *rx_tid;
 	dma_addr_t paddr;
 	u16 stats_id;
 	int ret;
@@ -1036,34 +972,14 @@ int ath12k_dp_rx_peer_tid_setup(struct ath12k *ar, struct ath12k_dp_peer *dp_pee
 		return -EINVAL;
 	}
 
-	/* Allocate the rx_tid slot if not yet present for this TID.
-	 * GFP_ATOMIC alloc happens outside rx_tid_lock; the pointer install
-	 * and all subsequent state operations are done under the same lock.
-	 * If two callers race, the loser frees its allocation.
-	 */
-	spin_lock_bh(&dp_peer->rx_tid_lock);
-	if (!dp_peer->rx_tid[tid]) {
-		new_rx_tid = kzalloc(sizeof(*new_rx_tid), GFP_ATOMIC);
-		if (!new_rx_tid) {
-			spin_unlock_bh(&dp_peer->rx_tid_lock);
-			rcu_read_unlock();
-			return -ENOMEM;
-		}
-		skb_queue_head_init(&new_rx_tid->rx_frags);
-		timer_setup(&new_rx_tid->frag_timer, ath12k_dp_rx_frag_timer, 0);
-		new_rx_tid->dp = dp;
-		new_rx_tid->peer_id = dp_peer->peer_id;
-		new_rx_tid->pdev_id = ar->pdev_idx;
-		dp_peer->rx_tid[tid] = new_rx_tid;
-	}
-
-	rx_tid = dp_peer->rx_tid[tid];
+	rx_tid = &peer->dp_peer->rx_tid[tid];
+	spin_lock_bh(&rx_tid->tid_lock);
 	/* Update the tid queue if it is already setup */
 	if (rx_tid->active) {
 		paddr = rx_tid->paddr;
 		ret = ath12k_dp_arch_peer_rx_tid_reo_update(dp, ar, peer, rx_tid,
 							    ba_win_sz, ssn, true);
-		spin_unlock_bh(&dp_peer->rx_tid_lock);
+		spin_unlock_bh(&rx_tid->tid_lock);
 		rcu_read_unlock();
 
 		if (ret) {
@@ -1107,7 +1023,7 @@ int ath12k_dp_rx_peer_tid_setup(struct ath12k *ar, struct ath12k_dp_peer *dp_pee
 	ret = ath12k_dp_arch_alloc_reo_qdesc(dp, rx_tid, ssn, pn_type,
 					     &addr_aligned, stats_id);
 	if (ret < 0) {
-		spin_unlock_bh(&dp_peer->rx_tid_lock);
+		spin_unlock_bh(&rx_tid->tid_lock);
 		rcu_read_unlock();
 		return ret;
 	}
@@ -1122,10 +1038,10 @@ int ath12k_dp_rx_peer_tid_setup(struct ath12k *ar, struct ath12k_dp_peer *dp_pee
 						      rx_tid->tid,
 						      rx_tid->paddr);
 
-		spin_unlock_bh(&dp_peer->rx_tid_lock);
+		spin_unlock_bh(&rx_tid->tid_lock);
 		rcu_read_unlock();
 	} else {
-		spin_unlock_bh(&dp_peer->rx_tid_lock);
+		spin_unlock_bh(&rx_tid->tid_lock);
 		rcu_read_unlock();
 		ret = ath12k_wmi_peer_rx_reorder_queue_setup(ar, vdev_id,
 							     peer_mac,
@@ -1136,7 +1052,6 @@ int ath12k_dp_rx_peer_tid_setup(struct ath12k *ar, struct ath12k_dp_peer *dp_pee
 
 	return ret;
 }
-EXPORT_SYMBOL(ath12k_dp_rx_peer_tid_setup);
 
 int ath12k_dp_rx_ampdu_start(struct ath12k *ar,
 			     struct ieee80211_ampdu_params *params,
@@ -1180,8 +1095,9 @@ int ath12k_dp_rx_ampdu_stop(struct ath12k *ar,
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_dp_link_peer *peer;
 	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(params->sta);
+	bool active;
+	int ret;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-	struct ath12k_dp_rx_tid *rx_tid;
 	struct ath12k_dp_peer *dp_peer;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
@@ -1205,28 +1121,28 @@ int ath12k_dp_rx_ampdu_stop(struct ath12k *ar,
 		return 0;
 	}
 
-	spin_lock_bh(&dp_peer->rx_tid_lock);
-	rx_tid = dp_peer->rx_tid[params->tid];
-	if (!rx_tid || !rx_tid->active) {
-		spin_unlock_bh(&dp_peer->rx_tid_lock);
+	spin_lock_bh(&dp_peer->rx_tid[params->tid].tid_lock);
+	active = dp_peer->rx_tid[params->tid].active;
+
+	if (!active) {
+		spin_unlock_bh(&dp_peer->rx_tid[params->tid].tid_lock);
 		rcu_read_unlock();
 		return 0;
 	}
 
-	/* Full delete: copies TID state into the async REO delete list,
-	 * sends REO UPDATE_RX_QUEUE with VLD=0 to invalidate HW queue.
-	 * The async del_func callback handles DMA unmap and desc free.
-	 */
-	ath12k_dp_arch_rx_peer_tid_delete(dp, ar, peer, params->tid);
-	ath12k_dp_rx_frags_cleanup(rx_tid, true);
-	dp_peer->rx_tid[params->tid] = NULL;
-	spin_unlock_bh(&dp_peer->rx_tid_lock);
+	ret = ath12k_dp_arch_peer_rx_tid_reo_update(dp, ar, peer,
+				&dp_peer->rx_tid[params->tid], 1, 0, false);
+
+	spin_unlock_bh(&dp_peer->rx_tid[params->tid].tid_lock);
 	rcu_read_unlock();
 
-	del_timer_sync(&rx_tid->frag_timer);
-	kfree(rx_tid);
+	if (ret) {
+		ath12k_warn(ab, "failed to update reo for rx tid %d: %d\n",
+			    params->tid, ret);
+		return ret;
+	}
 
-	return 0;
+	return ret;
 }
 
 int ath12k_dp_rx_peer_pn_replay_config(struct ath12k_link_vif *arvif,
@@ -1288,10 +1204,11 @@ int ath12k_dp_rx_peer_pn_replay_config(struct ath12k_link_vif *arvif,
 		    (cfg == ATH12K_RXTID_PN_CHECK_MGMT_TIDS && !is_mgmt))
 			continue;
 
-		spin_lock_bh(&dp_peer->rx_tid_lock);
-		rx_tid = dp_peer->rx_tid[tid];
-		if (!rx_tid || !rx_tid->active) {
-			spin_unlock_bh(&dp_peer->rx_tid_lock);
+		rx_tid = &dp_peer->rx_tid[tid];
+
+		spin_lock_bh(&rx_tid->tid_lock);
+		if (!rx_tid->active) {
+			spin_unlock_bh(&rx_tid->tid_lock);
 			continue;
 		}
 
@@ -1300,7 +1217,7 @@ int ath12k_dp_rx_peer_pn_replay_config(struct ath12k_link_vif *arvif,
 		ret = ath12k_dp_arch_reo_cmd_send(dp, rx_tid, sizeof(*rx_tid),
 						  HAL_REO_CMD_UPDATE_RX_QUEUE,
 						  &cmd, NULL);
-		spin_unlock_bh(&dp_peer->rx_tid_lock);
+		spin_unlock_bh(&rx_tid->tid_lock);
 
 		if (ret) {
 			ath12k_warn(ab, "failed to configure rx tid %d queue of peer %pM for pn replay detection %d\n",
@@ -1505,37 +1422,15 @@ EXPORT_SYMBOL(ath12k_dp_rx_deliver_msdu);
 void ath12k_dp_rx_frag_timer(struct timer_list *timer)
 {
 	struct ath12k_dp_rx_tid *rx_tid = from_timer(rx_tid, timer, frag_timer);
-	struct ath12k_pdev_dp *dp_pdev;
-	struct ath12k_dp_peer *dp_peer;
 
-	rcu_read_lock();
-	dp_pdev = ath12k_dp_to_dp_pdev(rx_tid->dp, rx_tid->pdev_id);
-	if (!dp_pdev) {
-		rcu_read_unlock();
-		return;
-	}
-	dp_peer = ath12k_dp_peer_find_by_peerid_index(rx_tid->dp, dp_pdev,
-						       rx_tid->peer_id);
-	if (!dp_peer) {
-		rcu_read_unlock();
-		return;
-	}
-	spin_lock_bh(&dp_peer->rx_tid_lock);
-	/* Re-validate: teardown may have NULLed the slot between find and lock */
-	if (dp_peer->rx_tid[rx_tid->tid] != rx_tid) {
-		spin_unlock_bh(&dp_peer->rx_tid_lock);
-		rcu_read_unlock();
-		return;
-	}
+	spin_lock_bh(&rx_tid->tid_lock);
 	if (rx_tid->last_frag_no &&
 	    rx_tid->rx_frag_bitmap == GENMASK(rx_tid->last_frag_no, 0)) {
-		spin_unlock_bh(&dp_peer->rx_tid_lock);
-		rcu_read_unlock();
+		spin_unlock_bh(&rx_tid->tid_lock);
 		return;
 	}
 	ath12k_dp_rx_frags_cleanup(rx_tid, true);
-	spin_unlock_bh(&dp_peer->rx_tid_lock);
-	rcu_read_unlock();
+	spin_unlock_bh(&rx_tid->tid_lock);
 }
 EXPORT_SYMBOL(ath12k_dp_rx_frag_timer);
 
@@ -1550,17 +1445,12 @@ int ath12k_dp_rx_peer_frag_setup(struct ath12k *ar,
 
 	lockdep_assert(&dp->dp_lock);
 
-	/* frag_timer and rx_frags are initialised at tid_setup() time.
-	 * Only set dp pointer for already-allocated slots; skip NULLs.
-	 */
-	spin_lock_bh(&peer->dp_peer->rx_tid_lock);
 	for (i = 0; i < ab->hal.hal_params->num_tids; i++) {
-		rx_tid = peer->dp_peer->rx_tid[i];
-		if (!rx_tid)
-			continue;
+		rx_tid = &peer->dp_peer->rx_tid[i];
 		rx_tid->dp = dp;
+		timer_setup(&rx_tid->frag_timer, ath12k_dp_rx_frag_timer, 0);
+		skb_queue_head_init(&rx_tid->rx_frags);
 	}
-	spin_unlock_bh(&peer->dp_peer->rx_tid_lock);
 
 	peer->dp_peer->tfm_mmic = tfm;
 	peer->dp_peer->primary_link_frag_setup = true;
@@ -1965,12 +1855,9 @@ ath12k_dp_tid_cleanup_cb(struct ath12k_pdev_dp *dp_pdev,
 
 	if (link_peer->dp_peer) {
 		for (tid = 0; tid < ab->hal.hal_params->num_tids; tid++) {
-			spin_lock_bh(&link_peer->dp_peer->rx_tid_lock);
-			rx_tid = link_peer->dp_peer->rx_tid[tid];
-			if (!rx_tid) {
-				spin_unlock_bh(&link_peer->dp_peer->rx_tid_lock);
-				continue;
-			}
+			rx_tid = &link_peer->dp_peer->rx_tid[tid];
+
+			spin_lock_bh(&rx_tid->tid_lock);
 			if (rx_tid->active) {
 				vaddr = rx_tid->vaddr;
 				addr_aligned = PTR_ALIGN(vaddr,
@@ -1980,7 +1867,7 @@ ath12k_dp_tid_cleanup_cb(struct ath12k_pdev_dp *dp_pdev,
 							      rx_tid->ba_win_sz,
 							      tid);
 			}
-			spin_unlock_bh(&link_peer->dp_peer->rx_tid_lock);
+			spin_unlock_bh(&rx_tid->tid_lock);
 		}
 	}
 }

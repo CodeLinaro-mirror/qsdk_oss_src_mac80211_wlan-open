@@ -604,7 +604,6 @@ static struct ath12k_dp_arch_ops ath12k_wifi7_dp_arch_ops = {
 	.sdwf_reinject_handler = ath12k_wifi7_sdwf_reinject_handler,
 	.dp_peer_create = ath12k_wifi7_dp_peer_create,
 	.dp_peer_delete = ath12k_wifi7_dp_peer_delete,
-	.dp_peer_reo_cmd_flush = ath12k_wifi7_dp_peer_reo_cmd_flush,
 	.dp_peer_assoc = ath12k_wifi7_dp_peer_assoc,
 	.dp_ppeds_tx_completion_handler = ath12k_wifi7_ppeds_tx_completion_handler,
 	.dp_vif_configure = ath12k_wifi7_dp_vif_configure,

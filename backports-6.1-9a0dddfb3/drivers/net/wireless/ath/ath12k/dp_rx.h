@@ -164,6 +164,8 @@ struct ath12k_dp_rx_tid {
 	u8      chip_id;
 	u8      pdev_id;
 
+	/* Per-TID lock protecting concurrent access to this TID's state */
+	spinlock_t tid_lock;
 	void    *smd_ctx;
 };
 
@@ -440,9 +442,6 @@ void ath12k_dp_rx_reo_cleanup(struct ath12k_base *ab);
 int ath12k_dp_rx_alloc(struct ath12k_base *ab);
 void ath12k_dp_rx_free(struct ath12k_base *ab);
 void ath12k_dp_rx_reo_cmd_list_cleanup(struct ath12k_base *ab);
-void ath12k_dp_rx_peer_reo_cmd_flush(struct ath12k_base *ab,
-				     struct ath12k_dp *central_dp,
-				     u16 peer_id);
 void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 				 struct hal_srng *srng,
 				 struct list_head *used_list,

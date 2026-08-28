@@ -731,13 +731,8 @@ static int ath12k_wifi8_dp_rx_frag_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 		goto out_unlock;
 	}
 
-	spin_lock_bh(&peer->rx_tid_lock);
-	rx_tid = peer->rx_tid[tid];
-	if (!rx_tid) {
-		spin_unlock_bh(&peer->rx_tid_lock);
-		ret = -EINVAL;
-		goto out_unlock;
-	}
+	rx_tid = &peer->rx_tid[tid];
+	spin_lock_bh(&rx_tid->tid_lock);
 	if ((!skb_queue_empty(&rx_tid->rx_frags) && seqno != rx_tid->cur_sn) ||
 	    skb_queue_empty(&rx_tid->rx_frags)) {
 		/* Flush stored fragments and start a new sequence */
@@ -747,7 +742,7 @@ static int ath12k_wifi8_dp_rx_frag_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 
 	if (rx_tid->rx_frag_bitmap & BIT(frag_no)) {
 		/* Fragment already present */
-		spin_unlock_bh(&peer->rx_tid_lock);
+		spin_unlock_bh(&rx_tid->tid_lock);
 		ret = -EINVAL;
 		goto out_unlock;
 	}
@@ -766,7 +761,6 @@ static int ath12k_wifi8_dp_rx_frag_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 				       sizeof(struct hal_rx_spd_data),
 				       GFP_ATOMIC);
 		if (!rx_tid->desc) {
-			spin_unlock_bh(&peer->rx_tid_lock);
 			ret = -ENOMEM;
 			goto out_unlock;
 		}
@@ -779,20 +773,13 @@ static int ath12k_wifi8_dp_rx_frag_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	    rx_tid->rx_frag_bitmap != GENMASK(rx_tid->last_frag_no, 0)) {
 		mod_timer(&rx_tid->frag_timer, jiffies +
 					       ATH12K_DP_RX_FRAGMENT_TIMEOUT_MS);
-		spin_unlock_bh(&peer->rx_tid_lock);
+		spin_unlock_bh(&rx_tid->tid_lock);
 		goto out_unlock;
 	}
 
-	spin_unlock_bh(&peer->rx_tid_lock);
+	spin_unlock_bh(&rx_tid->tid_lock);
 	del_timer_sync(&rx_tid->frag_timer);
-	spin_lock_bh(&peer->rx_tid_lock);
-	/* Re-validate: ampdu_stop may have freed rx_tid and NULLed the slot
-	 * in the window between the two lock acquisitions.
-	 */
-	if (peer->rx_tid[tid] != rx_tid) {
-		spin_unlock_bh(&peer->rx_tid_lock);
-		goto out_unlock;
-	}
+	spin_lock_bh(&rx_tid->tid_lock);
 
 	peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, peer_id);
 	if (!peer)
@@ -813,13 +800,13 @@ static int ath12k_wifi8_dp_rx_frag_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 		goto err_frags_cleanup;
 
 	ath12k_dp_rx_frags_cleanup(rx_tid, false);
-	spin_unlock_bh(&peer->rx_tid_lock);
+	spin_unlock_bh(&rx_tid->tid_lock);
 	goto out_unlock;
 
 err_frags_cleanup:
 	dev_kfree_skb_any(defrag_skb);
 	ath12k_dp_rx_frags_cleanup(rx_tid, true);
-	spin_unlock_bh(&peer->rx_tid_lock);
+	spin_unlock_bh(&rx_tid->tid_lock);
 out_unlock:
 	spin_unlock_bh(&dp->dp_lock);
 	return ret;
@@ -1199,7 +1186,6 @@ static bool ath12k_wifi8_handle_reo_route(struct ath12k_pdev_dp *dp_pdev,
 
 bool ath12k_wifi8_handle_null_queue(struct ath12k_pdev_dp *dp_pdev,
 				    struct ath12k_dp_peer *peer,
-				    u8 tid,
 				    struct ieee80211_rx_status *rx_status,
 				    struct hal_rx_spd_data *spd_desc_l,
 				    struct napi_struct *napi,
@@ -1217,43 +1203,6 @@ bool ath12k_wifi8_handle_null_queue(struct ath12k_pdev_dp *dp_pdev,
 		   peer ? peer->peer_id : ATH12K_PEER_ID_INVALID, is_mcbc,
 		   spd_desc_l->tlv_info.is_decrypted,
 		   spd_desc_l->tlv_info.decap);
-
-	/* Packet arrived on a TID whose REO queue was not set up
-	 * (DESC_ADDR_ZERO). Set up the queue now so subsequent packets
-	 * for this TID are routed correctly without hitting this error path.
-	 */
-	if (peer && !peer->is_vdev_peer &&
-	    tid < dp_pdev->ar->ab->hal.hal_params->num_tids) {
-		struct ath12k_dp_rx_tid *rx_tid;
-		bool needs_setup;
-
-		spin_lock_bh(&peer->rx_tid_lock);
-		rx_tid = peer->rx_tid[tid];
-		needs_setup = !rx_tid || !rx_tid->active;
-		spin_unlock_bh(&peer->rx_tid_lock);
-
-		if (needs_setup) {
-			struct ath12k_dp *dp = dp_pdev->dp;
-			struct ath12k_dp_link_peer *link_peer;
-			u32 ba_win_size;
-			u8 hw_link_id = dp_pdev->ar->hw_link_id;
-			u16 ssn;
-
-			rcu_read_lock();
-			link_peer = ath12k_dp_link_peer_find_by_hw_link_id(peer,
-									   hw_link_id);
-			if (link_peer && link_peer->primary_link) {
-				ath12k_dp_rx_peer_tid_ba_config(dp, tid, &ba_win_size,
-								&ssn);
-				ath12k_dp_rx_peer_tid_setup(dp_pdev->ar, peer,
-							    link_peer->addr,
-							    link_peer->vdev_id,
-							    tid, ba_win_size, ssn,
-							    HAL_PN_TYPE_NONE);
-			}
-			rcu_read_unlock();
-		}
-	}
 
 	switch (spd_desc_l->tlv_info.decap) {
 	case DP_RX_DECAP_TYPE_ETHERNET2_DIX:
@@ -1525,7 +1474,6 @@ ath12k_wifi8_dp_process_reo_rx_err_packets(struct ath12k_dp *dp,
 					HAL_REO_DEST_RING_ERROR_CODE_DESC_ADDR_ZERO) {
 					drop = ath12k_wifi8_handle_null_queue(dp_pdev,
 									      peer,
-									      tid,
 									      &rx_status,
 									      spd_desc_l,
 									      napi,
