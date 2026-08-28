@@ -235,11 +235,12 @@ static void ath12k_pci_q6_only_reset(struct ath12k_base *ab)
 	}
 
 	if (count < 0) {
-		ath12k_err(ab, "Failed to switch to PBL after BCR reset\n");
+		ath12k_err(ab, "Failed to switch to PBL after BCR reset mhi_ee %d\n",
+			   mhi_ee);
 		WARN_ON(1);
+	} else {
+		ath12k_info(ab, "Triggered Q6 BCR Reset\n");
 	}
-
-	ath12k_info(ab, "Triggered Q6 BCR Reset\n");
 }
 
 static void ath12k_pci_sw_reset(struct ath12k_base *ab, bool power_on)
