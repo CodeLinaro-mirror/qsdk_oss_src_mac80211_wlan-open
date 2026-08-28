@@ -34,6 +34,7 @@
 #include "../dp_mon.h"
 #ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/wifi8_dp_extn.h"
+#include "../qcn_extns/ipa/dp_ipa_pub.h"
 #endif /* CPTCFG_QCN_EXTN */
 #include "../cfr.h"
 
@@ -1470,6 +1471,13 @@ static void ath12k_wifi8_mac_op_tx(struct ieee80211_hw *hw,
 			arsta = rcu_dereference(ahsta->link[link_id]);
 		dp_peer = ath12k_sta_get_dp_peer_rcu(ahsta);
 	}
+
+#ifdef CPTCFG_QCN_EXTN
+	/* ULSO: IPA TX accelerator bypass */
+	if (ath12k_wifi8_dp_ipa_xmit(arvif->ar, skb, skb_cb,
+				     ahvif, ahsta, arvif, is_mcast) == 0)
+		return;
+#endif
 
 	/* Checking if it is a DVLAN frame */
 	if (!test_bit(ATH12K_GROUP_FLAG_HW_CRYPTO_DISABLED, &ah->ag->flags) &&
