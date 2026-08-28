@@ -976,6 +976,9 @@ void ieee80211_process_addba_resp(struct ieee80211_local *local,
 
 	lockdep_assert_wiphy(sta->local->hw.wiphy);
 
+	if (len < offsetof(typeof(*mgmt), u.action.u.addba_resp.variable))
+		return;
+
 	capab = le16_to_cpu(mgmt->u.action.u.addba_resp.capab);
 	amsdu = capab & IEEE80211_ADDBA_PARAM_AMSDU_MASK;
 	tid = u16_get_bits(capab, IEEE80211_ADDBA_PARAM_TID_MASK);

@@ -92,9 +92,14 @@ static struct sta_info *ieee80211_ocb_finish_sta(struct sta_info *sta)
 	ocb_dbg(sdata, "Adding new IBSS station %pM (dev=%s)\n",
 		addr, sdata->name);
 
-	sta_info_move_state(sta, IEEE80211_STA_AUTH);
-	sta_info_move_state(sta, IEEE80211_STA_ASSOC);
-	sta_info_move_state(sta, IEEE80211_STA_AUTHORIZED);
+	if (sta_info_move_state(sta, IEEE80211_STA_AUTH) ||
+	    sta_info_move_state(sta, IEEE80211_STA_ASSOC) ||
+	    sta_info_move_state(sta, IEEE80211_STA_AUTHORIZED)) {
+		ocb_dbg(sdata, "Failed to move station %pM to AUTHORIZED state\n",
+			addr);
+		sta_info_free(sta->local, sta);
+		return sta_info_get(sdata, addr);
+	}
 
 	rate_control_rate_init(&sta->deflink);
 
