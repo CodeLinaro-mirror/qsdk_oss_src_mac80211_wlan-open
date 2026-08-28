@@ -3043,7 +3043,7 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 	struct list_head desc_free_list;
 	struct hal_wbm_completion_ring_tx *tx_status;
 	struct sk_buff_head free_list_head;
-	int tx_status_idx = smp_processor_id();
+	int tx_status_idx = ring_id;
 	u32 tx_wbm_rel_source[HAL_WBM_REL_SRC_MODULE_MAX] = {0};
 	u32 tqm_rel_reason[MAX_TQM_RELEASE_REASON] = {0};
 	u32 fw_tx_status[MAX_FW_TX_STATUS] = {0};
@@ -3069,7 +3069,7 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 	skb_queue_head_init(&free_list_head);
 
 	tx_status_entry = (struct ath12k_wifi7_tx_status_entry *)
-				dp_hw_grp->tx_status_buf[tx_status_idx];
+				dp->tx_status_buf[tx_status_idx];
 	while (budget-- &&
 	       (tx_status = __ath12k_hal_srng_dst_get_next_cached_entry(status_ring,
 									NULL))) {
@@ -3101,7 +3101,7 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 
 	spin_lock_bh(&dp->dp_hw_grp->tx_desc_lock[ring_id]);
 
-	tx_status_entry = (struct ath12k_wifi7_tx_status_entry *)dp_hw_grp->tx_status_buf[tx_status_idx];
+	tx_status_entry = (struct ath12k_wifi7_tx_status_entry *)dp->tx_status_buf[tx_status_idx];
 	for (i = 0; i < n_entry; i++) {
 		struct ath12k_wifi7_tx_status_entry *tx_status_entry_next;
 		sw_metadata = &tx_status_entry->sw_metadata;
@@ -3190,7 +3190,7 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 		}
 	}
 
-	tx_status_entry = (struct ath12k_wifi7_tx_status_entry *)dp_hw_grp->tx_status_buf[tx_status_idx];
+	tx_status_entry = (struct ath12k_wifi7_tx_status_entry *)dp->tx_status_buf[tx_status_idx];
 	while (n_entry--) {
 		fast_flag = false;
 		tx_status = &tx_status_entry->tx_status;

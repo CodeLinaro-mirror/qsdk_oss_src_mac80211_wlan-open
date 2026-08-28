@@ -166,7 +166,6 @@ struct ath12k_dp_hw_group {
 	struct dp_rx_fst *fst;
 	/* Number of active FSE rules; shared across all SoCs in the group */
 	u32 fse_active_count;
-	u8 *tx_status_buf[ATH12K_HW_MAX_QUEUES];
 	struct ath12k_spt_info *spt_info;
 	u32 num_spt_pages;
 	struct ath12k_tx_desc_info **txbaddr;

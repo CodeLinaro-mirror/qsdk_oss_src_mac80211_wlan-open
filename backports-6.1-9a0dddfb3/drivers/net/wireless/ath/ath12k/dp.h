@@ -1140,6 +1140,7 @@ struct ath12k_dp {
 
 	struct ath12k_dbg_dp_svc_sort_stats svc_sort_stats;
 	u8 *rx_status_buf[DP_TOTAL_REO_DST_RINGS];
+	u8 *tx_status_buf[DP_TCL_NUM_RING_MAX];
 
 	/* Keep Last */
 	u8 arch_data[] __aligned(sizeof(void *));
