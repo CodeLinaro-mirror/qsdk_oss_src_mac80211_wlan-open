@@ -531,4 +531,5 @@ int ath12k_dp_peer_clear_keys(struct ath12k *ar, struct ieee80211_sta *sta,
 struct ath12k_dp_link_peer *
 ath12k_dp_link_peer_find_by_addr_post_rcu_remove(struct ath12k_dp_peer *dp_peer,
 						 const char *addr);
+void ath12k_dp_peer_free(struct ath12k_dp_peer *dp_peer);
 #endif
