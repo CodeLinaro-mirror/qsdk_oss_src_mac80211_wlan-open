@@ -2166,9 +2166,9 @@ static void ath12k_wifi8_dp_tx_free_txbuf(struct ath12k_dp *dp,
 
 static u32 ath12k_wifi8_dp_tx_compute_hw_delay(struct hal_tx_status *ts)
 {
-	u32 hw_delay;
+	u32 hw_delay = ts->delay_stats.hw.wifi_sched_latency;
 
-	hw_delay = ts->delay_stats.hw.wifi_sched_latency;
+	hw_delay *= HAL_TX_LATENCY_RESOLUTION_TO_US(HAL_TX_LATENCY_RESOLUTION_US_128);
 
 	if (hw_delay > HW_TX_DELAY_MAX)
 		return 0;
