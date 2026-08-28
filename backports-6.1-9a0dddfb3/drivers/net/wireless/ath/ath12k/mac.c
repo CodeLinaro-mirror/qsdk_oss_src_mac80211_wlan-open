@@ -10240,6 +10240,15 @@ skip_tpc_update:
 		if (!arvif->pending_csa_up || info->csa_active)
 			goto skip_pending_cs_up;
 
+		if (!arvif->is_started &&
+		    test_bit(ATH12K_FLAG_RECOVERY, &ar->ab->dev_flags)) {
+			ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+				   "Skip pending csa up for vdev id %d\n",
+				   arvif->vdev_id);
+			arvif->pending_csa_up = false;
+			goto skip_pending_cs_up;
+		}
+
 		memset(&params, 0, sizeof(params));
 		params.vdev_id = arvif->vdev_id;
 		params.aid = ahvif->aid;
