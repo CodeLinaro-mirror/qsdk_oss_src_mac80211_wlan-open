@@ -1782,6 +1782,9 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 	struct ieee80211_link_data *link;
 	struct ieee80211_bss_conf *link_conf;
 	struct ieee80211_chan_req chanreq = { .oper = params->chandef };
+#ifdef CPTCFG_QCN_EXTN
+	int target_radio_idx;
+#endif /* CPTCFG_QCN_EXTN */
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
 #endif
@@ -1801,6 +1804,19 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 	old = sdata_dereference(link->u.ap.beacon, sdata);
 	if (old)
 		return -EALREADY;
+
+#ifdef CPTCFG_QCN_EXTN
+	target_radio_idx = cfg80211_get_hw_idx_by_chan(local->hw.wiphy,
+						       params->chandef.chan);
+	if ((target_radio_idx >= 0) &&
+	    !ieee80211_any_ap_mon_vap_up_extn(local, target_radio_idx) &&
+	    ieee80211_diagnostic_sta_active_extn(local, target_radio_idx)) {
+		wiphy_dbg(local->hw.wiphy,
+			  "DEBUG_DIAG_STA: start_ap: rejecting 1st AP-VAP bring-up on %s (radio_idx=%d), diagnostic STA is connecting/connected on that radio\n",
+			  sdata->name, target_radio_idx);
+		return -EBUSY;
+	}
+#endif /* CPTCFG_QCN_EXTN */
 
 	link->smps_mode = IEEE80211_SMPS_OFF;
 
