@@ -1040,6 +1040,7 @@ int ath12k_wifi8_hal_tx_sam_mpduq_clear_cmd(struct ath12k_dp_wifi8 *dp_wifi8,
 					    struct hal_tlv_64_hdr *tlv,
 					    int id, bool clear_all)
 {
+	struct ath12k_base *ab = dp_wifi8->dp->ab;
 	struct hal_sam_mpdu_queue_clear_programming *desc;
 	u32 cmd_num;
 
@@ -1053,20 +1054,28 @@ int ath12k_wifi8_hal_tx_sam_mpduq_clear_cmd(struct ath12k_dp_wifi8 *dp_wifi8,
 	if (unlikely(cmd_num == 0))
 		cmd_num = atomic_inc_return(&dp_wifi8->sam_cmd_num);
 
-	/* TODO: In v2 hardware, the HAL_SAM_CMD_STATUS_REQUIRED_TO_SW bit
+	/* In v2 hardware, the HAL_SAM_CMD_STATUS_REQUIRED_TO_SW bit
 	 * must be set in the command header to receive status.
 	 */
 	desc->cmd_hdr.sam_cmd_number = cpu_to_le16(cmd_num);
+	desc->cmd_hdr.info0 =
+			le32_encode_bits((ab->hw_rev == ATH12K_HW_QCN9625_HW20 ? 1 : 0),
+					 HAL_SAM_CMD_HDR_INFO0_STATUS_REQUIRED_TO_SW);
+
 	/* If `clear_all` is true, update mpduq id range from 0 to max supported mpduq.*/
 	if (clear_all)
 		desc->info0 =
 		le32_encode_bits(0, HAL_SAM_MPDU_INFO0_START_MPDU_QUEUE_SAM_ID) |
 		le32_encode_bits(MAX_NUM_SAM_MPDU_QUEUES_SUPPORTED - 1,
-				 HAL_SAM_MPDU_INFO0_END_MPDU_QUEUE_SAM_ID);
+				 HAL_SAM_MPDU_INFO0_END_MPDU_QUEUE_SAM_ID) |
+		le32_encode_bits((ab->hw_rev == ATH12K_HW_QCN9625_HW20 ? 0x1F : 0),
+				 HAL_SAM_MPDU_INFO0_LINK_MASK);
 	else
 		desc->info0 =
 		le32_encode_bits(id, HAL_SAM_MPDU_INFO0_START_MPDU_QUEUE_SAM_ID) |
-		le32_encode_bits(id, HAL_SAM_MPDU_INFO0_END_MPDU_QUEUE_SAM_ID);
+		le32_encode_bits(id, HAL_SAM_MPDU_INFO0_END_MPDU_QUEUE_SAM_ID) |
+		le32_encode_bits((ab->hw_rev == ATH12K_HW_QCN9625_HW20 ? 0x1F : 0),
+				 HAL_SAM_MPDU_INFO0_LINK_MASK);
 
 	return le16_to_cpu(desc->cmd_hdr.sam_cmd_number);
 }
@@ -1075,6 +1084,7 @@ int ath12k_wifi8_hal_tx_sam_msduq_clear_cmd(struct ath12k_dp_wifi8 *dp_wifi8,
 					    struct hal_tlv_64_hdr *tlv,
 					    int id, bool clear_all)
 {
+	struct ath12k_base *ab = dp_wifi8->dp->ab;
 	struct hal_sam_msdu_queue_clear_programming *desc;
 	u32 cmd_num;
 
@@ -1088,21 +1098,28 @@ int ath12k_wifi8_hal_tx_sam_msduq_clear_cmd(struct ath12k_dp_wifi8 *dp_wifi8,
 	if (unlikely(cmd_num == 0))
 		cmd_num = atomic_inc_return(&dp_wifi8->sam_cmd_num);
 
-	/* TODO: In v2 hardware, the HAL_SAM_CMD_STATUS_REQUIRED_TO_SW bit
+	/* In v2 hardware, the HAL_SAM_CMD_STATUS_REQUIRED_TO_SW bit
 	 * must be set in the command header to receive status.
 	 */
 	desc->cmd_hdr.sam_cmd_number = cpu_to_le16(cmd_num);
+	desc->cmd_hdr.info0 =
+			le32_encode_bits((ab->hw_rev == ATH12K_HW_QCN9625_HW20 ? 1 : 0),
+					 HAL_SAM_CMD_HDR_INFO0_STATUS_REQUIRED_TO_SW);
 
 	/* If `clear_all` is true, update msduq id range from 0 to max supported msduq.*/
 	if (clear_all)
 		desc->info0 =
 		le32_encode_bits(0, HAL_SAM_MSDU_INFO0_START_MSDU_QUEUE_SAM_ID) |
 		le32_encode_bits(MAX_NUM_SAM_MSDU_QUEUES_SUPPORTED - 1,
-				 HAL_SAM_MSDU_INFO0_END_MSDU_QUEUE_SAM_ID);
+				 HAL_SAM_MSDU_INFO0_END_MSDU_QUEUE_SAM_ID) |
+		le32_encode_bits((ab->hw_rev == ATH12K_HW_QCN9625_HW20 ? 0x1F : 0),
+				 HAL_SAM_MSDU_INFO0_LINK_MASK);
 	else
 		desc->info0 =
 		le32_encode_bits(id, HAL_SAM_MSDU_INFO0_START_MSDU_QUEUE_SAM_ID) |
-		le32_encode_bits(id, HAL_SAM_MSDU_INFO0_END_MSDU_QUEUE_SAM_ID);
+		le32_encode_bits(id, HAL_SAM_MSDU_INFO0_END_MSDU_QUEUE_SAM_ID) |
+		le32_encode_bits((ab->hw_rev == ATH12K_HW_QCN9625_HW20 ? 0x1F : 0),
+				 HAL_SAM_MSDU_INFO0_LINK_MASK);
 
 	return le16_to_cpu(desc->cmd_hdr.sam_cmd_number);
 }
@@ -1111,13 +1128,15 @@ int ath12k_wifi8_hal_tx_sam_peer_clear_cmd(struct ath12k_dp_wifi8 *dp_wifi8,
 					   struct hal_tlv_64_hdr *tlv, int src_link_id,
 					   int id, bool clear_all)
 {
+	struct ath12k_base *ab = dp_wifi8->dp->ab;
 	struct hal_sam_peer_clear_programming *desc;
 	u32 cmd_num;
 
 	tlv->tl = le64_encode_bits(HAL_SAM_PEER_CLEAR_PROGRAMMING_BO,
 				   HAL_TLV_HDR_TAG) |
 		  le64_encode_bits(sizeof(*desc), HAL_TLV_64_HDR_LENGTH) |
-		  le64_encode_bits(src_link_id, HAL_TLV_64_HDR_SRC_LINK_ID);
+		  le64_encode_bits((ab->hw_rev == ATH12K_HW_QCN9625_HW10
+				    ? src_link_id : 0), HAL_TLV_64_HDR_SRC_LINK_ID);
 
 	desc = (struct hal_sam_peer_clear_programming *)tlv->value;
 
@@ -1129,15 +1148,24 @@ int ath12k_wifi8_hal_tx_sam_peer_clear_cmd(struct ath12k_dp_wifi8 *dp_wifi8,
 	 * must be set in the command header to receive status.
 	 */
 	desc->cmd_hdr.sam_cmd_number = cpu_to_le16(cmd_num);
+	desc->cmd_hdr.info0 =
+			le32_encode_bits((ab->hw_rev == ATH12K_HW_QCN9625_HW20 ? 1 : 0),
+					 HAL_SAM_CMD_HDR_INFO0_STATUS_REQUIRED_TO_SW);
 
 	/* If `clear_all` is true, update peer id range from 0 to max supported peer.*/
 	if (clear_all)
 		desc->info0 = le32_encode_bits(0, HAL_SAM_PEER_INFO0_START_PEER_ID) |
 			      le32_encode_bits(ATH12K_MAX_STA_ID - 1,
-					       HAL_SAM_PEER_INFO0_END_PEER_ID);
+					       HAL_SAM_PEER_INFO0_END_PEER_ID) |
+			      le32_encode_bits((ab->hw_rev == ATH12K_HW_QCN9625_HW20
+						? 0x1F : 0),
+						HAL_SAM_PEER_INFO0_LINK_MASK);
 	else
 		desc->info0 = le32_encode_bits(id, HAL_SAM_PEER_INFO0_START_PEER_ID) |
-			      le32_encode_bits(id, HAL_SAM_PEER_INFO0_END_PEER_ID);
+			      le32_encode_bits(id, HAL_SAM_PEER_INFO0_END_PEER_ID) |
+			      le32_encode_bits((ab->hw_rev == ATH12K_HW_QCN9625_HW20
+						? 0x1F : 0),
+						HAL_SAM_PEER_INFO0_LINK_MASK);
 
 	return le16_to_cpu(desc->cmd_hdr.sam_cmd_number);
 }
@@ -1240,19 +1268,30 @@ void ath12k_wifi8_hal_tx_sam_program_clear(struct ath12k_base *ab)
 	if (ret < 0)
 		ath12k_warn(ab, "failed to send SAM msdu clear command: %d\n", ret);
 
-	/* Send peer clear command over all links.
-	 * TODO: In v2 hardware, a new link_mask field allows a single SAM command
+	/* In v1 hardware, send peer clear command over all links.
+	 * In v2 hardware, a new link_mask field allows a single SAM command
 	 * to be sent for all links, with bits set for each link.
 	 */
-	for (i = 0; i < HAL_TX_NUM_MAX_LINKS; i++) {
-		ret = ath12k_wifi8_hal_tx_sam_cmd_send(ab, srng, i,
+	if (ab->hw_rev == ATH12K_HW_QCN9625_HW10) {
+		for (i = 0; i < HAL_TX_NUM_MAX_LINKS; i++) {
+			ret =
+			ath12k_wifi8_hal_tx_sam_cmd_send
+						(ab, srng, i,
+						 HAL_SAM_PEER_CLEAR_PROGRAMMING_BO,
+						 -1, true, true);
+
+			if (ret < 0)
+				ath12k_dbg(ab, ATH12K_DBG_HAL,
+					   "failed to send SAM peer clear command for link %d: %d\n",
+					   i, ret);
+		}
+	} else {
+		ret = ath12k_wifi8_hal_tx_sam_cmd_send(ab, srng, -1,
 						       HAL_SAM_PEER_CLEAR_PROGRAMMING_BO,
 						       -1, true, true);
-
 		if (ret < 0)
 			ath12k_dbg(ab, ATH12K_DBG_HAL,
-				   "failed to send SAM peer clear command for link %d: %d\n",
-				   i, ret);
+				   "failed to send SAM peer clear command: %d\n", ret);
 	}
 }
 

@@ -2911,6 +2911,7 @@ struct hal_uniform_sam_cmd_hdr {
 
 #define HAL_SAM_MPDU_INFO0_START_MPDU_QUEUE_SAM_ID	GENMASK(10, 0)
 #define HAL_SAM_MPDU_INFO0_END_MPDU_QUEUE_SAM_ID	GENMASK(23, 13)
+#define HAL_SAM_MPDU_INFO0_LINK_MASK			GENMASK(28, 24)
 
 struct hal_sam_mpdu_queue_clear_programming {
 	struct hal_uniform_sam_cmd_hdr cmd_hdr;
@@ -2919,6 +2920,7 @@ struct hal_sam_mpdu_queue_clear_programming {
 
 #define HAL_SAM_MSDU_INFO0_START_MSDU_QUEUE_SAM_ID	GENMASK(12, 0)
 #define HAL_SAM_MSDU_INFO0_END_MSDU_QUEUE_SAM_ID	GENMASK(25, 13)
+#define HAL_SAM_MSDU_INFO0_LINK_MASK			GENMASK(30, 26)
 
 struct hal_sam_msdu_queue_clear_programming {
 	struct hal_uniform_sam_cmd_hdr cmd_hdr;
@@ -2927,6 +2929,7 @@ struct hal_sam_msdu_queue_clear_programming {
 
 #define HAL_SAM_PEER_INFO0_START_PEER_ID		GENMASK(12, 0)
 #define HAL_SAM_PEER_INFO0_END_PEER_ID			GENMASK(25, 13)
+#define HAL_SAM_PEER_INFO0_LINK_MASK			GENMASK(30, 26)
 
 struct hal_sam_peer_clear_programming {
 	struct hal_uniform_sam_cmd_hdr cmd_hdr;

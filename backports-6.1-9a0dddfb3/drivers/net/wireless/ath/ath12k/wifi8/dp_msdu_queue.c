@@ -11,8 +11,14 @@
 static
 u16 ath12k_wifi8_msduq_sam_id_alloc(struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8)
 {
+	struct ath12k_base *ab = NULL;
 	u16 msduq_sam_id = dp_hw_grp_wifi8->last_msduq_sam_id;
 	int i;
+
+	if (!dp_hw_grp_wifi8->cumac_dp || !dp_hw_grp_wifi8->cumac_dp->ab)
+		return HAL_SAM_INVALID_MSDUQ_ID;
+
+	ab = dp_hw_grp_wifi8->cumac_dp->ab;
 
 	spin_lock_bh(&dp_hw_grp_wifi8->sam_id_lock);
 
@@ -31,8 +37,9 @@ u16 ath12k_wifi8_msduq_sam_id_alloc(struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_w
 		 * due to v1 hardware limitations.
 		 * TODO: Remove after v2 hardware.
 		 */
-		if (msduq_sam_id < HAL_SAM_QUEUE_SLICE_START_IDX ||
-		    msduq_sam_id > HAL_SAM_QUEUE_SLICE_END_IDX)
+		if (ab->hw_rev == ATH12K_HW_QCN9625_HW10 &&
+		    (msduq_sam_id < HAL_SAM_QUEUE_SLICE_START_IDX ||
+		     msduq_sam_id > HAL_SAM_QUEUE_SLICE_END_IDX))
 			continue;
 
 		if (test_bit(msduq_sam_id, dp_hw_grp_wifi8->msduq_sam_id_alloc_map))
