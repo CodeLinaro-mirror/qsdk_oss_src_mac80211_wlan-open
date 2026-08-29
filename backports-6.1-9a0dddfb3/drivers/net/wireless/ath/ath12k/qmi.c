@@ -12,6 +12,7 @@
 #include "hif.h"
 #include "coredump.h"
 #include "ahb.h"
+#include "mhi.h"
 #include <linux/of.h>
 #include <linux/firmware.h>
 #include <net/sock.h>
@@ -6260,6 +6261,21 @@ void ath12k_qmi_firmware_stop(struct ath12k_base *ab)
 		return;
 
 	clear_bit(ATH12K_FLAG_QMI_FW_READY_COMPLETE, &ab->dev_flags);
+
+	/* During system shutdown, skip mode-off QMI entirely — the firmware
+	 * is being torn down by the shutdown path itself, and on PCI devices
+	 * that are already in RDDM the request will time out (10s per radio).
+	 * GROUP_FLAG_SHUTDOWN is set by the first ath12k_pci_shutdown() call
+	 * and covers all radios in the group for subsequent shutdown calls.
+	 * RDDM check covers the race where RDDM arrives before shutdown flag.
+	 */
+	if (test_bit(ATH12K_GROUP_FLAG_SHUTDOWN, &ab->ag->flags) ||
+	    (ab->hif.bus == ATH12K_BUS_PCI &&
+	     test_bit(ATH12K_MHI_RDDM, &ath12k_pci_priv(ab)->mhi_state))) {
+		ath12k_dbg(ab, ATH12K_DBG_QMI,
+			   "qmi skipping wlan mode off, device in RDDM or shutdown\n");
+		return;
+	}
 
 	ret = ath12k_qmi_wlanfw_mode_send(ab, ATH12K_FIRMWARE_MODE_OFF);
 	if (ret < 0) {
