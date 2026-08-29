@@ -1762,7 +1762,7 @@ ath12k_afc_power_event_update_or_get_len(struct ath12k *ar,
 	struct nlattr *chan_list = NULL;
 	struct nlattr *chan_info = NULL;
 	int i, j, len = NLMSG_HDRLEN;
-	u8 hw_idx;
+	int hw_idx;
 
 	if (vendor_event &&
 	    nla_put_u8(vendor_event,
@@ -1951,7 +1951,7 @@ ath12k_afc_power_event_update_or_get_len(struct ath12k *ar,
 
 	hw_idx = cfg80211_get_hw_idx_by_freq(ar->ah->hw->wiphy,
 					     ar->freq_range.start_freq);
-	if (vendor_event &&
+	if (hw_idx >= 0 && vendor_event &&
 	    nla_put_u8(vendor_event,
 		       QCA_WLAN_VENDOR_ATTR_AFC_EVENT_HW_IDX, hw_idx)) {
 		ath12k_dbg(ar->ab, ATH12K_DBG_AFC, "hw_idx put fail\n");
@@ -1991,7 +1991,8 @@ ath12k_afc_expiry_event_update_or_get_len(struct ath12k *ar,
 	struct nlattr *chan_info = NULL;
 	int i, j, len = NLMSG_HDRLEN;
 	struct ath12k_afc_opclass_obj *afc_opclass_obj;
-	u8 hw_idx;
+	int hw_idx;
+
 
 	if (vendor_event &&
 	    nla_put_u8(vendor_event,
@@ -2164,7 +2165,7 @@ ath12k_afc_expiry_event_update_or_get_len(struct ath12k *ar,
 
 	hw_idx = cfg80211_get_hw_idx_by_freq(ar->ah->hw->wiphy,
 					     ar->freq_range.start_freq);
-	if (vendor_event &&
+	if (hw_idx >= 0 && vendor_event &&
 	    nla_put_u8(vendor_event,
 		       QCA_WLAN_VENDOR_ATTR_AFC_EVENT_HW_IDX, hw_idx)) {
 		ath12k_dbg(ar->ab, ATH12K_DBG_AFC, "hw_idx put fail\n");
@@ -2201,15 +2202,9 @@ int ath12k_send_afc_payload_reset(struct ath12k *ar)
 	struct sk_buff *vendor_event;
 	int ret = -EINVAL;
 	int vendor_buffer_len, hw_index;
-	struct ath12k_base *ab = ar->ab;
 
 	hw_index = cfg80211_get_hw_idx_by_freq(ar->ah->hw->wiphy,
 					       ar->freq_range.start_freq);
-	if (hw_index == -1) {
-		ath12k_err(ab, "Failed to get hw index for freq %d\n",
-			   ar->freq_range.start_freq);
-		goto out;
-	}
 
 	vendor_buffer_len = afc_payload_reset_evt_get_data_len();
 	vendor_event = cfg80211_vendor_event_alloc(ar->ah->hw->wiphy,
@@ -2226,12 +2221,15 @@ int ath12k_send_afc_payload_reset(struct ath12k *ar)
 		       QCA_WLAN_VENDOR_ATTR_AFC_EVENT_TYPE,
 		       QCA_WLAN_VENDOR_AFC_EVENT_TYPE_PAYLOAD_RESET)) {
 		ath12k_warn(ar->ab, "AFC payload reset complete event type put fail");
+		kfree_skb(vendor_event);
 		goto out;
 	}
-	if (nla_put_u32(vendor_event,
+	if (hw_index >= 0 &&
+	    nla_put_u32(vendor_event,
 			QCA_WLAN_VENDOR_ATTR_AFC_EVENT_HW_IDX,
 			hw_index)) {
 		ath12k_warn(ar->ab, "AFC payload reset complete event hw index put fail");
+		kfree_skb(vendor_event);
 		goto out;
 	}
 
@@ -2272,6 +2270,7 @@ int ath12k_send_afc_request(struct ath12k *ar, struct ath12k_afc_host_request *a
 
 	if (ret) {
 		ath12k_warn(ar->ab, "Failed to update AFC request vendor event\n");
+		kfree_skb(vendor_event);
 		ret = -EINVAL;
 		goto out;
 	}
