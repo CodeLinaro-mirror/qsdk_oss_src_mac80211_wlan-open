@@ -2852,6 +2852,23 @@ static void ath12k_mac_dp_peer_cleanup_cb(struct ath12k_pdev_dp *dp_pdev,
 #ifdef CPTCFG_QCN_EXTN
 	ath12k_dp_ipa_peer_notify(ar, link_peer, NULL, link_peer->vdev_id, false);
 #endif /* CPTCFG_QCN_EXTN */
+
+	/* Mode3 (client-retaining) recovery: the asserted chip's MLO client
+	 * peers are retained across the reload so the deferred link_readd phase
+	 * can re-add their asserted links.  Only legacy/SLO client peers and
+	 * self/vdev (AP) peers are torn down here; MLO client link_peers are
+	 * left untouched.  is_vdev_peer identifies the AP self peer (always
+	 * cleaned so the vdev can be recreated); is_mlo identifies an MLD
+	 * client peer.
+	 */
+	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE3 &&
+	    link_peer->dp_peer &&
+	    link_peer->dp_peer->is_mlo &&
+	    !link_peer->dp_peer->is_vdev_peer) {
+		spin_unlock_bh(&dp->dp_lock);
+		return;
+	}
+
 	/*Skip this for non primary_links and vdev peers*/
 	if (ath12k_dp_link_peer_get_sta(link_peer) && link_peer->dp_peer &&
 	    ath12k_dp_arch_mlo_peer_tid_teardown_ready(dp, link_peer->dp_peer,
