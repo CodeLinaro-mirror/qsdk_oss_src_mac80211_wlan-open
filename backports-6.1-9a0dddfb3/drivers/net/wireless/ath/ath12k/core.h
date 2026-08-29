@@ -3508,6 +3508,29 @@ static inline bool ath12k_hw_group_recovery_in_progress(const struct ath12k_hw_g
 	return test_bit(ATH12K_GROUP_FLAG_RECOVERY, &ag->flags);
 }
 
+/* Mode3 (client-retaining) recovery drives its own T2LM steering
+ * (one-link-per-MLD) across the asserted-chip restart.  That recovery T2LM has
+ * higher precedence than any user/AP-advertised T2LM: while Mode3 recovery is
+ * in progress, or specifically during the recovery T2LM window, a user-driven
+ * T2LM must be aborted so it cannot clobber the recovery steering.
+ */
+static inline bool ath12k_mode3_t2lm_recovery_active(const struct ath12k_hw_group *ag)
+{
+	return ag->recovery_t2lm_active ||
+	       (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE3 &&
+		ath12k_hw_group_recovery_in_progress(ag));
+}
+
+/* True while Mode3 (client-retaining) recovery is running for the group.  Used
+ * to reject MLO link-reconfig requests that arrive after Mode3 recovery has
+ * started, since they would race the recovery's link remove/readd.
+ */
+static inline bool ath12k_mode3_recovery_in_progress(const struct ath12k_hw_group *ag)
+{
+	return ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE3 &&
+	       ath12k_hw_group_recovery_in_progress(ag);
+}
+
 static inline void
 ath12k_core_dma_sync_single_for_cpu(struct device *dev,
 				    dma_addr_t dma_handle,

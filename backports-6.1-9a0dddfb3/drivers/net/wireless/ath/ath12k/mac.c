@@ -8194,6 +8194,12 @@ ath12k_mac_offload_advertised_ttlm(struct ieee80211_hw *hw,
 		return;
 
 	ar = arvif->ar;
+	if (ath12k_mode3_t2lm_recovery_active(ar->ab->ag)) {
+		ath12k_warn(ar->ab,
+			    "Mode3 recovery T2LM in progress, aborting user advertised T2LM\n");
+		return;
+	}
+
 	if (ath12k_mac_populate_ttlm_params(arvif, &map_params)) {
 		ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
 				 "Failed to populate advertised ttlm parameters\n");
@@ -8211,6 +8217,12 @@ static void ath12k_mac_bss_offload_advertised_ttlm(struct ath12k_link_vif *arvif
 
 	if (!arvif->is_created)
 		return;
+
+	if (ath12k_mode3_t2lm_recovery_active(ar->ab->ag)) {
+		ath12k_warn(ar->ab,
+			    "Mode3 recovery T2LM in progress, aborting user advertised T2LM\n");
+		return;
+	}
 
 	if (ath12k_mac_populate_ttlm_params(arvif, &map_params)) {
 		ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
@@ -8243,6 +8255,13 @@ static void ath12k_mac_ttlm_timer_expiry(struct ieee80211_hw *hw,
 		return;
 
 	lockdep_assert_wiphy(hw->wiphy);
+
+	if (ahvif->ah && ath12k_mode3_t2lm_recovery_active(ahvif->ah->ag)) {
+		ath12k_generic_dbg(ATH12K_DBG_MODE1_RECOVERY, ATH12K_DBG_L0,
+				   "Mode3 recovery T2LM in progress, aborting user TTLM timer expiry\n");
+		return;
+	}
+
 	for_each_set_bit(link_id, &links, ATH12K_NUM_MAX_LINKS) {
 		memset(&params, 0, sizeof(struct ath12k_wmi_ttlm_peer_params));
 		arvif = wiphy_dereference(hw->wiphy, ahvif->link[link_id]);
@@ -17083,6 +17102,19 @@ int ath12k_mac_op_change_sta_links(struct ieee80211_hw *hw,
 
 	lockdep_assert_wiphy(hw->wiphy);
 
+
+	/* Mode3 (client-retaining) recovery owns the MLO link topology of the
+	 * asserted chip while it re-adds the asserted links.  A link-reconfig
+	 * (add/remove link) triggered after Mode3 recovery has started must not
+	 * be honoured, as it would race the recovery's link remove/readd and
+	 * leave the peer in an inconsistent state.  Reject it here.
+	 */
+	if (ah->ag && ath12k_mode3_recovery_in_progress(ah->ag)) {
+		ath12k_hw_warn(ah,
+			       "Mode3 recovery in progress, rejecting sta link reconfig for %pM\n",
+			       sta->addr);
+		return -EBUSY;
+	}
 
 	if (sta->reconf.added_links ||
 	    (sta->valid_links & sta->reconf.removed_links)) {
@@ -31589,7 +31621,17 @@ ath12k_mac_op_can_neg_ttlm(struct ieee80211_hw *hw,
 			   struct ieee80211_vif *vif,
 			   struct ieee80211_neg_ttlm *neg_ttlm)
 {
+	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
 	u8 i;
+
+	/* Mode3 recovery T2LM steering has higher precedence than a
+	 * user/peer negotiated TTLM.  Reject the negotiation while Mode3
+	 * recovery is in progress so mac80211 sends a negotiated-TTLM reject
+	 * to the peer instead of overriding the recovery link mapping.
+	 */
+	if (ahvif->ah &&
+	    ath12k_mode3_t2lm_recovery_active(ahvif->ah->ag))
+		return NEG_TTLM_RES_REJECT;
 
 	/* Verify all TIDs are mapped to the same links
 	 * set in the given direction. When disjoint mapping support
@@ -31629,6 +31671,13 @@ static void ath12k_mac_handle_ttlm_neg(struct ieee80211_hw *hw,
 	u8 i;
 
 	lockdep_assert_wiphy(hw->wiphy);
+
+	if (ahsta->ahvif && ahsta->ahvif->ah &&
+	    ath12k_mode3_t2lm_recovery_active(ahsta->ahvif->ah->ag)) {
+		ath12k_generic_dbg(ATH12K_DBG_MODE1_RECOVERY, ATH12K_DBG_L0,
+				   "Mode3 recovery T2LM in progress, aborting user negotiated T2LM\n");
+		return;
+	}
 
 	ath12k_populate_default_mapping_flags(vif, neg_ttlm, is_default_mapping);
 
