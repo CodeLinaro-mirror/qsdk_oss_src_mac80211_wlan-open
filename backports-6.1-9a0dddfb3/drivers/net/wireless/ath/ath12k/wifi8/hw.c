@@ -311,15 +311,14 @@ static const struct ath12k_hw_ops qcn9625_ops = {
 /* Interrupt Grouping is as follows
  * Group 0-3: Tx completion
  * Group 4-7: Rx ring
- * Group 8: Tx exception ring
+ * Group 8: Tx exception ring, fw_tqm2sw
  * Group 9: Rx error, Reo Status, TCL status, TQM status
  * Group 10,11 : Monitor destination(TX,RX)
  * Group 12: Monitor buffer(TX,RX)
  * Group 13: Roaming RX ring, TX/RX peer telemetry
- * Group 14: fw_tqm2sw ring (FW-owned buffer completion WAR)
- * Group 18: UMCMN interrupts
- * Group 19-21: PPE interrupts
- * Group 22: UMAC reset
+ * Group 17: UMCMN interrupts
+ * Group 18-20: PPE interrupts
+ * Group 21: UMAC reset
  */
 static struct ath12k_hw_ring_mask ath12k_wifi8_hw_ring_mask_qcn9625 = {
 	/* Group 0-3, 5th ring uses group 10 */
@@ -356,6 +355,14 @@ static struct ath12k_hw_ring_mask ath12k_wifi8_hw_ring_mask_qcn9625 = {
 		0, 0, 0, 0,
 		0, 0, 0, 0,
 		ATH12K_TX_EXCEPTION_RING_MASK_0,
+	},
+	/* Group 8: fw_tqm2sw ring
+	 * (FW-owned buffer completion WAR - HAL_TQM_HOST_STATUS_RING=1)
+	 */
+	.tqm2sw_fw = {
+		0, 0, 0, 0,
+		0, 0, 0, 0,
+		ATH12K_FW_TQM2SW_RING_MASK_0,
 	},
 	/* Group 9 */
 	.rx_err = {
@@ -450,24 +457,16 @@ static struct ath12k_hw_ring_mask ath12k_wifi8_hw_ring_mask_qcn9625 = {
 		0,
 		ATH12K_RX_PEER_TELEMETRY_RING_MASK
 	},
-	/* Group 14: dedicated interrupt for fw_tqm2sw ring
-	 * (FW-owned buffer completion WAR - HAL_TQM_HOST_STATUS_RING=1)
-	 */
-	.tqm2sw_fw = {
-		0, 0, 0, 0,
-		0, 0, 0, 0,
-		ATH12K_FW_TQM2SW_RING_MASK_0,
-	},
-	/* Group 18 */
+	/* Group 17 */
 	.umcmn_interrupts = {
 		0, 0, 0, 0,
 		0, 0, 0, 0,
 		0, 0, 0, 0,
 		0, 0, 0, 0,
-		0, 0,
+		0,
 		ATH12K_UMCMN_INTR_MASK_0,
 	},
-	/* Group 19-21 */
+	/* Group 18-20 */
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	.ppe2tcl = {
 		0, 0, 0, 0,
@@ -494,7 +493,7 @@ static struct ath12k_hw_ring_mask ath12k_wifi8_hw_ring_mask_qcn9625 = {
 		ATH12K_PPE_TQM2SW_RELEASE_RING_MASK_0
 	},
 #endif
-	/* Group 22 */
+	/* Group 21 */
 	.umac_dp_reset = {
 		0, 0, 0, 0,
 		0, 0, 0, 0,
