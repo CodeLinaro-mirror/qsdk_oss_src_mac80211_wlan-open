@@ -253,6 +253,7 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_WLAN_STA_MAX_PWR_TABLE = 538,
 	QCA_NL80211_VENDOR_SUBCMD_WLAN_POWER_TABLE = 539,
 	QCA_NL80211_VENDOR_SUBCMD_WLAN_RTT_BLOB = 540,
+	QCA_NL80211_VENDOR_SUBCMD_LIST_PASN_PEER = 541,
 };
 
 /**
@@ -5281,10 +5282,22 @@ enum qca_wlan_vendor_attr_scs_rule_config {
  * @QCA_WLAN_VENDOR_PASN_ACTION_DELETE_SECURE_RANGING_CONTEXT: Notify
  *	hostapd that the secure ranging context for the listed peers should
  *	be torn down.
+ * @QCA_WLAN_VENDOR_PASN_ACTION_PEER_CREATE: Create PASN peer entries for
+ *	the listed peers. Each peer entry must include
+ *	%QCA_WLAN_VENDOR_ATTR_PASN_PEER_MAC_ADDR and
+ *	%QCA_WLAN_VENDOR_ATTR_PASN_PEER_TYPE. This action is used by test/
+ *	diagnostic userspace to pre-create open or secure PASN FW peers for
+ *	AP-to-AP ranging.
+ * @QCA_WLAN_VENDOR_PASN_ACTION_PEER_DELETE: Delete PASN peer entries for
+ *	the listed peers. Each peer entry must include
+ *	%QCA_WLAN_VENDOR_ATTR_PASN_PEER_MAC_ADDR and
+ *	%QCA_WLAN_VENDOR_ATTR_PASN_PEER_CONTROL_FLAG.
  */
 enum qca_wlan_vendor_pasn_action {
 	QCA_WLAN_VENDOR_PASN_ACTION_AUTH,
 	QCA_WLAN_VENDOR_PASN_ACTION_DELETE_SECURE_RANGING_CONTEXT,
+	QCA_WLAN_VENDOR_PASN_ACTION_PEER_CREATE,
+	QCA_WLAN_VENDOR_PASN_ACTION_PEER_DELETE,
 };
 
 /**
@@ -5305,6 +5318,15 @@ enum qca_wlan_vendor_pasn_action {
  *	which the initiator should retry when PASN is deferred.
  * @QCA_WLAN_VENDOR_ATTR_PASN_PEER_COOKIE: Binary; opaque cookie for
  *	anti-clogging during SAE-based PASN.
+ * @QCA_WLAN_VENDOR_ATTR_PASN_PEER_TYPE: u32 PASN peer type used with
+ *	%QCA_WLAN_VENDOR_PASN_ACTION_PEER_CREATE. Valid values are 0 for an
+ *	open/unsecure peer and 1 for a secure peer. Secure peers may be upgraded
+ *	to MAC+PHY security by also including
+ *	%QCA_WLAN_VENDOR_ATTR_PASN_PEER_LTF_KEYSEED_REQUIRED.
+ * @QCA_WLAN_VENDOR_ATTR_PASN_PEER_CONTROL_FLAG: u16 delete control flag used
+ *	with %QCA_WLAN_VENDOR_PASN_ACTION_PEER_DELETE. Valid values are driver
+ *	defined PASN peer delete controls: normal delete, flush keys, or already
+ *	deleted.
  */
 enum qca_wlan_vendor_attr_pasn_peer {
 	QCA_WLAN_VENDOR_ATTR_PASN_PEER_INVALID = 0,
@@ -5318,6 +5340,8 @@ enum qca_wlan_vendor_attr_pasn_peer {
 	QCA_WLAN_VENDOR_ATTR_PASN_PEER_PMKID = 8,
 	QCA_WLAN_VENDOR_ATTR_PASN_PEER_COMEBACK_AFTER = 9,
 	QCA_WLAN_VENDOR_ATTR_PASN_PEER_COOKIE = 10,
+	QCA_WLAN_VENDOR_ATTR_PASN_PEER_TYPE = 11,
+	QCA_WLAN_VENDOR_ATTR_PASN_PEER_CONTROL_FLAG = 12,
 
 	/* keep last */
 	QCA_WLAN_VENDOR_ATTR_PASN_PEER_AFTER_LAST,
