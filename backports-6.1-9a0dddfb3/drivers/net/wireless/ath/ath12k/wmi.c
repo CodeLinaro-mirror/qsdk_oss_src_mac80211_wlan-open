@@ -11970,8 +11970,8 @@ static void ath12k_wmi_event_scan_started(struct ath12k *ar)
 			ieee80211_ready_on_channel(ath12k_ar_to_hw(ar));
 
 		ath12k_dbg(ar->ab, ATH12K_DBG_SCAN,
-			   "scan_parallel: pdev %d scan state -> RUNNING (WMI STARTED event) [%llu ms]\n",
-			   ar->pdev->pdev_id, ktime_to_ms(ktime_get()));
+			   "scan: [radio:%d] state -> RUNNING (WMI STARTED event) [%llu ms]\n",
+			   ar->radio_idx, ktime_to_ms(ktime_get()));
 
 		complete(&ar->scan.started);
 		break;
@@ -12019,8 +12019,8 @@ static void ath12k_wmi_event_scan_completed(struct ath12k *ar)
 	case ATH12K_SCAN_RUNNING:
 	case ATH12K_SCAN_ABORTING:
 		ath12k_dbg(ar->ab, ATH12K_DBG_SCAN,
-			   "scan_parallel: pdev %d scan COMPLETED (WMI COMPLETED event) [%llu ms]\n",
-			   ar->pdev->pdev_id, ktime_to_ms(ktime_get()));
+			   "scan: [radio:%d] COMPLETED (WMI COMPLETED event) [%llu ms]\n",
+			   ar->radio_idx, ktime_to_ms(ktime_get()));
 		__ath12k_mac_scan_finish(ar);
 		break;
 	}

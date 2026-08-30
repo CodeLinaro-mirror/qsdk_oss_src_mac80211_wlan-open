@@ -11187,24 +11187,41 @@ static void ath12k_mac_scan_send_complete(struct ath12k *ar,
 	int i;
 
 	lockdep_assert_wiphy(ah->hw->wiphy);
+
 	if (ar->scan.is_roc || ar->scan.scan_id == ATH12K_ROC_SCAN_ID
 	    || ar->scan.roc_freq)
 		return;
+
+	if (ah->hw->wiphy->flags & WIPHY_FLAG_SUPPORTS_PARALLEL_HW_SCAN) {
+		/* Record abort before the deferral check so it is not lost
+		 * if this radio defers and returns early.
+		 */
+		if (info->aborted)
+			set_bit(ar->scan.parallel_scan_id, ah->scan_aborted);
+	}
+
 	for_each_ar(ah, partner_ar, i)
 		if (partner_ar != ar &&
-		    partner_ar->scan.state == ATH12K_SCAN_RUNNING &&
+		    partner_ar->scan.state != ATH12K_SCAN_IDLE &&
 		    !partner_ar->scan.is_roc &&
 		    partner_ar->scan.parallel_scan_id == ar->scan.parallel_scan_id) {
 			ath12k_dbg(ar->ab, ATH12K_DBG_SCAN,
-				   "scan_parallel: pdev %d done but pdev %d still RUNNING, deferring completion [%llu ms]\n",
-				   ar->pdev->pdev_id, partner_ar->pdev->pdev_id,
-				   ktime_to_ms(ktime_get()));
+				   "scan: [radio:%d] done scan_id=%u, deferring (partner radio:%d still RUNNING) [%llu ms]\n",
+				   ar->radio_idx, ar->scan.parallel_scan_id,
+				   partner_ar->radio_idx, ktime_to_ms(ktime_get()));
 			return;
 		}
 
+	if (ah->hw->wiphy->flags & WIPHY_FLAG_SUPPORTS_PARALLEL_HW_SCAN) {
+		/* All radios done — propagate accumulated abort status and reset */
+		if (test_and_clear_bit(ar->scan.parallel_scan_id, ah->scan_aborted))
+			info->aborted = true;
+	}
+
 	ath12k_dbg(ar->ab, ATH12K_DBG_SCAN,
-		   "scan_parallel: all radios done, calling ieee80211_scan_completed [%llu ms]\n",
-		   ktime_to_ms(ktime_get()));
+		   "scan: [radio:%d] all radios done scan_id=%u aborted=%d [%llu ms]\n",
+		   ar->radio_idx, ar->scan.parallel_scan_id,
+		   info->aborted, ktime_to_ms(ktime_get()));
 	ieee80211_scan_completed(ah->hw, info);
 }
 
@@ -11283,10 +11300,6 @@ static int ath12k_start_scan(struct ath12k *ar,
 	if (ret)
 		return ret;
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_SCAN,
-		   "scan_parallel: WMI_START_SCAN_CMDID sent to pdev %d, waiting for STARTED ack [%llu ms]\n",
-		   ar->pdev->pdev_id, ktime_to_ms(ktime_get()));
-
 	ret = wait_for_completion_timeout(&ar->scan.started, 1 * HZ);
 	if (ret == 0) {
 		/* FW assertion right after scan start can trigger WARN_ON.
@@ -11326,10 +11339,6 @@ static int ath12k_start_scan(struct ath12k *ar,
 		return -EINVAL;
 	}
 	spin_unlock_bh(&ar->data_lock);
-
-	ath12k_dbg(ar->ab, ATH12K_DBG_SCAN,
-		   "scan_parallel: pdev %d scan STARTED ack received, returning to caller [%llu ms]\n",
-		   ar->pdev->pdev_id, ktime_to_ms(ktime_get()));
 
 	return 0;
 }
@@ -12102,13 +12111,20 @@ exit:
 	return ret;
 }
 
+/* Per-radio scan segment: channel index range [from, to) for one radio. */
+struct ath12k_scan_segment {
+	struct ath12k *ar;
+	int from_index;
+	int to_index;
+};
+
 int ath12k_mac_op_hw_scan(struct ieee80211_hw *hw,
 			  struct ieee80211_vif *vif,
 			  struct ieee80211_scan_request *hw_req)
 {
-	struct ath12k *ar = NULL;
-	struct ath12k *prev_ar = NULL;
-	int i, from_index, to_index, ret;
+	struct ath12k_scan_segment segments[ATH12K_GROUP_MAX_RADIO];
+	struct ath12k *ar, *prev_ar;
+	int i, n_segments, ret;
 	struct ath12k_hw *ah = hw->priv;
 	struct ath12k_hw_group *ag = ath12k_ah_to_ag(ah);
 
@@ -12138,8 +12154,12 @@ int ath12k_mac_op_hw_scan(struct ieee80211_hw *hw,
 		return -EINVAL;
 	}
 
-	/* Since the targeted scan device could depend on the frequency
-	 * requested in the hw_req, select the corresponding radio
+	/*
+	 * Pass 1: build per-radio channel segments and verify all radios
+	 * are ready to scan before touching any of them.  This prevents a
+	 * partial-start scenario where some radios begin scanning and then
+	 * a later radio returns -EBUSY, leaving completions in flight
+	 * against an already-cleared local->scan_req.
 	 */
 	prev_ar = ath12k_mac_select_scan_device(hw, vif,
 						hw_req->req.channels[0]->center_freq);
@@ -12148,18 +12168,10 @@ int ath12k_mac_op_hw_scan(struct ieee80211_hw *hw,
 		return -EINVAL;
 	}
 
-	/* Check ROC state before starting scan */
-	spin_lock_bh(&prev_ar->data_lock);
-	if (prev_ar->scan.is_roc) {
-		spin_unlock_bh(&prev_ar->data_lock);
-		return -EBUSY;
-	}
-	spin_unlock_bh(&prev_ar->data_lock);
-	/* NOTE: There could be 5G low/high channels as mac80211 sees
-	 * it as an single band. In that case split the hw request and
-	 * perform multiple scans
-	 */
-	from_index = 0;
+	n_segments = 0;
+	segments[n_segments].ar = prev_ar;
+	segments[n_segments].from_index = 0;
+
 	for (i = 1; i < hw_req->req.n_channels; i++) {
 		ar = ath12k_mac_select_scan_device(hw, vif,
 						   hw_req->req.channels[i]->center_freq);
@@ -12167,36 +12179,76 @@ int ath12k_mac_op_hw_scan(struct ieee80211_hw *hw,
 			ath12k_err(NULL, "unable to select device for scan\n");
 			return -EINVAL;
 		}
-		if (prev_ar == ar)
+		if (ar == prev_ar)
 			continue;
 
-		/* Check if the new radio has ROC active */
+		segments[n_segments].to_index = i;
+		n_segments++;
+		if (n_segments >= ARRAY_SIZE(segments)) {
+			ath12k_err(NULL, "too many scan segments\n");
+			return -EINVAL;
+		}
+		segments[n_segments].ar = ar;
+		segments[n_segments].from_index = i;
+		prev_ar = ar;
+	}
+	segments[n_segments].to_index = i;
+	n_segments++;
+
+	/* Check all radios are free before starting any scan. */
+	for (i = 0; i < n_segments; i++) {
+		ar = segments[i].ar;
 		spin_lock_bh(&ar->data_lock);
 		if (ar->scan.is_roc) {
 			spin_unlock_bh(&ar->data_lock);
+			ath12k_dbg(ar->ab, ATH12K_DBG_SCAN,
+				   "scan: [radio:%d] busy (ROC active), not starting scan_id=%u\n",
+				   ar->radio_idx, hw_req->req.parallel_scan_id);
 			return -EBUSY;
 		}
 		spin_unlock_bh(&ar->data_lock);
-
-		to_index = i;
-		ath12k_dbg(prev_ar->ab, ATH12K_DBG_SCAN,
-			   "scan_parallel: firing scan on pdev %d, channels[%d..%d], freq %u-%u MHz [%llu ms]\n",
-			   prev_ar->pdev->pdev_id, from_index, to_index - 1,
-			   hw_req->req.channels[from_index]->center_freq,
-			   hw_req->req.channels[to_index - 1]->center_freq,
-			   ktime_to_ms(ktime_get()));
-		ath12k_mac_initiate_hw_scan(hw, vif, hw_req, prev_ar,
-					    from_index, to_index);
-		from_index = to_index;
-		prev_ar = ar;
 	}
-	ath12k_dbg(prev_ar->ab, ATH12K_DBG_SCAN,
-		   "scan_parallel: firing scan on pdev %d, channels[%d..%d], freq %u-%u MHz [%llu ms]\n",
-		   prev_ar->pdev->pdev_id, from_index, i - 1,
-		   hw_req->req.channels[from_index]->center_freq,
-		   hw_req->req.channels[i - 1]->center_freq,
-		   ktime_to_ms(ktime_get()));
-	return ath12k_mac_initiate_hw_scan(hw, vif, hw_req, prev_ar, from_index, i);
+
+	/* Pass 2: all radios are ready — start scans. */
+	for (i = 0; i < n_segments; i++) {
+		ar = segments[i].ar;
+		ath12k_dbg(ar->ab, ATH12K_DBG_SCAN,
+			   "scan: [radio:%d] starting channels[%d..%d], freq %u-%u MHz [%llu ms]\n",
+			   ar->radio_idx,
+			   segments[i].from_index, segments[i].to_index - 1,
+			   hw_req->req.channels[segments[i].from_index]->center_freq,
+			   hw_req->req.channels[segments[i].to_index - 1]->center_freq,
+			   ktime_to_ms(ktime_get()));
+		ret = ath12k_mac_initiate_hw_scan(hw, vif, hw_req, ar,
+						  segments[i].from_index,
+						  segments[i].to_index);
+		if (ret) {
+			/*
+			 * A radio that passed the pre-check failed to start.
+			 * If at least one radio was already started, abort
+			 * them and return 0 so that local->scan_req remains
+			 * valid — the aborted radios will fire
+			 * ieee80211_scan_completed(aborted=1) asynchronously.
+			 * If no radio was started yet (i == 0), return the
+			 * error directly since no completion will ever arrive.
+			 */
+			ath12k_dbg(ar->ab, ATH12K_DBG_SCAN,
+				   "scan: [radio:%d] start failed scan_id=%u\n",
+				   ar->radio_idx, hw_req->req.parallel_scan_id);
+			if (i == 0)
+				return ret;
+			while (--i >= 0) {
+				ar = segments[i].ar;
+				ath12k_dbg(ar->ab, ATH12K_DBG_SCAN,
+					   "scan: [radio:%d] aborting scan_id=%u\n",
+					   ar->radio_idx, ar->scan.parallel_scan_id);
+				ath12k_scan_abort(ar);
+			}
+			return 0;
+		}
+	}
+
+	return 0;
 }
 EXPORT_SYMBOL(ath12k_mac_op_hw_scan);
 
