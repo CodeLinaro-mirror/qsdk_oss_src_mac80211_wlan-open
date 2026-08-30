@@ -2477,6 +2477,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_ATF_GRP_WMM_AC_CFG_REQUEST_FIXED_PARAM = 0x348,
 	WMI_TAG_PEER_CREATE_RESP_EVENT = 0x364,
 	WMI_TAG_MULTIPLE_VDEV_RESTART_RESPONSE_EVENT = 0x365,
+	WMI_TAG_FRAME_INJECT_CMD_FIXED_PARAM = 0x36b,
 	WMI_TAG_MAC_PHY_CAPABILITIES_EXT = 0x36F,
 	WMI_TAG_HAL_REG_CAPABILITIES_EXT2 = 0x370,
 	WMI_TAG_PDEV_SRG_BSS_COLOR_BITMAP_CMD = 0x37b,
@@ -3763,6 +3764,34 @@ struct ath12k_wmi_twt_caps_params {
 struct ath12k_wmi_mac_addr_params {
 	u8 addr[ETH_ALEN];
 	u8 padding[2];
+} __packed;
+
+enum wmi_frame_inject_type {
+	WMI_FRAME_INJECT_TYPE_QOS_NULL = 0,
+	WMI_FRAME_INJECT_TYPE_CTS_TO_SELF = 1,
+	WMI_FRAME_INJECT_TYPE_MAX,
+};
+
+struct wmi_frame_inject_arg {
+	u32 vdev_id;
+	u32 enable;
+	u32 frame_type;
+	u32 frame_inject_period;
+	u8 dstmac[ETH_ALEN];
+	u32 fc_duration;
+	u32 bw;
+};
+
+struct wmi_frame_inject_cmd {
+	__le32 tlv_header;
+	__le32 vdev_id;
+	__le32 enable;
+	__le32 frame_type;
+	__le32 frame_inject_period;
+	struct ath12k_wmi_mac_addr_params frame_addr1;
+	__le32 fc_duration;
+	__le32 buf_len;
+	__le32 bw;
 } __packed;
 
 struct ath12k_wmi_dma_ring_caps_params {
@@ -11731,6 +11760,8 @@ int ath12k_wmi_set_peer_param(struct ath12k *ar, const u8 *peer_addr,
 int ath12k_wmi_pdev_set_param(struct ath12k *ar, u32 param_id,
 			      u32 param_value, u8 pdev_id);
 int ath12k_wmi_send_pdev_set_rf_path_cmd(struct ath12k *ar, u32 rf_path);
+int ath12k_wmi_send_pdev_frame_inject_cmd(struct ath12k *ar,
+					  const struct wmi_frame_inject_arg *arg);
 int ath12k_wmi_send_pdev_check_cal_version_cmd(struct ath12k *ar);
 int ath12k_wmi_pdev_set_ps_mode(struct ath12k *ar, int vdev_id, u32 enable);
 int ath12k_wmi_pdev_set_timer_for_mec(struct ath12k *ar, int vdev_id,

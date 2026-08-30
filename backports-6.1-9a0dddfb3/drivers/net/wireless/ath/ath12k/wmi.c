@@ -3131,6 +3131,47 @@ int ath12k_wmi_send_pdev_set_rf_path_cmd(struct ath12k *ar, u32 rf_path)
 	return ret;
 }
 
+int ath12k_wmi_send_pdev_frame_inject_cmd(struct ath12k *ar,
+					  const struct wmi_frame_inject_arg *arg)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct wmi_frame_inject_cmd *cmd;
+	struct sk_buff *skb;
+	int ret;
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_frame_inject_cmd *)skb->data;
+	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_FRAME_INJECT_CMD_FIXED_PARAM,
+						 sizeof(*cmd));
+	cmd->vdev_id = cpu_to_le32(arg->vdev_id);
+	cmd->enable = cpu_to_le32(arg->enable);
+	cmd->frame_type = cpu_to_le32(arg->frame_type);
+	if (cmd->enable) {
+		cmd->frame_inject_period = cpu_to_le32(arg->frame_inject_period);
+		ether_addr_copy(cmd->frame_addr1.addr, arg->dstmac);
+		cmd->fc_duration = cpu_to_le32(arg->fc_duration);
+		cmd->bw = cpu_to_le32(arg->bw);
+	}
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "WMI frame inject vdev %u type %u enable %u period %u bw %u\n",
+		   arg->vdev_id, arg->frame_type, arg->enable,
+		   arg->frame_inject_period, arg->bw);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_PDEV_FRAME_INJECT_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "failed to send WMI_PDEV_FRAME_INJECT_CMDID: %d\n",
+			    ret);
+		dev_kfree_skb(skb);
+	}
+
+	return ret;
+}
+
 int ath12k_wmi_pdev_set_ps_mode(struct ath12k *ar, int vdev_id, u32 enable)
 {
 	struct ath12k_wmi_pdev *wmi = ar->wmi;
