@@ -1596,6 +1596,7 @@ void ath12k_dp_clear_per_pkt_rx_stats(struct ath12k_dp_peer_stats *rx_peer_stats
 void ath12k_dp_clear_wbm_rx_stats(struct ath12k_wbm_rx_stats *wbm_stats);
 void ath12k_dp_clear_preserved_stats(struct ath12k_dp_preserved_stats *stats);
 
+u8 ath12k_dp_get_bw_offset(u8 bw);
 s8 ath12k_dp_get_rssi_value(s8 snr,
 			    struct ath12k_dp_link_peer_rx_signal_stats *stats,
 			    struct wmi_rssi_dbm_conv_offsets *rssi_offsets,

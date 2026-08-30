@@ -3732,6 +3732,13 @@ static int ath12k_vendor_get_rx_mon_stats_size(void)
 	attr_signal_size += nla_total_size(sizeof(stats.signal_stats.rssi_avg));
 	attr_signal_size += nla_total_size(sizeof(stats.signal_stats.rssi_dp));
 	attr_signal_size += nla_total_size(sizeof(stats.signal_stats.rssi_dp_avg));
+	/* RSSI calculation inputs */
+	attr_signal_size += nla_total_size(sizeof(s8));   /* region_offset */
+	attr_signal_size += nla_total_size(sizeof(u8));   /* bw_offset */
+	attr_signal_size += nla_total_size(sizeof(s8));   /* avg_nf_dbm */
+	attr_signal_size += nla_total_size(sizeof(s32));  /* rssi_temp_offset */
+	attr_signal_size += nla_total_size(sizeof(u32));  /* xlna_bypass_offset */
+	attr_signal_size += nla_total_size(sizeof(u32));  /* xlna_bypass_threshold */
 	total_size += nla_total_size_nested(attr_signal_size);
 
 	/* Per-AC RX duration nested */
@@ -6487,18 +6494,25 @@ static int ath12k_vendor_fill_rx_wme_ac_bytes(struct sk_buff *skb,
 }
 
 /**
- * ath12k_vendor_fill_rx_mon_stats() - Serialize RX signal statistics
+ * ath12k_vendor_fill_rx_signal_stats() - Serialize RX signal statistics
  * @skb: Socket buffer for netlink message
- * @signal_stats: Pointer to RX peer signal structure
+ * @stats: Per-peer RX signal statistics
+ * @ar: radio handle, used to read rssi_offsets (nf/temp/xlna fields)
  *
- * Serializes RX signal statistics to netlink attributes.
+ * Serializes both the derived SNR/RSSI values and the five raw inputs
+ * that feed ath12k_dp_get_rssi_value():
+ *   rssi_region_offset, bw_offset, avg_nf_dbm, rssi_temp_offset,
+ *   xlna_bypass_offset, xlna_bypass_threshold
  *
  * Return: 0 on success, -EMSGSIZE if buffer space insufficient
  */
 static int
 ath12k_vendor_fill_rx_signal_stats(struct sk_buff *skb,
-				   struct ath12k_dp_link_peer_rx_signal_stats *stats)
+				   struct ath12k_dp_link_peer_rx_signal_stats *stats,
+				   struct ath12k *ar)
 {
+	u8 bw_offset = ath12k_dp_get_bw_offset(stats->channel_bw);
+
 	if (nla_put_u8(skb, QCA_VENDOR_ATTR_RX_MON_SIGNAL_STATS_SNR,
 		       stats->snr) ||
 	    nla_put_u16(skb, QCA_VENDOR_ATTR_RX_MON_SIGNAL_STATS_SNR_AVG,
@@ -6514,7 +6528,19 @@ ath12k_vendor_fill_rx_signal_stats(struct sk_buff *skb,
 	    nla_put_s8(skb, QCA_VENDOR_ATTR_RX_MON_SIGNAL_STATS_RSSI_DP,
 		       stats->rssi_dp) ||
 	    nla_put_s16(skb, QCA_VENDOR_ATTR_RX_MON_SIGNAL_STATS_RSSI_DP_AVG,
-			stats->rssi_dp_avg))
+			stats->rssi_dp_avg) ||
+	    nla_put_s8(skb, QCA_VENDOR_ATTR_RX_MON_SIGNAL_STATS_REGION_OFFSET,
+		       stats->rssi_region_offset) ||
+	    nla_put_u8(skb, QCA_VENDOR_ATTR_RX_MON_SIGNAL_STATS_BW_OFFSET,
+		       bw_offset) ||
+	    nla_put_s8(skb, QCA_VENDOR_ATTR_RX_MON_SIGNAL_STATS_AVG_NF_DBM,
+		       ar->rssi_offsets.avg_nf_dbm) ||
+	    nla_put_s32(skb, QCA_VENDOR_ATTR_RX_MON_SIGNAL_STATS_RSSI_TEMP_OFFSET,
+			ar->rssi_offsets.rssi_temp_offset) ||
+	    nla_put_u32(skb, QCA_VENDOR_ATTR_RX_MON_SIGNAL_STATS_XLNA_BYPASS_OFF,
+			ar->rssi_offsets.xlna_bypass_offset) ||
+	    nla_put_u32(skb, QCA_VENDOR_ATTR_RX_MON_SIGNAL_STATS_XLNA_BYPASS_THR,
+			ar->rssi_offsets.xlna_bypass_threshold))
 		return -EMSGSIZE;
 
 	return 0;
@@ -6719,7 +6745,7 @@ static int ath12k_vendor_fill_rx_mon_stats(struct sk_buff *skb,
 		return -EMSGSIZE;
 	}
 
-	if (ath12k_vendor_fill_rx_signal_stats(skb, signal_stats)) {
+	if (ath12k_vendor_fill_rx_signal_stats(skb, signal_stats, ar)) {
 		ath12k_err(NULL, "nla put failure: RX signal stats");
 		nla_nest_cancel(skb, signal_stat_attr);
 		return -EMSGSIZE;
