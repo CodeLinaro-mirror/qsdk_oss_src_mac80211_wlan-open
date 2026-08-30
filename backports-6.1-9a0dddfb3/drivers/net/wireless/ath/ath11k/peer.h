@@ -101,6 +101,14 @@ struct ath11k_peer {
 	bool dp_setup_done;
 };
 
+enum ath11k_sta_phy_mode {
+	ATH11K_LEGACY_STA,
+	ATH11K_HT_STA,
+	ATH11K_VHT_STA,
+	ATH11K_HE_STA,
+	ATH11K_EHT_STA,
+};
+
 void ath11k_peer_unmap_event(struct ath11k_base *ab, u16 peer_id);
 void ath11k_peer_unmap_v2_event(struct ath11k_base *ab, u16 peer_id, u8 *mac_addr,
 			        bool is_wds, u32 free_wds_count);

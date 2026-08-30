@@ -11440,7 +11440,7 @@ static void ath11k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 	struct ath11k_sta *arsta = ath11k_sta_to_arsta(sta);
 	struct ath11k *ar = arsta->arvif->ar;
 	struct ath11k_vif *arvif = ath11k_vif_to_arvif(vif);
-	s8 signal;
+	s8 signal = 0;
 	u32 bw_offset = 0;
 	bool db2dbm = test_bit(WMI_TLV_SERVICE_HW_DB2DBM_CONVERSION_SUPPORT,
 			       ar->ab->wmi_ab.svc_map);
