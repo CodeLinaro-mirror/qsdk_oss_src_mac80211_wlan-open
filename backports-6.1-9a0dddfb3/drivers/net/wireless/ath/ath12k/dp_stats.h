@@ -1200,6 +1200,7 @@ struct ath12k_stats_feat {
 	bool feat_sojourn;
 	bool feat_mon_stats;
 	bool feat_tx_mon_stats;
+	bool feat_mac80211;
 };
 
 struct ath12k_telemetry_command {
@@ -1229,6 +1230,20 @@ enum ath12k_peer_type {
 };
 
 /* Telemetry Peer Stats */
+/**
+ * struct ath12k_mac80211_flow_stats - mac80211-layer TX/RX flow counters
+ *
+ * Counts packet crossings at mac80211 entry/exit boundaries.
+ * Populated from struct ieee80211_sta atomic counters.
+ */
+struct ath12k_mac80211_flow_stats {
+	u32 tx_netif_pkts;     /* frames entering mac80211 from netif */
+	u32 tx_drv_pkts;       /* frames handed to driver */
+	u32 rx_drv_pkts;       /* frames entering mac80211 from driver */
+	u32 rx_netif_pkts;     /* frames delivered to netif/stack */
+	u32 rx_forwarded_pkts; /* frames forwarded in bridge */
+};
+
 struct ath12k_telemetry_dp_peer {
 	bool is_extended;
 	int peer_type;
@@ -1239,6 +1254,8 @@ struct ath12k_telemetry_dp_peer {
 	 * stats knob (DP_ENABLE_EXT_RX_STATS)
 	 */
 	struct ath12k_dp_rx_pkt_ppdu_stats rx_pkt_ppdu_stats;
+	/* mac80211-layer TX/RX flow counters - per peer */
+	struct ath12k_mac80211_flow_stats mac80211_flow;
 };
 
 /* Telemetry Vif Stats */

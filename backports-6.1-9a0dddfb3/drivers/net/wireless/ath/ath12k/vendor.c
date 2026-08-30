@@ -2330,6 +2330,7 @@ ath12k_wlan_telemetry_feat_policy[QCA_VENDOR_ATTR_WLAN_FEAT_MAX + 1] = {
 	[QCA_VENDOR_ATTR_WLAN_FEAT_SOJOURN] = {.type = NLA_FLAG},
 	[QCA_VENDOR_ATTR_WLAN_FEAT_MON_STATS] = {.type = NLA_FLAG},
 	[QCA_VENDOR_ATTR_WLAN_FEAT_TX_MON_STATS] = {.type = NLA_FLAG},
+	[QCA_VENDOR_ATTR_WLAN_FEAT_MAC80211] = {.type = NLA_FLAG},
 };
 
 int ath12k_extract_feat_inputs(struct nlattr *tb_attr,
@@ -2382,6 +2383,9 @@ int ath12k_extract_feat_inputs(struct nlattr *tb_attr,
 
 	if (feat_attr[QCA_VENDOR_ATTR_WLAN_FEAT_TX_MON_STATS])
 		cmd->feat.feat_tx_mon_stats = true;
+
+	if (feat_attr[QCA_VENDOR_ATTR_WLAN_FEAT_MAC80211])
+		cmd->feat.feat_mac80211 = true;
 
 	return ret;
 }
@@ -3927,9 +3931,17 @@ static int ath12k_get_sojourn_stats_attr_size(void)
 	return total_size;
 }
 
+static int ath12k_get_mac80211_flow_stats_attr_size(void)
+{
+	return nla_total_size(5 * nla_total_size(sizeof(u32)));
+}
+
 static int ath12k_get_dp_peer_attr_len(struct ath12k_telemetry_command *cmd)
 {
 	int total_size = 0;
+
+	/* mac80211 flow stats are always emitted */
+	total_size += ath12k_get_mac80211_flow_stats_attr_size();
 
 	if (cmd->feat.feat_rx) {
 		total_size += ath12k_get_feat_rx_peer_attr_size();
@@ -7048,6 +7060,30 @@ ath12k_fill_peer_hw_rx_stats(struct sk_buff *vendor_event,
 	return 0;
 }
 
+static int ath12k_fill_mac80211_stats(struct sk_buff *vendor_event,
+				      const struct ath12k_mac80211_flow_stats *flow)
+{
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_WLAN_TELEMETRY_MAC80211_TX_NETIF_PKTS,
+			flow->tx_netif_pkts) ||
+	    nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_WLAN_TELEMETRY_MAC80211_TX_DRV_PKTS,
+			flow->tx_drv_pkts) ||
+	    nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_WLAN_TELEMETRY_MAC80211_RX_DRV_PKTS,
+			flow->rx_drv_pkts) ||
+	    nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_WLAN_TELEMETRY_MAC80211_RX_NETIF_PKTS,
+			flow->rx_netif_pkts) ||
+	    nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_WLAN_TELEMETRY_MAC80211_RX_FORWARDED_PKTS,
+			flow->rx_forwarded_pkts)) {
+		ath12k_err(NULL, "nla put failure: mac80211 flow stats");
+		return -EINVAL;
+	}
+	return 0;
+}
+
 static int ath12k_fill_peer_rx_stats(struct ath12k *ar,
 				     struct sk_buff *vendor_event,
 				     struct ath12k_dp_peer_stats *peer_stats,
@@ -7668,6 +7704,25 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 					    cmd->link_id)) {
 		ath12k_err(NULL, "Error getting peer stats from dp");
 		goto out;
+	}
+
+	/* mac80211 flow stats: MLD-level only, gated on feat_mac80211 like TX/RX */
+	if (cmd->feat.feat_mac80211 &&
+	    telemetry_peer->peer_type == ATH12K_MLD_PEER) {
+		attr = nla_nest_start(vendor_event,
+				      QCA_VENDOR_ATTR_WLAN_TELEMETRY_MAC_STATS_EVENT);
+		if (attr) {
+			if (ath12k_fill_mac80211_stats(vendor_event,
+						       &telemetry_peer->mac80211_flow)) {
+				ath12k_err(NULL, "nla put failure: mac80211 flow stats");
+				nla_nest_cancel(vendor_event, attr);
+				goto out;
+			}
+			nla_nest_end(vendor_event, attr);
+		} else {
+			ath12k_err(NULL, "nla nest failure: mac80211 flow stats");
+			goto out;
+		}
 	}
 
 	if (cmd->feat.feat_tx) {

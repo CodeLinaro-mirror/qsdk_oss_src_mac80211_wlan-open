@@ -3110,7 +3110,7 @@ static void ieee80211_deliver_skb_to_local_stack(struct sk_buff *skb,
 		else
 			netif_receive_skb(skb);
 #endif
-		atomic_inc(&sta->rx_netif_pkts);
+		atomic_inc(&sta->sta.rx_netif_pkts);
 	}
 }
 
@@ -3179,7 +3179,7 @@ ieee80211_deliver_skb(struct ieee80211_rx_data *rx)
 				 */
 				xmit_skb = skb;
 				skb = NULL;
-				atomic_inc(&rx->sta->rx_forwarded_pkts);
+				atomic_inc(&rx->sta->sta.rx_forwarded_pkts);
 				if (!tid_stats_disable)
 					ieee80211_rx_stats_reason(sdata,
 								  xmit_skb->len,
@@ -5641,7 +5641,7 @@ static void ieee80211_rx_8023(struct ieee80211_rx_data *rx,
 			skb_reset_network_header(xmit_skb);
 			skb_reset_mac_header(xmit_skb);
 			dev_queue_xmit(xmit_skb);
-			atomic_inc(&rx->sta->rx_forwarded_pkts);
+			atomic_inc(&rx->sta->sta.rx_forwarded_pkts);
 			if (!tid_stats_disable)
 				ieee80211_rx_stats_reason(rx->sdata,
 							  xmit_skb->len,
@@ -5657,7 +5657,7 @@ static void ieee80211_rx_8023(struct ieee80211_rx_data *rx,
 	/* Do not deliver frames to PPE in fast rx incase of RFS
 	 * RFS is supported only in SFE Mode */
 	if (ieee80211_netif_rx_ppe(rx, skb)) {
-		atomic_inc(&rx->sta->rx_netif_pkts);
+		atomic_inc(&rx->sta->sta.rx_netif_pkts);
 		if (!tid_stats_disable)
 			ieee80211_rx_stats_reason(rx->sdata,
 						  skb->len,
@@ -6443,7 +6443,7 @@ void ieee80211_rx_list(struct ieee80211_hw *hw, struct ieee80211_sta *pubsta,
 		sta = container_of(pubsta, struct sta_info, sta);
 		if (sta) {
 			if (!(status->flag & RX_FLAG_ONLY_MONITOR))
-				atomic_inc(&sta->rx_drv_pkts);
+				atomic_inc(&sta->sta.rx_drv_pkts);
 		}
 	}
 

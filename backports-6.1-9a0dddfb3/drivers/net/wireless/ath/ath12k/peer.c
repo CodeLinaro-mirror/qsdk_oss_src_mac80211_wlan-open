@@ -2186,6 +2186,18 @@ int ath12k_get_peer_telemetry_stats(struct ath12k_vif *ahvif,
 		ret = ath12k_dp_get_peer_stats(dp_pdev, dp_peer, telemetry_peer,
 					       link_id, valid_link, links_map,
 					       stats_link_id);
+
+		/* Populate mac80211-layer flow counters from ieee80211_sta atomics */
+		telemetry_peer->mac80211_flow.tx_netif_pkts =
+			(u32)atomic_read(&sta->tx_netif_pkts);
+		telemetry_peer->mac80211_flow.tx_drv_pkts =
+			(u32)atomic_read(&sta->tx_drv_pkts);
+		telemetry_peer->mac80211_flow.rx_drv_pkts =
+			(u32)atomic_read(&sta->rx_drv_pkts);
+		telemetry_peer->mac80211_flow.rx_netif_pkts =
+			(u32)atomic_read(&sta->rx_netif_pkts);
+		telemetry_peer->mac80211_flow.rx_forwarded_pkts =
+			(u32)atomic_read(&sta->rx_forwarded_pkts);
 	} else {
 		/* Link peer path (sta not found via MLD MAC) */
 		telemetry_peer->peer_type = ATH12K_LINK_PEER;
