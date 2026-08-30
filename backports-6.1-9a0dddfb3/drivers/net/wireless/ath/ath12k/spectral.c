@@ -18,12 +18,9 @@
 #define ATH12K_SPECTRAL_ATH12K_MAX_IB_BINS(x)	\
 					((x)->hw_params->spectral.max_fft_bins)
 
-#define ATH12K_SPECTRAL_SCAN_COUNT_MAX		4095
-
 #define ATH12K_SPECTRAL_PER_SAMPLE_SIZE(x)	(sizeof(struct fft_sample_ath12k) + \
-						 ATH12K_SPECTRAL_ATH12K_MAX_IB_BINS(x))
+					 ATH12K_SPECTRAL_ATH12K_MAX_IB_BINS(x))
 #define ATH12K_SPECTRAL_SUB_BUFF_SIZE(x)	ATH12K_SPECTRAL_PER_SAMPLE_SIZE(x)
-#define ATH12K_SPECTRAL_NUM_SUB_BUF		ATH12K_SPECTRAL_SCAN_COUNT_MAX
 
 #define ATH12K_SPECTRAL_20MHZ			20
 #define ATH12K_SPECTRAL_40MHZ			40
@@ -450,7 +447,8 @@ static void ath12k_spectral_init_param_min_max(struct ath12k *ar)
 	int i;
 
 	pmm->fft_size_min   = ar->ab->hw_params->spectral.fft_size_min;
-	pmm->scan_count_max = ATH12K_SPECTRAL_SCAN_COUNT_MAX;
+	pmm->scan_count_max = ar->spectral.scan_count_max;
+
 
 	for (i = 0; i < ATH12K_SPECTRAL_NUM_BW_SLOTS; i++)
 		pmm->fft_size_max[i] = hw_max[i];
@@ -1664,12 +1662,59 @@ void ath12k_spectral_deinit(struct ath12k_base *ab)
 	}
 }
 
+/**
+ * ath12k_spectral_validate_scan_count_max - Validate and clamp scan count max
+ * @ab: ath12k base structure
+ * @ini_value: Value read from INI
+ * @pdev_idx: Physical device index for logging
+ *
+ * Clamps the INI value to the valid range [MIN, HW_LIMIT].
+ * Values above the HW limit (4095) are capped with a warning.
+ * Values below the minimum (512) are raised with a warning.
+ *
+ * Returns: Validated scan count value
+ */
+static u32 ath12k_spectral_validate_scan_count_max(struct ath12k_base *ab,
+						   u32 ini_value,
+						   int pdev_idx)
+{
+	u32 clamped_scan_count = ini_value;
+
+	/* Cap to hardware maximum (4095 buffers, ~16MB per radio) */
+	if (clamped_scan_count > ATH12K_SPECTRAL_SCAN_COUNT_MAX_HW_LIMIT) {
+		ath12k_warn(ab,
+			    "spectral: scan_count_max=%u exceeds HW limit %u, capping to %u (pdev %d)\n",
+			    clamped_scan_count,
+			    ATH12K_SPECTRAL_SCAN_COUNT_MAX_HW_LIMIT,
+			    ATH12K_SPECTRAL_SCAN_COUNT_MAX_HW_LIMIT,
+			    pdev_idx);
+		clamped_scan_count = ATH12K_SPECTRAL_SCAN_COUNT_MAX_HW_LIMIT;
+	}
+
+	/* Enforce minimum (512 buffers minimum, ~2MB per radio) */
+	if (clamped_scan_count < ATH12K_SPECTRAL_SCAN_COUNT_MIN) {
+		ath12k_warn(ab,
+			    "spectral: scan_count_max=%u below minimum %u, capping to %u (pdev %d)\n",
+			    clamped_scan_count,
+			    ATH12K_SPECTRAL_SCAN_COUNT_MIN,
+			    ATH12K_SPECTRAL_SCAN_COUNT_MIN,
+			    pdev_idx);
+		clamped_scan_count = ATH12K_SPECTRAL_SCAN_COUNT_MIN;
+	}
+
+	return clamped_scan_count;
+}
+
 static inline int ath12k_spectral_debug_register(struct ath12k *ar)
 {
+	ath12k_info(ar->ab,
+		    "spectral: opening relay with num_sub_bufs=%u (pdev %d)\n",
+		    ar->spectral.scan_count_max, ar->pdev_idx);
+
 	ar->spectral.rfs_scan = relay_open("spectral_scan",
 					   ar->debug.debugfs_pdev,
 					   ATH12K_SPECTRAL_SUB_BUFF_SIZE(ar->ab),
-					   ATH12K_SPECTRAL_NUM_SUB_BUF,
+					   ar->spectral.scan_count_max,
 					   &rfs_scan_cb, NULL);
 	if (!ar->spectral.rfs_scan) {
 		ath12k_warn(ar->ab, "failed to open relay in pdev %d\n",
@@ -1677,8 +1722,12 @@ static inline int ath12k_spectral_debug_register(struct ath12k *ar)
 		return -EINVAL;
 	}
 
+	ath12k_info(ar->ab,
+		    "spectral: relay opened successfully with %u buffers (pdev %d)\n",
+		    ar->spectral.scan_count_max, ar->pdev_idx);
+
 	ar->spectral.sub_buf_size = ATH12K_SPECTRAL_SUB_BUFF_SIZE(ar->ab);
-	ar->spectral.num_sub_bufs = ATH12K_SPECTRAL_NUM_SUB_BUF;
+	ar->spectral.num_sub_bufs = ar->spectral.scan_count_max;
 
 	debugfs_create_u32("spectral_data_sub_buffer_size", 0444,
 			   ar->debug.debugfs_pdev,
@@ -1767,6 +1816,19 @@ int ath12k_spectral_init(struct ath12k_base *ab)
 		sp->enabled = true;
 
 		spin_unlock_bh(&sp->lock);
+
+		/* Read spectral scan count max from chip-specific INI.*/
+		sp->scan_count_max =
+			ath12k_spectral_validate_scan_count_max(ab,
+				ath12k_cfg_get(ab,
+					       ATH12K_CFG_SPECTRAL_SCAN_COUNT_MAX),
+				i);
+
+		ath12k_info(ab,
+			    "spectral: scan_count_max=%u (pdev %d, valid range: %u-%u)\n",
+			    sp->scan_count_max, i,
+			    ATH12K_SPECTRAL_SCAN_COUNT_MIN,
+			    ATH12K_SPECTRAL_SCAN_COUNT_MAX_HW_LIMIT);
 
 		ath12k_spectral_init_param_min_max(ar);
 
