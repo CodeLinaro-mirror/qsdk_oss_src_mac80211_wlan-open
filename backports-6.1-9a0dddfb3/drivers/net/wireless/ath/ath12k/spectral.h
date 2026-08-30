@@ -149,6 +149,23 @@ struct ath12k_spectral {
 
 struct ath12k_link_vif *ath12k_spectral_get_vdev(struct ath12k *ar);
 int ath12k_spectral_nl80211_bw_to_idx(enum nl80211_chan_width bw);
+/**
+ * ath12k_spectral_is_agile_capable() - check whether agile spectral is supported
+ * @ar: ath12k radio instance
+ *
+ * Return: true if any agile spectral BW tier is supported. Use
+ * ath12k_spectral_is_agile_bw_capable() for per-BW validation.
+ */
+bool ath12k_spectral_is_agile_capable(struct ath12k *ar);
+/**
+ * ath12k_spectral_is_agile_bw_capable() - check agile spectral BW support
+ * @ar: ath12k radio instance
+ * @width: nl80211 channel width to validate
+ *
+ * Return: true if agile spectral scan is supported for @width.
+ */
+bool ath12k_spectral_is_agile_bw_capable(struct ath12k *ar,
+					 enum nl80211_chan_width width);
 
 int ath12k_spectral_init(struct ath12k_base *ab);
 void ath12k_spectral_deinit(struct ath12k_base *ab);
@@ -203,6 +220,17 @@ static inline int ath12k_spectral_stop_scan(struct ath12k *ar)
 static inline int ath12k_spectral_start_scan(struct ath12k *ar)
 {
 	return 0;
+}
+
+static inline bool ath12k_spectral_is_agile_capable(struct ath12k *ar)
+{
+	return false;
+}
+
+static inline bool ath12k_spectral_is_agile_bw_capable(struct ath12k *ar,
+						       enum nl80211_chan_width width)
+{
+	return false;
 }
 
 #endif /* CPTCFG_ATH12K_SPECTRAL */

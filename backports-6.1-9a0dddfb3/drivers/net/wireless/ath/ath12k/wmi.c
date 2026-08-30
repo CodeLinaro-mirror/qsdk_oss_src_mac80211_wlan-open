@@ -8726,26 +8726,56 @@ static int ath12k_wmi_tlv_mac_phy_chainmask_caps(struct ath12k_base *soc,
 	}
 
 	for (i = 0; i < soc->num_radios; i++) {
+		bool chainmask_table_found = false;
+
 		pdev_cap = &soc->pdevs[i].cap;
+		pdev_cap->agile_spectral_cap = false;
+		pdev_cap->agile_spectral_cap_160 = false;
+		pdev_cap->agile_spectral_cap_80p80 = false;
+		pdev_cap->agile_spectral_cap_320 = false;
+
 		for (j = 0; j < svc_rdy_ext->n_mac_phy_chainmask_combo; j++) {
 			cmask_table = &svc_rdy_ext->arg.chainmask_table[j];
-			if (cmask_table->table_id == pdev_cap->chainmask_table_id)
+			if (cmask_table->table_id ==
+					pdev_cap->chainmask_table_id) {
+				chainmask_table_found = true;
 				break;
+			}
 		}
 
-		if (j == svc_rdy_ext->n_mac_phy_chainmask_combo) {
+		if (!chainmask_table_found) {
 			ath12k_warn(soc,
-				    "failed to find chainmask table for pdev %d table_id %u\n",
-				    i, pdev_cap->chainmask_table_id);
-			return -EINVAL;
+				    "chainmask table id %u not found for pdev %d\n",
+				    pdev_cap->chainmask_table_id, i);
+			continue;
 		}
 
 		for (j = 0; j < cmask_table->num_valid_chainmasks; j++) {
 			if (cmask_table->cap_list[j].supported_caps & WMI_SUPPORT_CHAIN_MASK_ADFS)
 				pdev_cap->adfs_chain_mask |= (1 << cmask_table->cap_list[j].chainmask);
+
+			pdev_cap->agile_spectral_cap |=
+				!!(cmask_table->cap_list[j].supported_caps &
+				   WMI_SUPPORT_AGILE_SPECTRAL);
+			pdev_cap->agile_spectral_cap_160 |=
+				!!(cmask_table->cap_list[j].supported_caps &
+				   WMI_SUPPORT_AGILE_SPECTRAL_160);
+			pdev_cap->agile_spectral_cap_320 |=
+				!!(cmask_table->cap_list[j].supported_caps &
+				   WMI_SUPPORT_AGILE_SPECTRAL_320);
 		}
+
+		pdev_cap->agile_spectral_cap_80p80 =
+			pdev_cap->agile_spectral_cap_160;
+
 		ath12k_dbg(soc, ATH12K_DBG_WMI, "updated adfs chain mask %lx for pdev %d",
 			   pdev_cap->adfs_chain_mask, i);
+		ath12k_dbg(soc, ATH12K_DBG_WMI,
+			   "updated agile spectral caps for pdev %d: 20_40_80=%d 160=%d 80p80=%d 320=%d",
+			   i, pdev_cap->agile_spectral_cap,
+			   pdev_cap->agile_spectral_cap_160,
+			   pdev_cap->agile_spectral_cap_80p80,
+			   pdev_cap->agile_spectral_cap_320);
 	}
 	return 0;
 }

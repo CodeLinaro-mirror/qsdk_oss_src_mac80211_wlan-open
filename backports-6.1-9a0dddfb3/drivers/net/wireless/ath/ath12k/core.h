@@ -2494,6 +2494,10 @@ struct ath12k_pdev_cap {
 	u32 rx_chain_mask_shift;
 	u32 chainmask_table_id;
 	unsigned long adfs_chain_mask;
+	bool agile_spectral_cap;
+	bool agile_spectral_cap_160;
+	bool agile_spectral_cap_80p80;
+	bool agile_spectral_cap_320;
 	struct ath12k_band_cap band[NUM_NL80211_BANDS];
 	u32 eml_cap;
 	u32 mld_cap;

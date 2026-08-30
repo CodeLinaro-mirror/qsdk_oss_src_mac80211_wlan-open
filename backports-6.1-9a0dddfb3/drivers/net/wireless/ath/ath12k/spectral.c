@@ -184,6 +184,48 @@ static u8 ath12k_spectral_get_detector_from_scan_mode(struct ath12k *ar,
 	}
 }
 
+bool ath12k_spectral_is_agile_capable(struct ath12k *ar)
+{
+	struct ath12k_pdev_cap *cap;
+
+	if (!ar || !ar->pdev)
+		return false;
+
+	cap = &ar->pdev->cap;
+
+	return cap->agile_spectral_cap ||
+	       cap->agile_spectral_cap_160 ||
+	       cap->agile_spectral_cap_80p80 ||
+	       cap->agile_spectral_cap_320;
+}
+
+bool ath12k_spectral_is_agile_bw_capable(struct ath12k *ar,
+					 enum nl80211_chan_width width)
+{
+	struct ath12k_pdev_cap *cap;
+
+	if (!ar || !ar->pdev)
+		return false;
+
+	cap = &ar->pdev->cap;
+
+	switch (width) {
+	case NL80211_CHAN_WIDTH_20_NOHT:
+	case NL80211_CHAN_WIDTH_20:
+	case NL80211_CHAN_WIDTH_40:
+	case NL80211_CHAN_WIDTH_80:
+		return cap->agile_spectral_cap;
+	case NL80211_CHAN_WIDTH_160:
+		return cap->agile_spectral_cap_160;
+	case NL80211_CHAN_WIDTH_80P80:
+		return cap->agile_spectral_cap_80p80;
+	case NL80211_CHAN_WIDTH_320:
+		return cap->agile_spectral_cap_320;
+	default:
+		return false;
+	}
+}
+
 static void ath12k_spectral_verify_ts(struct ath12k *ar, u8 *buf,
 				      u32 current_ts, u8 detector_id)
 {
