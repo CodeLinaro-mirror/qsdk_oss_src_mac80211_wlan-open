@@ -588,7 +588,7 @@ enum wmi_tlv_cmd_id {
 	WMI_PDEV_SET_RX_FILTER_PROMISCUOUS_CMDID,
 	WMI_PDEV_DMA_RING_CFG_REQ_CMDID,
 	WMI_PDEV_HE_TB_ACTION_FRM_CMDID,
-	WMI_PDEV_PKTLOG_FILTER_CMDID,
+	WMI_PDEV_RESERVED0_CMDID, /* was WMI_PDEV_PKTLOG_FILTER_CMDID, 0x4036 */
 	WMI_PDEV_SET_RAP_CONFIG_CMDID,
 	WMI_PDEV_DSM_FILTER_CMDID,
 	WMI_PDEV_FRAME_INJECT_CMDID,
@@ -2456,8 +2456,6 @@ enum wmi_tlv_tag {
 	WMI_TAG_NDP_CMD,
 	WMI_TAG_NDP_EVENT,
 	/* TODO add all the missing cmds */
-	WMI_TAG_PDEV_PEER_PKTLOG_FILTER_CMD = 0x301,
-	WMI_TAG_PDEV_PEER_PKTLOG_FILTER_INFO,
 	WMI_TAG_PEER_TX_PN_REQUEST_CMD = 0x306,
 	WMI_TAG_PEER_TX_PN_RESPONSE_EVENT,
 	WMI_TAG_PEER_CFR_CAPTURE_EVENT = 0x317,
@@ -6430,19 +6428,6 @@ struct wmi_addba_clear_resp_cmd {
 	__le32 tlv_header;
 	__le32 vdev_id;
 	struct ath12k_wmi_mac_addr_params peer_macaddr;
-} __packed;
-
-struct wmi_pdev_pktlog_filter_info {
-	__le32 tlv_header;
-	struct ath12k_wmi_mac_addr_params peer_macaddr;
-} __packed;
-
-struct wmi_pdev_pktlog_filter_cmd {
-	__le32 tlv_header;
-	__le32 pdev_id;
-	__le32 enable;
-	__le32 filter_type;
-	__le32 num_mac;
 } __packed;
 
 enum ath12k_wmi_pktlog_enable {
@@ -11841,7 +11826,6 @@ int ath12k_wmi_send_init_country_cmd(struct ath12k *ar,
 				     struct ath12k_wmi_init_country_arg *arg);
 int ath12k_wmi_pdev_pktlog_enable(struct ath12k *ar, u32 pktlog_filter);
 int ath12k_wmi_pdev_pktlog_disable(struct ath12k *ar);
-int ath12k_wmi_pdev_peer_pktlog_filter(struct ath12k *ar, u8 *addr, u8 enable);
 int
 ath12k_wmi_send_thermal_mitigation_cmd(struct ath12k *ar,
 				       struct ath12k_wmi_thermal_mitigation_arg *arg);

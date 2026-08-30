@@ -845,118 +845,6 @@ static const struct file_operations fops_scs = {
 	.llseek = default_llseek,
 };
 
-static ssize_t ath12k_dbg_sta_write_peer_pktlog(struct file *file,
-						const char __user *buf,
-						size_t count, loff_t *ppos)
-{
-	struct ieee80211_link_sta *link_sta = file->private_data;
-	struct ieee80211_sta *sta = link_sta->sta;
-	u8 link_id = link_sta->link_id;
-	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
-	struct ath12k_hw *ah = ahsta->ahvif->ah;
-	struct ath12k_link_sta *arsta;
-	struct ath12k *ar;
-	int ret, enable;
-
-	wiphy_lock(ah->hw->wiphy);
-	mutex_lock(&ah->hw_mutex);
-
-	if (!(BIT(link_id) & ahsta->links_map)) {
-		mutex_unlock(&ah->hw_mutex);
-		wiphy_unlock(ah->hw->wiphy);
-		return -ENOENT;
-	}
-
-	arsta = ahsta->link[link_id];
-
-	if (!arsta || !arsta->arvif->ar) {
-		mutex_unlock(&ah->hw_mutex);
-		wiphy_unlock(ah->hw->wiphy);
-		return -ENOENT;
-	}
-
-	ar = arsta->arvif->ar;
-
-	if (ah->state != ATH12K_HW_STATE_ON) {
-		ret = -ENETDOWN;
-		goto out;
-	}
-
-	ret = kstrtoint_from_user(buf, count, 0, &enable);
-	if (ret)
-		goto out;
-
-	ar->debug.pktlog_peer_valid = enable;
-	memcpy(ar->debug.pktlog_peer_addr, link_sta->addr, ETH_ALEN);
-
-	/* Send peer based pktlog enable/disable */
-	ret = ath12k_wmi_pdev_peer_pktlog_filter(ar, link_sta->addr, enable);
-	if (ret) {
-		ath12k_warn(ar->ab, "failed to set peer pktlog filter %pM: %d\n",
-			    sta->addr, ret);
-		goto out;
-	}
-
-	ath12k_dbg(ar->ab, ATH12K_DBG_WMI, "peer pktlog filter set to %d\n",
-		   enable);
-	ret = count;
-
-out:
-	mutex_unlock(&ah->hw_mutex);
-	wiphy_unlock(ah->hw->wiphy);
-	return ret;
-}
-
-static ssize_t ath12k_dbg_sta_read_peer_pktlog(struct file *file,
-					       char __user *ubuf,
-					       size_t count, loff_t *ppos)
-{
-	struct ieee80211_link_sta *link_sta = file->private_data;
-	struct ieee80211_sta *sta = link_sta->sta;
-	u8 link_id = link_sta->link_id;
-	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
-	struct ath12k_hw *ah = ahsta->ahvif->ah;
-	struct ath12k_link_sta *arsta;
-	struct ath12k *ar;
-	char buf[32] = {0};
-	int len;
-
-	wiphy_lock(ah->hw->wiphy);
-	mutex_lock(&ah->hw_mutex);
-
-	if (!(BIT(link_id) & ahsta->links_map)) {
-		mutex_unlock(&ah->hw_mutex);
-		wiphy_unlock(ah->hw->wiphy);
-		return -ENOENT;
-	}
-
-	arsta = ahsta->link[link_id];
-
-	if (!arsta || !arsta->arvif->ar) {
-		mutex_unlock(&ah->hw_mutex);
-		wiphy_unlock(ah->hw->wiphy);
-		return -ENOENT;
-	}
-
-	ar = arsta->arvif->ar;
-
-	len = scnprintf(buf, sizeof(buf), "%08x %pM\n",
-			ar->debug.pktlog_peer_valid,
-			ar->debug.pktlog_peer_addr);
-	mutex_unlock(&ah->hw_mutex);
-	wiphy_unlock(ah->hw->wiphy);
-
-	return simple_read_from_buffer(ubuf, count, ppos, buf, len);
-}
-
-static const struct file_operations fops_peer_pktlog = {
-	.write = ath12k_dbg_sta_write_peer_pktlog,
-	.read = ath12k_dbg_sta_read_peer_pktlog,
-	.open = simple_open,
-	.owner = THIS_MODULE,
-	.llseek = default_llseek,
-};
-
 static ssize_t ath12k_dbg_sta_write_delba(struct file *file,
 					  const char __user *user_buf,
 					  size_t count, loff_t *ppos)
@@ -2281,8 +2169,6 @@ void ath12k_debugfs_link_sta_op_add(struct ieee80211_hw *hw,
 
 	debugfs_create_file("htt_peer_stats", 0400, dir, link_sta,
 			    &fops_htt_peer_stats);
-	debugfs_create_file("peer_pktlog", 0644, dir, link_sta,
-			    &fops_peer_pktlog);
 
 	if (test_bit(WMI_TLV_SERVICE_PER_PEER_HTT_STATS_RESET,
 		     ar->ab->wmi_ab.svc_map))
