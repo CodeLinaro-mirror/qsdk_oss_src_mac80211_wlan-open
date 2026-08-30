@@ -18259,6 +18259,106 @@ static int ath12k_vendor_pasn_cmd(struct wiphy *wiphy,
 	return ret;
 }
 
+static int ath12k_vendor_list_pasn_peer_cmd(struct wiphy *wiphy,
+					    struct wireless_dev *wdev,
+					    const void *data, int data_len)
+{
+	const int ltf_attr =
+		QCA_WLAN_VENDOR_ATTR_PASN_PEER_LTF_KEYSEED_REQUIRED;
+	const int status_attr =
+		QCA_WLAN_VENDOR_ATTR_PASN_PEER_STATUS_SUCCESS;
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_PASN_MAX + 1];
+	struct ath12k_rtt_pasn_peer *pasn_peer;
+	struct ath12k_link_vif *arvif;
+	struct nlattr *peers;
+	struct nlattr *peer;
+	struct sk_buff *skb;
+	u8 link_id = INVALID_LINK_ID;
+	int ret = 0;
+
+	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_PASN_MAX,
+			data, data_len, ath12k_vendor_pasn_policy,
+			NULL);
+	if (ret)
+		return ret;
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_PASN_LINK_ID]) {
+		link_id = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_PASN_LINK_ID]);
+		if (!is_valid_link_id(link_id) || link_id >= ATH12K_NUM_MAX_LINKS)
+			return -EINVAL;
+	}
+
+	arvif = ath12k_pasn_arvif_from_wdev(wdev, link_id);
+	if (!arvif || !arvif->ar)
+		return -ENOLINK;
+
+	ath12k_dbg(arvif->ar->ab, ATH12K_DBG_RTT,
+		   "RTT PASN list peers vdev %u link %u\n",
+		   arvif->vdev_id, link_id);
+
+	skb = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, NLMSG_DEFAULT_SIZE);
+	if (!skb)
+		return -ENOMEM;
+
+	peers = nla_nest_start(skb, QCA_WLAN_VENDOR_ATTR_PASN_PEERS);
+	if (!peers)
+		goto put_failure;
+
+	spin_lock_bh(&arvif->rtt_ctx.pasn_peer_lock);
+	list_for_each_entry(pasn_peer, &arvif->rtt_ctx.pasn_peer_list, list) {
+		peer = nla_nest_start(skb, 0);
+		if (!peer) {
+			ret = -ENOBUFS;
+			goto unlock;
+		}
+
+		if (!is_zero_ether_addr(pasn_peer->src_addr) &&
+		    nla_put(skb, QCA_WLAN_VENDOR_ATTR_PASN_PEER_SRC_ADDR,
+			    ETH_ALEN, pasn_peer->src_addr)) {
+			ret = -ENOBUFS;
+			goto unlock;
+		}
+
+		if (nla_put(skb, QCA_WLAN_VENDOR_ATTR_PASN_PEER_MAC_ADDR,
+			    ETH_ALEN, pasn_peer->peer_addr)) {
+			ret = -ENOBUFS;
+			goto unlock;
+		}
+
+		if (pasn_peer->ltf_keyseed_required &&
+		    nla_put_flag(skb, ltf_attr)) {
+			ret = -ENOBUFS;
+			goto unlock;
+		}
+
+		if ((pasn_peer->flags & ATH12K_PASN_F_AUTH_SUCCESS) &&
+		    nla_put_flag(skb, status_attr)) {
+			ret = -ENOBUFS;
+			goto unlock;
+		}
+
+		ath12k_dbg(arvif->ar->ab, ATH12K_DBG_RTT,
+			   "RTT PASN list peer %pM flags 0x%x ltf %u\n",
+			   pasn_peer->peer_addr, pasn_peer->flags,
+			   pasn_peer->ltf_keyseed_required);
+
+		nla_nest_end(skb, peer);
+	}
+unlock:
+	spin_unlock_bh(&arvif->rtt_ctx.pasn_peer_lock);
+
+	if (ret)
+		goto put_failure;
+
+	nla_nest_end(skb, peers);
+
+	return cfg80211_vendor_cmd_reply(skb);
+
+put_failure:
+	kfree_skb(skb);
+	return -ENOBUFS;
+}
+
 static int ath12k_vendor_rf_path_mode_handler(struct wiphy *wiphy,
 					      struct wireless_dev *wdev,
 					      const void *data, int data_len)
@@ -18790,6 +18890,14 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
 		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_PASN,
 		.doit = ath12k_vendor_pasn_cmd,
+		.policy = ath12k_vendor_pasn_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_PASN_MAX,
+		.flags = WIPHY_VENDOR_CMD_NEED_WDEV,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_LIST_PASN_PEER,
+		.doit = ath12k_vendor_list_pasn_peer_cmd,
 		.policy = ath12k_vendor_pasn_policy,
 		.maxattr = QCA_WLAN_VENDOR_ATTR_PASN_MAX,
 		.flags = WIPHY_VENDOR_CMD_NEED_WDEV,
