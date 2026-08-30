@@ -8,7 +8,6 @@
 #include "../debugfs.h"
 #include "../dp_cmn.h"
 #include "../dp_peer.h"
-#include "../dp_rx.h"
 #include "dp.h"
 #include "dp_peer.h"
 #include "dp_tx_queue.h"
@@ -348,6 +347,7 @@ int ath12k_wifi8_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 	struct ath12k_sta *ahsta = NULL;
 	struct ath12k_pdev_dp *dp_pdev;
 	int ret;
+	struct ath12k_dp_rx_tid *rx_tid;
 	unsigned int num_peers;
 	bool vow_enabled;
 
@@ -391,20 +391,15 @@ int ath12k_wifi8_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 		kfree(dp_peer);
 		return ret;
 	}
-	dp_peer->rx_tid = kzalloc(array_size(dp_pdev->dp->ab->hal.hal_params->num_tids,
-					     sizeof(*dp_peer->rx_tid)), GFP_ATOMIC);
 	rcu_read_unlock();
 
-	if (!dp_peer->rx_tid) {
-		ath12k_dp_peer_stats_free(dp_peer);
-		kfree(dp_peer->qos);
-		kfree(dp_peer);
-		return -ENOMEM;
+	for (tid = 0; tid < ATH12K_MAX_TIDS; tid++) {
+		rx_tid = &dp_peer->rx_tid[tid];
+		spin_lock_init(&rx_tid->tid_lock);
 	}
 
 	spin_lock_init(&dp_peer->qos->lock);
 	spin_lock_init(&dp_peer->keys_lock);
-	spin_lock_init(&dp_peer->rx_tid_lock);
 	dp_peer->sta_id = ATH12K_STA_ID_INVALID;
 	ether_addr_copy(dp_peer->addr, addr);
 	dp_peer->sta = params->sta;
@@ -413,7 +408,6 @@ int ath12k_wifi8_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 	dp_peer->is_epp_peer = params->is_epp_peer;
 	dp_peer->peer_id = ath12k_wifi8_peer_id_alloc(dp_hw);
 	if (dp_peer->peer_id == ATH12K_MLO_PEER_ID_INVALID) {
-		kfree(dp_peer->rx_tid);
 		ath12k_dp_peer_stats_free(dp_peer);
 		kfree(dp_peer->qos);
 		kfree(dp_peer);
@@ -426,7 +420,6 @@ int ath12k_wifi8_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 			spin_lock_bh(&dp_hw->peer_hash_lock);
 			clear_bit(dp_peer->peer_id, dp_hw->free_peer_id_map);
 			spin_unlock_bh(&dp_hw->peer_hash_lock);
-			kfree(dp_peer->rx_tid);
 			kfree(dp_peer->qos);
 			ath12k_dp_peer_stats_free(dp_peer);
 			kfree(dp_peer);
@@ -527,30 +520,11 @@ int ath12k_wifi8_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 	return 0;
 }
 
-void ath12k_wifi8_dp_peer_cleanup(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
+void ath12k_wifi8_dp_peer_cleanup(struct ath12k_dp_hw *dp_hw,
 				  struct ath12k_dp_peer *dp_peer)
 {
-	struct ath12k_dp_rx_tid *rx_tid;
-	int i, num_tids;
-
 	clear_bit(dp_peer->peer_id, dp_hw->free_peer_id_map);
 	rcu_assign_pointer(dp_hw->dp_peer_list[dp_peer->peer_id], NULL);
-	num_tids = dp->ab->hal.hal_params->num_tids;
-	for (i = 0; i < num_tids; i++) {
-		spin_lock_bh(&dp_peer->rx_tid_lock);
-		rx_tid = dp_peer->rx_tid[i];
-		dp_peer->rx_tid[i] = NULL;
-		spin_unlock_bh(&dp_peer->rx_tid_lock);
-		if (!rx_tid)
-			continue;
-		del_timer_sync(&rx_tid->frag_timer);
-		ath12k_dp_rx_frags_cleanup(rx_tid, true);
-		if (rx_tid->vaddr)
-			ath12k_dp_rx_tid_free_desc(dp->ab, rx_tid);
-		kfree(rx_tid);
-	}
-	kfree(dp_peer->rx_tid);
-	dp_peer->rx_tid = NULL;
 	if (dp_peer->qos) {
 		if (dp_peer->qos->telemetry_peer_ctx)
 			ath12k_telemetry_peer_ctx_free(dp_peer->qos->telemetry_peer_ctx);
@@ -560,16 +534,6 @@ void ath12k_wifi8_dp_peer_cleanup(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_
 
 	ath12k_dp_peer_stats_free(dp_peer);
 	dp_peer->dp_peer_state = ATH12K_DP_PEER_DELETED;
-}
-
-void ath12k_wifi8_dp_peer_reo_cmd_flush(struct ath12k_dp *dp,
-					struct ath12k_base *ab, u16 peer_id)
-{
-	struct ath12k_dp *central_dp = ath12k_get_central_dp(dp);
-
-	if (!central_dp)
-		return;
-	ath12k_dp_rx_peer_reo_cmd_flush(ab, central_dp, peer_id);
 }
 
 void ath12k_wifi8_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 *addr,
@@ -684,7 +648,7 @@ void ath12k_wifi8_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 
 	}
 
 	if (dp_peer->dp_peer_state >= ATH12K_DP_PEER_LOGICALLY_DELETED) {
-		ath12k_wifi8_dp_peer_cleanup(dp, dp_hw, dp_peer);
+		ath12k_wifi8_dp_peer_cleanup(dp_hw, dp_peer);
 		num_peers = bitmap_weight(dp_hw->free_peer_id_map, ATH12K_MAX_PEER_ID);
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		ath12k_wifi8_dp_telemetry_peer_count_update(umac_dp->ab, num_peers);
@@ -697,7 +661,7 @@ void ath12k_wifi8_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 
 		if (!dp_peer->peer_ext_ctx) {
 			peerid_index = dp_peer->peer_id;
 			rcu_assign_pointer(dp_hw->dp_peer_list[peerid_index], NULL);
-			ath12k_wifi8_dp_peer_cleanup(dp, dp_hw, dp_peer);
+			ath12k_wifi8_dp_peer_cleanup(dp_hw, dp_peer);
 			num_peers = bitmap_weight(dp_hw->free_peer_id_map,
 						  ATH12K_MAX_PEER_ID);
 			spin_unlock_bh(&dp_hw->peer_hash_lock);

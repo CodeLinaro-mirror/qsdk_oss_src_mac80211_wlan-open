@@ -7,7 +7,6 @@
 #include "../debug.h"
 #include "../dp_cmn.h"
 #include "../dp_peer.h"
-#include "../dp_rx.h"
 #include "../dp.h"
 #include "dp.h"
 #include "../telemetry_agent_if.h"
@@ -65,7 +64,7 @@ int ath12k_wifi7_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 				struct ath12k_dp_peer_create_params *params,
 				struct ieee80211_vif *vif)
 {
-	u8 i = 0;
+	u8 i = 0, tid;
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
 	struct ath12k_dp_peer *dp_peer;
 	struct ieee80211_sta *sta = NULL;
@@ -74,6 +73,7 @@ int ath12k_wifi7_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 	struct wireless_dev *wdev;
 	struct ath12k_pdev_dp *dp_pdev;
 	int ret;
+	struct ath12k_dp_rx_tid *rx_tid;
 
 	if (params->sta) {
 		sta = params->sta;
@@ -116,6 +116,11 @@ int ath12k_wifi7_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 		return -ENOMEM;
 	}
 
+	for (tid = 0; tid < ATH12K_MAX_TIDS; tid++) {
+		rx_tid = &dp_peer->rx_tid[tid];
+		spin_lock_init(&rx_tid->tid_lock);
+	}
+
 	dp_peer->qos = kzalloc(sizeof(*dp_peer->qos), GFP_KERNEL);
 	if (!dp_peer->qos) {
 		if (sta && sta->mlo)
@@ -126,7 +131,6 @@ int ath12k_wifi7_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 
 	spin_lock_init(&dp_peer->qos->lock);
 	spin_lock_init(&dp_peer->keys_lock);
-	spin_lock_init(&dp_peer->rx_tid_lock);
 	ether_addr_copy(dp_peer->addr, addr);
 	dp_peer->sta = params->sta;
 	dp_peer->vif = vif;
@@ -165,18 +169,8 @@ int ath12k_wifi7_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 		kfree(dp_peer);
 		return ret;
 	}
-	dp_peer->rx_tid = kzalloc(array_size(dp_pdev->dp->ab->hal.hal_params->num_tids,
-					     sizeof(*dp_peer->rx_tid)), GFP_ATOMIC);
-	rcu_read_unlock();
 
-	if (!dp_peer->rx_tid) {
-		if (sta && sta->mlo)
-			ath12k_wifi7_peer_ml_id_free(ah, ahsta);
-		ath12k_dp_peer_stats_free(dp_peer);
-		kfree(dp_peer->qos);
-		kfree(dp_peer);
-		return -ENOMEM;
-	}
+	rcu_read_unlock();
 
 	spin_lock_bh(&dp_hw->peer_hash_lock);
 
@@ -201,23 +195,15 @@ int ath12k_wifi7_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 	return 0;
 }
 
-void ath12k_wifi7_dp_peer_reo_cmd_flush(struct ath12k_dp *dp,
-					struct ath12k_base *ab, u16 peer_id)
-{
-	ath12k_dp_rx_peer_reo_cmd_flush(ab, dp, peer_id);
-}
-
 void ath12k_wifi7_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 *addr,
 				 struct ieee80211_sta *sta, u8 hw_link_id,
 				 struct ieee80211_vif *vif)
 {
 	struct ath12k_dp_peer *dp_peer;
-	struct ath12k_dp_rx_tid *rx_tid;
 	u16 peerid_index;
 	struct ath12k_sta *ahsta;
 	struct ath12k_dp_hw *dp_hw = &ah->dp_hw;
 	bool pre_rcu_remove_done = false;
-	int i, num_tids;
 
 	spin_lock_bh(&dp_hw->peer_hash_lock);
 
@@ -278,22 +264,6 @@ void ath12k_wifi7_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 
 	if (dp_peer->qos && dp_peer->qos->telemetry_peer_ctx)
 		ath12k_telemetry_peer_ctx_free(dp_peer->qos->telemetry_peer_ctx);
 
-	num_tids = dp->ab->hal.hal_params->num_tids;
-	for (i = 0; i < num_tids; i++) {
-		spin_lock_bh(&dp_peer->rx_tid_lock);
-		rx_tid = dp_peer->rx_tid[i];
-		dp_peer->rx_tid[i] = NULL;
-		spin_unlock_bh(&dp_peer->rx_tid_lock);
-		if (!rx_tid)
-			continue;
-		del_timer_sync(&rx_tid->frag_timer);
-		ath12k_dp_rx_frags_cleanup(rx_tid, true);
-		if (rx_tid->vaddr)
-			ath12k_dp_rx_tid_free_desc(dp->ab, rx_tid);
-		kfree(rx_tid);
-	}
-	kfree(dp_peer->rx_tid);
-	dp_peer->rx_tid = NULL;
 	kfree(dp_peer->qos);
 	ath12k_dp_peer_stats_free(dp_peer);
 	kfree(dp_peer);

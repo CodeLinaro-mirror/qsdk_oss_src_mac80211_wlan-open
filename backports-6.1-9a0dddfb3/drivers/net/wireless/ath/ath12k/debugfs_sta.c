@@ -708,10 +708,11 @@ static ssize_t ath12k_dbg_sta_write_fetch_reo_ctx(struct file *file,
 		if (!(tid_bitmap & BIT(tid)))
 			continue;
 
-		spin_lock_bh(&dp_peer->rx_tid_lock);
-		rx_tid = dp_peer->rx_tid[tid];
-		if (!rx_tid || !rx_tid->active || !rx_tid->paddr) {
-			spin_unlock_bh(&dp_peer->rx_tid_lock);
+		rx_tid = &dp_peer->rx_tid[tid];
+
+		spin_lock_bh(&rx_tid->tid_lock);
+		if (!rx_tid->active || !rx_tid->paddr) {
+			spin_unlock_bh(&rx_tid->tid_lock);
 			continue;
 		}
 
@@ -725,7 +726,7 @@ static ssize_t ath12k_dbg_sta_write_fetch_reo_ctx(struct file *file,
 						  HAL_REO_CMD_GET_QUEUE_STATS,
 						  &cmd,
 						  ath12k_dbg_sta_reo_queue_stats_cb);
-		spin_unlock_bh(&dp_peer->rx_tid_lock);
+		spin_unlock_bh(&rx_tid->tid_lock);
 
 		if (ret) {
 			ath12k_warn(ar->ab,
