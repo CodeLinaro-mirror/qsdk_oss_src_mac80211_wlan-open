@@ -618,7 +618,7 @@ int ath12k_spectral_configure_scan_params(struct ath12k *ar,
 	}
 
 	param.vdev_id              = arvif->vdev_id;
-	param.scan_count           = max_t(u32, 1, p->scan_count);
+	param.scan_count           = max_t(u32, 0, p->scan_count);
 	param.scan_period          = p->scan_period;
 	param.scan_priority        = p->scan_priority;
 	param.scan_fft_size        = p->scan_fft_size;
