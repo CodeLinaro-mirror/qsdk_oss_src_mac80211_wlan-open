@@ -284,9 +284,9 @@ void ath12k_dp_mon_update_radiotap(struct ath12k_pdev_dp *dp_pdev,
 	rxs->noise = dp_pdev->ar->rssi_offsets.avg_nf_dbm;
 	rxs->nss = ppduinfo->nss + 1;
 
-	if (ppduinfo->userstats[ppduinfo->userid].ampdu_present) {
+	if (ppduinfo->userstats[ppduinfo->user_id].ampdu_present) {
 		rxs->flag |= RX_FLAG_AMPDU_DETAILS;
-		rxs->ampdu_reference = ppduinfo->userstats[ppduinfo->userid].ampdu_id;
+		rxs->ampdu_reference = ppduinfo->userstats[ppduinfo->user_id].ampdu_id;
 	}
 
 	if (ppduinfo->is_uhr || ppduinfo->uhr_usig) {
@@ -1339,9 +1339,9 @@ void ath12k_dp_mon_rx_update_peer_su_stats(struct ath12k_pdev_dp *pdev_dp,
 		 * Still update the pdev-level BAR counter so CTRL stats
 		 * are always accounted for.
 		 */
-		if (ppdu_info->userid < ARRAY_SIZE(ppdu_info->ctrl_frm_info))
+		if (ppdu_info->user_id < ARRAY_SIZE(ppdu_info->ctrl_frm_info))
 			pdev_dp->stats.telemetry_stats.rx_bar_cnt +=
-				ppdu_info->ctrl_frm_info[ppdu_info->userid].bar;
+				ppdu_info->ctrl_frm_info[ppdu_info->user_id].bar;
 		return;
 	}
 
@@ -1356,11 +1356,11 @@ void ath12k_dp_mon_rx_update_peer_su_stats(struct ath12k_pdev_dp *pdev_dp,
 	ewma_avg_rssi_add(&peer->avg_rssi, ppdu_info->rssi_comb);
 	ath12k_dp_rx_rate_stats_update(ppdu_info, peer, 0);
 
-	if (ppdu_info->userid < ARRAY_SIZE(ppdu_info->ctrl_frm_info)) {
+	if (ppdu_info->user_id < ARRAY_SIZE(ppdu_info->ctrl_frm_info)) {
 		pdev_dp->stats.telemetry_stats.rx_bar_cnt +=
-			ppdu_info->ctrl_frm_info[ppdu_info->userid].bar;
+			ppdu_info->ctrl_frm_info[ppdu_info->user_id].bar;
 		peer->peer_stats.num_bar +=
-			ppdu_info->ctrl_frm_info[ppdu_info->userid].bar;
+			ppdu_info->ctrl_frm_info[ppdu_info->user_id].bar;
 	}
 
 	rx_ppdu_stats = peer->peer_stats.rx_ppdu_stats;
