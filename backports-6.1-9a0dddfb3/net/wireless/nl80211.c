@@ -26516,6 +26516,9 @@ void cfg80211_sta_opmode_change_notify(struct net_device *dev, const u8 *mac,
 	if (WARN_ON(!mac))
 		return;
 
+	if (!sta_opmode)
+		return;
+
 	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, gfp);
 	if (!msg)
 		return;
