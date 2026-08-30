@@ -14726,7 +14726,7 @@ static int ath12k_mac_station_add(struct ath12k *ar,
 			   "RTT PASN deleting FW peer %pM before station add vdev=%u\n",
 			   arsta->addr, arvif->vdev_id);
 
-		ret = ath12k_pasn_fw_peer_delete(arvif, arsta->addr);
+		ret = ath12k_pasn_fw_peer_delete(arvif, arsta->addr, false);
 		if (ret) {
 			ath12k_warn(ab,
 				    "failed to delete RTT PASN fw peer %pM before station add: %d\n",

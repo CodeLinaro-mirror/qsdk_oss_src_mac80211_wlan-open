@@ -275,6 +275,19 @@ bool ath12k_pasn_peer_is_fw_created(struct ath12k_link_vif *arvif,
 		  ATH12K_PASN_F_FW_CREATED);
 }
 
+static unsigned int ath12k_pasn_peer_count(struct ath12k_link_vif *arvif)
+{
+	struct ath12k_rtt_pasn_peer *peer;
+	unsigned int count = 0;
+
+	lockdep_assert_held(&arvif->rtt_ctx.pasn_peer_lock);
+
+	list_for_each_entry(peer, &arvif->rtt_ctx.pasn_peer_list, list)
+		count++;
+
+	return count;
+}
+
 /**
  * ath12k_pasn_peer_create_or_update() - Add or update a SW PASN peer entry.
  * @arvif: link vif owning the PASN peer list.
@@ -302,6 +315,16 @@ int ath12k_pasn_peer_create_or_update(struct ath12k_link_vif *arvif,
 	spin_lock_bh(&arvif->rtt_ctx.pasn_peer_lock);
 	peer = ath12k_pasn_peer_find(arvif, peer_addr);
 	if (!peer) {
+		if (ath12k_pasn_peer_count(arvif) >=
+		    ATH12K_MAX_PASN_PEERS_PER_VAP) {
+			spin_unlock_bh(&arvif->rtt_ctx.pasn_peer_lock);
+			ath12k_dbg(arvif->ar->ab, ATH12K_DBG_RTT,
+				   "RTT PASN peer limit reached vdev %u max %u peer %pM\n",
+				   arvif->vdev_id, ATH12K_MAX_PASN_PEERS_PER_VAP,
+				   peer_addr);
+			return -ENOSPC;
+		}
+
 		peer = kzalloc(sizeof(*peer), GFP_ATOMIC);
 		if (!peer) {
 			spin_unlock_bh(&arvif->rtt_ctx.pasn_peer_lock);
@@ -332,8 +355,8 @@ int ath12k_pasn_peer_create_or_update(struct ath12k_link_vif *arvif,
  *
  * Returns 0 on success or a negative errno on failure.
  */
-static int ath12k_pasn_fw_peer_create(struct ath12k_link_vif *arvif,
-				      const u8 *peer_addr)
+int ath12k_pasn_fw_peer_create(struct ath12k_link_vif *arvif,
+			       const u8 *peer_addr)
 {
 	struct ath12k_wmi_peer_create_arg peer_param = {};
 	struct ath12k *ar = arvif->ar;
@@ -408,14 +431,16 @@ static int ath12k_pasn_fw_peer_create(struct ath12k_link_vif *arvif,
  * ath12k_pasn_fw_peer_delete() - Delete a PASN firmware peer.
  * @arvif: link vif owning the peer.
  * @peer_addr: remote peer MAC address.
+ * @skip_peer_del: true if firmware peer delete was already handled.
  *
- * Skips WMI peer delete during firmware recovery (crash flush).
+ * Skips WMI peer delete during firmware recovery (crash flush) or when
+ * @skip_peer_del is true.
  * Clears ATH12K_PASN_F_FW_CREATED.
  *
  * Returns 0 on success or a negative errno on failure.
  */
 int ath12k_pasn_fw_peer_delete(struct ath12k_link_vif *arvif,
-			       const u8 *peer_addr)
+			       const u8 *peer_addr, bool skip_peer_del)
 {
 	struct ath12k *ar = arvif->ar;
 	int ret = 0;
@@ -433,11 +458,13 @@ int ath12k_pasn_fw_peer_delete(struct ath12k_link_vif *arvif,
 	}
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_RTT,
-		   "RTT PASN fw_peer_delete: %pM vdev=%u crash_flush=%d\n",
+		   "RTT PASN fw_peer_delete: %pM vdev=%u crash_flush=%d skip=%u\n",
 		   peer_addr, arvif->vdev_id,
-		   test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags));
+		   test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags),
+		   skip_peer_del);
 
-	if (!test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)) {
+	if (!test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags) &&
+	    !skip_peer_del) {
 		if (ar->pdev->peer_del_tracker) {
 			ret = ath12k_peer_del_tracker_add(ar->pdev, arvif->vdev_id,
 							  peer_addr, NULL);
@@ -564,7 +591,7 @@ void ath12k_pasn_fw_peer_create_work(struct wiphy *wiphy,
 					    "RTT PASN work: failed vendor event %pM: %d, deleting FW peer\n",
 					    peer->peer_addr, vevent_ret);
 				/* hostapd will never run PASN; tear down FW peer now. */
-				ath12k_pasn_fw_peer_delete(arvif, peer->peer_addr);
+				ath12k_pasn_fw_peer_delete(arvif, peer->peer_addr, false);
 			} else {
 				ath12k_dbg(arvif->ar->ab, ATH12K_DBG_RTT,
 					   "RTT PASN work: auth vendor event sent %pM\n",

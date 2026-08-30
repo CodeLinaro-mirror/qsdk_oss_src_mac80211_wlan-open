@@ -17921,7 +17921,7 @@ static int ath12k_vendor_secure_ranging_ctx_cmd(struct wiphy *wiphy,
 		ret = ath12k_wmi_send_rtt_pasn_deauth(arvif->ar, peer_addr);
 		if (ret)
 			return ret;
-		ath12k_pasn_fw_peer_delete(arvif, peer_addr);
+		ath12k_pasn_fw_peer_delete(arvif, peer_addr, false);
 		ath12k_pasn_peer_delete(arvif, peer_addr);
 		return 0;
 	}
