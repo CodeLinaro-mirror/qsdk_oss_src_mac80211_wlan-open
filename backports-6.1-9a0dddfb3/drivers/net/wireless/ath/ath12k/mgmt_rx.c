@@ -69,7 +69,8 @@ void ath12k_mgmt_device_deinit(struct ath12k_mgmt *mgmt)
 	if (!mgmt)
 		return;
 
-	if (test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &mgmt->ab->dev_flags)) {
+	if (test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &mgmt->ab->dev_flags) ||
+	    mgmt->ab->umcmn_fatal_received) {
 		ath12k_info(mgmt->ab, "Skip mgmt deinit during Q6 BCR RESET\n");
 		return;
 	}
