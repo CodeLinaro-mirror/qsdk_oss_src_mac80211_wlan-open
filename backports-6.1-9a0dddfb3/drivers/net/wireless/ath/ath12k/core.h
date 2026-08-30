@@ -37,7 +37,6 @@
 #include "debugfs_htt_stats.h"
 #include "coredump.h"
 #include "cmn_defs.h"
-#include <linux/platform_device.h>
 #include "spectral.h"
 #include "qos.h"
 #ifdef CPTCFG_QCN_EXTN
@@ -2784,7 +2783,7 @@ struct ath12k_internal_pci {
 };
 
 struct ath12k_mem_dev {
-	struct platform_device pdev;
+	struct device dev;
 	bool dev_registered;
 	bool rmem_inited;
 };
