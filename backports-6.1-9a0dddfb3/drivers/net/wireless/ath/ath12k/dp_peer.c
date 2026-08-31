@@ -1421,6 +1421,11 @@ static int __ath12k_dp_peer_scs_del(struct ath12k_dp_peer_qos *qos,
 		return -EINVAL;
 	}
 
+	if (scs_id >= QOS_MAX_SCS_ID) {
+		ath12k_err(NULL, "ath12k: Invalid SCS ID");
+		return -EINVAL;
+	}
+
 	scs = &qos->scs_map[scs_id];
 	qos_data = u16_encode_bits(QOS_INVALID_MSDUQ, SCS_MSDUQ_MASK) |
 		   u16_encode_bits(QOS_ID_INVALID, SCS_QOS_ID_MASK);
@@ -1458,6 +1463,11 @@ u16 ath12k_dp_peer_scs_get_qos_id(struct ath12k_dp_peer_qos *qos, u8 scs_id)
 	if (!qos)
 		return qos_id;
 
+	if (scs_id >= QOS_MAX_SCS_ID) {
+		ath12k_err(NULL, "ath12k: Invalid SCS ID");
+		return qos_id;
+	}
+
 	qos_id = u16_get_bits(qos->scs_map[scs_id].qos_id_msduq,
 			      SCS_QOS_ID_MASK);
 
@@ -1486,6 +1496,11 @@ int ath12k_dp_peer_scs_data(struct ath12k_dp *dp,
 	qos = dp_peer->qos;
 
 	spin_lock_bh(&qos->lock);
+	if (scs_id >= QOS_MAX_SCS_ID) {
+		ath12k_err(dp->ab, "ath12k: Invalid SCS ID");
+		goto ret;
+	}
+
 	msduq = u16_get_bits(qos->scs_map[scs_id].qos_id_msduq,
 			     SCS_MSDUQ_MASK);
 	qos_id = u16_get_bits(qos->scs_map[scs_id].qos_id_msduq,
