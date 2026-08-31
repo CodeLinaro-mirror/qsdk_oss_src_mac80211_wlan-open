@@ -47,6 +47,7 @@
 #include "mgmt_rx.h"
 #ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/ath12k_cmn_extn.h"
+#include "qcn_extns/mapc_extn.h"
 #include "qcn_extns/ipa/dp_ipa_pub.h"
 #endif /* CPTCFG_QCN_EXTN */
 #include "mgmt_rx.h"
@@ -16421,6 +16422,7 @@ ath12k_mac_op_sta_set_mapc_params(struct ieee80211_hw *hw,
 	struct ath12k *ar = arvif->ar;
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_wmi_peer_mapc_params_arg arg = {};
+	struct ath12k_link_sta *arsta;
 	int ret;
 
 	if (!test_bit(WMI_TLV_SERVICE_UHR_MAX_CTDMA_AP_PEERS_SUPPORT,
@@ -16454,12 +16456,17 @@ ath12k_mac_op_sta_set_mapc_params(struct ieee80211_hw *hw,
 		   arg.rx_txop_return_support);
 
 	ret = ath12k_wmi_send_peer_set_mapc_params_cmd(ar, &arg);
-	if (ret)
+	if (ret) {
 		ath12k_err(ab,
 			   "failed to send MAPC params WMI cmd for %pM: %d\n",
 			    sta->addr, ret);
+		return ret;
+	}
 
-	return ret;
+	arsta = &ath12k_sta_to_ahsta(sta)->deflink;
+	ath12k_mapc_cache_update_extn(arsta, ar, &arg);
+
+	return 0;
 }
 EXPORT_SYMBOL(ath12k_mac_op_sta_set_mapc_params);
 

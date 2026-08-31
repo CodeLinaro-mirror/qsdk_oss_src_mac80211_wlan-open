@@ -2661,9 +2661,12 @@ enum wmi_tlv_tag {
 	WMI_TAG_MAPC_COSR_PARAMS = 0x0597,
 	WMI_TAG_MAPC_COBF_PARAMS = 0x0598,
 	WMI_TAG_MAPC_CORTWT_PARAMS = 0x0599,
+	WMI_TAG_MAPC_CMN_Q2Q_PARAMS = 0x05AC,
 	WMI_TAG_MAPC_CTDMA_PROFILE = 0x05AD,
+	WMI_TAG_MAPC_CTDMA_TXOP_SHARING_POLICY = 0x05AE,
 	WMI_TAG_MAPC_PEER_SETUP_STATUS_EVENT_FIXED_PARAM = 0x05AF,
 	WMI_TAG_PEER_UHR_OMP_DSO_PARAMS = 0x5B1,
+	WMI_TAG_MAPC_COTDMA_E2E_CONFIG = 0x05BE,
 	WMI_TAG_MAX
 };
 
@@ -4488,11 +4491,14 @@ struct wmi_peer_create_mlo_params {
 	__le32 flags;
 };
 
-/* Bitmask constants for param_set_mask — aligned with FW MAPC_SET_* bit positions */
+/* Bitmask constants for param_set_mask */
 #define ATH12K_WMI_MAPC_SET_CAPS    BIT(0)  /* wmi_mapc_cmn_params — cap bitmap */
 #define ATH12K_WMI_MAPC_SET_IDS     BIT(1)  /* wmi_mapc_cmn_params — APID pair */
 #define ATH12K_WMI_MAPC_SET_CMN     (ATH12K_WMI_MAPC_SET_CAPS | ATH12K_WMI_MAPC_SET_IDS)
+#define ATH12K_WMI_MAPC_SET_Q2Q     BIT(2)  /* wmi_mapc_cmn_q2q_params */
 #define ATH12K_WMI_MAPC_SET_PROFILE BIT(3)  /* wmi_mapc_ctdma_profile */
+#define ATH12K_WMI_MAPC_SET_TXOP    BIT(4)  /* wmi_mapc_ctdma_txop_sharing_policy */
+#define ATH12K_WMI_MAPC_SET_E2E     BIT(5)  /* wmi_mapc_cotdma_e2e_config */
 
 struct ath12k_wmi_peer_mapc_params_arg {
 	u8  peer_addr[ETH_ALEN];
@@ -4500,12 +4506,27 @@ struct ath12k_wmi_peer_mapc_params_arg {
 	u32 param_set_mask;
 	u32 apid_to_neighbor_peer;
 	u32 apid_from_neighbor_peer;
+	u32 q2q_apid_to_neighbor_peer;
+	u32 q2q_apid_from_neighbor_peer;
 	u32 mapc_capability_bitmap;
 	u32 channel_width;
 	u32 ccfs;
 	u32 disable_subchannel_bitmap;
 	u32 bss_color;
 	bool rx_txop_return_support;
+	u32 primary_ac;
+	u32 nbr_ap_prio;
+	u32 service_start_time;
+	u32 service_interval;
+	u32 service_end_time;
+	u32 critical_traffic_dur_thresh_us;
+	u32 max_shared_txop_dur_us;
+	u32 min_shared_txop_dur_us;
+	/* COTDMA E2E config fields (ATH12K_WMI_MAPC_SET_E2E) */
+	u8   e2e_config_mode;
+	u16  e2e_qmid;
+	bool e2e_bsta_mac_valid;
+	u8   e2e_bsta_mac[ETH_ALEN];
 };
 
 /* Scheme enable bitmap — bit per scheme */
@@ -4529,6 +4550,12 @@ struct wmi_mapc_cmn_params {
 	__le32 apid_from_neighbor_peer;
 } __packed;
 
+struct wmi_mapc_cmn_q2q_params {
+	__le32 tlv_header;
+	__le32 q2q_apid_to_neighbor_peer;
+	__le32 q2q_apid_from_neighbor_peer;
+} __packed;
+
 struct wmi_mapc_ctdma_profile {
 	__le32 tlv_header;
 	__le32 channel_width;
@@ -4538,9 +4565,29 @@ struct wmi_mapc_ctdma_profile {
 	__le32 disable_subchannel_bitmap;
 } __packed;
 
+struct wmi_mapc_ctdma_txop_sharing_policy {
+	__le32 tlv_header;
+	__le32 primary_ac;
+	__le32 nbr_ap_prio;
+	__le32 latency_sensitive_threshold_us;
+	__le32 service_start_time;
+	__le32 service_interval;
+	__le32 service_end_time;
+	__le32 critical_traffic_dur_thresh_us;
+	__le32 max_shared_txop_dur_us;
+	__le32 min_shared_txop_dur_us;
+} __packed;
+
 struct wmi_mapc_cosr_params   { __le32 tlv_header; __le32 reserved; } __packed;
 struct wmi_mapc_cobf_params   { __le32 tlv_header; __le32 reserved; } __packed;
 struct wmi_mapc_cortwt_params { __le32 tlv_header; __le32 reserved; } __packed;
+
+struct wmi_mapc_cotdma_e2e_config {
+	__le32 tlv_header;
+	__le32 config_mode;                        /* 0 = remove, 1 = add */
+	__le32 qmid;
+	struct ath12k_wmi_mac_addr_params bsta_mac; /* optional intermediate node */
+} __packed;
 
 struct wmi_mapc_peer_setup_status_event_fixed_param {
 	__le32 tlv_header;

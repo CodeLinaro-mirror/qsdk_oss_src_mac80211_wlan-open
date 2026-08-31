@@ -2838,22 +2838,28 @@ int ath12k_wmi_send_peer_set_mapc_params_cmd(struct ath12k *ar,
 	struct ath12k_wmi_pdev *wmi = ar->wmi;
 	struct wmi_peer_set_mapc_params_cmd_fixed_param *fixed;
 	struct wmi_mapc_cmn_params *cmn;
+	struct wmi_mapc_cmn_q2q_params *q2q;
 	struct wmi_mapc_ctdma_profile *profile;
+	struct wmi_mapc_ctdma_txop_sharing_policy *txop;
+	struct wmi_mapc_cotdma_e2e_config *e2e;
 	struct wmi_tlv *tlv;
 	struct sk_buff *skb;
 	void *ptr;
 	int ret;
 	size_t skb_len;
 	bool has_cmn     = !!(arg->param_set_mask & ATH12K_WMI_MAPC_SET_CMN);
+	bool has_q2q     = !!(arg->param_set_mask & ATH12K_WMI_MAPC_SET_Q2Q);
 	bool has_profile = !!(arg->param_set_mask & ATH12K_WMI_MAPC_SET_PROFILE);
+	bool has_txop    = !!(arg->param_set_mask & ATH12K_WMI_MAPC_SET_TXOP);
+	bool has_e2e     = !!(arg->param_set_mask & ATH12K_WMI_MAPC_SET_E2E);
 
 	/* fixed param is always present; each group is either 1-element or 0-element */
 	skb_len = sizeof(*fixed);
 	skb_len += TLV_HDR_SIZE + (has_cmn     ? sizeof(*cmn)     : 0);
-	skb_len += TLV_HDR_SIZE; /* always 0-element stub to preserve slot position */
+	skb_len += TLV_HDR_SIZE + (has_q2q     ? sizeof(*q2q)     : 0);
 	skb_len += TLV_HDR_SIZE + (has_profile ? sizeof(*profile) : 0);
-	skb_len += TLV_HDR_SIZE; /* always 0-element stub to preserve slot position */
-	skb_len += TLV_HDR_SIZE; /* always 0-element stub to preserve slot position */
+	skb_len += TLV_HDR_SIZE + (has_txop    ? sizeof(*txop)    : 0);
+	skb_len += TLV_HDR_SIZE + (has_e2e     ? sizeof(*e2e)     : 0);
 	skb_len += 3 * TLV_HDR_SIZE; /* Co-SR, Co-BF, Co-rTWT: always 0-element stubs */
 
 	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, skb_len);
@@ -2887,10 +2893,22 @@ int ath12k_wmi_send_peer_set_mapc_params_cmd(struct ath12k *ar,
 		ptr += sizeof(*cmn);
 	}
 
-	/* always 0-element stub — preserves FW TLV slot position*/
+	/* Slot 2: Q2Q group — QCA-to-QCA vendor APID pair */
 	tlv = ptr;
-	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, 0);
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT,
+					 has_q2q ? sizeof(*q2q) : 0);
 	ptr += TLV_HDR_SIZE;
+	if (has_q2q) {
+		q2q = ptr;
+		q2q->tlv_header =
+			ath12k_wmi_tlv_cmd_hdr(WMI_TAG_MAPC_CMN_Q2Q_PARAMS,
+					       sizeof(*q2q));
+		q2q->q2q_apid_to_neighbor_peer   =
+			cpu_to_le32(arg->q2q_apid_to_neighbor_peer);
+		q2q->q2q_apid_from_neighbor_peer =
+			cpu_to_le32(arg->q2q_apid_from_neighbor_peer);
+		ptr += sizeof(*q2q);
+	}
 
 	/* CTDMA profile group: channel info */
 	tlv = ptr;
@@ -2911,17 +2929,48 @@ int ath12k_wmi_send_peer_set_mapc_params_cmd(struct ath12k *ar,
 		ptr += sizeof(*profile);
 	}
 
-	/* always 0-element stub — preserves FW TLV slot position*/
+	/* Slot 4: TXOP policy group — Co-TDMA TXOP sharing policy */
 	tlv = ptr;
-	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, 0);
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT,
+					 has_txop ? sizeof(*txop) : 0);
 	ptr += TLV_HDR_SIZE;
+	if (has_txop) {
+		txop = ptr;
+		txop->tlv_header =
+			ath12k_wmi_tlv_cmd_hdr(WMI_TAG_MAPC_CTDMA_TXOP_SHARING_POLICY,
+					       sizeof(*txop));
+		txop->primary_ac                     = cpu_to_le32(arg->primary_ac);
+		txop->nbr_ap_prio                    = cpu_to_le32(arg->nbr_ap_prio);
+		txop->latency_sensitive_threshold_us = 0;
+		txop->service_start_time = cpu_to_le32(arg->service_start_time);
+		txop->service_interval               = cpu_to_le32(arg->service_interval);
+		txop->service_end_time               = cpu_to_le32(arg->service_end_time);
+		txop->critical_traffic_dur_thresh_us =
+			cpu_to_le32(arg->critical_traffic_dur_thresh_us);
+		txop->max_shared_txop_dur_us = cpu_to_le32(arg->max_shared_txop_dur_us);
+		txop->min_shared_txop_dur_us = cpu_to_le32(arg->min_shared_txop_dur_us);
+		ptr += sizeof(*txop);
+	}
 
-	/* always 0-element stub — preserves FW TLV slot position*/
+	/* COTDMA E2E config group */
 	tlv = ptr;
-	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, 0);
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT,
+					 has_e2e ? sizeof(*e2e) : 0);
 	ptr += TLV_HDR_SIZE;
+	if (has_e2e) {
+		e2e = ptr;
+		memset(e2e, 0, sizeof(*e2e));
+		e2e->tlv_header =
+			ath12k_wmi_tlv_cmd_hdr(WMI_TAG_MAPC_COTDMA_E2E_CONFIG,
+					       sizeof(*e2e));
+		e2e->config_mode = cpu_to_le32(arg->e2e_config_mode);
+		e2e->qmid        = cpu_to_le32(arg->e2e_qmid);
+		if (arg->e2e_bsta_mac_valid)
+			ether_addr_copy(e2e->bsta_mac.addr, arg->e2e_bsta_mac);
+		ptr += sizeof(*e2e);
+	}
 
-	/* Slots 5-7: Co-SR, Co-BF, Co-rTWT — always 0-element stubs */
+	/* Co-SR, Co-BF, Co-rTWT — always 0-element stubs */
 	tlv = ptr;
 	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, 0);
 	ptr += TLV_HDR_SIZE;
@@ -2933,15 +2982,23 @@ int ath12k_wmi_send_peer_set_mapc_params_cmd(struct ath12k *ar,
 	ptr += TLV_HDR_SIZE;
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
-		   "WMI_PEER_SET_MAPC_PARAMS: peer %pM vdev %d mask=0x%x cmn: apid_to=%u apid_from=%u cap=0x%04x\n",
+		   "WMI_PEER_SET_MAPC_PARAMS: peer %pM vdev %d mask=0x%x cmn: apid_to=%u apid_from=%u cap=0x%04x q2q: apid_to=%u apid_from=%u\n",
 		   arg->peer_addr, arg->vdev_id, arg->param_set_mask,
 		   arg->apid_to_neighbor_peer, arg->apid_from_neighbor_peer,
-		   arg->mapc_capability_bitmap);
+		   arg->mapc_capability_bitmap,
+		   arg->q2q_apid_to_neighbor_peer, arg->q2q_apid_from_neighbor_peer);
 	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
-		   "WMI_PEER_SET_MAPC_PARAMS: profile: ch_width=%u ccfs=%u dsb=0x%04x bss_color=%u rx_txop_return=%u\n",
+		   "WMI_PEER_SET_MAPC_PARAMS: profile: ch_width=%u ccfs=%u dsb=0x%04x bss_color=%u rx_txop_return=%u txop: primary_ac=%u nbr_prio=%u svc_start=%u svc_interval=%u svc_end=%u crit_dur=%u max_txop=%u min_txop=%u\n",
 		   arg->channel_width, arg->ccfs,
 		   arg->disable_subchannel_bitmap, arg->bss_color,
-		   arg->rx_txop_return_support);
+		   arg->rx_txop_return_support,
+		   arg->primary_ac, arg->nbr_ap_prio,
+		   arg->service_start_time, arg->service_interval, arg->service_end_time,
+		   arg->critical_traffic_dur_thresh_us,
+		   arg->max_shared_txop_dur_us, arg->min_shared_txop_dur_us);
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "WMI_PEER_SET_MAPC_PARAMS: e2e: config_mode=%u qmid=%u bsta_mac_valid=%d\n",
+		   arg->e2e_config_mode, arg->e2e_qmid, arg->e2e_bsta_mac_valid);
 
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_PEER_SET_MAPC_PARAMS_CMDID);
@@ -20373,20 +20430,24 @@ static void ath12k_wmi_mapc_peer_setup_status_event(struct ath12k_base *ab,
 	missing = le32_to_cpu(ev->param_sets_missing);
 
 	ath12k_dbg(ab, ATH12K_DBG_WMI,
-		   "MAPC SETUP STATUS: vdev_id=%u peer=%pM scheme_bitmap=0x%x sets_recvd=0x%x (CMN:%c PROF:%c) sets_missing=0x%x\n",
+		   "MAPC SETUP STATUS: vdev_id=%u peer=%pM scheme_bitmap=0x%x sets_recvd=0x%x (CMN:%c Q2Q:%c PROF:%c TXOP:%c) sets_missing=0x%x\n",
 		   le32_to_cpu(ev->vdev_id), mac,
 		   le32_to_cpu(ev->scheme_enable_bitmap),
 		   recvd,
 		   (recvd & ATH12K_WMI_MAPC_SET_CMN)     ? 'Y' : 'N',
+		   (recvd & ATH12K_WMI_MAPC_SET_Q2Q)     ? 'Y' : 'N',
 		   (recvd & ATH12K_WMI_MAPC_SET_PROFILE) ? 'Y' : 'N',
+		   (recvd & ATH12K_WMI_MAPC_SET_TXOP)    ? 'Y' : 'N',
 		   missing);
 
 	if (missing)
 		ath12k_dbg(ab, ATH12K_DBG_WMI,
-			   "MAPC SETUP STATUS: peer %pM still waiting for sets: %s%s\n",
+			   "MAPC SETUP STATUS: peer %pM still waiting for sets: %s%s%s%s\n",
 			   mac,
 			   (missing & ATH12K_WMI_MAPC_SET_CMN)     ? "CMN " : "",
-			   (missing & ATH12K_WMI_MAPC_SET_PROFILE) ? "PROFILE " : "");
+			   (missing & ATH12K_WMI_MAPC_SET_Q2Q)     ? "Q2Q " : "",
+			   (missing & ATH12K_WMI_MAPC_SET_PROFILE) ? "PROFILE " : "",
+			   (missing & ATH12K_WMI_MAPC_SET_TXOP)    ? "TXOP " : "");
 	else
 		ath12k_dbg(ab, ATH12K_DBG_WMI,
 			   "MAPC SETUP STATUS: peer %pM fully configured — Co-TDMA active\n",
