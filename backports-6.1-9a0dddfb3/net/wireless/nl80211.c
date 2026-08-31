@@ -6473,13 +6473,14 @@ static void he_build_mcs_mask(u16 he_mcs_map,
 	}
 }
 
-static u16 he_get_txmcsmap(struct genl_info *info, unsigned int link_id,
+static u16 he_get_txmcsmap(struct wireless_dev *wdev, unsigned int link_id,
 			   const struct ieee80211_sta_he_cap *he_cap)
 {
-	struct net_device *dev = info->user_ptr[1];
-	struct wireless_dev *wdev = dev->ieee80211_ptr;
 	struct cfg80211_chan_def *chandef;
 	__le16 tx_mcs;
+
+	if (!wdev->valid_links)
+		link_id = 0;
 
 	chandef = wdev_chandef(wdev, link_id);
 	if (!chandef) {
@@ -6523,7 +6524,7 @@ static bool he_set_mcs_mask(struct genl_info *info,
 
 	memset(mcs, 0, sizeof(u16) * NL80211_HE_NSS_MAX);
 
-	tx_mcs_map = he_get_txmcsmap(info, link_id, he_cap);
+	tx_mcs_map = he_get_txmcsmap(wdev, link_id, he_cap);
 
 	/* Build he_mcs_mask from HE capabilities */
 	he_build_mcs_mask(tx_mcs_map, tx_mcs_mask);
@@ -6538,16 +6539,14 @@ static bool he_set_mcs_mask(struct genl_info *info,
 	return true;
 }
 
-static int eht_build_mcs_mask(struct genl_info *info,
+static int eht_build_mcs_mask(struct wireless_dev *wdev,
 			      const struct ieee80211_sta_he_cap *he_cap,
 			      const struct ieee80211_sta_eht_cap *eht_cap,
-			      u16 *mcs_mask)
+			      u16 *mcs_mask,
+			      unsigned int link_id)
 {
-	struct net_device *dev = info->user_ptr[1];
-	struct wireless_dev *wdev = dev->ieee80211_ptr;
 	u8 mcs_nss_len, nss, mcs_7 = 0, mcs_9 = 0, mcs_11 = 0, mcs_13 = 0;
 	bool mcs_14 = false, mcs_15 = false;
-	unsigned int link_id = nl80211_link_id(info->attrs);
 
 	mcs_nss_len = ieee80211_eht_mcs_nss_size(&he_cap->he_cap_elem,
 						 &eht_cap->eht_cap_elem,
@@ -6644,7 +6643,8 @@ static int eht_build_mcs_mask(struct genl_info *info,
 static bool eht_set_mcs_mask(struct genl_info *info, struct wireless_dev *wdev,
 			     struct ieee80211_supported_band *sband,
 			     struct nl80211_txrate_eht *txrate,
-			     u16 mcs[NL80211_EHT_NSS_MAX])
+			     u16 mcs[NL80211_EHT_NSS_MAX],
+			     unsigned int link_id)
 {
 	const struct ieee80211_sta_he_cap *he_cap;
 	const struct ieee80211_sta_eht_cap *eht_cap;
@@ -6674,7 +6674,7 @@ static bool eht_set_mcs_mask(struct genl_info *info, struct wireless_dev *wdev,
 		      IEEE80211_EHT_PHY_CAP6_MCS15_SUPP_MASK))
 			return false;
 
-	if (eht_build_mcs_mask(info, he_cap, eht_cap, tx_mcs_mask))
+	if (eht_build_mcs_mask(wdev, he_cap, eht_cap, tx_mcs_mask, link_id))
 		return false;
 
 	memset(mcs, 0, sizeof(u16) * NL80211_EHT_NSS_MAX);
@@ -6691,7 +6691,8 @@ static bool eht_set_mcs_mask(struct genl_info *info, struct wireless_dev *wdev,
 static bool uhr_set_mcs_mask(struct genl_info *info, struct wireless_dev *wdev,
 			     struct ieee80211_supported_band *sband,
 			     struct nl80211_txrate_uhr *txrate,
-			     u32 mcs[NL80211_UHR_NSS_MAX])
+			     u32 mcs[NL80211_UHR_NSS_MAX],
+			     unsigned int link_id)
 {
 	const struct ieee80211_sta_he_cap *he_cap;
 	const struct ieee80211_sta_eht_cap *eht_cap;
@@ -6713,7 +6714,7 @@ static bool uhr_set_mcs_mask(struct genl_info *info, struct wireless_dev *wdev,
 		return false;
 
 	/* Build uhr_mcs_mask from EHT and HE capabilities */
-	if (eht_build_mcs_mask(info, he_cap, eht_cap, eht_mcs_mask))
+	if (eht_build_mcs_mask(wdev, he_cap, eht_cap, eht_mcs_mask, link_id))
 		return false;
 
 	/* MCS 14 is not defined in UHR as per Draft P802.11bn_D1.4*/
@@ -6887,7 +6888,7 @@ static int nl80211_parse_tx_bitrate_mask(struct genl_info *info,
 		if (!he_cap)
 			continue;
 
-		he_tx_mcs_map = he_get_txmcsmap(info, link_id, he_cap);
+		he_tx_mcs_map = he_get_txmcsmap(wdev, link_id, he_cap);
 		he_build_mcs_mask(he_tx_mcs_map, mask->control[i].he_mcs);
 
 		mask->control[i].he_gi = 0xFF;
@@ -6897,8 +6898,8 @@ static int nl80211_parse_tx_bitrate_mask(struct genl_info *info,
 		if (!eht_cap)
 			continue;
 
-		if (eht_build_mcs_mask(info, he_cap, eht_cap,
-				       mask->control[i].eht_mcs))
+		if (eht_build_mcs_mask(wdev, he_cap, eht_cap,
+				       mask->control[i].eht_mcs, link_id))
 			continue;
 
 		mask->control[i].eht_gi = 0xFF;
@@ -7036,7 +7037,7 @@ static int nl80211_parse_tx_bitrate_mask(struct genl_info *info,
 		if (tb[NL80211_TXRATE_EHT] &&
 		    !eht_set_mcs_mask(info, wdev, sband,
 				      nla_data(tb[NL80211_TXRATE_EHT]),
-				      mask->control[band].eht_mcs))
+				      mask->control[band].eht_mcs, link_id))
 			return -EINVAL;
 
 		if (tb[NL80211_TXRATE_EHT])
@@ -7053,7 +7054,7 @@ static int nl80211_parse_tx_bitrate_mask(struct genl_info *info,
 		if (tb[NL80211_TXRATE_UHR] &&
 		    !uhr_set_mcs_mask(info, wdev, sband,
 				      nla_data(tb[NL80211_TXRATE_UHR]),
-				      mask->control[band].uhr_mcs))
+				      mask->control[band].uhr_mcs, link_id))
 			return -EINVAL;
 
 		if (tb[NL80211_TXRATE_UHR])
