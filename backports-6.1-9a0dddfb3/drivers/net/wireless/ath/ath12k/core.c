@@ -4749,6 +4749,24 @@ static int ath12k_core_mlo_unified_peer_update(struct ath12k_hw_group *ag)
 			}
 			ahsta->recov.mode3_processed = true;
 
+			if (hweight16(ahsta->links_map) <= 1) {
+				ath12k_mac_peer_disassoc(assert_ab, sta, ahsta,
+							 ATH12K_DBG_MODE1_RECOVERY);
+				spin_lock_bh(&ar->arsta_lock);
+				continue;
+			}
+
+			if (sta->reconf.added_links || sta->reconf.removed_links) {
+				ath12k_warn(assert_ab,
+					    "Mode3: %pM has MLO reconfig in progress (added=0x%x removed=0x%x), disconnecting\n",
+					    sta->addr, sta->reconf.added_links,
+					    sta->reconf.removed_links);
+				ath12k_mac_peer_disassoc(assert_ab, sta, ahsta,
+							 ATH12K_DBG_MODE1_RECOVERY);
+				spin_lock_bh(&ar->arsta_lock);
+				continue;
+			}
+
 			ahsta->recov.new_primary_hwlink_id = WMI_MLO_INVALID_MASTER_LL_ID;
 
 			/* All links of this peer that live on the asserted chip,
