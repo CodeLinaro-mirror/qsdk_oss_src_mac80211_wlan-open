@@ -1672,12 +1672,17 @@ ath12k_dp_get_ether_type(struct sk_buff *skb)
 
 	ether_type = get_unaligned((u16 *)(skb->data + SKB_TRAC_ETH_TYPE_OFFSET));
 
-	if (unlikely(be16_to_cpu(ether_type) == DP_ETH_TYPE_8021Q))
+	if (unlikely(be16_to_cpu(ether_type) == DP_ETH_TYPE_8021Q)) {
+		if (skb->len < SKB_TRAC_VLAN_ETH_TYPE_OFFSET + sizeof(u16))
+			return 0;
 		ether_type = get_unaligned((u16 *)(skb->data +
-						   SKB_TRAC_VLAN_ETH_TYPE_OFFSET));
-	else if (unlikely(be16_to_cpu(ether_type) == DP_ETH_TYPE_8021AD))
+					SKB_TRAC_VLAN_ETH_TYPE_OFFSET));
+	} else if (unlikely(be16_to_cpu(ether_type) == DP_ETH_TYPE_8021AD)) {
+		if (skb->len < SKB_TRAC_DOUBLE_VLAN_ETH_TYPE_OFFSET + sizeof(u16))
+			return 0;
 		ether_type = get_unaligned((u16 *)(skb->data +
-					    SKB_TRAC_DOUBLE_VLAN_ETH_TYPE_OFFSET));
+					SKB_TRAC_DOUBLE_VLAN_ETH_TYPE_OFFSET));
+	}
 
 	return be16_to_cpu(ether_type);
 }
