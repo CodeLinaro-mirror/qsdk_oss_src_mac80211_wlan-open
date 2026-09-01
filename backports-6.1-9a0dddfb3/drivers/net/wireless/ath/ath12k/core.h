@@ -2136,7 +2136,7 @@ struct ath12k {
 	u8 hw_link_id;
 	u8 radio_idx;
 
-	struct completion peer_create_done;
+	struct completion peer_create_conf;
 	struct completion peer_assoc_done;
 
 	int install_key_status;
@@ -2364,6 +2364,7 @@ struct ath12k {
 	struct work_struct mvr_ch_switch_notify_work;
 	u32 mvr_ch_switch_notify_vdev_bm;
 	struct ath12k_peer_map_pending_event peer_map_event;
+	ath12k_peer_create_conf_status peer_create_status;
 	/* Broadcast probe request per-STA rate-limit table.
 	 * Suppresses duplicate broadcast probe requests from the same STA
 	 * within ATH12K_BCAST_PROBE_RL_WINDOW_MS milliseconds.

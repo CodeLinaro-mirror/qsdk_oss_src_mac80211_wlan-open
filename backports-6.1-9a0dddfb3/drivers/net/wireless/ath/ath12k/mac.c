@@ -30918,7 +30918,7 @@ static int ath12k_mac_setup(struct ath12k *ar)
 
 	init_completion(&ar->vdev_setup_done);
 	init_completion(&ar->vdev_delete_done);
-	init_completion(&ar->peer_create_done);
+	init_completion(&ar->peer_create_conf);
 	init_completion(&ar->peer_assoc_done);
 	init_completion(&ar->install_key_done);
 	init_completion(&ar->bss_survey_done);

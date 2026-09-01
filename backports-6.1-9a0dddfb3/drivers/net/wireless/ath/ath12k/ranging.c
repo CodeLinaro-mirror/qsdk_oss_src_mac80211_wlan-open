@@ -385,7 +385,8 @@ int ath12k_pasn_fw_peer_create(struct ath12k_link_vif *arvif,
 		   "RTT PASN fw_peer_create: sending WMI peer create %pM vdev=%u type=PASN\n",
 		   peer_addr, arvif->vdev_id);
 
-	reinit_completion(&ar->peer_create_done);
+	reinit_completion(&ar->peer_create_conf);
+	ar->peer_create_status = ATH12K_WMI_PEER_CREATE_STATUS_MAX;
 
 	memset(&ar->peer_map_event, 0, sizeof(ar->peer_map_event));
 	ether_addr_copy(ar->peer_map_event.pending_peer_addr, peer_addr);
