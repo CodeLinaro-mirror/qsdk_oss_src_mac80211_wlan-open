@@ -728,6 +728,7 @@ nl80211_qm_desc_params_policy[NL80211_QM_DESC_ATTR_MAX + 1] = {
 	[NL80211_QM_DESC_ATTR_USER_PRIORITY_BITMAP] = { .type = NLA_U8 },
 	[NL80211_QM_DESC_ATTR_USER_PRIORITY_LIMIT] = { .type = NLA_U8 },
 	[NL80211_QM_DESC_ATTR_TCLAS_MASK] = { .type = NLA_U8 },
+	[NL80211_QM_DESC_ATTR_DEDICATED_QUEUE] = { .type = NLA_FLAG },
 };
 
 static const struct nla_policy
@@ -21102,6 +21103,9 @@ static int nl80211_parse_qm_desc(struct nlattr *tb_qm_desc,
 	if (tb_qm_desc_entry[NL80211_QM_DESC_ATTR_TCLAS_MASK])
 		qm_req_desc->tclas_mask =
 		    nla_get_u8(tb_qm_desc_entry[NL80211_QM_DESC_ATTR_TCLAS_MASK]);
+
+	if (tb_qm_desc_entry[NL80211_QM_DESC_ATTR_DEDICATED_QUEUE])
+		qm_req_desc->dedicated_queue = true;
 
 	return 0;
 }
