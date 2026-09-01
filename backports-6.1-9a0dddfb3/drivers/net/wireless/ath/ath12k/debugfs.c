@@ -6184,6 +6184,7 @@ static ssize_t ath12k_write_pktlog_filter(struct file *file,
 	int ret = 0;
 	ssize_t rc;
 	bool enable = true;
+	bool pktlog_buf_allocated = false;
 
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
 	if (!ath12k_ftm_mode &&
@@ -6229,11 +6230,20 @@ static ssize_t ath12k_write_pktlog_filter(struct file *file,
 			filter |= ATH12K_PKTLOG_CBF;
 	}
 
+	if (enable) {
+		ret = ath12k_pktlog_buf_alloc_if_needed(ar, &pktlog_buf_allocated);
+		if (ret) {
+			ath12k_err(ab, "Failed to alloc pktlog buf: %d\n", ret);
+			goto exit;
+		}
+	}
+
 	ath12k_dp_mon_pktlog_config(ar, enable, mode, filter);
 	ret = ath12k_dp_mon_rx_update_filter(ar);
 	if (ret) {
 		ath12k_err(ab, "Failed to configure pktlog filters\n");
 		ath12k_dp_mon_pktlog_config(ar, false, mode, filter);
+		ath12k_pktlog_buf_release_if_allocated(ar, pktlog_buf_allocated);
 		goto exit;
 	}
 
@@ -6242,6 +6252,7 @@ static ssize_t ath12k_write_pktlog_filter(struct file *file,
 		if (ret) {
 			ath12k_err(ab, "Failed to configure pktlog filters\n");
 			ath12k_dp_mon_pktlog_config(ar, false, mode, filter);
+			ath12k_pktlog_buf_release_if_allocated(ar, pktlog_buf_allocated);
 			goto exit;
 		}
 	}

@@ -217,6 +217,7 @@ struct ath12k_pktlog {
 	struct ath12k_pktlog_buf *buf;
 	u32 filter;
 	u32 buf_size;
+	u32 buf_alloc_size;
 	spinlock_t lock;
 	u8 hdr_size;
 	u8 hdr_size_field_offset;
@@ -250,4 +251,8 @@ int ath12k_pktlog_remote_service_send(struct ath12k_pktlog_remote_service *servi
 int ath12k_pktlog_stop_service(struct ath12k *ar);
 void ath12k_pktlog_init_remote_service_work(struct ath12k *ar);
 int ath12k_pktlog_remote_enable(struct ath12k *ar, u32 enable);
+int ath12k_pktlog_buf_alloc_if_needed(struct ath12k *ar, bool *allocated);
+void ath12k_pktlog_buf_release_if_allocated(struct ath12k *ar, bool allocated);
+void ath12k_pktlog_buf_reset(struct ath12k *ar);
+
 #endif /* _PKTLOG_H_ */
