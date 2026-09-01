@@ -415,7 +415,7 @@ ath12k_dbg_sta_open_htt_peer_stats(struct inode *inode, struct file *file)
 	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
 	struct ath12k_hw *ah = ahsta->ahvif->ah;
 	struct ath12k_link_sta *arsta;
-	struct ath12k *ar;
+	struct ath12k *ar = NULL;
 	struct debug_htt_stats_req *stats_req;
 	int type;
 	int ret;
@@ -424,17 +424,15 @@ ath12k_dbg_sta_open_htt_peer_stats(struct inode *inode, struct file *file)
 	mutex_lock(&ah->hw_mutex);
 
 	if (!(BIT(link_id) & ahsta->links_map)) {
-		mutex_unlock(&ah->hw_mutex);
-		wiphy_unlock(ah->hw->wiphy);
-		return -ENOENT;
+		ret = -ENOENT;
+		goto err_unlock;
 	}
 
 	arsta = ahsta->link[link_id];
 
 	if (!arsta || !arsta->arvif->ar) {
-		mutex_unlock(&ah->hw_mutex);
-		wiphy_unlock(ah->hw->wiphy);
-		return -ENOENT;
+		ret = -ENOENT;
+		goto err_unlock;
 	}
 
 	ar = arsta->arvif->ar;
@@ -443,16 +441,14 @@ ath12k_dbg_sta_open_htt_peer_stats(struct inode *inode, struct file *file)
 	if ((type != ATH12K_DBG_HTT_EXT_STATS_PEER_INFO &&
 	     type != ATH12K_DBG_HTT_EXT_PEER_CTRL_PATH_TXRX_STATS) ||
 	     type == ATH12K_DBG_HTT_EXT_STATS_RESET) {
-		mutex_unlock(&ah->hw_mutex);
-		wiphy_unlock(ah->hw->wiphy);
-		return -EPERM;
+		ret = -EPERM;
+		goto err_unlock;
 	}
 
 	stats_req = vzalloc(sizeof(*stats_req) + ATH12K_HTT_STATS_BUF_SIZE);
 	if (!stats_req) {
-		mutex_unlock(&ah->hw_mutex);
-		wiphy_unlock(ah->hw->wiphy);
-		return -ENOMEM;
+		ret = -ENOMEM;
+		goto err_unlock;
 	}
 
 	ar->debug.htt_stats.stats_req = stats_req;
@@ -463,12 +459,16 @@ ath12k_dbg_sta_open_htt_peer_stats(struct inode *inode, struct file *file)
 		goto out;
 
 	file->private_data = stats_req;
+	ar->debug.htt_stats.type = ATH12K_DBG_HTT_EXT_STATS_RESET;
 	mutex_unlock(&ah->hw_mutex);
 	wiphy_unlock(ah->hw->wiphy);
 	return 0;
 out:
 	vfree(stats_req);
 	ar->debug.htt_stats.stats_req = NULL;
+err_unlock:
+	if (ar)
+		ar->debug.htt_stats.type = ATH12K_DBG_HTT_EXT_STATS_RESET;
 	mutex_unlock(&ah->hw_mutex);
 	wiphy_unlock(ah->hw->wiphy);
 	return ret;
