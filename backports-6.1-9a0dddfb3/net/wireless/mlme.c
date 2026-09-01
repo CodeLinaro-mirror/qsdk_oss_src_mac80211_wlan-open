@@ -1840,9 +1840,26 @@ cfg80211_start_background_radar_detection(struct cfg80211_registered_device *rde
 	if (!bgr)
 		return -EINVAL;
 
-	/* CAC is serialized only per radio offchannel chain */
-	if (bgr->active)
-		return -EBUSY;
+	/*
+	 * CAC is serialized per radio offchannel chain.
+	 * If a background CAC is already active on the same chandef, the
+	 * hardware is already monitoring. Treat it as a no-op and return
+	 * success. Note: NL80211_RADAR_CAC_STARTED is not re-sent because
+	 * no new CAC was initiated.
+	 * If active on a different chandef (e.g. BW expanded after Progressive
+	 * DFS NOL expiry), abort the old CAC and start the new one so the
+	 * wider device bandwidth channels can be checked for availability.
+	 * The abort unconditionally clears bgr->active regardless of driver
+	 * error, so it is safe to proceed to rdev_set_radar_background().
+	 */
+	if (bgr->active) {
+		if (cfg80211_chandef_identical(&bgr->chandef, chandef))
+			return 0;
+		/* Ignore abort error: state is cleared regardless (see comment
+		 * in __cfg80211_stop_background_radar_detection_radio). */
+		if (__cfg80211_stop_background_radar_detection_radio(rdev, bgr))
+			printk("DFS: background radar abort failed, proceeding with restart\n");
+	}
 
 	err = rdev_set_radar_background(rdev, chandef);
 	if (err)
