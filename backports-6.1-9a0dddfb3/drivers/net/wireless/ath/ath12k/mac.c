@@ -19619,9 +19619,11 @@ bool ath12k_mgmt_has_ml_link_info_ie(struct ath12k_base *ab,
 				     struct sk_buff *skb)
 {
 	struct ieee80211_hdr *hdr;
-	struct ieee80211_mgmt *mgmt;
 	struct ath12k_skb_cb *skb_cb;
+	const struct element *elem;
 	const u8 *pos, *end;
+	size_t action_code_offset;
+	size_t ies_len;
 	u8 code, iv_len = 0;
 
 	if (!ab || !skb || !skb->data)
@@ -19662,22 +19664,33 @@ bool ath12k_mgmt_has_ml_link_info_ie(struct ath12k_base *ab,
 			 ieee80211_has_protected(hdr->frame_control), iv_len,
 			 skb->len);
 
-	mgmt = (void *)skb->data;
-	pos = (const u8 *)&mgmt->u.action + iv_len;
-	end = skb->data + skb->len;
-
-	if (pos + 2 > end)
+	action_code_offset = IEEE80211_MIN_ACTION_SIZE + iv_len;
+	if (skb->len < action_code_offset + sizeof(code)) {
+		ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
+				 "ml_info_ie: short action frame len=%u action_code_offset=%zu iv_len=%u\n",
+				 skb->len, action_code_offset, iv_len);
 		return false;
+	}
 
-	pos++;
+	pos = skb->data + action_code_offset;
+	end = skb->data + skb->len;
+	ies_len = end - pos - sizeof(code);
+
 	code = *pos++;
 	ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
-			 "ml_info_ie: action_code=%u\n", code);
+			 "ml_info_ie: action_code=%u ies_len=%zu\n", code, ies_len);
 	if (code != WLAN_ACTION_SPCT_CHL_SWITCH)
 		return false;
 
-	if (cfg80211_find_ext_elem(WLAN_EID_EXT_MLO_LINK_INFO,
-				   pos, end - pos))
+	if (ies_len > INT_MAX)
+		return false;
+
+	elem = cfg80211_find_ext_elem(WLAN_EID_EXT_MLO_LINK_INFO, pos,
+				      (int)ies_len);
+	ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
+			 "ml_info_ie: mlo link info ie %s ies_len=%zu\n",
+			 elem ? "found" : "not found", ies_len);
+	if (elem)
 		return true;
 
 	return false;
