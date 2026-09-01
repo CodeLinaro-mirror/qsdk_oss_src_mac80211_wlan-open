@@ -3324,12 +3324,19 @@ ath12k_wifi7_hal_mon_tx_parse_eht_sig_non_mumimo_user_info
 			IEEE80211_RADIOTAP_EHT_USER_INFO_NSS_KNOWN_O |
 			IEEE80211_RADIOTAP_EHT_USER_INFO_BEAMFORMING_KNOWN_O;
 
+	/**
+	 * num_user_info is a fill counter tracking number of written entries for
+	 * user_info[]. The guard caps writes at EHT_MAX_USER_INFO regardless
+	 * of num_users. user_idx is the destination slot (counter-derived); userid is the
+	 * TLV-reported user index used to select the correct userstats entry.
+	 * The two are independent and must not be conflated.
+	 */
 	if (ppdu_info->rx_status.eht_info.num_user_info <
 		ARRAY_SIZE(ppdu_info->rx_status.eht_info.user_info)) {
 		u32 user_idx = ppdu_info->rx_status.eht_info.num_user_info++;
 
 		ppdu_info->rx_status.eht_info.user_info[user_idx] =
-			ppdu_info->rx_status.userstats[user_idx].eht_user_info;
+			ppdu_info->rx_status.userstats[userid].eht_user_info;
 	}
 }
 
@@ -3362,16 +3369,20 @@ ath12k_wifi7_hal_mon_tx_parse_eht_sig_mumimo_user_info
 			IEEE80211_RADIOTAP_EHT_USER_INFO_MCS_KNOWN |
 			IEEE80211_RADIOTAP_EHT_USER_INFO_CODING_KNOWN |
 			IEEE80211_RADIOTAP_EHT_USER_INFO_SPATIAL_CONFIG_KNOWN_M;
-	ppdu_info->rx_status.eht_info.num_user_info = ppdu_info->num_users;
-	ppdu_info->rx_status.eht_info.user_info[userid] =
-			ppdu_info->rx_status.userstats[userid].eht_user_info;
 
+	/**
+	 * num_user_info is a fill counter tracking number of written entries for
+	 * user_info[]. The guard caps writes at EHT_MAX_USER_INFO regardless
+	 * of num_users. user_idx is the destination slot (counter-derived); userid is the
+	 * TLV-reported user index used to select the correct userstats entry.
+	 * The two are independent and must not be conflated.
+	 */
 	if (ppdu_info->rx_status.eht_info.num_user_info <
 		ARRAY_SIZE(ppdu_info->rx_status.eht_info.user_info)) {
 		u32 user_idx = ppdu_info->rx_status.eht_info.num_user_info++;
 
 		ppdu_info->rx_status.eht_info.user_info[user_idx] =
-			ppdu_info->rx_status.userstats[user_idx].eht_user_info;
+			ppdu_info->rx_status.userstats[userid].eht_user_info;
 	}
 }
 
