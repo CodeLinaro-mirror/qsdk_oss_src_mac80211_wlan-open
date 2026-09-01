@@ -756,6 +756,9 @@ void ath12k_wifi7_dp_deinit(struct ath12k_dp *dp)
 	ath12k_dp_mon_tx_srng_free(dp);
 	ath12k_dp_mon_rx_free(dp);
 	ath12k_dp_mon_deinit(dp);
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	ath12k_dp_ipa_plugin_deregister_ops_extn(dp->ab);
+#endif
 	ath12k_wifi7_dp_rx_ring_free(dp->ab);
 	ath12k_wifi7_dp_reoq_lut_cleanup(dp->ab);
 	ath12k_wifi7_dp_tx_ring_cleanup(dp->ab);

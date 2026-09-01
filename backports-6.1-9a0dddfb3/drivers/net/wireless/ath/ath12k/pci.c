@@ -1682,11 +1682,6 @@ qmi_fail:
 	if (ab_pci->device_ops->dp_deinit)
 		ab_pci->device_ops->dp_deinit(ab->dp);
 
-#ifdef CPTCFG_EXT_IPA_OFFLOAD
-#ifdef CPTCFG_QCN_EXTN
-	ath12k_dp_ipa_plugin_deregister_ops_extn(ab);
-#endif /* CPTCFG_QCN_EXTN */
-#endif
 	ath12k_pci_msi_free(ab_pci);
 #ifdef CONFIG_IO_COHERENCY
 	ret = ath12k_core_config_iocoherency(ab, false);

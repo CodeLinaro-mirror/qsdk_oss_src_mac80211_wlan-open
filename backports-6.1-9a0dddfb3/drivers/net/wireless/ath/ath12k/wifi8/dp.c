@@ -301,6 +301,10 @@ static void ath12k_wifi8_dp_umac_free(struct ath12k_dp *dp)
 	if (!dp_wifi8->alloc_done)
 		return;
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	ath12k_dp_ipa_plugin_deregister_ops_extn(dp->ab);
+#endif
+
 	ath12k_wifi8_dp_rx_ring_cleanup(ab);
 	ath12k_wifi8_dp_reoq_lut_cleanup(ab);
 	ath12k_wifi8_dp_telemetry_ring_cleanup(ab);
