@@ -26004,8 +26004,8 @@ exit:
 	return 0;
 }
 
-static void ath12k_mac_handle_failures_bridge_addition(struct ieee80211_hw *hw,
-						       struct ieee80211_vif *vif)
+static void ath12k_mac_handle_fail_bridge_add(struct ieee80211_hw *hw,
+					      struct ieee80211_vif *vif)
 {
 	struct ath12k_vif *ahvif = (void *)vif->drv_priv;
 	struct ath12k_link_vif *arvif;
@@ -26062,7 +26062,7 @@ static void ath12k_mac_configure_bridge_vap_sta_mode(struct ieee80211_hw *hw,
 			if (ret) {
 				ath12k_dbg_level(NULL, ATH12K_DBG_MAC, ATH12K_DBG_L3,
 						 "Bridge VAP addition for STA mode failed\n");
-				ath12k_mac_handle_failures_bridge_addition(hw, vif);
+				ath12k_mac_handle_fail_bridge_add(hw, vif);
 				continue;
 			}
 			break;
@@ -26158,7 +26158,7 @@ check_bridge_needed:
 			ath12k_warn(arvif->ar->ab,
 				    "restart bridge: failed to restart bridge vdev %d link_id %d: ret:%d\n",
 				    arvif->vdev_id, bridge_link_id, ret);
-			ath12k_mac_handle_failures_bridge_addition(hw, vif);
+			ath12k_mac_handle_fail_bridge_add(hw, vif);
 			return;
 		}
 		ath12k_dbg_level(arvif->ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
@@ -26214,11 +26214,24 @@ static int ath12k_mac_create_and_start_bridge(struct ieee80211_hw *hw,
 				if (WARN_ON(!arvif))
 					continue;
 
-				if (arvif->chanctx.def.chan)
+				if (arvif->chanctx.def.chan) {
 					bridge_ctx = &arvif->chanctx;
-				else
+					ret = ath12k_mac_sync_ctx_on_radio(hw, vif,
+									   bridge_ctx,
+									   &num_devices);
+					if (ret) {
+						ath12k_err(NULL, "[vdev_id : %u radio_idx : %u] Bridge VAP sync during Mode0 recovery failed for MLD:%pM\n",
+							   arvif->vdev_id,
+							   arvif->ar->radio_idx,
+							   vif->addr);
+						ath12k_mac_handle_fail_bridge_add(hw,
+										  vif);
+						break;
+					}
+				} else {
 					bridge_ctx =
 					ath12k_mac_get_ctx_for_bridge_recovery(arvif->ar);
+				}
 
 				ath12k_dbg(arvif->ar->ab, ATH12K_DBG_MAC,
 					   "[radio_idx : %u] Recovery bridge chanctx link_id=%u addr=%pM freq %d\n",
@@ -26232,7 +26245,7 @@ static int ath12k_mac_create_and_start_bridge(struct ieee80211_hw *hw,
 					ath12k_err(NULL, "[vdev_id : %s radio_idx : %s] Bridge VAP addition during Mode0 recovery failed for MLD:%pM\n",
 						   ATH12K_INVALID_VDEV_ID,
 						   ATH12K_INVALID_RADIO_IDX, vif->addr);
-					ath12k_mac_handle_failures_bridge_addition(hw, vif);
+					ath12k_mac_handle_fail_bridge_add(hw, vif);
 					break;
 				} else {
 					ath12k_dbg_level(NULL, ATH12K_DBG_MAC,
@@ -26320,7 +26333,7 @@ static int ath12k_mac_create_and_start_bridge(struct ieee80211_hw *hw,
 				ath12k_err(NULL, "[vdev_id : %s radio_idx : %s] Bridge VAP addition failed for MLD:%pM\n",
 					   ATH12K_INVALID_VDEV_ID,
 					   ATH12K_INVALID_RADIO_IDX, vif->addr);
-				ath12k_mac_handle_failures_bridge_addition(hw, vif);
+				ath12k_mac_handle_fail_bridge_add(hw, vif);
 				goto exit;
 			}
 		}
