@@ -1288,15 +1288,17 @@ static bool ieee80211_6ghz_sta_power_type_disallowed
  * ieee80211_notify_colocated_ap_6ghz_update - Notify colocated AP links
  * @sdata: STA interface that learned the updated 6 GHz information
  * @sta_link: STA link that received the update
+ * @tpe_changed: Root AP transmit power envelope changed
  * @power_mode_changed: Root AP 6 GHz power type changed
  *
- * When a STA link learns a new 6 GHz power type from the upstream AP,
+ * When a STA link learns updated 6 GHz power information from the upstream AP,
  * propagate the relevant BSS change notification to colocated 6 GHz AP links so
  * the driver can recompute repeater AP power handling.
  */
 static void
 ieee80211_notify_colocated_ap_6ghz_update(struct ieee80211_sub_if_data *sdata,
 					  struct ieee80211_link_data *sta_link,
+					  bool tpe_changed,
 					  bool power_mode_changed)
 {
 	struct ieee80211_link_data *ap_link;
@@ -1306,6 +1308,8 @@ ieee80211_notify_colocated_ap_6ghz_update(struct ieee80211_sub_if_data *sdata,
 	if (sdata->vif.type != NL80211_IFTYPE_STATION)
 		return;
 
+	if (tpe_changed)
+		changed |= BSS_CHANGED_TPE;
 	if (power_mode_changed)
 		changed |= BSS_CHANGED_6GHZ_POWER_MODE;
 
@@ -1614,7 +1618,9 @@ static int ieee80211_config_bw(struct ieee80211_link_data *link,
 		}
 
 			ieee80211_notify_colocated_ap_6ghz_update(sdata, link,
-								  power_mode_changed);
+							  !!(*changed &
+							     BSS_CHANGED_TPE),
+							  power_mode_changed);
 		}
 
 	if (ieee80211_chanreq_identical(&chanreq, &link->conf->chanreq))
