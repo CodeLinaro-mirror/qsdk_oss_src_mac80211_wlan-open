@@ -2917,7 +2917,7 @@ static void sta_set_link_sinfo(struct sta_info *sta,
 		link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_BEACON_RX) |
 				 BIT_ULL(NL80211_STA_INFO_BEACON_SIGNAL_AVG);
 		link_sinfo->rx_beacon_signal_avg =
-			ieee80211_ave_rssi(&sdata->vif, -1);
+			ieee80211_ave_rssi(&sdata->vif, link->link_id);
 	}
 
 	if (ieee80211_hw_check(&sta->local->hw, SIGNAL_DBM) ||
@@ -3049,7 +3049,7 @@ void sta_set_sinfo(struct sta_info *sta, struct station_info *sinfo,
 	struct ieee80211_sub_if_data *sdata = sta->sdata;
 	struct ieee80211_local *local = sdata->local;
 	u32 thr = 0;
-	int i, ac, link_id, cpu;
+	int i, ac, link_id = -1, cpu;
 	struct ieee80211_sta_rx_stats *last_rxstats;
 
 	last_rxstats = sta_get_last_rx_stats(sta, false, -1);
@@ -3174,7 +3174,7 @@ void sta_set_sinfo(struct sta_info *sta, struct station_info *sinfo,
 		sinfo->filled |= BIT_ULL(NL80211_STA_INFO_BEACON_RX) |
 				 BIT_ULL(NL80211_STA_INFO_BEACON_SIGNAL_AVG);
 		sinfo->rx_beacon_signal_avg =
-			ieee80211_ave_rssi(&sdata->vif, -1);
+			ieee80211_ave_rssi(&sdata->vif, sta->deflink.link_id);
 	}
 
 	if (ieee80211_hw_check(&sta->local->hw, SIGNAL_DBM) ||
