@@ -37,6 +37,15 @@
 #include <linux/vmalloc.h>
 #include "ranging.h"
 
+/* Forward declarations for functions defined later in this file that are
+ * called before their definition. In QCN builds these are declared via
+ * qcn_extns/ath12k_cmn_extn.h; in noextns builds they are static.
+ */
+#ifndef CPTCFG_QCN_EXTN
+static struct ath12k_vif *ath12k_get_ahvif_from_wdev(struct wireless_dev *wdev);
+static struct ath12k *ath12k_get_ar_from_wdev(struct wireless_dev *wdev, u8 link_id);
+#endif /* !CPTCFG_QCN_EXTN */
+
 static const struct nla_policy
 ath12k_wifi_config_policy[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_COMMAND] = {.type = NLA_U32 },

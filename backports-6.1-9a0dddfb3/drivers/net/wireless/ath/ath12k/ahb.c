@@ -1694,7 +1694,9 @@ static int ath12k_ahb_probe(struct platform_device *pdev)
 			bus_type = ATH12K_BUS_AHB;
 			break;
 		case ATH12K_HW_QCN6432_HW10:
+#ifdef CPTCFG_QCN_EXTN
 		case ATH12K_HW_QCN9160_HW10:
+#endif
 			bus_type = ATH12K_BUS_HYBRID;
 			hif_ops = &ath12k_ahb_hif_ops_qcn6432;
 			break;
