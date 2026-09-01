@@ -394,6 +394,7 @@ EXPORT_SYMBOL(ath12k_ppeds_wifi7_inst_detach);
 int ath12k_ppeds_wifi7_register_soc(struct ath12k_dp *dp, struct dp_ppe_ds_idxs *idx)
 {
 	struct ath12k_base *ab = dp->ab;
+	struct ath12k *ar = ab->pdevs[0].ar;
 	struct hal_srng *ppe2tcl_ring, *reo2ppe_ring;
 	struct ppe_ds_wlan_reg_info reg_info = {0};
 
@@ -420,6 +421,13 @@ int ath12k_ppeds_wifi7_register_soc(struct ath12k_dp *dp, struct dp_ppe_ds_idxs 
 	reg_info.reo2ppe_ba = dp->ppe.reo2ppe_ring[REO2PPE_RING_WIFI7].paddr;
 	reg_info.ppe2tcl_num_desc = DP_PPE2TCL_RING_SIZE;
 	reg_info.reo2ppe_num_desc = DP_REO2PPE_RING_SIZE;
+
+	if (ar) {
+		spin_lock_bh(&ar->data_lock);
+		reg_info.freq.low_freq = ar->chan_info.low_freq;
+		reg_info.freq.high_freq = ar->chan_info.high_freq;
+		spin_unlock_bh(&ar->data_lock);
+	}
 
 	if (ab->dp->ppe.nss_plugin_ops->ds_inst_register(&reg_info,
 							 dp->ppe.ds_node_id) != true) {

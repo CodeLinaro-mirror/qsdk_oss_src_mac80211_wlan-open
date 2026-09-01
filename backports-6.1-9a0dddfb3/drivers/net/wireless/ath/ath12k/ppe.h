@@ -241,6 +241,7 @@ void ath12k_dp_ppeds_interrupt_stop(struct ath12k_base *ab);
 void ath12k_dp_ppeds_interrupt_start(struct ath12k_base *ab);
 int ath12k_nss_plugin_register_ops(struct ath12k_base *ab);
 void ath12k_nss_plugin_unregister_ops(struct ath12k_base *ab);
+void ath12k_ppe_ds_notify_freq_range(struct ath12k *ar, u32 freq_low, u32 freq_high);
 
 void ath12k_dp_ppeds_tx_release_desc_list_bulk(struct ath12k_base *ab,
 					       struct ath12k_dp_hw_group *dp_hw_grp,
@@ -390,6 +391,11 @@ static inline int ath12k_nss_plugin_register_ops(struct ath12k_base *ab)
 }
 
 static inline void ath12k_nss_plugin_unregister_ops(struct ath12k_base *ab)
+{
+}
+
+static inline void ath12k_ppe_ds_notify_freq_range(struct ath12k *ar,
+						    u32 freq_low, u32 freq_high)
 {
 }
 #endif /* CPTCFG_ATH12K_PPE_DS_SUPPORT */
