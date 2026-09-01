@@ -19916,7 +19916,7 @@ int ath12k_wmi_send_low_power_20mhz(struct ath12k *ar, bool config)
 	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(
 					     WMI_TAG_ENERGY_MGMT_ECO_MODE_CMD_FIXED_PARAM,
 					     len);
-	cmd->pdev_id = cpu_to_le32(ath12k_mac_get_target_pdev_id(ar));
+	cmd->pdev_id = cpu_to_le32(DP_HW2SW_MACID(ar->pdev->pdev_id));
 
 	if (config)
 		wmi_config = WMI_LOW_POWER_20MHZ_ENABLE;
