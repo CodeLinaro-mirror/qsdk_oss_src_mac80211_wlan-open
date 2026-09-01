@@ -26575,6 +26575,9 @@ void cfg80211_probe_status(struct net_device *dev, const u8 *addr,
 	struct sk_buff *msg;
 	void *hdr;
 
+	if (!addr)
+		return;
+
 	trace_cfg80211_probe_status(dev, addr, cookie, acked);
 
 	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, gfp);
