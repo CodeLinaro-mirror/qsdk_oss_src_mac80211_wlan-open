@@ -707,6 +707,8 @@ static enum wmi_phy_mode ath12k_cfr_chan_to_phymode(struct ath12k_link_vif *arvi
 				phymode = MODE_11BE_EHT20_2G;
 			else if (link_conf->he_support)
 				phymode = MODE_11AX_HE20_2G;
+			else if (arvif->vht_cap)
+				phymode = MODE_11AC_VHT20_2G;
 			else
 				phymode = MODE_11NG_HT20;
 			break;
@@ -717,6 +719,8 @@ static enum wmi_phy_mode ath12k_cfr_chan_to_phymode(struct ath12k_link_vif *arvi
 				phymode = MODE_11BE_EHT40_2G;
 			else if (link_conf->he_support)
 				phymode = MODE_11AX_HE40_2G;
+			else if (arvif->vht_cap)
+				phymode = MODE_11AC_VHT40_2G;
 			else
 				phymode = MODE_11NG_HT40;
 			break;
@@ -782,6 +786,12 @@ static enum wmi_phy_mode ath12k_cfr_chan_to_phymode(struct ath12k_link_vif *arvi
 				phymode = MODE_11AX_HE80_80;
 			else
 				phymode = MODE_11AC_VHT80_80;
+			break;
+		case NL80211_CHAN_WIDTH_320:
+			if (link_conf->uhr_support)
+				phymode = MODE_11BN_UHR320;
+			else
+				phymode = MODE_11BE_EHT320;
 			break;
 		default:
 			break;
