@@ -3060,6 +3060,8 @@ struct ieee80211_link_sta {
  *	valid if the STA is a TDLS peer in the first place.
  * @mapc: indicates whether the STA is a MAPC peer
  * @mfp: indicates whether the STA uses management frame protection or not.
+ * @isolated: indicates whether intra-BSS forwarding to/from this station
+ *	is disabled (per-station isolation).
  * @cfp: indicated whether the STA used control frame protection or not.
  * @mlo: indicates whether the STA is MLO station.
  * @ft_auth: indicates whether the STA uses FT Authentication.
@@ -3107,6 +3109,7 @@ struct ieee80211_sta {
 	bool tdls_initiator;
 	bool mapc;
 	bool mfp;
+	bool isolated;
 	bool cfp;
 	bool mlo;
 	bool spp_amsdu;
