@@ -375,7 +375,6 @@ void ath12k_dp_tx_release_txbuf_nolock(struct ath12k_dp *dp,
 				       u8 pool_id)
 {
 	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
-	u32 *tx_desc_used_cnt;
 
 	if (WARN_ON(!tx_desc->in_use))
 		return;
@@ -395,8 +394,7 @@ void ath12k_dp_tx_release_txbuf_nolock(struct ath12k_dp *dp,
 	else
 		list_add_tail(&tx_desc->list, &dp_hw_grp->tx_spl_desc_free_list[pool_id]);
 
-	tx_desc_used_cnt = this_cpu_ptr(dp_hw_grp->tx_desc_used_cnt);
-	(*tx_desc_used_cnt) ? (*tx_desc_used_cnt)-- : 0;
+	dp_hw_grp->tx_desc_used_cnt[pool_id]--;
 }
 EXPORT_SYMBOL(ath12k_dp_tx_release_txbuf_nolock);
 
@@ -418,7 +416,6 @@ ath12k_tx_desc_info *ath12k_dp_tx_assign_buffer(struct ath12k_dp_hw_group *dp_hw
 						u8 pool_id)
 {
 	struct ath12k_tx_desc_info *desc, *next_desc;
-	u32 *tx_desc_used_cnt;
 
 	pool_id = pool_id % ATH12K_HW_MAX_QUEUES;
 
@@ -438,9 +435,7 @@ ath12k_tx_desc_info *ath12k_dp_tx_assign_buffer(struct ath12k_dp_hw_group *dp_hw
 	if (next_desc)
 		prefetch(next_desc);
 
-	tx_desc_used_cnt = this_cpu_ptr(dp_hw_grp->tx_desc_used_cnt);
-	(*tx_desc_used_cnt)++;
-
+	dp_hw_grp->tx_desc_used_cnt[pool_id]++;
 	spin_unlock_bh(&dp_hw_grp->tx_desc_lock[pool_id]);
 
 	return desc;

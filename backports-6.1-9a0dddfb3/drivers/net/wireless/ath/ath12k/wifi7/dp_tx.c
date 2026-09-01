@@ -3040,7 +3040,7 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 	struct ath12k_wifi7_tx_status_entry *tx_status_entry;
 	struct ath12k_tx_sw_metadata *sw_metadata;
 	u8 n_entry = 0, idx = 0;
-	struct list_head desc_free_list;
+	struct list_head desc_free_list[ATH12K_HW_MAX_QUEUES];
 	struct hal_wbm_completion_ring_tx *tx_status;
 	struct sk_buff_head free_list_head;
 	int tx_status_idx = ring_id;
@@ -3048,7 +3048,7 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 	u32 tqm_rel_reason[MAX_TQM_RELEASE_REASON] = {0};
 	u32 fw_tx_status[MAX_FW_TX_STATUS] = {0};
 	u32 htt_status = 0, tx_completed = 0;
-	u32 tx_desc_free_cnt = 0, *used_cnt;
+	u32 tx_desc_free_cnt[ATH12K_HW_MAX_QUEUES] = {0};
 	u8 hw_link_id = 0;
 
 	ath12k_hal_srng_access_dst_ring_begin_nolock(ab, status_ring);
@@ -3065,7 +3065,10 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 
 	ath12k_hal_srng_dst_invalidate_entry(dp, status_ring, valid_entries);
 #endif
-	INIT_LIST_HEAD(&desc_free_list);
+
+	for (i = 0; i < ATH12K_HW_MAX_QUEUES; i++)
+		INIT_LIST_HEAD(&desc_free_list[i]);
+
 	skb_queue_head_init(&free_list_head);
 
 	tx_status_entry = (struct ath12k_wifi7_tx_status_entry *)
@@ -3099,14 +3102,15 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 	if (!n_entry)
 		return orig_budget - budget;
 
-	spin_lock_bh(&dp->dp_hw_grp->tx_desc_lock[ring_id]);
-
 	tx_status_entry = (struct ath12k_wifi7_tx_status_entry *)dp->tx_status_buf[tx_status_idx];
 	for (i = 0; i < n_entry; i++) {
 		struct ath12k_wifi7_tx_status_entry *tx_status_entry_next;
+		int pool_id;
+
 		sw_metadata = &tx_status_entry->sw_metadata;
 		tx_desc = tx_status_entry->tx_desc;
 		tx_status_entry++;
+		pool_id = tx_desc->pool_id;
 
 		if ((i + 10) < n_entry) {
 			tx_status_entry_next = tx_status_entry + 8;
@@ -3120,13 +3124,18 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 			continue;
 		}
 
-		if (likely(!tx_desc->spl_desc))
-			list_add_tail(&tx_desc->list, &desc_free_list);
-		else
-			list_add_tail(&tx_desc->list,
-				      &dp->dp_hw_grp->tx_spl_desc_free_list[ring_id]);
+		if (likely(!tx_desc->spl_desc)) {
+			list_add_tail(&tx_desc->list, &desc_free_list[pool_id]);
+		} else {
+			spin_lock_bh(&dp->dp_hw_grp->tx_desc_lock[pool_id]);
 
-		tx_desc_free_cnt++;
+			list_add_tail(&tx_desc->list,
+				      &dp->dp_hw_grp->tx_spl_desc_free_list[pool_id]);
+
+			spin_unlock_bh(&dp->dp_hw_grp->tx_desc_lock[pool_id]);
+		}
+
+		tx_desc_free_cnt[pool_id]++;
 
 		sw_metadata->skb = tx_desc->skb;
 		sw_metadata->paddr = tx_desc->paddr;
@@ -3168,12 +3177,13 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 		tx_desc->to_fw = 0;
 	}
 
-	list_splice(&desc_free_list, &dp->dp_hw_grp->tx_desc_free_list[ring_id]);
+	for (i = 0; i < ATH12K_HW_MAX_QUEUES; i++) {
+		spin_lock_bh(&dp->dp_hw_grp->tx_desc_lock[i]);
+		dp_hw_grp->tx_desc_used_cnt[i] -= tx_desc_free_cnt[i];
+		list_splice(&desc_free_list[i], &dp->dp_hw_grp->tx_desc_free_list[i]);
+		spin_unlock_bh(&dp->dp_hw_grp->tx_desc_lock[i]);
+	}
 
-	used_cnt = this_cpu_ptr(dp_hw_grp->tx_desc_used_cnt);
-	(*used_cnt) -= tx_desc_free_cnt;
-
-	spin_unlock_bh(&dp->dp_hw_grp->tx_desc_lock[ring_id]);
 
 	for (hw_link_id = 0; hw_link_id < ATH12K_GROUP_MAX_RADIO; hw_link_id++) {
 		if (likely(pdev_tx_comp_cnt[hw_link_id])) {
@@ -3206,7 +3216,6 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 			le32_get_bits(tx_status->info0, HAL_WBM_COMPL_TX_INFO0_REL_SRC_MODULE);
 
 		tx_wbm_rel_source[ts.buf_rel_source]++;
-
 
                 if (ts.buf_rel_source == HAL_WBM_REL_SRC_MODULE_TQM) {
                         ts.status = le32_get_bits(tx_status->info0,

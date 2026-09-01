@@ -3228,8 +3228,6 @@ void ath12k_dp_umac_tx_desc_cleanup(struct ath12k_base *ab)
 	u32 tx_spt_page;
 	dp = ath12k_ab_to_dp(ab);
 	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
-	u32 *tx_desc_used_cnt;
-	int cpu;
 
 	/* TX Descriptor cleanup */
 	for (pool_id = 0; pool_id < ATH12K_HW_MAX_QUEUES; pool_id++) {
@@ -3274,6 +3272,7 @@ void ath12k_dp_umac_tx_desc_cleanup(struct ath12k_base *ab)
 			}
 		}
 
+		dp_hw_grp->tx_desc_used_cnt[pool_id] = 0;
 		spin_unlock_bh(&dp_hw_grp->tx_desc_lock[pool_id]);
 	}
 
@@ -3293,12 +3292,6 @@ void ath12k_dp_umac_tx_desc_cleanup(struct ath12k_base *ab)
 	}
 
 	rcu_read_unlock();
-
-	for_each_possible_cpu(cpu) {
-		tx_desc_used_cnt = per_cpu_ptr(dp_hw_grp->tx_desc_used_cnt, cpu);
-		*tx_desc_used_cnt = 0;
-	}
-
 }
 EXPORT_SYMBOL(ath12k_dp_umac_tx_desc_cleanup);
 
