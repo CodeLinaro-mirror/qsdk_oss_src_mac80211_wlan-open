@@ -92,6 +92,7 @@ const struct ath12k_dp_arch_mon_ops ath12k_wifi7_dp_arch_mon_dual_ring_ops = {
 	.ext_mon_add_wmi_tx_peers = ath12k_wifi7_dp_ext_mon_add_wmi_tx_peers,
 	.ext_mon_remove_wmi_tx_peers = ath12k_wifi7_dp_ext_mon_remove_wmi_tx_peers,
 	.mon_tx_get_spc_bitmap = ath12k_wifi7_dp_mon_tx_get_spc_bitmap,
+	.ext_mon_get_filter_mode = ath12k_wifi7_get_ext_mon_peer_filter_mode_locked,
 };
 
 static inline void

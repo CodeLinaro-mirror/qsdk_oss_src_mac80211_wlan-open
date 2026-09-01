@@ -135,9 +135,9 @@ struct ath12k_mon_data;
 struct dp_mon_rx_filter;
 struct dp_mon_tx_filter;
 struct ath12k_ext_mon_config;
-struct ath12k_dp_tx_ext_mon_config;
 struct ath12k_ext_mon_pkt_config;
 struct ath12k_dp_rx_ext_mon;
+struct ath12k_dp_tx_ext_mon_config;
 
 struct ath12k_dp_mon_pad_params {
 	u32 frag_size;
@@ -289,13 +289,15 @@ struct ath12k_dp_arch_mon_ops {
 
 	int (*ext_mon_tx_alloc)(struct ath12k_pdev_dp *dp_pdev);
 	void (*ext_mon_tx_free)(struct ath12k_pdev_dp *dp_pdev);
-	int (*ext_mon_filter)(struct sk_buff *mpdu,
-				struct ath12k_dp_tx_ext_mon_config *tx_ext_mon);
+	int (*ext_mon_filter)(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *mpdu);
 	int (*ext_mon_add_wmi_tx_peers)(struct ath12k_pdev_dp *dp_pdev,
-				struct ath12k_dp_ext_mon_tx_peer_params *peer_param);
+					struct ath12k_dp_ext_mon_tx_peer_params
+					*peer_param);
 	int (*ext_mon_remove_wmi_tx_peers)(struct ath12k_pdev_dp *dp_pdev,
-				struct ath12k_dp_ext_mon_tx_peer_params *peer_param);
+					   struct ath12k_dp_ext_mon_tx_peer_params
+					   *peer_param);
 	u32 (*mon_tx_get_spc_bitmap)(struct ath12k_base *ab);
+	u8 (*ext_mon_get_filter_mode)(struct ath12k_pdev_dp *dp_pdev);
 };
 
 /**

@@ -161,12 +161,16 @@ struct ath12k_ext_mon_pkt_config;
  * @pkt_buf_free: packet TLV buffers released back to the page-fragment allocator
  * @status_buf_free: status buffers released back to the page-fragment allocator
  * @mu_user_frame: MU frames generated for individual users within a MU-MIMO PPDU
- * @data_ppdu_delivered: Data PPDUs successfully delivered up to mac80211
- * @prot_ppdu_delivered: Protection PPDUs successfully delivered up to mac80211
+ * @data_ppdu_delivered: Data PPDUs successfully delivered
+ * @prot_ppdu_delivered: Protection PPDUs successfully delivered
+ * @total_frames_delivered: Frames successfully delivered
  * @self_gen_failed: failures generating self-generated response frames (ACK/CTS/BA)
  * @skb_alloc_failed: failures allocating skb for a new MPDU during PPDU reconstruction
  * @ring_extract_failed: failures reading the next entry from the TX mon destination ring
  * @get_num_users_failed: failures parsing the number of users from the PPDU start TLV
+ * @frames_drop_in_sw: frames dropped by host in ext_mon filtering
+ * @custom_call_back_delivered: frames delivered via notifier chain
+ * @wmi_peer_send_failed: wmi peer command send failed
  */
 struct ath12k_pdev_tx_mon_stats {
 	/* Tasklet related stats */
@@ -198,6 +202,7 @@ struct ath12k_pdev_tx_mon_stats {
 	/* Delivery statistics */
 	u32 prot_ppdu_delivered;
 	u32 data_ppdu_delivered;
+	u32 total_frames_delivered;
 
 	/* frame generation failures */
 	u32 self_gen_failed;
@@ -208,6 +213,11 @@ struct ath12k_pdev_tx_mon_stats {
 	u32 get_num_users_failed;
 	/* bitmap: 0=unknown 1=ARP 2=EAPOL 3=DHCP 4=DNS 5=ICMP 6=MGMT */
 	u32 spl_pkt_cap_stats[ATH12K_DP_MON_TX_SPC_PKT_ID_MAX];
+
+	/* Extended Monitor mode */
+	u32 frames_drop_in_sw;
+	u32 wmi_peer_send_failed;
+	u32 custom_call_back_delivered;
 };
 
 /**

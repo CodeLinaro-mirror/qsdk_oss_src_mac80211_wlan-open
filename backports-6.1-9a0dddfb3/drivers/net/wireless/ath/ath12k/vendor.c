@@ -9680,6 +9680,10 @@ static int ath12k_fill_radio_tx_mon_stats(struct sk_buff *vendor_event,
 	struct ath12k_pdev_tx_mon_stats *pdev_tx_mon_stats;
 	struct ath12k_tx_mon_ssr_stats *ssr_stats;
 	struct ath12k_dp_mon *dp_mon;
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	struct ath12k_pdev_tx_mon *tx_pdev_mon;
+	u8 tx_mon_mode = 0;
+	u8 tx_ext_mon_filter_mode = 0;
 
 	if (unlikely(!dp_pdev->dp_mon_pdev)) {
 		ath12k_err(NULL, "dp_mon_pdev not initialized");
@@ -9687,14 +9691,30 @@ static int ath12k_fill_radio_tx_mon_stats(struct sk_buff *vendor_event,
 	}
 
 	dp_mon = dp_pdev->dp_mon_pdev->dp_mon;
-
 	if (unlikely(!dp_mon || !dp_mon->dp_tx_mon)) {
 		ath12k_err(NULL, "dp_mon_tx not present");
 		return -ENODEV;
 	}
 
+	mon_ops = ath12k_dp_mon_ops_get(dp_pdev->dp);
+	tx_pdev_mon = dp_pdev->dp_mon_pdev->dp_pdev_tx_mon;
 	tx_mon_stats = &dp_mon->dp_tx_mon->tx_mon_stats;
 	ath12k_dp_mon_tx_update_buf_ownership_stats(dp_pdev->dp);
+
+	if (tx_pdev_mon && tx_pdev_mon->tx_monitor_started)
+		/**
+		 * TX_monitor_mode stores the internal dp_mon_tx_filter_mode enum value
+		 * which is zero-based (DP_MON_TX_FULL_MONITOR=0, HYBRID=1, EXT_MON=2,
+		 * SPL_PKT_CAP=3).
+		 * The vendor attribute encoding is one-based so that 0
+		 * can be reserved for "TX monitor disabled" — callers that check
+		 * tx_mon_mode==0 treat it as disabled. Add 1 to convert internal
+		 * zero-based mode to the vendor one-based encoding.
+		 */
+		tx_mon_mode = tx_pdev_mon->tx_monitor_mode + 1;
+
+	if (mon_ops && mon_ops->ext_mon_get_filter_mode)
+		tx_ext_mon_filter_mode = mon_ops->ext_mon_get_filter_mode(dp_pdev);
 
 	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_BUF_REPLENISHED,
 			tx_mon_stats->buf_replenished)) {
@@ -10011,6 +10031,46 @@ static int ath12k_fill_radio_tx_mon_stats(struct sk_buff *vendor_event,
 			ssr_stats->status_desc_drained)) {
 		ath12k_err(NULL, "nla put failure: tx mon stats: %s",
 			   "ssr drained status descriptors");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u8(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_TX_MON_MODE,
+		       tx_mon_mode)) {
+		ath12k_err(NULL, "nla put failure: tx mon stats: tx monitor mode");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u8(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_EXT_MON_FILTER_MODE,
+		       tx_ext_mon_filter_mode)) {
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+			   "extended monitor filter mode");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_FRAMES_DROP_IN_SW,
+			pdev_tx_mon_stats->frames_drop_in_sw)) {
+		ath12k_err(NULL, "nla put failure: tx mon stats: frames drop by host");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_WMI_PEER_SEND_FAILED,
+			pdev_tx_mon_stats->wmi_peer_send_failed)) {
+		ath12k_err(NULL, "nla put failure: tx mon stats: wmi peer send failed");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_TX_MON_STATS_TOTAL_FRAMES_DELIVERED,
+			pdev_tx_mon_stats->total_frames_delivered)) {
+		ath12k_err(NULL, "nla put failure: tx mon stats: total frames delivered");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_TX_MON_STATS_CUSTOM_CALL_BACK_DELIVERED,
+			pdev_tx_mon_stats->custom_call_back_delivered)) {
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+			   "frames delivered via custom call back");
 		return -EMSGSIZE;
 	}
 
