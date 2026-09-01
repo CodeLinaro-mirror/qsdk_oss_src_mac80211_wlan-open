@@ -420,6 +420,8 @@ ath12k_tx_desc_info *ath12k_dp_tx_assign_buffer(struct ath12k_dp_hw_group *dp_hw
 	struct ath12k_tx_desc_info *desc, *next_desc;
 	u32 *tx_desc_used_cnt;
 
+	pool_id = pool_id % ATH12K_HW_MAX_QUEUES;
+
 	spin_lock_bh(&dp_hw_grp->tx_desc_lock[pool_id]);
 	desc = list_first_entry_or_null(&desc_free_list[pool_id],
 					struct ath12k_tx_desc_info, list);
