@@ -159,6 +159,104 @@ struct ath12k_dbring *ath12k_cfr_get_dbring(struct ath12k *ar)
 	return NULL;
 }
 
+static void ath12k_peer_cfr_default_ta_ra_config(struct cfr_rcc_param *rcc_info,
+						 bool allvalid,
+						 unsigned long reset_cfg)
+{
+	struct ta_ra_cfr_cfg *curr_cfg;
+	int grp_id;
+	unsigned long bitmap = reset_cfg;
+	u8 def_mac[ETH_ALEN] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
+	u8 null_mac[ETH_ALEN] = { 0 };
+
+	for (grp_id = 0; grp_id < MAX_TA_RA_ENTRIES; grp_id++) {
+		if (!test_bit(grp_id, &bitmap))
+			continue;
+
+		curr_cfg = &rcc_info->curr[grp_id];
+
+		curr_cfg->filter_group_id = grp_id;
+		ether_addr_copy(curr_cfg->ta_addr, null_mac);
+		ether_addr_copy(curr_cfg->ta_addr_mask, def_mac);
+		ether_addr_copy(curr_cfg->ra_addr, null_mac);
+		ether_addr_copy(curr_cfg->ra_addr_mask, def_mac);
+		curr_cfg->bw = 0xf;
+		curr_cfg->nss = 0xff;
+		curr_cfg->mgmt_subtype_filter = 0;
+		curr_cfg->ctrl_subtype_filter = 0;
+		curr_cfg->data_subtype_filter = 0;
+
+		if (!allvalid) {
+			curr_cfg->valid_ta = 0;
+			curr_cfg->valid_ta_mask = 0;
+			curr_cfg->valid_ra = 0;
+			curr_cfg->valid_ra_mask = 0;
+			curr_cfg->valid_bw_mask = 0;
+			curr_cfg->valid_nss_mask = 0;
+			curr_cfg->valid_mgmt_subtype = 0;
+			curr_cfg->valid_ctrl_subtype = 0;
+			curr_cfg->valid_data_subtype = 0;
+		} else {
+			curr_cfg->valid_ta = 1;
+			curr_cfg->valid_ta_mask = 1;
+			curr_cfg->valid_ra = 1;
+			curr_cfg->valid_ra_mask = 1;
+			curr_cfg->valid_bw_mask = 1;
+			curr_cfg->valid_nss_mask = 1;
+			curr_cfg->valid_mgmt_subtype = 1;
+			curr_cfg->valid_ctrl_subtype = 1;
+			curr_cfg->valid_data_subtype = 1;
+		}
+	}
+}
+
+static void ath12k_peer_cfr_update_global_cfg(struct ath12k *ar)
+{
+	int grp_id;
+	struct ta_ra_cfr_cfg *curr_cfg;
+	struct ta_ra_cfr_cfg *glbl_cfg;
+
+	for (grp_id = 0; grp_id < MAX_TA_RA_ENTRIES; grp_id++) {
+		if (!test_bit(grp_id, &ar->cfr.rcc_param.modified_in_curr_session))
+			continue;
+
+		glbl_cfg = &ar->cfr.global[grp_id];
+		curr_cfg = &ar->cfr.rcc_param.curr[grp_id];
+
+		if (curr_cfg->valid_ta)
+			ether_addr_copy(glbl_cfg->ta_addr, curr_cfg->ta_addr);
+
+		if (curr_cfg->valid_ra)
+			ether_addr_copy(glbl_cfg->ra_addr, curr_cfg->ra_addr);
+
+		if (curr_cfg->valid_ta_mask)
+			ether_addr_copy(glbl_cfg->ta_addr_mask,
+					curr_cfg->ta_addr_mask);
+
+		if (curr_cfg->valid_ra_mask)
+			ether_addr_copy(glbl_cfg->ra_addr_mask,
+					curr_cfg->ra_addr_mask);
+
+		if (curr_cfg->valid_bw_mask)
+			glbl_cfg->bw = curr_cfg->bw;
+
+		if (curr_cfg->valid_nss_mask)
+			glbl_cfg->nss = curr_cfg->nss;
+
+		if (curr_cfg->valid_mgmt_subtype)
+			glbl_cfg->mgmt_subtype_filter =
+					curr_cfg->mgmt_subtype_filter;
+
+		if (curr_cfg->valid_ctrl_subtype)
+			glbl_cfg->ctrl_subtype_filter =
+					curr_cfg->ctrl_subtype_filter;
+
+		if (curr_cfg->valid_data_subtype)
+			glbl_cfg->data_subtype_filter =
+					curr_cfg->data_subtype_filter;
+	}
+}
+
 static inline
 void ath12k_cfr_release_lut_entry(struct ath12k_cfr_look_up_table *lut)
 {
@@ -1137,6 +1235,31 @@ int ath12k_cfr_init(struct ath12k_base *ab)
 			ath12k_warn(ab, "Failed to get enhanced aoa caps");
 			goto deinit;
 		}
+
+		if (!test_bit(WMI_SERVICE_CFR_CAPTURE_FILTER_SUPPORT,
+			      ab->wmi_ab.svc_map))
+			continue;
+
+		cfr->rcc_param.modified_in_curr_session = MAX_RESET_CFG_ENTRY;
+		cfr->rcc_param.num_grp_tlvs = MAX_TA_RA_ENTRIES;
+		cfr->rcc_param.pdev_id = ar->pdev->pdev_id;
+		cfr->rcc_param.srng_id = 0;
+		cfr->rcc_param.vdev_id = 0xff;
+
+		ath12k_peer_cfr_default_ta_ra_config(&cfr->rcc_param, true,
+						     MAX_RESET_CFG_ENTRY);
+
+		ret = ath12k_wmi_send_cfr_rcc_cmd(ar, &cfr->rcc_param);
+		if (ret) {
+			ath12k_warn(ab,
+				    "failed to send default cfr rcc config for pdev %d: %d\n",
+				    i, ret);
+			goto deinit;
+		}
+
+		ath12k_peer_cfr_update_global_cfg(ar);
+		cfr->rcc_param.modified_in_curr_session = 0;
+		cfr->rcc_param.num_grp_tlvs = 0;
 	}
 	return 0;
 

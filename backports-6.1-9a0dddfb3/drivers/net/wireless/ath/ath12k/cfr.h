@@ -738,6 +738,7 @@ struct cfr_unassoc_pool_entry {
 };
 
 #define MAX_TA_RA_ENTRIES 16
+#define MAX_RESET_CFG_ENTRY 0xFFFF
 struct ta_ra_cfr_cfg {
 	u8 filter_group_id;
 	u16 bw :5,
