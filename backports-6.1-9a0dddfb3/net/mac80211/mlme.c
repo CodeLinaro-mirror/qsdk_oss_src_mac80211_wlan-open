@@ -12132,7 +12132,7 @@ int ieee80211_qos_mgmt_cfg(struct ieee80211_sub_if_data *sdata,
 	struct ieee80211_local *local = sdata->local;
 	struct sta_info *sta;
 
-	sta = sta_info_get(sdata, qm_req->peer_mac);
+	sta = sta_info_get_bss(sdata, qm_req->peer_mac);
 	if (!sta)
 		return -ENOENT;
 
