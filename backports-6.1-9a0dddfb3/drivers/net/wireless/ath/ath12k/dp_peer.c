@@ -1352,7 +1352,8 @@ u16 ath12k_dp_peer_qos_msduq(struct ath12k_base *ab,
 }
 
 static int __ath12k_dp_peer_scs_add(struct ath12k_dp_peer_qos *qos,
-				    u8 scs_id, u16 qos_id)
+				    u8 scs_id, u16 qos_id,
+				    bool dedicated_queue)
 {
 	struct ath12k_dl_scs *scs;
 	u16 qos_data;
@@ -1366,6 +1367,7 @@ static int __ath12k_dp_peer_scs_add(struct ath12k_dp_peer_qos *qos,
 	qos_data = u16_encode_bits(QOS_INVALID_MSDUQ, SCS_MSDUQ_MASK) |
 		   u16_encode_bits(qos_id, SCS_QOS_ID_MASK);
 	scs->qos_id_msduq = qos_data;
+	scs->dedicated_queue = dedicated_queue;
 
 	ath12k_info(NULL, "Peer QoS add scs_id:%d | msduq:%d| qos_id:%d",
 		    scs_id, u16_get_bits(qos_data, SCS_MSDUQ_MASK),
@@ -1375,7 +1377,7 @@ static int __ath12k_dp_peer_scs_add(struct ath12k_dp_peer_qos *qos,
 }
 
 int ath12k_dp_peer_scs_add(struct ath12k_dp_peer *dp_peer, u8 qm_id,
-			   u16 qos_id)
+			   u16 qos_id, bool dedicated_queue)
 {
 	struct ath12k_dp_peer_qos *qos;
 	int ret;
@@ -1387,7 +1389,7 @@ int ath12k_dp_peer_scs_add(struct ath12k_dp_peer *dp_peer, u8 qm_id,
 	}
 
 	spin_lock_bh(&qos->lock);
-	ret = __ath12k_dp_peer_scs_add(qos, qm_id, qos_id);
+	ret = __ath12k_dp_peer_scs_add(qos, qm_id, qos_id, dedicated_queue);
 	spin_unlock_bh(&qos->lock);
 
 	return ret;
