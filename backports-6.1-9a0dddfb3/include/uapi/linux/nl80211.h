@@ -3343,6 +3343,10 @@ enum nl80211_commands {
  *	%NL80211_CMD_SET_STATION), this flag is sent on %NL80211_CMD_NEW_STA
  *	and %NL80211_CMD_ADD_LINK_STA to indicate an in-progress BSS transition.
  *
+ * @NL80211_ATTR_STA_ISOLATED: u8 attribute to enable or disable isolation
+ *	from peer stations i.e, enable /disable intra-bss forwarding for this
+ *	station. 0 = not isolated 1 = isolated.
+ *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  *
  * @NL80211_ATTR_MAX: highest attribute number currently defined
@@ -4034,6 +4038,7 @@ enum nl80211_attrs {
 	NL80211_ATTR_MAPC_MAX_CTDMA_PEERS,
 	NL80211_ATTR_SMD_ROAM_STA,
 
+	NL80211_ATTR_STA_ISOLATED,
 	/* add attributes here, update the policy in nl80211.c */
 	__NL80211_ATTR_AFTER_LAST,
 	NUM_NL80211_ATTR = __NL80211_ATTR_AFTER_LAST,
@@ -4678,6 +4683,8 @@ enum nl80211_sta_bss_param {
  *	authentication server (u8, 0 or 1)
  * @NL80211_STA_INFO_RX_RETRIES: number of rx packets(MPDUs) from this station
  *	with retry bit set (u32)
+ * @NL80211_STA_INFO_ISOLATED: Indicates if peer isolation is enabled/disabled
+ *	for this station (u8, 0 or 1)
  * @NL80211_STA_INFO_PN_ERRORS: number of packet number (PN) errors
  *	detected (u32)
  * @NL80211_STA_INFO_MIC_ERRORS: number of message integrity check
@@ -4735,6 +4742,7 @@ enum nl80211_sta_info {
 	NL80211_STA_INFO_ASSOC_AT_BOOTTIME,
 	NL80211_STA_INFO_CONNECTED_TO_AS,
 	NL80211_STA_INFO_RX_RETRIES,
+	NL80211_STA_INFO_ISOLATED,
 
 	/**
 	 * Fix me: This section should be removed once the

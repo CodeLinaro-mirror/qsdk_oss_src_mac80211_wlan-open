@@ -2284,6 +2284,7 @@ struct cfg80211_sta_mapc_params {
  * @STATION_PARAM_APPLY_UAPSD: apply new uAPSD parameters (uapsd_queues, max_sp)
  * @STATION_PARAM_APPLY_CAPABILITY: apply new capability
  * @STATION_PARAM_APPLY_PLINK_STATE: apply new plink state
+ * @STATION_PARAM_APPLY_ISOLATION: apply peer isolation
  *
  * Not all station parameters have in-band "no change" signalling,
  * for those that don't these flags will are used.
@@ -2293,6 +2294,7 @@ enum station_parameters_apply_mask {
 	STATION_PARAM_APPLY_CAPABILITY = BIT(1),
 	STATION_PARAM_APPLY_PLINK_STATE = BIT(2),
 	STATION_PARAM_APPLY_MGMT_RTS_CTS = BIT(4),
+	STATION_PARAM_APPLY_ISOLATION = BIT(5),
 };
 
 /**
@@ -2442,6 +2444,7 @@ struct link_station_del_parameters {
  * @epp_peer: EPP peer indication
  * @mapc_params_present: indicates that @mapc_params has been populated
  * @mapc_params: MAPC coordination parameters for this peer
+ * @isolated: indicates if station needs to be isolated from peers
  */
 struct station_parameters {
 	struct net_device *vlan;
@@ -2473,6 +2476,7 @@ struct station_parameters {
 	bool epp_peer;
 	bool mapc_params_present;
 	struct cfg80211_sta_mapc_params mapc_params;
+	u8 isolated;
 };
 
 /**
@@ -2937,6 +2941,7 @@ struct link_station_info {
  *	get_station() and dump_station() callbacks.
  * @links: reference to Link sta entries for MLO STA, all link specific
  *	information is accessed through links[link_id].
+ * @isolated: Indicates if station is isolated from peers within the bss
  */
 struct station_info {
 	u64 filled;
@@ -3010,6 +3015,7 @@ struct station_info {
 	u32 mic_errors;
 	u32 decrypt_errors;
 	s8 mgmt_signal;
+	u8 isolated;
 };
 
 /**
