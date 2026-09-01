@@ -3793,7 +3793,7 @@ ath12k_wifi7_hal_mon_tx_parse_user_desc_common(const void *tlv_data,
 	case HAL_RX_PREAMBLE_11BE:
 		ath12k_wifi7_hal_mon_tx_populate_eht_sig_common(&usr_common,
 								ppdu_info);
-		if (!su_or_mu || !mu_type) {
+		if (su_or_mu && !mu_type) {
 			ppdu_info->rx_status.eht_known |=
 				IEEE80211_RADIOTAP_EHT_KNOWN_NR_NON_OFDMA_USERS_M;
 			ppdu_info->rx_status.eht_data[7] |=
