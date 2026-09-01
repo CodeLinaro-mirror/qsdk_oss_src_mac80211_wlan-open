@@ -278,6 +278,57 @@ static void ath12k_cfr_rfs_write(struct ath12k *ar, const void *head,
 	relay_flush(cfr->rfs_cfr_capture);
 }
 
+static void ath12k_cfr_lut_ageout_timer(struct timer_list *t)
+{
+	struct ath12k_cfr *cfr = from_timer(cfr, t, lut_age_timer);
+	struct ath12k *ar = container_of(cfr, struct ath12k, cfr);
+	struct ath12k_cfr_look_up_table *lut = NULL;
+	struct ath12k_dbring_element *buff;
+	unsigned long cur_tstamp = jiffies;
+	u64 diff;
+	int i;
+
+	spin_lock_bh(&cfr->lut_lock);
+
+	if (!cfr->lut)
+		goto out;
+
+	for (i = 0; i < cfr->lut_num; i++) {
+		lut = &cfr->lut[i];
+
+		if (!lut->dbr_recv || lut->tx_recv)
+			continue;
+
+		diff = jiffies_to_msecs((unsigned long)(cur_tstamp - lut->dbr_tstamp));
+		if (diff <= ATH12K_CFR_LUT_AGE_TIMER)
+			continue;
+
+		spin_lock_bh(&cfr->rx_ring.idr_lock);
+		buff = idr_find(&cfr->rx_ring.bufs_idr, i);
+		if (!buff) {
+			spin_unlock_bh(&cfr->rx_ring.idr_lock);
+			ath12k_warn(ar->ab,
+				    "Buffer not found in IDR for aged LUT[%d]\n", i);
+			ath12k_cfr_release_lut_entry(lut);
+			cfr->flush_timeout_dbr_cnt++;
+			continue;
+		}
+		spin_unlock_bh(&cfr->rx_ring.idr_lock);
+
+		ath12k_cfr_release_lut_entry(lut);
+		ath12k_dbring_remove_buf_id(&cfr->rx_ring, i);
+		ath12k_dbring_bufs_replenish(ar, &cfr->rx_ring, buff,
+					     WMI_DIRECT_BUF_CFR, GFP_ATOMIC);
+		cfr->flush_timeout_dbr_cnt++;
+	}
+
+out:
+	spin_unlock_bh(&cfr->lut_lock);
+	if (cfr->lut_age_timer_init)
+		mod_timer(&cfr->lut_age_timer,
+			  jiffies + msecs_to_jiffies(ATH12K_CFR_LUT_AGE_TIMER));
+}
+
 static void ath12k_cfr_free_pending_dbr_events(struct ath12k *ar)
 {
 	struct ath12k_cfr *cfr = &ar->cfr;
@@ -1017,6 +1068,10 @@ void ath12k_cfr_deinit(struct ath12k_base *ab)
 	for (i = 0; i <  ab->num_radios; i++) {
 		ar = ab->pdevs[i].ar;
 		cfr = &ar->cfr;
+		if (cfr->lut_age_timer_init) {
+			cfr->lut_age_timer_init = false;
+			timer_delete_sync(&cfr->lut_age_timer);
+		}
 
 		spin_lock_bh(&cfr->lut_lock);
 		if (cfr->lut) {
@@ -1260,6 +1315,9 @@ int ath12k_cfr_init(struct ath12k_base *ab)
 		ath12k_peer_cfr_update_global_cfg(ar);
 		cfr->rcc_param.modified_in_curr_session = 0;
 		cfr->rcc_param.num_grp_tlvs = 0;
+
+		timer_setup(&cfr->lut_age_timer, ath12k_cfr_lut_ageout_timer, 0);
+		cfr->lut_age_timer_init = true;
 	}
 	return 0;
 
