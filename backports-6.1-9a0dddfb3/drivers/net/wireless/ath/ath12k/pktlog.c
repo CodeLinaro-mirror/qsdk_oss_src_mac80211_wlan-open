@@ -1369,13 +1369,30 @@ static void ath12k_pktlog_write_buf(struct ath12k *ar,
 	memcpy(log_data, hdr_arg->payload, hdr_arg->payload_size);
 }
 
-void ath12k_htt_pktlog_process(struct ath12k *ar, u8 *data)
+void ath12k_htt_pktlog_process(struct ath12k *ar, u8 *data, u32 len)
 {
 	struct ath12k_pktlog *pl_info;
+	struct ath12k_pktlog_hdr *hdr;
 	struct ath12k_pktlog_hdr_arg hdr_arg;
+	u16 payload_size;
+	u32 hdr_size = struct_size(hdr, payload, 0);
 
-	if (!ar)
+	if (!ar || !data)
 		return;
+
+	if (len < hdr_size) {
+		ath12k_warn(ar->ab, "HTT PKTLOG payload too short: %u\n", len);
+		return;
+	}
+
+	hdr = (struct ath12k_pktlog_hdr *)data;
+	payload_size = __le16_to_cpu(hdr->size);
+	if (payload_size > len - hdr_size) {
+		ath12k_warn(ar->ab,
+			    "HTT PKTLOG invalid inner payload size: %u > %u\n",
+			    payload_size, len - hdr_size);
+		return;
+	}
 
 	pl_info = &ar->debug.pktlog;
 	ath12k_pktlog_pull_hdr(&hdr_arg, ar, data);

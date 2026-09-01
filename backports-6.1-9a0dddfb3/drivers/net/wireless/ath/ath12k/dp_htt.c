@@ -2189,17 +2189,32 @@ ath12k_htt_pktlog_tx_handler(struct ath12k_base *ab, struct sk_buff *skb)
 {
 	struct ath12k *ar;
 	struct ath12k_htt_pktlog_msg *msg;
+	u32 payload_avail;
 	u16 payload_size;
 	u8 pdev_id;
 
 	if (!skb->data)
 		return;
 
+	if (skb->len < sizeof(msg->header)) {
+		ath12k_warn(ab, "HTT PKTLOG MSG too short: %u\n", skb->len);
+		return;
+	}
+
 	msg = (struct ath12k_htt_pktlog_msg *)skb->data;
+	payload_size = le32_get_bits(msg->header, HTT_T2H_PKTLOG_PAYLOAD_SIZE);
+	payload_avail = skb->len - sizeof(msg->header);
+	if (payload_size > payload_avail) {
+		ath12k_warn(ab,
+			    "HTT PKTLOG MSG invalid payload size: %u > %u\n",
+			    payload_size, payload_avail);
+		return;
+	}
 
 	pdev_id = le32_get_bits(msg->header, HTT_T2H_PKTLOG_PDEV_ID);
 	if (pdev_id < 1) {
-		ath12k_warn(ab, "HTT PKTLOG MSG has invalid pdev id");
+		ath12k_warn(ab, "HTT PKTLOG MSG has invalid pdev id : %d\n",
+			    pdev_id);
 		return;
 	}
 
@@ -2209,12 +2224,11 @@ ath12k_htt_pktlog_tx_handler(struct ath12k_base *ab, struct sk_buff *skb)
 		return;
 	}
 
-	payload_size = le32_get_bits(msg->header, HTT_T2H_PKTLOG_PAYLOAD_SIZE);
 	trace_ath12k_htt_pktlog_tx_handler(ar, msg->payload, payload_size,
 					   ar->ab->pktlog_defs_checksum);
 
 	if (ar->debug.is_pkt_logging)
-		ath12k_htt_pktlog_process(ar, (u8 *)msg->payload);
+		ath12k_htt_pktlog_process(ar, (u8 *)msg->payload, payload_size);
 }
 
 static void ath12k_htt_t2h_ppdu_id_fmt_handler(struct ath12k_dp *dp,
