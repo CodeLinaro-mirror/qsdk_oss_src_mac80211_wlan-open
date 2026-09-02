@@ -4232,7 +4232,8 @@ struct ath12k_wmi_uhr_omp_link_params {
 	bool npca_enable;
 	u8 npca_switch_delay;
 	u8 npca_switch_back_delay;
-	bool npca_mode_update;
+	bool npca_mode_update; /* set MODE_UPDATE bit in WMI NPCA caps word */
+	bool npca_update;      /* gate for including NPCA TLV in WMI command */
 	bool dso_enable;
 	bool dso_mode_update;
 	u8 dso_subband;
