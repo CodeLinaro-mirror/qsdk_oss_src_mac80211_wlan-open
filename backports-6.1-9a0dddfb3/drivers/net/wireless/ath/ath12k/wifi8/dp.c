@@ -1023,7 +1023,15 @@ static void ath12k_wifi8_dp_vif_configure(struct ath12k_dp *dp,
 	if (optype == ATH12K_DP_OP_DEINIT) {
 		if (dp_vif->bank_id != DP_INVALID_BANK_ID)
 			ath12k_dp_tx_put_bank_profile(central_dp, dp_vif->bank_id);
-
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+		if (dp_vif->is_wds_4addr) {
+			printk(KERN_ERR "WDS_IPA_DBG: %s: DEINIT WDS AP_VLAN"
+			       " ahvif_id=%u bank_id=%d, clearing TCL search"
+			       " index table slot\n",
+			       __func__, dp_vif->ahvif_id, dp_vif->bank_id);
+			ath12k_wifi8_dp_ipa_wds_bank_srch_clear(central_ab, dp_vif);
+		}
+#endif
 		/* Reset VDEV multicast packet control bits for this vdev_id
 		 * to prevent stale entry on vdev_id reuse.
 		 */

@@ -1674,7 +1674,9 @@ void ieee80211_txq_remove_vlan(struct ieee80211_local *local,
 
 	if (WARN_ON(sdata->vif.type != NL80211_IFTYPE_AP_VLAN))
 		return;
-
+	
+	if (ieee80211_hw_check(&local->hw, HAS_TX_QUEUE))
+		return;
 	ap = container_of(sdata->bss, struct ieee80211_sub_if_data, u.ap);
 
 	if (!ap->vif.txq)

@@ -22260,7 +22260,31 @@ ppe_vp_config:
 			goto exit;
 		}
 	}
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	if (vif->type == NL80211_IFTYPE_AP_VLAN &&
+	    ahvif->dp_vif.ppe_vp_num == ATH12K_INVALID_PPE_VP_NUM) {
+		struct ath12k_vlan_iface *ipa_vlan_iface;
 
+		ipa_vlan_iface = kzalloc(sizeof(*ipa_vlan_iface), GFP_ATOMIC);
+		if (!ipa_vlan_iface) {
+			printk(KERN_ERR "WDS_IPA_DBG: %s: vlan_iface alloc failed netdev=%s\n",
+			       __func__,
+			       wdev->netdev ? wdev->netdev->name : "NULL");
+			return -ENOMEM;
+		}
+
+		ipa_vlan_iface->parent_vif = vlan_master_vif;
+		if (!links_map && vlan_master_ahvif)
+			links_map = vlan_master_ahvif->links_map;
+		ahvif->links_map = links_map;
+		ahvif->vlan_iface = ipa_vlan_iface;
+		memset(ahvif->vlan_iface->grp_key_slot,
+		       ATH12K_GROUP_KEY_SLOT_INVALID,
+		       sizeof(ahvif->vlan_iface->grp_key_slot));
+
+		goto exit;
+	}
+#endif /* CPTCFG_EXT_IPA_OFFLOAD */
 	/* Allocate Default Queue now and reassign during actual vdev create */
 	vif->cab_queue = ATH12K_HW_DEFAULT_QUEUE;
 	for (i = 0; i < ARRAY_SIZE(vif->hw_queue); i++)
@@ -22293,6 +22317,102 @@ exit:
 	return 0;
 }
 EXPORT_SYMBOL(ath12k_mac_op_add_interface);
+/**
+ * ath12k_ahvif_from_wdev - get ath12k_vif for any interface type from wdev
+ *
+ * wdev_to_ieee80211_vif() returns NULL for AP_VLAN (IEEE80211_SDATA_IN_DRIVER
+ * not set).  wdev_to_ieee80211_vif_vlan() always returns the MASTER AP's vif
+ * for AP_VLAN — it is hardcoded to walk to master->vif in the AP_VLAN case.
+ *
+ * Use IEEE80211_WDEV_TO_SUB_IF() directly to get the interface's own sdata
+ * and therefore its own drv_priv (= ahvif), regardless of interface type.
+ */
+struct ath12k_vif *ath12k_ahvif_from_wdev(struct wireless_dev *wdev)
+{
+	struct ieee80211_sub_if_data *sdata;
+
+	if (!wdev)
+		return NULL;
+	sdata = IEEE80211_WDEV_TO_SUB_IF(wdev);
+	if (!sdata)
+		return NULL;
+	return ath12k_vif_to_ahvif(&sdata->vif);
+}
+EXPORT_SYMBOL(ath12k_ahvif_from_wdev);
+
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+/**
+ * ath12k_mac_ipa_wds_apvlan_connect - fire WLAN_AP_CONNECT to IPA for
+ *   a WDS STA AP_VLAN interface.
+ *
+ * Called from wifi8/hw.c sta_set_4addr() AFTER wds_bank_srch_setup()
+ * has set dp_vif->bank_id and programmed the TCL PPE search-index table.
+ *
+ * This ordering is critical: system_unbound_wq (used by apvlan_connect)
+ * runs without wiphy lock and could start on another CPU at any time
+ * after queue_work() is called.  By deferring the call to here we
+ * guarantee that bank_id and the TCL table are ready before the
+ * workqueue worker executes set_vp_num().
+ */
+void ath12k_mac_ipa_wds_apvlan_connect(struct ieee80211_hw *hw,
+				       struct ath12k_vif *ahvif)
+{
+	struct ath12k_vlan_iface *vlan_iface = ahvif->vlan_iface;
+	struct ath12k_vif *parent_ahvif;
+
+	if (!vlan_iface || !vlan_iface->parent_vif) {
+		printk(KERN_ERR "WDS_IPA_DBG: %s: vlan_iface=%p or parent_vif NULL"
+		       " ahvif_id=%u\n", __func__, vlan_iface,
+		       ahvif->dp_vif.ahvif_id);
+		return;
+	}
+
+	parent_ahvif = ath12k_vif_to_ahvif(vlan_iface->parent_vif);
+	if (!parent_ahvif)
+		return;
+
+	ath12k_dp_ipa_apvlan_connect(hw, ahvif, parent_ahvif,
+				     vlan_iface->parent_vif, ahvif->vif);
+}
+EXPORT_SYMBOL(ath12k_mac_ipa_wds_apvlan_connect);
+
+/**
+ * ath12k_mac_ipa_wds_apvlan_disconnect - fire WLAN_AP_DISCONNECT to IPA for
+ *   a WDS STA AP_VLAN interface being torn down.
+ *
+ * Called from ath12k_mac_op_remove_interface()'s NL80211_IFTYPE_AP_VLAN
+ * per-link loop, mirroring the CPTCFG_ATH12K_PPE_DS_SUPPORT teardown call
+ * (ath12k_ppeds_detach_link_apvlan_vif()) at the same call site. Without
+ * this, ipa_ctx->vdev_to_iface[ahvif_id] is never reset, so a later WDS
+ * STA that recycles this ahvif_id gets its IPA registration silently
+ * skipped ("Vdev already connected").
+ *
+ * @ahvif: the AP_VLAN's own ath12k_vif (session_id source, see
+ *         ath12k_ipa_enqueue_evt_apvlan())
+ * @parent_arvif: parent AP's link_vif for this link_id — already resolved
+ *                by the caller's per-link loop
+ * @vlan_master_vif: parent AP's ieee80211_vif (MLO check)
+ */
+void ath12k_mac_ipa_wds_apvlan_disconnect(struct ath12k_vif *ahvif,
+					  struct ath12k_link_vif *parent_arvif,
+					  struct ieee80211_vif *vlan_master_vif)
+{
+	printk(KERN_ERR "WDS_IPA_DBG: %s: ahvif_id=%u parent_arvif=%p"
+	       " vdev_id=%u link_id=%u\n",
+	       __func__, ahvif->dp_vif.ahvif_id, parent_arvif,
+	       parent_arvif->vdev_id, parent_arvif->link_id);
+
+	printk(KERN_ERR "WDS_IPA_DBG: %s: ENTER ahvif_id=%u"
+	       " calling ath12k_dp_ipa_apvlan_disconnect\n",
+	       __func__, ahvif->dp_vif.ahvif_id);
+	ath12k_dp_ipa_apvlan_disconnect(ahvif, parent_arvif, ahvif->vif,
+					vlan_master_vif);
+	printk(KERN_ERR "WDS_IPA_DBG: %s: EXIT ahvif_id=%u"
+	       " ath12k_dp_ipa_apvlan_disconnect RETURNED\n",
+	       __func__, ahvif->dp_vif.ahvif_id);
+}
+EXPORT_SYMBOL(ath12k_mac_ipa_wds_apvlan_disconnect);
+#endif /* CPTCFG_EXT_IPA_OFFLOAD */
 
 void ath12k_mac_vif_unref(struct ath12k_dp *dp, struct ieee80211_vif *vif)
 {
@@ -22518,6 +22638,10 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 
 	lockdep_assert_wiphy(hw->wiphy);
 
+	printk(KERN_ERR "WDS_IPA_DBG: %s: ENTER vif=%p type=%d ahvif=%p"
+	       " ahvif_id=%u\n", __func__, vif, vif->type, ahvif,
+	       ahvif->dp_vif.ahvif_id);
+
 	if (vif->type == NL80211_IFTYPE_AP) {
 		ath12k_me_db_deinit(&ahvif->dp_vif);
 		ath12k_dbg(NULL, ATH12K_DBG_MAC,
@@ -22535,10 +22659,21 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 	if (vif->type == NL80211_IFTYPE_AP_VLAN) {
 		if (!ahvif->vlan_iface) {
 			pr_err("vlan_iface is null\n");
+				printk(KERN_ERR "WDS_IPA_DBG: %s: AP_VLAN ahvif_id=%u"
+			       	" vlan_iface NULL at ENTRY -- jumping to"
+			       	" free_tstats, per-link loop and IPA disconnect"
+			       	" will be SKIPPED\n", __func__, ahvif->dp_vif.ahvif_id);
 			goto free_tstats;
 		}
 		vlan_master_vif = ahvif->vlan_iface->parent_vif;
 		vlan_master_ahvif = ath12k_vif_to_ahvif(vlan_master_vif);
+		printk(KERN_ERR "WDS_IPA_DBG: %s: AP_VLAN ahvif_id=%u"
+		       	" vlan_master_vif=%p vlan_master_ahvif=%p"
+		       	" vlan_master_ahvif_id=%u links_map=0x%x\n",
+		       	__func__, ahvif->dp_vif.ahvif_id, vlan_master_vif,
+		       	vlan_master_ahvif,
+		       	vlan_master_ahvif ? vlan_master_ahvif->dp_vif.ahvif_id : 0xFF,
+		       	vlan_master_ahvif ? vlan_master_ahvif->links_map : 0);
 	} else {
 		vlan_master_ahvif = ahvif;
 	}
@@ -22548,12 +22683,30 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 		 */
 		ath12k_ahvif_put_link_cache(ahvif, link_id);
 		arvif = wiphy_dereference(hw->wiphy, vlan_master_ahvif->link[link_id]);
+		if (vif->type == NL80211_IFTYPE_AP_VLAN)
+			printk(KERN_ERR "WDS_IPA_DBG: %s: AP_VLAN ahvif_id=%u"
+			       	" per-link loop link_id=%u arvif=%p is_created=%d\n",
+			       	__func__, ahvif->dp_vif.ahvif_id, link_id, arvif,
+			       	arvif ? arvif->is_created : -1);
 		if (!arvif || !arvif->is_created)
 			continue;
 
 		if (vif->type == NL80211_IFTYPE_AP_VLAN) {
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 			ath12k_ppeds_detach_link_apvlan_vif(arvif, ahvif->vlan_iface, link_id);
+#endif
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+			printk(KERN_ERR "WDS_IPA_DBG: %s: AP_VLAN ahvif_id=%u"
+			       	" link_id=%u calling"
+			       	" ath12k_mac_ipa_wds_apvlan_disconnect arvif=%p"
+			       	" vdev_id=%u\n", __func__, ahvif->dp_vif.ahvif_id,
+			       	link_id, arvif, arvif->vdev_id);
+			ath12k_mac_ipa_wds_apvlan_disconnect(ahvif, arvif,
+							     				vlan_master_vif);
+			printk(KERN_ERR "WDS_IPA_DBG: %s: AP_VLAN ahvif_id=%u"
+			       " link_id=%u ath12k_mac_ipa_wds_apvlan_disconnect"
+			       " RETURNED\n", __func__, ahvif->dp_vif.ahvif_id,
+			       link_id);
 #endif
 			ath12k_group_slot_free(arvif, ahvif);
 			continue;
@@ -22614,26 +22767,44 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 		ath12k_mac_remove_link_interface(hw, arvif);
 		ath12k_mac_unassign_link_vif(arvif);
 	}
-
+	/*
+	 * Free the ahvif_id bitmap slot here, at the same point as before
+	 * (so add_interface() can reuse it as soon as it always could) --
+	 * but leave ahvif->dp_vif.ahvif_id itself set to the real value
+	 * until AFTER DEINIT returns below: DEINIT reads it (e.g. to clear
+	 * the WDS TCL search-index slot) and would always see
+	 * ATH12K_INVALID_AHVIF_ID (0), clearing the wrong slot, if we
+	 * cleared the field here too.
+	 */
 	if (ahvif->dp_vif.ahvif_id != ATH12K_INVALID_AHVIF_ID) {
+		printk(KERN_ERR "WDS_IPA_DBG: %s: FREEING ahvif_id=%u back to"
+		       " bitmap -- now reusable by a NEW add_interface() call\n",
+		       __func__, ahvif->dp_vif.ahvif_id);
 		ah->free_ahvif_id_map |= 1ULL << ahvif->dp_vif.ahvif_id;
-		ahvif->dp_vif.ahvif_id = ATH12K_INVALID_AHVIF_ID;
 	}
 
-	ah->free_map_id |= 1 << ahvif->map_id;
-
+	printk(KERN_ERR "WDS_IPA_DBG: %s: calling"
+	       " ath12k_dp_arch_dp_vif_configure(DEINIT) ahvif=%p\n",
+	       __func__, ahvif);
 	ath12k_dp_arch_dp_vif_configure(ah->ag->dp_hw_grp, ahvif,
 					ATH12K_DP_OP_DEINIT);
-	dp_vif = &ahvif->dp_vif;
+	printk(KERN_ERR "WDS_IPA_DBG: %s:"
+	       " ath12k_dp_arch_dp_vif_configure(DEINIT) RETURNED ahvif=%p\n",
+	       __func__, ahvif);
+
+	ahvif->dp_vif.ahvif_id = ATH12K_INVALID_AHVIF_ID;
+        dp_vif = &ahvif->dp_vif;
 	ath12k_dp_free_proto_stats_vif(dp_vif->stats);
 
 free_vlan_iface:
+	printk(KERN_ERR "WDS_IPA_DBG: %s: kfree(vlan_iface=%p) ahvif=%p\n",
+	    __func__, ahvif->vlan_iface, ahvif);
 	kfree(ahvif->vlan_iface);
 	ahvif->vlan_iface = NULL;
 free_tstats:
 	free_percpu(ahvif->tstats);
 	ahvif->tstats = NULL;
-
+	printk(KERN_ERR "WDS_IPA_DBG: %s: EXIT ahvif=%p\n", __func__, ahvif);
 }
 EXPORT_SYMBOL(ath12k_mac_op_remove_interface);
 

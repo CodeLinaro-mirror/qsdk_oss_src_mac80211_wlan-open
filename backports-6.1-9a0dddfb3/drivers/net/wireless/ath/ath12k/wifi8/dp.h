@@ -353,4 +353,12 @@ int ath12k_wifi8_fetch_smd_ctx(struct ath12k_base *ab, struct ath12k_dp_hw *dp_h
 struct ath12k_dp *ath12k_wifi8_dp_init(struct ath12k_base *ab);
 void ath12k_wifi8_dp_deinit(struct ath12k_dp *dp);
 void ath12k_wifi8_srng_hw_ring_disable(struct ath12k_base *ab);
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+/* WDS-EXT: clear TCL_PPE_INDEX_MAPPING_TABLE[slot] programmed by
+ * ath12k_wifi8_dp_ipa_wds_bank_srch_setup(); called from
+ * ath12k_wifi8_dp_vif_configure(ATH12K_DP_OP_DEINIT) for AP_VLAN ahvifs.
+ */
+void ath12k_wifi8_dp_ipa_wds_bank_srch_clear(struct ath12k_base *central_ab,
+					     					struct ath12k_dp_vif *dp_vif);
+#endif
 #endif
