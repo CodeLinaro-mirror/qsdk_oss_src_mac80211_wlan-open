@@ -10887,9 +10887,20 @@ static int ath12k_start_scan(struct ath12k *ar,
 	/* If we failed to start the scan, return error code at
 	 * this point.  This is probably due to some issue in the
 	 * firmware, but no need to wedge the driver due to that...
+	 *
+	 * On success, ath12k_wmi_event_scan_started() transitions the state
+	 * to ATH12K_SCAN_RUNNING before completing ar->scan.started, so
+	 * the state will be RUNNING here.
+	 *
+	 * On failure, ath12k_wmi_event_scan_start_failed() completes
+	 * ar->scan.started without changing the state (it stays STARTING),
+	 * and queues vdev_clean_wk asynchronously.  Since vdev_clean_wk
+	 * cannot run until the wiphy lock is released (after this function
+	 * returns), the state is still STARTING here — treat it as failure.
 	 */
 	spin_lock_bh(&ar->data_lock);
-	if (ar->scan.state == ATH12K_SCAN_IDLE) {
+	if (ar->scan.state == ATH12K_SCAN_IDLE ||
+	    ar->scan.state == ATH12K_SCAN_STARTING) {
 		spin_unlock_bh(&ar->data_lock);
 		return -EINVAL;
 	}
