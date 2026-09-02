@@ -1431,6 +1431,53 @@ int ath12k_wait_pending_deauth_disassoc_tx(struct ath12k *ar, const u8 *addr,
 }
 EXPORT_SYMBOL(ath12k_wait_pending_deauth_disassoc_tx);
 
+void ath12k_arvif_deauth_disassoc_tx_dec(struct ath12k *ar,
+					 struct ath12k_skb_cb *skb_cb)
+{
+	struct ath12k_vif *ahvif;
+	struct ath12k_link_vif *arvif;
+
+	rcu_read_lock();
+	if (!skb_cb->vif)
+		goto out;
+
+	if (skb_cb->link_id >= ATH12K_NUM_MAX_LINKS)
+		goto out;
+
+	ahvif = ath12k_vif_to_ahvif(skb_cb->vif);
+	if (!(ahvif->links_map & BIT(skb_cb->link_id)))
+		goto out;
+
+	arvif = rcu_dereference(ahvif->link[skb_cb->link_id]);
+	if (!arvif)
+		goto out;
+
+	atomic_dec_if_positive(&arvif->pending_deauth_disassoc_tx);
+out:
+	rcu_read_unlock();
+	wake_up(&ar->txmgmt_empty_waitq);
+}
+EXPORT_SYMBOL(ath12k_arvif_deauth_disassoc_tx_dec);
+
+int ath12k_wait_pending_deauth_disassoc_tx_arvif(struct ath12k_link_vif *arvif,
+						 unsigned long timeout_ms)
+{
+	struct ath12k *ar = arvif->ar;
+
+	if (!wait_event_timeout(ar->txmgmt_empty_waitq,
+				!atomic_read(&arvif->pending_deauth_disassoc_tx),
+				msecs_to_jiffies(timeout_ms))) {
+		ath12k_err(ar->ab,
+			   "timed out waiting for pending deauth/disassoc tx(%d), vdev_id %d, link addr %pM proceeding with peer delete all\n",
+			   atomic_read(&arvif->pending_deauth_disassoc_tx),
+			   arvif->vdev_id, arvif->addr);
+		return -ETIMEDOUT;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_wait_pending_deauth_disassoc_tx_arvif);
+
 struct ath12k_link_sta *ath12k_link_sta_find_by_addr_vdev_id(struct ath12k *ar,
 							     const u8 *addr,
 							     u32 vdev_id)

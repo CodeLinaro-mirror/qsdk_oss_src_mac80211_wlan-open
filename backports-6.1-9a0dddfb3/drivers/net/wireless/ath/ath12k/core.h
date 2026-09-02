@@ -1042,6 +1042,12 @@ struct ath12k_link_vif {
 	 * decrement mlo_peer_count by the correct count.  Cleared after use.
 	 */
 	u32 num_ml_peers_del_all;
+	/* Number of deauth/disassoc mgmt frames submitted to firmware for
+	 * this vdev that have not yet completed tx (ack/fail).  Checked
+	 * before ath12k_wmi_peer_delete_all() so it does not race ahead of
+	 * an in-flight deauth/disassoc.
+	 */
+	atomic_t pending_deauth_disassoc_tx;
 	struct wiphy_work update_bcn_tx_status_work;
 	struct wiphy_work tpc_ie_eirp_work;
 	struct ath12k_vap_cfg vap_cfg;
