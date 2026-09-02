@@ -13412,9 +13412,15 @@ static int nl80211_start_radar_detection(struct sk_buff *skb,
 		cfg80211_cac_event(dev, &chandef,
 				NL80211_RADAR_CAC_FINISHED,
 				GFP_KERNEL, link_id);
-		/* Set cac_started true for ieee80211_link_release_channel() */
-		wdev->links[link_id].cac_started = true;
-		rdev_end_cac(rdev, dev, link_id);
+#ifdef CPTCFG_QCN_EXTN
+		if (!cfg80211_support_bootup_cac(wiphy)) {
+#endif /* CPTCFG_QCN_EXTN */
+			/* Set cac_started true for ieee80211_link_release_channel() */
+			wdev->links[link_id].cac_started = false;
+			rdev_end_cac(rdev, dev, link_id);
+#ifdef CPTCFG_QCN_EXTN
+		}
+#endif /* CPTCFG_QCN_EXTN */
 	}
 unlock:
 	return err;
@@ -13600,7 +13606,6 @@ static int nl80211_channel_switch(struct sk_buff *skb, struct genl_info *info)
 	bool need_new_beacon = false;
 	bool need_handle_dfs_flag = true;
 	u32 cs_count;
-	bool is_skip_cac_enabled;
 #ifdef CPTCFG_QCN_EXTN
 	struct cfg80211_scan_radio_pwr_nla scan_radio_pwr_nla = {};
 #endif
@@ -13730,15 +13735,6 @@ skip_beacons:
 		}
 	}
 
-	is_skip_cac_enabled = (info->attrs[NL80211_ATTR_SKIP_CAC] &&
-			nla_get_flag(info->attrs[NL80211_ATTR_SKIP_CAC]));
-	if (is_skip_cac_enabled) {
-		cfg80211_set_dfs_state(&rdev->wiphy, &params.chandef,
-				       NL80211_DFS_AVAILABLE);
-		memcpy(&rdev->cac_done_chandef, &params.chandef, sizeof(params.chandef));
-		queue_work(cfg80211_wq, &rdev->propagate_cac_done_wk);
-		cfg80211_sched_dfs_chan_update(rdev);
-	}
 	err = cfg80211_chandef_dfs_required(wdev->wiphy,
 					    &params.chandef,
 					    wdev->iftype);
