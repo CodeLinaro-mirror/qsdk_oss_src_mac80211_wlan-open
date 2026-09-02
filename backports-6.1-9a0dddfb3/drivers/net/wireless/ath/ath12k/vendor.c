@@ -17403,19 +17403,28 @@ static int ath12k_vendor_spectral_scan_start(struct wiphy *wiphy,
 
 	if (nl_mode == QCA_WLAN_VENDOR_SPECTRAL_SCAN_MODE_AGILE) {
 		ret = ath12k_vendor_spectral_validate_agile(wiphy, ar, tb,
-						    req_type);
+							    req_type);
 		if (ret)
 			return ret;
-
-		ath12k_warn(ar->ab,
-			    "spectral scan: agile start path not implemented yet\n");
-		return ath12k_spectral_scan_start_reply_error(wiphy,
-				QCA_WLAN_VENDOR_SPECTRAL_SCAN_ERR_MODE_UNSUPPORTED);
+		/* Validation passed, continue to shared param-update
+		 * and configure/start blocks below.
+		 */
 	}
 
 	/* Step 1: update scan params in software if request includes CONFIG. */
 	if (req_type != QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_REQUEST_TYPE_SCAN) {
 		struct ath12k_spectral_params *p = &ar->spectral.params;
+		bool active;
+
+		spin_lock_bh(&ar->spectral.lock);
+		active = ar->spectral.scan_active;
+		spin_unlock_bh(&ar->spectral.lock);
+		if (active && nl_mode == QCA_WLAN_VENDOR_SPECTRAL_SCAN_MODE_AGILE) {
+			ath12k_warn(ar->ab,
+				    "spectral scan_start: rejecting agile param update while scan is active\n");
+			return ath12k_spectral_scan_start_reply_error(wiphy,
+				QCA_WLAN_VENDOR_SPECTRAL_SCAN_ERR_PARAM_INVALID_VALUE);
+		}
 
 		/* Validate user-supplied attrs BEFORE storing. The ATTR_U32 macro
 		 * below unconditionally writes into *p, so a post-store check
@@ -17609,24 +17618,55 @@ static int ath12k_vendor_spectral_scan_start(struct wiphy *wiphy,
 
 	/* Step 2: configure firmware and trigger scan if request includes SCAN. */
 	if (req_type != QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_REQUEST_TYPE_CONFIG) {
+		enum spectral_scan_mode smode =
+			(nl_mode == QCA_WLAN_VENDOR_SPECTRAL_SCAN_MODE_AGILE) ?
+			SPECTRAL_SCAN_MODE_AGILE :
+			SPECTRAL_SCAN_MODE_NORMAL;
+		bool already_active;
+
 		/* Don't restart a running scan; collected samples would be lost. */
-		if (ar->spectral.scan_active) {
+		if (smode == SPECTRAL_SCAN_MODE_AGILE) {
+			spin_lock_bh(&ar->spectral.lock);
+			already_active = ar->spectral.scan_active;
+			spin_unlock_bh(&ar->spectral.lock);
+			if (already_active) {
+				ath12k_warn(ar->ab,
+					    "spectral scan_start: agile scan already active, rejecting\n");
+				return ath12k_spectral_scan_start_reply_error(wiphy,
+				QCA_WLAN_VENDOR_SPECTRAL_SCAN_ERR_PARAM_INVALID_VALUE);
+			}
+		} else if (ar->spectral.scan_active) {
 			ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
 				   "spectral scan_start: scan already active, ignoring\n");
 			return 0;
 		}
 
 		ar->spectral.samples_done = 0;
-		ret = ath12k_spectral_configure_scan_params(ar,
-							    SPECTRAL_SCAN_MODE_NORMAL);
+		ret = ath12k_spectral_configure_scan_params(ar, smode);
 		if (ret)
 			return ret;
+
 		ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
-			   "spectral scan_start: configure_scan_params(NORMAL) OK\n");
+			   "spectral scan_start: configure_scan_params(%s) OK\n",
+			   smode == SPECTRAL_SCAN_MODE_AGILE ? "AGILE" : "NORMAL");
 
 		ret = ath12k_spectral_start_scan(ar);
-		if (ret)
+		if (ret) {
+			if (smode == SPECTRAL_SCAN_MODE_AGILE) {
+				int stop_ret;
+
+				ath12k_warn(ar->ab,
+					    "spectral scan_start: agile start_scan failed (%d), rolling back\n",
+					    ret);
+				stop_ret = ath12k_spectral_stop_scan(ar);
+				if (stop_ret)
+					ath12k_warn(ar->ab,
+						    "spectral scan_start: agile rollback stop_scan failed (%d)\n",
+						    stop_ret);
+				ath12k_spectral_rollback_agile(ar);
+			}
 			return ret;
+		}
 		ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
 			   "spectral scan_start: start_scan OK\n");
 	}
@@ -17751,6 +17791,27 @@ static int ath12k_vendor_spectral_get_config(struct wiphy *wiphy,
 	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_COMPLETION_TIMEOUT,
 		    p->completion_timeout_us);
 
+	/* Return current scan mode so userspace knows whether NORMAL or
+	 * AGILE spectral scan is configured.
+	 */
+	{
+		enum spectral_scan_mode cur_mode;
+
+		/* ar->spectral.mode is protected by ar->spectral.lock
+		 * (spinlock_bh), NOT by wiphy_lock. Using wiphy_lock here
+		 * caused a deadlock when wiphy_lock was held by another task
+		 * while this handler tried to acquire it.
+		 */
+		spin_lock_bh(&ar->spectral.lock);
+		cur_mode = ar->spectral.mode;
+		spin_unlock_bh(&ar->spectral.lock);
+
+		nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_MODE,
+			    (cur_mode == SPECTRAL_SCAN_MODE_AGILE) ?
+			    QCA_WLAN_VENDOR_SPECTRAL_SCAN_MODE_AGILE :
+			    QCA_WLAN_VENDOR_SPECTRAL_SCAN_MODE_NORMAL);
+	}
+
 	return cfg80211_vendor_cmd_reply(skb);
 }
 
@@ -17809,7 +17870,7 @@ static int ath12k_vendor_spectral_get_cap(struct wiphy *wiphy,
 	if (!ar || !ar->spectral.enabled)
 		return -EPERM;
 
-	skb = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, 512);
+	skb = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, 768);
 	if (!skb) {
 		ath12k_warn(ar->ab, "spectral get_cap: skb alloc failed\n");
 		return -ENOMEM;
@@ -17848,6 +17909,32 @@ static int ath12k_vendor_spectral_get_cap(struct wiphy *wiphy,
 		    0);
 	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CAP_NUM_DETECTORS_320_MHZ,
 		    ar->ab->hw_params->spectral.supports_320mhz ? 1 : 0);
+
+	/* Agile spectral scan capability flags, derived from chainmask table
+	 * (populated in wmi.c via WMI_SERVICE_READY_EXT2 chainmask caps).
+	 * Only emit the flag attribute when the capability is actually supported
+	 */
+	{
+		struct ath12k_pdev_cap *cap = &ar->pdev->cap;
+
+		if (cap->agile_spectral_cap)
+			nla_put_flag(skb,
+			QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CAP_AGILE_SPECTRAL);
+		if (cap->agile_spectral_cap_160)
+			nla_put_flag(skb,
+			QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CAP_AGILE_SPECTRAL_160);
+		if (cap->agile_spectral_cap_80p80)
+			nla_put_flag(skb,
+			QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CAP_AGILE_SPECTRAL_80_80);
+		if (cap->agile_spectral_cap_320)
+			nla_put_flag(skb,
+			QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CAP_AGILE_SPECTRAL_320);
+
+		ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+			   "spectral get_cap: agile=%d agile_160=%d agile_80p80=%d agile_320=%d\n",
+			   cap->agile_spectral_cap, cap->agile_spectral_cap_160,
+			   cap->agile_spectral_cap_80p80, cap->agile_spectral_cap_320);
+	}
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
 		   "spectral get_cap: SUCCESS iface=%s\n",

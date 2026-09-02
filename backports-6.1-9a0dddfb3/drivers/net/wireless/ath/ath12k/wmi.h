@@ -8551,6 +8551,10 @@ struct ath12k_wmi_vdev_spectral_enable_cmd {
 	__le32 vdev_id;
 	__le32 trigger_cmd;
 	__le32 enable_cmd;
+	/* scan_mode: 0=NORMAL, 1=AGILE. Required for agile spectral scan;
+	 * without it FW ignores cf1/chan_freq and runs normal mode only.
+	 */
+	__le32 scan_mode;
 } __packed;
 
 struct ath12k_wmi_pdev_dma_ring_cfg_arg {
@@ -8632,6 +8636,9 @@ struct ath12k_wmi_pdev_sscan_chan_info {
 	u32 sscan_puncture_20mhz_bitmap;
 } __packed;
 
+/* ath12k_wmi_pdev_sscan_per_detector_info - TLV payload for
+ * WMI_TAG_PDEV_SSCAN_PER_DETECTOR_INFO.
+ */
 struct ath12k_wmi_pdev_sscan_per_detector_info {
 	__le32 tlv_header;
 	u32 detector_id;
