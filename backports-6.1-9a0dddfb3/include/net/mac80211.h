@@ -851,6 +851,9 @@ struct ieee80211_uhr_config {
  * @npca_mode_update: true if NPCA was already enabled and this is a
  *	parameter-only update (switch_delay or switch_back_delay changed)
  *	rather than a fresh enable, disable, or no-op re-send
+ * @npca_update: true if any NPCA parameter was updated in this
+ *	ieee80211_uhr_mode_update() call, regardless of whether NPCA was
+ *	already active; used by the driver to gate WMI NPCA TLV inclusion
  */
 struct ieee80211_bss_conf {
 	struct ieee80211_vif *vif;
@@ -985,6 +988,7 @@ struct ieee80211_bss_conf {
 	struct cfg80211_smd_params smd_params;
 	struct ieee80211_bss_npca_params npca;
 	bool npca_mode_update;
+	bool npca_update;
 	struct cfg80211_uhr_dso_params dso;
 };
 
