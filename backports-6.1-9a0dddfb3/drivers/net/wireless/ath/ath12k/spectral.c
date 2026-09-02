@@ -1674,6 +1674,7 @@ void ath12k_spectral_deinit(struct ath12k_base *ab)
  *
  * Returns: Validated scan count value
  */
+#ifdef CPTCFG_QCN_EXTN
 static u32 ath12k_spectral_validate_scan_count_max(struct ath12k_base *ab,
 						   u32 ini_value,
 						   int pdev_idx)
@@ -1704,6 +1705,7 @@ static u32 ath12k_spectral_validate_scan_count_max(struct ath12k_base *ab,
 
 	return clamped_scan_count;
 }
+#endif /* CPTCFG_QCN_EXTN */
 
 static inline int ath12k_spectral_debug_register(struct ath12k *ar)
 {
@@ -1818,6 +1820,7 @@ int ath12k_spectral_init(struct ath12k_base *ab)
 		spin_unlock_bh(&sp->lock);
 
 		/* Read spectral scan count max from chip-specific INI.*/
+#ifdef CPTCFG_QCN_EXTN
 		sp->scan_count_max =
 			ath12k_spectral_validate_scan_count_max(ab,
 				ath12k_cfg_get(ab,
@@ -1829,6 +1832,9 @@ int ath12k_spectral_init(struct ath12k_base *ab)
 			    sp->scan_count_max, i,
 			    ATH12K_SPECTRAL_SCAN_COUNT_MIN,
 			    ATH12K_SPECTRAL_SCAN_COUNT_MAX_HW_LIMIT);
+#else
+		sp->scan_count_max = ATH12K_SPECTRAL_SCAN_COUNT_MAX_DEFAULT;
+#endif /* CPTCFG_QCN_EXTN */
 
 		ath12k_spectral_init_param_min_max(ar);
 

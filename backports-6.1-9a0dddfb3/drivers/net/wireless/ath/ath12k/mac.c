@@ -16465,7 +16465,9 @@ ath12k_mac_op_sta_set_mapc_params(struct ieee80211_hw *hw,
 	}
 
 	arsta = &ath12k_sta_to_ahsta(sta)->deflink;
+#ifdef CPTCFG_QCN_EXTN
 	ath12k_mapc_cache_update_extn(arsta, ar, &arg);
+#endif /* CPTCFG_QCN_EXTN */
 
 	return 0;
 }
