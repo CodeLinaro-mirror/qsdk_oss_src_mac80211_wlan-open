@@ -1933,9 +1933,12 @@ ath12k_dp_get_l4_protocol_subtype(struct sk_buff *skb)
 }
 
 static inline enum ath12k_dp_pkt_l5_proto_type
-ath12k_dp_get_dhcp_subtype(u8 *data)
+ath12k_dp_get_dhcp_subtype(u8 *data, unsigned int len)
 {
 	enum ath12k_dp_pkt_l5_proto_type subtype = DP_PKT_TYPE_DHCP_NS;
+
+	if (len <= DHCP_OPTION53_STATUS_OFFSET)
+		return subtype;
 
 	if (data[DHCP_OPTION53_OFFSET] == DHCP_OPTION53 &&
 	    data[DHCP_OPTION53_LENGTH_OFFSET] == DHCP_OPTION53_LENGTH) {
@@ -1963,7 +1966,7 @@ ath12k_dp_get_dhcp_subtype(u8 *data)
 static inline enum ath12k_dp_pkt_l5_proto_type
 ath12k_dp_get_l5_protocol_subtype(struct sk_buff *skb)
 {
-	return ath12k_dp_get_dhcp_subtype(skb->data);
+	return ath12k_dp_get_dhcp_subtype(skb->data, skb->len);
 }
 
 static inline u8

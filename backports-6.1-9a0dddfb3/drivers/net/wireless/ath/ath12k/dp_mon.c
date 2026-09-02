@@ -976,7 +976,8 @@ void ath12k_dp_mon_rx_update_advance_stats(struct ath12k_rx_ppdu_stats *rx_stats
 				mu->ppdu_nss[nss - 1] += 1;
 		}
 	}
-	rx_stats->ppdu_reception[ppdu_info->reception_type] += 1;
+	if (ppdu_info->reception_type < HAL_RX_RECEPTION_TYPE_MAX)
+		rx_stats->ppdu_reception[ppdu_info->reception_type] += 1;
 }
 
 static void
@@ -1548,8 +1549,10 @@ ath12k_dp_mon_rx_update_user_ext_stats(struct ath12k_rx_peer_stats *rx_stats,
 	if (ppdu_info->reception_type ==
 	    HAL_RX_RECEPTION_TYPE_MU_OFDMA ||
 	    ppdu_info->reception_type ==
-	    HAL_RX_RECEPTION_TYPE_MU_OFDMA_MIMO)
-		rx_stats->ru_alloc_cnt[ru_sz] += num_msdu;
+	    HAL_RX_RECEPTION_TYPE_MU_OFDMA_MIMO) {
+		if (ru_sz < HAL_RX_RU_ALLOC_TYPE_MAX)
+			rx_stats->ru_alloc_cnt[ru_sz] += num_msdu;
+	}
 
 	if (user_stats->nss > 0 && user_stats->nss <= HAL_RX_MAX_NSS) {
 		pkt->nss_count[user_stats->nss - 1] += num_msdu;
@@ -2499,6 +2502,9 @@ void ath12k_dp_mon_peer_update_telemetry_stats(struct ath12k_pdev_dp *dp_pdev,
        airtime_stats = &peer->peer_stats.dp_mon_stats.mon_stats;
        time_diff = (u32)(current_time - airtime_stats->last_update_time);
 	atf_airtime = &peer->atf_peer_airtime;
+
+	if (!time_diff)
+		return;
 
        for (ac = 0; ac < ATH12K_DP_WLAN_MAX_AC; ac++) {
                /* *_link_airtime refers to the amount of time a peer spends
