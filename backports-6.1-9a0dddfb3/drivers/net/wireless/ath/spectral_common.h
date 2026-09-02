@@ -426,4 +426,14 @@ enum spectral_scan_complete_status {
 	SPECTRAL_SCAN_COMPLETE_INVALID = 0xff,
 };
 
+/**
+ * enum spectral_scan_priority: Spectral scan priority
+ * @SPECTRAL_SCAN_PRIORITY_LOW: Low priority Spectral scan
+ * @SPECTRAL_SCAN_PRIORITY_HIGH: High priority Spectral scan
+ */
+enum spectral_scan_priority {
+	SPECTRAL_SCAN_PRIORITY_LOW = 0,
+	SPECTRAL_SCAN_PRIORITY_HIGH = 1,
+};
+
 #endif /* SPECTRAL_COMMON_H */
