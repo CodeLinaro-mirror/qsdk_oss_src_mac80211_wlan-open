@@ -1086,7 +1086,9 @@ int ath12k_pci_power_up(struct ath12k_base *ab)
 	struct ath12k_pci *ab_pci = ath12k_pci_priv(ab);
 	int ret;
 
-	ab_pci->register_window = 0;
+	if (!test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags))
+		ab_pci->register_window = 0;
+
 	clear_bit(ATH12K_PCI_FLAG_INIT_DONE, &ab_pci->flags);
 	ath12k_pci_sw_reset(ab, true);
 
