@@ -132,6 +132,7 @@ static inline u32 ath12k_dp_rx_spt_page_offset(void)
 #define HAL_SRNG_INT_TIMER_THRESHOLD_RX 200
 #define HAL_SRNG_INT_TIMER_THRESHOLD_TX 1000
 #define DP_UMCMN_INTR_HANDLING_DISABLE false
+#define DP_STATS_MASK		0x00000001
 
 #else /* CPTCFG_QCN_EXTN */
 #define ATH12K_DP_INI_GET(__ini__)	ath12k_cfg_get(ab, ATH12K_INI_DP_##__ini__)
@@ -166,6 +167,7 @@ static inline u32 ath12k_dp_rx_spt_page_offset(void)
 
 #define DP_UMCMN_INTR_HANDLING_DISABLE \
 	ATH12K_DP_INI_GET(UMCMN_INTR_HANDLING_DISABLE)
+#define DP_STATS_MASK		ATH12K_DP_INI_GET(STATS_MASK)
 
 #endif /* CPTCFG_QCN_EXTN*/
 
