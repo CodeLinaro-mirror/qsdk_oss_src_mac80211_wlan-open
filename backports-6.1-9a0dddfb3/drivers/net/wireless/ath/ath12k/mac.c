@@ -6669,7 +6669,8 @@ void ath12k_bss_disassoc(struct ath12k *ar,
 
 	memset(&arvif->rekey_data, 0, sizeof(arvif->rekey_data));
 
-	if (arvif == &ahvif->deflink)
+	if (arvif == &ahvif->deflink &&
+	    ahvif->vdev_type == WMI_VDEV_TYPE_STA)
 		cancel_delayed_work_sync(&ahvif->deflink.connection_loss_work);
 }
 
@@ -6871,8 +6872,6 @@ static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 
 	INIT_LIST_HEAD(&arvif->list);
 	arvif->key_cipher = INVALID_CIPHER;
-	INIT_DELAYED_WORK(&ahvif->deflink.connection_loss_work,
-			  ath12k_mac_vif_sta_connection_loss_work);
 	if (!is_bridge_vdev) {
 		wiphy_work_init(&arvif->update_obss_color_notify_work,
 				ath12k_update_obss_color_notify_work);
@@ -7147,7 +7146,8 @@ static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 	if (!dp)
 		return;
 
-	if (arvif == &ahvif->deflink)
+	if (arvif == &ahvif->deflink &&
+	    ahvif->vdev_type == WMI_VDEV_TYPE_STA)
 		cancel_delayed_work_sync(&ahvif->deflink.connection_loss_work);
 
 	if (!ath12k_mac_is_bridge_vdev(arvif)) {
@@ -7240,8 +7240,10 @@ ath12k_mac_assign_link_vif(struct ath12k_hw *ah, struct ieee80211_vif *vif,
 	 */
 	if (!ahvif->links_map && link_id < ATH12K_DEFAULT_SCAN_LINK) {
 		arvif = &ahvif->deflink;
-		/* Clear pre-allocated deflink to reset the old residual data */
 		memset(arvif, 0, sizeof(*arvif));
+		if (ahvif->vdev_type == WMI_VDEV_TYPE_STA)
+			INIT_DELAYED_WORK(&ahvif->deflink.connection_loss_work,
+					  ath12k_mac_vif_sta_connection_loss_work);
 	} else {
 		arvif = (struct ath12k_link_vif *)
 		kzalloc(sizeof(struct ath12k_link_vif), GFP_KERNEL);
@@ -7318,10 +7320,13 @@ static void ath12k_mac_unassign_link_vif(struct ath12k_link_vif *arvif)
 	if (dp_vif && dp_link_vif && link_id < ATH12K_DEFAULT_SCAN_LINK)
 		ath12k_mac_aggr_link_vif_to_mld_vif(arvif->ar, dp_vif, dp_link_vif);
 
-	if (arvif != &ahvif->deflink)
+	if (arvif != &ahvif->deflink) {
 		kfree(arvif);
-	else
+	} else {
+		if (ahvif->vdev_type == WMI_VDEV_TYPE_STA)
+			cancel_delayed_work_sync(&ahvif->deflink.connection_loss_work);
 		memset(arvif, 0, sizeof(*arvif));
+	}
 }
 
 static void
