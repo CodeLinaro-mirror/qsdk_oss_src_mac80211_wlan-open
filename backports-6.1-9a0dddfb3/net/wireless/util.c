@@ -219,8 +219,11 @@ ieee80211_get_valid_6ghz_power_mode(struct wiphy *wiphy, u32 freq)
 			if (ieee80211_channel_to_khz(chan) != freq)
 				continue;
 
-			if (chan->flags &
-			    (IEEE80211_CHAN_DISABLED | IEEE80211_CHAN_NO_IR))
+			/* AFC Client SP channels are DISABLED+NO_IR pre-AFC completion.
+			 * Skip the break so CSA to such channels returns a valid mode.
+			 */
+			if ((chan->flags & IEEE80211_CHAN_DISABLED) &&
+			    !(chan->flags & IEEE80211_CHAN_NO_IR))
 				break;
 
 			return mode;
