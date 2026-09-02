@@ -1220,7 +1220,8 @@ int ath12k_process_cfr_capture_event(struct ath12k_base *ab,
 		buff = idr_find(&cfr->rx_ring.bufs_idr, lut_idx);
 		if (!buff) {
 			spin_unlock_bh(&cfr->rx_ring.idr_lock);
-			return -ENOENT;
+			ret = -ENOENT;
+			goto out_unlock;
 		}
 		spin_unlock_bh(&cfr->rx_ring.idr_lock);
 
@@ -1233,6 +1234,7 @@ int ath12k_process_cfr_capture_event(struct ath12k_base *ab,
 		ret = -EINVAL;
 	}
 
+out_unlock:
 	spin_unlock_bh(&cfr->lut_lock);
 	return ret;
 }
