@@ -1856,6 +1856,12 @@ static int ath12k_dp_peer_qos_stats_alloc(struct ath12k_dp_peer *dp_peer)
 	return 0;
 }
 
+void ath12k_dp_peer_qos_stats_free(struct ath12k_dp_peer *dp_peer)
+{
+	kfree(dp_peer->mld_stats.mld_qos_stats);
+	dp_peer->mld_stats.mld_qos_stats = NULL;
+}
+
 int ath12k_dp_peer_stats_alloc(struct ath12k_dp_peer *dp_peer,
 			       struct ath12k_pdev_dp *dp_pdev)
 {
@@ -1886,47 +1892,57 @@ int ath12k_dp_peer_stats_alloc(struct ath12k_dp_peer *dp_peer,
 		if (ret) {
 			ath12k_warn(dp_pdev->ar->ab,
 				    "Failed to allocate delay stats\n");
-			return ret;
+			goto err_free;
 		}
 
 		ret = ath12k_dp_alloc_jitter_stats_peer(dp_peer);
 		if (ret) {
 			ath12k_warn(dp_pdev->ar->ab,
 				    "Failed to allocate jitter stats\n");
-			kfree(dp_peer->mld_stats.delay_stats);
-			dp_peer->mld_stats.delay_stats = NULL;
-			return ret;
+			goto err_free;
 		}
 
 		ret = ath12k_dp_alloc_sojourn_stats_peer(dp_peer);
 		if (ret) {
 			ath12k_warn(dp_pdev->ar->ab,
 				    "Failed to allocate sojourn stats\n");
-			kfree(dp_peer->mld_stats.delay_stats);
-			dp_peer->mld_stats.delay_stats = NULL;
-			kfree(dp_peer->mld_stats.jitter_stats);
-			dp_peer->mld_stats.jitter_stats = NULL;
-			return ret;
+			goto err_free;
 		}
 	}
 
 	if (ath12k_proto_stats_enabled(dp_pdev)) {
 		ret = ath12k_dp_alloc_proto_stats_peer(dp_peer);
-		if (ret)
+		if (ret) {
 			ath12k_warn(dp_pdev->ar->ab, "Failed to alloc proto stats.\n");
+			goto err_free;
+		}
 	}
-	if (dp_pdev && (dp_pdev->dp_stats_mask & DP_ENABLE_QOS_STATS))
+	if (dp_pdev && (dp_pdev->dp_stats_mask & DP_ENABLE_QOS_STATS)) {
 		ret = ath12k_dp_peer_qos_stats_alloc(dp_peer);
+		if (ret) {
+			ath12k_warn(dp_pdev->ar->ab,
+				    "Failed to allocate Qos Stats\n");
+			goto err_free;
+		}
+	}
+
+	return ret;
+
+err_free:
+	ath12k_dp_peer_qos_stats_free(dp_peer);
+	ath12k_dp_free_proto_stats_peer(dp_peer);
+	kfree(dp_peer->mld_stats.delay_stats);
+	dp_peer->mld_stats.delay_stats = NULL;
+	kfree(dp_peer->mld_stats.jitter_stats);
+	dp_peer->mld_stats.jitter_stats = NULL;
+	kfree(dp_peer->mld_stats.sojourn_stats);
+	dp_peer->mld_stats.sojourn_stats = NULL;
+	kfree(dp_peer->mld_stats.hw_stats);
+	dp_peer->mld_stats.hw_stats = NULL;
 
 	return ret;
 }
 EXPORT_SYMBOL(ath12k_dp_peer_stats_alloc);
-
-void ath12k_dp_peer_qos_stats_free(struct ath12k_dp_peer *dp_peer)
-{
-	kfree(dp_peer->mld_stats.mld_qos_stats);
-	dp_peer->mld_stats.mld_qos_stats = NULL;
-}
 
 void ath12k_dp_peer_stats_free(struct ath12k_dp_peer *dp_peer)
 {

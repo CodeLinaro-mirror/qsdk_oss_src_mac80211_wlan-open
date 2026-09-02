@@ -2062,13 +2062,17 @@ exit:
 static void ath12k_htt_backpressure_event_handler(struct ath12k_base *ab,
 						  struct sk_buff *skb)
 {
-	u32 *data = (u32 *)skb->data;
+	u32 *data;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	u8 pdev_id, ring_type, ring_id, pdev_idx;
 	u16 hp, tp;
 	u32 backpressure_time;
 	struct ath12k_bp_stats *bp_stats;
 
+	if (skb->len < sizeof(u32) * 3)
+		return;
+
+	data = (u32 *)skb->data;
 	pdev_id = u32_get_bits(*data, HTT_BACKPRESSURE_EVENT_PDEV_ID_M);
 	ring_type = u32_get_bits(*data, HTT_BACKPRESSURE_EVENT_RING_TYPE_M);
 	ring_id = u32_get_bits(*data, HTT_BACKPRESSURE_EVENT_RING_ID_M);
@@ -2266,6 +2270,9 @@ ath12k_htt_pri_link_peer_migrate_indication(struct ath12k_base *ab,
 	int ret;
 	struct ath12k_sta *ahsta = NULL;
 	struct ath12k_pdev_dp *dp_pdev;
+
+	if (skb->len < sizeof(struct ath12k_htt_pri_link_migr_ind_msg))
+		return;
 
 	msg = (struct ath12k_htt_pri_link_migr_ind_msg *)skb->data;
 
