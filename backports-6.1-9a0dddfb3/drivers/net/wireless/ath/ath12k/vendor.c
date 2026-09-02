@@ -10399,6 +10399,77 @@ ath12k_vendor_set_rtt_responder_role(struct wireless_dev *wdev,
 	return 0;
 }
 
+static int
+ath12k_vendor_set_rtt_initiator_role(struct wireless_dev *wdev,
+				     struct ath12k_wifi_generic_params *params)
+{
+	struct ieee80211_vif *vif;
+	struct ath12k_link_vif *arvif;
+	struct ath12k_vif *ahvif;
+	struct ath12k *ar;
+	u32 role;
+	u8 link_id;
+	int ret;
+
+	if (!wdev || !params)
+		return -EINVAL;
+
+	vif = wdev_to_ieee80211_vif(wdev);
+	if (!vif)
+		return -EINVAL;
+
+	if (vif->type != NL80211_IFTYPE_AP &&
+		vif->type != NL80211_IFTYPE_STATION)
+		return -EOPNOTSUPP;
+
+	role = params->value;
+	if (role > 1)
+		return -EINVAL;
+
+	ahvif = ath12k_vif_to_ahvif(vif);
+	if (!ahvif)
+		return -EINVAL;
+
+	if (params->link_id != INVALID_LINK_ID) {
+		link_id = params->link_id;
+		if (link_id >= ATH12K_NUM_MAX_LINKS ||
+		    !(ahvif->links_map & BIT(link_id)))
+			return -EINVAL;
+	} else {
+		link_id = 0;
+		/* Validate that the default link 0 is actually active */
+		if (!(ahvif->links_map & BIT(link_id))) {
+			ath12k_warn(ar->ab,
+					"RTT initiator: default link 0 not in links_map 0x%x\n",
+					ahvif->links_map);
+			return -EINVAL;
+		}
+	}
+
+	arvif = ath12k_get_arvif_from_link_id(ahvif, link_id);
+	if (!arvif || !arvif->ar)
+		return -EINVAL;
+
+	ar = arvif->ar;
+	ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
+		WMI_VDEV_PARAM_ENABLE_DISABLE_RTT_INITIATOR_ROLE,
+		role);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "failed to set RTT initiator role %u on vdev %i: %d\n",
+			    role, arvif->vdev_id, ret);
+		return ret;
+	}
+
+	arvif->rtt_ctx.rtt_initiator_role = role;
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_CFG,
+		   "set RTT initiator role %u on vdev %i link %u\n",
+		   role, arvif->vdev_id, link_id);
+
+	return 0;
+}
+
 /**
  * ath12k_vendor_send_pasn_event() - Send a QCA PASN vendor event to userspace.
  * @wiphy: wiphy of the AP interface.
@@ -10704,6 +10775,14 @@ static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 			if (ret) {
 				ath12k_dbg(NULL, ATH12K_DBG_CFG,
 					   "failed to set RTT responder role: %d\n", ret);
+				return ret;
+			}
+			break;
+		case QCA_WLAN_VENDOR_WIFI_PARAM_RTT_INITIATOR_ROLE:
+			ret = ath12k_vendor_set_rtt_initiator_role(wdev, &wifi_params);
+			if (ret) {
+				ath12k_dbg(NULL, ATH12K_DBG_CFG,
+					   "failed to set RTT initiator role: %d\n", ret);
 				return ret;
 			}
 			break;
