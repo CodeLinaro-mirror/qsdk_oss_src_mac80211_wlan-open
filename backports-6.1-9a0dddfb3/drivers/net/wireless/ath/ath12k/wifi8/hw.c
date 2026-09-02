@@ -1150,7 +1150,7 @@ ath12k_wifi8_mac_get_tx_link(struct ieee80211_sta *sta, struct ieee80211_vif *vi
 	 * the frame will be transmitted on master (primary) link. An individually
 	 * addressed mgmt frame can be transmitted on master link after peer assoc.
 	 */
-	if (ahsta->state <= IEEE80211_STA_ASSOC ||
+	if (ahsta->state < IEEE80211_STA_ASSOC ||
 	    !ath12k_wifi8_mac_is_mgmt_link_agnostic(ab, skb))
 		goto skip_link_agnostic_tx;
 
@@ -1271,8 +1271,7 @@ static void ath12k_wifi8_mgmt_handler(struct ieee80211_hw *hw,
 	 */
 	if (sta) {
 		ahsta = ath12k_sta_to_ahsta(sta);
-		if (ahsta->state == IEEE80211_STA_AUTHORIZED ||
-		    (sta->epp_peer && ahsta->state > IEEE80211_STA_AUTH))
+		if (ahsta->state >= IEEE80211_STA_ASSOC)
 			skb_cb->flags |= ATH12K_SKB_MGMT_MLO_PARAMS;
 	}
 
