@@ -2794,8 +2794,7 @@ static void handle_band_custom(struct wiphy *wiphy,
 		struct cfg80211_registered_device *rdev = wiphy_to_rdev(wiphy);
 
 		if (rdev->ops->nol_regdom_update_locked)
-			rdev->ops->nol_regdom_update_locked(wiphy,
-					&sband->channels[0]);
+			rdev->ops->nol_regdom_update_locked(wiphy);
 	}
 #endif /* CPTCFG_QCN_EXTN */
 }
