@@ -8766,6 +8766,7 @@ static int ath12k_wmi_tlv_mac_phy_chainmask_caps(struct ath12k_base *soc,
 	struct ath12k_pdev_cap *pdev_cap;
 	u32 tag;
 	int i, j;
+	int ret = 0;
 
 	if (!svc_rdy_ext->hw_mode_caps)
 		return -EINVAL;
@@ -8818,8 +8819,14 @@ static int ath12k_wmi_tlv_mac_phy_chainmask_caps(struct ath12k_base *soc,
 		}
 
 		for (j = 0; j < cmask_table->num_valid_chainmasks; j++) {
-			if (cmask_table->cap_list[j].supported_caps & WMI_SUPPORT_CHAIN_MASK_ADFS)
-				pdev_cap->adfs_chain_mask |= (1 << cmask_table->cap_list[j].chainmask);
+			if (cmask_table->cap_list[j].supported_caps &
+			    WMI_SUPPORT_CHAIN_MASK_ADFS) {
+				if (cmask_table->cap_list[j].chainmask < BITS_PER_LONG)
+					pdev_cap->adfs_chain_mask |=
+						(1UL << cmask_table->cap_list[j].chainmask);
+				else
+					ret = -EINVAL;
+			}
 
 			pdev_cap->agile_spectral_cap |=
 				!!(cmask_table->cap_list[j].supported_caps &
@@ -8844,7 +8851,7 @@ static int ath12k_wmi_tlv_mac_phy_chainmask_caps(struct ath12k_base *soc,
 			   pdev_cap->agile_spectral_cap_80p80,
 			   pdev_cap->agile_spectral_cap_320);
 	}
-	return 0;
+	return ret;
 }
 
 static void ath12k_wmi_free_chainmask_caps(struct ath12k_wmi_svc_rdy_ext_parse *svc_rdy_ext)
