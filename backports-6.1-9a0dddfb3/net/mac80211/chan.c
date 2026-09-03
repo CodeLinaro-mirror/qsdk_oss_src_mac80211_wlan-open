@@ -2142,9 +2142,29 @@ void __ieee80211_link_release_channel(struct ieee80211_link_data *link,
 		ieee80211_vif_use_reserved_switch(local);
 }
 
+static int ieee80211_set_monitor_chanctx(struct ieee80211_local *local,
+					 struct ieee80211_sub_if_data *tmp_sdata,
+					 struct ieee80211_chanctx *ctx)
+{
+	struct ieee80211_channel *chan = ctx->conf.def.chan;
+	int ret;
+
+	sdata_info(tmp_sdata,
+		   "Switching channel for monitor iface to %d - %s\n",
+		   chan->center_freq,
+		   nl80211_chan_width_to_string(ctx->conf.def.width));
+	ret = ieee80211_set_monitor_channel(tmp_sdata->wdev.wiphy,
+					    tmp_sdata->dev,
+					    &ctx->conf.def);
+	if (ret)
+		return -EINVAL;
+
+	return ieee80211_add_chanctx(local, ctx);
+}
+
 int ieee80211_update_chanctx_for_radio(struct ieee80211_sub_if_data *sdata,
 				       struct ieee80211_chanctx *ctx,
-				       int radio_idx)
+				       int radio_idx, bool *skip_assign)
 {
 	struct ieee80211_local *local = sdata->local;
 	struct ieee80211_chanctx *temp_ctx;
@@ -2173,7 +2193,8 @@ int ieee80211_update_chanctx_for_radio(struct ieee80211_sub_if_data *sdata,
 			   "Cannot set monitor channel to %d: radio already configured with channel %d\n",
 			   chan->center_freq,
 			   temp_ctx->conf.def.chan->center_freq);
-		return -EOPNOTSUPP;
+		*skip_assign = true;
+		return ieee80211_set_monitor_chanctx(local, sdata, temp_ctx);
 	}
 
 	list_for_each_entry(tmp_link, &temp_ctx->assigned_links, assigned_chanctx_list) {
@@ -2181,16 +2202,7 @@ int ieee80211_update_chanctx_for_radio(struct ieee80211_sub_if_data *sdata,
 		if (tmp_sdata->wdev.iftype != NL80211_IFTYPE_MONITOR)
 			continue;
 
-		sdata_info(tmp_sdata,
-			   "Switching channel for monitor iface to %d - %s\n",
-			   chan->center_freq,
-			   nl80211_chan_width_to_string(ctx->conf.def.width));
-		ret = ieee80211_set_monitor_channel(tmp_sdata->wdev.wiphy,
-						    tmp_sdata->dev,
-						    &ctx->conf.def);
-		if (ret)
-			return -EINVAL;
-		ret = ieee80211_add_chanctx(local, ctx);
+		ret = ieee80211_set_monitor_chanctx(local, tmp_sdata, ctx);
 		break;
 	}
 
@@ -2206,7 +2218,7 @@ int _ieee80211_link_use_channel(struct ieee80211_link_data *link,
 	struct ieee80211_local *local = sdata->local;
 	struct ieee80211_chanctx *ctx;
 	u8 radar_detect_width = 0;
-	bool reserved = false;
+	bool reserved = false, skip_assign = false;
 	int radio_idx = -1;
 	int ret;
 
@@ -2255,8 +2267,9 @@ int _ieee80211_link_use_channel(struct ieee80211_link_data *link,
 	 */
 	if (!reserved && ieee80211_hw_check(&local->hw,
 					    SUPPORTS_SINGLE_CHANNEL)) {
-		ret = ieee80211_update_chanctx_for_radio(sdata, ctx, radio_idx);
-		if (ret) {
+		ret = ieee80211_update_chanctx_for_radio(sdata, ctx, radio_idx,
+							 &skip_assign);
+		if (ret || skip_assign) {
 			if (ieee80211_chanctx_refcount(local, ctx) == 0)
 				ieee80211_free_chanctx(local, ctx, false);
 			goto out;
