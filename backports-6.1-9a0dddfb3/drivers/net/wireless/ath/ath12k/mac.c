@@ -33950,6 +33950,7 @@ int ath12k_mac_op_sta_uhr_mode_update(struct ieee80211_hw *hw,
 		link_params[num_links].npca_switch_back_delay =
 			link_conf->npca.switch_back_delay;
 		link_params[num_links].npca_mode_update = link_conf->npca_mode_update;
+		link_params[num_links].npca_update = link_conf->npca_update;
 
 		link_params[num_links].dso_enable = link_conf->dso.enable;
 		link_params[num_links].dso_mode_update = link_conf->dso.mode_update;

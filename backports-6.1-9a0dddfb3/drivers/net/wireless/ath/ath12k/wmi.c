@@ -24810,7 +24810,7 @@ int ath12k_wmi_send_peer_uhr_omp_cmd(struct ath12k *ar, u32 sw_peer_id,
 		return -EINVAL;
 
 	for (i = 0, has_npca_update = false; i < num_links; i++) {
-		if (links[i].npca_mode_update) {
+		if (links[i].npca_update) {
 			has_npca_update = true;
 			break;
 		}
