@@ -252,7 +252,7 @@ ath12k_wifi8_hal_mon_rx_mpdu_start_info_get_hw10(const void *tlv_data,
 							   ppdu_info->nrp_info.mac_addr2);
 
 	if (user_id < HAL_MAX_UL_MU_USERS) {
-		ppdu_info->userstats[user_id].sw_peer_id = peer_id;
+		ppdu_info->userstats[user_id].sw_peer_id = ppdu_info->peer_id;
 		ppdu_info->userstats[user_id].ampdu_id =
 			le16_to_cpu(mpdu_start->phy_ppdu_id);
 		ppdu_info->userstats[user_id].filter_category =
@@ -324,7 +324,7 @@ ath12k_wifi8_hal_mon_rx_mpdu_start_info_get_compact_hw10(
 							   ppdu_info->nrp_info.mac_addr2);
 
 	if (user_id < HAL_MAX_UL_MU_USERS) {
-		ppdu_info->userstats[user_id].sw_peer_id = peer_id;
+		ppdu_info->userstats[user_id].sw_peer_id = ppdu_info->peer_id;
 		ppdu_info->userstats[user_id].ampdu_id =
 			le16_to_cpu(mpdu_start->phy_ppdu_id);
 		ppdu_info->userstats[user_id].filter_category =

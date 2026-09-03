@@ -2577,7 +2577,7 @@ ath12k_wifi8_hal_mon_rx_mpdu_start_info_get(const void *tlv_data, u32 userid,
 		ath12k_wifi8_hal_mon_get_nrp_mac_addr(addr_16, addr_32,
 						      ppdu_info->nrp_info.mac_addr2);
 
-	ppdu_info->userstats[user_id].sw_peer_id = peer_id;
+	ppdu_info->userstats[user_id].sw_peer_id = ppdu_info->peer_id;
 	ppdu_info->userstats[user_id].ampdu_id = le16_to_cpu(mpdu_start->phy_ppdu_id);
 	ppdu_info->userstats[user_id].filter_category =
 		u32_get_bits(info[2],
@@ -2645,7 +2645,7 @@ ath12k_wifi8_hal_mon_rx_mpdu_start_info_get_compact(
 		ath12k_wifi8_hal_mon_get_nrp_mac_addr(addr_16, addr_32,
 						      ppdu_info->nrp_info.mac_addr2);
 
-	ppdu_info->userstats[user_id].sw_peer_id = peer_id;
+	ppdu_info->userstats[user_id].sw_peer_id = ppdu_info->peer_id;
 	ppdu_info->userstats[user_id].ampdu_id = le16_to_cpu(mpdu_start->phy_ppdu_id);
 	ppdu_info->userstats[user_id].filter_category =
 		u32_get_bits(info[2],
