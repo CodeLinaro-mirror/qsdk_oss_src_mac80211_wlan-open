@@ -405,12 +405,12 @@ void ath12k_wifi_qos_desc(struct hal_tcl_data_cmd *desc,
 	flow_override = u32_get_bits(msduq, MSDUQ_FLOW_OVERRIDE);
 	who_classify_info_sel = u32_get_bits(msduq, MSDUQ_WHO_CL_INFO);
 
-	desc->info1 = u32_encode_bits(tid, HAL_TCL_DATA_CMD_INFO1_HLOS_TID) |
-		      u32_encode_bits(1, HAL_TCL_DATA_CMD_INFO1_HLOS_TID_OVERWRITE);
+	desc->info1 |= u32_encode_bits(tid, HAL_TCL_DATA_CMD_INFO1_HLOS_TID) |
+		       u32_encode_bits(1, HAL_TCL_DATA_CMD_INFO1_HLOS_TID_OVERWRITE);
 
-	desc->info2 = u32_encode_bits(1, HAL_TCL_DATA_CMD_INFO2_FLOW_OVERRIDE_ENABLE) |
-		      u32_encode_bits(who_classify_info_sel,
-				      HAL_TCL_DATA_CMD_INFO2_WHO_CLASSIFY_INFO_SEL);
+	desc->info2 |= u32_encode_bits(1, HAL_TCL_DATA_CMD_INFO2_FLOW_OVERRIDE_ENABLE) |
+		       u32_encode_bits(who_classify_info_sel,
+				       HAL_TCL_DATA_CMD_INFO2_WHO_CLASSIFY_INFO_SEL);
 
 	meta_data_flags = ath12k_qos_get_metadata(qos_id);
 	desc->info3 = u32_encode_bits(flow_override,
