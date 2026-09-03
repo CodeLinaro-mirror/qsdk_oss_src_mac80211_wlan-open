@@ -6626,8 +6626,7 @@ struct cfg80211_ops {
 			       const u8 *addr,
 			       struct cfg80211_smd_transition_info *st_info);
 #ifdef CPTCFG_QCN_EXTN
-	void    (*nol_regdom_update_locked)(struct wiphy *wiphy,
-					    struct ieee80211_channel *channel);
+	void    (*nol_regdom_update_locked)(struct wiphy *wiphy);
 #endif /* CPTCFG_QCN_EXTN */
 
 };
