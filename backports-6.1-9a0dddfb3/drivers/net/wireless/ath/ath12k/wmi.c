@@ -19236,6 +19236,7 @@ static void ath12k_wmi_tlv_cfr_cpature_phase_fixed_param(const void *ptr,
 	for (i = 0; i < WMI_MAX_CHAINS; i++) {
 		tx_params->chain_phase[i] = params->chain_phase[i];
 		tx_params->agc_gain[i] = params->agc_gain[i];
+		tx_params->agc_gain_tbl_index[i] = params->agc_gain_tbl_index[i];
 	}
 }
 

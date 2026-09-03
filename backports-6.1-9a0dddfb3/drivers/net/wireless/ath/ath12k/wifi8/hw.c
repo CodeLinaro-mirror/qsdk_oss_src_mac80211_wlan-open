@@ -257,7 +257,10 @@ int ath12k_hw_qcn9625_parse_cfr_enh_dma_hdr(struct ath12k *ar, u8 *data,
 	memcpy(&cc_hdr, cc_hdr_wire, sizeof(struct ath12k_cfir_wifi8_cc_hdr));
 
 	if (cc_hdr.freeze_data_incl) {
-		freeze_tlv = cc_hdr_wire + cc_hdr.freeze_tlv_offset * 2;
+		/* freeze tlv starts from common_header + freeze_tlv_offset * 4
+		 * after 32 words from common header
+		 */
+		freeze_tlv = data + (cc_hdr.freeze_tlv_offset * 4);
 		capture_type = freeze_reason_to_capture_type(ab, freeze_tlv);
 	} else {
 		capture_type = CFR_CAPTURE_METHOD_AUTO;

@@ -10914,6 +10914,7 @@ struct ath12k_wmi_cfr_peer_tx_event_param {
 struct ath12k_wmi_cfr_peer_tx_event_phase_param {
 	u32 chain_phase[WMI_MAX_CHAINS];
 	u8 agc_gain[WMI_MAX_CHAINS];
+	u8 agc_gain_tbl_index[WMI_MAX_CHAINS];
 } __packed;
 
 enum ath12k_wmi_cfr_capture_bw {
