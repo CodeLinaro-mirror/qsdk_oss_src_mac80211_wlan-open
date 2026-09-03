@@ -14827,6 +14827,13 @@ static int ath12k_mac_station_add(struct ath12k *ar,
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
+	if (arvif->peer_del_all_enable) {
+		ath12k_dbg(ab, ATH12K_DBG_MAC,
+			   "rejecting peer add %pM on vdev %d: link teardown in progress\n",
+			   arsta->addr, arvif->vdev_id);
+		return -EBUSY;
+	}
+
 	if (ath12k_pasn_peer_is_fw_created(arvif, arsta->addr)) {
 		ath12k_dbg(ab, ATH12K_DBG_RTT,
 			   "RTT PASN deleting FW peer %pM before station add vdev=%u\n",
