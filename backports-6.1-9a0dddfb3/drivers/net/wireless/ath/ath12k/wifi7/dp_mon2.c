@@ -125,15 +125,23 @@ ath12k_wifi7_dp_mon_rx_memset_ppdu_info(struct ath12k_pdev_dp *pdev_dp,
 }
 
 static inline void
-ath12k_wifi7_dp_mon_rx_parse_status_msdu_end(struct ath12k_mon_data *pmon)
+ath12k_wifi7_dp_mon_rx_parse_status_msdu_end(struct ath12k_pdev_dp *dp_pdev,
+					     struct ath12k_mon_data *pmon)
 {
 	struct hal_rx_mon_ppdu_info *ppdu_info = &pmon->mon_ppdu_info;
+	struct ath12k_dp_rx_ext_mon *rx_ext_mon_config =
+			dp_pdev->dp_mon_pdev->rx_ext_mon_config;
 	u8 user_id = ppdu_info->user_id;
 
 	pmon->err_bitmap = ppdu_info->errmap;
 	pmon->mon_ppdu_info.mpdu_info[user_id].err_bitmap = ppdu_info->errmap;
 	pmon->mon_ppdu_info.msdu_info[user_id].first_buffer = false;
 	pmon->decap_format = ppdu_info->decap_format;
+	pmon->mon_ppdu_info.msdu_info[user_id].msdu_index++;
+	if (rx_ext_mon_config && rx_ext_mon_config->enable &&
+	    rx_ext_mon_config->metadata & ATH12K_EXT_MON_METADATA_META_HDR) {
+		ath12k_dp_mon_rx_add_pf_tag_to_headroom(dp_pdev, ppdu_info);
+	}
 }
 
 static int
@@ -326,13 +334,21 @@ ath12k_wifi7_dp_mon_parse_status_rx_hdr(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 	if (!ppdu_info->mpdu_info[user_id].mpdu_start_received) {
-		skb = dev_alloc_skb(ATH12K_DP_MON_MAX_RADIO_TAP_HDR);
+		skb = dev_alloc_skb(ATH12K_DP_MON_MAX_RADIO_TAP_HDR +
+				    ATH12K_RX_MON_MAX_METADATA_HDR +
+				    ATH12K_RX_MON_MAX_VENDOR_TLV_DATA);
 		if (unlikely(!skb)) {
 			ath12k_warn(dp_pdev->dp,
 				    "skb allocation for rx hdr failed\n");
 			return -ENOMEM;
 		}
 
+		/* Reserve headroom for msdu metadata and rtap, skb->head is used for
+		 * storing msdu metadata by ath12k_wifi7_dp_mon_rx_add_pf_tag_to_headroom
+		 */
+		skb_reserve(skb, ATH12K_DP_MON_MAX_RADIO_TAP_HDR +
+			    ATH12K_RX_MON_MAX_METADATA_HDR +
+			    ATH12K_RX_MON_MAX_VENDOR_TLV_DATA);
 		mon_stats->num_skb_alloc++;
 		skb_queue_tail(&ppdu_info->mpdu_q[user_id], skb);
 		ath12k_dp_mon_add_rx_frag(skb, mon_buf, offset, frag_len, true);
@@ -424,6 +440,7 @@ ath12k_wifi7_dp_mon_rx_parse_mpdu_end(struct ath12k_pdev_dp *dp_pdev,
 	mpdu_meta->truncated = ppdu_info->mpdu_info[user_id].truncated;
 	mpdu_meta->full_pkt = ppdu_info->mpdu_info[user_id].full_pkt;
 	mpdu_meta->fcs_err = ppdu_info->mpdu_info[user_id].fcs_err;
+	ppdu_info->msdu_info[user_id].msdu_index = 0;
 
 reset_mpdu_info:
 	ppdu_info->mpdu_info[user_id].truncated = false;
@@ -449,7 +466,7 @@ ath12k_wifi7_dp_mon_rx_parse_dest_tlv(struct ath12k_pdev_dp *dp_pdev,
 		ath12k_wifi7_dp_mon_rx_parse_mpdu_end(dp_pdev, pmon);
 		break;
 	case HAL_RX_MON_STATUS_MSDU_END:
-		ath12k_wifi7_dp_mon_rx_parse_status_msdu_end(pmon);
+		ath12k_wifi7_dp_mon_rx_parse_status_msdu_end(dp_pdev, pmon);
 		break;
 	case HAL_RX_MON_STATUS_RX_HDR:
 		return ath12k_wifi7_dp_mon_parse_status_rx_hdr(dp_pdev, pmon,
@@ -762,7 +779,9 @@ ath12k_wifi7_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	enum ath12k_ext_mon_filter_level level;
 	bool is_mcast = false;
 	bool need_rtap = true;
+	bool need_metadata = false;
 	bool peer_found = false;
+	u16 vendor_tlv_len = 0;
 
 	spin_lock(&dp_mon_pdev->rx_ext_mon_lock);
 	config = dp_mon_pdev->rx_ext_mon_config;
@@ -862,6 +881,7 @@ ath12k_wifi7_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	type_len = pkt_config->len[type];
 	level = config->level;
 	need_rtap = config->metadata & ATH12K_EXT_MON_METADATA_RTAP_HDR;
+	need_metadata = config->metadata & ATH12K_EXT_MON_METADATA_META_HDR;
 
 	if (config->ra_peer_count &&
 	    (filter_category == DP_MPDU_FILTER_CATEGORY_MO)) {
@@ -911,10 +931,16 @@ ath12k_wifi7_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 		}
 	}
 
-	if (need_rtap) {
-		skb_reserve(mpdu, ATH12K_DP_MON_MAX_RADIO_TAP_HDR);
-		ath12k_dp_mon_update_radiotap(dp_pdev, ppdu_info, mpdu, rxs);
+	vendor_tlv_len = 0;
+	if (need_metadata && level == ATH12K_EXT_MON_FILTER_LEVEL_MSDU &&
+	    type == ATH12K_EXT_MON_FRAME_DATA) {
+		vendor_tlv_len =
+			ath12k_dp_mon_rx_vendor_tlv_len(mpdu);
+	}
+	ppdu_info->vendor_tlv_len = vendor_tlv_len;
 
+	if (need_rtap) {
+		ath12k_dp_mon_update_radiotap(dp_pdev, ppdu_info, mpdu, rxs);
 		ath12k_dp_mon_rx_deliver_skb(dp_pdev, NULL, mpdu,
 					     rxs, ppdu_info);
 	} else {
@@ -994,7 +1020,6 @@ ath12k_wifi7_dp_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 
 	if (!(dp_mon_pdev->rx_ext_mon_config &&
 	      dp_mon_pdev->rx_ext_mon_config->enable)) {
-		skb_reserve(mpdu, ATH12K_DP_MON_MAX_RADIO_TAP_HDR);
 		ath12k_dp_mon_update_radiotap(dp_pdev, ppdu_info, mpdu, &rxs);
 
 		ath12k_dp_mon_rx_deliver_skb(dp_pdev, NULL, mpdu, &rxs, ppdu_info);
