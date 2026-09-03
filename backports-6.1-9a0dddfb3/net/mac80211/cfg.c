@@ -7515,9 +7515,12 @@ static int ieee80211_uhr_mode_update(struct wiphy *wiphy,
 				npca->enabled && new_npca->enable &&
 				(npca->switch_delay != new_npca->switch_delay ||
 				 npca->switch_back_delay != new_npca->switch_back_delay);
+			link->conf->npca_update = true;
 			npca->enabled = new_npca->enable;
 			npca->switch_delay = new_npca->switch_delay;
 			npca->switch_back_delay = new_npca->switch_back_delay;
+		} else {
+			link->conf->npca_update = false;
 		}
 
 		if (params->dso_update[link_id]) {
