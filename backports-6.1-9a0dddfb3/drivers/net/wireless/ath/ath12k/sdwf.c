@@ -519,10 +519,15 @@ u16 ath12k_sdwf_get_msduq(struct wireless_dev *wdev,
 
 	guard(rcu)();
 
-	if (ath12k_mlo_3_link_tx)
-		vif = wdev_to_ieee80211_vif_vlan(wdev, false);
-	else
-		vif = wdev_to_ieee80211_vif(wdev);
+	/*
+	 * Always use wdev_to_ieee80211_vif_vlan() so that AP/VLAN wdevs
+	 * (e.g. wlan4.sta1) resolve to the master AP vif whose link[]
+	 * array is populated. wdev_to_ieee80211_vif() returns the AP/VLAN
+	 * vif itself which has no link entries, causing arvif NULL.
+	 * wdev_to_ieee80211_vif_vlan() fetches the vif itself
+	 * for non-AP/VLAN interfaces so behaviour is unchanged for them.
+	 */
+	vif = wdev_to_ieee80211_vif_vlan(wdev, false);
 
 	if (!vif)
 		return SDWF_PEER_MSDUQ_INVALID;
