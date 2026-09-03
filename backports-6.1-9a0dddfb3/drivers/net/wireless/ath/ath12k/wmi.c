@@ -12932,6 +12932,14 @@ static void ath12k_mgmt_rx_event(struct ath12k_base *ab, struct sk_buff *skb)
 	fc = le16_to_cpu(hdr->frame_control);
 	frm_stype = FIELD_GET(IEEE80211_FCTL_STYPE, fc);
 
+	/* pdp_dbg: WMI path entry - only for probe requests */
+	if (ieee80211_is_probe_req(hdr->frame_control))
+		ath12k_dbg(ar->ab, ATH12K_DBG_MGMT,
+			   "pdp_dbg wmi_rx probe_req: sa=%pM da=%pM bssid=%pM freq=%u seq=%u frag=%u hw_link_id=%u rssi=%d\n",
+			   hdr->addr2, hdr->addr1, hdr->addr3, status->freq,
+			   IEEE80211_SEQ_TO_SN(le16_to_cpu(hdr->seq_ctrl)),
+			   le16_to_cpu(hdr->seq_ctrl) & IEEE80211_SCTL_FRAG,
+			   ar->hw_link_id, status->signal);
 	if (ATH12K_MGMT_MLME_FRAME(hdr->frame_control))
 		ath12k_dbg_level(ar->ab, ATH12K_DBG_MLME, ATH12K_DBG_L0,
 				 "Received %s frame from STA %pM\n",
@@ -13183,6 +13191,15 @@ skip_mgmt_stats:
 		rcu_read_unlock();
 		return;
 	}
+
+	/* pdp_dbg: WMI path delivery to mac80211 - only for probe requests */
+	if (ieee80211_is_probe_req(hdr->frame_control))
+		ath12k_dbg(ar->ab, ATH12K_DBG_MGMT,
+			   "pdp_dbg wmi_rx_ni probe_req: sa=%pM da=%pM bssid=%pM freq=%u seq=%u frag=%u hw_link_id=%u rssi=%d\n",
+			   hdr->addr2, hdr->addr1, hdr->addr3, status->freq,
+			   IEEE80211_SEQ_TO_SN(le16_to_cpu(hdr->seq_ctrl)),
+			   le16_to_cpu(hdr->seq_ctrl) & IEEE80211_SCTL_FRAG,
+			   ar->hw_link_id, status->signal);
 
 	ieee80211_rx_ni(ath12k_ar_to_hw(ar), skb);
 
