@@ -5295,7 +5295,7 @@ int ath12k_wmi_update_scan_chan_list(struct ath12k *ar,
 			}
 
                        if (req_channel && !found &&
-                           req_channel->center_freq == channel->center_freq) {
+			    req_channel->center_freq == channel->center_freq) {
                                ch->mhz = req_arg->chan_list.chan[0].freq;
                                ch->cfreq1 = chandef->center_freq1;
                                ch->cfreq2 = chandef->center_freq2;
@@ -5503,13 +5503,22 @@ int ath12k_wmi_send_scan_start_cmd(struct ath12k *ar,
 	if (arg->num_ssids)
 		len += arg->num_ssids * sizeof(*ssid);
 
+	if (arg->num_bssid > WLAN_SCAN_MAX_NUM_BSSID)
+		return -EINVAL;
+
 	len += TLV_HDR_SIZE;
 	if (arg->num_bssid)
 		len += sizeof(*bssid) * arg->num_bssid;
 
+	if (arg->num_hint_bssid > WLAN_SCAN_MAX_HINT_BSSID)
+		return -EINVAL;
+
 	if (arg->num_hint_bssid)
 		len += TLV_HDR_SIZE +
 		       arg->num_hint_bssid * sizeof(*hint_bssid);
+
+	if (arg->num_hint_s_ssid > WLAN_SCAN_MAX_HINT_S_SSID)
+		return -EINVAL;
 
 	if (arg->num_hint_s_ssid)
 		len += TLV_HDR_SIZE +
@@ -5528,6 +5537,10 @@ int ath12k_wmi_send_scan_start_cmd(struct ath12k *ar,
 	}
 
 	len += TLV_HDR_SIZE;
+
+	if (arg->ie_whitelist.num_vendor_oui > PROBE_REQ_MAX_OUIS)
+		return -EINVAL;
+
 	if (arg->scan_f_en_ie_whitelist_in_probe)
 		len += arg->ie_whitelist.num_vendor_oui *
 				sizeof(struct wmi_vendor_oui);
@@ -5705,8 +5718,8 @@ int ath12k_wmi_send_scan_start_cmd(struct ath12k *ar,
 		for (i = 0; i < arg->num_hint_bssid; ++i) {
 			hint_bssid->freq_flags =
 				arg->hint_bssid[i].freq_flags;
-			ether_addr_copy(&arg->hint_bssid[i].bssid.addr[0],
-					&hint_bssid->bssid.addr[0]);
+			ether_addr_copy(&hint_bssid->bssid.addr[0],
+					&arg->hint_bssid[i].bssid.addr[0]);
 			hint_bssid++;
 		}
 	}
@@ -5802,6 +5815,7 @@ ath12k_wmi_fill_psd_power_array(struct ath12k *ar, u8 **ptr,
 	psd_info_tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_VDEV_CH_PSD_POWER_INFO,
 						     sizeof(*ch_power_psd_info));
 	ath12k_dbg(ar->ab, ATH12K_DBG_WMI, "PSD Array:\n");
+
 	for (i = 0; i < param->num_psd_pwr_levels; ++i) {
 		ch_power_psd_info = (struct wmi_vdev_ch_power_psd_info *)(*ptr);
 		ch_power_psd_info->tlv_header = psd_info_tlv_header;
@@ -5851,6 +5865,7 @@ ath12k_wmi_fill_eirp_power_array(struct ath12k *ar, u8 **ptr,
 	eirp_info_tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_VDEV_CH_EIRP_POWER_INFO,
 						      sizeof(*ch_power_eirp_info));
 	ath12k_dbg(ar->ab, ATH12K_DBG_WMI, "EIRP Array:\n");
+
 	for (i = 0; i < param->num_eirp_pwr_levels; ++i) {
 		ch_power_eirp_info =
 			(struct wmi_vdev_ch_power_eirp_info *)(*ptr);
@@ -5897,10 +5912,15 @@ ath12_wmi_send_vdev_set_both_psd_and_eirp_in_tpc_for_sp(struct ath12k *ar,
 	u8 *ptr;
 
 	len = sizeof(*cmd) + TLV_HDR_SIZE;
+
+	if (param->num_psd_pwr_levels > ATH12K_NUM_PWR_LEVELS ||
+	    param->num_eirp_pwr_levels > ATH12K_MAX_EIRP_VALS)
+		return -EINVAL;
+
 	len += TLV_HDR_SIZE + (sizeof(struct wmi_vdev_ch_power_psd_info) *
-			       param->num_psd_pwr_levels);
+			param->num_psd_pwr_levels);
 	len += TLV_HDR_SIZE + (sizeof(struct wmi_vdev_ch_power_eirp_info) *
-			       param->num_eirp_pwr_levels);
+			param->num_eirp_pwr_levels);
 
 	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
 	if (!skb)
@@ -5942,6 +5962,9 @@ int ath12k_wmi_send_vdev_set_tpc_power(struct ath12k *ar,
         struct wmi_tlv *tlv;
         u8 *ptr;
         int i, ret, len;
+
+	if (param->num_pwr_levels > ATH12K_NUM_PWR_LEVELS)
+		return -EINVAL;
 
 	if (test_bit(WMI_TLV_SERVICE_BOTH_PSD_EIRP_FOR_AP_SP_CLIENT_SP_SUPPORT,
 		     ar->ab->wmi_ab.svc_map) &&
@@ -6339,7 +6362,7 @@ int ath12k_wmi_set_bios_cmd(struct ath12k_base *ab, u32 param_id,
 		dev_kfree_skb(skb);
 	}
 
-	return 0;
+	return ret;
 }
 
 int ath12k_wmi_set_bios_sar_cmd(struct ath12k_base *ab, const u8 *psar_table)
@@ -7264,6 +7287,9 @@ int ath12k_wmi_pdev_set_srg_bss_color_bitmap(struct ath12k *ar, u32 *bitmap)
 
 	len = sizeof(*cmd);
 
+	if (!bitmap)
+		return -EINVAL;
+
 	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
 	if (!skb)
 		return -ENOMEM;
@@ -7273,6 +7299,7 @@ int ath12k_wmi_pdev_set_srg_bss_color_bitmap(struct ath12k *ar, u32 *bitmap)
 				     WMI_TAG_PDEV_SRG_BSS_COLOR_BITMAP_CMD) |
 			  FIELD_PREP(WMI_TLV_LEN, len - TLV_HDR_SIZE);
 	cmd->pdev_id = ar->pdev->pdev_id;
+
 	memcpy(cmd->bitmap, bitmap, sizeof(cmd->bitmap));
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
@@ -7301,6 +7328,9 @@ ath12k_wmi_pdev_set_srg_patial_bssid_bitmap(struct ath12k *ar, u32 *bitmap)
 
 	len = sizeof(*cmd);
 
+	if (!bitmap)
+		return -EINVAL;
+
 	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
 	if (!skb)
 		return -ENOMEM;
@@ -7312,7 +7342,6 @@ ath12k_wmi_pdev_set_srg_patial_bssid_bitmap(struct ath12k *ar, u32 *bitmap)
 		FIELD_PREP(WMI_TLV_LEN, len - TLV_HDR_SIZE);
 	cmd->pdev_id = ar->pdev->pdev_id;
 	memcpy(cmd->bitmap, bitmap, sizeof(cmd->bitmap));
-
 	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
 		   "obss pd pdev_id %d partial bssid bitmap %08x %08x\n",
 		   cmd->pdev_id, cmd->bitmap[0], cmd->bitmap[1]);
@@ -7524,6 +7553,9 @@ int ath12k_wmi_fils_discovery_tmpl(struct ath12k *ar, u32 vdev_id,
 	size_t aligned_len;
 	struct wmi_fils_discovery_tmpl_cmd *cmd;
 
+	if (!tmpl)
+		return -EINVAL;
+
 	aligned_len = roundup(tmpl->len, 4);
 	len = sizeof(*cmd) + TLV_HDR_SIZE + aligned_len;
 
@@ -7597,6 +7629,12 @@ int ath12k_wmi_peer_set_cfr_capture_conf(struct ath12k *ar,
 	struct wmi_peer_cfr_capture_cmd_fixed_param *cmd;
 	struct sk_buff *skb;
 	int ret;
+
+	if (!arg)
+		return -EINVAL;
+
+	if (!mac_addr)
+		return -EINVAL;
 
 	skb = ath12k_wmi_alloc_skb(ar->wmi->wmi_ab, sizeof(*cmd));
 	if (!skb)
@@ -21886,6 +21924,7 @@ ath12k_wmi_op_gen_config_pno_start(struct ath12k *ar, u32 vdev_id,
 						     sizeof(*nlo_list));
 
 		nlo_list[i].ssid.valid = cpu_to_le32(1);
+
 		nlo_list[i].ssid.ssid.ssid_len =
 			cpu_to_le32(pno->a_networks[i].ssid.ssid_len);
 		memcpy(nlo_list[i].ssid.ssid.ssid,
@@ -22209,12 +22248,15 @@ int ath12k_wmi_mlo_setup(struct ath12k *ar, struct wmi_mlo_setup_arg *mlo_params
 	struct wmi_mlo_setup_cmd *cmd;
 	struct ath12k_wmi_pdev *wmi = ar->wmi;
 	u32 *partner_links, num_links;
-	int i, ret, buf_len, arg_len;
+	int i, ret, arg_len, buf_len;
 	struct sk_buff *skb;
 	struct wmi_tlv *tlv;
 	void *ptr;
 
 	num_links = mlo_params->num_partner_links;
+	if (num_links > ATH12K_WMI_MLO_MAX_PARTNER_LINKS)
+		return -EINVAL;
+
 	arg_len = num_links * sizeof(u32);
 	buf_len = sizeof(*cmd) + TLV_HDR_SIZE + arg_len;
 
@@ -22382,6 +22424,9 @@ int ath12k_wmi_mlo_send_ptqm_migrate_cmd(struct ath12k_link_vif *arvif,
 	max_entry_per_cmd = (wmi->wmi_ab->max_msg_len[ar->pdev_idx] -
 			     sizeof(*cmd) - TLV_HDR_SIZE) /
 			    sizeof(*peer_info);
+
+	if (!max_entry_per_cmd)
+		return -EINVAL;
 
 	reinit_completion(&arvif->wmi_migration_event_resp);
 
@@ -23184,8 +23229,12 @@ ath12k_wmi_send_mlo_peer_tid_to_link_map_cmd(struct ath12k *ar,
 	buf_len = sizeof(*cmd);
 
 	buf_len += TLV_HDR_SIZE;
-	if (ttlm_info)
+
+	if (ttlm_info) {
+		if (params->num_dir > ATH12K_WMI_TTLM_MAX_DIRECTION)
+			return -EINVAL;
 		buf_len += params->num_dir * TTLM_MAX_NUM_TIDS * sizeof(*ttlm);
+	}
 
 	/* Update the length for preferred link tlv.
 	 * The link preference tlv is planned to be deprecated, so the tlv
@@ -24446,8 +24495,7 @@ ath12k_wmi_delete_all_peer_resp_event(struct ath12k_base *ab, struct sk_buff *sk
 		return;
 	}
 
-	if (arg.status)
-		complete(&ar->delete_all_peer_done);
+	complete(&ar->delete_all_peer_done);
 
 	arvif = ath12k_mac_get_arvif(ar, arg.vdev_id);
 	if (arvif && arvif->num_ml_peers_del_all) {
