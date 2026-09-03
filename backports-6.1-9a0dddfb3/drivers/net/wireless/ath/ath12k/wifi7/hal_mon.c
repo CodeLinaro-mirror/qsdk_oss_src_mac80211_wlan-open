@@ -1715,7 +1715,7 @@ ath12k_wifi7_hal_mon_rx_mpdu_start_info_get(const void *tlv_data, u32 userid,
 					    ppdu_info->nrp_info.mac_addr2,
 					    false);
 
-	ppdu_info->userstats[user_id].sw_peer_id = peer_id;
+	ppdu_info->userstats[user_id].sw_peer_id = ppdu_info->peer_id;
 	ppdu_info->userstats[user_id].ampdu_id =
 		u32_get_bits(info[1], HAL_RX_MPDU_START_INFO1_PPDU_ID);
 	ppdu_info->userstats[user_id].filter_category =
@@ -1793,7 +1793,7 @@ ath12k_wifi7_hal_mon_rx_mpdu_start_info_get_compact(const void *tlv_data, u32 us
 					    ppdu_info->nrp_info.mac_addr2,
 					    false);
 
-	ppdu_info->userstats[user_id].sw_peer_id = peer_id;
+	ppdu_info->userstats[user_id].sw_peer_id = ppdu_info->peer_id;
 	ppdu_info->userstats[user_id].ampdu_id =
 		u32_get_bits(info[1], HAL_RX_MPDU_START_INFO1_PPDU_ID_CMPCT);
 	ppdu_info->userstats[user_id].filter_category =
@@ -2011,6 +2011,7 @@ ath12k_wifi7_hal_mon_rx_ppdu_eu_stats_info_get(const void *tlv_data, u32 userid,
 						       rxuser_stats);
 		ath12k_wifi7_hal_mon_populate_byte_count(info,
 							 rxuser_stats);
+		ppdu_info->userstats[userid].sw_peer_id = ppdu_info->peer_id;
 	}
 }
 
@@ -2102,6 +2103,7 @@ ath12k_wifi7_hal_mon_rx_ppdu_eu_stats_info_get_compact(const void *tlv_data, u32
 							       rxuser_stats);
 		ath12k_wifi7_hal_mon_populate_byte_count_compact(info,
 								 rxuser_stats);
+		ppdu_info->userstats[userid].sw_peer_id = ppdu_info->peer_id;
 	}
 }
 
