@@ -1384,7 +1384,7 @@ DECLARE_EWMA(avg_rssi_dp, 10, 8)
  *                    the peer’s signal. Used to compute bandwidth-dependent offsets
  *                    during RSSI calculations.
  *
- * @rssi_chain_pri20: Represents the per chain primary 20 RSSI (raw unsigned/SNR).
+ * @rssi_db_per_chain_pri20: Represents the per chain primary 20 RSSI (raw unsigned/SNR).
  *
  * This structure holds both instantaneous and averaged signal quality
  * metrics (SNR and RSSI) for a given peer, including data path specific
@@ -1409,7 +1409,7 @@ struct ath12k_dp_link_peer_rx_signal_stats {
 	s8 rssi;
 	s8 rssi_dp;
 	u8 channel_bw;
-	u8 rssi_chain_pri20[HAL_RX_MAX_NSS];
+	u8 rssi_db_per_chain_pri20[HAL_RX_MAX_NSS];
 };
 
 /**

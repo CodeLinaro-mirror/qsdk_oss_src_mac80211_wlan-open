@@ -976,9 +976,9 @@ static int ath12k_cfr_process_rx_tlv_ppdu(struct ath12k *ar,
 	params.gi_type = cfr_info->gi_type;
 
 	ath12k_cfr_fill_rx_tlv_agc_info(cfr_info, &params);
-	for (i = 0; i < ARRAY_SIZE(ppdu_info->rssi_chain_pri20); i++) {
+	for (i = 0; i < ARRAY_SIZE(ppdu_info->rssi_db_per_chain_pri20); i++) {
 		params.chain_rssi[i] =
-			ath12k_cfr_snr_to_signal_strength(ppdu_info->rssi_chain_pri20[i]);
+		ath12k_cfr_snr_to_signal_strength(ppdu_info->rssi_db_per_chain_pri20[i]);
 	}
 
 	spin_lock_bh(&cfr->lut_lock);

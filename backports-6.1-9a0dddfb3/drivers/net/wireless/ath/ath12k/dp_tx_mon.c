@@ -2801,7 +2801,7 @@ ath12k_dp_tx_mon_generate_ack_rx_frm(struct ath12k_pdev_dp *dp_pdev,
 	rx_ppdu_info->rx_status.frame_control_info_valid = 1;
 	rx_ppdu_info->rx_status.tsft = tx_ppdu_info->rx_status.tsft;
 	rx_ppdu_info->rx_status.freq = tx_ppdu_info->rx_status.freq;
-	rx_ppdu_info->rx_status.rssi_comb = tx_ppdu_info->ack_rssi;
+	rx_ppdu_info->rx_status.rssi_db_comb_chain_pri20 = tx_ppdu_info->ack_rssi;
 	rx_ppdu_info->rx_status.sgi = 1;
 	rx_ppdu_info->rx_status.bw = 0;
 	rx_ppdu_info->rx_status.mcs = tx_ppdu_info->rx_status.mcs;

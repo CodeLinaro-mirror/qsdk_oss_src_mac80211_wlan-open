@@ -1747,7 +1747,7 @@ ath12k_wifi8_dp_mon_rx_process_ppdu(struct work_struct *work)
 				list_for_each_entry_safe(nrp, tmp,
 							 &dp->neighbor_peers, list) {
 					u8 avg = nrp->avg_rssi;
-					u8 snr = ppdu_info->rssi_comb;
+					u8 snr = ppdu_info->rssi_db_comb_chain_pri20;
 
 					is_addr_equal =
 					ether_addr_equal(nrp->addr,
@@ -1755,7 +1755,8 @@ ath12k_wifi8_dp_mon_rx_process_ppdu(struct work_struct *work)
 					if (filter_category ==
 					    DP_MPDU_FILTER_CATEGORY_MD && is_addr_equal) {
 						avg = ath12k_dp_get_avg_snr(snr, avg);
-						nrp->rssi = ppdu_info->rssi_comb;
+						nrp->rssi =
+						    ppdu_info->rssi_db_comb_chain_pri20;
 						nrp->avg_rssi = avg;
 						nrp->timestamp =
 							ktime_to_ms(ktime_get_real());

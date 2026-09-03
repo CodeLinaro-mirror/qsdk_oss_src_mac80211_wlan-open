@@ -18678,7 +18678,7 @@ ath12k_wmi_rssi_dbm_conv_subtlv_parser(struct ath12k_base *ab,
 		 * of all sub-bands*/
 		for (i = 0; i < num_rx_ant; i++) {
 			if (param_info->curr_rx_chainmask & (0x01 << i))
-				avg_nf += param_info->nf_hw_dbm[i][0];
+				avg_nf += param_info->nf_dbm_per_chain_per_subband[i][0];
 		}
 		if (avg_nf)
 			avg_nf = avg_nf / num_rx_ant;
