@@ -609,7 +609,10 @@ struct hal_rx_nrp_info {
 
 struct hal_rx_mon_msdu_info {
 	u32 first_buffer:1,
-	    last_buffer:1;
+	    last_buffer:1,
+	    cce_metadata:16;
+	u32 fse_metadata;
+	u32 flow_idx;
 };
 
 struct hal_rx_user_ctrl_frm_info {

@@ -1847,18 +1847,32 @@ ath12k_wifi7_hal_mon_rx_msdu_end_info_get(const void *tlv_data, u32 userid,
 {
 	struct hal_rx_msdu_end *msdu_end =
 		(struct hal_rx_msdu_end *)tlv_data;
-	u32 info[3];
+	u32 info[6];
 
 	info[0] = __le32_to_cpu(msdu_end->info0);
 	info[1] = __le32_to_cpu(msdu_end->info1);
 	info[2] = __le32_to_cpu(msdu_end->info2);
+	info[3] = __le32_to_cpu(msdu_end->info3);
+	info[4] = __le32_to_cpu(msdu_end->info4);
+	info[5] = __le32_to_cpu(msdu_end->info5);
 
 	ppdu_info->grp_id = u32_get_bits(info[0],
 					 HAL_RX_MSDU_END_INFO0_SW_FRAME_GRP_ID);
 
-	ppdu_info->decap_format = u32_get_bits(info[1],
-					       HAL_RX_MSDU_END_INFO1_DECAP_FORMAT);
-	ath12k_wifi7_hal_mon_parse_rx_msdu_end_err(info[2],
+	if (userid < HAL_MAX_UL_MU_USERS) {
+		ppdu_info->msdu_info[userid].flow_idx =
+				u32_get_bits(info[1],
+					     HAL_RX_MSDU_END_INFO1_FLOW_IDX);
+		ppdu_info->msdu_info[userid].fse_metadata =
+					u32_get_bits(info[2],
+						     HAL_RX_MSDU_END_INFO2_FSE);
+		ppdu_info->msdu_info[userid].cce_metadata =
+					u32_get_bits(info[3],
+						     HAL_RX_MSDU_END_INFO3_CCE);
+	}
+	ppdu_info->decap_format = u32_get_bits(info[4],
+					       HAL_RX_MSDU_END_INFO4_DECAP_FORMAT);
+	ath12k_wifi7_hal_mon_parse_rx_msdu_end_err(info[5],
 						   &ppdu_info->errmap);
 }
 
@@ -1868,18 +1882,31 @@ ath12k_wifi7_hal_mon_rx_msdu_end_info_get_compact(const void *tlv_data, u32 user
 {
 	struct hal_rx_mon_msdu_end_compact *msdu_end =
 		(struct hal_rx_mon_msdu_end_compact *)tlv_data;
-	u32 info[3];
+	u32 info[6];
 
 	info[0] = __le32_to_cpu(msdu_end->info0);
 	info[1] = __le32_to_cpu(msdu_end->info1);
 	info[2] = __le32_to_cpu(msdu_end->info2);
+	info[3] = __le32_to_cpu(msdu_end->info3);
+	info[4] = __le32_to_cpu(msdu_end->info4);
+	info[5] = __le32_to_cpu(msdu_end->info5);
 
 	ppdu_info->grp_id = u32_get_bits(info[0],
 					 HAL_RX_MSDU_END_INFO0_SW_FRAME_GRP_ID_CMPCT);
-
-	ppdu_info->decap_format = u32_get_bits(info[1],
-					       HAL_RX_MSDU_END_INFO1_DECAP_FORMAT_CMPCT);
-	ath12k_wifi7_hal_mon_parse_rx_msdu_end_err(info[2],
+	if (userid < HAL_MAX_UL_MU_USERS) {
+		ppdu_info->msdu_info[userid].flow_idx =
+				u32_get_bits(info[1],
+					     HAL_RX_MSDU_END_INFO1_FLOW_IDX_CMPCT);
+		ppdu_info->msdu_info[userid].fse_metadata =
+					u32_get_bits(info[2],
+						     HAL_RX_MSDU_END_INFO2_FSE_CMPCT);
+		ppdu_info->msdu_info[userid].cce_metadata =
+					u32_get_bits(info[3],
+						     HAL_RX_MSDU_END_INFO3_CCE_CMPCT);
+	}
+	ppdu_info->decap_format = u32_get_bits(info[4],
+					       HAL_RX_MSDU_END_INFO4_DECAP_FORMAT_CMPCT);
+	ath12k_wifi7_hal_mon_parse_rx_msdu_end_err(info[5],
 						   &ppdu_info->errmap);
 }
 

@@ -506,20 +506,26 @@ struct hal_rx_mpdu_start {
 	__le32 rsvd3[8];
 } __packed;
 
-#define HAL_RX_MSDU_END_INFO0_SW_FRAME_GRP_ID			GENMASK(8, 2)
-#define HAL_RX_MSDU_END_INFO1_DECAP_FORMAT			GENMASK(9, 8)
-
+#define HAL_RX_MSDU_END_INFO0_SW_FRAME_GRP_ID		GENMASK(8, 2)
+#define HAL_RX_MSDU_END_INFO1_FLOW_IDX			GENMASK(25, 6)
+#define HAL_RX_MSDU_END_INFO2_FSE			GENMASK(31, 0)
+#define HAL_RX_MSDU_END_INFO3_CCE			GENMASK(15, 0)
+#define HAL_RX_MSDU_END_INFO4_DECAP_FORMAT		GENMASK(9, 8)
 /* The below hal_rx_msdu_end structure is non-compact
  * structure for MSDU END TLV.
  * Only WCN chipset is using non-compact tlv structures.
  */
 struct hal_rx_msdu_end {
 	__le32 info0;
-	__le32 rsvd0[18];
+	__le32 rsvd0[11];
 	__le32 info1;
-	__le32 rsvd1[10];
 	__le32 info2;
-	__le32 rsvd2;
+	__le32 info3;
+	__le32 rsvd1[4];
+	__le32 info4;
+	__le32 rsvd2[10];
+	__le32 info5;
+	__le32 rsvd3;
 } __packed;
 
 #define HAL_RX_MPDU_END_INFO0_FCS_ERR				BIT(19)
@@ -1243,16 +1249,23 @@ struct hal_rx_mon_mpdu_start_compact {
 } __packed;
 
 #define MSDU_END_SELECT_INFO0_SW_GRPID                         BIT(0)
-#define MSDU_END_SELECT_INFO1_DECAP_FORMAT                     BIT(9)
-#define MSDU_END_SELECT_INFO2_ERR_MAP                          BIT(15)
+#define MSDU_END_SELECT_INFO1_INFO2                            BIT(6)
+#define MSDU_END_SELECT_INFO3_CCE                              BIT(7)
+#define MSDU_END_SELECT_INFO4_DECAP_FORMAT                     BIT(9)
+#define MSDU_END_SELECT_INFO5_ERR_MAP                          BIT(15)
 
 #define RX_MON_MSDU_END_WMASK \
 		(MSDU_END_SELECT_INFO0_SW_GRPID |              \
-		 MSDU_END_SELECT_INFO1_DECAP_FORMAT |          \
-		 MSDU_END_SELECT_INFO2_ERR_MAP)
+		 MSDU_END_SELECT_INFO1_INFO2 |                 \
+		 MSDU_END_SELECT_INFO3_CCE |                   \
+		 MSDU_END_SELECT_INFO4_DECAP_FORMAT |          \
+		 MSDU_END_SELECT_INFO5_ERR_MAP)
 
 #define HAL_RX_MSDU_END_INFO0_SW_FRAME_GRP_ID_CMPCT		GENMASK(8, 2)
-#define HAL_RX_MSDU_END_INFO1_DECAP_FORMAT_CMPCT		GENMASK(9, 8)
+#define HAL_RX_MSDU_END_INFO1_FLOW_IDX_CMPCT			GENMASK(25, 6)
+#define HAL_RX_MSDU_END_INFO2_FSE_CMPCT				GENMASK(31, 0)
+#define HAL_RX_MSDU_END_INFO3_CCE_CMPCT				GENMASK(15, 0)
+#define HAL_RX_MSDU_END_INFO4_DECAP_FORMAT_CMPCT		GENMASK(9, 8)
 
 /* The below hal_rx_mon_msdu_end_compact structure is tied with the mask value
  * RX_MON_MSDU_END_WMASK. If the mask value changes the structure will also
@@ -1262,10 +1275,14 @@ struct hal_rx_mon_mpdu_start_compact {
  */
 struct hal_rx_mon_msdu_end_compact {
 	__le32 info0;
-	__le32 rsvd0[2];
+	__le32 rsvd0;
 	__le32 info1;
 	__le32 info2;
-	__le32 rsvd1;
+	__le32 info3;
+	__le32 rsvd1[2];
+	__le32 info4;
+	__le32 info5;
+	__le32 rsvd2;
 } __packed;
 
 #define PPDU_END_USER_STATS_SELECT_INFO0_MCS_NSS                  BIT(0)
