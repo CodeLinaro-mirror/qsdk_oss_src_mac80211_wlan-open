@@ -609,13 +609,104 @@ struct hal_rx_he_sig_b2_ofdma_info {
 #define RECEIVE_RSSI_INFO_RSSI_PRI20_CHAIN4_LSB			0
 #define RECEIVE_RSSI_INFO_RSSI_PRI20_CHAIN4_MASK		0x000000ff
 
+/*
+ * struct hal_rx_phyrx_rssi_legacy_info maps the phyrx_rssi_legacy TLV.
+ *
+ * TLV word layout (little-endian, NUM_OF_DWORDS = 12):
+ *   words 0-3  (bytes  0-15): receive_pkt_start_info (4 DWORDs)
+ *     → info0 (bytes 0-1) + rsvd0 (bytes 2-3) + info2[0..2] (bytes 4-15)
+ *   word  4    (bytes 16-19): sw_phy_meta_data [31:0]       → info2[3]
+ *   word  5    (bytes 20-23): gain_corr chains 0-3 [31:0]   → info2[4]
+ *   word  6    (bytes 24-27): reserved_6a [31:0]            → info2[5]
+ *   word  7    (bytes 28-31): reserved_7a [31:0]            → info2[6]
+ *   word  8    (bytes 32-35): preamble_rssi_pri20_chain0[7:0]
+ *                             + gain_corr chain4 [15:8]
+ *                             + reserved_8a [31:16]         → info2[7]
+ *   words 9-11 (bytes 36-47): rssi_comb, puncture_bitmap, etc.
+ *     → info1 (bytes 36-37) + rsvd2 (bytes 38-39) + info3[0..3] (bytes 40-55)
+ *
+ * FW packs rx_gain_offset_per_chain[] into:
+ *   info2[4] (word 5, bytes 20-23): chains 0-3, 8 bits each
+ *     chain 0: info2[4] bits  [7:0]
+ *     chain 1: info2[4] bits [15:8]
+ *     chain 2: info2[4] bits [23:16]
+ *     chain 3: info2[4] bits [31:24]
+ *   info2[7] (word 8, bytes 32-35): chain 4, 8 bits
+ *     chain 4: info2[7] bits [15:8]
+ *
+ * Masks are applied to the full 32-bit word read at the respective offset.
+ */
+#define HAL_RX_PHYRX_RSSI_LEGACY_INFO2_GAIN_CORR_CHAIN0	GENMASK(7, 0)
+#define HAL_RX_PHYRX_RSSI_LEGACY_INFO2_GAIN_CORR_CHAIN1	GENMASK(15, 8)
+#define HAL_RX_PHYRX_RSSI_LEGACY_INFO2_GAIN_CORR_CHAIN2	GENMASK(23, 16)
+#define HAL_RX_PHYRX_RSSI_LEGACY_INFO2_GAIN_CORR_CHAIN3	GENMASK(31, 24)
+
+/* chain 4: info2[7] bits [15:8] (= reserved_8a[7:0]) */
+#define HAL_RX_PHYRX_RSSI_LEGACY_INFO2_GAIN_CORR_CHAIN4	GENMASK(15, 8)
+
 struct hal_rx_phyrx_rssi_legacy_info {
 	__le16 info0;
-	__le16 rsvd0;
-	__le32 rsvd1[8];
+	__le16 rsvd0;   /* padding to align info2[] to 32-bit boundary */
+	__le32 info2[8];
 	__le16 info1;
-	__le16 rsvd2;
-	__le32 rsvd3[4];
+	__le16 rsvd2;   /* padding to align info3[] to 32-bit boundary */
+	__le32 info3[4];
+} __packed;
+
+/*
+ * struct hal_rx_phyrx_pkt_end_part1_info maps the phyrx_pkt_end_part1 TLV.
+ *
+ * TLV word layout (little-endian, 6 DWORDs):
+ *   info0 (word 0, bytes  0- 3): rx_frame_correction_needed[0], usr0[8:1],
+ *                                usr1[16:9], usr2[24:17],
+ *                                gain_corr chain4 [30:25]
+ *   info1 (word 1, bytes  4- 7): usr3[7:0], usr4[15:8], usr5[23:16], usr6[31:24]
+ *   info2 (word 2, bytes  8-11): usr7[7:0], usr8[15:8], usr9[23:16], usr10[31:24]
+ *   info3 (word 3, bytes 12-15): usr11[7:0], usr12[15:8], usr13[23:16], usr14[31:24]
+ *   info4 (word 4, bytes 16-19): usr15[7:0],
+ *                                gain_corr chain0 [13:8],
+ *                                gain_corr chain1 [19:14],
+ *                                gain_corr chain2 [25:20],
+ *                                gain_corr chain3 [31:26]
+ *   info5 (word 5, bytes 20-23): tlv64_padding[31:0]
+ *
+ * FW packs rx_gain_offset_per_chain[] (6-bit signed) into:
+ *   info4 (word 4): chains 0-3
+ *     chain 0: info4 bits [13:8]
+ *     chain 1: info4 bits [19:14]
+ *     chain 2: info4 bits [25:20]
+ *     chain 3: info4 bits [31:26]
+ *   info0 (word 0): chain 4
+ *     chain 4: info0 bits [30:25]
+ *
+ * Sign extension: 6-bit → s8: ath12k_wifi8_sign_extend_6bit()
+ */
+#define HAL_RX_PHYRX_PKT_END_PART1_INFO4_GAIN_CORR_CHAIN0	GENMASK(13, 8)
+#define HAL_RX_PHYRX_PKT_END_PART1_INFO4_GAIN_CORR_CHAIN1	GENMASK(19, 14)
+#define HAL_RX_PHYRX_PKT_END_PART1_INFO4_GAIN_CORR_CHAIN2	GENMASK(25, 20)
+#define HAL_RX_PHYRX_PKT_END_PART1_INFO4_GAIN_CORR_CHAIN3	GENMASK(31, 26)
+#define HAL_RX_PHYRX_PKT_END_PART1_INFO0_GAIN_CORR_CHAIN4	GENMASK(30, 25)
+
+#define HAL_RX_PHYRX_PKT_END_GAIN_CORR_SIGN_EXTN_SHIFT	26
+
+/*
+ * FW packs the Gain correction values (signed) in 6bits per chain.
+ * We perform the following sign extension to ensure sign is preserved
+ * while extracting s8.
+ */
+static inline s8 ath12k_wifi8_sign_extend_6bit(u32 gain_corr_raw)
+{
+	return (s8)((s32)(gain_corr_raw << HAL_RX_PHYRX_PKT_END_GAIN_CORR_SIGN_EXTN_SHIFT)
+				>> HAL_RX_PHYRX_PKT_END_GAIN_CORR_SIGN_EXTN_SHIFT);
+}
+
+struct hal_rx_phyrx_pkt_end_part1_info {
+	__le32 info0;
+	__le32 info1;
+	__le32 info2;
+	__le32 info3;
+	__le32 info4;
+	__le32 info5;
 } __packed;
 
 #define HAL_RX_USR_INFO0_USR_RSSI		GENMASK(7, 0)

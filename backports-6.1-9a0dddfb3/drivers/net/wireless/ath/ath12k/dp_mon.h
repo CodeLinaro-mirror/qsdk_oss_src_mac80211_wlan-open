@@ -145,6 +145,10 @@
 #define ATH12K_FC0_TYPE_SHIFT		2
 #define ATH12K_FC0_SUBTYPE_SHIFT	4
 
+#define ATH12K_RSSI_DB_PER_SUBBAND_INVALID	128
+#define ATH12K_RSSI_SCALE_FACTOR		64
+#define ATH12K_RSSI_SCALE_DOWN_SHIFT		32
+
 struct ath12k_mon_data;
 struct dp_mon_rx_filter;
 struct dp_mon_tx_filter;

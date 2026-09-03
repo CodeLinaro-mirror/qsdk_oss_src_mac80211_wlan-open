@@ -9081,10 +9081,14 @@ struct wmi_rssi_dbm_conv_temp_offset {
 struct wmi_rssi_dbm_conv_offsets {
 	s32 rssi_temp_offset;
 	s8 avg_nf_dbm;
-	/* rssi_offset is the sum of avg_nf_dbm & rssi_temp_offset*/
+	/* rssi_offset is the sum of avg_nf_dbm & rssi_temp_offset */
 	s32 rssi_offset;
 	u32 xlna_bypass_offset;
 	u32 xlna_bypass_threshold;
+	/* Per-chain NF in dBm */
+	s8 nf_dbm_per_chain[MAX_NUM_ANTENNA];
+	/* Active RX chainmask from WMI param_info */
+	u32 curr_rx_chainmask;
 };
 
 #define ATH12K_PEER_VALID_VDEV_ID		(1 << 31)
