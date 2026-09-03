@@ -51,6 +51,8 @@ static void get_ranges_from_chandef(struct cfg80211_chan_def *chandef,
 	int bandwidth;
 
 	bandwidth = nl80211_chan_width_to_mhz(chandef->width);
+	if (bandwidth < 0)
+		return;
 
 	get_chan_freq_boundary(chandef->center_freq1, bandwidth, &start_freq1, &end_freq1);
 

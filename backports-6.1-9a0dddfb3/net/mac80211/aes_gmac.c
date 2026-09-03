@@ -24,7 +24,7 @@ int ieee80211_aes_gmac(struct crypto_aead *tfm, const u8 *aad, u8 *nonce,
 	const __le16 *fc;
 	int ret;
 
-	if (data_len < GMAC_MIC_LEN)
+	if (data_len < 8 + GMAC_MIC_LEN)
 		return -EINVAL;
 
 	aead_req = kzalloc(reqsize + GMAC_MIC_LEN + GMAC_AAD_LEN, GFP_ATOMIC);
