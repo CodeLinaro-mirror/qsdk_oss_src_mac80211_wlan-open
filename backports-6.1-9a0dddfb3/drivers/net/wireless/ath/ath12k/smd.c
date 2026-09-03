@@ -164,14 +164,10 @@ static int ath12k_smd_bss_assoc(struct ath12k *ar,
 	he_6ghz_cap = link_sta->he_6ghz_capa;
 	bandwidth   = ath12k_mac_ieee80211_sta_bw_to_wmi(ar, link_sta);
 
-	if (ctx)
-		ath12k_mac_peer_assoc_prepare_smd(ar, arvif, arsta, peer_arg,
-					      false, link_sta, ctx);
-#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
-	else
-		ath12k_peer_assoc_prepare(ar, arvif, arsta, peer_arg,
-					  false, link_sta);
-#endif /* CPTCFG_QCN_EXTN_MESH_SUPPORT */
+	ath12k_mac_peer_assoc_prepare_smd(ar, arvif, arsta, peer_arg,
+					  false,  /* reassoc */
+					  false, /* in st transition */
+					  link_sta, ctx);
 
 	ret = ath12k_mac_vif_recalc_sta_he_txbf(ar, arvif, &he_cap, &hemode);
 	if (ret) {
@@ -375,8 +371,9 @@ static int ath12k_smd_current_bss_assoc(const struct ath12k_smd_peer_assoc_ctx *
 	he_cap = link_sta->he_cap;
 
 	ath12k_mac_peer_assoc_prepare_smd(ar, arvif, arsta, peer_arg,
-				      true,  /* reassoc */
-				      link_sta, ctx);
+					  true,  /* reassoc */
+					  true, /* in st transition */
+					  link_sta, ctx);
 
 	ret = ath12k_mac_vif_recalc_sta_he_txbf(ar, arvif, &he_cap, &hemode);
 	if (ret) {
