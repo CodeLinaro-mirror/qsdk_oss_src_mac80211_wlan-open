@@ -227,6 +227,14 @@ static int ath12k_dp_tx_htt_msduq_mpduq_setup(struct ath12k_base *ab,
 					 HTT_MSDUQ_INFO_CMD_INFO3_SAM_MSDUQ_ID) |
 			le32_encode_bits(1, HTT_MSDUQ_INFO_CMD_INFO3_SAM_MSDUQ_ALLOCATED);
 		}
+		if (msduq->txop_intent) {
+			txq_cmd->msduq.info3 |=
+				le32_encode_bits(1,
+						 HTT_MPDUQ_INFO_CMD_INFO3_TXOP_INTENT);
+			txq_cmd->msduq.info3 |=
+				le32_encode_bits(msduq->qm_id,
+						 HTT_MPDUQ_INFO_CMD_INFO3_QMID);
+		}
 		txq_cmd++;
 	}
 

@@ -162,7 +162,8 @@ ath12k_wifi7_dp_qos_update(struct ath12k_dp *dp, struct ath12k_pdev_dp *dp_pdev,
 			   struct ath12k_dp_peer *dp_peer, u8 link_id)
 {
 	u8 scs_id;
-	u16 msduq, peer_id;
+	u8 msduq;
+	u16 peer_id;
 	u16 qos_id = QOS_ID_MAX;
 	int ret;
 
@@ -216,7 +217,8 @@ ath12k_dp_sdwftx_ingress_stats_update(struct ath12k *ar,
 {
 	struct ath12k_dp *dp;
 	struct ath12k_dp_peer *dp_peer;
-	u16 msduq, peer_id, qos_id;
+	u8 msduq;
+	u16 peer_id, qos_id;
 	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
 
 	if (!ar)

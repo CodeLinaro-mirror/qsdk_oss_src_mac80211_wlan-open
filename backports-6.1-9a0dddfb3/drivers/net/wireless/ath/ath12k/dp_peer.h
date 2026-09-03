@@ -283,10 +283,12 @@ struct ath12k_dp_peer {
 #define DP_RETRY_COUNT		7
 
 struct ath12k_msduq {
-	bool reserved;
-	u8 qos_id;
 	u32 tgt_opaque_id;
-	u16 msduq;
+	u8 qos_id;
+	u8 qm_id;
+	u8 msduq      : 6,
+	   reserved   : 1,
+	   txop_intent: 1;
 };
 
 struct ath12k_dl_scs {
@@ -389,17 +391,18 @@ int ath12k_dp_peer_scs_del(struct ath12k_dp_peer *dp_peer, u8 qm_id,
 int ath12k_dp_peer_scs_data(struct ath12k_dp *dp,
 			    u8 scs_id,
 			    struct ath12k_dp_hw *dp_hw,
-			    u16 *msduq, u16 *qos_id,
+			    u8 *msduq, u16 *qos_id,
 			    struct ath12k_dp_peer *dp_peer);
 u16 ath12k_dp_peer_scs_get_qos_id(struct ath12k_dp_peer_qos *qos, u8 scs_id);
-u16 ath12k_dp_peer_qos_msduq(struct ath12k_base *ab,
-			     struct ath12k_dp_peer_qos *qos,
-			     struct ath12k_dp_peer *dp_peer,
-			     struct ath12k_dp_hw *dp_hw,
-			     u16 qos_id, u8 svc_id);
+u8 ath12k_dp_peer_qos_msduq(struct ath12k_base *ab,
+			    struct ath12k_dp_peer_qos *qos,
+			    struct ath12k_dp_peer *dp_peer,
+			    struct ath12k_dp_hw *dp_hw,
+			    u16 qos_id, u8 svc_id,
+			    u8 qm_id, bool txop_intent);
 u16 dp_peer_msduq_qos_id(struct ath12k_base *ab,
 			 struct ath12k_dp_peer_qos *qos,
-			 u16 msduq);
+			 u8 msduq);
 void ath12k_peer_qos_queue_ind_handler(struct ath12k_base *ab,
 				       struct sk_buff *skb);
 void ath12k_link_peer_free(struct ath12k_dp_link_peer *peer);

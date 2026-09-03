@@ -1233,26 +1233,35 @@ bool ath12k_dp_qos_stats_alloc(struct ath12k *ar,
 	return true;
 }
 
-static u16 ath12k_get_tid_msduq(struct ath12k_base *ab,
-				struct ath12k_dp_peer_qos *qos,
-				struct ath12k_dp_peer *dp_peer,
-				struct ath12k_dp_hw *dp_hw,
-				u16 qos_id, u8 svc_id, u8 tid)
+static u8 ath12k_get_tid_msduq(struct ath12k_base *ab,
+			       struct ath12k_dp_peer_qos *qos,
+			       struct ath12k_dp_peer *dp_peer,
+			       struct ath12k_dp_hw *dp_hw,
+			       u16 qos_id, u8 svc_id, u8 tid,
+			       u8 qm_id, bool txop_intent)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	void *telemetry_peer_ctx;
 	u8 q, msduq = QOS_INVALID_MSDUQ;
 
-	/* Find matching msduq with qos_id in the reserved pool*/
+	/* Find matching msduq with qos_id in the reserved pool.
+	 * For dedicated_queue (txop_intent=true), only reuse a slot
+	 * that was allocated for the same qm_id — each dedicated
+	 * session must have its own MSDUQ even if qos_id matches.
+	 */
 	for (q = 0; q < QOS_TID_MDSUQ_MAX; ++q) {
-		if (qos->msduq_map[tid][q].reserved &&
-		    qos->msduq_map[tid][q].qos_id == qos_id) {
-			msduq = qos->msduq_map[tid][q].msduq;
-			ath12k_dbg(ab, ATH12K_DBG_QOS,
-				   "Res:msduq 0x%x:tid %u usrdefq %u\n",
-				   msduq, tid, q);
-			break;
-		}
+		if (!qos->msduq_map[tid][q].reserved)
+			continue;
+		if (qos->msduq_map[tid][q].qos_id != qos_id)
+			continue;
+		if (txop_intent &&
+		    qos->msduq_map[tid][q].qm_id != qm_id)
+			continue;
+		msduq = qos->msduq_map[tid][q].msduq;
+		ath12k_dbg(ab, ATH12K_DBG_QOS,
+			   "Res:msduq 0x%x:tid %u usrdefq %u\n",
+			   msduq, tid, q);
+		break;
 	}
 
 	if (msduq != QOS_INVALID_MSDUQ)
@@ -1265,10 +1274,12 @@ static u16 ath12k_get_tid_msduq(struct ath12k_base *ab,
 
 		qos->msduq_map[tid][q].reserved = true;
 		qos->msduq_map[tid][q].qos_id = qos_id;
-		msduq = u16_encode_bits(q, MSDUQ_MASK) |
-						u16_encode_bits(tid, MSDUQ_TID_MASK);
+		msduq = u8_encode_bits(q, MSDUQ_MASK) |
+						u8_encode_bits(tid, MSDUQ_TID_MASK);
 		msduq = msduq + MSDUQ_MAX_DEF;
 		qos->msduq_map[tid][q].msduq = msduq;
+		qos->msduq_map[tid][q].qm_id = qm_id;
+		qos->msduq_map[tid][q].txop_intent = txop_intent;
 		ath12k_dbg(ab, ATH12K_DBG_QOS,
 			   "New: msduq 0x%x:tid %u usrdefq %u",
 			   msduq, tid, q);
@@ -1295,7 +1306,8 @@ static u16 ath12k_get_tid_msduq(struct ath12k_base *ab,
 		}
 
 		if (ath12k_dp_qos_queue_setup(dp, dp->dp_hw_grp,
-					      dp_peer, msduq, qos_id))
+					      dp_peer, msduq, qos_id,
+					      qm_id, txop_intent))
 			msduq = QOS_INVALID_MSDUQ;
 		break;
 	}
@@ -1303,13 +1315,14 @@ static u16 ath12k_get_tid_msduq(struct ath12k_base *ab,
 	return msduq;
 }
 
-u16 ath12k_dp_peer_qos_msduq(struct ath12k_base *ab,
-			     struct ath12k_dp_peer_qos *qos,
-			     struct ath12k_dp_peer *dp_peer,
-			     struct ath12k_dp_hw *dp_hw,
-			     u16 qos_id, u8 svc_id)
+u8 ath12k_dp_peer_qos_msduq(struct ath12k_base *ab,
+			    struct ath12k_dp_peer_qos *qos,
+			    struct ath12k_dp_peer *dp_peer,
+			    struct ath12k_dp_hw *dp_hw,
+			    u16 qos_id, u8 svc_id,
+			    u8 qm_id, bool txop_intent)
 {
-	u16 msduq;
+	u8 msduq;
 	u8 qos_tid;
 
 	lockdep_assert_held(&qos->lock);
@@ -1322,7 +1335,7 @@ u16 ath12k_dp_peer_qos_msduq(struct ath12k_base *ab,
 
 	/* Get MSDUQ for excat QoS profile TID */
 	msduq = ath12k_get_tid_msduq(ab, qos, dp_peer, dp_hw, qos_id,
-				     svc_id, qos_tid);
+				     svc_id, qos_tid, qm_id, txop_intent);
 
 	/* Get MSDUQ for lower QoS profile TID */
 	if (msduq == QOS_INVALID_MSDUQ && qos_tid != 0) {
@@ -1330,7 +1343,8 @@ u16 ath12k_dp_peer_qos_msduq(struct ath12k_base *ab,
 
 		while (tid < qos_tid) {
 			msduq = ath12k_get_tid_msduq(ab, qos, dp_peer, dp_hw,
-						     qos_id, svc_id, tid);
+						     qos_id, svc_id, tid,
+						     qm_id, txop_intent);
 			if (msduq != QOS_INVALID_MSDUQ)
 				break;
 			--tid;
@@ -1342,7 +1356,8 @@ u16 ath12k_dp_peer_qos_msduq(struct ath12k_base *ab,
 
 		while (tid < QOS_MAX_TID) {
 			msduq = ath12k_get_tid_msduq(ab, qos, dp_peer, dp_hw,
-						     qos_id, svc_id, tid);
+						     qos_id, svc_id, tid,
+						     qm_id, txop_intent);
 			if (msduq != QOS_INVALID_MSDUQ)
 				break;
 			++tid;
@@ -1456,12 +1471,13 @@ u16 ath12k_dp_peer_scs_get_qos_id(struct ath12k_dp_peer_qos *qos, u8 scs_id)
 int ath12k_dp_peer_scs_data(struct ath12k_dp *dp,
 			    u8 scs_id,
 			    struct ath12k_dp_hw *dp_hw,
-			    u16 *queue, u16 *id,
+			    u8 *queue, u16 *id,
 			    struct ath12k_dp_peer *dp_peer)
 {
 	struct ath12k_dp_peer_qos *qos;
 	u16 qos_data;
-	u16 msduq = QOS_INVALID_MSDUQ, qos_id = QOS_ID_INVALID;
+	u8 msduq = QOS_INVALID_MSDUQ;
+	u16 qos_id = QOS_ID_INVALID;
 	int ret = -EINVAL;
 
 	if (!dp_peer || !dp_peer->qos)
@@ -1489,7 +1505,9 @@ int ath12k_dp_peer_scs_data(struct ath12k_dp *dp,
 		msduq = qos_id - QOS_LEGACY_DL_ID_MIN;
 	else
 		msduq = ath12k_dp_peer_qos_msduq(dp->ab, qos, dp_peer,
-						 dp_hw, qos_id, scs_id);
+						 dp_hw, qos_id, scs_id,
+						 scs_id,
+						 qos->scs_map[scs_id].dedicated_queue);
 
 	if (msduq == QOS_INVALID_MSDUQ)
 		goto ret;
@@ -1514,7 +1532,7 @@ EXPORT_SYMBOL(ath12k_dp_peer_scs_data);
 
 u16 dp_peer_msduq_qos_id(struct ath12k_base *ab,
 			 struct ath12k_dp_peer_qos *qos,
-			 u16 msduq)
+			 u8 msduq)
 {
 	u16 qos_id = QOS_ID_INVALID;
 	u8 tid, q;
@@ -1556,7 +1574,8 @@ void ath12k_peer_qos_queue_ind_handler(struct ath12k_base *ab,
 	u32 max_qos_msduq;
 	u8 msduq_index, q_id;
 #ifdef CPTCFG_QCN_EXTN
-	u16 msduq, qos_id;
+	u8 msduq;
+	u16 qos_id;
 #endif /* CPTCFG_QCN_EXTN */
 
 	resp = (struct htt_t2h_qos_info_ind *)skb->data;
