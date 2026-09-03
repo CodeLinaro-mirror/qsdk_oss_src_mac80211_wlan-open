@@ -17986,18 +17986,16 @@ static void ath12k_wmi_peer_create_conf_event(struct ath12k_base *ab,
 	struct ath12k *ar;
 
 	if (ath12k_pull_peer_create_conf_ev(ab, skb, &arg)) {
-		ath12k_warn(ab, "failed to extract peer create conf event");
+		ath12k_err(ab, "failed to extract peer create conf event");
 		return;
 	}
 
-	if (arg.status != ATH12K_WMI_PEER_CREATE_SUCCESS) {
+	if (arg.status != ATH12K_WMI_PEER_CREATE_SUCCESS)
 		ath12k_warn(ab, "Peer %pM creation failed due to %d",
 			    arg.mac_addr, arg.status);
-		return;
-	}
 
 	rcu_read_lock();
-	ar = ath12k_mac_get_ar_by_vdev_id(ab, le32_to_cpu(arg.vdev_id));
+	ar = ath12k_mac_get_ar_by_vdev_id(ab, arg.vdev_id);
 	if (!ar) {
 		ath12k_warn(ab, "invalid vdev id in peer delete resp ev %d",
 			    arg.vdev_id);
@@ -18005,7 +18003,8 @@ static void ath12k_wmi_peer_create_conf_event(struct ath12k_base *ab,
 		return;
 	}
 
-	complete(&ar->peer_create_done);
+	ar->peer_create_status = arg.status;
+	complete(&ar->peer_create_conf);
 	rcu_read_unlock();
 
 	ath12k_dbg_level(ab, ATH12K_DBG_WMI | ATH12K_DBG_MLME, ATH12K_DBG_L1,

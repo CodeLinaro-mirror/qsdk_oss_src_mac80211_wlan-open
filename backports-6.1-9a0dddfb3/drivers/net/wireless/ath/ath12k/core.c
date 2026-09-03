@@ -3487,7 +3487,7 @@ void ath12k_core_radio_cleanup(struct ath12k *ar)
 		complete_all(&ar->scan.completed);
 	spin_unlock_bh(&ar->data_lock);
 	complete(&ar->scan.on_channel);
-	complete(&ar->peer_create_done);
+	complete(&ar->peer_create_conf);
 	complete(&ar->peer_assoc_done);
 	ath12k_debugfs_nrp_cleanup_all(ar);
 	complete(&ar->install_key_done);

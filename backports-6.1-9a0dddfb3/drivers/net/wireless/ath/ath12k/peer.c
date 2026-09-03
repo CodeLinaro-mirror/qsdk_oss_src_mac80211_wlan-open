@@ -792,29 +792,40 @@ static int ath12k_wait_for_peer_created(struct ath12k *ar, int vdev_id, const u8
 int ath12k_wait_for_peer_create_done(struct ath12k *ar, u32 vdev_id,
 				     const u8 *addr)
 {
-	int ret;
+	int ret = 0;
 	unsigned long time_left;
 
 	/* Wait for HTT peer map event only when required */
 	if (ar->ab->map_event_required) {
 		ret = ath12k_wait_for_peer_created(ar, vdev_id, addr);
-		if (ret) {
-			ath12k_warn(ar->ab, "failed wait for peer create addr : %pM\n",
-				    addr);
+		if (ret)
 			ath12k_critical_failure_trigger(ar->ab, ATH12K_CRIT_PEER_FAILURE);
-			WARN_ON(1);
-			return ret;
-		}
 	}
 
-	time_left = wait_for_completion_timeout(&ar->peer_create_done,
+	time_left = wait_for_completion_timeout(&ar->peer_create_conf,
 						3 * HZ);
 	if (time_left == 0) {
-		ath12k_warn(ar->ab, "Timeout in receiving peer create conf peer_addr : %pM\n",
-			    addr);
+		ath12k_err(ar->ab, "Timeout in receiving peer create confirmation addr : %pM\n",
+			   addr);
+		if (ret)
+			ath12k_err(ar->ab, "failed wait for peer create map event also, addr : %pM\n",
+				   addr);
+		WARN_ON(1);
 		return -ETIMEDOUT;
 	}
 
+	if (ret && ar->peer_create_status == ATH12K_WMI_PEER_CREATE_SUCCESS) {
+		ath12k_err(ar->ab, "failed wait for peer create map event addr : %pM\n",
+			   addr);
+		WARN_ON(1);
+		return ret;
+	}
+
+	if (ar->peer_create_status != ATH12K_WMI_PEER_CREATE_SUCCESS) {
+		ath12k_err(ar->ab, "Peer create conf error addr : %pM status : %u\n",
+			   addr, ar->peer_create_status);
+		return -EINVAL;
+	}
 	return 0;
 }
 
@@ -900,7 +911,8 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		return -ENOBUFS;
 	}
 
-	reinit_completion(&ar->peer_create_done);
+	reinit_completion(&ar->peer_create_conf);
+	ar->peer_create_status = ATH12K_WMI_PEER_CREATE_STATUS_MAX;
 
 	memset(map_event, 0, sizeof(struct ath12k_peer_map_pending_event));
 

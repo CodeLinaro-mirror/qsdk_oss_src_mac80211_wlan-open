@@ -7311,7 +7311,7 @@ typedef enum {
 	ATH12K_WMI_PEER_BSS_PEER_EXISTS,
 	ATH12K_WMI_PEER_AST_FULL,
 
-	ATH12K_WMI_PEER_CREATRE_STATUS_MAX
+	ATH12K_WMI_PEER_CREATE_STATUS_MAX
 } ath12k_peer_create_conf_status;
 
 struct ath12k_wmi_peer_create_conf_ev {
