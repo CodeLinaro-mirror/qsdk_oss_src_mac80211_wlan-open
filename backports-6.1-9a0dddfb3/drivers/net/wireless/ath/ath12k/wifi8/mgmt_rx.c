@@ -54,16 +54,9 @@ void ath12k_wifi8_mgmt_rx_replenish_buffs(struct ath12k_mgmt *mgmt,
 		}
 	} else {
 		list_for_each_entry_safe(rx_desc, tmp_rx_desc, desc_used_list, list) {
-			skb = dev_alloc_skb(MGMT_RX_BUFFER_SIZE +
-					    MGMT_RX_BUFFER_ALIGN_SIZE);
+			skb = dev_alloc_skb(MGMT_RX_BUFFER_SIZE);
 			if (!skb)
 				break;
-
-			if (!IS_ALIGNED((unsigned long)skb->data,
-					MGMT_RX_BUFFER_ALIGN_SIZE))
-				skb_pull(skb,
-					 PTR_ALIGN(skb->data, MGMT_RX_BUFFER_ALIGN_SIZE) -
-					 skb->data);
 
 			paddr = ath12k_core_dma_map_single(mgmt->dev, skb->data,
 							   skb->len + skb_tailroom(skb),
