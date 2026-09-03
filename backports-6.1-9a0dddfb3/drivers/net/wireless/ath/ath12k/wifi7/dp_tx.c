@@ -265,13 +265,12 @@ ath12k_dp_sdwftx_ingress_stats_update(struct ath12k *ar,
 	}
 
 	/* Store the NWDELAY to skb->mark which can be fetched
-	 * during tx completion
+	 * during tx completion.
 	 */
 	if (qos_nw_delay > QOS_NW_DELAY_MAX)
 		qos_nw_delay = QOS_NW_DELAY_MAX;
 
-	*skb_mark = u32_encode_bits(u32_get_bits(*skb_mark, QOS_NW_TAG_SHIFT),
-				    QOS_TAG_ID) |
+	*skb_mark = SDWF_VALID_MASK |
 		    (qos_nw_delay << QOS_NW_DELAY_SHIFT) | msduq;
 }
 
