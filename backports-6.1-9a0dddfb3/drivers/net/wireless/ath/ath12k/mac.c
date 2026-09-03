@@ -30480,6 +30480,11 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 	ieee80211_hw_set(hw, SUPPORTS_MULTI_BSSID);
 	ieee80211_hw_set(hw, SUPPORTS_SINGLE_CHANNEL);
 
+#ifdef CPTCFG_QCN_EXTN
+	if (ath12k_cfg_get(ab, ATH12K_CFG_SYNC_RCU_EXPEDITE))
+		ieee80211_hw_set(hw, STA_DESTROY_SYNC_RCU_EXPEDITED);
+#endif /* CPTCFG_QCN_EXTN */
+
 	if (ath12k_frame_mode == ATH12K_HW_TXRX_ETHERNET) {
 		ieee80211_hw_set(hw, SUPPORTS_TX_ENCAP_OFFLOAD);
 		ieee80211_hw_set(hw, SUPPORTS_RX_DECAP_OFFLOAD);
