@@ -3001,6 +3001,8 @@ ath12k_wifi8_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 	case HAL_PHYRX_RSSI_LEGACY: {
 		const struct hal_rx_phyrx_rssi_legacy_info *rssi = tlv_data;
 		u32 info[2];
+		u32 info2_4;
+		u32 info2_7;
 
 		info[0] = __le32_to_cpu(rssi->info0);
 		info[1] = __le32_to_cpu(rssi->info1);
@@ -3015,6 +3017,39 @@ ath12k_wifi8_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 
 		ppdu_info->bw = u32_get_bits(info[0],
 					     HAL_RX_PHYRX_RSSI_LEGACY_INFO_INFO0_RX_BW);
+
+		/*
+		 * Parse gain correction values from info2[] struct fields
+		 * of phyrx_rssi_legacy TLV (struct hal_rx_phyrx_rssi_legacy_info).
+		 *
+		 * Chains 0–3: 8-bit signed values in info2[4] (word 5)
+		 * Chain 4:    8-bit signed value in info2[7] bits [15:8] (word 8)
+		 *
+		 * Minimum TLV length check: need at least info2[7] + 4 bytes.
+		 */
+		if (hal->rssi_gain_corr_in_rssi_legacy &&
+		    tlv_len >= offsetof(struct hal_rx_phyrx_rssi_legacy_info,
+					info2[7]) + sizeof(u32)) {
+			info2_4 = le32_to_cpu(rssi->info2[4]);
+			info2_7 = le32_to_cpu(rssi->info2[7]);
+
+			/* Sign-extend: direct s8 cast (8-bit signed, no extn needed) */
+			ppdu_info->rssi_db_lin_corr_per_gain_per_chain[0] =
+				(s8)u32_get_bits(info2_4,
+					HAL_RX_PHYRX_RSSI_LEGACY_INFO2_GAIN_CORR_CHAIN0);
+			ppdu_info->rssi_db_lin_corr_per_gain_per_chain[1] =
+				(s8)u32_get_bits(info2_4,
+					HAL_RX_PHYRX_RSSI_LEGACY_INFO2_GAIN_CORR_CHAIN1);
+			ppdu_info->rssi_db_lin_corr_per_gain_per_chain[2] =
+				(s8)u32_get_bits(info2_4,
+					HAL_RX_PHYRX_RSSI_LEGACY_INFO2_GAIN_CORR_CHAIN2);
+			ppdu_info->rssi_db_lin_corr_per_gain_per_chain[3] =
+				(s8)u32_get_bits(info2_4,
+					HAL_RX_PHYRX_RSSI_LEGACY_INFO2_GAIN_CORR_CHAIN3);
+			ppdu_info->rssi_db_lin_corr_per_gain_per_chain[4] =
+				(s8)u32_get_bits(info2_7,
+					HAL_RX_PHYRX_RSSI_LEGACY_INFO2_GAIN_CORR_CHAIN4);
+		}
 		break;
 	}
 	case HAL_PHYRX_RSSI_LEGACY_PART2: {
@@ -3022,16 +3057,68 @@ ath12k_wifi8_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 		u8 *rssi_info_tlv = part2 +
 				HAL_PHYRX_RSSI_LEGACY_PART2_PREAMBLE_RSSI_INFO_OFFSET;
 		u32 need = HAL_PHYRX_RSSI_LEGACY_PART2_PREAMBLE_RSSI_INFO_OFFSET +
-			  RECEIVE_RSSI_INFO_RSSI_PRI20_CHAIN4_OFFSET + sizeof(u32);
+			   RECEIVE_RSSI_INFO_RSSI_PRI20_CHAIN4_OFFSET +
+			   HAL_RX_MAX_SUBBANDS;
 
 		if (tlv_len < need)
 			break;
 
+		/*
+		 * HAL_RX_MON_UPDATE_PRI20_RSSI_PER_CHAIN writes to
+		 * rssi_db_per_chain_per_subband[]
+		 */
 		HAL_RX_MON_UPDATE_PRI20_RSSI_PER_CHAIN(0, ppdu_info, rssi_info_tlv);
+		HAL_RX_MON_UPDATE_SUBBAND_RSSI_PER_CHAIN(0, ppdu_info, rssi_info_tlv);
 		HAL_RX_MON_UPDATE_PRI20_RSSI_PER_CHAIN(1, ppdu_info, rssi_info_tlv);
+		HAL_RX_MON_UPDATE_SUBBAND_RSSI_PER_CHAIN(1, ppdu_info, rssi_info_tlv);
 		HAL_RX_MON_UPDATE_PRI20_RSSI_PER_CHAIN(2, ppdu_info, rssi_info_tlv);
+		HAL_RX_MON_UPDATE_SUBBAND_RSSI_PER_CHAIN(2, ppdu_info, rssi_info_tlv);
 		HAL_RX_MON_UPDATE_PRI20_RSSI_PER_CHAIN(3, ppdu_info, rssi_info_tlv);
+		HAL_RX_MON_UPDATE_SUBBAND_RSSI_PER_CHAIN(3, ppdu_info, rssi_info_tlv);
 		HAL_RX_MON_UPDATE_PRI20_RSSI_PER_CHAIN(4, ppdu_info, rssi_info_tlv);
+		HAL_RX_MON_UPDATE_SUBBAND_RSSI_PER_CHAIN(4, ppdu_info, rssi_info_tlv);
+		break;
+	}
+	case HAL_PHYRX_PKT_END_PART1: {
+		/*
+		 * Parse gain correction values from info0 and info4 fields
+		 * of phyrx_pkt_end_part1 TLV (struct hal_rx_phyrx_pkt_end_part1_info).
+		 *
+		 * Chains 0–3: 6-bit signed values in info4 (word 4)
+		 * Chain 4:    6-bit signed value in info0 bits [30:25] (word 0)
+		 *
+		 * Minimum TLV length: need at least info4 offset + 4 bytes
+		 */
+		if (!hal->rssi_gain_corr_in_rssi_legacy &&
+		    tlv_len >= offsetof(struct hal_rx_phyrx_pkt_end_part1_info, info4) +
+					sizeof(u32)) {
+			const struct hal_rx_phyrx_pkt_end_part1_info *pkt_end = tlv_data;
+			u32 info4, info0;
+
+			/*
+			 * info4 (chains 0-3) at word 4 (byte 16),
+			 * info0 (chain 4)    at word 0 (byte 0).
+			 */
+			info4 = le32_to_cpu(pkt_end->info4);
+			info0 = le32_to_cpu(pkt_end->info0);
+
+			/* Sign-extend 6-bit values to s8 */
+			ppdu_info->rssi_db_lin_corr_per_gain_per_chain[0] =
+				ath12k_wifi8_sign_extend_6bit(u32_get_bits(info4,
+				HAL_RX_PHYRX_PKT_END_PART1_INFO4_GAIN_CORR_CHAIN0));
+			ppdu_info->rssi_db_lin_corr_per_gain_per_chain[1] =
+				ath12k_wifi8_sign_extend_6bit(u32_get_bits(info4,
+				HAL_RX_PHYRX_PKT_END_PART1_INFO4_GAIN_CORR_CHAIN1));
+			ppdu_info->rssi_db_lin_corr_per_gain_per_chain[2] =
+				ath12k_wifi8_sign_extend_6bit(u32_get_bits(info4,
+				HAL_RX_PHYRX_PKT_END_PART1_INFO4_GAIN_CORR_CHAIN2));
+			ppdu_info->rssi_db_lin_corr_per_gain_per_chain[3] =
+				ath12k_wifi8_sign_extend_6bit(u32_get_bits(info4,
+				HAL_RX_PHYRX_PKT_END_PART1_INFO4_GAIN_CORR_CHAIN3));
+			ppdu_info->rssi_db_lin_corr_per_gain_per_chain[4] =
+				ath12k_wifi8_sign_extend_6bit(u32_get_bits(info0,
+				HAL_RX_PHYRX_PKT_END_PART1_INFO0_GAIN_CORR_CHAIN4));
+		}
 		break;
 	}
 	case HAL_PHYRX_COMMON_USER_INFO: {

@@ -18806,6 +18806,11 @@ ath12k_wmi_rssi_dbm_conv_subtlv_parser(struct ath12k_base *ab,
 	struct wmi_rssi_dbm_conv_param_info *param_info;
 	struct wmi_rssi_dbm_conv_temp_offset *temp_offset_info;
 	int i, ret = 0, num_rx_ant, avg_nf = 0;
+	int n_subbands;
+	const s8 *nf_sb = NULL; /* Array holding NF across subbands */
+	s8 max_nf = S8_MIN;
+	int j = 0;
+	s8 nf = 0;
 
 	switch (tag) {
 	case WMI_TAG_RSSI_DBM_CONVERSION_PARAMS_INFO:
@@ -18823,6 +18828,9 @@ ath12k_wmi_rssi_dbm_conv_subtlv_parser(struct ath12k_base *ab,
 				    tag, param_info->curr_rx_chainmask);
 			return -EINVAL;
 		}
+
+		rssi_offsets->curr_rx_chainmask = param_info->curr_rx_chainmask;
+
 		/* Using minimum pri20 Noise Floor across active chains instead
 		 * of all sub-bands*/
 		for (i = 0; i < num_rx_ant; i++) {
@@ -18832,6 +18840,47 @@ ath12k_wmi_rssi_dbm_conv_subtlv_parser(struct ath12k_base *ab,
 		if (avg_nf)
 			avg_nf = avg_nf / num_rx_ant;
 		rssi_offsets->avg_nf_dbm = (s8)avg_nf;
+
+		/*
+		 * Compute Per-chain NF by finding max NF_DBM across it's active subbands
+		 * Use BW to limit iteration to active subbands alone
+		 */
+		switch (param_info->curr_bw) {
+		case HAL_RX_BW_40MHZ:
+			n_subbands = 2;
+			break;
+		case HAL_RX_BW_80MHZ:
+			n_subbands = 4;
+			break;
+		case HAL_RX_BW_160MHZ:
+			n_subbands = 8;
+			break;
+		case HAL_RX_BW_320MHZ:
+			n_subbands = 16;
+			break;
+		default:
+			n_subbands = 1;
+			break;
+		}
+
+		for (i = 0; i < num_rx_ant; i++) {
+			if (param_info->curr_rx_chainmask & (0x01 << i)) {
+				nf_sb = param_info->nf_dbm_per_chain_per_subband[i];
+				max_nf = S8_MIN;
+
+				for (j = 0; j < n_subbands; j++) {
+					nf = nf_sb[j];
+
+					if (nf == 1)
+						continue;
+					if (nf > max_nf)
+						max_nf = nf;
+				}
+				if (max_nf == S8_MIN)
+					max_nf = nf_sb[0];
+				rssi_offsets->nf_dbm_per_chain[i] = max_nf;
+			}
+		}
 		rssi_offsets->xlna_bypass_offset = param_info->xlna_bypass_offset;
 		rssi_offsets->xlna_bypass_threshold = param_info->xlna_bypass_threshold;
 		break;

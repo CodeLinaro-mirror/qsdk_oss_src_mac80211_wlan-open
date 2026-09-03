@@ -682,6 +682,8 @@ struct hal_rx_mon_ppdu_info {
 	u8 gi;
 	u8 rssi_db_comb_chain_pri20;
 	u8 rssi_db_per_chain_pri20[HAL_RX_MAX_NSS];
+	/* Per-chain gain correction values from ucode TLV */
+	s8 rssi_db_lin_corr_per_gain_per_chain[HAL_RX_MAX_NSS];
 	u16 tid;
 	u8 fc_valid;
 	u32 ht_flags : 1,
@@ -810,13 +812,32 @@ static inline u32 hal_rx_mon_get(const void *ptr, u32 offset, u32 mask, u8 lsb)
 	( \
 		(ppdu_info)->rssi_db_per_chain_pri20[(chain)] = \
 			hal_rx_mon_get((rssi_info_tlv), \
-				       HAL_RX_MON_OFFSET(RECEIVE_RSSI_INFO, \
-							 RSSI_PRI20_CHAIN##chain), \
-				       HAL_RX_MON_MASK(RECEIVE_RSSI_INFO, \
-						       RSSI_PRI20_CHAIN##chain), \
-				       HAL_RX_MON_LSB(RECEIVE_RSSI_INFO, \
-						      RSSI_PRI20_CHAIN##chain)) \
+					HAL_RX_MON_OFFSET(RECEIVE_RSSI_INFO, \
+						RSSI_PRI20_CHAIN##chain), \
+					HAL_RX_MON_MASK(RECEIVE_RSSI_INFO, \
+						RSSI_PRI20_CHAIN##chain), \
+					HAL_RX_MON_LSB(RECEIVE_RSSI_INFO, \
+						RSSI_PRI20_CHAIN##chain)) \
 	)
+
+/*
+ * HAL_RX_MON_UPDATE_SUBBAND_RSSI_PER_CHAIN - populate all subbands for a chain.
+ *
+ * The preamble_rssi_info_details TLV packs 8 subband RSSI values as consecutive
+ * bytes starting at RSSI_PRI20_CHAIN<n>_OFFSET:
+ *   byte 0: pri20, byte 1: ext20, byte 2: ext40_low, byte 3: ext40_high,
+ *   byte 4: ext80_ll, byte 5: ext80_lh, byte 6: ext80_hl, byte 7: ext80_h
+ * This matches the FW's rssi_chain packed 64-bit field (8 bits per subband).
+ */
+#define HAL_RX_MON_UPDATE_SUBBAND_RSSI_PER_CHAIN(chain, ppdu_info, rssi_info_tlv) \
+	do { \
+		const u8 *_base = (const u8 *)(rssi_info_tlv) + \
+			HAL_RX_MON_OFFSET(RECEIVE_RSSI_INFO, RSSI_PRI20_CHAIN##chain); \
+		int _seg; \
+		for (_seg = 0; _seg < HAL_RX_MAX_SUBBANDS; _seg++) \
+			(ppdu_info)->rssi_db_per_chain_per_subband[(chain)][_seg] = \
+				(s8)_base[_seg]; \
+	} while (0)
 
 /* in the bitmap 0 indicates no puncturing and 1 indicate that sub channel is punctured */
 #define PUNCTURE_NONE    0x0000
@@ -1657,5 +1678,11 @@ ath12k_hal_mon_tx_pkt_buf_cnt_in_desc(struct ath12k_hal *hal)
 		return hal->hal_mon_ops->tx_mon_pkt_buf_cnt_in_desc();
 
 	return false;
+}
+
+static inline bool
+ath12k_hal_get_rssi_full_band_accuracy_en(struct ath12k_hal *hal)
+{
+	return hal->rssi_full_band_accuracy_en;
 }
 #endif
