@@ -16080,6 +16080,11 @@ static void ath12k_probe_resp_tx_status_event(struct ath12k_base *ab,
 {
 	const void **tb;
 	const struct wmi_probe_resp_tx_status_event *ev;
+	struct ath12k *ar;
+	struct ath12k_link_vif *arvif;
+	struct ath12k_mgmt_frame_stats *mgmt_stats;
+	u8 frm_type = IEEE80211_STYPE_PROBE_RESP >> 4;
+	bool found = false;
 	int ret;
 
 	tb = ath12k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
@@ -16104,6 +16109,45 @@ static void ath12k_probe_resp_tx_status_event(struct ath12k_base *ab,
 			    "Probe response transmission failed for vdev_id %u, status %u\n",
 			    ev->vdev_id, ev->tx_status);
 
+	rcu_read_lock();
+	ar = ath12k_mac_get_ar_by_vdev_id(ab, le32_to_cpu(ev->vdev_id));
+	if (!ar) {
+		ath12k_warn(ab, "probe resp tx status: invalid vdev_id %u\n",
+			    le32_to_cpu(ev->vdev_id));
+		rcu_read_unlock();
+		goto out;
+	}
+
+	spin_lock_bh(&ar->data_lock);
+	list_for_each_entry(arvif, &ar->arvifs, list) {
+		if (ath12k_mac_is_bridge_vdev(arvif))
+			continue;
+		if (le32_to_cpu(ev->vdev_id) == arvif->vdev_id) {
+			found = true;
+			break;
+		}
+	}
+
+	if (found) {
+		if (!arvif->ahvif) {
+			ath12k_warn(ab, "probe resp tx status: ahvif is NULL for vdev_id %u\n",
+				    le32_to_cpu(ev->vdev_id));
+			goto unlock;
+		}
+		mgmt_stats = &arvif->ahvif->mgmt_stats;
+		if (!ev->tx_status) {
+			mgmt_stats->tx_succ_cnt[frm_type]++;
+			mgmt_stats->tx_compl_succ[frm_type]++;
+		} else {
+			mgmt_stats->tx_fail_cnt[frm_type]++;
+			mgmt_stats->tx_compl_fail[frm_type]++;
+		}
+	}
+unlock:
+	spin_unlock_bh(&ar->data_lock);
+	rcu_read_unlock();
+
+out:
 	kfree(tb);
 }
 
