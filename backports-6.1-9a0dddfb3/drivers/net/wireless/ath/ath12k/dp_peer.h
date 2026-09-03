@@ -111,7 +111,7 @@ struct ath12k_dp_link_peer {
 	struct rate_info last_txrate;
 	u64 rx_duration;
 	u64 tx_duration;
-	u8 rssi_comb;
+	u8 rssi_db_comb_chain_pri20; /* Comb chain Pri20 RSSI val */
 	u16 tx_retry_failed;
 	u16 tx_retry_count;
 	struct ewma_avg_rssi avg_rssi;

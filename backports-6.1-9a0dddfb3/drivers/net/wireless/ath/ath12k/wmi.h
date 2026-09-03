@@ -9071,7 +9071,7 @@ struct wmi_rssi_dbm_conv_param_info {
 	u32 xbar_config;
 	u32 xlna_bypass_offset;
 	u32 xlna_bypass_threshold;
-	s8 nf_hw_dbm[MAX_NUM_ANTENNA][MAX_20MHZ_SEGS];
+	s8 nf_dbm_per_chain_per_subband[MAX_NUM_ANTENNA][MAX_20MHZ_SEGS];
 } __packed;
 
 struct wmi_rssi_dbm_conv_temp_offset {
