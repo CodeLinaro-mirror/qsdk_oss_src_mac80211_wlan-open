@@ -299,6 +299,18 @@ int ath12k_dbring_reset(struct ath12k *ar, struct ath12k_dbring *ring)
 	 */
 	spin_lock_bh(&ring->idr_lock);
 	idr_for_each_entry(&ring->bufs_idr, buff, buf_id) {
+		/* Leave enough ring slots free to absorb the maximum batch size
+		 * firmware releases at once. Firmware releases up to ~6 buffers
+		 * per batch event. If we fill the ring too full, the last few
+		 * bufs_replenish calls in a batch fail (num_free=0), IDR entries
+		 * are removed, and the pool permanently shrinks each scan.
+		 * Keeping ATH12K_SPECTRAL_DBRING_FREE_SLOTS slots free ensures
+		 * all batch replenish calls succeed.
+		 */
+		if (ath12k_hal_srng_src_num_free(ab, srng, false) <=
+		    ATH12K_SPECTRAL_DBRING_FREE_SLOTS)
+			break;
+
 		ptr_unaligned = buff->payload;
 		ptr_aligned = PTR_ALIGN(ptr_unaligned, ring->buf_align);
 		ath12k_dbring_fill_magic_value(ar, ptr_aligned, ring->buf_sz);
