@@ -2157,6 +2157,13 @@ struct ath12k {
 	u8 num_created_bridge_vdevs;
 	unsigned long long allocated_vdev_map;
 
+	/* bit per vdev_id, set when arvif->is_created becomes true and
+	 * cleared when it becomes false; used for O(1) lookup in
+	 * ath12k_wmi_vdev_is_created() instead of walking ar->arvifs
+	 * Used only to debug.
+	 */
+	unsigned long long created_vdev_map;
+
 	struct idr txmgmt_idr;
 	/* protects txmgmt_idr data */
 	spinlock_t txmgmt_idr_lock;
