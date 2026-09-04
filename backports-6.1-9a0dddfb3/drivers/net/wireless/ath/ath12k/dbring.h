@@ -12,6 +12,8 @@
 #include <linux/spinlock.h>
 #include "dp.h"
 
+#define ATH12K_DB_MAGIC_VALUE 0xdeadbeaf
+
 struct ath12k_dbring_element {
 	dma_addr_t paddr;
 	u8 payload[];
@@ -100,5 +102,6 @@ int ath12k_dbring_get_cap(struct ath12k_base *ab,
 			  struct ath12k_dbring_cap *db_cap);
 void ath12k_dbring_srng_cleanup(struct ath12k *ar, struct ath12k_dbring *ring);
 void ath12k_dbring_buf_cleanup(struct ath12k *ar, struct ath12k_dbring *ring);
+int ath12k_dbring_reset(struct ath12k *ar, struct ath12k_dbring *ring);
 int ath12k_dbring_validate_buffer(struct ath12k *ar, void *data, u32 size);
 #endif /* ATH12K_DBRING_H */
