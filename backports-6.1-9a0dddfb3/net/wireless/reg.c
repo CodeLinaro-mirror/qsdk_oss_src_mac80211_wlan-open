@@ -2954,6 +2954,7 @@ static bool cfg80211_update_wiphy_dfs_cac_channels(struct wiphy *wiphy,
 
 	return changed;
 }
+#endif
 
 static void cfg80211_reg_change_event_work(struct work_struct *work)
 {
@@ -2977,12 +2978,14 @@ static void cfg80211_reg_change_event_work(struct work_struct *work)
 	kfree(event_work);
 }
 
+#ifdef CPTCFG_QCA_LAB_TEST_FEATURES
 static void
 cfg80211_free_reg_change_event_work(struct cfg80211_reg_change_event_work *event_work)
 {
 	put_device(&event_work->wiphy->dev);
 	kfree(event_work);
 }
+#endif
 
 static struct cfg80211_reg_change_event_work *
 cfg80211_alloc_reg_change_event_work(struct wiphy *wiphy, const char *alpha2)
@@ -3021,6 +3024,7 @@ cfg80211_alloc_reg_change_event_work(struct wiphy *wiphy, const char *alpha2)
  *
  * Return: 0 on success, negative errno on failure.
  */
+#ifdef CPTCFG_QCA_LAB_TEST_FEATURES
 int
 cfg80211_update_dfs_cac_time(struct wiphy *wiphy,
 			     u32 start_freq_mhz,
@@ -4756,6 +4760,54 @@ int regulatory_set_wiphy_regd_sync(struct wiphy *wiphy,
 	return 0;
 }
 EXPORT_SYMBOL(regulatory_set_wiphy_regd_sync);
+
+void regulatory_update_wiphy_regd(struct wiphy *wiphy,
+				  struct ieee80211_regdomain *regd)
+{
+	const struct ieee80211_regdomain *old;
+
+	lockdep_assert_wiphy(wiphy);
+
+	old = rcu_dereference_protected(wiphy->regd,
+					lockdep_is_held(&wiphy->mtx));
+	if (old == regd)
+		return;
+
+	rcu_assign_pointer(wiphy->regd, regd);
+	rcu_free_regdom(old);
+
+	reg_check_channels();
+}
+EXPORT_SYMBOL(regulatory_update_wiphy_regd);
+
+/**
+ * regulatory_notify_wiphy_change - send nl80211 reg-change event for a wiphy
+ *
+ * Schedules NL80211_CMD_WIPHY_REG_CHANGE so userspace refreshes its channel
+ * list.  May be called while holding wiphy_lock; deferred to cfg80211_wq to
+ * avoid acquiring rtnl_lock while wiphy_lock is held (inverted lock order).
+ */
+void regulatory_notify_wiphy_change(struct wiphy *wiphy)
+{
+	struct cfg80211_reg_change_event_work *event_work;
+	const struct ieee80211_regdomain *regd;
+	char alpha2[3] = "00";
+
+	rcu_read_lock();
+	regd = rcu_dereference(wiphy->regd);
+	if (regd) {
+		alpha2[0] = regd->alpha2[0];
+		alpha2[1] = regd->alpha2[1];
+	}
+	rcu_read_unlock();
+
+	event_work = cfg80211_alloc_reg_change_event_work(wiphy, alpha2);
+	if (!event_work)
+		return;
+
+	queue_work(cfg80211_wq, &event_work->work);
+}
+EXPORT_SYMBOL(regulatory_notify_wiphy_change);
 
 void wiphy_regulatory_register(struct wiphy *wiphy)
 {

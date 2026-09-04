@@ -9071,6 +9071,31 @@ int regulatory_set_wiphy_regd_sync(struct wiphy *wiphy,
 				   struct ieee80211_regdomain *rd);
 
 /**
+ * regulatory_update_wiphy_regd - replace a wiphy's active regdomain
+ * @wiphy: self-managed wiphy
+ * @regd: new regdomain; ownership is transferred to the wiphy
+ *
+ * Atomically updates @wiphy->regd without reapplying channel flags or
+ * resetting DFS state. Intended for drivers that maintain per-radio channel
+ * state. Must be called with wiphy_lock held. Invokes reg_check_channels()
+ * to tear down interfaces on channels that become unavailable and to
+ * re-evaluate channels that become available under the new regdomain.
+ */
+void regulatory_update_wiphy_regd(struct wiphy *wiphy,
+				  struct ieee80211_regdomain *regd);
+
+/**
+ * regulatory_notify_wiphy_change - send nl80211 reg-change event for a wiphy
+ * @wiphy: the wiphy whose regulatory state changed
+ *
+ * Schedules NL80211_CMD_WIPHY_REG_CHANGE so userspace (hostapd) refreshes its
+ * channel list.  Safe to call while holding wiphy_lock.
+ * deferred to cfg80211_wq to
+ * avoid acquiring rtnl_lock while wiphy_lock is held (inverted lock order).
+ */
+void regulatory_notify_wiphy_change(struct wiphy *wiphy);
+
+/**
  * wiphy_apply_custom_regulatory - apply a custom driver regulatory domain
  * @wiphy: the wireless device we want to process the regulatory domain on
  * @regd: the custom regulatory domain to use for this wiphy
@@ -9108,7 +9133,6 @@ void wiphy_apply_custom_regulatory(struct wiphy *wiphy,
  */
 const struct ieee80211_reg_rule *freq_reg_info(struct wiphy *wiphy,
 					       u32 center_freq);
-
 /**
  * reg_initiator_name - map regulatory request initiator enum to name
  * @initiator: the regulatory request initiator
