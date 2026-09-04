@@ -591,6 +591,7 @@ int ath12k_spectral_start_scan(struct ath12k *ar)
 	ar->spectral.timestamp_war_offset[smode] = 0;
 	ar->spectral.samples_done = 0;   /* reset per-scan counter */
 	ar->spectral.timeout_received_count = 0;
+	ar->spectral.timeout_prev_count = 0;
 	ar->spectral.scan_active = true;
 	/* Cache vdev_id so timeout_work can send CLEAR+DISABLE without
 	 * needing wiphy_lock or walking ar->arvifs from workqueue context.
@@ -1892,6 +1893,35 @@ static void ath12k_spectral_timeout_work(struct work_struct *work)
 	 */
 	if (!sp->scan_active || sp->mode == SPECTRAL_SCAN_MODE_INVALID) {
 		spin_unlock_bh(&sp->lock);
+		return;
+	}
+
+	/* Read current mode before using it in the rearm check below. */
+	prev_mode = sp->mode;
+
+	/* If firmware made progress since the last worker invocation
+	 * (timeout_received_count advanced beyond timeout_prev_count),
+	 * the scan is still running rearm the timer with a 200ms floor
+	 * to handle firmware delivery rate variations. Advance
+	 * timeout_prev_count so the next firing detects a genuine stall.
+	 */
+	if (sp->params[prev_mode].scan_count > 0 &&
+	    sp->timeout_received_count > sp->timeout_prev_count &&
+	    sp->timeout_received_count < sp->params[prev_mode].scan_count) {
+		u32 remaining = sp->params[prev_mode].scan_count -
+				sp->timeout_received_count;
+		u64 rearm_ns  = (u64)remaining * sp->params[prev_mode].scan_period * 2 *
+				NSEC_PER_USEC;
+
+		if (rearm_ns < 200 * NSEC_PER_MSEC)
+			rearm_ns = 200 * NSEC_PER_MSEC;
+
+		sp->timeout_prev_count = sp->timeout_received_count;
+		spin_unlock_bh(&sp->lock);
+
+		hrtimer_start(&sp->scan_completion_timer,
+			      ns_to_ktime(rearm_ns),
+			      HRTIMER_MODE_REL_SOFT);
 		return;
 	}
 
