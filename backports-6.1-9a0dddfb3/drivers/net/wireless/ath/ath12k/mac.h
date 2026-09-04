@@ -573,6 +573,11 @@ int ath12k_mac_op_erp(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 		      int link_id, struct cfg80211_erp_params *params);
 int ath12k_mac_mgmt_tx(struct ath12k *ar, struct sk_buff *skb,
 		       bool is_prb_rsp);
+#ifdef CPTCFG_QCN_EXTN
+int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arvif,
+			   struct sk_buff *skb);
+void ath12k_mgmt_over_wmi_tx_drop(struct ath12k *ar, struct sk_buff *skb);
+#endif
 bool ath12k_mgmt_has_ml_link_info_ie(struct ath12k_base *ab,
 				     struct sk_buff *skb);
 int ath12k_mac_op_uhr_smd_update(struct ieee80211_hw *hw,

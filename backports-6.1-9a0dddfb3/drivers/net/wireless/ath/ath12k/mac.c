@@ -11898,6 +11898,11 @@ static int ath12k_mac_initiate_hw_scan(struct ieee80211_hw *hw,
 	if (unlikely(test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)))
 		return -ESHUTDOWN;
 
+#ifdef CPTCFG_QCN_EXTN
+	if (ath12k_rtt_hw_scan_blocked_extn(ar))
+		return -EBUSY;
+#endif
+
 	arvif = &ahvif->deflink;
 
 	/* check if any of the links of ML VIF is already started on
@@ -19516,7 +19521,10 @@ static int __ath12k_set_antenna(struct ath12k *ar, u32 tx_ant, u32 rx_ant,
 	return 0;
 }
 
-static void ath12k_mgmt_over_wmi_tx_drop(struct ath12k *ar, struct sk_buff *skb)
+#ifndef CPTCFG_QCN_EXTN
+static
+#endif
+void ath12k_mgmt_over_wmi_tx_drop(struct ath12k *ar, struct sk_buff *skb)
 {
 	int num_mgmt = 0;
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
@@ -19593,8 +19601,11 @@ static int ath12k_mac_vif_txmgmt_idr_remove(int buf_id, void *skb, void *ctx)
 	return 0;
 }
 
-static int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arvif,
-				  struct sk_buff *skb)
+#ifndef CPTCFG_QCN_EXTN
+static
+#endif
+int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arvif,
+			   struct sk_buff *skb)
 {
 	struct ath12k_base *ab = ar->ab;
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
@@ -19671,15 +19682,18 @@ static int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arv
 		is_cfr = true;
 #endif /* CPTCFG_ATH12K_CFR */
 
-	spin_lock_bh(&ar->data_lock);
-	stats = &arvif->ahvif->mgmt_stats;
-	stats->aggr_tx_mgmt_cnt++;
-	spin_unlock_bh(&ar->data_lock);
+	/* arvif->ahvif is NULL for the dedicated RTT/ranging vdev (rtt_vif) */
+	if (arvif->ahvif) {
+		spin_lock_bh(&ar->data_lock);
+		stats = &arvif->ahvif->mgmt_stats;
+		stats->aggr_tx_mgmt_cnt++;
+		spin_unlock_bh(&ar->data_lock);
+	}
 
 	ether_addr_copy(sta_addr, hdr->addr1);
 	ether_addr_copy(own_addr, hdr->addr2);
 
-	if (is_deauth_disassoc &&
+	if (arvif->ahvif && is_deauth_disassoc &&
 	    ath12k_peer_deauth_disassoc_tx_inc(ar, hdr->addr1))
 		skb_cb->flags |= ATH12K_SKB_DEAUTH_DISASSOC_TRACKED;
 
@@ -20097,6 +20111,12 @@ static void ath12k_mgmt_over_wmi_tx_work(struct wiphy *wiphy,
 
 	while ((skb = skb_dequeue(&ar->wmi_mgmt_tx_queue)) != NULL) {
 		skb_cb = ATH12K_SKB_CB(skb);
+
+#ifdef CPTCFG_QCN_EXTN
+		if (ath12k_mgmt_over_wmi_tx_work_extn(ar, skb))
+			continue;
+#endif
+
 		if (!skb_cb->vif) {
 			ath12k_warn(ar->ab, "no vif found for mgmt frame\n");
 			ath12k_mgmt_over_wmi_tx_drop(ar, skb);
@@ -28579,6 +28599,12 @@ int ath12k_mac_op_remain_on_channel(struct ieee80211_hw *hw,
 	ar = ath12k_mac_select_scan_device(hw, vif, chan->center_freq);
 	if (!ar)
 		return -EINVAL;
+
+#ifdef CPTCFG_QCN_EXTN
+	ret = ath12k_mac_op_remain_on_channel_extn(hw, vif, chandef, duration, type);
+	if (!ret)
+		return ret;
+#endif
 
 	ab = ar->ab;
 	if (!test_bit(WMI_TLV_SERVICE_SCAN_PHYMODE_SUPPORT,

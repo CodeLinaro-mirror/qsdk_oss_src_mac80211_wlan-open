@@ -13,6 +13,9 @@
 #include "vendor.h"
 #include "peer.h"
 #include "ranging.h"
+#ifdef CPTCFG_QCN_EXTN
+#include "qcn_extns/ranging_extn.h"
+#endif
 
 u32 ath12k_supported_rtt_responder_roles(struct ath12k_base *ab)
 {
@@ -532,6 +535,7 @@ void ath12k_pasn_fw_peer_create_work(struct wiphy *wiphy,
 	const u8 *src_addr;
 	u8 security_mode;
 	int ret;
+	struct wireless_dev *wdev;
 
 	lockdep_assert_wiphy(wiphy);
 
@@ -552,25 +556,31 @@ void ath12k_pasn_fw_peer_create_work(struct wiphy *wiphy,
 	 */
 	spin_lock_bh(lock);
 	list_for_each_entry_safe(peer, next_peer, &rtt_ctx->pasn_peer_list, list) {
-		if (!(peer->flags & ATH12K_PASN_F_FW_CREATE_PENDING))
-			continue;
-		peer->flags &= ~ATH12K_PASN_F_FW_CREATE_PENDING;
-		spin_unlock_bh(lock);
 
-		ath12k_dbg(arvif->ar->ab, ATH12K_DBG_RTT,
-			   "RTT PASN work: creating FW peer %pM vdev=%u\n",
-			   peer->peer_addr, arvif->vdev_id);
+		if ((peer->flags & ATH12K_PASN_F_FW_CREATED)) {
+			ath12k_dbg(arvif->ar->ab, ATH12K_DBG_RTT,
+				   "RTT PASN work: Already Create FW peer %pM vdev=%u\n",
+				   peer->peer_addr, arvif->vdev_id);
+		} else {
+			peer->flags &= ~ATH12K_PASN_F_FW_CREATE_PENDING;
+		}
+		spin_unlock_bh(lock);
 
 		security_mode = peer->security_mode;
 		src_addr = peer->src_addr;
 
-		ret = ath12k_pasn_fw_peer_create(arvif, peer->peer_addr);
-		if (ret) {
-			ath12k_warn(arvif->ar->ab,
-				    "RTT PASN work: failed FW peer create %pM: %d\n",
-				    peer->peer_addr, ret);
-			spin_lock_bh(lock);
-			continue;
+		if (!(peer->flags & ATH12K_PASN_F_FW_CREATED)) {
+			ath12k_dbg(arvif->ar->ab, ATH12K_DBG_RTT,
+				   "RTT PASN work: creating FW peer %pM vdev=%u\n",
+				   peer->peer_addr, arvif->vdev_id);
+			ret = ath12k_pasn_fw_peer_create(arvif, peer->peer_addr);
+			if (ret) {
+				ath12k_warn(arvif->ar->ab,
+					    "RTT PASN work: failed FW peer create %pM: %d\n",
+					    peer->peer_addr, ret);
+				spin_lock_bh(lock);
+				continue;
+			}
 		}
 
 		if (security_mode != ATH12K_WMI_RTT_PASN_SECURITY_MODE_NONE) {
@@ -580,12 +590,15 @@ void ath12k_pasn_fw_peer_create_work(struct wiphy *wiphy,
 				   "RTT PASN work: FW peer ready, sending auth vendor event %pM sec=%u ltf=%d\n",
 				   peer->peer_addr, security_mode,
 				   peer->ltf_keyseed_required);
+#ifdef CPTCFG_QCN_EXTN
+			wdev = get_pasn_auth_wdev_extn(arvif);
+#endif
 			vevent_ret = ath12k_vendor_send_pasn_event(
 					ath12k_ar_to_hw(arvif->ar)->wiphy,
-					ieee80211_vif_to_wdev(arvif->ahvif->vif),
+					wdev,
 					arvif->link_id,
 					QCA_WLAN_VENDOR_PASN_ACTION_AUTH,
-					src_addr, peer->peer_addr,
+					NULL, peer->peer_addr,
 					peer->ltf_keyseed_required);
 			if (vevent_ret) {
 				ath12k_warn(arvif->ar->ab,
@@ -597,6 +610,9 @@ void ath12k_pasn_fw_peer_create_work(struct wiphy *wiphy,
 				ath12k_dbg(arvif->ar->ab, ATH12K_DBG_RTT,
 					   "RTT PASN work: auth vendor event sent %pM\n",
 					   peer->peer_addr);
+#ifdef CPTCFG_QCN_EXTN
+				ath12k_pasn_vendor_event_sent_extn(arvif);
+#endif
 			}
 		} else {
 			ath12k_dbg(arvif->ar->ab, ATH12K_DBG_RTT,
