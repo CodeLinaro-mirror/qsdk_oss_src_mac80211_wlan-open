@@ -995,6 +995,7 @@ int ath12k_peer_dp_cp_link_peer_delete(struct ath12k_link_vif *arvif,
 				       bool peer_delete_send_mlo_hw_bitmap,
 				       bool update_bmap)
 {
+	struct ath12k_link_sta *arsta;
 	bool ml_peer_del_all = false;
 	struct ath12k *ar;
 	int ret;
@@ -1005,20 +1006,25 @@ int ath12k_peer_dp_cp_link_peer_delete(struct ath12k_link_vif *arvif,
 	ar = arvif->ar;
 
 	ml_peer_del_all = ar->ab->hw_params->peer_del_all_support;
+	arsta = wiphy_dereference(ar->ah->hw->wiphy, ahsta->link[link_id]);
+	if (!arsta)
+		arsta = ahsta->saved_link_sta[link_id];
 	ath12k_dp_cp_link_peer_unassign(ar, arvif, ahsta, link_id, addr, update_bmap);
 
 	if (ml_peer_del_all && arvif->peer_del_all_enable) {
 		ath12k_dbg_level(ar->ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
 				 "Skipping peer delete for %pM due to peer_del_all:%d\n",
 				 addr, arvif->peer_del_all_enable);
-		return 0;
+		ret = 0;
+		goto exit;
 	}
 
 	if (test_bit(ATH12K_FLAG_RECOVERY, &ar->ab->dev_flags)) {
 		ath12k_warn(ar->ab,
 			    "skipped peer delete cmd for vdev_id %d addr %pM during recovery ret:%d\n",
 			    arvif->vdev_id, addr, -EHOSTDOWN);
-		return -EHOSTDOWN;
+		ret = -EHOSTDOWN;
+		goto exit;
 	}
 
 	ret = ath12k_peer_delete_send(ar, arvif->vdev_id, addr,
@@ -1028,6 +1034,36 @@ int ath12k_peer_dp_cp_link_peer_delete(struct ath12k_link_vif *arvif,
 		ath12k_warn(ar->ab,
 			    "failed to delete peer vdev_id %d addr %pM ret %d\n",
 			    arvif->vdev_id, addr, ret);
+	}
+
+exit:
+	/*
+	 * Remove arsta from the per-radio hlist after the WMI peer delete
+	 * send. The RCU pointers were already cleared and
+	 * synchronize_net() ran in ath12k_dp_cp_link_peer_unassign(), so
+	 * no further grace period is needed here.
+	 */
+	if (arsta) {
+
+		ath12k_cfr_decrement_peer_count(ar, arsta);
+
+		spin_lock_bh(&ar->arsta_lock);
+		ath12k_link_sta_hlist_delete(ar, arsta);
+		spin_unlock_bh(&ar->arsta_lock);
+
+		ahsta->ar_bitmap &= ~BIT(ar->radio_idx);
+
+		if (arsta == &ahsta->deflink) {
+			arsta->link_id = ATH12K_INVALID_LINK_ID;
+			arsta->ahsta = NULL;
+			arsta->arvif = NULL;
+		} else {
+			kfree(arsta);
+		}
+	} else {
+		ath12k_err(ar->ab,
+			    "failed to find arsta %pM vdev_id %d\n",
+			    addr, arvif->vdev_id);
 	}
 
 	return ret;
