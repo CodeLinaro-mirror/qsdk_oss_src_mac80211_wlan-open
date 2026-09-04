@@ -20424,9 +20424,15 @@ int ath12k_mac_start(struct ath12k *ar)
 	if (ret)
 		ath12k_warn(ab, "failed to enable peer PS state change events: %d\n",
 			    ret);
-
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	ret = ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_SET_CONG_CTRL_MAX_MSDUS,
+					max(DP_TX_DESC_COUNT_POOL0,
+						ATH12K_NUM_POOL_PPEDS_TX_DESC_DEFAULT),
+					pdev->pdev_id);
+#else
 	ret = ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_SET_CONG_CTRL_MAX_MSDUS,
 					DP_TX_DESC_COUNT_POOL0, pdev->pdev_id);
+#endif
 	if (ret) {
 		ath12k_err(ab, "[vdev_id : %s radio_idx : %u] failed to set congestion control MAX MSDUS: %d\n",
 			   ATH12K_INVALID_VDEV_ID, ar->radio_idx, ret);
