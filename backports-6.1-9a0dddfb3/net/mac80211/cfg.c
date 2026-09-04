@@ -3089,6 +3089,33 @@ static int ieee80211_change_station(struct wiphy *wiphy,
 			master = container_of(vlansdata->bss,
 					      struct ieee80211_sub_if_data, u.ap);
 
+			if (sta->sta.valid_links) {
+				int link_id;
+				unsigned long master_iter = master->vif.valid_links;
+				u16 new_links = master->vif.valid_links &
+						sta->sta.valid_links;
+
+				wdev->valid_links = new_links;
+
+				for_each_set_bit(link_id, &master_iter,
+						 IEEE80211_MLD_MAX_NUM_LINKS) {
+					if (!(sta->sta.valid_links & BIT(link_id)))
+						memset(wdev->links[link_id].addr,
+						       0, ETH_ALEN);
+					else
+						memcpy(wdev->links[link_id].addr,
+						       master->wdev.links[link_id].addr,
+						       ETH_ALEN);
+				}
+
+				err = ieee80211_vif_set_links(vlansdata,
+							      new_links, 0);
+				if (err) {
+					wdev->valid_links = 0;
+					return err;
+				}
+			}
+
 			rcu_assign_pointer(vlansdata->u.vlan.sta, sta);
 			__ieee80211_check_fast_rx_iface(vlansdata);
 
@@ -3101,29 +3128,6 @@ static int ieee80211_change_station(struct wiphy *wiphy,
 				sta->sta.dev = vlansdata->dev;
 				drv_sta_set_4addr(local, sta->sdata, &sta->sta,
 						  true);
-			}
-			if (sta->sta.valid_links) {
-				int link_id;
-				unsigned long master_iter = master->vif.valid_links;
-				u16 new_links = master->vif.valid_links &
-						sta->sta.valid_links;
-
-				wdev->valid_links = new_links;
-
-				ieee80211_vif_set_links(vlansdata, new_links, 0);
-
-				for_each_set_bit(link_id, &master_iter,
-						 IEEE80211_MLD_MAX_NUM_LINKS) {
-					if (!(sta->sta.valid_links & BIT(link_id))) {
-						memset(wdev->links[link_id].addr,
-						       0, ETH_ALEN);
-					}
-					else {
-						memcpy(wdev->links[link_id].addr,
-						       vlansdata->vif.link_conf[link_id]->bssid,
-							ETH_ALEN);
-					}
-				}
 			}
 		}
 
