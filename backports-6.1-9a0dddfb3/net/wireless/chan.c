@@ -768,6 +768,16 @@ static void cfg80211_set_chans_dfs_state(struct wiphy *wiphy, u32 center_freq,
 			}
 		}
 		else {
+			/*
+			 * Do not promote a channel still in NOL
+			 * (NL80211_DFS_UNAVAILABLE) to AVAILABLE. CAC
+			 * completion on a wide block must not clear the NOL
+			 * status of a sub-channel that had radar detected
+			 * during this CAC run.
+			 */
+			if (dfs_state == NL80211_DFS_AVAILABLE &&
+			    c->dfs_state == NL80211_DFS_UNAVAILABLE)
+				continue;
 			c->dfs_state = dfs_state;
 			c->dfs_state_entered = jiffies;
 			c->dfs_state_last_available = jiffies;
