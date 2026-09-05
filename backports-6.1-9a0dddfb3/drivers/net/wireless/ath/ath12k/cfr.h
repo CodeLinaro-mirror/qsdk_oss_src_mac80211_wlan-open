@@ -484,10 +484,11 @@ struct uplink_user_setup_info_v2 {
  */
 struct ath12k_cfir_wifi8_common_hdr {
 	u32 header_tag;
-	u32 chip_id             :  8,
-	    header_type         :  8,
-	    header_version      :  8,
-	    header_size         :  8;
+	u32 chip_id                :  8,
+	    header_type            :  8,
+	    common_header_version  :  4,
+	    feature_header_version :  4,
+	    header_size            :  8;
 	u32 payload_size;
 	u32 reserved_0          : 15,
 	    sw_peer_id_valid    :  1,
@@ -508,6 +509,22 @@ struct ath12k_cfir_wifi8_common_hdr {
 	u32 xbar_config;
 	u32 reserved_2;
 	u32 reserved_3;
+} __packed;
+
+struct ath12k_per_user_cfr_11az_info_t {
+	u32 sw_peer_id    : 16,
+	    stream_offset : 3,
+	    reserved1a    : 13;
+	struct uplink_user_setup_info_v2 user_info;
+} __packed;
+
+struct ath12k_aoa_cal_gdp {
+	u32 combined_ch0;
+	u32 combined_ch1;
+	u32 combined_ch2;
+	u32 combined_ch3;
+	u32 combined_ch4;
+	u32 reserved0;
 } __packed;
 
 /*
@@ -578,7 +595,7 @@ struct ath12k_cfir_wifi8_common_hdr {
  * @reserved12: reserved, ignore
  */
 struct ath12k_cfir_wifi8_cc_hdr {
-	u16 capture_type        :  4,
+	u16 capture_type         :  4,
 	    cc_format            :  2,
 	    cir_fmt              :  3,
 	    aoa_cal_gdp_incl     :  1,
