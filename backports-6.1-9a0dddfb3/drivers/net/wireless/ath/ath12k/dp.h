@@ -1947,6 +1947,9 @@ int ath12k_dp_tx_htt_srng_setup(struct ath12k_base *ab, u32 ring_id,
 int ath12k_dp_peer_epp_setup_mgmt_tids(struct ath12k *ar, void *ptr,
 				       struct ath12k_link_vif *arvif,
 				       struct ath12k_link_sta *arsta);
+int ath12k_dp_peer_set_default_routing(struct ath12k *ar,
+				       struct ath12k_link_vif *arvif,
+				       const u8 *addr);
 int ath12k_dp_peer_setup(struct ath12k *ar, void *ptr, struct ath12k_link_vif *arvif,
 			 const u8 *addr, u8 link_id);
 void ath12k_dp_peer_cleanup(struct ath12k *ar, void *ptr, int vdev_id, const u8 *addr);
