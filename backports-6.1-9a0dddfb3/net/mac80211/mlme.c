@@ -10210,6 +10210,14 @@ int ieee80211_mgd_auth(struct ieee80211_sub_if_data *sdata,
 		return -EINVAL;
 	}
 
+#ifdef CPTCFG_QCN_EXTN
+	if (ieee80211_diagnostic_sta_blocks_bss_extn(sdata, req->bss)) {
+		sdata_info(sdata,
+			   "co-channel-context AP CSA active or channel stale, reject auth\n");
+		return -EBUSY;
+	}
+#endif /* CPTCFG_QCN_EXTN */
+
 	auth_data = kzalloc(sizeof(*auth_data) + req->auth_data_len +
 			    req->ie_len, GFP_KERNEL);
 	if (!auth_data)
@@ -10567,6 +10575,15 @@ int ieee80211_mgd_assoc(struct ieee80211_sub_if_data *sdata,
 		err = -EINVAL;
 		goto err_free;
 	}
+
+#ifdef CPTCFG_QCN_EXTN
+	if (ieee80211_diagnostic_sta_blocks_bss_extn(sdata, cbss)) {
+		sdata_info(sdata,
+			   "co-channel-context AP CSA active or channel stale, reject assoc\n");
+		err = -EBUSY;
+		goto err_free;
+	}
+#endif /* CPTCFG_QCN_EXTN */
 
 	rcu_read_lock();
 	ssid_elem = ieee80211_bss_get_elem(cbss, WLAN_EID_SSID);
