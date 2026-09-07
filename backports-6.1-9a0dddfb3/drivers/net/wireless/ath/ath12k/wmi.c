@@ -15090,35 +15090,34 @@ static void ath12k_update_stats_event(struct ath12k_base *ab, struct sk_buff *sk
 		ar->pdev_stats_timer_req_pending = false;
 
 		if (is_timer_req) {
-			/* Periodic timer path: only replace the pdev list.
-			 * Save vdev/bcn/vdev_extd lists, free all stats
-			 * (clears only pdevs since others are detached),
-			 * then restore saved lists.
+			/* Periodic timer path: read counters directly from the
+			 * temporary stats.pdevs list and free it. Do NOT touch
+			 * ar->fw_stats — it is shared with the synchronous path
+			 * and may have an in-flight vdev/bcn request.
 			 */
-			LIST_HEAD(saved_vdevs);
-			LIST_HEAD(saved_bcn);
-			LIST_HEAD(saved_vdev_extds);
-
-			list_splice_init(&ar->fw_stats.vdevs, &saved_vdevs);
-			list_splice_init(&ar->fw_stats.bcn, &saved_bcn);
-			list_splice_init(&ar->fw_stats.vdev_extds, &saved_vdev_extds);
-
-			ath12k_fw_stats_free(&ar->fw_stats);
-
-			list_splice(&saved_vdevs, &ar->fw_stats.vdevs);
-			list_splice(&saved_bcn, &ar->fw_stats.bcn);
-			list_splice(&saved_vdev_extds, &ar->fw_stats.vdev_extds);
-		} else {
-			/* Synchronous path: free all stats as before. */
-			ath12k_fw_stats_free(&ar->fw_stats);
+			pdev_entry = list_first_entry_or_null(&stats.pdevs,
+							      struct ath12k_fw_stats_pdev,
+							      list);
+			if (pdev_entry) {
+				ar->pdev_prev_rx_clear_count = ar->pdev_rx_clear_count;
+				ar->pdev_prev_cycle_count    = ar->pdev_cycle_count;
+				ar->pdev_rx_clear_count = pdev_entry->rx_clear_count;
+				ar->pdev_cycle_count    = pdev_entry->cycle_count;
+				ar->pdev_chan_nf        = pdev_entry->ch_noise_floor;
+			} else {
+				ath12k_warn(ar->ab, "pdev stats timer: no pdev entry in response\n");
+			}
+			ath12k_fw_stats_pdevs_free(&stats.pdevs);
+			spin_unlock_bh(&ar->data_lock);
+			rcu_read_unlock();
+			return;
 		}
 
+		/* Synchronous path: free all shared stats and replace pdevs. */
+		ath12k_fw_stats_free(&ar->fw_stats);
 		list_splice_tail_init(&stats.pdevs, &ar->fw_stats.pdevs);
 
-		/* Cache the latest pdev counters so periodic-timer consumers
-		 * (chan_util, survey, noise floor) can read fresh values
-		 * without issuing a new blocking WMI request.
-		 */
+		/* Cache the latest pdev counters. */
 		pdev_entry = list_first_entry_or_null(&ar->fw_stats.pdevs,
 						      struct ath12k_fw_stats_pdev,
 						      list);
@@ -15132,8 +15131,7 @@ static void ath12k_update_stats_event(struct ath12k_base *ab, struct sk_buff *sk
 			ath12k_warn(ar->ab, "pdev stats timer: event received but pdev_entry is NULL\n");
 		}
 
-		if (!is_timer_req)
-			complete(&ar->fw_stats_done);
+		complete(&ar->fw_stats_done);
 		goto complete;
 	}
 

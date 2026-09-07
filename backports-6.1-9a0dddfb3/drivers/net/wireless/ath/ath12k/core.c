@@ -2766,7 +2766,7 @@ bool ath12k_core_hw_group_start_ready(struct ath12k_hw_group *ag)
 	return (ag->num_started == (ag->num_devices - ag->num_bypassed));
 }
 
-static void ath12k_fw_stats_pdevs_free(struct list_head *head)
+void ath12k_fw_stats_pdevs_free(struct list_head *head)
 {
 	struct ath12k_fw_stats_pdev *i, *tmp;
 
@@ -2832,6 +2832,15 @@ void ath12k_fw_stats_reset(struct ath12k *ar)
 	ar->fw_stats.num_vdev_recvd = 0;
 	ar->fw_stats.num_bcn_recvd = 0;
 	ar->fw_stats.num_vdev_extd_recvd = 0;
+	/* Reset periodic pdev stats state on radio stop/recovery so that
+	 * stale pre-recovery responses do not repopulate the cache.
+	 */
+	ar->pdev_stats_timer_req_pending = false;
+	ar->pdev_rx_clear_count = 0;
+	ar->pdev_prev_rx_clear_count = 0;
+	ar->pdev_cycle_count = 0;
+	ar->pdev_prev_cycle_count = 0;
+	ar->pdev_chan_nf = 0;
 	spin_unlock_bh(&ar->data_lock);
 }
 
