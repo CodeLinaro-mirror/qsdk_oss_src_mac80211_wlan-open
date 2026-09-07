@@ -2574,6 +2574,7 @@ static int ath12k_fill_device_rx_sw_reo_drop_attrs(struct ath12k_base *ab,
 			ath12k_err(ab,
 				   "nla nest failure: Device reo sw drop ring %d",
 				   ring_attr + 1);
+			nla_nest_cancel(vendor_event, attr1);
 			return -EINVAL;
 		}
 
@@ -2585,7 +2586,8 @@ static int ath12k_fill_device_rx_sw_reo_drop_attrs(struct ath12k_base *ab,
 				ath12k_err(ab,
 					   "nla put failure: Device rx sw REO drop attr %d ring %d",
 					   reo_drop_attr + 1, ring_attr + 1);
-				nla_nest_end(vendor_event, attr2);
+				nla_nest_cancel(vendor_event, attr2);
+				nla_nest_cancel(vendor_event, attr1);
 				return -EINVAL;
 			}
 		}
@@ -2649,6 +2651,7 @@ static int ath12k_fill_device_tx_comp_err_attr(struct ath12k_base *ab,
 			ath12k_err(ab,
 				   "nla nest failure: Device tx comp error - ring %d",
 				   ring_attr + 1);
+			nla_nest_cancel(vendor_event, attr1);
 			return -EINVAL;
 		}
 
@@ -2661,6 +2664,8 @@ static int ath12k_fill_device_tx_comp_err_attr(struct ath12k_base *ab,
 				ath12k_err(ab,
 					   "nla put failure: Device tx comp err attr %d ring %d",
 					   ring_attr + 1, tx_comp_attr + 1);
+				nla_nest_cancel(vendor_event, attr2);
+				nla_nest_cancel(vendor_event, attr1);
 				return -EINVAL;
 			}
 		}
