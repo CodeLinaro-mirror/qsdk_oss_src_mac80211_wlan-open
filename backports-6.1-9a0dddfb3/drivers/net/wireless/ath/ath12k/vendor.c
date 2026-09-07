@@ -10444,10 +10444,12 @@ ath12k_vendor_set_rtt_responder_role(struct wireless_dev *wdev,
 		return -EINVAL;
 
 	ar = arvif->ar;
-	supported_role = ath12k_supported_rtt_responder_roles(ar->ab);
-	role &= supported_role;
-	if (!role)
-		return -EOPNOTSUPP;
+	if (role) {
+		supported_role = ath12k_supported_rtt_responder_roles(ar->ab);
+		role &= supported_role;
+		if (!role)
+			return -EOPNOTSUPP;
+	}
 
 	ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
 		WMI_VDEV_PARAM_ENABLE_DISABLE_RTT_RESPONDER_ROLE,
@@ -10462,8 +10464,8 @@ ath12k_vendor_set_rtt_responder_role(struct wireless_dev *wdev,
 	arvif->rtt_ctx.rtt_responder_role = role;
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_CFG,
-		   "set RTT responder role 0x%x supported 0x%x vdev %i link %u\n",
-		   role, supported_role, arvif->vdev_id, link_id);
+		   "set RTT responder role 0x%x vdev %i link %u\n",
+		   role, arvif->vdev_id, link_id);
 
 	return 0;
 }
