@@ -3500,11 +3500,11 @@ static int get_feat_sdwftx_attr_size_per_msduq(void)
 	nested2_size += nla_total_size_nested(nested3_size + attr_size);
 
 	attr_size = nla_total_size(sizeof(tx.svc_intval_stats.success_cnt));
-	attr_size = nla_total_size(sizeof(tx.svc_intval_stats.failure_cnt));
+	attr_size += nla_total_size(sizeof(tx.svc_intval_stats.failure_cnt));
 	nested2_size += nla_total_size_nested(attr_size);
 
 	attr_size = nla_total_size(sizeof(tx.burst_size_stats.success_cnt));
-	attr_size = nla_total_size(sizeof(tx.burst_size_stats.failure_cnt));
+	attr_size += nla_total_size(sizeof(tx.burst_size_stats.failure_cnt));
 	nested2_size += nla_total_size_nested(attr_size);
 
 	attr_size = nla_total_size(sizeof(tx.queue_depth));
