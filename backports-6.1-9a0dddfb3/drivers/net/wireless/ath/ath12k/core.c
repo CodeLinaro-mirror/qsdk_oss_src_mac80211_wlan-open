@@ -3487,7 +3487,7 @@ void ath12k_core_radio_cleanup(struct ath12k *ar)
 		complete_all(&ar->scan.completed);
 	spin_unlock_bh(&ar->data_lock);
 	complete(&ar->scan.on_channel);
-	complete(&ar->peer_create_done);
+	complete(&ar->peer_create_conf);
 	complete(&ar->peer_assoc_done);
 	ath12k_debugfs_nrp_cleanup_all(ar);
 	complete(&ar->install_key_done);
@@ -4749,6 +4749,24 @@ static int ath12k_core_mlo_unified_peer_update(struct ath12k_hw_group *ag)
 			}
 			ahsta->recov.mode3_processed = true;
 
+			if (hweight16(ahsta->links_map) <= 1) {
+				ath12k_mac_peer_disassoc(assert_ab, sta, ahsta,
+							 ATH12K_DBG_MODE1_RECOVERY);
+				spin_lock_bh(&ar->arsta_lock);
+				continue;
+			}
+
+			if (sta->reconf.added_links || sta->reconf.removed_links) {
+				ath12k_warn(assert_ab,
+					    "Mode3: %pM has MLO reconfig in progress (added=0x%x removed=0x%x), disconnecting\n",
+					    sta->addr, sta->reconf.added_links,
+					    sta->reconf.removed_links);
+				ath12k_mac_peer_disassoc(assert_ab, sta, ahsta,
+							 ATH12K_DBG_MODE1_RECOVERY);
+				spin_lock_bh(&ar->arsta_lock);
+				continue;
+			}
+
 			ahsta->recov.new_primary_hwlink_id = WMI_MLO_INVALID_MASTER_LL_ID;
 
 			/* All links of this peer that live on the asserted chip,
@@ -5795,6 +5813,38 @@ void ath12k_recovery_skip_partner_dump_collection(struct ath12k_base *ab)
 }
 EXPORT_SYMBOL(ath12k_recovery_skip_partner_dump_collection);
 
+/* Mode3 (client-retaining) recovery is only supported when the asserted
+ * radio serves AP VAPs.  In repeater/mesh deployments a STA VAP may be present
+ * on the asserted radio; that flow is not covered by the Mode3 link
+ * remove/readd path, so fall back to Mode2 (full MLO peer disconnect) if any
+ * STA VAP exists on the asserted chip.  Called from the reset work before the
+ * asserted chip powers down, so its arvif lists are still valid.
+ */
+static bool ath12k_mode3_asserted_has_sta_vap(struct ath12k_base *asserted_ab)
+{
+	struct ath12k_link_vif *arvif;
+	struct ath12k *ar;
+	int i;
+
+	for (i = 0; i < asserted_ab->num_radios; i++) {
+		ar = asserted_ab->pdevs[i].ar;
+		if (!ar)
+			continue;
+
+		spin_lock_bh(&ar->data_lock);
+		list_for_each_entry(arvif, &ar->arvifs, list) {
+			if (arvif->ahvif &&
+			    arvif->ahvif->vdev_type == WMI_VDEV_TYPE_STA) {
+				spin_unlock_bh(&ar->data_lock);
+				return true;
+			}
+		}
+		spin_unlock_bh(&ar->data_lock);
+	}
+
+	return false;
+}
+
 static void ath12k_update_recovery_mode(struct ath12k_hw_group *ag,
 					struct ath12k_base *asserted_ab)
 {
@@ -5802,6 +5852,17 @@ static void ath12k_update_recovery_mode(struct ath12k_hw_group *ag,
 		/*get current recovery mode as per FW from shmem*/
 		switch (*asserted_ab->recovery_mode_address) {
 		case ATH12K_MLO_RECOVERY_MODE3:
+			if (ath12k_mode3_asserted_has_sta_vap(asserted_ab)) {
+				/* STA VAP present on the asserted radio
+				 * (repeater/mesh): Mode3 link retain/readd is
+				 * not supported, fall back to Mode2 full MLO
+				 * peer disconnect.
+				 */
+				ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE2;
+				ath12k_info(asserted_ab,
+					    "Mode3 not supported with STA VAP on asserted radio, falling back to Mode2\n");
+				break;
+			}
 			ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE3;
 			ag->assert_ab     = asserted_ab;
 			ath12k_info(asserted_ab,
@@ -6183,8 +6244,8 @@ static struct ath12k_hw_group *ath12k_core_hw_group_alloc(struct ath12k_base *ab
 		return NULL;
 	}
 
-	ag->dp_hw_grp->pcpu_tx = alloc_percpu(typeof(*ag->dp_hw_grp->pcpu_tx));
-	if (!ag->dp_hw_grp->pcpu_tx) {
+	ag->dp_hw_grp->tx_desc_used_cnt = alloc_percpu(u32);
+	if (!ag->dp_hw_grp->tx_desc_used_cnt) {
 		kfree(ag->dp_hw_grp);
 		kfree(ag);
 		return NULL;
@@ -6257,7 +6318,7 @@ static void ath12k_core_hw_group_free(struct ath12k_hw_group *ag)
 	ath12k_sta_hlist_destroy(ag);
 	ath12k_sta_hlist_head_destroy(ag);
 	spin_unlock_bh(&ag->ahsta_lock);
-	free_percpu(ag->dp_hw_grp->pcpu_tx);
+	free_percpu(ag->dp_hw_grp->tx_desc_used_cnt);
 	kfree(ag->dp_hw_grp);
 	kfree(ag);
 

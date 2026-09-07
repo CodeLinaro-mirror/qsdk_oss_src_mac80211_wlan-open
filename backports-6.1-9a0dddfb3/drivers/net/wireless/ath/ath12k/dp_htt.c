@@ -452,6 +452,7 @@ ath12k_dp_htt_process_usr_compltn_ack_ba_stats(const u32 *tlv_desc,
 	user_stats->peer_id = peer_id;
 	user_stats->is_valid_peer_id = true;
 	ppdu_info->ppdu_id = HTT_PPDU_STATS_GET_PPDU_ID(ppdu_id);
+	ppdu_info->ack_ba_done++;
 	memcpy(&user_stats->ack_ba, tlv_desc,
 	       sizeof(struct htt_ppdu_stats_usr_cmpltn_ack_ba_status));
 
@@ -1095,7 +1096,6 @@ ath12k_update_extd_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 	if (!(tlv_bitmap & BIT(HTT_PPDU_STATS_TAG_USR_COMPLTN_ACK_BA_STATUS)))
 		return;
 
-	ppdu_info->ack_ba_done++;
 	usr_stats->processed_tlv_bitmap |=
 		BIT(HTT_PPDU_STATS_TAG_USR_COMPLTN_ACK_BA_STATUS);
 
@@ -2062,13 +2062,17 @@ exit:
 static void ath12k_htt_backpressure_event_handler(struct ath12k_base *ab,
 						  struct sk_buff *skb)
 {
-	u32 *data = (u32 *)skb->data;
+	u32 *data;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	u8 pdev_id, ring_type, ring_id, pdev_idx;
 	u16 hp, tp;
 	u32 backpressure_time;
 	struct ath12k_bp_stats *bp_stats;
 
+	if (skb->len < sizeof(u32) * 3)
+		return;
+
+	data = (u32 *)skb->data;
 	pdev_id = u32_get_bits(*data, HTT_BACKPRESSURE_EVENT_PDEV_ID_M);
 	ring_type = u32_get_bits(*data, HTT_BACKPRESSURE_EVENT_RING_TYPE_M);
 	ring_id = u32_get_bits(*data, HTT_BACKPRESSURE_EVENT_RING_ID_M);
@@ -2189,17 +2193,32 @@ ath12k_htt_pktlog_tx_handler(struct ath12k_base *ab, struct sk_buff *skb)
 {
 	struct ath12k *ar;
 	struct ath12k_htt_pktlog_msg *msg;
+	u32 payload_avail;
 	u16 payload_size;
 	u8 pdev_id;
 
 	if (!skb->data)
 		return;
 
+	if (skb->len < sizeof(msg->header)) {
+		ath12k_warn(ab, "HTT PKTLOG MSG too short: %u\n", skb->len);
+		return;
+	}
+
 	msg = (struct ath12k_htt_pktlog_msg *)skb->data;
+	payload_size = le32_get_bits(msg->header, HTT_T2H_PKTLOG_PAYLOAD_SIZE);
+	payload_avail = skb->len - sizeof(msg->header);
+	if (payload_size > payload_avail) {
+		ath12k_warn(ab,
+			    "HTT PKTLOG MSG invalid payload size: %u > %u\n",
+			    payload_size, payload_avail);
+		return;
+	}
 
 	pdev_id = le32_get_bits(msg->header, HTT_T2H_PKTLOG_PDEV_ID);
 	if (pdev_id < 1) {
-		ath12k_warn(ab, "HTT PKTLOG MSG has invalid pdev id");
+		ath12k_warn(ab, "HTT PKTLOG MSG has invalid pdev id : %d\n",
+			    pdev_id);
 		return;
 	}
 
@@ -2209,12 +2228,11 @@ ath12k_htt_pktlog_tx_handler(struct ath12k_base *ab, struct sk_buff *skb)
 		return;
 	}
 
-	payload_size = le32_get_bits(msg->header, HTT_T2H_PKTLOG_PAYLOAD_SIZE);
 	trace_ath12k_htt_pktlog_tx_handler(ar, msg->payload, payload_size,
 					   ar->ab->pktlog_defs_checksum);
 
 	if (ar->debug.is_pkt_logging)
-		ath12k_htt_pktlog_process(ar, (u8 *)msg->payload);
+		ath12k_htt_pktlog_process(ar, (u8 *)msg->payload, payload_size);
 }
 
 static void ath12k_htt_t2h_ppdu_id_fmt_handler(struct ath12k_dp *dp,
@@ -2252,6 +2270,9 @@ ath12k_htt_pri_link_peer_migrate_indication(struct ath12k_base *ab,
 	int ret;
 	struct ath12k_sta *ahsta = NULL;
 	struct ath12k_pdev_dp *dp_pdev;
+
+	if (skb->len < sizeof(struct ath12k_htt_pri_link_migr_ind_msg))
+		return;
 
 	msg = (struct ath12k_htt_pri_link_migr_ind_msg *)skb->data;
 

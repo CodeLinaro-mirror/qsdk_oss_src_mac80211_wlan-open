@@ -8,6 +8,23 @@
 #include "core.h"
 #include "debug.h"
 #include "debugfs.h"
+#include "dp_peer.h"
+#include "ath12k_notif.h"
+
+#define ATH12K_CFR_COMMON_NOISE_FLOOR  (-96)
+#define ATH12K_CFR_INVALID_SNR         0x80
+#define ATH12K_CFR_GAIN_TABLE_IDX GENMASK(9, 8)
+#define ATH12K_CFR_GAIN_DB GENMASK(7, 0)
+#define ATH12K_CFR_GAIN_INFO_L_U16 GENMASK(15, 0)
+#define ATH12K_CFR_GAIN_INFO_M_U16 GENMASK(31, 16)
+
+static inline
+s32 ath12k_cfr_snr_to_signal_strength(u8 snr)
+{
+	/* SNR value 0x80 indicates -128 dB and should remain unchanged. */
+	return (snr != ATH12K_CFR_INVALID_SNR) ?
+		((s8)snr + ATH12K_CFR_COMMON_NOISE_FLOOR) : (s8)snr;
+}
 
 bool peer_is_in_cfr_unassoc_pool(struct ath12k *ar, u8 *peer_mac)
 {
@@ -153,10 +170,108 @@ void ath12k_cfr_peer_capture_update(struct ath12k *ar,
 
 struct ath12k_dbring *ath12k_cfr_get_dbring(struct ath12k *ar)
 {
-	if (ar->cfr.cfr_enabled)
+	if (ar->cfr.cfr_enabled || ar->cfr.rcc_enabled)
 		return &ar->cfr.rx_ring;
 
 	return NULL;
+}
+
+static void ath12k_peer_cfr_default_ta_ra_config(struct cfr_rcc_param *rcc_info,
+						 bool allvalid,
+						 unsigned long reset_cfg)
+{
+	struct ta_ra_cfr_cfg *curr_cfg;
+	int grp_id;
+	unsigned long bitmap = reset_cfg;
+	u8 def_mac[ETH_ALEN] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
+	u8 null_mac[ETH_ALEN] = { 0 };
+
+	for (grp_id = 0; grp_id < MAX_TA_RA_ENTRIES; grp_id++) {
+		if (!test_bit(grp_id, &bitmap))
+			continue;
+
+		curr_cfg = &rcc_info->curr[grp_id];
+
+		curr_cfg->filter_group_id = grp_id;
+		ether_addr_copy(curr_cfg->ta_addr, null_mac);
+		ether_addr_copy(curr_cfg->ta_addr_mask, def_mac);
+		ether_addr_copy(curr_cfg->ra_addr, null_mac);
+		ether_addr_copy(curr_cfg->ra_addr_mask, def_mac);
+		curr_cfg->bw = 0xf;
+		curr_cfg->nss = 0xff;
+		curr_cfg->mgmt_subtype_filter = 0;
+		curr_cfg->ctrl_subtype_filter = 0;
+		curr_cfg->data_subtype_filter = 0;
+
+		if (!allvalid) {
+			curr_cfg->valid_ta = 0;
+			curr_cfg->valid_ta_mask = 0;
+			curr_cfg->valid_ra = 0;
+			curr_cfg->valid_ra_mask = 0;
+			curr_cfg->valid_bw_mask = 0;
+			curr_cfg->valid_nss_mask = 0;
+			curr_cfg->valid_mgmt_subtype = 0;
+			curr_cfg->valid_ctrl_subtype = 0;
+			curr_cfg->valid_data_subtype = 0;
+		} else {
+			curr_cfg->valid_ta = 1;
+			curr_cfg->valid_ta_mask = 1;
+			curr_cfg->valid_ra = 1;
+			curr_cfg->valid_ra_mask = 1;
+			curr_cfg->valid_bw_mask = 1;
+			curr_cfg->valid_nss_mask = 1;
+			curr_cfg->valid_mgmt_subtype = 1;
+			curr_cfg->valid_ctrl_subtype = 1;
+			curr_cfg->valid_data_subtype = 1;
+		}
+	}
+}
+
+static void ath12k_peer_cfr_update_global_cfg(struct ath12k *ar)
+{
+	int grp_id;
+	struct ta_ra_cfr_cfg *curr_cfg;
+	struct ta_ra_cfr_cfg *glbl_cfg;
+
+	for (grp_id = 0; grp_id < MAX_TA_RA_ENTRIES; grp_id++) {
+		if (!test_bit(grp_id, &ar->cfr.rcc_param.modified_in_curr_session))
+			continue;
+
+		glbl_cfg = &ar->cfr.global[grp_id];
+		curr_cfg = &ar->cfr.rcc_param.curr[grp_id];
+
+		if (curr_cfg->valid_ta)
+			ether_addr_copy(glbl_cfg->ta_addr, curr_cfg->ta_addr);
+
+		if (curr_cfg->valid_ra)
+			ether_addr_copy(glbl_cfg->ra_addr, curr_cfg->ra_addr);
+
+		if (curr_cfg->valid_ta_mask)
+			ether_addr_copy(glbl_cfg->ta_addr_mask,
+					curr_cfg->ta_addr_mask);
+
+		if (curr_cfg->valid_ra_mask)
+			ether_addr_copy(glbl_cfg->ra_addr_mask,
+					curr_cfg->ra_addr_mask);
+
+		if (curr_cfg->valid_bw_mask)
+			glbl_cfg->bw = curr_cfg->bw;
+
+		if (curr_cfg->valid_nss_mask)
+			glbl_cfg->nss = curr_cfg->nss;
+
+		if (curr_cfg->valid_mgmt_subtype)
+			glbl_cfg->mgmt_subtype_filter =
+					curr_cfg->mgmt_subtype_filter;
+
+		if (curr_cfg->valid_ctrl_subtype)
+			glbl_cfg->ctrl_subtype_filter =
+					curr_cfg->ctrl_subtype_filter;
+
+		if (curr_cfg->valid_data_subtype)
+			glbl_cfg->data_subtype_filter =
+					curr_cfg->data_subtype_filter;
+	}
 }
 
 static inline
@@ -178,6 +293,57 @@ static void ath12k_cfr_rfs_write(struct ath12k *ar, const void *head,
 	relay_write(cfr->rfs_cfr_capture, data, data_len);
 	relay_write(cfr->rfs_cfr_capture, tail, tail_data);
 	relay_flush(cfr->rfs_cfr_capture);
+}
+
+static void ath12k_cfr_lut_ageout_timer(struct timer_list *t)
+{
+	struct ath12k_cfr *cfr = from_timer(cfr, t, lut_age_timer);
+	struct ath12k *ar = container_of(cfr, struct ath12k, cfr);
+	struct ath12k_cfr_look_up_table *lut = NULL;
+	struct ath12k_dbring_element *buff;
+	unsigned long cur_tstamp = jiffies;
+	u64 diff;
+	int i;
+
+	spin_lock_bh(&cfr->lut_lock);
+
+	if (!cfr->lut)
+		goto out;
+
+	for (i = 0; i < cfr->lut_num; i++) {
+		lut = &cfr->lut[i];
+
+		if (!lut->dbr_recv || lut->tx_recv)
+			continue;
+
+		diff = jiffies_to_msecs((unsigned long)(cur_tstamp - lut->dbr_tstamp));
+		if (diff <= ATH12K_CFR_LUT_AGE_TIMER)
+			continue;
+
+		spin_lock_bh(&cfr->rx_ring.idr_lock);
+		buff = idr_find(&cfr->rx_ring.bufs_idr, i);
+		if (!buff) {
+			spin_unlock_bh(&cfr->rx_ring.idr_lock);
+			ath12k_warn(ar->ab,
+				    "Buffer not found in IDR for aged LUT[%d]\n", i);
+			ath12k_cfr_release_lut_entry(lut);
+			cfr->flush_timeout_dbr_cnt++;
+			continue;
+		}
+		spin_unlock_bh(&cfr->rx_ring.idr_lock);
+
+		ath12k_cfr_release_lut_entry(lut);
+		ath12k_dbring_remove_buf_id(&cfr->rx_ring, i);
+		ath12k_dbring_bufs_replenish(ar, &cfr->rx_ring, buff,
+					     WMI_DIRECT_BUF_CFR, GFP_ATOMIC);
+		cfr->flush_timeout_dbr_cnt++;
+	}
+
+out:
+	spin_unlock_bh(&cfr->lut_lock);
+	if (cfr->lut_age_timer_init)
+		mod_timer(&cfr->lut_age_timer,
+			  jiffies + msecs_to_jiffies(ATH12K_CFR_LUT_AGE_TIMER));
 }
 
 static void ath12k_cfr_free_pending_dbr_events(struct ath12k *ar)
@@ -463,6 +629,488 @@ static int ath12k_cfr_process_dbr_data(struct ath12k *ar,
 	return ret;
 }
 
+struct ath12k_cfr_vif_iter {
+	struct ath12k *ar;
+	struct ath12k_link_vif *arvif;
+};
+
+static void ath12k_cfr_get_first_arvif_iter(void *data, u8 *mac,
+					    struct ieee80211_vif *vif)
+{
+	struct ath12k_cfr_vif_iter *arvif_iter = data;
+	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
+	unsigned long links_map = ahvif->links_map;
+	struct ath12k_link_vif *arvif;
+	u8 link_id;
+
+	if (arvif_iter->arvif)
+		return;
+
+	for_each_set_bit(link_id, &links_map, ATH12K_NUM_MAX_LINKS) {
+		arvif = rcu_dereference(ahvif->link[link_id]);
+		if (!arvif)
+			continue;
+
+		if (arvif->ar == arvif_iter->ar) {
+			arvif_iter->arvif = arvif;
+			return;
+		}
+	}
+}
+
+static struct ath12k_link_vif *ath12k_cfr_get_first_arvif(struct ath12k *ar)
+{
+	struct ath12k_cfr_vif_iter arvif_iter = {};
+	u32 flags;
+
+	/* To use the arvif returned, caller must have held rcu read lock. */
+	WARN_ON(!rcu_read_lock_held());
+
+	arvif_iter.ar = ar;
+
+	flags = IEEE80211_IFACE_ITER_RESUME_ALL;
+	ieee80211_iterate_active_interfaces_atomic(ath12k_ar_to_hw(ar),
+						   flags,
+						   ath12k_cfr_get_first_arvif_iter,
+						   &arvif_iter);
+
+	return arvif_iter.arvif;
+}
+
+static enum wmi_phy_mode ath12k_cfr_chan_to_phymode(struct ath12k_link_vif *arvif)
+{
+	struct ieee80211_vif *vif = arvif->ahvif->vif;
+	const struct cfg80211_chan_def *def = &arvif->chanctx.def;
+	struct ieee80211_bss_conf *link_conf;
+	enum wmi_phy_mode phymode = MODE_UNKNOWN;
+
+	if (!def->chan)
+		return MODE_UNKNOWN;
+
+	link_conf = rcu_dereference(vif->link_conf[arvif->link_id]);
+	if (!link_conf)
+		return MODE_UNKNOWN;
+
+	switch (def->chan->band) {
+	case NL80211_BAND_2GHZ:
+		switch (def->width) {
+		case NL80211_CHAN_WIDTH_20_NOHT:
+			if (def->chan->flags & IEEE80211_CHAN_NO_OFDM)
+				phymode = MODE_11B;
+			else
+				phymode = MODE_11G;
+			break;
+		case NL80211_CHAN_WIDTH_20:
+			if (link_conf->uhr_support)
+				phymode = MODE_11BN_UHR20_2G;
+			else if (link_conf->eht_support)
+				phymode = MODE_11BE_EHT20_2G;
+			else if (link_conf->he_support)
+				phymode = MODE_11AX_HE20_2G;
+			else if (arvif->vht_cap)
+				phymode = MODE_11AC_VHT20_2G;
+			else
+				phymode = MODE_11NG_HT20;
+			break;
+		case NL80211_CHAN_WIDTH_40:
+			if (link_conf->uhr_support)
+				phymode = MODE_11BN_UHR40_2G;
+			else if (link_conf->eht_support)
+				phymode = MODE_11BE_EHT40_2G;
+			else if (link_conf->he_support)
+				phymode = MODE_11AX_HE40_2G;
+			else if (arvif->vht_cap)
+				phymode = MODE_11AC_VHT40_2G;
+			else
+				phymode = MODE_11NG_HT40;
+			break;
+		default:
+			break;
+		}
+		break;
+	case NL80211_BAND_5GHZ:
+		switch (def->width) {
+		case NL80211_CHAN_WIDTH_20_NOHT:
+			phymode = MODE_11A;
+			break;
+		case NL80211_CHAN_WIDTH_20:
+			if (link_conf->uhr_support)
+				phymode = MODE_11BN_UHR20;
+			else if (link_conf->eht_support)
+				phymode = MODE_11BE_EHT20;
+			else if (link_conf->he_support)
+				phymode = MODE_11AX_HE20;
+			else if (arvif->vht_cap)
+				phymode = MODE_11AC_VHT20;
+			else
+				phymode = MODE_11NA_HT20;
+			break;
+		case NL80211_CHAN_WIDTH_40:
+			if (link_conf->uhr_support)
+				phymode = MODE_11BN_UHR40;
+			else if (link_conf->eht_support)
+				phymode = MODE_11BE_EHT40;
+			else if (link_conf->he_support)
+				phymode = MODE_11AX_HE40;
+			else if (arvif->vht_cap)
+				phymode = MODE_11AC_VHT40;
+			else
+				phymode = MODE_11NA_HT40;
+			break;
+		case NL80211_CHAN_WIDTH_80:
+			if (link_conf->uhr_support)
+				phymode = MODE_11BN_UHR80;
+			else if (link_conf->eht_support)
+				phymode = MODE_11BE_EHT80;
+			else if (link_conf->he_support)
+				phymode = MODE_11AX_HE80;
+			else
+				phymode = MODE_11AC_VHT80;
+			break;
+		case NL80211_CHAN_WIDTH_160:
+			if (link_conf->uhr_support)
+				phymode = MODE_11BN_UHR160;
+			else if (link_conf->eht_support)
+				phymode = MODE_11BE_EHT160;
+			else if (link_conf->he_support)
+				phymode = MODE_11AX_HE160;
+			else
+				phymode = MODE_11AC_VHT160;
+			break;
+		case NL80211_CHAN_WIDTH_80P80:
+			if (link_conf->uhr_support)
+				phymode = MODE_11BN_UHR80_80;
+			else if (link_conf->eht_support)
+				phymode = MODE_11BE_EHT80_80;
+			else if (link_conf->he_support)
+				phymode = MODE_11AX_HE80_80;
+			else
+				phymode = MODE_11AC_VHT80_80;
+			break;
+		case NL80211_CHAN_WIDTH_320:
+			if (link_conf->uhr_support)
+				phymode = MODE_11BN_UHR320;
+			else
+				phymode = MODE_11BE_EHT320;
+			break;
+		default:
+			break;
+		}
+		break;
+	case NL80211_BAND_6GHZ:
+		switch (def->width) {
+		case NL80211_CHAN_WIDTH_20_NOHT:
+		case NL80211_CHAN_WIDTH_20:
+			if (link_conf->uhr_support)
+				phymode = MODE_11BN_UHR20;
+			else if (link_conf->eht_support)
+				phymode = MODE_11BE_EHT20;
+			else
+				phymode = MODE_11AX_HE20;
+			break;
+		case NL80211_CHAN_WIDTH_40:
+			if (link_conf->uhr_support)
+				phymode = MODE_11BN_UHR40;
+			else if (link_conf->eht_support)
+				phymode = MODE_11BE_EHT40;
+			else
+				phymode = MODE_11AX_HE40;
+			break;
+		case NL80211_CHAN_WIDTH_80:
+			if (link_conf->uhr_support)
+				phymode = MODE_11BN_UHR80;
+			else if (link_conf->eht_support)
+				phymode = MODE_11BE_EHT80;
+			else
+				phymode = MODE_11AX_HE80;
+			break;
+		case NL80211_CHAN_WIDTH_160:
+			if (link_conf->uhr_support)
+				phymode = MODE_11BN_UHR160;
+			else if (link_conf->eht_support)
+				phymode = MODE_11BE_EHT160;
+			else
+				phymode = MODE_11AX_HE160;
+			break;
+		case NL80211_CHAN_WIDTH_80P80:
+			if (link_conf->uhr_support)
+				phymode = MODE_11BN_UHR80_80;
+			else if (link_conf->eht_support)
+				phymode = MODE_11BE_EHT80_80;
+			else
+				phymode = MODE_11AX_HE80_80;
+			break;
+		case NL80211_CHAN_WIDTH_320:
+			if (link_conf->uhr_support)
+				phymode = MODE_11BN_UHR320;
+			else
+				phymode = MODE_11BE_EHT320;
+			break;
+		default:
+			break;
+		}
+		break;
+	default:
+		break;
+	}
+
+	WARN_ON(phymode == MODE_UNKNOWN);
+	return phymode;
+}
+
+static void
+ath12k_cfr_fill_rx_tlv_agc_info(const struct hal_rx_ppdu_cfr_info *cfr_info,
+				struct ath12k_cfr_peer_tx_param *params)
+{
+	u16 gain_info[HOST_MAX_CHAINS];
+	int i;
+
+	gain_info[0] = (u16)u32_get_bits(cfr_info->agc_gain_info0,
+					 ATH12K_CFR_GAIN_INFO_L_U16);
+	gain_info[1] = (u16)u32_get_bits(cfr_info->agc_gain_info0,
+					 ATH12K_CFR_GAIN_INFO_M_U16);
+	gain_info[2] = (u16)u32_get_bits(cfr_info->agc_gain_info1,
+					 ATH12K_CFR_GAIN_INFO_L_U16);
+	gain_info[3] = (u16)u32_get_bits(cfr_info->agc_gain_info1,
+					 ATH12K_CFR_GAIN_INFO_M_U16);
+	gain_info[4] = (u16)u32_get_bits(cfr_info->agc_gain_info2,
+					 ATH12K_CFR_GAIN_INFO_L_U16);
+	gain_info[5] = (u16)u32_get_bits(cfr_info->agc_gain_info2,
+					 ATH12K_CFR_GAIN_INFO_M_U16);
+	gain_info[6] = (u16)u32_get_bits(cfr_info->agc_gain_info3,
+					 ATH12K_CFR_GAIN_INFO_L_U16);
+	gain_info[7] = (u16)u32_get_bits(cfr_info->agc_gain_info3,
+					 ATH12K_CFR_GAIN_INFO_M_U16);
+
+	for (i = 0; i < min_t(u8, HOST_MAX_CHAINS, WMI_MAX_CHAINS); i++) {
+		params->agc_gain[i] = u16_get_bits(gain_info[i], ATH12K_CFR_GAIN_DB);
+		params->agc_gain_tbl_index[i] = u16_get_bits(gain_info[i],
+							     ATH12K_CFR_GAIN_TABLE_IDX);
+	}
+}
+
+static int ath12k_cfr_process_rx_tlv_ppdu(struct ath12k *ar,
+					  struct hal_rx_mon_ppdu_info *ppdu_info)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_cfr *cfr = &ar->cfr;
+	struct ath12k_cfr_look_up_table *lut = NULL, *temp = NULL;
+	struct ath12k_dbring_element *buff;
+	struct ath12k_cfr_peer_tx_param params = {0};
+	struct ath12k_csi_cfr_header *header;
+	struct ath12k_link_vif *arvif = NULL;
+	struct ath12k_dp_link_peer *link_peer;
+	const struct hal_rx_ppdu_cfr_info *cfr_info = &ppdu_info->cfr_info;
+	dma_addr_t buf_addr;
+	u32 end_magic = ATH12K_CFR_END_MAGIC;
+	u16 center_freq1 = ppdu_info->freq;
+	u16 center_freq2 = 0;
+	u16 puncture_bitmap = ppdu_info->punctured_pattern;
+	enum wmi_phy_mode cfr_phymode = MODE_UNKNOWN;
+	u32 i;
+	int ret = 0;
+	int status;
+	int lut_idx = -1;
+
+	if (!cfr_info->bb_captured_channel)
+		return 0;
+
+	if (!test_bit(WMI_SERVICE_CFR_CAPTURE_FILTER_SUPPORT, ab->wmi_ab.svc_map))
+		return 0;
+
+	buf_addr = cfr_info->rtt_che_buffer_pointer_low32 |
+		   (((u64)(cfr_info->rtt_che_buffer_pointer_high8 & 0xf))
+		    << 32);
+
+	if (!buf_addr)
+		return -EINVAL;
+
+	rcu_read_lock();
+	link_peer = ath12k_dp_link_peer_find_by_peerid_index(ab->dp, NULL,
+							     ppdu_info->peer_id);
+	if (link_peer && (link_peer->peer_id != ppdu_info->peer_id ||
+			  link_peer->pdev_idx != ar->pdev_idx))
+		link_peer = NULL;
+
+	if (cfr->rcc_param.vdev_id != 0xff)
+		arvif = ath12k_mac_get_arvif_by_vdev_id(ab, cfr->rcc_param.vdev_id);
+	else
+		arvif = ath12k_cfr_get_first_arvif(ar);
+
+	if (arvif && arvif->ar != ar)
+		arvif = NULL;
+
+	if (!arvif && link_peer)
+		arvif = ath12k_mac_get_arvif(ar, link_peer->vdev_id);
+
+	if (!arvif) {
+		rcu_read_unlock();
+		return -ENOENT;
+	}
+
+	if (arvif && arvif->chanctx.def.chan) {
+		center_freq1 = arvif->chanctx.def.center_freq1;
+		center_freq2 = arvif->chanctx.def.center_freq2;
+		puncture_bitmap = arvif->chanctx.def.punctured;
+	}
+
+	if (link_peer)
+		ether_addr_copy(params.peer_mac_addr, link_peer->addr);
+	else
+		ether_addr_copy(params.peer_mac_addr, ppdu_info->addr2);
+
+	cfr_phymode = ath12k_cfr_chan_to_phymode(arvif);
+
+	rcu_read_unlock();
+
+	params.status = WMI_CFR_PEER_CAPTURE_STATUS;
+	params.bandwidth = ppdu_info->bw;
+	params.phy_mode = cfr_phymode;
+	params.band_center_freq1 = center_freq1;
+	params.band_center_freq2 = center_freq2;
+	params.cfo_measurement = cfr_info->rtt_cfo_measurement;
+	params.rx_start_ts = cfr_info->rx_start_ts;
+	params.mcs_rate = cfr_info->mcs_rate;
+	params.gi_type = cfr_info->gi_type;
+
+	ath12k_cfr_fill_rx_tlv_agc_info(cfr_info, &params);
+	for (i = 0; i < ARRAY_SIZE(ppdu_info->rssi_chain_pri20); i++) {
+		params.chain_rssi[i] =
+			ath12k_cfr_snr_to_signal_strength(ppdu_info->rssi_chain_pri20[i]);
+	}
+
+	spin_lock_bh(&cfr->lut_lock);
+
+	if (!cfr->lut) {
+		ret = -EINVAL;
+		goto unlock;
+	}
+
+	for (i = 0; i < cfr->lut_num; i++) {
+		temp = &cfr->lut[i];
+		if (temp->dbr_address == buf_addr) {
+			lut = &cfr->lut[i];
+			lut_idx = i;
+			break;
+		}
+	}
+
+	if (!lut) {
+		cfr->tx_dbr_lookup_fail++;
+		ret = -EINVAL;
+		goto unlock;
+	}
+
+	lut->tx_ppdu_id = ppdu_info->ppdu_id;
+	lut->tx_address1 = cfr_info->rtt_che_buffer_pointer_low32;
+	lut->tx_address2 = cfr_info->rtt_che_buffer_pointer_high8;
+	lut->txrx_tstamp = jiffies;
+
+	header = &lut->header;
+	ab->hw_params->hw_ops->fill_cfr_hdr_info(ar, header, &params);
+	header->meta_enh.puncture_bitmap = puncture_bitmap;
+	header->meta_enh.beamformed = ppdu_info->beamformed;
+
+	if (ppdu_info->reception_type != HAL_RECEPTION_TYPE_SU)
+		header->meta_enh.num_mu_users =
+			min_t(u8, ppdu_info->num_users, (u8)cfr->max_mu_users);
+
+	status = ath12k_cfr_correlate_and_relay(ar, lut,
+						ATH12K_CORRELATE_TX_EVENT);
+	if (status == ATH12K_CORRELATE_STATUS_RELEASE) {
+		ath12k_cfr_rfs_write(ar, &lut->header,
+				     sizeof(struct ath12k_csi_cfr_header),
+				     lut->data, lut->data_len,
+				     &end_magic, sizeof(u32));
+		spin_lock_bh(&cfr->rx_ring.idr_lock);
+		buff = idr_find(&cfr->rx_ring.bufs_idr, lut_idx);
+		spin_unlock_bh(&cfr->rx_ring.idr_lock);
+		if (!buff) {
+			ret = -ENOENT;
+			goto unlock;
+		}
+
+		ath12k_cfr_release_lut_entry(lut);
+		ath12k_dbring_remove_buf_id(&cfr->rx_ring, lut_idx);
+		ath12k_dbring_bufs_replenish(ar, &cfr->rx_ring, buff,
+					     WMI_DIRECT_BUF_CFR, GFP_ATOMIC);
+	} else {
+		ret = -EINVAL;
+	}
+
+unlock:
+	spin_unlock_bh(&cfr->lut_lock);
+	return ret;
+}
+
+static int ath12k_cfr_ppdu_rx_notifier(struct notifier_block *nb,
+				       unsigned long val, void *v)
+{
+	struct ath12k_cfr *cfr = container_of(nb, struct ath12k_cfr,
+					      ppdu_rx_notifier);
+	struct ath12k *ar = container_of(cfr, struct ath12k, cfr);
+	struct ath12k_ppdu_event *event = v;
+	struct ath12k_ppdu_rx_info *rx_evt;
+
+	if (val != ATH12K_EVENT_PPDU_RX_COMPLETE || !event || !event->skb)
+		return NOTIFY_DONE;
+
+	if (event->skb->len < sizeof(*rx_evt))
+		return NOTIFY_DONE;
+
+	rx_evt = (struct ath12k_ppdu_rx_info *)event->skb->data;
+
+	if (rx_evt->ppdu_info.device_id != ath12k_get_ab_device_id(ar->ab))
+		return NOTIFY_DONE;
+
+	ath12k_cfr_process_rx_tlv_ppdu(ar, &rx_evt->ppdu_info);
+
+	return NOTIFY_DONE;
+}
+
+int ath12k_cfr_register_ppdu_rx_notifier(struct ath12k *ar)
+{
+	struct ath12k_cfr *cfr = &ar->cfr;
+	int ret;
+
+	if (cfr->ppdu_rx_notifier_registered)
+		return 0;
+
+	cfr->ppdu_rx_notifier.notifier_call = ath12k_cfr_ppdu_rx_notifier;
+	ret = ath12k_register_ppdu_notifier(&cfr->ppdu_rx_notifier,
+					    BIT(ATH12K_EVENT_PPDU_RX_COMPLETE));
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "failed to register CFR RX PPDU notifier for pdev %d: %d\n",
+			    ar->pdev->pdev_id, ret);
+		return ret;
+	}
+
+	cfr->ppdu_rx_notifier_registered = true;
+	return 0;
+}
+
+int ath12k_cfr_unregister_ppdu_rx_notifier(struct ath12k *ar)
+{
+	struct ath12k_cfr *cfr = &ar->cfr;
+	int ret;
+
+	if (!cfr->ppdu_rx_notifier_registered)
+		return 0;
+
+	ret = ath12k_unregister_ppdu_notifier(&cfr->ppdu_rx_notifier,
+					      BIT(ATH12K_EVENT_PPDU_RX_COMPLETE));
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "failed to unregister CFR RX PPDU notifier for pdev %d: %d\n",
+			    ar->pdev->pdev_id, ret);
+		return ret;
+	}
+
+	cfr->ppdu_rx_notifier_registered = false;
+	return 0;
+}
+
 int ath12k_process_cfr_capture_event(struct ath12k_base *ab,
 				     struct ath12k_cfr_peer_tx_param *params)
 {
@@ -572,7 +1220,8 @@ int ath12k_process_cfr_capture_event(struct ath12k_base *ab,
 		buff = idr_find(&cfr->rx_ring.bufs_idr, lut_idx);
 		if (!buff) {
 			spin_unlock_bh(&cfr->rx_ring.idr_lock);
-			return -ENOENT;
+			ret = -ENOENT;
+			goto out_unlock;
 		}
 		spin_unlock_bh(&cfr->rx_ring.idr_lock);
 
@@ -585,6 +1234,7 @@ int ath12k_process_cfr_capture_event(struct ath12k_base *ab,
 		ret = -EINVAL;
 	}
 
+out_unlock:
 	spin_unlock_bh(&cfr->lut_lock);
 	return ret;
 }
@@ -919,6 +1569,10 @@ void ath12k_cfr_deinit(struct ath12k_base *ab)
 	for (i = 0; i <  ab->num_radios; i++) {
 		ar = ab->pdevs[i].ar;
 		cfr = &ar->cfr;
+		if (cfr->lut_age_timer_init) {
+			cfr->lut_age_timer_init = false;
+			timer_delete_sync(&cfr->lut_age_timer);
+		}
 
 		spin_lock_bh(&cfr->lut_lock);
 		if (cfr->lut) {
@@ -1109,6 +1763,7 @@ int ath12k_cfr_init(struct ath12k_base *ab)
 		spin_lock_init(&cfr->lock);
 		spin_lock_init(&cfr->lut_lock);
 		num_lut_entries = min((u32)CFR_MAX_LUT_ENTRIES, db_cap.min_elem);
+		cfr->max_mu_users = HAL_MAX_UL_MU_USERS;
 
 		cfr->lut = kzalloc(num_lut_entries * sizeof(*lut), GFP_KERNEL);
 		if (!cfr->lut) {
@@ -1137,6 +1792,34 @@ int ath12k_cfr_init(struct ath12k_base *ab)
 			ath12k_warn(ab, "Failed to get enhanced aoa caps");
 			goto deinit;
 		}
+
+		if (!test_bit(WMI_SERVICE_CFR_CAPTURE_FILTER_SUPPORT,
+			      ab->wmi_ab.svc_map))
+			continue;
+
+		cfr->rcc_param.modified_in_curr_session = MAX_RESET_CFG_ENTRY;
+		cfr->rcc_param.num_grp_tlvs = MAX_TA_RA_ENTRIES;
+		cfr->rcc_param.pdev_id = ar->pdev->pdev_id;
+		cfr->rcc_param.srng_id = 0;
+		cfr->rcc_param.vdev_id = 0xff;
+
+		ath12k_peer_cfr_default_ta_ra_config(&cfr->rcc_param, true,
+						     MAX_RESET_CFG_ENTRY);
+
+		ret = ath12k_wmi_send_cfr_rcc_cmd(ar, &cfr->rcc_param);
+		if (ret) {
+			ath12k_warn(ab,
+				    "failed to send default cfr rcc config for pdev %d: %d\n",
+				    i, ret);
+			goto deinit;
+		}
+
+		ath12k_peer_cfr_update_global_cfg(ar);
+		cfr->rcc_param.modified_in_curr_session = 0;
+		cfr->rcc_param.num_grp_tlvs = 0;
+
+		timer_setup(&cfr->lut_age_timer, ath12k_cfr_lut_ageout_timer, 0);
+		cfr->lut_age_timer_init = true;
 	}
 	return 0;
 

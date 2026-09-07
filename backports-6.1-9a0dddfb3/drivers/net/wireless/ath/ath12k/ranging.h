@@ -14,6 +14,13 @@
 						 ATH12K_RTT_11AZ_NTB_RESPONDER_ROLE | \
 						 ATH12K_RTT_11AZ_TB_RESPONDER_ROLE)
 
+#define ATH12K_MAX_PASN_PEERS_PER_VAP	15
+#define ATH12K_PASN_PEER_TYPE_UNSECURE	0
+#define ATH12K_PASN_PEER_TYPE_SECURE	1
+#define ATH12K_PASN_PEER_DELETE_NORMAL	0
+#define ATH12K_PASN_PEER_DELETE_ALREADY_DELETED	BIT(0)
+#define ATH12K_PASN_PEER_DELETE_FLUSH_KEYS	BIT(1)
+
 /* PASN peer state flags (ATH12K_PASN_F_*) and WMI RTT PASN control bits */
 #define ATH12K_WMI_RTT_PASN_LTF_KEYSEED_REQUIRED	BIT(1)
 #define ATH12K_PASN_F_FW_CREATED		BIT(0)
@@ -49,8 +56,10 @@ void ath12k_rtt_init_link_vif(struct ath12k_link_vif *arvif);
 void ath12k_rtt_deinit_link_vif(struct ath12k_link_vif *arvif);
 void ath12k_pasn_fw_peer_create_work(struct wiphy *wiphy,
 				     struct wiphy_work *work);
-int ath12k_pasn_fw_peer_delete(struct ath12k_link_vif *arvif,
+int ath12k_pasn_fw_peer_create(struct ath12k_link_vif *arvif,
 			       const u8 *peer_addr);
+int ath12k_pasn_fw_peer_delete(struct ath12k_link_vif *arvif,
+			       const u8 *peer_addr, bool skip_peer_del);
 struct ath12k_rtt_pasn_peer *
 ath12k_pasn_peer_find(struct ath12k_link_vif *arvif, const u8 *peer_addr);
 u8 ath12k_pasn_peer_update_flags(struct ath12k_link_vif *arvif,

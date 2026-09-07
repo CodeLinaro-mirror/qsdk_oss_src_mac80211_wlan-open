@@ -24,11 +24,78 @@
 #include "qcn_extns/dp_mon_extn.h"
 #endif /* CPTCFG_QCN_EXTN */
 
+static inline u8
+ath12k_wifi7_get_ext_mon_peer_filter_mode(struct ath12k_dp_tx_ext_mon *tx_ext_mon)
+{
+	struct ath12k_dp_tx_ext_mon_config *tx_ext_mon_config;
+	u8 filter_mode;
+
+	lockdep_assert_held(&tx_ext_mon->tx_ext_mon_lock);
+	tx_ext_mon_config = tx_ext_mon->tx_ext_mon_config;
+	filter_mode = (tx_ext_mon_config->fp_enabled << 1) |
+		       tx_ext_mon_config->fpmo_enabled;
+
+	if (tx_ext_mon_config->monitor_flags == ATH12K_EXT_MON_PKT_CAP)
+		filter_mode = ATH12K_DP_TX_EXT_MON_SPC_PEER_FILTER;
+	return filter_mode;
+}
+
+/**
+ * ath12k_wifi7_get_ext_mon_peer_filter_mode_locked() - classify the active TX ext-mon
+ * peer-filter mode from the current configuration
+ * @dp_pdev: DP pdev handle
+ *
+ * Maps the (fp_enabled, fpmo_enabled) bit-pair in tx ext_mon structure to a
+ * &enum ath12k_dp_tx_ext_mon_peer_filter value that controls both the
+ * per-frame SW filter path and whether the staged peer list is pushed
+ * into the HW peer-filter table:
+ *
+ * fp_enabled  fpmo_enabled  result                               HW peers
+ * ----------  ------------  -----------------------------------  --------
+ *        0            0     (ext_mon disabled — not applicable)     -
+ *        0            1     %ATH12K_DP_TX_EXT_MON_HW_PEER_FILTER    yes
+ *        1            0     %ATH12K_DP_TX_EXT_MON_ALL_PEER_FILTER   no
+ *        1            1     %ATH12K_DP_TX_EXT_MON_SW_PEER_FILTER    no
+ *
+ * When monitor_flags is %ATH12K_EXT_MON_PKT_CAP the mode is forced to
+ * %ATH12K_DP_TX_EXT_MON_SPC_PEER_FILTER regardless of the bit-pair above.
+ *
+ * Return: &enum ath12k_dp_tx_ext_mon_peer_filter value, or 0 if the
+ *         ext-monitor config pointer is NULL or disabled.
+ */
+u8 ath12k_wifi7_get_ext_mon_peer_filter_mode_locked(struct ath12k_pdev_dp *dp_pdev)
+{
+	u8 filter_mode = 0;
+	struct ath12k_dp_tx_ext_mon_config *tx_ext_mon;
+	struct ath12k_pdev_tx_mon *tx_mon;
+
+	if (!dp_pdev || !dp_pdev->dp_mon_pdev)
+		return 0;
+
+	tx_mon = dp_pdev->dp_mon_pdev->dp_pdev_tx_mon;
+	if (!tx_mon)
+		return 0;
+
+	lockdep_assert_not_held(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+
+	spin_lock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+	tx_ext_mon = tx_mon->tx_ext_mon.tx_ext_mon_config;
+	if (unlikely(!tx_ext_mon)) {
+		ath12k_warn(dp_pdev->dp, "ext_mon in tx direction is null\n");
+		spin_unlock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+		return 0;
+	}
+	filter_mode = ath12k_wifi7_get_ext_mon_peer_filter_mode(&tx_mon->tx_ext_mon);
+	spin_unlock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+
+	return filter_mode;
+}
+
 /**
  * ath12k_wifi7_dp_ext_mon_filter() - decide whether an MPDU passes TX
- *	ext-mon capture filtering for the pdev's current mode
+ *	ext-mon capture filtering for the pdev's current mode.
+ * @dp_pdev: DP pdev handle
  * @mpdu: the TX MPDU skb being considered for ext-mon capture
- * @tx_ext_mon: TX extended-monitor configuration for this pdev
  *
  * Ext-mon capture filtering runs in one of four modes. Three modes are
  * selected by the (fp_enabled, fpmo_enabled) pair; the fourth is forced
@@ -59,16 +126,20 @@
  * Return: 0 if the MPDU passes filtering for the active mode, -EINVAL
  *	if it is rejected (or if fraglist/skb fragment counts disagree).
  */
-int ath12k_wifi7_dp_ext_mon_filter(struct sk_buff *mpdu,
-				   struct ath12k_dp_tx_ext_mon_config *tx_ext_mon)
+int ath12k_wifi7_dp_ext_mon_filter(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *mpdu)
 {
-	u8 filter_mode = (tx_ext_mon->fp_enabled << 1) | tx_ext_mon->fpmo_enabled;
+	struct ath12k_pdev_tx_mon *tx_mon;
+	u8 filter_mode;
 	int ret = 0, frag_count;
 	struct ieee80211_hdr *wh;
+	struct ath12k_dp_tx_ext_mon_config *tx_ext_mon_config;
 
-	if (tx_ext_mon->monitor_flags == ATH12K_EXT_MON_PKT_CAP)
-		filter_mode = ATH12K_DP_TX_EXT_MON_SPC_PEER_FILTER;
+	tx_mon = dp_pdev->dp_mon_pdev->dp_pdev_tx_mon;
+	if (!tx_mon)
+		return 0;
 
+	tx_ext_mon_config = tx_mon->tx_ext_mon.tx_ext_mon_config;
+	filter_mode = ath12k_wifi7_get_ext_mon_peer_filter_mode(&tx_mon->tx_ext_mon);
 	frag_count = ath12k_dp_mon_get_num_frags_in_fraglist(mpdu);
 	if (frag_count) {
 		if (!skb_shinfo(mpdu)->nr_frags) {
@@ -85,22 +156,22 @@ int ath12k_wifi7_dp_ext_mon_filter(struct sk_buff *mpdu,
 	switch (filter_mode) {
 	case ATH12K_DP_TX_EXT_MON_HW_PEER_FILTER:
 		/* Perform subtype filtering */
-		ret = ath12k_dp_ext_mon_filter_subtype(wh, &tx_ext_mon->fpmo);
+		ret = ath12k_dp_ext_mon_filter_subtype(wh, &tx_ext_mon_config->fpmo);
 		if (ret)
 			return ret;
 		/* Perform s/w peer check to filter selfgen & leaked frames */
-		return ath12k_dp_ext_mon_filter_peer(wh, &tx_ext_mon->peer_list);
+		return ath12k_dp_ext_mon_filter_peer(wh, &tx_ext_mon_config->peer_list);
 	case ATH12K_DP_TX_EXT_MON_ALL_PEER_FILTER:
 		/* Perform subtype filtering */
-		return ath12k_dp_ext_mon_filter_subtype(wh, &tx_ext_mon->fp);
+		return ath12k_dp_ext_mon_filter_subtype(wh, &tx_ext_mon_config->fp);
 	case ATH12K_DP_TX_EXT_MON_SW_PEER_FILTER:
 	case ATH12K_DP_TX_EXT_MON_SPC_PEER_FILTER:
 		/* Perform s/w peer check to filter targeted peer frames */
-		ret = ath12k_dp_ext_mon_filter_peer(wh, &tx_ext_mon->peer_list);
+		ret = ath12k_dp_ext_mon_filter_peer(wh, &tx_ext_mon_config->peer_list);
 		if (!ret)
 			return 0;
 		/* Perform Type filtering */
-		return ath12k_dp_ext_mon_filter_type(wh, &tx_ext_mon->fp);
+		return ath12k_dp_ext_mon_filter_type(wh, &tx_ext_mon_config->fp);
 	default:
 		break;
 	}
@@ -269,44 +340,6 @@ int ath12k_wifi7_dp_mon_tx_config_filter(struct ath12k_pdev_dp *dp_pdev,
 }
 EXPORT_SYMBOL(ath12k_wifi7_dp_mon_tx_config_filter);
 
-/**
- * ath12k_wifi7_dp_ext_mon_tx_hw_peer_filter_enabled() - decide whether the
- * staged TX ext-mon peer list should be programmed into the HW peer
- * filter table
- * @ext_mon_config: active TX extended-monitor filter configuration
- *
- * Hardware can only apply peer-scoped TX filtering when @fpmo_enabled
- * ("target_peer" mode) is the sole active mode. It has no mechanism to
- * combine a blanket "pass everything" capture (@fp_enabled) with a
- * peer-scoped filter at the same time - the two modes are mutually
- * exclusive in HW.
- *
- * When @fp_enabled is also set (either alone, or together with
- * @fpmo_enabled), HW is configured to pass all TX frames, and any
- * peer-level scoping is done entirely in software by walking the staged
- * peer list per frame. In that case the peer list must stay host-side
- * only; pushing it into the HW filter table would be a no-op HW
- * cannot honor
- *
- * When monitor_flags is ATH12K_EXT_MON_PKT_CAP (special packet capture),
- * HW peer-filter programming is also skipped. Peer scoping for packet
- * capture remains entirely in the host filter path
- * (ATH12K_DP_TX_EXT_MON_SPC_PEER_FILTER), so pushing peers into the
- * HW table would be incorrect.
- *
- * Return: true only when @fpmo_enabled is set, @fp_enabled is clear, and
- *    monitor_flags is not ATH12K_EXT_MON_PKT_CAP — the one configuration
- *    where the HW peer filter table applies.
- */
-static int
-ath12k_wifi7_dp_ext_mon_tx_hw_peer_filter_enabled
-	(struct ath12k_dp_tx_ext_mon_config *ext_mon_config)
-{
-	if (ext_mon_config->monitor_flags == ATH12K_EXT_MON_PKT_CAP)
-		return 0;
-	return !(ext_mon_config->fp_enabled) && ext_mon_config->fpmo_enabled;
-}
-
 int
 ath12k_wifi7_dp_ext_mon_add_wmi_tx_peers(struct ath12k_pdev_dp *dp_pdev,
 					 struct ath12k_dp_ext_mon_tx_peer_params
@@ -314,24 +347,15 @@ ath12k_wifi7_dp_ext_mon_add_wmi_tx_peers(struct ath12k_pdev_dp *dp_pdev,
 {
 	bool enable_filter_action = false;
 	struct ath12k_pdev_tx_mon *tx_mon;
-	struct ath12k_dp_tx_ext_mon_config *tx_ext_mon;
 	struct ath12k_set_tx_peer_filter_params wmi_param = {0};
 	struct ath12k_dp_ext_mon_peer *peer, *tmp;
 	int hw_peer_filter_enabled = 0, ret = 0;
 	struct list_head *peer_list;
+	u8 filter_mode = 0;
 
 	tx_mon = dp_pdev->dp_mon_pdev->dp_pdev_tx_mon;
-
-	spin_lock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
-	tx_ext_mon = tx_mon->tx_ext_mon.tx_ext_mon_config;
-	if (unlikely(!tx_ext_mon)) {
-		ath12k_warn(dp_pdev->dp, "ext_mon in tx direction is null\n");
-		spin_unlock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
-		return -EINVAL;
-	}
-	hw_peer_filter_enabled =
-		ath12k_wifi7_dp_ext_mon_tx_hw_peer_filter_enabled(tx_ext_mon);
-	spin_unlock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+	filter_mode = ath12k_wifi7_get_ext_mon_peer_filter_mode_locked(dp_pdev);
+	hw_peer_filter_enabled = (filter_mode == ATH12K_DP_TX_EXT_MON_HW_PEER_FILTER);
 
 	if (!hw_peer_filter_enabled)
 		return ret;
@@ -353,6 +377,7 @@ ath12k_wifi7_dp_ext_mon_add_wmi_tx_peers(struct ath12k_pdev_dp *dp_pdev,
 			   "Peer add attempt for %pM\n", wmi_param.mac_addr);
 		if (ath12k_wmi_vdev_set_tx_peer_filter_cmd(dp_pdev->ar,
 							   &wmi_param)) {
+			ATH12K_TX_MON_STAT_INC_ERR(dp_pdev, wmi_peer_send_failed);
 			ath12k_warn(dp_pdev->dp,
 				    "wmi add fail vdev %d peer addr %pM: mismatch H/W state\n",
 				    wmi_param.vdev_id, wmi_param.mac_addr);
@@ -399,6 +424,7 @@ ath12k_wifi7_dp_ext_mon_remove_wmi_tx_peers(struct ath12k_pdev_dp *dp_pdev,
 		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
 			   "Peer remove attempt for %pM\n", wmi_param.mac_addr);
 		if (ath12k_wmi_vdev_set_tx_peer_filter_cmd(dp_pdev->ar, &wmi_param)) {
+			ATH12K_TX_MON_STAT_INC_ERR(dp_pdev, wmi_peer_send_failed);
 			ath12k_warn(dp_pdev->dp,
 				    "Peer remove fail for %pM: mismatch H/W state.\n",
 				    wmi_param.mac_addr);

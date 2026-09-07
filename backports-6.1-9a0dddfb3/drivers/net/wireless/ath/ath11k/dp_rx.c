@@ -3682,25 +3682,69 @@ ath11k_dp_rx_update_peer_rate_table_stats(struct ath11k_rx_peer_stats *rx_stats,
 		rx_stats->byte_stats.rx_rate[bw_idx][gi_idx][nss_idx][mcs_idx] += ppdu_info->mpdu_len;
 }
 
+static enum ath11k_sta_phy_mode
+ath11k_get_sta_phy_mode(const struct ieee80211_sta *sta)
+{
+	if (sta->deflink.he_cap.has_he)
+		return ATH11K_HE_STA;
+	if (sta->deflink.vht_cap.vht_supported)
+		return ATH11K_VHT_STA;
+	if (sta->deflink.ht_cap.ht_supported)
+		return ATH11K_HT_STA;
+
+	return ATH11K_LEGACY_STA;
+}
+
+static bool ath11k_dp_rx_update_rssi_allowed(struct hal_rx_mon_ppdu_info *ppdu_info,
+						     struct ieee80211_sta *sta)
+{
+	if (!ppdu_info->fc_valid)
+		return false;
+
+	if ((ppdu_info->frame_control & IEEE80211_FCTL_FTYPE) != IEEE80211_FTYPE_DATA)
+		return false;
+
+	switch (ppdu_info->frame_control & IEEE80211_FCTL_STYPE) {
+	case IEEE80211_STYPE_DATA:
+	case IEEE80211_STYPE_DATA_CFACK:
+	case IEEE80211_STYPE_DATA_CFPOLL:
+	case IEEE80211_STYPE_DATA_CFACKPOLL:
+	case IEEE80211_STYPE_QOS_DATA:
+	case IEEE80211_STYPE_QOS_DATA_CFACK:
+	case IEEE80211_STYPE_QOS_DATA_CFPOLL:
+	case IEEE80211_STYPE_QOS_DATA_CFACKPOLL:
+		break;
+	default:
+		return false;
+	}
+
+	return (ppdu_info->preamble_type != HAL_RX_PREAMBLE_11A &&
+		ppdu_info->preamble_type != HAL_RX_PREAMBLE_11B) ||
+	       ath11k_get_sta_phy_mode(sta) == ATH11K_LEGACY_STA ||
+	       ath11k_get_sta_phy_mode(sta) == ATH11K_HT_STA;
+}
+
 static void ath11k_dp_rx_update_peer_su_stats(struct ath11k *ar,
 					      struct ath11k_sta *arsta,
-					      struct hal_rx_mon_ppdu_info *ppdu_info)
+					      struct hal_rx_mon_ppdu_info *ppdu_info,
+					      struct ath11k_peer *peer)
 {
 	struct ath11k_rx_peer_stats *rx_stats = arsta->rx_stats;
 	u32 num_msdu;
-	u32 bw_offset;
 	int i;
+
+	if (ath11k_dp_rx_update_rssi_allowed(ppdu_info, peer->sta)) {
+		arsta->last_tx_pkt_bw = ppdu_info->bw;
+		arsta->rssi_comb = ppdu_info->rssi_comb;
+		ewma_avg_rssi_add(&arsta->avg_rssi, ppdu_info->rssi_comb);
+	}
+
+	if (!ath11k_debugfs_is_extd_rx_stats_enabled(ar))
+		return;
 
 	if (!rx_stats)
 		return;
 
-	arsta->last_tx_pkt_bw = ppdu_info->bw;
-	bw_offset = arsta->last_tx_pkt_bw * 3;
-	arsta->rssi_comb = ppdu_info->rssi_comb;
-	ewma_avg_rssi_add(&arsta->avg_rssi, ppdu_info->rssi_comb + bw_offset);
-
-	if (!ath11k_debugfs_is_extd_rx_stats_enabled(ar))
-		return;
 	num_msdu = ppdu_info->tcp_msdu_count + ppdu_info->tcp_ack_msdu_count +
 		   ppdu_info->udp_msdu_count + ppdu_info->other_msdu_count;
 
@@ -3824,6 +3868,12 @@ static void ath11k_dp_rx_update_user_stats(struct ath11k *ar,
 	arsta = (struct ath11k_sta *)peer->sta->drv_priv;
 	rx_stats = arsta->rx_stats;
 
+	if (ath11k_dp_rx_update_rssi_allowed(ppdu_info, peer->sta)) {
+		arsta->last_tx_pkt_bw = ppdu_info->bw;
+		arsta->rssi_comb = ppdu_info->rssi_comb;
+		ewma_avg_rssi_add(&arsta->avg_rssi, ppdu_info->rssi_comb);
+	}
+
 	if (ar->ab->nss.enabled)
 		ath11k_nss_update_sta_rxrate(ppdu_info, peer, user_stats);
 
@@ -3833,8 +3883,6 @@ static void ath11k_dp_rx_update_user_stats(struct ath11k *ar,
 
 	if (!rx_stats)
 		return;
-
-	arsta->rssi_comb = ppdu_info->rssi_comb;
 
 	num_msdu = user_stats->tcp_msdu_count + user_stats->tcp_ack_msdu_count +
 		   user_stats->udp_msdu_count + user_stats->other_msdu_count;
@@ -6623,7 +6671,7 @@ int ath11k_dp_rx_process_mon_status(struct ath11k_base *ab, int mac_id,
 
 		if (ppdu_info->reception_type == HAL_RX_RECEPTION_TYPE_SU) {
 			arsta = (struct ath11k_sta *)peer->sta->drv_priv;
-			ath11k_dp_rx_update_peer_su_stats(ar, arsta, ppdu_info);
+			ath11k_dp_rx_update_peer_su_stats(ar, arsta, ppdu_info, peer);
 			ath11k_nss_update_sta_rxrate(ppdu_info, peer, NULL);
 		} else if ((ppdu_info->fc_valid) &&
 				(ppdu_info->ast_index != HAL_AST_IDX_INVALID)) {

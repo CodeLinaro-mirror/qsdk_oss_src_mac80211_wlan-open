@@ -311,15 +311,14 @@ static const struct ath12k_hw_ops qcn9625_ops = {
 /* Interrupt Grouping is as follows
  * Group 0-3: Tx completion
  * Group 4-7: Rx ring
- * Group 8: Tx exception ring
+ * Group 8: Tx exception ring, fw_tqm2sw
  * Group 9: Rx error, Reo Status, TCL status, TQM status
  * Group 10,11 : Monitor destination(TX,RX)
  * Group 12: Monitor buffer(TX,RX)
  * Group 13: Roaming RX ring, TX/RX peer telemetry
- * Group 14: fw_tqm2sw ring (FW-owned buffer completion WAR)
- * Group 18: UMCMN interrupts
- * Group 19-21: PPE interrupts
- * Group 22: UMAC reset
+ * Group 17: UMCMN interrupts
+ * Group 18-20: PPE interrupts
+ * Group 21: UMAC reset
  */
 static struct ath12k_hw_ring_mask ath12k_wifi8_hw_ring_mask_qcn9625 = {
 	/* Group 0-3, 5th ring uses group 10 */
@@ -356,6 +355,14 @@ static struct ath12k_hw_ring_mask ath12k_wifi8_hw_ring_mask_qcn9625 = {
 		0, 0, 0, 0,
 		0, 0, 0, 0,
 		ATH12K_TX_EXCEPTION_RING_MASK_0,
+	},
+	/* Group 8: fw_tqm2sw ring
+	 * (FW-owned buffer completion WAR - HAL_TQM_HOST_STATUS_RING=1)
+	 */
+	.tqm2sw_fw = {
+		0, 0, 0, 0,
+		0, 0, 0, 0,
+		ATH12K_FW_TQM2SW_RING_MASK_0,
 	},
 	/* Group 9 */
 	.rx_err = {
@@ -450,24 +457,16 @@ static struct ath12k_hw_ring_mask ath12k_wifi8_hw_ring_mask_qcn9625 = {
 		0,
 		ATH12K_RX_PEER_TELEMETRY_RING_MASK
 	},
-	/* Group 14: dedicated interrupt for fw_tqm2sw ring
-	 * (FW-owned buffer completion WAR - HAL_TQM_HOST_STATUS_RING=1)
-	 */
-	.tqm2sw_fw = {
-		0, 0, 0, 0,
-		0, 0, 0, 0,
-		ATH12K_FW_TQM2SW_RING_MASK_0,
-	},
-	/* Group 18 */
+	/* Group 17 */
 	.umcmn_interrupts = {
 		0, 0, 0, 0,
 		0, 0, 0, 0,
 		0, 0, 0, 0,
 		0, 0, 0, 0,
-		0, 0,
+		0,
 		ATH12K_UMCMN_INTR_MASK_0,
 	},
-	/* Group 19-21 */
+	/* Group 18-20 */
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	.ppe2tcl = {
 		0, 0, 0, 0,
@@ -494,7 +493,7 @@ static struct ath12k_hw_ring_mask ath12k_wifi8_hw_ring_mask_qcn9625 = {
 		ATH12K_PPE_TQM2SW_RELEASE_RING_MASK_0
 	},
 #endif
-	/* Group 22 */
+	/* Group 21 */
 	.umac_dp_reset = {
 		0, 0, 0, 0,
 		0, 0, 0, 0,
@@ -735,7 +734,11 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 
 		.iova_mask = 0,
 
+#ifdef PLATFORM_SDX
+		.supports_aspm = false,
+#else
 		.supports_aspm = true,
+#endif
 
 		.current_cc_support = false,
 
@@ -796,7 +799,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.name = "qcn9625 hw2.0",
 		.hw_rev = ATH12K_HW_QCN9625_HW20,
 		.fw = {
-			.dir = "QCN9625/hw1.0",
+			.dir = "QCN9625/hw2.0",
 			.board_size = ATH12K_WIFI8_BOARD_SIZE,
 			.cal_offset = 128 * 1024,
 			.m3_loader = ath12k_m3_fw_loader_driver,
@@ -1158,7 +1161,7 @@ ath12k_wifi8_mac_get_tx_link(struct ieee80211_sta *sta, struct ieee80211_vif *vi
 	 * the frame will be transmitted on master (primary) link. An individually
 	 * addressed mgmt frame can be transmitted on master link after peer assoc.
 	 */
-	if (ahsta->state <= IEEE80211_STA_ASSOC ||
+	if (ahsta->state < IEEE80211_STA_ASSOC ||
 	    !ath12k_wifi8_mac_is_mgmt_link_agnostic(ab, skb))
 		goto skip_link_agnostic_tx;
 
@@ -1279,8 +1282,7 @@ static void ath12k_wifi8_mgmt_handler(struct ieee80211_hw *hw,
 	 */
 	if (sta) {
 		ahsta = ath12k_sta_to_ahsta(sta);
-		if (ahsta->state == IEEE80211_STA_AUTHORIZED ||
-		    (sta->epp_peer && ahsta->state > IEEE80211_STA_AUTH))
+		if (ahsta->state >= IEEE80211_STA_ASSOC)
 			skb_cb->flags |= ATH12K_SKB_MGMT_MLO_PARAMS;
 	}
 
@@ -2053,7 +2055,7 @@ ath12k_mem_profile_based_param_wifi8[] = {
 			.mon_num_ppdu_desc		= 8,
 			.rx_desc_count			= 8192,
 			.dp_max_clients			= 512,
-			.num_pool_ppeds_tx_desc		= 0x2000,
+			.num_pool_ppeds_tx_desc		= 0x4000,
 			.ppeds_hotlist_len_max		= 256,
 			.dp_num_clients_max		= 56,
 			.dp_mon_status_buf		= 20,

@@ -276,23 +276,24 @@ struct ath12k_dp_peer {
 #define MSDUQ_FLOW_OVERRIDE	BIT(3)
 #define MSDUQ_WHO_CL_INFO	GENMASK(5, 4)
 
-#define QOS_NW_DELAY_MAX	0x3FFFF
-#define QOS_NW_DELAY		GENMASK(23, 6)
-#define QOS_NW_TAG_SHIFT	GENMASK(23, 16)
-#define QOS_TAG_ID		GENMASK(31, 24)
+#define QOS_NW_DELAY_MAX	0xFFFF
+#define QOS_NW_DELAY		GENMASK(21, 6)
 #define QOS_NW_DELAY_SHIFT	0x6
 #define QOS_VALID_TAG		BIT(30)
 #define DP_RETRY_COUNT		7
 
 struct ath12k_msduq {
-	bool reserved;
-	u8 qos_id;
 	u32 tgt_opaque_id;
-	u16 msduq;
+	u8 qos_id;
+	u8 qm_id;
+	u8 msduq      : 6,
+	   reserved   : 1,
+	   txop_intent: 1;
 };
 
 struct ath12k_dl_scs {
 	u16 qos_id_msduq;
+	bool dedicated_queue;
 };
 
 struct ath12k_dp_peer_qos {
@@ -384,23 +385,24 @@ bool ath12k_dp_qos_stats_alloc(struct ath12k *ar,
 			       struct ieee80211_vif *vif,
 			       struct ath12k_dp_link_peer *peer);
 int ath12k_dp_peer_scs_add(struct ath12k_dp_peer *dp_peer, u8 qm_id,
-			   u16 qos_id);
+			   u16 qos_id, bool dedicated_queue);
 int ath12k_dp_peer_scs_del(struct ath12k_dp_peer *dp_peer, u8 qm_id,
 			   u16 *qos_id);
 int ath12k_dp_peer_scs_data(struct ath12k_dp *dp,
 			    u8 scs_id,
 			    struct ath12k_dp_hw *dp_hw,
-			    u16 *msduq, u16 *qos_id,
+			    u8 *msduq, u16 *qos_id,
 			    struct ath12k_dp_peer *dp_peer);
 u16 ath12k_dp_peer_scs_get_qos_id(struct ath12k_dp_peer_qos *qos, u8 scs_id);
-u16 ath12k_dp_peer_qos_msduq(struct ath12k_base *ab,
-			     struct ath12k_dp_peer_qos *qos,
-			     struct ath12k_dp_peer *dp_peer,
-			     struct ath12k_dp_hw *dp_hw,
-			     u16 qos_id, u8 svc_id);
+u8 ath12k_dp_peer_qos_msduq(struct ath12k_base *ab,
+			    struct ath12k_dp_peer_qos *qos,
+			    struct ath12k_dp_peer *dp_peer,
+			    struct ath12k_dp_hw *dp_hw,
+			    u16 qos_id, u8 svc_id,
+			    u8 qm_id, bool txop_intent);
 u16 dp_peer_msduq_qos_id(struct ath12k_base *ab,
 			 struct ath12k_dp_peer_qos *qos,
-			 u16 msduq);
+			 u8 msduq);
 void ath12k_peer_qos_queue_ind_handler(struct ath12k_base *ab,
 				       struct sk_buff *skb);
 void ath12k_link_peer_free(struct ath12k_dp_link_peer *peer);

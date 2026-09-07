@@ -421,6 +421,7 @@ static void ath12k_wifi7_dp_op_device_deinit(struct ath12k_dp *dp)
 		return;
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	dp->ppe.ppe_ops->ath12k_ppeds_stop(ab);
 	dp->ppe.ppe_ops->ath12k_ppeds_detach(ab);
 #endif
 	ath12k_dp_cc_deinit(ab);
@@ -571,7 +572,8 @@ int ath12k_wifi7_dp_fetch_replenish_ring_id(struct ath12k_dp *dp)
 
 static int ath12k_wifi7_dp_qos_queue_setup(struct ath12k_dp_hw_group *dp_hw_grp,
 					   struct ath12k_dp_peer *dp_peer,
-					   u16 msduq, u16 qos_id)
+					   u8 msduq, u16 qos_id,
+					   u8 qm_id, bool txop_intent)
 {
 	return 0;
 }
@@ -755,6 +757,9 @@ void ath12k_wifi7_dp_deinit(struct ath12k_dp *dp)
 	ath12k_dp_mon_tx_srng_free(dp);
 	ath12k_dp_mon_rx_free(dp);
 	ath12k_dp_mon_deinit(dp);
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	ath12k_dp_ipa_plugin_deregister_ops_extn(dp->ab);
+#endif
 	ath12k_wifi7_dp_rx_ring_free(dp->ab);
 	ath12k_wifi7_dp_reoq_lut_cleanup(dp->ab);
 	ath12k_wifi7_dp_tx_ring_cleanup(dp->ab);

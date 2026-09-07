@@ -851,6 +851,9 @@ struct ieee80211_uhr_config {
  * @npca_mode_update: true if NPCA was already enabled and this is a
  *	parameter-only update (switch_delay or switch_back_delay changed)
  *	rather than a fresh enable, disable, or no-op re-send
+ * @npca_update: true if any NPCA parameter was updated in this
+ *	ieee80211_uhr_mode_update() call, regardless of whether NPCA was
+ *	already active; used by the driver to gate WMI NPCA TLV inclusion
  */
 struct ieee80211_bss_conf {
 	struct ieee80211_vif *vif;
@@ -985,6 +988,7 @@ struct ieee80211_bss_conf {
 	struct cfg80211_smd_params smd_params;
 	struct ieee80211_bss_npca_params npca;
 	bool npca_mode_update;
+	bool npca_update;
 	struct cfg80211_uhr_dso_params dso;
 };
 
@@ -2403,6 +2407,7 @@ struct ieee80211_vif {
 	u32 mdbg;
 #endif
 	bool is_roc;
+
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));
 };
@@ -3140,6 +3145,13 @@ struct ieee80211_sta {
 
 	bool epp_peer;
 
+	/* mac80211 TX/RX flow counters - accessible from driver */
+	atomic_t tx_netif_pkts;
+	atomic_t tx_drv_pkts;
+	atomic_t rx_drv_pkts;
+	atomic_t rx_netif_pkts;
+	atomic_t rx_forwarded_pkts;
+
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));
 };
@@ -3509,6 +3521,9 @@ struct ieee80211_txq {
  *	bandwidth reconfigurations are always processed even when the new
  *	chandef appears identical to the current one.
  *
+ * @IEEE80211_HW_STA_DESTROY_SYNC_RCU_EXPEDITED: Driver requests expedited RCU
+ *	synchronization in __sta_info_destroy() to reduce peer delete latency.
+ *
  * @NUM_IEEE80211_HW_FLAGS: number of hardware flags, used for sizing arrays
  */
 enum ieee80211_hw_flags {
@@ -3584,6 +3599,7 @@ enum ieee80211_hw_flags {
 	IEEE80211_HW_VLAN_GROUP_KEY_HW_OFFLOAD,
 	IEEE80211_HW_SUPPORTS_TX_MONITOR_OFFLOAD,
 	IEEE80211_HW_SKIP_CHANDEF_IDENTICAL_CHECK,
+	IEEE80211_HW_STA_DESTROY_SYNC_RCU_EXPEDITED,
 
 	/* keep last, obviously */
 	NUM_IEEE80211_HW_FLAGS

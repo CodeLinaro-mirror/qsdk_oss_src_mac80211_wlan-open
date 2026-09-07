@@ -2052,8 +2052,8 @@ void ath12k_wifi8_rx_sw_desc_sanity_check(struct hal_reo_dest_ring *hw_rx_desc,
 			return;
 		}
 
-		pr_err("HW cookie conversion table seems to be corrupted");
-		WARN_ON(1);
+		pr_err_ratelimited("SPT lookup failed for rx desc (CC globally disabled), dropping frame");
+		return;
 	}
 
 	if (unlikely(sw_desc->magic != ATH12K_DP_RX_DESC_MAGIC)) {
@@ -2140,8 +2140,10 @@ int ath12k_wifi8_dp_rx_process_reo_rings(struct ath12k_dp *dp,
 	while (valid_entries) {
 		struct hal_rx_spd_data *rx_spd = &rx_status_desc[total_msdu_reaped];
 
-		/* reset all the flags before using scratch_pad desc */
+		/* reset all the flags and msdu pointer before using scratch_pad desc */
 		rx_spd->flags = 0;
+		rx_spd->msdu = NULL;
+		rx_spd->vaddr = NULL;
 		hw_rx_desc =
 			__ath12k_hal_get_dst_srng_desc(srng, &curr_tp,
 						       (void **)&next_hw_rx_desc);
@@ -3269,8 +3271,8 @@ int ath12k_wifi8_dp_pdev_alloc(struct ath12k_base *ab)
 		dp_pdev->dp_hw = &ar->ah->dp_hw;
 		dp_pdev->hw_link_id = ar->hw_link_id;
 
-		/* Enable enable_dp_stats by default */
-		ar->dp.dp_stats_mask |= DP_ENABLE_STATS;
+		/* Restore dp_stats_mask from INI to persist value across reboots */
+		ar->dp.dp_stats_mask = DP_STATS_MASK;
 
 		if (!dp_pdev->dp_mon_pdev_configured) {
 			ret = ath12k_dp_mon_pdev_init(dp_pdev);

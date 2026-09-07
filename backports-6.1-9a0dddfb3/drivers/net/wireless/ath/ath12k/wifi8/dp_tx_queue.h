@@ -23,6 +23,8 @@ enum ath12k_classify_bank_subid {
 struct ath12k_dp_tx_metdata {
 	u8 svc_id; //bit 0
 	u32 bitmap; //bitmap is used to track if fields are modified
+	u8 qm_id;
+	bool txop_intent;
 };
 
 struct ath12k_dp_tx_queue_metadata {

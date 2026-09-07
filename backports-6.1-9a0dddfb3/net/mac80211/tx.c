@@ -4666,7 +4666,7 @@ void __ieee80211_subif_start_xmit(struct sk_buff *skb,
 		sta = NULL;
 
 	if (sta)
-		atomic_inc(&sta->tx_netif_pkts);
+		atomic_inc(&sta->sta.tx_netif_pkts);
 
         if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN) {
                 if (!ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD))
@@ -5044,7 +5044,7 @@ static bool __ieee80211_tx_8023(struct ieee80211_sub_if_data *sdata,
 	drv_tx(local, &control, skb);
 
 	if (sta)
-		atomic_inc(&sta->tx_drv_pkts);
+		atomic_inc(&sta->sta.tx_drv_pkts);
 
 	return true;
 }
@@ -5197,7 +5197,7 @@ static void ieee80211_8023_xmit(struct ieee80211_sub_if_data *sdata,
 	ieee80211_tx_8023(sdata, skb, sta, false);
 
 	if (sta)
-		atomic_inc(&sta->tx_netif_pkts);
+		atomic_inc(&sta->sta.tx_netif_pkts);
 
 	return;
 
@@ -5272,7 +5272,7 @@ void ieee80211_8023_xmit_ap(struct ieee80211_sub_if_data *sdata,
 				}
 			}
 		}
-		atomic_inc(&sta->tx_netif_pkts);
+		atomic_inc(&sta->sta.tx_netif_pkts);
 	}
 
 	ieee80211_tx_stats(dev, skb->len);
@@ -5304,7 +5304,7 @@ void ieee80211_8023_xmit_ap(struct ieee80211_sub_if_data *sdata,
 	drv_tx(local, &control, skb);
 
 	if (sta)
-		atomic_inc(&sta->tx_drv_pkts);
+		atomic_inc(&sta->sta.tx_drv_pkts);
 }
 
 netdev_tx_t ieee80211_subif_start_xmit_8023(struct sk_buff *skb,
@@ -5393,7 +5393,7 @@ netdev_tx_t __ieee80211_subif_start_xmit_8023(struct sk_buff *skb,
 	}
 
 	/* Adjust the skb->data to point to the actual payload after the meta header*/
-	if (wdev->vap_submode == IEEE80211_EXTN_VAP_SUBMODE_MESH) {
+	if (IEEE80211_EXTN_VAP_IS_MESH_MODE(wdev->vap_submode)) {
 		if (!mmeshsim) {
 			skb_pull(skb, vif->mhdr_len);
 		}

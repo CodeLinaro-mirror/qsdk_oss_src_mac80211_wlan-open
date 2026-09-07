@@ -7,11 +7,14 @@
 #ifndef ATH12K_CFR_H
 #define ATH12K_CFR_H
 
+#include <linux/timer.h>
+#include <linux/notifier.h>
 #include "dbring.h"
 #include "wmi.h"
 
 #define ATH12K_CFR_NUM_RESP_PER_EVENT   1
 #define ATH12K_CFR_EVENT_TIMEOUT_MS     1
+#define ATH12K_CFR_LUT_AGE_TIMER        3000
 
 #define ATH12K_CORRELATE_TX_EVENT 1
 #define ATH12K_CORRELATE_DBR_EVENT 0
@@ -113,10 +116,8 @@ struct ath12k_cfr_peer_tx_param {
  * @center_freq2: secondary center frequency of the capture (160/80+80 MHz)
  *
  * @num_mu_users: 0 for an SU capture. Non-zero indicates an MU (RCC)
- * capture and gives the user count -- RCC is not yet implemented in UD,
- * so this is currently always 0 and su_peer_addr is the only valid peer
- * address. When RCC lands, see prop's target_if_cfr_rx_tlv_process() for
- * how multiple peer MACs are carried for the MU case
+ * capture and gives the user count. Current metadata layout carries only
+ * su_peer_addr; multi-user peer-address arrays are not part of this struct
  *
  * @su_peer_addr: peer MAC address for an SU capture
  *
@@ -138,10 +139,7 @@ struct ath12k_cfr_peer_tx_param {
  *
  * @gi_type: pending FW/ucode alignment, kept for now
  *
- * @beamformed: whether the captured packet was beamformed. RCC-only
- * (prop sets this from cdp_rx_ppdu->beamformed in
- * target_if_cfr_rx_tlv_process()); RCC is not yet implemented in UD, so
- * this is currently always 0
+ * @beamformed: whether the captured packet was beamformed
  *
  * @agc_gain_tbl_index: per-chain AGC gain table index. Same as
  * chain_rssi -- no ucode DMA-header equivalent, kept
@@ -738,6 +736,7 @@ struct cfr_unassoc_pool_entry {
 };
 
 #define MAX_TA_RA_ENTRIES 16
+#define MAX_RESET_CFG_ENTRY 0xFFFF
 struct ta_ra_cfr_cfg {
 	u8 filter_group_id;
 	u16 bw :5,
@@ -822,6 +821,8 @@ struct ath12k_cfr {
 	u32 max_mu_users;
 	/* protect look up table data */
 	spinlock_t lut_lock;
+	struct timer_list lut_age_timer;
+	bool lut_age_timer_init;
 	u64 tx_evt_cnt;
 	u64 dbr_evt_cnt;
 	u64 total_tx_evt_cnt;
@@ -837,6 +838,9 @@ struct ath12k_cfr {
 	u64 flush_timeout_dbr_cnt;
 	struct cfr_unassoc_pool_entry unassoc_pool[ATH12K_MAX_CFR_ENABLED_CLIENTS];
 	bool cfr_enabled;
+	bool rcc_enabled;
+	struct notifier_block ppdu_rx_notifier;
+	bool ppdu_rx_notifier_registered;
 	struct cfr_rcc_param rcc_param;
 	struct ta_ra_cfr_cfg global[MAX_TA_RA_ENTRIES];
 	bool is_enh_aoa_data;
@@ -870,6 +874,8 @@ int ath12k_process_cfr_capture_event(struct ath12k_base *ab,
 u8 freeze_reason_to_capture_type(struct ath12k_base *ab, void *freeze_tlv);
 void extract_peer_mac_from_freeze_tlv(void *freeze_tlv, uint8_t *peermac);
 bool peer_is_in_cfr_unassoc_pool(struct ath12k *ar, u8 *peer_mac);
+int ath12k_cfr_register_ppdu_rx_notifier(struct ath12k *ar);
+int ath12k_cfr_unregister_ppdu_rx_notifier(struct ath12k *ar);
 void ath12k_cfr_lut_update_paddr(struct ath12k *ar, dma_addr_t paddr,
 				 u32 buf_id);
 void ath12k_cfr_decrement_peer_count(struct ath12k *ar, struct ath12k_link_sta *arsta);

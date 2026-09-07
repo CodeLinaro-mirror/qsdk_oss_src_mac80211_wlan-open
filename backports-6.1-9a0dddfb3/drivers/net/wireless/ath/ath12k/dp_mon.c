@@ -166,8 +166,6 @@ ath12k_dp_mon_update_radiotap_uhr(struct hal_rx_mon_ppdu_info *ppduinfo,
 	rxs->flag |= RX_FLAG_RADIOTAP_TLV_AT_END;
 	rxs->encoding = RX_ENC_UHR;
 
-	skb_reset_mac_header(mon_skb);
-
 	tlv = skb_push(mon_skb, len);
 
 	if (ppduinfo->uhr_usig) {
@@ -236,8 +234,6 @@ ath12k_dp_mon_update_radiotap_eht(struct hal_rx_mon_ppdu_info *ppduinfo,
 	rxs->flag |= RX_FLAG_RADIOTAP_TLV_AT_END;
 	rxs->encoding = RX_ENC_EHT;
 
-	skb_reset_mac_header(mon_skb);
-
 	tlv = skb_push(mon_skb, len);
 
 	if (ppduinfo->eht_usig) {
@@ -270,6 +266,119 @@ ath12k_dp_mon_update_radiotap_eht(struct hal_rx_mon_ppdu_info *ppduinfo,
 	}
 }
 
+void
+ath12k_dp_mon_rx_add_pf_tag_to_headroom(struct ath12k_pdev_dp *dp_pdev,
+					struct hal_rx_mon_ppdu_info *ppdu_info)
+{
+	struct hal_rx_mon_msdu_info *msdu_info;
+	struct sk_buff *skb = NULL;
+	u8 user_id = ppdu_info->user_id;
+	u16 cce_metadata, fse_metadata;
+	u16 flow_tag = 0;
+	u8 *skb_head;
+	bool invalid_cce = false, invalid_fse = false;
+	u16 marker = ATH12K_RX_MON_MSDU_MARKER;
+	u32 proto_type;
+	u16 cce_tag = 0;
+
+	skb = skb_peek_tail(&ppdu_info->mpdu_q[user_id]);
+	if (unlikely(!skb))
+		return;
+
+	if (unlikely(skb_headroom(skb) < ATH12K_RX_MON_MAX_METADATA_HDR))
+		return;
+
+	msdu_info = &ppdu_info->msdu_info[user_id];
+
+	if (unlikely(msdu_info->msdu_index > ATH12K_RX_MON_MAX_MSDU))
+		return;
+
+	fse_metadata = msdu_info->fse_metadata & ATH12K_RX_MON_FSE_TAG_MASK;
+	cce_metadata = msdu_info->cce_metadata;
+
+	if (cce_metadata < ATH12K_RX_PROTOCOL_TAG_START_OFFSET) {
+		invalid_cce = true;
+	} else {
+		proto_type = cce_metadata - ATH12K_RX_PROTOCOL_TAG_START_OFFSET;
+		if (unlikely(proto_type >= ATH12K_PKT_TYPE_MAX))
+			invalid_cce = true;
+		else
+			cce_tag = dp_pdev->protocol_tag_map[proto_type].tag;
+	}
+
+	/* A valid fse entry is expected to have a non-zero tag.
+	 */
+	if (!fse_metadata)
+		invalid_fse = true;
+
+	flow_tag = fse_metadata;
+
+	if (invalid_cce && invalid_fse)
+		return;
+
+	skb_head = skb->head;
+
+	put_unaligned_le16(marker, skb_head);
+	skb_head += ATH12K_RX_MON_MSDU_MARKER_SIZE;
+
+	put_unaligned_le16(msdu_info->msdu_index, skb_head);
+	skb_head += ATH12K_RX_MON_MSDU_CNT_SIZE;
+	skb_head += ((msdu_info->msdu_index - 1) * ATH12K_RX_MON_PF_TAG_SIZE);
+
+	put_unaligned_le16(cce_tag, skb_head);
+	skb_head += sizeof(u16);
+
+	put_unaligned_le16(flow_tag, skb_head);
+}
+EXPORT_SYMBOL(ath12k_dp_mon_rx_add_pf_tag_to_headroom);
+
+u16 ath12k_dp_mon_rx_vendor_tlv_len(struct sk_buff *mpdu)
+{
+	u16 msdu_count;
+
+	if (get_unaligned_le16(mpdu->head) == ATH12K_RX_MON_MSDU_MARKER) {
+		msdu_count =
+			get_unaligned_le16(&mpdu->head[ATH12K_RX_MON_MSDU_MARKER_SIZE]);
+		if (!msdu_count || msdu_count > ATH12K_RX_MON_MAX_MSDU)
+			return 0;
+
+		return ATH12K_RX_MON_MSDU_CNT_SIZE +
+		       (msdu_count * ATH12K_RX_MON_PF_TAG_SIZE);
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_rx_vendor_tlv_len);
+
+void
+ath12k_dp_rx_mon_add_vendor_tlv(struct sk_buff *skb,
+				struct ieee80211_rx_status *rxs,
+				u16 vendor_data_len)
+{
+	struct ieee80211_radiotap_vendor_tlv *rtap;
+
+	rtap = skb_push(skb, sizeof(*rtap) + vendor_data_len);
+	rtap->type = cpu_to_le16(IEEE80211_RADIOTAP_VENDOR_NAMESPACE);
+	rtap->len = cpu_to_le16(sizeof(*rtap) -
+				sizeof(struct ieee80211_radiotap_tlv) +
+				vendor_data_len);
+
+	/* Qualcomm OUI */
+	rtap->content.oui[0] = 0x00;
+	rtap->content.oui[1] = 0x03;
+	rtap->content.oui[2] = 0x7f;
+	/* monitor metadata sub-namespace */
+	rtap->content.oui_subtype = 1;
+	rtap->content.vendor_type = cpu_to_le16(0);
+	rtap->content.reserved = cpu_to_le16(0);
+
+	memcpy(rtap->content.data, &skb->head[ATH12K_RX_MON_MSDU_MARKER_SIZE],
+	       vendor_data_len);
+
+	rxs->flag |= RX_FLAG_RADIOTAP_TLV_AT_END;
+}
+EXPORT_SYMBOL(ath12k_dp_rx_mon_add_vendor_tlv);
+
 void ath12k_dp_mon_update_radiotap(struct ath12k_pdev_dp *dp_pdev,
 				   struct hal_rx_mon_ppdu_info *ppduinfo,
 				   struct sk_buff *mon_skb,
@@ -284,10 +393,14 @@ void ath12k_dp_mon_update_radiotap(struct ath12k_pdev_dp *dp_pdev,
 	rxs->noise = dp_pdev->ar->rssi_offsets.avg_nf_dbm;
 	rxs->nss = ppduinfo->nss + 1;
 
-	if (ppduinfo->userstats[ppduinfo->userid].ampdu_present) {
+	if (ppduinfo->userstats[ppduinfo->user_id].ampdu_present) {
 		rxs->flag |= RX_FLAG_AMPDU_DETAILS;
-		rxs->ampdu_reference = ppduinfo->userstats[ppduinfo->userid].ampdu_id;
+		rxs->ampdu_reference = ppduinfo->userstats[ppduinfo->user_id].ampdu_id;
 	}
+
+	skb_reset_mac_header(mon_skb);
+	if (ppduinfo->vendor_tlv_len)
+		ath12k_dp_rx_mon_add_vendor_tlv(mon_skb, rxs, ppduinfo->vendor_tlv_len);
 
 	if (ppduinfo->is_uhr || ppduinfo->uhr_usig) {
 		ath12k_dp_mon_update_radiotap_uhr(ppduinfo, mon_skb, rxs);
@@ -976,7 +1089,8 @@ void ath12k_dp_mon_rx_update_advance_stats(struct ath12k_rx_ppdu_stats *rx_stats
 				mu->ppdu_nss[nss - 1] += 1;
 		}
 	}
-	rx_stats->ppdu_reception[ppdu_info->reception_type] += 1;
+	if (ppdu_info->reception_type < HAL_RX_RECEPTION_TYPE_MAX)
+		rx_stats->ppdu_reception[ppdu_info->reception_type] += 1;
 }
 
 static void
@@ -1339,9 +1453,9 @@ void ath12k_dp_mon_rx_update_peer_su_stats(struct ath12k_pdev_dp *pdev_dp,
 		 * Still update the pdev-level BAR counter so CTRL stats
 		 * are always accounted for.
 		 */
-		if (ppdu_info->userid < ARRAY_SIZE(ppdu_info->ctrl_frm_info))
+		if (ppdu_info->user_id < ARRAY_SIZE(ppdu_info->ctrl_frm_info))
 			pdev_dp->stats.telemetry_stats.rx_bar_cnt +=
-				ppdu_info->ctrl_frm_info[ppdu_info->userid].bar;
+				ppdu_info->ctrl_frm_info[ppdu_info->user_id].bar;
 		return;
 	}
 
@@ -1356,11 +1470,11 @@ void ath12k_dp_mon_rx_update_peer_su_stats(struct ath12k_pdev_dp *pdev_dp,
 	ewma_avg_rssi_add(&peer->avg_rssi, ppdu_info->rssi_comb);
 	ath12k_dp_rx_rate_stats_update(ppdu_info, peer, 0);
 
-	if (ppdu_info->userid < ARRAY_SIZE(ppdu_info->ctrl_frm_info)) {
+	if (ppdu_info->user_id < ARRAY_SIZE(ppdu_info->ctrl_frm_info)) {
 		pdev_dp->stats.telemetry_stats.rx_bar_cnt +=
-			ppdu_info->ctrl_frm_info[ppdu_info->userid].bar;
+			ppdu_info->ctrl_frm_info[ppdu_info->user_id].bar;
 		peer->peer_stats.num_bar +=
-			ppdu_info->ctrl_frm_info[ppdu_info->userid].bar;
+			ppdu_info->ctrl_frm_info[ppdu_info->user_id].bar;
 	}
 
 	rx_ppdu_stats = peer->peer_stats.rx_ppdu_stats;
@@ -1548,8 +1662,10 @@ ath12k_dp_mon_rx_update_user_ext_stats(struct ath12k_rx_peer_stats *rx_stats,
 	if (ppdu_info->reception_type ==
 	    HAL_RX_RECEPTION_TYPE_MU_OFDMA ||
 	    ppdu_info->reception_type ==
-	    HAL_RX_RECEPTION_TYPE_MU_OFDMA_MIMO)
-		rx_stats->ru_alloc_cnt[ru_sz] += num_msdu;
+	    HAL_RX_RECEPTION_TYPE_MU_OFDMA_MIMO) {
+		if (ru_sz < HAL_RX_RU_ALLOC_TYPE_MAX)
+			rx_stats->ru_alloc_cnt[ru_sz] += num_msdu;
+	}
 
 	if (user_stats->nss > 0 && user_stats->nss <= HAL_RX_MAX_NSS) {
 		pkt->nss_count[user_stats->nss - 1] += num_msdu;
@@ -2499,6 +2615,9 @@ void ath12k_dp_mon_peer_update_telemetry_stats(struct ath12k_pdev_dp *dp_pdev,
        airtime_stats = &peer->peer_stats.dp_mon_stats.mon_stats;
        time_diff = (u32)(current_time - airtime_stats->last_update_time);
 	atf_airtime = &peer->atf_peer_airtime;
+
+	if (!time_diff)
+		return;
 
        for (ac = 0; ac < ATH12K_DP_WLAN_MAX_AC; ac++) {
                /* *_link_airtime refers to the amount of time a peer spends

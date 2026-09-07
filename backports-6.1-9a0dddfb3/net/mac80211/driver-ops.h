@@ -856,6 +856,9 @@ static inline void drv_flush_sta(struct ieee80211_local *local,
 	if (!sta->uploaded)
 		return;
 
+	if (!sdata)
+		return;
+
 	trace_drv_flush_sta(local, sdata, &sta->sta);
 	if (local->ops->flush_sta)
 		local->ops->flush_sta(&local->hw, &sdata->vif, &sta->sta);
@@ -1436,7 +1439,7 @@ static inline int drv_get_txpower(struct ieee80211_local *local,
 		return -EOPNOTSUPP;
 
 	ret = local->ops->get_txpower(&local->hw, &sdata->vif, link_id, dbm);
-	trace_drv_get_txpower(local, sdata, link_id, *dbm, ret);
+	trace_drv_get_txpower(local, sdata, link_id, ret ? 0 : *dbm, ret);
 
 	return ret;
 }

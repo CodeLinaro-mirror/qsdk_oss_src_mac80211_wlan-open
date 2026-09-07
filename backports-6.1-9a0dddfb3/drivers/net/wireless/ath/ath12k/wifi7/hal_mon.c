@@ -1847,18 +1847,32 @@ ath12k_wifi7_hal_mon_rx_msdu_end_info_get(const void *tlv_data, u32 userid,
 {
 	struct hal_rx_msdu_end *msdu_end =
 		(struct hal_rx_msdu_end *)tlv_data;
-	u32 info[3];
+	u32 info[6];
 
 	info[0] = __le32_to_cpu(msdu_end->info0);
 	info[1] = __le32_to_cpu(msdu_end->info1);
 	info[2] = __le32_to_cpu(msdu_end->info2);
+	info[3] = __le32_to_cpu(msdu_end->info3);
+	info[4] = __le32_to_cpu(msdu_end->info4);
+	info[5] = __le32_to_cpu(msdu_end->info5);
 
 	ppdu_info->grp_id = u32_get_bits(info[0],
 					 HAL_RX_MSDU_END_INFO0_SW_FRAME_GRP_ID);
 
-	ppdu_info->decap_format = u32_get_bits(info[1],
-					       HAL_RX_MSDU_END_INFO1_DECAP_FORMAT);
-	ath12k_wifi7_hal_mon_parse_rx_msdu_end_err(info[2],
+	if (userid < HAL_MAX_UL_MU_USERS) {
+		ppdu_info->msdu_info[userid].flow_idx =
+				u32_get_bits(info[1],
+					     HAL_RX_MSDU_END_INFO1_FLOW_IDX);
+		ppdu_info->msdu_info[userid].fse_metadata =
+					u32_get_bits(info[2],
+						     HAL_RX_MSDU_END_INFO2_FSE);
+		ppdu_info->msdu_info[userid].cce_metadata =
+					u32_get_bits(info[3],
+						     HAL_RX_MSDU_END_INFO3_CCE);
+	}
+	ppdu_info->decap_format = u32_get_bits(info[4],
+					       HAL_RX_MSDU_END_INFO4_DECAP_FORMAT);
+	ath12k_wifi7_hal_mon_parse_rx_msdu_end_err(info[5],
 						   &ppdu_info->errmap);
 }
 
@@ -1868,18 +1882,31 @@ ath12k_wifi7_hal_mon_rx_msdu_end_info_get_compact(const void *tlv_data, u32 user
 {
 	struct hal_rx_mon_msdu_end_compact *msdu_end =
 		(struct hal_rx_mon_msdu_end_compact *)tlv_data;
-	u32 info[3];
+	u32 info[6];
 
 	info[0] = __le32_to_cpu(msdu_end->info0);
 	info[1] = __le32_to_cpu(msdu_end->info1);
 	info[2] = __le32_to_cpu(msdu_end->info2);
+	info[3] = __le32_to_cpu(msdu_end->info3);
+	info[4] = __le32_to_cpu(msdu_end->info4);
+	info[5] = __le32_to_cpu(msdu_end->info5);
 
 	ppdu_info->grp_id = u32_get_bits(info[0],
 					 HAL_RX_MSDU_END_INFO0_SW_FRAME_GRP_ID_CMPCT);
-
-	ppdu_info->decap_format = u32_get_bits(info[1],
-					       HAL_RX_MSDU_END_INFO1_DECAP_FORMAT_CMPCT);
-	ath12k_wifi7_hal_mon_parse_rx_msdu_end_err(info[2],
+	if (userid < HAL_MAX_UL_MU_USERS) {
+		ppdu_info->msdu_info[userid].flow_idx =
+				u32_get_bits(info[1],
+					     HAL_RX_MSDU_END_INFO1_FLOW_IDX_CMPCT);
+		ppdu_info->msdu_info[userid].fse_metadata =
+					u32_get_bits(info[2],
+						     HAL_RX_MSDU_END_INFO2_FSE_CMPCT);
+		ppdu_info->msdu_info[userid].cce_metadata =
+					u32_get_bits(info[3],
+						     HAL_RX_MSDU_END_INFO3_CCE_CMPCT);
+	}
+	ppdu_info->decap_format = u32_get_bits(info[4],
+					       HAL_RX_MSDU_END_INFO4_DECAP_FORMAT_CMPCT);
+	ath12k_wifi7_hal_mon_parse_rx_msdu_end_err(info[5],
 						   &ppdu_info->errmap);
 }
 
@@ -3324,12 +3351,19 @@ ath12k_wifi7_hal_mon_tx_parse_eht_sig_non_mumimo_user_info
 			IEEE80211_RADIOTAP_EHT_USER_INFO_NSS_KNOWN_O |
 			IEEE80211_RADIOTAP_EHT_USER_INFO_BEAMFORMING_KNOWN_O;
 
+	/**
+	 * num_user_info is a fill counter tracking number of written entries for
+	 * user_info[]. The guard caps writes at EHT_MAX_USER_INFO regardless
+	 * of num_users. user_idx is the destination slot (counter-derived); userid is the
+	 * TLV-reported user index used to select the correct userstats entry.
+	 * The two are independent and must not be conflated.
+	 */
 	if (ppdu_info->rx_status.eht_info.num_user_info <
 		ARRAY_SIZE(ppdu_info->rx_status.eht_info.user_info)) {
 		u32 user_idx = ppdu_info->rx_status.eht_info.num_user_info++;
 
 		ppdu_info->rx_status.eht_info.user_info[user_idx] =
-			ppdu_info->rx_status.userstats[user_idx].eht_user_info;
+			ppdu_info->rx_status.userstats[userid].eht_user_info;
 	}
 }
 
@@ -3362,16 +3396,20 @@ ath12k_wifi7_hal_mon_tx_parse_eht_sig_mumimo_user_info
 			IEEE80211_RADIOTAP_EHT_USER_INFO_MCS_KNOWN |
 			IEEE80211_RADIOTAP_EHT_USER_INFO_CODING_KNOWN |
 			IEEE80211_RADIOTAP_EHT_USER_INFO_SPATIAL_CONFIG_KNOWN_M;
-	ppdu_info->rx_status.eht_info.num_user_info = ppdu_info->num_users;
-	ppdu_info->rx_status.eht_info.user_info[userid] =
-			ppdu_info->rx_status.userstats[userid].eht_user_info;
 
+	/**
+	 * num_user_info is a fill counter tracking number of written entries for
+	 * user_info[]. The guard caps writes at EHT_MAX_USER_INFO regardless
+	 * of num_users. user_idx is the destination slot (counter-derived); userid is the
+	 * TLV-reported user index used to select the correct userstats entry.
+	 * The two are independent and must not be conflated.
+	 */
 	if (ppdu_info->rx_status.eht_info.num_user_info <
 		ARRAY_SIZE(ppdu_info->rx_status.eht_info.user_info)) {
 		u32 user_idx = ppdu_info->rx_status.eht_info.num_user_info++;
 
 		ppdu_info->rx_status.eht_info.user_info[user_idx] =
-			ppdu_info->rx_status.userstats[user_idx].eht_user_info;
+			ppdu_info->rx_status.userstats[userid].eht_user_info;
 	}
 }
 
@@ -3782,7 +3820,7 @@ ath12k_wifi7_hal_mon_tx_parse_user_desc_common(const void *tlv_data,
 	case HAL_RX_PREAMBLE_11BE:
 		ath12k_wifi7_hal_mon_tx_populate_eht_sig_common(&usr_common,
 								ppdu_info);
-		if (!su_or_mu || !mu_type) {
+		if (su_or_mu && !mu_type) {
 			ppdu_info->rx_status.eht_known |=
 				IEEE80211_RADIOTAP_EHT_KNOWN_NR_NON_OFDMA_USERS_M;
 			ppdu_info->rx_status.eht_data[7] |=

@@ -670,6 +670,7 @@ u32 ath12k_ppeds_wifi8_get_batched_tx_desc(int ds_node_id,
 {
 	struct ath12k_base *ab = ds_node_map[ds_node_id];
 	struct ath12k_dp_hw_group *dp_hw_grp = ab->dp->dp_hw_grp;
+	u32 *used_cnt;
 	int i = 0;
 	int allocated = 0;
 	struct sk_buff *skb = NULL;
@@ -705,7 +706,8 @@ u32 ath12k_ppeds_wifi8_get_batched_tx_desc(int ds_node_id,
 	}
 
 	if (!num_buff_req) {
-		this_cpu_add(dp_hw_grp->pcpu_tx->ppeds_cnt, allocated);
+		used_cnt = this_cpu_ptr(dp_hw_grp->ppeds_tx_desc_used_cnt);
+		(*used_cnt) += allocated;
 
 		spin_unlock_bh(&dp_hw_grp->ppeds_tx_desc_lock);
 		goto update_stats_and_ret;
@@ -758,7 +760,8 @@ u32 ath12k_ppeds_wifi8_get_batched_tx_desc(int ds_node_id,
 		i++;
 	}
 
-	this_cpu_add(dp_hw_grp->pcpu_tx->ppeds_cnt, allocated);
+	used_cnt = this_cpu_ptr(dp_hw_grp->ppeds_tx_desc_used_cnt);
+	(*used_cnt) += allocated;
 
 	spin_unlock_bh(&dp_hw_grp->ppeds_tx_desc_lock);
 
@@ -1090,6 +1093,7 @@ void ath12k_wifi8_dp_ppeds_stop(struct ath12k_base *ab)
 int ath12k_wifi8_dp_ppeds_register_soc(struct ath12k_dp *dp, struct dp_ppe_ds_idxs *idx)
 {
 	struct ath12k_base *ab = dp->ab;
+	struct ath12k *ar = ab->pdevs[0].ar;
 	struct hal_srng *ppe2tcl_ring, *reo2ppe_ring, *tqm2ppe_ring, *ppe2wbm_ring;
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
 	struct ppe_ds_wlan_arch_reg_info reg_info = {0};
@@ -1264,6 +1268,13 @@ int ath12k_wifi8_dp_ppeds_register_soc(struct ath12k_dp *dp, struct dp_ppe_ds_id
 				reg_offset, &reg_paddr);
 
 		reg_info.wifi8_cfg.hw_buff_mgmt_en = true;
+	}
+
+	if (ar) {
+		spin_lock_bh(&ar->data_lock);
+		reg_info.freq.low_freq = ar->chan_info.low_freq;
+		reg_info.freq.high_freq = ar->chan_info.high_freq;
+		spin_unlock_bh(&ar->data_lock);
 	}
 
 	if (ab->dp->ppe.nss_plugin_ops->ds_inst_register_wifi_arch_mode(&reg_info,

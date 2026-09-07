@@ -395,7 +395,8 @@ int ath12k_dp_tx_peer_msduq_mpduq_setup(struct ath12k_dp_hw_group *dp_hw_grp,
 
 int ath12k_wifi8_qos_queue_setup(struct ath12k_dp_hw_group *dp_hw_grp,
 				 struct ath12k_dp_peer *dp_peer,
-				 u16 msduq, u16 qos_id)
+				 u8 msduq, u16 qos_id,
+				 u8 qm_id, bool txop_intent)
 {
 	u32 tid;
 	struct ath12k_dp_tx_flow_info *tx_info;
@@ -420,6 +421,8 @@ int ath12k_wifi8_qos_queue_setup(struct ath12k_dp_hw_group *dp_hw_grp,
 	tx_queue_params.flow_type = flow_type;
 	tx_queue_params.encap_type = HAL_TCL_ENCAP_TYPE_ETHERNET;
 	tx_queue_params.q_params.svc_id = qos_id & 0xFF;
+	tx_queue_params.q_params.qm_id = qm_id;
+	tx_queue_params.q_params.txop_intent = txop_intent;
 
 	ret = ath12k_peer_alloc_dynamic_queue(dp_hw_grp, dp_peer,
 					      &tx_queue_params);

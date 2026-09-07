@@ -227,7 +227,7 @@ ath12k_wifi8_hal_mon_rx_mpdu_start_info_get_hw10(const void *tlv_data,
 	ppdu_info->nrp_info.fc_valid =
 		u32_get_bits(info[1], HAL_RX_MPDU_START_INFO1_FC_VALID);
 
-	if (userid < HAL_MAX_UL_MU_USERS) {
+	if (user_id < HAL_MAX_UL_MU_USERS) {
 		ppdu_info->mpdu_info[user_id].raw_mpdu =
 			u32_get_bits(info[3], HAL_RX_MPDU_START_INFO3_RAW_MPDU);
 		if (ppdu_info->mpdu_info[user_id].raw_mpdu)
@@ -251,18 +251,17 @@ ath12k_wifi8_hal_mon_rx_mpdu_start_info_get_hw10(const void *tlv_data,
 		ath12k_wifi8_hal_mon_get_nrp_mac_addr_hw10(addr_16, addr_32,
 							   ppdu_info->nrp_info.mac_addr2);
 
-	if (userid < HAL_MAX_UL_MU_USERS) {
-		ppdu_info->userid = userid;
-		ppdu_info->userstats[userid].sw_peer_id = peer_id;
-		ppdu_info->userstats[userid].ampdu_id =
+	if (user_id < HAL_MAX_UL_MU_USERS) {
+		ppdu_info->userstats[user_id].sw_peer_id = peer_id;
+		ppdu_info->userstats[user_id].ampdu_id =
 			le16_to_cpu(mpdu_start->phy_ppdu_id);
-		ppdu_info->userstats[userid].filter_category =
+		ppdu_info->userstats[user_id].filter_category =
 			u32_get_bits(info[2], HAL_RX_MPDU_START_INFO2_FILTER_CAT);
-		ppdu_info->userstats[userid].mpdu_retry +=
+		ppdu_info->userstats[user_id].mpdu_retry +=
 			u32_get_bits(info[1], HAL_RX_MPDU_START_INFO1_MPDU_RETRY);
-		ppdu_info->userstats[userid].frame_control_info_valid =
+		ppdu_info->userstats[user_id].frame_control_info_valid =
 				ppdu_info->nrp_info.fc_valid;
-		ppdu_info->userstats[userid].frame_control =
+		ppdu_info->userstats[user_id].frame_control =
 				ppdu_info->nrp_info.frame_control;
 	}
 
@@ -324,18 +323,17 @@ ath12k_wifi8_hal_mon_rx_mpdu_start_info_get_compact_hw10(
 		ath12k_wifi8_hal_mon_get_nrp_mac_addr_hw10(addr_16, addr_32,
 							   ppdu_info->nrp_info.mac_addr2);
 
-	if (userid < HAL_MAX_UL_MU_USERS) {
-		ppdu_info->userid = userid;
-		ppdu_info->userstats[userid].sw_peer_id = peer_id;
-		ppdu_info->userstats[userid].ampdu_id =
+	if (user_id < HAL_MAX_UL_MU_USERS) {
+		ppdu_info->userstats[user_id].sw_peer_id = peer_id;
+		ppdu_info->userstats[user_id].ampdu_id =
 			le16_to_cpu(mpdu_start->phy_ppdu_id);
-		ppdu_info->userstats[userid].filter_category =
+		ppdu_info->userstats[user_id].filter_category =
 			u32_get_bits(info[2], HAL_RX_MPDU_START_INFO2_FILTER_CAT_CMPCT);
-		ppdu_info->userstats[userid].mpdu_retry +=
+		ppdu_info->userstats[user_id].mpdu_retry +=
 			u32_get_bits(info[1], HAL_RX_MPDU_START_INFO1_MPDU_RETRY_CMPCT);
-		ppdu_info->userstats[userid].frame_control_info_valid =
+		ppdu_info->userstats[user_id].frame_control_info_valid =
 				ppdu_info->nrp_info.fc_valid;
-		ppdu_info->userstats[userid].frame_control =
+		ppdu_info->userstats[user_id].frame_control =
 				ppdu_info->nrp_info.frame_control;
 	}
 }

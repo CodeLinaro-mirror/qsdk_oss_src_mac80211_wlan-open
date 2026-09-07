@@ -728,6 +728,7 @@ nl80211_qm_desc_params_policy[NL80211_QM_DESC_ATTR_MAX + 1] = {
 	[NL80211_QM_DESC_ATTR_USER_PRIORITY_BITMAP] = { .type = NLA_U8 },
 	[NL80211_QM_DESC_ATTR_USER_PRIORITY_LIMIT] = { .type = NLA_U8 },
 	[NL80211_QM_DESC_ATTR_TCLAS_MASK] = { .type = NLA_U8 },
+	[NL80211_QM_DESC_ATTR_DEDICATED_QUEUE] = { .type = NLA_FLAG },
 };
 
 static const struct nla_policy
@@ -13430,9 +13431,15 @@ static int nl80211_start_radar_detection(struct sk_buff *skb,
 		cfg80211_cac_event(dev, &chandef,
 				NL80211_RADAR_CAC_FINISHED,
 				GFP_KERNEL, link_id);
-		/* Set cac_started true for ieee80211_link_release_channel() */
-		wdev->links[link_id].cac_started = true;
-		rdev_end_cac(rdev, dev, link_id);
+#ifdef CPTCFG_QCN_EXTN
+		if (!cfg80211_support_bootup_cac(wiphy)) {
+#endif /* CPTCFG_QCN_EXTN */
+			/* Set cac_started true for ieee80211_link_release_channel() */
+			wdev->links[link_id].cac_started = false;
+			rdev_end_cac(rdev, dev, link_id);
+#ifdef CPTCFG_QCN_EXTN
+		}
+#endif /* CPTCFG_QCN_EXTN */
 	}
 unlock:
 	return err;
@@ -13618,7 +13625,6 @@ static int nl80211_channel_switch(struct sk_buff *skb, struct genl_info *info)
 	bool need_new_beacon = false;
 	bool need_handle_dfs_flag = true;
 	u32 cs_count;
-	bool is_skip_cac_enabled;
 #ifdef CPTCFG_QCN_EXTN
 	struct cfg80211_scan_radio_pwr_nla scan_radio_pwr_nla = {};
 #endif
@@ -13748,15 +13754,6 @@ skip_beacons:
 		}
 	}
 
-	is_skip_cac_enabled = (info->attrs[NL80211_ATTR_SKIP_CAC] &&
-			nla_get_flag(info->attrs[NL80211_ATTR_SKIP_CAC]));
-	if (is_skip_cac_enabled) {
-		cfg80211_set_dfs_state(&rdev->wiphy, &params.chandef,
-				       NL80211_DFS_AVAILABLE);
-		memcpy(&rdev->cac_done_chandef, &params.chandef, sizeof(params.chandef));
-		queue_work(cfg80211_wq, &rdev->propagate_cac_done_wk);
-		cfg80211_sched_dfs_chan_update(rdev);
-	}
 	err = cfg80211_chandef_dfs_required(wdev->wiphy,
 					    &params.chandef,
 					    wdev->iftype);
@@ -21103,6 +21100,9 @@ static int nl80211_parse_qm_desc(struct nlattr *tb_qm_desc,
 		qm_req_desc->tclas_mask =
 		    nla_get_u8(tb_qm_desc_entry[NL80211_QM_DESC_ATTR_TCLAS_MASK]);
 
+	if (tb_qm_desc_entry[NL80211_QM_DESC_ATTR_DEDICATED_QUEUE])
+		qm_req_desc->dedicated_queue = true;
+
 	return 0;
 }
 
@@ -26516,6 +26516,9 @@ void cfg80211_sta_opmode_change_notify(struct net_device *dev, const u8 *mac,
 	if (WARN_ON(!mac))
 		return;
 
+	if (!sta_opmode)
+		return;
+
 	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, gfp);
 	if (!msg)
 		return;
@@ -26567,6 +26570,9 @@ void cfg80211_probe_status(struct net_device *dev, const u8 *addr,
 	struct cfg80211_registered_device *rdev = wiphy_to_rdev(wdev->wiphy);
 	struct sk_buff *msg;
 	void *hdr;
+
+	if (!addr)
+		return;
 
 	trace_cfg80211_probe_status(dev, addr, cookie, acked);
 

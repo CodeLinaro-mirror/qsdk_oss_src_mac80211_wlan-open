@@ -1819,7 +1819,8 @@ struct cfg80211_bss *__cfg80211_get_bss(struct wiphy *wiphy,
 		if ((privacy == IEEE80211_PRIVACY_ON && !bss_privacy) ||
 		    (privacy == IEEE80211_PRIVACY_OFF && bss_privacy))
 			continue;
-		if (channel && bss->pub.channel != channel)
+		if (channel &&
+		    !cfg80211_channel_identical(bss->pub.channel, channel))
 			continue;
 		if (!is_valid_ether_addr(bss->pub.bssid))
 			continue;

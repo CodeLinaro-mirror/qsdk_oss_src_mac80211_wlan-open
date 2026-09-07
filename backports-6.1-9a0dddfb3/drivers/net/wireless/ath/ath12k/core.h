@@ -37,7 +37,6 @@
 #include "debugfs_htt_stats.h"
 #include "coredump.h"
 #include "cmn_defs.h"
-#include <linux/platform_device.h>
 #include "spectral.h"
 #include "qos.h"
 #ifdef CPTCFG_QCN_EXTN
@@ -1731,8 +1730,6 @@ struct ath12k_debug {
 	bool is_pkt_logging;
 	u32 pktlog_mode;
 	u32 pktlog_filter;
-	u32 pktlog_peer_valid;
-	u8 pktlog_peer_addr[ETH_ALEN];
 	struct dentry *debugfs_nrp;
 };
 
@@ -2139,7 +2136,7 @@ struct ath12k {
 	u8 hw_link_id;
 	u8 radio_idx;
 
-	struct completion peer_create_done;
+	struct completion peer_create_conf;
 	struct completion peer_assoc_done;
 
 	int install_key_status;
@@ -2367,6 +2364,7 @@ struct ath12k {
 	struct work_struct mvr_ch_switch_notify_work;
 	u32 mvr_ch_switch_notify_vdev_bm;
 	struct ath12k_peer_map_pending_event peer_map_event;
+	ath12k_peer_create_conf_status peer_create_status;
 	/* Broadcast probe request per-STA rate-limit table.
 	 * Suppresses duplicate broadcast probe requests from the same STA
 	 * within ATH12K_BCAST_PROBE_RL_WINDOW_MS milliseconds.
@@ -2494,6 +2492,10 @@ struct ath12k_pdev_cap {
 	u32 rx_chain_mask_shift;
 	u32 chainmask_table_id;
 	unsigned long adfs_chain_mask;
+	bool agile_spectral_cap;
+	bool agile_spectral_cap_160;
+	bool agile_spectral_cap_80p80;
+	bool agile_spectral_cap_320;
 	struct ath12k_band_cap band[NUM_NL80211_BANDS];
 	u32 eml_cap;
 	u32 mld_cap;
@@ -2780,7 +2782,7 @@ struct ath12k_internal_pci {
 };
 
 struct ath12k_mem_dev {
-	struct platform_device pdev;
+	struct device dev;
 	bool dev_registered;
 	bool rmem_inited;
 };
@@ -3506,6 +3508,29 @@ int ath12k_core_config_iocoherency(struct ath12k_base *ab, bool enable);
 static inline bool ath12k_hw_group_recovery_in_progress(const struct ath12k_hw_group *ag)
 {
 	return test_bit(ATH12K_GROUP_FLAG_RECOVERY, &ag->flags);
+}
+
+/* Mode3 (client-retaining) recovery drives its own T2LM steering
+ * (one-link-per-MLD) across the asserted-chip restart.  That recovery T2LM has
+ * higher precedence than any user/AP-advertised T2LM: while Mode3 recovery is
+ * in progress, or specifically during the recovery T2LM window, a user-driven
+ * T2LM must be aborted so it cannot clobber the recovery steering.
+ */
+static inline bool ath12k_mode3_t2lm_recovery_active(const struct ath12k_hw_group *ag)
+{
+	return ag->recovery_t2lm_active ||
+	       (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE3 &&
+		ath12k_hw_group_recovery_in_progress(ag));
+}
+
+/* True while Mode3 (client-retaining) recovery is running for the group.  Used
+ * to reject MLO link-reconfig requests that arrive after Mode3 recovery has
+ * started, since they would race the recovery's link remove/readd.
+ */
+static inline bool ath12k_mode3_recovery_in_progress(const struct ath12k_hw_group *ag)
+{
+	return ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE3 &&
+	       ath12k_hw_group_recovery_in_progress(ag);
 }
 
 static inline void

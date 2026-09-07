@@ -588,7 +588,7 @@ enum wmi_tlv_cmd_id {
 	WMI_PDEV_SET_RX_FILTER_PROMISCUOUS_CMDID,
 	WMI_PDEV_DMA_RING_CFG_REQ_CMDID,
 	WMI_PDEV_HE_TB_ACTION_FRM_CMDID,
-	WMI_PDEV_PKTLOG_FILTER_CMDID,
+	WMI_PDEV_RESERVED0_CMDID, /* was WMI_PDEV_PKTLOG_FILTER_CMDID, 0x4036 */
 	WMI_PDEV_SET_RAP_CONFIG_CMDID,
 	WMI_PDEV_DSM_FILTER_CMDID,
 	WMI_PDEV_FRAME_INJECT_CMDID,
@@ -2456,8 +2456,6 @@ enum wmi_tlv_tag {
 	WMI_TAG_NDP_CMD,
 	WMI_TAG_NDP_EVENT,
 	/* TODO add all the missing cmds */
-	WMI_TAG_PDEV_PEER_PKTLOG_FILTER_CMD = 0x301,
-	WMI_TAG_PDEV_PEER_PKTLOG_FILTER_INFO,
 	WMI_TAG_PEER_TX_PN_REQUEST_CMD = 0x306,
 	WMI_TAG_PEER_TX_PN_RESPONSE_EVENT,
 	WMI_TAG_PEER_CFR_CAPTURE_EVENT = 0x317,
@@ -2477,6 +2475,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_ATF_GRP_WMM_AC_CFG_REQUEST_FIXED_PARAM = 0x348,
 	WMI_TAG_PEER_CREATE_RESP_EVENT = 0x364,
 	WMI_TAG_MULTIPLE_VDEV_RESTART_RESPONSE_EVENT = 0x365,
+	WMI_TAG_FRAME_INJECT_CMD_FIXED_PARAM = 0x36b,
 	WMI_TAG_MAC_PHY_CAPABILITIES_EXT = 0x36F,
 	WMI_TAG_HAL_REG_CAPABILITIES_EXT2 = 0x370,
 	WMI_TAG_PDEV_SRG_BSS_COLOR_BITMAP_CMD = 0x37b,
@@ -2662,9 +2661,12 @@ enum wmi_tlv_tag {
 	WMI_TAG_MAPC_COSR_PARAMS = 0x0597,
 	WMI_TAG_MAPC_COBF_PARAMS = 0x0598,
 	WMI_TAG_MAPC_CORTWT_PARAMS = 0x0599,
+	WMI_TAG_MAPC_CMN_Q2Q_PARAMS = 0x05AC,
 	WMI_TAG_MAPC_CTDMA_PROFILE = 0x05AD,
+	WMI_TAG_MAPC_CTDMA_TXOP_SHARING_POLICY = 0x05AE,
 	WMI_TAG_MAPC_PEER_SETUP_STATUS_EVENT_FIXED_PARAM = 0x05AF,
 	WMI_TAG_PEER_UHR_OMP_DSO_PARAMS = 0x5B1,
+	WMI_TAG_MAPC_COTDMA_E2E_CONFIG = 0x05BE,
 	WMI_TAG_MAX
 };
 
@@ -3765,6 +3767,34 @@ struct ath12k_wmi_mac_addr_params {
 	u8 padding[2];
 } __packed;
 
+enum wmi_frame_inject_type {
+	WMI_FRAME_INJECT_TYPE_QOS_NULL = 0,
+	WMI_FRAME_INJECT_TYPE_CTS_TO_SELF = 1,
+	WMI_FRAME_INJECT_TYPE_MAX,
+};
+
+struct wmi_frame_inject_arg {
+	u32 vdev_id;
+	u32 enable;
+	u32 frame_type;
+	u32 frame_inject_period;
+	u8 dstmac[ETH_ALEN];
+	u32 fc_duration;
+	u32 bw;
+};
+
+struct wmi_frame_inject_cmd {
+	__le32 tlv_header;
+	__le32 vdev_id;
+	__le32 enable;
+	__le32 frame_type;
+	__le32 frame_inject_period;
+	struct ath12k_wmi_mac_addr_params frame_addr1;
+	__le32 fc_duration;
+	__le32 buf_len;
+	__le32 bw;
+} __packed;
+
 struct ath12k_wmi_dma_ring_caps_params {
 	__le32 tlv_header;
 	__le32 pdev_id;
@@ -4233,7 +4263,8 @@ struct ath12k_wmi_uhr_omp_link_params {
 	bool npca_enable;
 	u8 npca_switch_delay;
 	u8 npca_switch_back_delay;
-	bool npca_mode_update;
+	bool npca_mode_update; /* set MODE_UPDATE bit in WMI NPCA caps word */
+	bool npca_update;      /* gate for including NPCA TLV in WMI command */
 	bool dso_enable;
 	bool dso_mode_update;
 	u8 dso_subband;
@@ -4461,11 +4492,14 @@ struct wmi_peer_create_mlo_params {
 	__le32 flags;
 };
 
-/* Bitmask constants for param_set_mask — aligned with FW MAPC_SET_* bit positions */
+/* Bitmask constants for param_set_mask */
 #define ATH12K_WMI_MAPC_SET_CAPS    BIT(0)  /* wmi_mapc_cmn_params — cap bitmap */
 #define ATH12K_WMI_MAPC_SET_IDS     BIT(1)  /* wmi_mapc_cmn_params — APID pair */
 #define ATH12K_WMI_MAPC_SET_CMN     (ATH12K_WMI_MAPC_SET_CAPS | ATH12K_WMI_MAPC_SET_IDS)
+#define ATH12K_WMI_MAPC_SET_Q2Q     BIT(2)  /* wmi_mapc_cmn_q2q_params */
 #define ATH12K_WMI_MAPC_SET_PROFILE BIT(3)  /* wmi_mapc_ctdma_profile */
+#define ATH12K_WMI_MAPC_SET_TXOP    BIT(4)  /* wmi_mapc_ctdma_txop_sharing_policy */
+#define ATH12K_WMI_MAPC_SET_E2E     BIT(5)  /* wmi_mapc_cotdma_e2e_config */
 
 struct ath12k_wmi_peer_mapc_params_arg {
 	u8  peer_addr[ETH_ALEN];
@@ -4473,12 +4507,27 @@ struct ath12k_wmi_peer_mapc_params_arg {
 	u32 param_set_mask;
 	u32 apid_to_neighbor_peer;
 	u32 apid_from_neighbor_peer;
+	u32 q2q_apid_to_neighbor_peer;
+	u32 q2q_apid_from_neighbor_peer;
 	u32 mapc_capability_bitmap;
 	u32 channel_width;
 	u32 ccfs;
 	u32 disable_subchannel_bitmap;
 	u32 bss_color;
 	bool rx_txop_return_support;
+	u32 primary_ac;
+	u32 nbr_ap_prio;
+	u32 service_start_time;
+	u32 service_interval;
+	u32 service_end_time;
+	u32 critical_traffic_dur_thresh_us;
+	u32 max_shared_txop_dur_us;
+	u32 min_shared_txop_dur_us;
+	/* COTDMA E2E config fields (ATH12K_WMI_MAPC_SET_E2E) */
+	u8   e2e_config_mode;
+	u16  e2e_qmid;
+	bool e2e_bsta_mac_valid;
+	u8   e2e_bsta_mac[ETH_ALEN];
 };
 
 /* Scheme enable bitmap — bit per scheme */
@@ -4502,6 +4551,12 @@ struct wmi_mapc_cmn_params {
 	__le32 apid_from_neighbor_peer;
 } __packed;
 
+struct wmi_mapc_cmn_q2q_params {
+	__le32 tlv_header;
+	__le32 q2q_apid_to_neighbor_peer;
+	__le32 q2q_apid_from_neighbor_peer;
+} __packed;
+
 struct wmi_mapc_ctdma_profile {
 	__le32 tlv_header;
 	__le32 channel_width;
@@ -4511,9 +4566,29 @@ struct wmi_mapc_ctdma_profile {
 	__le32 disable_subchannel_bitmap;
 } __packed;
 
+struct wmi_mapc_ctdma_txop_sharing_policy {
+	__le32 tlv_header;
+	__le32 primary_ac;
+	__le32 nbr_ap_prio;
+	__le32 latency_sensitive_threshold_us;
+	__le32 service_start_time;
+	__le32 service_interval;
+	__le32 service_end_time;
+	__le32 critical_traffic_dur_thresh_us;
+	__le32 max_shared_txop_dur_us;
+	__le32 min_shared_txop_dur_us;
+} __packed;
+
 struct wmi_mapc_cosr_params   { __le32 tlv_header; __le32 reserved; } __packed;
 struct wmi_mapc_cobf_params   { __le32 tlv_header; __le32 reserved; } __packed;
 struct wmi_mapc_cortwt_params { __le32 tlv_header; __le32 reserved; } __packed;
+
+struct wmi_mapc_cotdma_e2e_config {
+	__le32 tlv_header;
+	__le32 config_mode;                        /* 0 = remove, 1 = add */
+	__le32 qmid;
+	struct ath12k_wmi_mac_addr_params bsta_mac; /* optional intermediate node */
+} __packed;
 
 struct wmi_mapc_peer_setup_status_event_fixed_param {
 	__le32 tlv_header;
@@ -6403,19 +6478,6 @@ struct wmi_addba_clear_resp_cmd {
 	struct ath12k_wmi_mac_addr_params peer_macaddr;
 } __packed;
 
-struct wmi_pdev_pktlog_filter_info {
-	__le32 tlv_header;
-	struct ath12k_wmi_mac_addr_params peer_macaddr;
-} __packed;
-
-struct wmi_pdev_pktlog_filter_cmd {
-	__le32 tlv_header;
-	__le32 pdev_id;
-	__le32 enable;
-	__le32 filter_type;
-	__le32 num_mac;
-} __packed;
-
 enum ath12k_wmi_pktlog_enable {
 	ATH12K_WMI_PKTLOG_ENABLE_AUTO  = 0,
 	ATH12K_WMI_PKTLOG_ENABLE_FORCE = 1,
@@ -7249,7 +7311,7 @@ typedef enum {
 	ATH12K_WMI_PEER_BSS_PEER_EXISTS,
 	ATH12K_WMI_PEER_AST_FULL,
 
-	ATH12K_WMI_PEER_CREATRE_STATUS_MAX
+	ATH12K_WMI_PEER_CREATE_STATUS_MAX
 } ath12k_peer_create_conf_status;
 
 struct ath12k_wmi_peer_create_conf_ev {
@@ -8490,6 +8552,10 @@ struct ath12k_wmi_vdev_spectral_enable_cmd {
 	__le32 vdev_id;
 	__le32 trigger_cmd;
 	__le32 enable_cmd;
+	/* scan_mode: 0=NORMAL, 1=AGILE. Required for agile spectral scan;
+	 * without it FW ignores cf1/chan_freq and runs normal mode only.
+	 */
+	__le32 scan_mode;
 } __packed;
 
 struct ath12k_wmi_pdev_dma_ring_cfg_arg {
@@ -8571,6 +8637,9 @@ struct ath12k_wmi_pdev_sscan_chan_info {
 	u32 sscan_puncture_20mhz_bitmap;
 } __packed;
 
+/* ath12k_wmi_pdev_sscan_per_detector_info - TLV payload for
+ * WMI_TAG_PDEV_SSCAN_PER_DETECTOR_INFO.
+ */
 struct ath12k_wmi_pdev_sscan_per_detector_info {
 	__le32 tlv_header;
 	u32 detector_id;
@@ -9258,6 +9327,11 @@ struct wmi_twt_disable_event {
 
 #define WMI_ADFS_MODE_QUICK_OCAC		0 /* Agile preCAC */
 #define WMI_ADFS_MODE_QUICK_RCAC		2 /* Agile Rolling CAC */
+
+/* Chainmask capability bits reported in WMI_SERVICE_READY_EXT_EVENTID. */
+#define WMI_SUPPORT_AGILE_SPECTRAL		BIT(5) /* 20/40/80 MHz */
+#define WMI_SUPPORT_AGILE_SPECTRAL_160		BIT(6) /* 160 MHz */
+#define WMI_SUPPORT_AGILE_SPECTRAL_320		BIT(10) /* 320 MHz */
 #define WMI_SUPPORT_CHAIN_MASK_ADFS		BIT(31)
 
 #define MIN_PRECAC_TIMEOUT			(6 * 60 * 1000) /* 6 minutes */
@@ -11726,6 +11800,8 @@ int ath12k_wmi_set_peer_param(struct ath12k *ar, const u8 *peer_addr,
 int ath12k_wmi_pdev_set_param(struct ath12k *ar, u32 param_id,
 			      u32 param_value, u8 pdev_id);
 int ath12k_wmi_send_pdev_set_rf_path_cmd(struct ath12k *ar, u32 rf_path);
+int ath12k_wmi_send_pdev_frame_inject_cmd(struct ath12k *ar,
+					  const struct wmi_frame_inject_arg *arg);
 int ath12k_wmi_send_pdev_check_cal_version_cmd(struct ath12k *ar);
 int ath12k_wmi_pdev_set_ps_mode(struct ath12k *ar, int vdev_id, u32 enable);
 int ath12k_wmi_pdev_set_timer_for_mec(struct ath12k *ar, int vdev_id,
@@ -11805,7 +11881,6 @@ int ath12k_wmi_send_init_country_cmd(struct ath12k *ar,
 				     struct ath12k_wmi_init_country_arg *arg);
 int ath12k_wmi_pdev_pktlog_enable(struct ath12k *ar, u32 pktlog_filter);
 int ath12k_wmi_pdev_pktlog_disable(struct ath12k *ar);
-int ath12k_wmi_pdev_peer_pktlog_filter(struct ath12k *ar, u8 *addr, u8 enable);
 int
 ath12k_wmi_send_thermal_mitigation_cmd(struct ath12k *ar,
 				       struct ath12k_wmi_thermal_mitigation_arg *arg);

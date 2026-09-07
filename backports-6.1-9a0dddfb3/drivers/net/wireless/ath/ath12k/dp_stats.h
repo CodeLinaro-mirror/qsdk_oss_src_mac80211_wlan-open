@@ -1200,6 +1200,7 @@ struct ath12k_stats_feat {
 	bool feat_sojourn;
 	bool feat_mon_stats;
 	bool feat_tx_mon_stats;
+	bool feat_mac80211;
 };
 
 struct ath12k_telemetry_command {
@@ -1229,6 +1230,20 @@ enum ath12k_peer_type {
 };
 
 /* Telemetry Peer Stats */
+/**
+ * struct ath12k_mac80211_flow_stats - mac80211-layer TX/RX flow counters
+ *
+ * Counts packet crossings at mac80211 entry/exit boundaries.
+ * Populated from struct ieee80211_sta atomic counters.
+ */
+struct ath12k_mac80211_flow_stats {
+	u32 tx_netif_pkts;     /* frames entering mac80211 from netif */
+	u32 tx_drv_pkts;       /* frames handed to driver */
+	u32 rx_drv_pkts;       /* frames entering mac80211 from driver */
+	u32 rx_netif_pkts;     /* frames delivered to netif/stack */
+	u32 rx_forwarded_pkts; /* frames forwarded in bridge */
+};
+
 struct ath12k_telemetry_dp_peer {
 	bool is_extended;
 	int peer_type;
@@ -1239,6 +1254,8 @@ struct ath12k_telemetry_dp_peer {
 	 * stats knob (DP_ENABLE_EXT_RX_STATS)
 	 */
 	struct ath12k_dp_rx_pkt_ppdu_stats rx_pkt_ppdu_stats;
+	/* mac80211-layer TX/RX flow counters - per peer */
+	struct ath12k_mac80211_flow_stats mac80211_flow;
 };
 
 /* Telemetry Vif Stats */
@@ -1596,6 +1613,7 @@ void ath12k_dp_clear_per_pkt_rx_stats(struct ath12k_dp_peer_stats *rx_peer_stats
 void ath12k_dp_clear_wbm_rx_stats(struct ath12k_wbm_rx_stats *wbm_stats);
 void ath12k_dp_clear_preserved_stats(struct ath12k_dp_preserved_stats *stats);
 
+u8 ath12k_dp_get_bw_offset(u8 bw);
 s8 ath12k_dp_get_rssi_value(s8 snr,
 			    struct ath12k_dp_link_peer_rx_signal_stats *stats,
 			    struct wmi_rssi_dbm_conv_offsets *rssi_offsets,
@@ -1654,12 +1672,17 @@ ath12k_dp_get_ether_type(struct sk_buff *skb)
 
 	ether_type = get_unaligned((u16 *)(skb->data + SKB_TRAC_ETH_TYPE_OFFSET));
 
-	if (unlikely(be16_to_cpu(ether_type) == DP_ETH_TYPE_8021Q))
+	if (unlikely(be16_to_cpu(ether_type) == DP_ETH_TYPE_8021Q)) {
+		if (skb->len < SKB_TRAC_VLAN_ETH_TYPE_OFFSET + sizeof(u16))
+			return 0;
 		ether_type = get_unaligned((u16 *)(skb->data +
-						   SKB_TRAC_VLAN_ETH_TYPE_OFFSET));
-	else if (unlikely(be16_to_cpu(ether_type) == DP_ETH_TYPE_8021AD))
+					SKB_TRAC_VLAN_ETH_TYPE_OFFSET));
+	} else if (unlikely(be16_to_cpu(ether_type) == DP_ETH_TYPE_8021AD)) {
+		if (skb->len < SKB_TRAC_DOUBLE_VLAN_ETH_TYPE_OFFSET + sizeof(u16))
+			return 0;
 		ether_type = get_unaligned((u16 *)(skb->data +
-					    SKB_TRAC_DOUBLE_VLAN_ETH_TYPE_OFFSET));
+					SKB_TRAC_DOUBLE_VLAN_ETH_TYPE_OFFSET));
+	}
 
 	return be16_to_cpu(ether_type);
 }
@@ -1915,9 +1938,12 @@ ath12k_dp_get_l4_protocol_subtype(struct sk_buff *skb)
 }
 
 static inline enum ath12k_dp_pkt_l5_proto_type
-ath12k_dp_get_dhcp_subtype(u8 *data)
+ath12k_dp_get_dhcp_subtype(u8 *data, unsigned int len)
 {
 	enum ath12k_dp_pkt_l5_proto_type subtype = DP_PKT_TYPE_DHCP_NS;
+
+	if (len <= DHCP_OPTION53_STATUS_OFFSET)
+		return subtype;
 
 	if (data[DHCP_OPTION53_OFFSET] == DHCP_OPTION53 &&
 	    data[DHCP_OPTION53_LENGTH_OFFSET] == DHCP_OPTION53_LENGTH) {
@@ -1945,7 +1971,7 @@ ath12k_dp_get_dhcp_subtype(u8 *data)
 static inline enum ath12k_dp_pkt_l5_proto_type
 ath12k_dp_get_l5_protocol_subtype(struct sk_buff *skb)
 {
-	return ath12k_dp_get_dhcp_subtype(skb->data);
+	return ath12k_dp_get_dhcp_subtype(skb->data, skb->len);
 }
 
 static inline u8

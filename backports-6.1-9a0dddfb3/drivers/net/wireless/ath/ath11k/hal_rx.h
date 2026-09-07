@@ -177,7 +177,7 @@ struct hal_rx_mon_ppdu_info {
 	u8 gi;
 	u8 ldpc;
 	u8 beamformed;
-	u8 rssi_comb;
+	s8 rssi_comb;
 	u8 rssi_chain_pri20[HAL_RX_MAX_NSS];
 	u16 tid;
 	u8 fc_valid;

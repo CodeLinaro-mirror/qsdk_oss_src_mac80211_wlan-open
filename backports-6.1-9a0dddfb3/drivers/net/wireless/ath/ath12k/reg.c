@@ -9,6 +9,9 @@
 #include "debug.h"
 #include "ahb.h"
 #include "vendor.h"
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+#include "ppe.h"
+#endif
 
 /* World regdom to be used in case default regd from fw is unavailable */
 #define ATH12K_2GHZ_CH01_11      REG_RULE(2412 - 10, 2462 + 10, 40, 0, 20, 0)
@@ -378,6 +381,9 @@ static void ath12k_regd_update_freq_range(struct ath12k *ar)
 			ath12k_dbg(ab, ATH12K_DBG_REG,
 				   "pdev %u 5G WMI filter restricted (RF secondary): [%u, %u] MHz\n",
 				   ar->pdev->pdev_id, freq_low, freq_high);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+			ath12k_ppe_ds_notify_freq_range(ar, freq_low, freq_high);
+#endif
 		} else {
 			ath12k_mac_update_freq_range(ar, freq_low, freq_high);
 		}
@@ -577,19 +583,7 @@ int ath12k_reg_get_num_chans_in_band(struct ath12k *ar,
 	return count;
 }
 
-/**
- * ath12k_reg_get_fallback_regd() - find a usable regulatory domain
- * @ab: ath12k base
- * @pdev_id: preferred pdev index
- *
- * Prefer new_regd[pdev_id], then default_regd[pdev_id], then any available
- * regdomain in @ab. This covers early set_cactimeout calls before firmware
- * sends WMI_REG_CHAN_LIST_CC_EXT_EVENT and split 5G-low/5G-high setups where
- * firmware may only populate the primary pdev regdomain.
- *
- * Return: regdomain on success, NULL if none is available.
- */
-static struct ieee80211_regdomain *
+struct ieee80211_regdomain *
 ath12k_reg_get_fallback_regd(struct ath12k_base *ab, u8 pdev_id)
 {
 	struct ieee80211_regdomain *regd;
@@ -3000,6 +2994,7 @@ static void ath12k_change_6g_txpow_sta_mode(struct ath12k *ar)
 	bool has_ap;
 	bool has_sp_ap;
 	bool has_sta;
+	const char *sta_type;
 	struct wireless_dev *wdev;
 	int ret;
 
@@ -3035,20 +3030,33 @@ static void ath12k_change_6g_txpow_sta_mode(struct ath12k *ar)
 		return;
 #endif
 
+	sta_type = has_ap ? "repeater" : "standalone";
+
 	ret = ieee80211_6ghz_power_mode_change(ar->ah->hw->wiphy, wdev,
 						       NL80211_REG_AP_SP,
 						       link_id, false);
 	if (ret) {
-		ath12k_warn(ar->ab,
-			    "failed to notify %s STA 6 GHz AFC power mode update link %u ret %d\n",
-			    has_ap ? "repeater" : "standalone", link_id, ret);
+		if (ret == -EBUSY) {
+			/* Deferred: the SP update raced an in-progress CSA.
+			 * Repeater STA is re-driven post-CSA via
+			 * ath12k_mac_vdev_config_after_start(); standalone STA
+			 * re-drives on the next AFC power event. Demote to debug
+			 * so this expected deferral is not logged as an error.
+			 */
+			ath12k_dbg(ar->ab, ATH12K_DBG_AFC,
+				   "skip %s STA 6 GHz AFC power mode update during CSA pdev %u link %u\n",
+				   sta_type, ar->pdev->pdev_id, link_id);
+		} else {
+			ath12k_warn(ar->ab,
+				    "failed to notify %s STA 6 GHz AFC power mode update link %u ret %d\n",
+				    sta_type, link_id, ret);
+		}
 		return;
 	}
 
 	ath12k_info(ar->ab,
 		    "notify %s STA 6 GHz AFC SP update pdev %u link %u\n",
-		    has_ap ? "repeater" : "standalone", ar->pdev->pdev_id,
-		    link_id);
+		    sta_type, ar->pdev->pdev_id, link_id);
 }
 
 /**

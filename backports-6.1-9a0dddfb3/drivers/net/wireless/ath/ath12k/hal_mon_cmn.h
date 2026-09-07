@@ -518,7 +518,7 @@ struct hal_rx_uhr_elr_info {
 };
 
 struct hal_rx_user_status {
-	u32 mcs:4,
+	u32 mcs:5,
 	    nss:3,
 	    ofdma_info_valid:1,
 	    ul_ofdma_ru_start_index:7,
@@ -609,7 +609,11 @@ struct hal_rx_nrp_info {
 
 struct hal_rx_mon_msdu_info {
 	u32 first_buffer:1,
-	    last_buffer:1;
+	    last_buffer:1,
+	    cce_metadata:16;
+	u32 fse_metadata;
+	u32 flow_idx;
+	u8 msdu_index;
 };
 
 struct hal_rx_user_ctrl_frm_info {
@@ -685,7 +689,7 @@ struct hal_rx_mon_ppdu_info {
 	    he_mu_flags : 1,
 	    usig_flags : 1,
 	    eht_flags : 1,
-	    mcs : 4,
+	    mcs : 5,
 	    nss : 3,
 	    bw : 4,
 	    is_stbc : 1,
@@ -695,7 +699,7 @@ struct hal_rx_mon_ppdu_info {
 	    beamformed : 1,
 	    dcm : 1,
 	    preamble_type : 4,
-	    reserved : 4;
+	    reserved : 3;
 	u8 ru_alloc;
 	u8 reception_type;
 	u64 tsft;
@@ -746,7 +750,6 @@ struct hal_rx_mon_ppdu_info {
 	u8 addr3[ETH_ALEN];
 	u8 addr4[ETH_ALEN];
 	struct hal_rx_user_status userstats[HAL_MAX_UL_MU_USERS];
-	u8 userid;
 	bool first_msdu_in_mpdu;
 	bool is_ampdu;
 	u8 medium_prot_type;
@@ -787,6 +790,7 @@ struct hal_rx_mon_ppdu_info {
 	u8 band;
 	u32 rx_antenna;
 	u8 num_non_ofdma_users;
+	u16 vendor_tlv_len;
 };
 
 #define HAL_RX_MON_OFFSET(block, field) block##_##field##_OFFSET

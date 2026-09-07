@@ -234,7 +234,7 @@ static u8 ath12k_sdwf_alloc_msduq(struct ath12k_base *ab,
 {
 	struct ath12k_qos_ctx *qos_ctx;
 	u16 qos_id;
-	u16 msduq = QOS_INVALID_MSDUQ;
+	u8 msduq = QOS_INVALID_MSDUQ;
 	struct ath12k_dp_peer_qos *qos;
 
 	qos_ctx = ath12k_get_qos(ab);
@@ -268,7 +268,7 @@ static u8 ath12k_sdwf_alloc_msduq(struct ath12k_base *ab,
 
 	spin_lock_bh(&qos->lock);
 	msduq = ath12k_dp_peer_qos_msduq(ab, qos, dp_peer, dp_hw, qos_id,
-					 svc_id);
+					 svc_id, 0, false);
 	spin_unlock_bh(&qos->lock);
 ret:
 	return msduq;
@@ -519,10 +519,15 @@ u16 ath12k_sdwf_get_msduq(struct wireless_dev *wdev,
 
 	guard(rcu)();
 
-	if (ath12k_mlo_3_link_tx)
-		vif = wdev_to_ieee80211_vif_vlan(wdev, false);
-	else
-		vif = wdev_to_ieee80211_vif(wdev);
+	/*
+	 * Always use wdev_to_ieee80211_vif_vlan() so that AP/VLAN wdevs
+	 * (e.g. wlan4.sta1) resolve to the master AP vif whose link[]
+	 * array is populated. wdev_to_ieee80211_vif() returns the AP/VLAN
+	 * vif itself which has no link entries, causing arvif NULL.
+	 * wdev_to_ieee80211_vif_vlan() fetches the vif itself
+	 * for non-AP/VLAN interfaces so behaviour is unchanged for them.
+	 */
+	vif = wdev_to_ieee80211_vif_vlan(wdev, false);
 
 	if (!vif)
 		return SDWF_PEER_MSDUQ_INVALID;
@@ -1231,9 +1236,10 @@ void ath12k_telemetry_update_delay_stats(struct ath12k_dp_qos_delay_stats *delay
 
 tele_stats_fill:
 	if (qos->telemetry_peer_ctx) {
-		u16 msduq;
-		msduq = u16_encode_bits(q_idx, MSDUQ_MASK) |
-			u16_encode_bits(tid, MSDUQ_TID_MASK);
+		u8 msduq;
+
+		msduq = u8_encode_bits(q_idx, MSDUQ_MASK) |
+			u8_encode_bits(tid, MSDUQ_TID_MASK);
 		ath12k_telemetry_get_mov_avg(qos->telemetry_peer_ctx,
 					     tid, msduq, &nwdelay_avg,
 					     &swdelay_avg, &hwdelay_avg);

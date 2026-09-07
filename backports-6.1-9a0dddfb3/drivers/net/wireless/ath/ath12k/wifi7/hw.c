@@ -1782,7 +1782,7 @@ void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 	}
 
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
-	if (ahvif->vap_submode == QCA_WLAN_VENDOR_VAP_SUBMODE_MESH) {
+	if (QCA_WLAN_VENDOR_VAP_IS_MESH_MODE(ahvif->vap_submode)) {
 		ret = ath12k_dp_mmesh_tx(hw, ar->ab,  arvif, vlan_vif, skb, sta,
 					 &skb_ctrl, is_eth, link_id, is_mcast,
 					 &htt_mesh, &info_tx, qos_nw_delay);
@@ -2052,7 +2052,7 @@ ath12k_mem_profile_based_param_wifi7[] = {
 			.mon_num_ppdu_desc		= 8,
 			.rx_desc_count			= 8192,
 			.dp_max_clients			= 512,
-			.num_pool_ppeds_tx_desc		= 0x2000,
+			.num_pool_ppeds_tx_desc		= 0x4000,
 			.ppeds_hotlist_len_max		= 256,
 			.dp_num_clients_max		= 56,
 			.dp_mon_status_buf		= 20,

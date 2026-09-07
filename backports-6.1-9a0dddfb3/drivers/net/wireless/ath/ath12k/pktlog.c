@@ -59,6 +59,7 @@ static int ath12k_alloc_pktlog_buf(struct ath12k *ar)
 
 	pktlog->buf = (struct ath12k_pktlog_buf *)ALIGN((uintptr_t)(buf),
 							PAGE_SIZE);
+	pktlog->buf_alloc_size = pktlog->buf_size;
 	vaddr_start = (uintptr_t)pktlog->buf;
 	vaddr_end = vaddr_start + (page_cnt * PAGE_SIZE);
 
@@ -671,6 +672,47 @@ static void ath12k_init_pktlog_buf(struct ath12k *ar, struct ath12k_pktlog
 	pktlog->buf->wr_offset = 0;
 }
 
+/* Allocate and init pktlog buf if not already allocated.
+ * Must be called with wiphy_lock held. Idempotent: no-op if buf exists.
+ */
+int ath12k_pktlog_buf_alloc_if_needed(struct ath12k *ar, bool *allocated)
+{
+	int ret;
+
+	if (allocated)
+		*allocated = false;
+
+	if (ar->debug.pktlog.buf) {
+		if (ar->debug.pktlog.buf_alloc_size == ar->debug.pktlog.buf_size)
+			return 0;
+		ath12k_pktlog_release(&ar->debug.pktlog);
+	}
+
+	ret = ath12k_alloc_pktlog_buf(ar);
+	if (ret)
+		return ret;
+
+	ath12k_init_pktlog_buf(ar, &ar->debug.pktlog);
+	if (allocated)
+		*allocated = true;
+
+	return 0;
+}
+
+void ath12k_pktlog_buf_release_if_allocated(struct ath12k *ar, bool allocated)
+{
+	if (allocated)
+		ath12k_pktlog_release(&ar->debug.pktlog);
+}
+
+void ath12k_pktlog_buf_reset(struct ath12k *ar)
+{
+	if (!ar->debug.pktlog.buf)
+		return;
+
+	ath12k_init_pktlog_buf(ar, &ar->debug.pktlog);
+}
+
 static inline void ath12k_pktlog_mov_rd_idx(struct ath12k_pktlog *pl_info,
                                             int32_t *rd_offset)
 {
@@ -981,8 +1023,8 @@ static ssize_t ath12k_write_pktlog_start(struct file *file, const char __user *u
                                          size_t count, loff_t *ppos)
 {
 	struct ath12k *ar = file->private_data;
-	struct ath12k_pktlog *pktlog = &ar->debug.pktlog;
 	u32 start_pktlog;
+	bool allocated = false;
 	int err;
 
 	err = kstrtou32_from_user(ubuf, count, 0, &start_pktlog);
@@ -1002,10 +1044,7 @@ static ssize_t ath12k_write_pktlog_start(struct file *file, const char __user *u
 	}
 
 	if (start_pktlog) {
-		if (pktlog->buf)
-			ath12k_pktlog_release(pktlog);
-
-		err = ath12k_alloc_pktlog_buf(ar);
+		err = ath12k_pktlog_buf_alloc_if_needed(ar, &allocated);
 		if (err)
 			goto exit;
 
@@ -1015,10 +1054,10 @@ static ssize_t ath12k_write_pktlog_start(struct file *file, const char __user *u
 			ath12k_err(ar->ab,
 				   "failed to enable pktlog filter 0%x: %d\n",
 				   ar->debug.pktlog_filter, err);
-			ath12k_pktlog_release(pktlog);
+			ath12k_pktlog_buf_release_if_allocated(ar, allocated);
 			goto exit;
 		}
-		ath12k_init_pktlog_buf(ar, pktlog);
+		ath12k_pktlog_buf_reset(ar);
 		ar->debug.is_pkt_logging = true;
 	} else {
 		ar->debug.is_pkt_logging = false;
@@ -1330,13 +1369,30 @@ static void ath12k_pktlog_write_buf(struct ath12k *ar,
 	memcpy(log_data, hdr_arg->payload, hdr_arg->payload_size);
 }
 
-void ath12k_htt_pktlog_process(struct ath12k *ar, u8 *data)
+void ath12k_htt_pktlog_process(struct ath12k *ar, u8 *data, u32 len)
 {
 	struct ath12k_pktlog *pl_info;
+	struct ath12k_pktlog_hdr *hdr;
 	struct ath12k_pktlog_hdr_arg hdr_arg;
+	u16 payload_size;
+	u32 hdr_size = struct_size(hdr, payload, 0);
 
-	if (!ar)
+	if (!ar || !data)
 		return;
+
+	if (len < hdr_size) {
+		ath12k_warn(ar->ab, "HTT PKTLOG payload too short: %u\n", len);
+		return;
+	}
+
+	hdr = (struct ath12k_pktlog_hdr *)data;
+	payload_size = __le16_to_cpu(hdr->size);
+	if (payload_size > len - hdr_size) {
+		ath12k_warn(ar->ab,
+			    "HTT PKTLOG invalid inner payload size: %u > %u\n",
+			    payload_size, len - hdr_size);
+		return;
+	}
 
 	pl_info = &ar->debug.pktlog;
 	ath12k_pktlog_pull_hdr(&hdr_arg, ar, data);

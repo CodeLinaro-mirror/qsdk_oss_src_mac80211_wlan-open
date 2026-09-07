@@ -183,7 +183,7 @@ static ssize_t key_rx_spec_read(struct file *file, char __user *userbuf,
 				size_t count, loff_t *ppos)
 {
 	struct ieee80211_key *key = file->private_data;
-	char buf[14*IEEE80211_NUM_TIDS+1], *p = buf;
+	char buf[14*(IEEE80211_NUM_TIDS+1)+1], *p = buf;
 	int i, len;
 	const u8 *rpn;
 

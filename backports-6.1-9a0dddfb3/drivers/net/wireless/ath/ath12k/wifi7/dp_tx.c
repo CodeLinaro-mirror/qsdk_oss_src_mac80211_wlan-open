@@ -162,7 +162,8 @@ ath12k_wifi7_dp_qos_update(struct ath12k_dp *dp, struct ath12k_pdev_dp *dp_pdev,
 			   struct ath12k_dp_peer *dp_peer, u8 link_id)
 {
 	u8 scs_id;
-	u16 msduq, peer_id;
+	u8 msduq;
+	u16 peer_id;
 	u16 qos_id = QOS_ID_MAX;
 	int ret;
 
@@ -216,7 +217,8 @@ ath12k_dp_sdwftx_ingress_stats_update(struct ath12k *ar,
 {
 	struct ath12k_dp *dp;
 	struct ath12k_dp_peer *dp_peer;
-	u16 msduq, peer_id, qos_id;
+	u8 msduq;
+	u16 peer_id, qos_id;
 	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
 
 	if (!ar)
@@ -265,13 +267,12 @@ ath12k_dp_sdwftx_ingress_stats_update(struct ath12k *ar,
 	}
 
 	/* Store the NWDELAY to skb->mark which can be fetched
-	 * during tx completion
+	 * during tx completion.
 	 */
 	if (qos_nw_delay > QOS_NW_DELAY_MAX)
 		qos_nw_delay = QOS_NW_DELAY_MAX;
 
-	*skb_mark = u32_encode_bits(u32_get_bits(*skb_mark, QOS_NW_TAG_SHIFT),
-				    QOS_TAG_ID) |
+	*skb_mark = SDWF_VALID_MASK |
 		    (qos_nw_delay << QOS_NW_DELAY_SHIFT) | msduq;
 }
 
@@ -1823,7 +1824,7 @@ skip_assign_buffer:
 
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 	 tx_desc->mmesh = (ahvif &&
-			  (ahvif->vap_submode == QCA_WLAN_VENDOR_VAP_SUBMODE_MESH));
+			  (QCA_WLAN_VENDOR_VAP_IS_MESH_MODE(ahvif->vap_submode)));
 	 /* mmesh uses msdu ext desc to program rates to
 	  * firmware
 	  */
@@ -1932,7 +1933,7 @@ ath12k_wifi7_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
 
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 	 tx_desc->mmesh = (ahvif &&
-			  (ahvif->vap_submode == QCA_WLAN_VENDOR_VAP_SUBMODE_MESH));
+			  (QCA_WLAN_VENDOR_VAP_IS_MESH_MODE(ahvif->vap_submode)));
 	 /* mmesh uses msdu ext desc to program rates to
 	  * firmware
 	  */
@@ -3032,7 +3033,7 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 	u32 tqm_rel_reason[MAX_TQM_RELEASE_REASON] = {0};
 	u32 fw_tx_status[MAX_FW_TX_STATUS] = {0};
 	u32 htt_status = 0, tx_completed = 0;
-	u32 tx_desc_free_cnt = 0;
+	u32 tx_desc_free_cnt = 0, *used_cnt;
 	u8 hw_link_id = 0;
 
 	ath12k_hal_srng_access_dst_ring_begin_nolock(ab, status_ring);
@@ -3154,7 +3155,8 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 
 	list_splice(&desc_free_list, &dp->dp_hw_grp->tx_desc_free_list[ring_id]);
 
-	this_cpu_sub(dp_hw_grp->pcpu_tx->cnt, tx_desc_free_cnt);
+	used_cnt = this_cpu_ptr(dp_hw_grp->tx_desc_used_cnt);
+	(*used_cnt) -= tx_desc_free_cnt;
 
 	spin_unlock_bh(&dp->dp_hw_grp->tx_desc_lock[ring_id]);
 

@@ -1403,3 +1403,23 @@ void ath12k_nss_plugin_unregister_ops(struct ath12k_base *ab)
 	ab->dp->ppe.nss_plugin_ops = NULL;
 }
 EXPORT_SYMBOL(ath12k_nss_plugin_unregister_ops);
+
+void ath12k_ppe_ds_notify_freq_range(struct ath12k *ar, u32 freq_low, u32 freq_high)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ar->ab);
+	struct ppe_ds_wlan_node_freq node_freq;
+
+	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ar->ab->dev_flags))
+		return;
+
+	if (!dp->ppe.nss_plugin_ops || !dp->ppe.nss_plugin_ops->get_ds_node_freq)
+		return;
+
+	node_freq = (struct ppe_ds_wlan_node_freq) {
+	.low_freq = freq_low,
+	.high_freq = freq_high,
+	};
+
+	dp->ppe.nss_plugin_ops->get_ds_node_freq(dp->ppe.ds_node_id, &node_freq);
+}
+EXPORT_SYMBOL(ath12k_ppe_ds_notify_freq_range);

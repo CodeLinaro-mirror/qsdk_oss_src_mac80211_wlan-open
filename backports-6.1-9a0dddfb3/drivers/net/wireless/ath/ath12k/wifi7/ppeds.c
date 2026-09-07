@@ -300,6 +300,7 @@ int ath12k_ppeds_wifi7_inst_attach(struct ath12k_base *ab)
 	}
 	ab->dp->ppe.ds_node_id = ds_node_id;
 	ds_node_map[ds_node_id] = ab;
+	ab->dp->ppe.ppeds_stopped = 0;
 
 	WARN_ON(ab->dp->ppe.ppeds_soc_idx != -1);
 	/* dec ppeds_soc_idx to start from 0 */
@@ -393,6 +394,7 @@ EXPORT_SYMBOL(ath12k_ppeds_wifi7_inst_detach);
 int ath12k_ppeds_wifi7_register_soc(struct ath12k_dp *dp, struct dp_ppe_ds_idxs *idx)
 {
 	struct ath12k_base *ab = dp->ab;
+	struct ath12k *ar = ab->pdevs[0].ar;
 	struct hal_srng *ppe2tcl_ring, *reo2ppe_ring;
 	struct ppe_ds_wlan_reg_info reg_info = {0};
 
@@ -419,6 +421,13 @@ int ath12k_ppeds_wifi7_register_soc(struct ath12k_dp *dp, struct dp_ppe_ds_idxs 
 	reg_info.reo2ppe_ba = dp->ppe.reo2ppe_ring[REO2PPE_RING_WIFI7].paddr;
 	reg_info.ppe2tcl_num_desc = DP_PPE2TCL_RING_SIZE;
 	reg_info.reo2ppe_num_desc = DP_REO2PPE_RING_SIZE;
+
+	if (ar) {
+		spin_lock_bh(&ar->data_lock);
+		reg_info.freq.low_freq = ar->chan_info.low_freq;
+		reg_info.freq.high_freq = ar->chan_info.high_freq;
+		spin_unlock_bh(&ar->data_lock);
+	}
 
 	if (ab->dp->ppe.nss_plugin_ops->ds_inst_register(&reg_info,
 							 dp->ppe.ds_node_id) != true) {
@@ -964,6 +973,7 @@ u32 ath12k_ppeds_get_batched_tx_desc_v2(int ds_node_id,
 {
 	struct ath12k_base *ab = ds_node_map[ds_node_id];
 	struct ath12k_dp_hw_group *dp_hw_grp = ab->dp->dp_hw_grp;
+	u32 *used_cnt;
 	int i = 0;
 	int allocated = 0;
 	struct sk_buff *skb = NULL;
@@ -999,7 +1009,8 @@ u32 ath12k_ppeds_get_batched_tx_desc_v2(int ds_node_id,
 	}
 
 	if (!num_buff_req) {
-		this_cpu_add(dp_hw_grp->pcpu_tx->ppeds_cnt, allocated);
+		used_cnt = this_cpu_ptr(dp_hw_grp->ppeds_tx_desc_used_cnt);
+		(*used_cnt) += allocated;
 
 		spin_unlock_bh(&dp_hw_grp->ppeds_tx_desc_lock);
 		goto update_stats_and_ret;
@@ -1053,7 +1064,8 @@ u32 ath12k_ppeds_get_batched_tx_desc_v2(int ds_node_id,
 		i++;
 	}
 
-	this_cpu_add(dp_hw_grp->pcpu_tx->ppeds_cnt, allocated);
+	used_cnt = this_cpu_ptr(dp_hw_grp->ppeds_tx_desc_used_cnt);
+	(*used_cnt) += allocated;
 
 	spin_unlock_bh(&dp_hw_grp->ppeds_tx_desc_lock);
 

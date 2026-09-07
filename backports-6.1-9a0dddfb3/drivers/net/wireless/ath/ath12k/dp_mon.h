@@ -56,6 +56,20 @@
 #define ATH12K_DP_MON_RX_BUF_SIZE	2048
 #define ATH12K_MON_MAGIC_VALUE		0xDECAFEED
 #define ATH12K_DP_MON_MAX_RADIO_TAP_HDR 128
+#define ATH12K_RX_MON_MSDU_CNT_SIZE		sizeof(u16)
+#define ATH12K_RX_MON_MSDU_MARKER_SIZE		sizeof(u16)
+#define ATH12K_RX_MON_PF_TAG_SIZE		(sizeof(u16) * 2)
+#define ATH12K_RX_MON_FSE_TAG_MASK		0xffff
+#define ATH12K_RX_MON_MAX_MSDU			16
+#define ATH12K_RX_MON_MSDU_MARKER		0xFEED
+#define ATH12K_RX_MON_MAX_METADATA_HDR	(ATH12K_RX_MON_MSDU_MARKER_SIZE + \
+					 ATH12K_RX_MON_MSDU_CNT_SIZE + \
+					 (ATH12K_RX_MON_MAX_MSDU * \
+					  ATH12K_RX_MON_PF_TAG_SIZE))
+#define ATH12K_RX_MON_MAX_VENDOR_TLV_DATA \
+			(sizeof(struct ieee80211_radiotap_vendor_tlv) + \
+			 ATH12K_RX_MON_MSDU_CNT_SIZE + \
+			 ATH12K_RX_MON_MAX_MSDU * ATH12K_RX_MON_PF_TAG_SIZE)
 #define ATH12K_MON_RX_DOT11_OFFSET	5
 #define ATH12K_MON_RX_PKT_OFFSET	8
 #define ATH12K_DP_WLAN_MAX_AC		4
@@ -135,9 +149,9 @@ struct ath12k_mon_data;
 struct dp_mon_rx_filter;
 struct dp_mon_tx_filter;
 struct ath12k_ext_mon_config;
-struct ath12k_dp_tx_ext_mon_config;
 struct ath12k_ext_mon_pkt_config;
 struct ath12k_dp_rx_ext_mon;
+struct ath12k_dp_tx_ext_mon_config;
 
 struct ath12k_dp_mon_pad_params {
 	u32 frag_size;
@@ -289,13 +303,15 @@ struct ath12k_dp_arch_mon_ops {
 
 	int (*ext_mon_tx_alloc)(struct ath12k_pdev_dp *dp_pdev);
 	void (*ext_mon_tx_free)(struct ath12k_pdev_dp *dp_pdev);
-	int (*ext_mon_filter)(struct sk_buff *mpdu,
-				struct ath12k_dp_tx_ext_mon_config *tx_ext_mon);
+	int (*ext_mon_filter)(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *mpdu);
 	int (*ext_mon_add_wmi_tx_peers)(struct ath12k_pdev_dp *dp_pdev,
-				struct ath12k_dp_ext_mon_tx_peer_params *peer_param);
+					struct ath12k_dp_ext_mon_tx_peer_params
+					*peer_param);
 	int (*ext_mon_remove_wmi_tx_peers)(struct ath12k_pdev_dp *dp_pdev,
-				struct ath12k_dp_ext_mon_tx_peer_params *peer_param);
+					   struct ath12k_dp_ext_mon_tx_peer_params
+					   *peer_param);
 	u32 (*mon_tx_get_spc_bitmap)(struct ath12k_base *ab);
+	u8 (*ext_mon_get_filter_mode)(struct ath12k_pdev_dp *dp_pdev);
 };
 
 /**
@@ -2055,4 +2071,12 @@ ath12k_dp_get_ext_mon_peers(struct ath12k_pdev_dp *dp_pdev,
 
 void ath12k_dp_mon_peer_telemetry_stats(const struct ath12k_dp_link_peer *peer,
 					struct ath12k_peer_telemetry_stats *stats);
+void
+ath12k_dp_mon_rx_add_pf_tag_to_headroom(struct ath12k_pdev_dp *dp_pdev,
+					struct hal_rx_mon_ppdu_info *ppdu_info);
+u16 ath12k_dp_mon_rx_vendor_tlv_len(struct sk_buff *mpdu);
+void
+ath12k_dp_mon_rx_add_vendor_tlv(struct sk_buff *skb,
+				struct ieee80211_rx_status *rxs,
+				u16 vendor_data_len);
 #endif
