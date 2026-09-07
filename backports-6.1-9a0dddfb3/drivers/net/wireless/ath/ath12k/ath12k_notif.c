@@ -49,16 +49,16 @@ int ath12k_register_ppdu_notifier(struct notifier_block *nb, unsigned long event
 		   event_mask);
 
 	ret = atomic_notifier_chain_register(&ath12k_ppdu_notifier_chain, nb);
-	if (ret)
-		return ret;
 
 	/* Increment listener counts for requested events */
-	if (event_mask & (1 << ATH12K_EVENT_PPDU_RX_COMPLETE))
-		atomic_inc(&ath12k_ppdu_rx_listener_count);
-	if (event_mask & (1 << ATH12K_EVENT_PPDU_TX_COMPLETE))
-		atomic_inc(&ath12k_ppdu_tx_listener_count);
+	if (!ret) {
+		if (event_mask & (1 << ATH12K_EVENT_PPDU_RX_COMPLETE))
+			atomic_inc(&ath12k_ppdu_rx_listener_count);
+		if (event_mask & (1 << ATH12K_EVENT_PPDU_TX_COMPLETE))
+			atomic_inc(&ath12k_ppdu_tx_listener_count);
+	}
 
-	return 0;
+	return ret;
 }
 EXPORT_SYMBOL(ath12k_register_ppdu_notifier);
 
@@ -81,11 +81,13 @@ int ath12k_unregister_ppdu_notifier(struct notifier_block *nb, unsigned long eve
 		   event_mask);
 	ret = atomic_notifier_chain_unregister(&ath12k_ppdu_notifier_chain, nb);
 
-	/* Decrement listener counts for registered events */
-	if (event_mask & (1 << ATH12K_EVENT_PPDU_RX_COMPLETE))
-		atomic_dec(&ath12k_ppdu_rx_listener_count);
-	if (event_mask & (1 << ATH12K_EVENT_PPDU_TX_COMPLETE))
-		atomic_dec(&ath12k_ppdu_tx_listener_count);
+	if (!ret) {
+		/* Decrement listener counts for registered events */
+		if (event_mask & (1 << ATH12K_EVENT_PPDU_RX_COMPLETE))
+			atomic_dec(&ath12k_ppdu_rx_listener_count);
+		if (event_mask & (1 << ATH12K_EVENT_PPDU_TX_COMPLETE))
+			atomic_dec(&ath12k_ppdu_tx_listener_count);
+	}
 
 	return ret;
 }
