@@ -7630,12 +7630,11 @@ void ieee80211_get_smd_ctx_done(struct ieee80211_vif *vif,
 EXPORT_SYMBOL(ieee80211_get_smd_ctx_done);
 
 #ifdef CPTCFG_QCN_EXTN
-static void ieee80211_nol_regdom_update_locked(struct wiphy *wiphy,
-					       struct ieee80211_channel *channel)
+static void ieee80211_nol_regdom_update_locked(struct wiphy *wiphy)
 {
 	struct ieee80211_local *local = wiphy_priv(wiphy);
 
-	ieee80211_nol_regdom_change_locked_extn(local, channel);
+	ieee80211_nol_regdom_change_locked_extn(local);
 }
 #endif /* CPTCFG_QCN_EXTN */
 
