@@ -1405,7 +1405,8 @@ ath12k_update_htt_stats_txrate(struct ath12k_pdev_dp *dp_pdev,
 	snr = le32_to_cpu(usr_stats->cmpltn_cmn.ack_rssi);
 	ack_rssi = ath12k_dp_get_rssi_value(snr, &peer->signal_stats,
 					    &dp_pdev->ar->rssi_offsets, true);
-	if (!is_mcast) {
+
+	if (!is_mcast && ack_rssi) {
 		peer->peer_stats.last_ack_rssi = ack_rssi;
 		ewma_avg_ack_rssi_add(&peer->peer_stats.avg_ack_rssi,
 				      -ack_rssi);
