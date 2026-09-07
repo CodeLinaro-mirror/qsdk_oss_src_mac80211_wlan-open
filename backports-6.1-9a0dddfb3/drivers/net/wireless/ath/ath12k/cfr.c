@@ -282,6 +282,25 @@ void ath12k_cfr_release_lut_entry(struct ath12k_cfr_look_up_table *lut)
 	memset(lut, 0, sizeof(*lut));
 }
 
+static void
+ath12k_cfr_fill_peer_addr(struct ath12k_csi_cfr_header *header,
+			  const struct hal_rx_mon_ppdu_info *ppdu_info,
+			  u8 num_mu_users, const u8 *fallback_peer_addr)
+{
+	u8 i;
+
+	if (!num_mu_users) {
+		memcpy(header->meta_enh.peer_addr, fallback_peer_addr, ETH_ALEN);
+		return;
+	}
+
+	for (i = 0; i < num_mu_users; i++) {
+		const u8 *peer_addr = ppdu_info->userstats[i].peer_mac;
+
+		memcpy(&header->meta_enh.peer_addr[i * ETH_ALEN], peer_addr, ETH_ALEN);
+	}
+}
+
 static void ath12k_cfr_rfs_write(struct ath12k *ar, const void *head,
 				 u32 head_len, const void *data, u32 data_len,
 				 const void * tail, int tail_data)
@@ -543,7 +562,7 @@ int ath12k_cfr_parse_enh_dma_hdr(struct ath12k *ar, u8 *data,
 
 	if (capture_type != CFR_CAPTURE_METHOD_ACK_RESP_TO_TM_FTM) {
 		if (!dma_hdr.mu_rx_data_incl) {
-			peer_macaddr = meta->su_peer_addr;
+			peer_macaddr = meta->peer_addr;
 			if (dma_hdr.freeze_data_incl)
 				extract_peer_mac_from_freeze_tlv(freeze_tlv,
 								 peer_macaddr);
@@ -611,10 +630,13 @@ static int ath12k_cfr_process_dbr_data(struct ath12k *ar,
 	if (status == ATH12K_CORRELATE_STATUS_RELEASE) {
 		ath12k_dbg(ab, ATH12K_DBG_CFR,
 			   "releasing CFR data to user space");
-		ath12k_cfr_rfs_write(ar, &lut->header,
-				sizeof(struct ath12k_csi_cfr_header),
-				lut->data, lut->data_len,
-				&end_magic, sizeof(u32));
+		if (!lut->header_len)
+			lut->header_len =
+				ATH12K_CFR_HEADER_LEN(lut->header.meta_enh.num_mu_users);
+
+		ath12k_cfr_rfs_write(ar, &lut->header, lut->header_len,
+				     lut->data, lut->data_len,
+				     &end_magic, sizeof(u32));
 		ath12k_cfr_release_lut_entry(lut);
 		ret = ATH12K_CORRELATE_STATUS_RELEASE;
 	} else if (status == ATH12K_CORRELATE_STATUS_HOLD) {
@@ -909,6 +931,7 @@ static int ath12k_cfr_process_rx_tlv_ppdu(struct ath12k *ar,
 	u16 center_freq2 = 0;
 	u16 puncture_bitmap = ppdu_info->punctured_pattern;
 	enum wmi_phy_mode cfr_phymode = MODE_UNKNOWN;
+	u8 num_mu_users = 0;
 	u32 i;
 	int ret = 0;
 	int status;
@@ -1008,20 +1031,25 @@ static int ath12k_cfr_process_rx_tlv_ppdu(struct ath12k *ar,
 	lut->tx_address2 = cfr_info->rtt_che_buffer_pointer_high8;
 	lut->txrx_tstamp = jiffies;
 
+	if (ppdu_info->reception_type != HAL_RECEPTION_TYPE_SU)
+		num_mu_users = min_t(u8, ppdu_info->num_users,
+				     (u8)cfr->max_mu_users);
+
 	header = &lut->header;
 	ab->hw_params->hw_ops->fill_cfr_hdr_info(ar, header, &params);
+	num_mu_users = min_t(u8, num_mu_users, ATH12K_CFR_MAX_MU_USERS);
+	header->cfr_metadata_len = ATH12K_CFR_META_LEN(num_mu_users);
+	header->meta_enh.num_mu_users = num_mu_users;
+	ath12k_cfr_fill_peer_addr(header, ppdu_info, num_mu_users,
+				  params.peer_mac_addr);
+	lut->header_len = ATH12K_CFR_HEADER_LEN(num_mu_users);
 	header->meta_enh.puncture_bitmap = puncture_bitmap;
 	header->meta_enh.beamformed = ppdu_info->beamformed;
-
-	if (ppdu_info->reception_type != HAL_RECEPTION_TYPE_SU)
-		header->meta_enh.num_mu_users =
-			min_t(u8, ppdu_info->num_users, (u8)cfr->max_mu_users);
 
 	status = ath12k_cfr_correlate_and_relay(ar, lut,
 						ATH12K_CORRELATE_TX_EVENT);
 	if (status == ATH12K_CORRELATE_STATUS_RELEASE) {
-		ath12k_cfr_rfs_write(ar, &lut->header,
-				     sizeof(struct ath12k_csi_cfr_header),
+		ath12k_cfr_rfs_write(ar, &lut->header, lut->header_len,
 				     lut->data, lut->data_len,
 				     &end_magic, sizeof(u32));
 		spin_lock_bh(&cfr->rx_ring.idr_lock);
@@ -1207,6 +1235,7 @@ int ath12k_process_cfr_capture_event(struct ath12k_base *ab,
 	header->vendorid = VENDOR_QCA;
 
 	ab->hw_params->hw_ops->fill_cfr_hdr_info(ar, header, params);
+	lut->header_len = ATH12K_CFR_HEADER_LEN(0);
 	header->meta_enh.puncture_bitmap = arvif->chanctx.def.punctured;
 
 	status = ath12k_cfr_correlate_and_relay(ar, lut,
@@ -1214,8 +1243,7 @@ int ath12k_process_cfr_capture_event(struct ath12k_base *ab,
 	if (status == ATH12K_CORRELATE_STATUS_RELEASE) {
 		ath12k_dbg(ab, ATH12K_DBG_CFR,
 			   "Releasing CFR data to user space");
-		ath12k_cfr_rfs_write(ar, &lut->header,
-				     sizeof(struct ath12k_csi_cfr_header),
+		ath12k_cfr_rfs_write(ar, &lut->header, lut->header_len,
 				     lut->data, lut->data_len,
 				     &end_magic, sizeof(u32));
 		spin_lock_bh(&cfr->rx_ring.idr_lock);
