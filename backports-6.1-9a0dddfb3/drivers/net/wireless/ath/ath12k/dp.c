@@ -484,6 +484,7 @@ int ath12k_dp_peer_setup(struct ath12k *ar, void *ptr, struct ath12k_link_vif *a
 	ret = ath12k_dp_rx_peer_frag_setup(ar, link_peer, tfm);
 	if (ret) {
 		ath12k_warn(ab, "failed to setup rx defrag context\n");
+		spin_unlock_bh(&dp->dp_lock);
 		goto tid_clean;
 	}
 
