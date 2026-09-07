@@ -28388,6 +28388,7 @@ int ath12k_mac_op_remain_on_channel(struct ieee80211_hw *hw,
 	bool create = true;
 	u8 link_id;
 	int ret;
+	bool vdev_started_now = false;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
@@ -28513,6 +28514,7 @@ int ath12k_mac_op_remain_on_channel(struct ieee80211_hw *hw,
 		}
 		ar->scan.arvif = arvif;
 		arvif->is_started = true;
+		vdev_started_now = true;
 	}
 
 	spin_lock_bh(&ar->data_lock);
@@ -28556,7 +28558,26 @@ int ath12k_mac_op_remain_on_channel(struct ieee80211_hw *hw,
 
 	ath12k_wmi_start_scan_init(ar, arg, vif->type);
 
-	arg->chan_list.num_chan = 1;
+	/* When the STA vdev was started on the AP home channel (dual
+	 * home-channel constraint), the FW treats the scan as an on-BSS
+	 * scan and sends BSS_CHANNEL (not FOREIGN_CHAN) for the home chan.
+	 * To get a FOREIGN_CHAN event for the actual ROC target — which is
+	 * what completes ar->scan.on_channel — include the AP home channel
+	 * as the first entry so the FW visits it first (emitting BSS_CHANNEL),
+	 * then moves to the ROC channel and emits FOREIGN_CHAN.
+	 */
+	struct ath12k_link_vif *roc_ap_arvif = NULL;
+	bool home_chan_subst = false;
+
+	if (vdev_started_now) {
+		roc_ap_arvif = ath12k_mac_get_started_ap_arvif(ar);
+		home_chan_subst = roc_ap_arvif &&
+				  roc_ap_arvif->chanctx.def.chan &&
+				  roc_ap_arvif->chanctx.def.chan->center_freq !=
+				  chan->center_freq;
+	}
+
+	arg->chan_list.num_chan = home_chan_subst ? 2 : 1;
 	struct chan_info *chaninfo __free(kfree) = kcalloc(arg->chan_list.num_chan,
 							   sizeof(struct chan_info),
 							   GFP_KERNEL);
@@ -28567,10 +28588,29 @@ int ath12k_mac_op_remain_on_channel(struct ieee80211_hw *hw,
 	}
 
 	arg->chan_list.chan = chaninfo;
-	arg->chan_list.chan[0].freq = chan->center_freq;
+	if (home_chan_subst) {
+		struct ieee80211_channel *home_chan = roc_ap_arvif->chanctx.def.chan;
 
-	arg->chan_list.chan[0].phymode =
-		ath12k_mac_get_phymode(ar, chandef->chan->band, chandef->width);
+		/* Entry 0: AP home channel — FW emits BSS_CHANNEL here */
+		arg->chan_list.chan[0].freq = home_chan->center_freq;
+		arg->chan_list.chan[0].phymode =
+			ath12k_mac_get_phymode(ar, home_chan->band,
+					       roc_ap_arvif->chanctx.def.width);
+		/* Entry 1: ROC target channel — FW emits FOREIGN_CHAN here */
+		arg->chan_list.chan[1].freq = chan->center_freq;
+		arg->chan_list.chan[1].phymode =
+			ath12k_mac_get_phymode(ar, chandef->chan->band,
+					       chandef->width);
+		ath12k_info(ar->ab,
+			    "[vdev_id : %u radio_idx : %u] ROC scan: adding home chan %u MHz + roc chan %u MHz to get FOREIGN_CHAN event\n",
+			    arvif->vdev_id, ar->radio_idx,
+			    home_chan->center_freq, chan->center_freq);
+	} else {
+		arg->chan_list.chan[0].freq = chan->center_freq;
+		arg->chan_list.chan[0].phymode =
+			ath12k_mac_get_phymode(ar, chandef->chan->band,
+					       chandef->width);
+	}
 
 	/* Wide Band Scan is required for bandwidth > 20_NoHT mode */
 	if (chandef->width > NL80211_CHAN_WIDTH_20_NOHT) {
