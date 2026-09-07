@@ -7316,6 +7316,37 @@ static const struct file_operations fops_bcast_probe_rl_stats = {
 	.llseek = default_llseek,
 };
 
+static ssize_t ath12k_read_rfa_temperature(struct file *file,
+					   char __user *ubuf,
+					   size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	bool rfa_temp_valid;
+	int rfa_temperature;
+	char buf[32];
+	int len;
+
+	spin_lock_bh(&ar->data_lock);
+	rfa_temp_valid = ar->thermal.rfa_temp_valid;
+	rfa_temperature = ar->thermal.rfa_temperature;
+	ar->thermal.rfa_temp_valid = false;
+	ar->thermal.rfa_temperature = 0;
+	spin_unlock_bh(&ar->data_lock);
+
+	/* display in millidegree celsius */
+	len = scnprintf(buf, sizeof(buf), "%d\n",
+			rfa_temp_valid ? rfa_temperature * 1000 : 0);
+
+	return simple_read_from_buffer(ubuf, count, ppos, buf, len);
+}
+
+static const struct file_operations fops_rfa_temperature = {
+	.read = ath12k_read_rfa_temperature,
+	.open = ath12k_debugfs_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 void ath12k_debugfs_register(struct ath12k *ar)
 {
 	struct ath12k_base *ab = ar->ab;
@@ -7403,6 +7434,9 @@ void ath12k_debugfs_register(struct ath12k *ar)
 	ath12k_debugfs_create_file("set_tt_configs", 0600, ar->debug.debugfs_pdev,
 				   ar->ab, ar,
 				   &tt_configs);
+	ath12k_debugfs_create_file("rfa_temperature", 0400, ar->debug.debugfs_pdev,
+				   ar->ab, ar,
+				   &fops_rfa_temperature);
 	ath12k_debugfs_create_file("bcast_probe_rl_stats", 0644,
 				   ar->debug.debugfs_pdev,
 				   ar->ab, ar,

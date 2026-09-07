@@ -7070,6 +7070,13 @@ struct wmi_pdev_temperature_event {
 	__le32 pdev_id;
 } __packed;
 
+struct ath12k_wmi_pdev_temperature_event_parse {
+	const struct wmi_pdev_temperature_event *ev;
+	bool fixed_param_parsed;
+	bool rfa_temp_valid;
+	a_sle32 rfa_temp;
+};
+
 #define WMI_AC_BE				0
 #define WMI_AC_BK				1
 #define WMI_AC_VI				2

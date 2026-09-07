@@ -123,6 +123,11 @@ struct ath12k_thermal {
 	 * protected by data_lock
 	 */
 	int temperature;
+	/* RFA temperature value in Celsius degree and its validity flag
+	 * protected by data_lock
+	 */
+	bool rfa_temp_valid;
+	int rfa_temperature;
 };
 
 #ifdef CPTCFG_ATH12K_POWER_OPTIMIZATION
@@ -156,7 +161,8 @@ int ath12k_thermal_set_throttling(struct ath12k *ar, u32 throttle_state);
 void ath12k_update_tt_configs(struct ath12k *ar, int level, int tmplwm,
 			      int tmphwm, int dcoffpercent, int pout_reduction_db,
 			      int tx_chain_mask, int duty_cycle);
-void ath12k_thermal_event_temperature(struct ath12k *ar, int temperature);
+void ath12k_thermal_event_temperature(struct ath12k *ar, int temperature,
+				      bool rfa_temp_valid, int rfa_temperature);
 void ath12k_thermal_event_throt_level(struct ath12k *ar, int curr_level);
 int ath12k_wmi_thermal_set_throttle(struct ath12k *ar);
 #else
@@ -174,8 +180,9 @@ static inline int ath12k_thermal_set_throttling(struct ath12k *ar, u32 throttle_
 	return 0;
 }
 
-static inline void ath12k_thermal_event_temperature(struct ath12k *ar,
-						    int temperature)
+static inline void
+ath12k_thermal_event_temperature(struct ath12k *ar, int temperature,
+				 bool rfa_temp_valid, int rfa_temperature)
 {
 }
 
