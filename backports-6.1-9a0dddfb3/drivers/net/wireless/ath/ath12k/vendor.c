@@ -7635,13 +7635,20 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 	struct ath12k_dp_link_peer_hw_stats *hw_link_stats = NULL;
 	struct ath12k_dp_peer_hw_stats *hw_stats = NULL;
 	struct ath12k_htt_tx_ppdu_stats *tx_ppdu_stats = NULL;
-	struct ath12k *ar = &ahvif->ah->radio[0];
+	struct ath12k *ar;
+	struct ath12k_link_vif *arvif;
 	struct ath12k_dp_proto_stats_peer *proto = NULL;
 	struct ath12k_dp_mld_agg_latency_peer_stats *agg_mld_stats = NULL;
 	struct ath12k_dp_link_peer_qos_stats *qos_stats = NULL;
 	struct ath12k_rx_ppdu_stats *rx_mon_stats;
 	struct nlattr *attr;
 	int ret = -EINVAL;
+
+	rcu_read_lock();
+	arvif = (cmd->link_id != INVALID_LINK_ID) ?
+		rcu_dereference(ahvif->link[cmd->link_id]) : NULL;
+	ar = (arvif && arvif->ar) ? arvif->ar : &ahvif->ah->radio[0];
+	rcu_read_unlock();
 
 	telemetry_peer = vmalloc(sizeof(*telemetry_peer));
 	if (!telemetry_peer) {
