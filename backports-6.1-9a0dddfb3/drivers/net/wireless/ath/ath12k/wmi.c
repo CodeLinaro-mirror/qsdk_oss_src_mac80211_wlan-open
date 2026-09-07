@@ -16043,44 +16043,76 @@ static void ath12k_tm_wmi_event_segmented(struct ath12k_base *ab, u32 cmd_id,
 	tb = NULL;
 }
 
+static int
+ath12k_wmi_tlv_pdev_temperature_parse(struct ath12k_base *ab,
+				      u16 tag, u16 len,
+				      const void *ptr, void *data)
+{
+	struct ath12k_wmi_pdev_temperature_event_parse *parse = data;
+
+	switch (tag) {
+	case WMI_TAG_PDEV_TEMPERATURE_EVENT:
+		parse->ev = ptr;
+		parse->fixed_param_parsed = true;
+		break;
+	case WMI_TAG_ARRAY_UINT32:
+		if (!parse->fixed_param_parsed)
+			break;
+		if (len >= sizeof(u32)) {
+			parse->rfa_temp = *(const a_sle32 *)ptr;
+			parse->rfa_temp_valid = true;
+		}
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
 static void
 ath12k_wmi_pdev_temperature_event(struct ath12k_base *ab,
 				  struct sk_buff *skb)
 {
-	const struct wmi_pdev_temperature_event *ev;
+	struct ath12k_wmi_pdev_temperature_event_parse parse = {};
 	struct ath12k *ar;
-	const void **tb;
 	int ret;
 
-	tb = ath12k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
-	if (IS_ERR(tb)) {
-	       ret = PTR_ERR(tb);
-	   ath12k_warn(ab, "failed to parse tlv: %d\n", ret);
-	   return;
+	ret = ath12k_wmi_tlv_iter(ab, skb->data, skb->len,
+				  ath12k_wmi_tlv_pdev_temperature_parse,
+				  &parse);
+	if (ret) {
+		ath12k_warn(ab, "failed to parse pdev temperature event tlv: %d\n", ret);
+		return;
 	}
 
-	ev = tb[WMI_TAG_PDEV_TEMPERATURE_EVENT];
-	if (!ev) {
-	    ath12k_warn(ab, "failed to fetch pdev temp ev");
-	    kfree(tb);
-	    return;
+	if (!parse.ev) {
+		ath12k_warn(ab, "failed to fetch pdev temp ev");
+		return;
 	}
 
-	ath12k_dbg(ab, ATH12K_DBG_WMI,
-			"pdev temperature ev temp %d pdev_id %d\n", ev->temp,
-			ev->pdev_id);
+	if (parse.rfa_temp_valid)
+		ath12k_dbg(ab, ATH12K_DBG_WMI,
+			   "pdev temperature ev temp %d pdev_id %d rfa_temp %d\n",
+			   parse.ev->temp, parse.ev->pdev_id, parse.rfa_temp);
+	else
+		ath12k_dbg(ab, ATH12K_DBG_WMI,
+			   "pdev temperature ev temp %d pdev_id %d\n",
+			   parse.ev->temp, parse.ev->pdev_id);
 
 	rcu_read_lock();
 
-	ar = ath12k_mac_get_ar_by_pdev_id(ab, le32_to_cpu(ev->pdev_id));
+	ar = ath12k_mac_get_ar_by_pdev_id(ab, le32_to_cpu(parse.ev->pdev_id));
 	if (!ar) {
-		ath12k_warn(ab, "invalid pdev id in pdev temperature ev %d", ev->pdev_id);
+		ath12k_warn(ab, "invalid pdev id in pdev temperature ev %d",
+			    parse.ev->pdev_id);
 		goto exit;
 	}
 
-	ath12k_thermal_event_temperature(ar, ev->temp);
+	ath12k_thermal_event_temperature(ar, le32_to_cpu(parse.ev->temp),
+					 parse.rfa_temp_valid,
+					 le32_to_cpu(parse.rfa_temp));
 exit:
-	kfree(tb);
 	rcu_read_unlock();
 }
 
