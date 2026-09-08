@@ -24657,7 +24657,8 @@ int ath12k_vendor_install_secure_ranging_tk(struct ath12k_link_vif *arvif,
 	if (ret)
 		return ret;
 
-	if (!wait_for_completion_timeout(&ar->install_key_done, HZ))
+	if (!wait_for_completion_timeout(&ar->install_key_done,
+					 WMI_INSTALL_KEY_TIMEOUT_HZ))
 		return -ETIMEDOUT;
 
 	return ar->install_key_status ? -EINVAL : 0;

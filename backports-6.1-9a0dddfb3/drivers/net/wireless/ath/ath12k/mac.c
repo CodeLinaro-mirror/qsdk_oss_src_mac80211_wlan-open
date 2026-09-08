@@ -12329,7 +12329,8 @@ install:
 	if (ret)
 		return ret;
 
-	if (!wait_for_completion_timeout(&ar->install_key_done, 1 * HZ))
+	if (!wait_for_completion_timeout(&ar->install_key_done,
+					 WMI_INSTALL_KEY_TIMEOUT_HZ))
 		return -ETIMEDOUT;
 
 	if (ether_addr_equal(macaddr, arvif->bssid)) {
