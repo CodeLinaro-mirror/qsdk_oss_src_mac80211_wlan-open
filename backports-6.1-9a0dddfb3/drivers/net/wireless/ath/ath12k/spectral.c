@@ -5,6 +5,7 @@
  */
 
 #include <linux/relay.h>
+#include <linux/cpu.h>
 #include <asm/unaligned.h>
 #include "core.h"
 #include "debug.h"
@@ -351,7 +352,313 @@ static int remove_buf_file_handler(struct dentry *dentry)
 	return 0;
 }
 
+static int ath12k_spectral_subbuf_start(struct rchan_buf *buf, void *subbuf,
+					void *prev_subbuf, size_t prev_padding)
+{
+	struct ath12k_spectral *sp = buf->chan->private_data;
+
+	(void)subbuf;
+	(void)prev_subbuf;
+	(void)prev_padding;
+
+	if (relay_buf_full(buf))
+		atomic64_inc(&sp->relay_overwrite_events);
+
+	return 1;
+}
+
+static bool
+ath12k_spectral_relay_write_record(struct rchan *chan, const void *data,
+				   size_t length)
+{
+	unsigned long flags;
+	struct rchan_buf *buf;
+
+	local_irq_save(flags);
+	buf = *this_cpu_ptr(chan->buf);
+	if (unlikely(buf->offset + length > chan->subbuf_size)) {
+		length = relay_switch_subbuf(buf, length);
+		if (!length) {
+			local_irq_restore(flags);
+			return false;
+		}
+	}
+
+	memcpy(buf->data + buf->offset, data, length);
+	buf->offset += length;
+	if (buf->offset == chan->subbuf_size)
+		relay_switch_subbuf(buf, 0);
+	local_irq_restore(flags);
+
+	return true;
+}
+
+static ssize_t
+ath12k_spectral_relay_overwrite_events_read(struct file *file,
+					    char __user *user_buf,
+					    size_t count, loff_t *ppos)
+{
+	struct ath12k_spectral *sp = file->private_data;
+	char buf[32];
+	int len;
+
+	len = scnprintf(buf, sizeof(buf), "%llu\n",
+			(unsigned long long)atomic64_read(&sp->relay_overwrite_events));
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static ssize_t
+ath12k_spectral_relay_full_events_read(struct file *file,
+				       char __user *user_buf,
+				       size_t count, loff_t *ppos)
+{
+	struct ath12k_spectral *sp = file->private_data;
+	char buf[32];
+	int len;
+
+	len = scnprintf(buf, sizeof(buf), "%llu\n",
+			(unsigned long long)atomic64_read(&sp->relay_full_events));
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static ssize_t
+ath12k_spectral_relay_write_attempts_read(struct file *file,
+					  char __user *user_buf,
+					  size_t count, loff_t *ppos)
+{
+	struct ath12k_spectral *sp = file->private_data;
+	char buf[32];
+	int len;
+
+	len = scnprintf(buf, sizeof(buf), "%llu\n",
+			(unsigned long long)atomic64_read(&sp->relay_write_attempts));
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static ssize_t
+ath12k_spectral_relay_write_accepted_read(struct file *file,
+					  char __user *user_buf,
+					  size_t count, loff_t *ppos)
+{
+	struct ath12k_spectral *sp = file->private_data;
+	char buf[32];
+	int len;
+
+	len = scnprintf(buf, sizeof(buf), "%llu\n",
+			(unsigned long long)atomic64_read(&sp->relay_write_accepted));
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static ssize_t
+ath12k_spectral_relay_write_rejected_read(struct file *file,
+					  char __user *user_buf,
+					  size_t count, loff_t *ppos)
+{
+	struct ath12k_spectral *sp = file->private_data;
+	char buf[32];
+	int len;
+
+	len = scnprintf(buf, sizeof(buf), "%llu\n",
+			(unsigned long long)atomic64_read(&sp->relay_write_rejected));
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static u64 ath12k_spectral_relay_occupancy(struct ath12k_spectral *sp)
+{
+	struct rchan_buf *buf;
+	size_t produced, consumed, occupancy;
+
+	if (!sp->rfs_scan || !sp->rfs_scan->buf)
+		return 0;
+
+	buf = *per_cpu_ptr(sp->rfs_scan->buf, 0);
+	produced = READ_ONCE(buf->subbufs_produced);
+	consumed = READ_ONCE(buf->subbufs_consumed);
+	if (produced < consumed)
+		return 0;
+
+	occupancy = produced - consumed;
+	if (READ_ONCE(buf->offset))
+		occupancy++;
+	if (occupancy > sp->num_sub_bufs)
+		occupancy = sp->num_sub_bufs;
+
+	return occupancy;
+}
+
+static void ath12k_spectral_relay_update_peak(struct ath12k_spectral *sp)
+{
+	u64 occupancy = ath12k_spectral_relay_occupancy(sp);
+
+	if (occupancy > atomic64_read(&sp->relay_peak_occupancy))
+		atomic64_set(&sp->relay_peak_occupancy, occupancy);
+}
+
+static ssize_t
+ath12k_spectral_relay_peak_occupancy_read(struct file *file,
+					  char __user *user_buf,
+					  size_t count, loff_t *ppos)
+{
+	struct ath12k_spectral *sp = file->private_data;
+	char buf[32];
+	int len;
+
+	len = scnprintf(buf, sizeof(buf), "%llu\n",
+			(unsigned long long)atomic64_read(&sp->relay_peak_occupancy));
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static ssize_t
+ath12k_spectral_relay_current_occupancy_read(struct file *file,
+					     char __user *user_buf,
+					     size_t count, loff_t *ppos)
+{
+	struct ath12k_spectral *sp = file->private_data;
+	char buf[32];
+	int len;
+
+	len = scnprintf(buf, sizeof(buf), "%llu\n",
+			(unsigned long long)ath12k_spectral_relay_occupancy(sp));
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static const struct file_operations ath12k_spectral_relay_write_attempts_fops = {
+	.owner = THIS_MODULE,
+	.open = simple_open,
+	.read = ath12k_spectral_relay_write_attempts_read,
+	.llseek = default_llseek,
+};
+
+static const struct file_operations ath12k_spectral_relay_write_accepted_fops = {
+	.owner = THIS_MODULE,
+	.open = simple_open,
+	.read = ath12k_spectral_relay_write_accepted_read,
+	.llseek = default_llseek,
+};
+
+static const struct file_operations ath12k_spectral_relay_write_rejected_fops = {
+	.owner = THIS_MODULE,
+	.open = simple_open,
+	.read = ath12k_spectral_relay_write_rejected_read,
+	.llseek = default_llseek,
+};
+
+static const struct file_operations ath12k_spectral_relay_overwrite_events_fops = {
+	.owner = THIS_MODULE,
+	.open = simple_open,
+	.read = ath12k_spectral_relay_overwrite_events_read,
+	.llseek = default_llseek,
+};
+
+static const struct file_operations ath12k_spectral_relay_current_occupancy_fops = {
+	.owner = THIS_MODULE,
+	.open = simple_open,
+	.read = ath12k_spectral_relay_current_occupancy_read,
+	.llseek = default_llseek,
+};
+
+static ssize_t
+ath12k_spectral_relay_reset_write(struct file *file,
+				  const char __user *user_buf,
+				  size_t count, loff_t *ppos)
+{
+	struct ath12k_spectral *sp = file->private_data;
+	bool scan_active;
+
+	(void)user_buf;
+	(void)ppos;
+
+	if (!count)
+		return 0;
+	if (!sp->rfs_scan)
+		return -ENODEV;
+
+	/* Write-only trigger; the payload itself is intentionally ignored. */
+	spin_lock_bh(&sp->lock);
+	scan_active = sp->scan_active;
+	spin_unlock_bh(&sp->lock);
+	if (scan_active)
+		return -EBUSY;
+
+	/*
+	 * Block new relay writers, then wait for the writer already in flight.
+	 * The gate remains set while relay_reset() runs outside the spinlock.
+	 */
+	atomic_set(&sp->relay_resetting, 1);
+	spin_lock_bh(&sp->lock);
+	spin_unlock_bh(&sp->lock);
+	spin_lock_bh(&sp->relay_lock);
+	spin_unlock_bh(&sp->relay_lock);
+	relay_reset(sp->rfs_scan);
+	spin_lock_bh(&sp->lock);
+	spin_unlock_bh(&sp->lock);
+	spin_lock_bh(&sp->relay_lock);
+
+	/* relay_reset() resets subbufs_produced/consumed to 0 but does not
+	 * zero the underlying memory. Without this memset, stale FFT records
+	 * from the previous scan remain in the relay pages and are read back
+	 * as fresh data when subbufs_produced wraps around to those slots
+	 * again (~923ms after scan start at 224us period). The stale records
+	 * pass iw_is_selected_sample, causing samples >> relay_write_attempts
+	 * and filling the relay with CPU-bound filter work, which in turn
+	 * starves the producer and causes relay_full_events.
+	 */
+	{
+		struct rchan_buf *buf;
+		int cpu;
+
+		for_each_possible_cpu(cpu) {
+			buf = *per_cpu_ptr(sp->rfs_scan->buf, cpu);
+			if (!buf)
+				continue;
+
+			memset(buf->start, 0,
+			       sp->rfs_scan->subbuf_size * sp->rfs_scan->n_subbufs);
+		}
+	}
+
+	atomic64_set(&sp->relay_write_attempts, 0);
+	atomic64_set(&sp->relay_write_accepted, 0);
+	atomic64_set(&sp->relay_write_rejected, 0);
+	atomic64_set(&sp->relay_full_events, 0);
+	atomic64_set(&sp->relay_overwrite_events, 0);
+	atomic64_set(&sp->relay_peak_occupancy, 0);
+	spin_unlock_bh(&sp->relay_lock);
+	atomic_set(&sp->relay_resetting, 0);
+
+	return count;
+}
+
+static const struct file_operations ath12k_spectral_relay_reset_fops = {
+	.owner = THIS_MODULE,
+	.open = simple_open,
+	.write = ath12k_spectral_relay_reset_write,
+	.llseek = default_llseek,
+};
+
+static const struct file_operations ath12k_spectral_relay_full_events_fops = {
+	.owner = THIS_MODULE,
+	.open = simple_open,
+	.read = ath12k_spectral_relay_full_events_read,
+	.llseek = default_llseek,
+};
+
+static const struct file_operations ath12k_spectral_relay_peak_occupancy_fops = {
+	.owner = THIS_MODULE,
+	.open = simple_open,
+	.read = ath12k_spectral_relay_peak_occupancy_read,
+	.llseek = default_llseek,
+};
+
 static struct rchan_callbacks rfs_scan_cb = {
+	.subbuf_start = ath12k_spectral_subbuf_start,
 	.create_buf_file = create_buf_file_handler,
 	.remove_buf_file = remove_buf_file_handler,
 };
@@ -1262,10 +1569,27 @@ static int ath12k_spectral_fill_fft_sample(struct ath12k *ar,
 		   (s16)be16_to_cpu(fft_sample->detector_info.noise_floor),
 		   fft_sample->macaddr);
 
-	if (ar->spectral.rfs_scan)
-		relay_write(ar->spectral.rfs_scan, fft_sample,
-			    sizeof(*fft_sample) +
-			    ATH12K_SPECTRAL_ATH12K_MAX_IB_BINS(ar->ab));
+	/* This path is reached for active FFT reports; count every relay attempt. */
+	if (ar->spectral.rfs_scan) {
+		unsigned long flags;
+		size_t sample_len;
+
+		sample_len = sizeof(*fft_sample) +
+			     ATH12K_SPECTRAL_ATH12K_MAX_IB_BINS(ar->ab);
+		spin_lock_irqsave(&ar->spectral.relay_lock, flags);
+		if (unlikely(atomic_read(&ar->spectral.relay_resetting))) {
+			spin_unlock_irqrestore(&ar->spectral.relay_lock, flags);
+			return -EBUSY;
+		}
+		atomic64_inc(&ar->spectral.relay_write_attempts);
+		if (ath12k_spectral_relay_write_record(ar->spectral.rfs_scan,
+						       fft_sample, sample_len))
+			atomic64_inc(&ar->spectral.relay_write_accepted);
+		else
+			atomic64_inc(&ar->spectral.relay_write_rejected);
+		ath12k_spectral_relay_update_peak(&ar->spectral);
+		spin_unlock_irqrestore(&ar->spectral.relay_lock, flags);
+	}
 
 	return 0;
 }
@@ -2106,7 +2430,7 @@ static inline int ath12k_spectral_debug_register(struct ath12k *ar)
 					   ar->debug.debugfs_pdev,
 					   ATH12K_SPECTRAL_SUB_BUFF_SIZE(ar->ab),
 					   ar->spectral.scan_count_max,
-					   &rfs_scan_cb, NULL);
+					   &rfs_scan_cb, &ar->spectral);
 	if (!ar->spectral.rfs_scan) {
 		ath12k_warn(ar->ab, "failed to open relay in pdev %d\n",
 			    ar->pdev_idx);
@@ -2127,6 +2451,31 @@ static inline int ath12k_spectral_debug_register(struct ath12k *ar)
 	debugfs_create_u32("spectral_data_num_sub_buffers", 0444,
 			   ar->debug.debugfs_pdev,
 			   &ar->spectral.num_sub_bufs);
+
+	debugfs_create_file("spectral_relay_full_events", 0444,
+			    ar->debug.debugfs_pdev, &ar->spectral,
+			    &ath12k_spectral_relay_full_events_fops);
+	debugfs_create_file("spectral_relay_write_attempts", 0444,
+			    ar->debug.debugfs_pdev, &ar->spectral,
+			    &ath12k_spectral_relay_write_attempts_fops);
+	debugfs_create_file("spectral_relay_write_accepted", 0444,
+			    ar->debug.debugfs_pdev, &ar->spectral,
+			    &ath12k_spectral_relay_write_accepted_fops);
+	debugfs_create_file("spectral_relay_write_rejected", 0444,
+			    ar->debug.debugfs_pdev, &ar->spectral,
+			    &ath12k_spectral_relay_write_rejected_fops);
+	debugfs_create_file("spectral_relay_overwrite_events", 0444,
+			    ar->debug.debugfs_pdev, &ar->spectral,
+			    &ath12k_spectral_relay_overwrite_events_fops);
+	debugfs_create_file("spectral_relay_reset", 0200,
+			    ar->debug.debugfs_pdev, &ar->spectral,
+			    &ath12k_spectral_relay_reset_fops);
+	debugfs_create_file("spectral_relay_peak_occupancy", 0444,
+			    ar->debug.debugfs_pdev, &ar->spectral,
+			    &ath12k_spectral_relay_peak_occupancy_fops);
+	debugfs_create_file("spectral_relay_current_occupancy", 0444,
+			    ar->debug.debugfs_pdev, &ar->spectral,
+			    &ath12k_spectral_relay_current_occupancy_fops);
 
 	debugfs_create_bool("spectral_dbr_buff_debug", 0600,
 			    ar->debug.debugfs_pdev,
@@ -2163,6 +2512,8 @@ int ath12k_spectral_init(struct ath12k_base *ab)
 		idr_init(&sp->rx_ring.bufs_idr);
 		spin_lock_init(&sp->rx_ring.idr_lock);
 		spin_lock_init(&sp->lock);
+		spin_lock_init(&sp->relay_lock);
+		atomic_set(&sp->relay_resetting, 0);
 #if LINUX_VERSION_IS_GEQ(6, 18, 0)
 		hrtimer_setup(&sp->scan_completion_timer, ath12k_spectral_scan_timeout,
 			      CLOCK_MONOTONIC, HRTIMER_MODE_REL_SOFT);
@@ -2184,6 +2535,12 @@ int ath12k_spectral_init(struct ath12k_base *ab)
 
 		spin_lock_bh(&sp->lock);
 
+		atomic64_set(&sp->relay_write_attempts, 0);
+		atomic64_set(&sp->relay_write_accepted, 0);
+		atomic64_set(&sp->relay_write_rejected, 0);
+		atomic64_set(&sp->relay_full_events, 0);
+		atomic64_set(&sp->relay_overwrite_events, 0);
+		atomic64_set(&sp->relay_peak_occupancy, 0);
 		sp->mode = SPECTRAL_SCAN_MODE_INVALID;
 
 		for (int m = 0; m < SPECTRAL_SCAN_MODE_MAX; m++) {

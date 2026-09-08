@@ -109,6 +109,9 @@ struct ath12k_spectral {
 	struct ath12k_dbring rx_ring;
 	/* Protects enabled, mode, and scan_active */
 	spinlock_t lock;
+	/* Serializes relay writes to the global spectral channel. */
+	spinlock_t relay_lock;
+	atomic_t relay_resetting;
 	struct rchan *rfs_scan;	/* relay(fs) channel for spectral scan */
 	enum spectral_scan_mode mode;
 	struct ath12k_spectral_params     params[SPECTRAL_SCAN_MODE_MAX];
@@ -125,6 +128,12 @@ struct ath12k_spectral {
 	u32 num_sub_bufs;
 	/* Runtime configurable max scan count from INI */
 	u32 scan_count_max;
+	atomic64_t relay_write_attempts;
+	atomic64_t relay_write_accepted;
+	atomic64_t relay_write_rejected;
+	atomic64_t relay_full_events;
+	atomic64_t relay_overwrite_events;
+	atomic64_t relay_peak_occupancy;
 	/* fields populated from WMI_PDEV_SSCAN_FW_PARAM_EVENTID */
 	u32 pri20_freq;
 	/* center frequency of the home channel; stays fixed during agile scans */
