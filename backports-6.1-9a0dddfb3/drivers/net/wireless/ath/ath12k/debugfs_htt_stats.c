@@ -3116,6 +3116,8 @@ static inline void ath12k_htt_print_rx_pdev_fw_stats_tlv(const void *tag_buf,
 			   le32_to_cpu(htt_stats_buf->bytes_received_low_32));
 	len += scnprintf(buf + len, buf_len - len, "bytes_received_high_32 = %u\n",
 			   le32_to_cpu(htt_stats_buf->bytes_received_high_32));
+	len += scnprintf(buf + len, buf_len - len, "fw_ring_ucast_probe_req = %u\n",
+			   le32_to_cpu(htt_stats_buf->fw_ring_ucast_probe_req));
 
 	stats_req->buf_len = len;
 }
@@ -4086,7 +4088,9 @@ ath12k_htt_print_pdev_ctrl_path_tx_stats_tlv(const void *tag_buf, u16 tag_len,
 			 "HTT_TX_PDEV_STATS_CTRL_PATH_TX_STATS:\n");
 	len += print_array_to_buf(buf, len, "fw_tx_mgmt_subtype",
 				 htt_stats_buf->fw_tx_mgmt_subtype,
-				 ATH12K_HTT_STATS_SUBTYPE_MAX, "\n\n");
+				 ATH12K_HTT_STATS_SUBTYPE_MAX, "\n");
+	len += scnprintf(buf + len, buf_len - len, "fw_tx_ucast_probe_resp = %u\n\n",
+			 le32_to_cpu(htt_stats_buf->fw_tx_ucast_probe_resp));
 
 	stats_req->buf_len = len;
 }
