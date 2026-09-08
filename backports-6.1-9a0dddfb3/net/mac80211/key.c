@@ -199,6 +199,19 @@ static int ieee80211_key_enable_hw_accel(struct ieee80211_key *key)
 		return 0;
 	}
 
+	/*
+	 * The key could not be programmed into hardware (e.g. drv_set_key()
+	 * failed or timed out while re-enabling keys after a hardware
+	 * restart). The flag may still indicate it was programmed into the
+	 * device from before the restart; clear it now so the later teardown
+	 * (ieee80211_key_disable_hw_accel) doesn't do a spurious tailroom
+	 * increment and leak crypto_tx_tailroom_needed_cnt. The count was
+	 * already incremented by the caller (ieee80211_key_link /
+	 * ieee80211_reenable_keys), so the key correctly stays accounted as
+	 * needing software crypto tailroom while it is not in hardware.
+	 */
+	key->flags &= ~KEY_FLAG_UPLOADED_TO_HARDWARE;
+
 	if (ret != -ENOSPC && ret != -EOPNOTSUPP && ret != 1)
 		sdata_err(sdata,
 			  "failed to set key (%d, %pM) to hardware (%d)\n",
