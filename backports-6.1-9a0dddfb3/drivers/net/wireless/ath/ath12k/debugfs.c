@@ -8723,34 +8723,78 @@ static const struct file_operations fops_congestion_ctrl_set = {
 	.owner = THIS_MODULE,
 };
 
-static ssize_t ath12k_dump_dp_congestion_recovery_history(struct file *file,
-							  char __user *user_buf,
-							  size_t count,
-							  loff_t *ppos)
-{
-	struct ath12k_base *ab = file->private_data;
+struct ath12k_dump_dp_congestion_recovery_history_priv {
 	char *buf;
-	int size = PAGE_SIZE;
-	int len = 0, retval;
+	int len;
+};
 
-	buf = kzalloc(size, GFP_KERNEL);
-	if (!buf)
+static int ath12k_debugfs_dump_dp_congestion_recovery_history_open(struct inode *inode,
+								   struct file *file)
+{
+	struct ath12k_base *ab = inode->i_private;
+	struct ath12k_dump_dp_congestion_recovery_history_priv *priv;
+	const int size = 1024 * 24;
+
+	if (ab->is_bypassed) {
+		ath12k_info(ab, "Device is in Bypass state, skipping recovery history cmd\n");
+		return -EPERM;
+	}
+
+	if (test_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags)) {
+		ath12k_info(ab, "Device is in recovery, skipping recovery history cmd\n");
+		return -EBUSY;
+	}
+
+	priv = kzalloc(sizeof(*priv), GFP_KERNEL);
+	if (!priv)
 		return -ENOMEM;
 
+	priv->buf = vmalloc(size);
+	if (!priv->buf) {
+		kfree(priv);
+		return -ENOMEM;
+	}
+
 	if (ab->dp->arch_ops->dump_congestion_recovery_hist)
-		len += ab->dp->arch_ops->dump_congestion_recovery_hist(ab->dp,
-								       buf + len,
-								       size - len);
+		priv->len = ab->dp->arch_ops->dump_congestion_recovery_hist(ab->dp,
+									    priv->buf,
+									    size);
 
-	retval = simple_read_from_buffer(user_buf, count, ppos, buf, len);
-	kfree(buf);
+	priv->len = min_t(int, priv->len, size);
 
-	return retval;
+	file->private_data = priv;
+
+	return 0;
+}
+
+static int ath12k_debugfs_dump_dp_congestion_recovery_history_release(struct inode *inode,
+								      struct file *file)
+{
+	struct ath12k_dump_dp_congestion_recovery_history_priv *priv = file->private_data;
+
+	vfree(priv->buf);
+	kfree(priv);
+
+	return 0;
+}
+
+static ssize_t ath12k_dump_dp_congestion_recovery_history_read(struct file *file,
+							       char __user *user_buf,
+							       size_t count,
+							       loff_t *ppos)
+{
+	struct ath12k_dump_dp_congestion_recovery_history_priv *priv;
+
+	priv = file->private_data;
+
+	return simple_read_from_buffer(user_buf, count, ppos, priv->buf, priv->len);
 }
 
 static const struct file_operations fops_congestion_recovery_history = {
-	.open = ath12k_debugfs_open,
-	.read = ath12k_dump_dp_congestion_recovery_history,
+	.open = ath12k_debugfs_dump_dp_congestion_recovery_history_open,
+	.release = ath12k_debugfs_dump_dp_congestion_recovery_history_release,
+	.read = ath12k_dump_dp_congestion_recovery_history_read,
+	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
 
@@ -8782,9 +8826,9 @@ static void ath12k_debugfs_dp_svc_sorted_flow_init(struct ath12k_base *ab)
 				   ab, ab,
 				   &fops_congestion_ctrl_set);
 
-	ath12k_debugfs_create_file("congestion_recovery_history", 0400,
-				   svc_sorted_flow_dir,
-				   ab, ab, &fops_congestion_recovery_history);
+	debugfs_create_file("congestion_recovery_history", 0400,
+			    svc_sorted_flow_dir,
+			    ab, &fops_congestion_recovery_history);
 }
 
 void ath12k_debugfs_pdev_create(struct ath12k_base *ab) {
