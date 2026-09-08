@@ -882,6 +882,44 @@ static enum wmi_phy_mode ath12k_cfr_chan_to_phymode(struct ath12k_link_vif *arvi
 	return phymode;
 }
 
+static bool ath12k_cfr_is_valid_gain_table_idx(const struct ath12k_cfr *cfr,
+					       u16 tbl_idx)
+{
+	/* default gain table is always valid */
+	if (!tbl_idx)
+		return true;
+
+	/* If target did not share aoa caldata and max gain table details,
+	 * do not derive phase delta locally. just return false
+	 */
+	if (!cfr->is_enh_aoa_data)
+		return false;
+
+	return tbl_idx < cfr->enh_aoa_data.max_agc_gain_tbls;
+}
+
+static u16 ath12k_cfr_get_max_agc_gain(const struct ath12k_cfr *cfr,
+				       u16 center_freq1, u16 tbl_idx)
+{
+	const struct cfr_enhanced_aoa_data *aoa = &cfr->enh_aoa_data;
+	const u16 *max_agc_gain_per_tbl;
+
+	if (!cfr->is_enh_aoa_data)
+		return ATH12K_CFR_INVALID_AGC_GAIN;
+
+	if (center_freq1 < 3000)
+		max_agc_gain_per_tbl = aoa->max_agc_gain_per_tbl_2g;
+	else if (center_freq1 >= 5925)
+		max_agc_gain_per_tbl = aoa->max_agc_gain_per_tbl_6g;
+	else
+		max_agc_gain_per_tbl = aoa->max_agc_gain_per_tbl_5g;
+
+	if (ath12k_cfr_is_valid_gain_table_idx(cfr, tbl_idx))
+		return max_agc_gain_per_tbl[tbl_idx];
+
+	return ATH12K_CFR_INVALID_AGC_GAIN;
+}
+
 static void
 ath12k_cfr_fill_rx_tlv_agc_info(const struct hal_rx_ppdu_cfr_info *cfr_info,
 				struct ath12k_cfr_peer_tx_param *params)
@@ -911,6 +949,115 @@ ath12k_cfr_fill_rx_tlv_agc_info(const struct hal_rx_ppdu_cfr_info *cfr_info,
 		params->agc_gain_tbl_index[i] = u16_get_bits(gain_info[i],
 							     ATH12K_CFR_GAIN_TABLE_IDX);
 	}
+}
+
+static void
+ath12k_cfr_populate_enh_chain_phase(struct ath12k *ar,
+				    struct ath12k_cfr_peer_tx_param *params,
+				    u16 center_freq1)
+{
+	struct ath12k_cfr *cfr = &ar->cfr;
+	struct cfr_enhanced_aoa_data *aoa = &cfr->enh_aoa_data;
+	u16 *phase_array, *gain_array;
+	u32 max_chains = min_t(u32, HOST_MAX_CHAINS, WMI_MAX_CHAINS);
+	u32 chain_limit;
+	u32 start_ent, stop_ent, chain, tbl_idx, grp_stp_idx;
+	u32 data_idx, rf_chain;
+	u16 max_agc_gain, phase_delta;
+	bool found;
+	bool invalid_gain_table_idx = false;
+
+	for (chain = 0; chain < max_chains; chain++) {
+		tbl_idx = params->agc_gain_tbl_index[chain];
+		if (!ath12k_cfr_is_valid_gain_table_idx(cfr, tbl_idx))
+			invalid_gain_table_idx = true;
+
+		/* cap the agc gain if it crosses max allowed gain value for the
+		 * given gain table index.
+		 */
+		max_agc_gain = ath12k_cfr_get_max_agc_gain(cfr, center_freq1, tbl_idx);
+		if (max_agc_gain != ATH12K_CFR_INVALID_AGC_GAIN &&
+		    params->agc_gain[chain] > max_agc_gain)
+			params->agc_gain[chain] = max_agc_gain;
+	}
+
+	/* When invalid gain table index reported do not populate the phase delta.
+	 * And when aoa caldata is not shared via WMI event as well do not populate the
+	 * chain phase as it means either target does not support enhanced AoA or it
+	 * reports the data via dma header
+	 */
+	if (invalid_gain_table_idx || !cfr->is_enh_aoa_data ||
+	    !aoa->gain_stop_index_array || !aoa->enh_phase_delta_array ||
+	    !aoa->max_entries_all_table) {
+		for (chain = 0; chain < max_chains; chain++)
+			params->chain_phase[chain] = ATH12K_CFR_INVALID_PHASE_DELTA;
+		return;
+	}
+
+	chain_limit = min_t(u32, max_chains, aoa->max_aoa_chains);
+	for (chain = 0; chain < chain_limit; chain++) {
+		tbl_idx = params->agc_gain_tbl_index[chain];
+
+		if (tbl_idx >= aoa->max_agc_gain_tbls ||
+		    tbl_idx >= ATH12K_PSOC_MAX_NUM_AGC_GAIN_TBLS)
+			continue;
+
+		rf_chain = aoa->xbar_config ?
+			   ((aoa->xbar_config >> (3 * chain)) & 0x07) : chain;
+		if (rf_chain >= WMI_MAX_CHAINS)
+			continue;
+
+		data_idx = rf_chain * aoa->max_entries_all_table;
+		phase_array = &aoa->enh_phase_delta_array[data_idx];
+		gain_array = &aoa->gain_stop_index_array[data_idx];
+		start_ent = aoa->start_ent[tbl_idx];
+		if (start_ent >= aoa->max_entries_all_table)
+			continue;
+
+		stop_ent = start_ent + aoa->max_bdf_entries_per_tbl[tbl_idx];
+		stop_ent = min_t(u32, stop_ent, aoa->max_entries_all_table);
+
+		/* If default gain table exceeds max_agc_gain, chain_phase needs to be
+		 * considered as 0. Remaining gain tables would have a phase delta
+		 * assigned with max agc gain as well
+		 */
+		max_agc_gain = ath12k_cfr_get_max_agc_gain(cfr, center_freq1, tbl_idx);
+		if (!tbl_idx && max_agc_gain != ATH12K_CFR_INVALID_AGC_GAIN &&
+		    params->agc_gain[chain] == max_agc_gain) {
+			phase_delta = 0;
+			params->chain_phase[chain] =
+				(aoa->ibf_cal_val[rf_chain] + phase_delta) & 0x3FF;
+			continue;
+		}
+
+		found = false;
+		for (grp_stp_idx = start_ent; grp_stp_idx < stop_ent; grp_stp_idx++) {
+			if (params->agc_gain[chain] <= gain_array[grp_stp_idx]) {
+				phase_delta = phase_array[grp_stp_idx];
+				found = true;
+				break;
+			}
+		}
+
+		if (!found)
+			phase_delta = 0;
+
+		if (phase_delta == ATH12K_CFR_INVALID_PHASE_DELTA)
+			params->chain_phase[chain] =
+				ATH12K_CFR_INVALID_PHASE_DELTA;
+		else
+			params->chain_phase[chain] =
+				(aoa->ibf_cal_val[rf_chain] + phase_delta) & 0x3FF;
+	}
+}
+
+static void
+ath12k_cfr_fill_rx_tlv_chain_phase_info(struct ath12k *ar,
+					struct ath12k_cfr_peer_tx_param *params,
+					u16 center_freq1)
+{
+	/* for enhanced aoa data supported target */
+	ath12k_cfr_populate_enh_chain_phase(ar, params, center_freq1);
 }
 
 static int ath12k_cfr_process_rx_tlv_ppdu(struct ath12k *ar,
@@ -999,6 +1146,8 @@ static int ath12k_cfr_process_rx_tlv_ppdu(struct ath12k *ar,
 	params.gi_type = cfr_info->gi_type;
 
 	ath12k_cfr_fill_rx_tlv_agc_info(cfr_info, &params);
+	ath12k_cfr_fill_rx_tlv_chain_phase_info(ar, &params, center_freq1);
+
 	for (i = 0; i < ARRAY_SIZE(ppdu_info->rssi_db_per_chain_pri20); i++) {
 		params.chain_rssi[i] =
 		ath12k_cfr_snr_to_signal_strength(ppdu_info->rssi_db_per_chain_pri20[i]);
