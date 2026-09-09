@@ -9,7 +9,7 @@
 
 #ifdef CPTCFG_ATHDEBUG
 #if !defined(CONFIG_DEBUG_MEM_USAGE)
-#if !defined(CONFIG_KERNEL_ATHMEMDEBUG) && defined(CONFIG_QCA_MINIDUMP)
+#if !defined(CPTCFG_MAC80211_ATHMEMDEBUG) && defined(CONFIG_QCA_MINIDUMP)
 #include "linux/ath_alloc_if.h"
 #endif
 #endif

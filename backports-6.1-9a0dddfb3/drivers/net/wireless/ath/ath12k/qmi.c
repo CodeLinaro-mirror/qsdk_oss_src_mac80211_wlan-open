@@ -4542,13 +4542,14 @@ static void ath12k_qmi_free_mlo_mem_chunk(struct ath12k_base *ab,
 			       mlo_chunk->paddr,
 			       DMA_ATTR_FORCE_CONTIGUOUS);
 #else
-		if (ab->mlo_mem_dev.rmem_inited)
+		if (ab->mlo_mem_dev.rmem_inited) {
 			dma_free_coherent(dev,
 					  mlo_chunk->size,
 					  mlo_chunk->v.ioaddr,
 					  mlo_chunk->paddr);
-		else
+		} else {
 			iounmap(mlo_chunk->v.ioaddr);
+		}
 #endif
 		mlo_chunk->v.ioaddr = NULL;
 	} else if (mlo_chunk->v.addr) {
