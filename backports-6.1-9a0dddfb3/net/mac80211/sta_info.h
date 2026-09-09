@@ -792,6 +792,7 @@ struct sta_info {
 
 #ifdef CPTCFG_MAC80211_DEBUGFS
 	struct dentry *debugfs_dir;
+	bool debugfs_full;
 #endif
 
 	struct codel_params cparams;
