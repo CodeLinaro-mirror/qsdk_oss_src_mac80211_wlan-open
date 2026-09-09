@@ -44,12 +44,15 @@
 
 #define DP_RXDMA_MON_STATUS_RING_SIZE(ab)	({ (void)(ab); 1024; })
 #define DP_RXDMA_MONITOR_DESC_RING_SIZE(ab)	({ (void)(ab); 4096; })
+#define DP_RXDMA_MON_RING_FILL_LVL(ab)	({ (void)(ab); 512;  })
 
 #else
 #define DP_RXDMA_MON_STATUS_RING_SIZE(ab)	ath12k_cfg_get(ab, \
 	ATH12K_INI_DP_RXDMA_MON_STATUS_RING_SIZE)
 #define DP_RXDMA_MONITOR_DESC_RING_SIZE(ab)	ath12k_cfg_get(ab, \
 	ATH12K_INI_DP_RXDMA_MONITOR_DESC_RING_SIZE)
+#define DP_RXDMA_MON_RING_FILL_LVL(ab)		ath12k_cfg_get(ab, \
+	ATH12K_INI_DP_MON_RING_FILL_LVL)
 #endif
 
 #define ATH12K_DP_MON_TX_BUF_SIZE	2048
@@ -84,7 +87,6 @@
 #define	ATH12K_DP_MON_KEYIV			0x20
 #define ATH12K_DP_MON_ETH_TYPE_VLAN_LEN		4
 #define ATH12K_DP_MON_ETH_TYPE_DOUBLE_VLAN_LEN	8
-#define DP_RXDMA_MONITOR_DEFAULT_RING_FILL_LVL 512
 
 #define ATH12K_DP_SMART_MON_FILTER_DEFAULT \
 	((ab)->mem_params.dp_params.smart_mon_filter_default)
@@ -356,6 +358,7 @@ struct ath12k_dp_mon {
 	u32 mon_buf_ring_size;
 	u32 mon_dst_ring_size;
 	u32 mon_num_ppdu_desc;
+	u32 mon_ring_fill_lvl;
 };
 
 enum dp_monitor_type {
@@ -1198,6 +1201,9 @@ void ath12k_dp_mon_add_rx_frag(struct sk_buff *skb, const void *mon_buf,
 			       int offset, int frag_len, bool take_frag_ref);
 int ath12k_dp_mon_get_puncture_type(u16 puncture_pattern, u8 bw);
 void ath12k_dp_mon_rx_process_low_thres(struct ath12k_dp *dp);
+void ath12k_dp_mon_rx_update_srng_low_thresh(struct ath12k_dp *dp,
+					     struct hal_srng_params *params,
+					     int num_entries);
 void
 ath12k_dp_mon_cnt_skb_and_frags(struct sk_buff *skb, u32 *skb_count, u32 *frag_count);
 void ath12k_dp_mon_pktlog_config_filter(struct ath12k_pdev_dp *dp_pdev,

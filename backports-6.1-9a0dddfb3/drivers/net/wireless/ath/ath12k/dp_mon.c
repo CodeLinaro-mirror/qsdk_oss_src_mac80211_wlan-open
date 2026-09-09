@@ -2160,7 +2160,7 @@ int ath12k_dp_mon_rx_buf_alloc(struct ath12k_dp *dp)
 	struct dp_rxdma_mon_ring *rx_ring;
 	size_t req_entries;
 	int num_entries, ret = -EINVAL;
-	size_t ring_lvl = DP_RXDMA_MONITOR_DEFAULT_RING_FILL_LVL;
+	size_t ring_lvl = dp_mon->mon_ring_fill_lvl;
 
 	rx_ring = &dp_mon->rxdma_mon_buf_ring;
 
@@ -2365,6 +2365,7 @@ void ath12k_dp_mon_cfg_init(struct ath12k_dp *dp)
 	dp_mon->mon_buf_ring_size = DP_RXDMA_MONITOR_BUF_RING_SIZE(ab);
 	dp_mon->mon_dst_ring_size = DP_RXDMA_MONITOR_DST_RING_SIZE(ab);
 	dp_mon->mon_num_ppdu_desc = DP_MON_NUM_PPDU_DESC(ab);
+	dp_mon->mon_ring_fill_lvl =  DP_RXDMA_MON_RING_FILL_LVL(ab);
 }
 EXPORT_SYMBOL(ath12k_dp_mon_cfg_init);
 
@@ -2871,7 +2872,7 @@ int ath12k_dp_mon_rx_monitor_mode_buf_setup(struct ath12k *ar)
 
 	/* Ensure monitor RX ring is fully replenished now that the monitor VAP
 	 * is being started. At boot we only partially filled the ring up to
-	 * DP_RXDMA_MONITOR_DEFAULT_RING_FILL_LVL entries if the ring is large;
+	 * dp_mon->mon_ring_fill_lvl entries if the ring is large;
 	 * here we replenish the remaining free entries so that the ring is full.
 	 */
 	if (rx_ring->bufs_fill_lvl < rx_ring->bufs_max) {
@@ -2902,6 +2903,21 @@ int ath12k_dp_mon_rx_monitor_mode_buf_setup(struct ath12k *ar)
 	return ret;
 }
 
+void ath12k_dp_mon_rx_update_srng_low_thresh(struct ath12k_dp *dp,
+					     struct hal_srng_params *params,
+					     int num_entries)
+{
+	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
+
+	if (unlikely(!dp_mon))
+		return;
+
+	if (num_entries > dp_mon->mon_ring_fill_lvl)
+		params->low_threshold = dp_mon->mon_ring_fill_lvl >> 1;
+	else
+		params->low_threshold = num_entries >> 1;
+}
+
 int ath12k_dp_mon_rx_monitor_mode_reset_buffers(struct ath12k *ar)
 {
 	struct ath12k_base *ab = ar->ab;
@@ -2909,7 +2925,7 @@ int ath12k_dp_mon_rx_monitor_mode_reset_buffers(struct ath12k *ar)
 	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
 	struct dp_rxdma_mon_ring *rx_ring;
 	struct hal_srng *srng;
-	u16 ring_lvl = DP_RXDMA_MONITOR_DEFAULT_RING_FILL_LVL;
+	u16 ring_lvl = dp_mon->mon_ring_fill_lvl;
 	int ret = 0;
 
 	if (unlikely(!dp_mon))
@@ -2918,13 +2934,13 @@ int ath12k_dp_mon_rx_monitor_mode_reset_buffers(struct ath12k *ar)
 	rx_ring = &dp_mon->rxdma_mon_buf_ring;
 	srng = &dp->hal->srng_list[rx_ring->refill_buf_ring.ring_id];
 
-	if (rx_ring->bufs_fill_lvl > DP_RXDMA_MONITOR_DEFAULT_RING_FILL_LVL) {
+	if (rx_ring->bufs_fill_lvl > dp_mon->mon_ring_fill_lvl) {
 		ret = ath12k_dp_mon_rx_set_low_threshold(dp, rx_ring, ring_lvl);
 		if (ret)
 			return ret;
 
 		spin_lock_bh(&srng->lock);
-		rx_ring->bufs_fill_lvl = DP_RXDMA_MONITOR_DEFAULT_RING_FILL_LVL;
+		rx_ring->bufs_fill_lvl = dp_mon->mon_ring_fill_lvl;
 		spin_unlock_bh(&srng->lock);
 	}
 

@@ -820,12 +820,8 @@ int ath12k_dp_srng_init(struct ath12k_base *ab, struct dp_srng *ring,
 		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_RX;
 		break;
 	case HAL_RXDMA_MONITOR_BUF:
-		if (ring->num_entries > DP_RXDMA_MONITOR_DEFAULT_RING_FILL_LVL) {
-			params.low_threshold =
-					DP_RXDMA_MONITOR_DEFAULT_RING_FILL_LVL >> 1;
-		} else {
-			params.low_threshold = ring->num_entries >> 1;
-		}
+		ath12k_dp_mon_rx_update_srng_low_thresh(ab->dp, &params,
+							ring->num_entries);
 		params.flags |= HAL_SRNG_FLAGS_LOW_THRESH_INTR_EN;
 		params.intr_batch_cntr_thres_entries = 0;
 		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_RX;
