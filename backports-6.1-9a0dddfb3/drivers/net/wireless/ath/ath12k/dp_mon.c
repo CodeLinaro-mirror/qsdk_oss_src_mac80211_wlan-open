@@ -2732,13 +2732,6 @@ int ath12k_dp_mon_pdev_rx_htt_srng_setup(struct ath12k_pdev_dp *dp_pdev,
 }
 EXPORT_SYMBOL(ath12k_dp_mon_pdev_rx_htt_srng_setup);
 
-void ath12k_dp_mon_pdev_rx_mpdu_list_init(struct ath12k_mon_data *pmon)
-{
-	INIT_LIST_HEAD(&pmon->dp_rx_mon_mpdu_list);
-	pmon->mon_mpdu = NULL;
-}
-EXPORT_SYMBOL(ath12k_dp_mon_pdev_rx_mpdu_list_init);
-
 void ath12k_dp_mon_pdev_rx_srng_cleanup(struct ath12k_pdev_dp *dp_pdev)
 {
 	struct ath12k_dp *dp = dp_pdev->dp;
@@ -2884,9 +2877,6 @@ void ath12k_dp_mon_pdev_rx_attach(struct ath12k_pdev_dp *dp_pdev)
 	mon_ops = ath12k_dp_mon_ops_get(dp_pdev->dp);
 	if (mon_ops && mon_ops->setup_mon_link_desc)
 		mon_ops->setup_mon_link_desc(dp_pdev);
-
-	if (mon_ops && mon_ops->mon_pdev_rx_mpdu_list_init)
-		mon_ops->mon_pdev_rx_mpdu_list_init(pmon);
 
 	INIT_LIST_HEAD(&dp_mon_pdev->mon_desc_used_list);
 

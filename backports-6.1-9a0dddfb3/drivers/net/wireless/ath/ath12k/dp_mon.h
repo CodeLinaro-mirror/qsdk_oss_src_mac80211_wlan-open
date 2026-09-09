@@ -239,7 +239,6 @@ struct ath12k_dp_arch_mon_ops {
 	void (*mon_pdev_rx_attach)(struct ath12k_pdev_dp *dp_pdev);
 	int (*setup_mon_link_desc)(struct ath12k_pdev_dp *dp_pdev);
 	void (*cleanup_mon_link_desc)(struct ath12k_pdev_dp *dp_pdev);
-	void (*mon_pdev_rx_mpdu_list_init)(struct ath12k_mon_data *pmon);
 	int (*mon_rx_srng_process)(struct ath12k_pdev_dp *dp_pdev, int mac_id,
 				      struct napi_struct *napi, int *budget);
 	int (*update_telemetry_stats)(struct ath12k_base *ab,
@@ -581,8 +580,6 @@ struct ath12k_pdev_mon_stats {
  *               Used for buffering monitor frames before mac80211 delivery
  * @mon_mpdu: Pointer to current MPDU being processed in monitor mode
  *            Contains frame data and metadata during active processing
- * @dp_rx_mon_mpdu_list: List of RX monitor MPDUs pending processing
- *                       Used for batching and efficient MPDU handling
  * @prot_status_info: TX monitor status information for protection frames
  *                    (RTS/CTS, Block ACK, etc.) containing timing and status data
  * @data_status_info: TX monitor status information for data frames containing
@@ -615,7 +612,6 @@ struct ath12k_mon_data {
 	spinlock_t mon_lock;
 	struct sk_buff_head rx_status_q;
 	struct dp_mon_mpdu *mon_mpdu;
-	struct list_head dp_rx_mon_mpdu_list;
 	struct hal_tx_mon_status_info prot_status_info;
 	struct hal_tx_mon_status_info data_status_info;
 	struct dp_mon_tx_ppdu_info prot_ppdu_info;
@@ -1174,7 +1170,6 @@ int ath12k_dp_mon_pdev_rx_htt_srng_setup(struct ath12k_pdev_dp *dp_pdev,
 					 u32 mac_id);
 void ath12k_dp_mon_pdev_rx_attach(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_mon_pdev_rx_detach(struct ath12k_pdev_dp *dp_pdev);
-void ath12k_dp_mon_pdev_rx_mpdu_list_init(struct ath12k_mon_data *pmon);
 void ath12k_dp_rx_mon_dest_process(struct ath12k *ar, int mac_id,
 				   u32 quota, struct napi_struct *napi);
 int ath12k_dp_mon_rx_set_pktlen(struct sk_buff *skb, u32 len);
