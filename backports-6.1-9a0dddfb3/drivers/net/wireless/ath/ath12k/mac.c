@@ -20640,7 +20640,7 @@ int ath12k_mac_op_start(struct ieee80211_hw *hw)
 	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
 	struct ath12k *ar;
 	struct ath12k_hw_group *ag = ath12k_ah_to_ag(ah);
-	int ret, i;
+	int ret, i, j;
 
 	if (ath12k_ftm_mode)
 		return -EPERM;
@@ -20698,7 +20698,31 @@ skip_state_check:
 
 			ar->ab->powerup_triggered = false;
 			ar->pdev_suspend = false;
-			ar->pdev_user_suspend = false;
+		}
+	}
+
+	/* Re-suspend any radio that was user-suspended before MLO ready.
+	 * This handles the case where a non-CUMAC chip is brought out of
+	 * bypass: the MLO-ready WMI above wakes CUMAC firmware, so we must
+	 * put it back into pdev suspend to honour the user's intent.
+	 */
+	for (i = 0; i < ag->num_hw; i++) {
+		ah = ag->ah[i];
+		if (!ah)
+			continue;
+
+		for_each_ar(ah, ar, j) {
+			ar = &ah->radio[j];
+			if (!ar || !ar->pdev_user_suspend ||
+			    (ar->pdev_user_suspend && ar->pdev_suspend))
+				continue;
+			ath12k_info(ar->ab, "Chip was in suspend state (%d) before restart. Suspend again!",
+				    ar->pdev_user_suspend);
+			ret = ath12k_core_wsi_remap_pdev_suspend(ar->ab);
+			if (ret)
+				ath12k_warn(ar->ab,
+					    "failed to re-suspend pdev %d after mlo ready: %d\n",
+					    ar->pdev_idx, ret);
 		}
 	}
 
