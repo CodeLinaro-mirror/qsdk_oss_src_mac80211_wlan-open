@@ -1365,24 +1365,6 @@ ath12k_dp_tx_mon_extract_buffer_info(struct ath12k_pdev_dp *dp_pdev,
 
 	INIT_LIST_HEAD(&mon_desc_used_list);
 
-	if (usr_idx >= HAL_MAX_UL_MU_USERS) {
-		ath12k_warn(dp_mon->dp->ab,
-			    "TX Mon: Invalid user index %u >= %u\n",
-			    usr_idx, HAL_MAX_UL_MU_USERS);
-		return -EINVAL;
-	}
-
-	mpdu_info = &tx_ppdu_info->tx_info.rx_status.mpdu_info[usr_idx];
-
-	if (!mpdu_info->mpdu_start_received) {
-		ath12k_dbg(dp_mon->dp->ab, ATH12K_DBG_DP_MON_TX,
-			   "TX Mon: Buffer without MPDU start for user %u\n",
-			   usr_idx);
-		return -EINVAL;
-	}
-
-	mpdu_q = &tx_ppdu_info->tx_info.rx_status.mpdu_q[usr_idx];
-
 	hal_info = &tx_ppdu_info->tx_info;
 	packet_info = &hal_info->packet_info;
 
@@ -1401,24 +1383,28 @@ ath12k_dp_tx_mon_extract_buffer_info(struct ath12k_pdev_dp *dp_pdev,
 		ath12k_warn(dp_mon->dp->ab,
 			    "TX Mon: Invalid magic value 0x%x for user %u\n",
 			    mon_desc->magic, usr_idx);
-		ret = -EINVAL;
-		goto return_mon_desc;
+		return -EINVAL;
 	}
 
 	if (unlikely(mon_desc->in_use != DP_MON_DESC_TO_HW)) {
 		ath12k_warn(dp_mon->dp->ab,
 			    "TX Mon: Invalid descriptor state %d for user %u\n",
 			    mon_desc->in_use, usr_idx);
+		return -EINVAL;
+	}
+
+	mon_desc->in_use = DP_MON_DESC_PACKET_REAP;
+	list_add_tail(&mon_desc->list, &mon_desc_used_list);
+
+	if (usr_idx >= HAL_MAX_UL_MU_USERS) {
+		ath12k_warn(dp_mon->dp->ab,
+			    "TX Mon: Invalid user index %u >= %u\n",
+			    usr_idx, HAL_MAX_UL_MU_USERS);
 		ret = -EINVAL;
 		goto return_mon_desc;
 	}
 
-	mon_desc->in_use = DP_MON_DESC_REPLENISH;
-	list_add_tail(&mon_desc->list, &mon_desc_used_list);
-	tx_ppdu_info->buffer_addr = mon_desc->mon_buf;
-	mon_desc->mon_buf = NULL;
-
-	if (!tx_ppdu_info->buffer_addr) {
+	if (!mon_desc->mon_buf) {
 		ret = -EINVAL;
 		goto return_mon_desc;
 	}
@@ -1428,9 +1414,19 @@ ath12k_dp_tx_mon_extract_buffer_info(struct ath12k_pdev_dp *dp_pdev,
 			    "TX Mon: Invalid DMA length %u for user %u\n",
 			    packet_info->dma_length, usr_idx);
 		ret = -EINVAL;
-		page_frag_free(tx_ppdu_info->buffer_addr);
 		goto return_mon_desc;
 	}
+
+	mpdu_info = &tx_ppdu_info->tx_info.rx_status.mpdu_info[usr_idx];
+	if (!mpdu_info->mpdu_start_received) {
+		ath12k_dbg(dp_mon->dp->ab, ATH12K_DBG_DP_MON_TX,
+			   "TX Mon: Buffer without MPDU start for user %u\n",
+			   usr_idx);
+		ret = -EINVAL;
+		goto return_mon_desc;
+	}
+
+	mpdu_q = &tx_ppdu_info->tx_info.rx_status.mpdu_q[usr_idx];
 
 	header_skb = skb_peek_tail(mpdu_q);
 	if (!header_skb) {
@@ -1438,13 +1434,11 @@ ath12k_dp_tx_mon_extract_buffer_info(struct ath12k_pdev_dp *dp_pdev,
 			    "TX Mon: No header SKB in queue for user %u\n",
 			    usr_idx);
 		ret = -EINVAL;
-		page_frag_free(tx_ppdu_info->buffer_addr);
 		goto return_mon_desc;
 	}
 
-	ath12k_core_dma_unmap_page(dp_mon->dp->dev, mon_desc->paddr,
-				   ATH12K_DP_MON_TX_BUF_SIZE,
-				   DMA_FROM_DEVICE);
+	tx_ppdu_info->buffer_addr = mon_desc->mon_buf;
+	mon_desc->mon_buf = NULL;
 
 	tx_ppdu_info->buffer_length = packet_info->dma_length;
 	tx_ppdu_info->msdu_continuation = packet_info->msdu_continuation;
@@ -1456,6 +1450,13 @@ ath12k_dp_tx_mon_extract_buffer_info(struct ath12k_pdev_dp *dp_pdev,
 	ATH12K_TX_MON_STAT_INC(dp_pdev, pkt_buf_processed);
 
 return_mon_desc:
+	ath12k_core_dma_unmap_page(dp_mon->dp->dev, mon_desc->paddr,
+				   ATH12K_DP_MON_TX_BUF_SIZE,
+				   DMA_FROM_DEVICE);
+	if (ret && mon_desc->mon_buf) {
+		page_frag_free(mon_desc->mon_buf);
+		mon_desc->mon_buf = NULL;
+	}
 
 	ath12k_dp_mon_tx_desc_free(dp_pdev, &mon_desc_used_list, dp_mon);
 	return ret;
@@ -3609,6 +3610,8 @@ void ath12k_dp_tx_mon_process_ppdu(struct work_struct *work)
 	struct ath12k_dp_mon_ppdu_desc *ppdu_desc;
 	struct ath12k_dp_mon_status_desc *status_desc;
 	struct ath12k_mon_data *mon_data;
+	struct ath12k_hal *hal;
+	bool pkt_buf_cnt_in_desc;
 	int desc_idx, ppdu_prep_failed = 0;
 	int ppdu_processed_cnt = 0, total_status_desc_cnt = 0;
 	struct ath12k_base *ab;
@@ -3631,6 +3634,9 @@ void ath12k_dp_tx_mon_process_ppdu(struct work_struct *work)
 	}
 
 	mon_data = &dp_mon_pdev->mon_data;
+
+	hal = &dp_pdev->dp->ab->hal;
+	pkt_buf_cnt_in_desc = ath12k_hal_mon_tx_pkt_buf_cnt_in_desc(hal);
 
 	spin_lock_bh(&dp_pdev_tx_mon->tx_mon_ppdu_desc_lock);
 	if (!dp_pdev_tx_mon->tx_mon_ppdu_desc_initialized) {
@@ -3684,11 +3690,11 @@ void ath12k_dp_tx_mon_process_ppdu(struct work_struct *work)
 						   DMA_FROM_DEVICE);
 
 			if (ppdu_prep_failed) {
-				page_frag_free(status_desc->mon_buf);
-				status_desc->mon_buf = NULL;
-				status_desc->paddr = 0;
-				status_desc->buf_len = 0;
-				status_desc->end_of_ppdu = false;
+				/* status desc is reset at
+				 * ath12k_dp_mon_reset_ppdu_desc()
+				 */
+				ath12k_dp_tx_mon_flush_tlv(dp_pdev, status_desc,
+							   pkt_buf_cnt_in_desc);
 				continue;
 			}
 
@@ -3704,11 +3710,8 @@ void ath12k_dp_tx_mon_process_ppdu(struct work_struct *work)
 			if (status_desc->end_of_ppdu)
 				ath12k_dp_tx_mon_deliver_ppdu(dp_pdev, mon_data);
 
+			/* status desc is reset at ath12k_dp_mon_reset_ppdu_desc() */
 			page_frag_free(status_desc->mon_buf);
-			status_desc->mon_buf = NULL;
-			status_desc->paddr = 0;
-			status_desc->buf_len = 0;
-			status_desc->end_of_ppdu = false;
 			total_status_desc_cnt++;
 			ATH12K_TX_MON_STAT_INC(dp_pdev, status_desc_processed);
 		}
