@@ -10,6 +10,8 @@
 #include "debugfs.h"
 #include "dp_peer.h"
 #include "ath12k_notif.h"
+#include "dp_mon.h"
+#include "dp_mon_filter.h"
 
 #define ATH12K_CFR_COMMON_NOISE_FLOOR  (-96)
 #define ATH12K_CFR_INVALID_SNR         0x80
@@ -1825,5 +1827,305 @@ int ath12k_cfr_init(struct ath12k_base *ab)
 
 deinit:
 	ath12k_cfr_deinit(ab);
+	return ret;
+}
+
+int
+ath12k_cfr_set_rcc_capture_mode(struct ath12k *ar,
+				enum qca_wlan_vendor_cfr_capture_type type,
+				bool enable)
+{
+	switch (type) {
+	case QCA_WLAN_VENDOR_CFR_TA_RA:
+		ar->cfr.rcc_param.m_ta_ra_filter = enable;
+		break;
+	case QCA_WLAN_VENDOR_CFR_DIRECT_NDPA_NDP:
+		ar->cfr.rcc_param.m_ndpa_ndp_directed = enable;
+		break;
+	case QCA_WLAN_VENDOR_CFR_NDPA_NDP_ALL:
+		ar->cfr.rcc_param.m_ndpa_ndp_all = enable;
+		break;
+	default:
+		ath12k_err(ar->ab, "Unknown RCC capture type %u",
+			   type);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+int
+ath12k_cfr_set_capture_duration(struct ath12k *ar, u32 duration)
+{
+	struct cfr_rcc_param *rcc = &ar->cfr.rcc_param;
+
+	if (duration > 0xffffff) {
+		ath12k_err(ar->ab,
+			   "Duration should not be greater than (16.8 sec) 0xFFFFFF");
+		return -EINVAL;
+	}
+
+	if (rcc->capture_interval &&
+	    duration > rcc->capture_interval) {
+		ath12k_err(ar->ab,
+			   "Capture duration is exceeding capture interval");
+		return -EINVAL;
+	}
+
+	rcc->capture_duration = duration;
+
+	return 0;
+}
+
+int
+ath12k_cfr_set_capture_interval(struct ath12k *ar, u32 interval)
+{
+	struct cfr_rcc_param *rcc = &ar->cfr.rcc_param;
+
+	if (interval > 0xffffff) {
+		ath12k_err(ar->ab,
+			   "Interval should not be greater than 16.8 sec) 0xFFFFFF");
+		return -EINVAL;
+	}
+
+	if (rcc->capture_duration > interval) {
+		ath12k_err(ar->ab,
+			   "Capture interval should be more than capture duration");
+		return -EINVAL;
+	}
+
+	rcc->capture_interval = interval;
+	return 0;
+}
+
+int
+ath12k_cfr_set_freeze_tlv_delay_cnt(struct ath12k *ar, u32 val)
+{
+	struct cfr_rcc_param *rcc = &ar->cfr.rcc_param;
+
+	if (val > 0xff) {
+		ath12k_err(ar->ab,
+			   "Invalid freeze tlv delay (allowed 0x0 - 0xff");
+		return -EINVAL;
+	}
+	rcc->freeze_tlv_delay_cnt_thr = val;
+	if (rcc->freeze_tlv_delay_cnt_thr)
+		rcc->freeze_tlv_delay_cnt_en = 1;
+	else
+		rcc->freeze_tlv_delay_cnt_en = 0;
+
+	return 0;
+}
+
+int
+ath12k_cfr_set_capture_count(struct ath12k *ar, u16 val)
+{
+	struct cfr_rcc_param *rcc = &ar->cfr.rcc_param;
+
+	if (!test_bit(WMI_SERVICE_CFR_CAPTURE_COUNT_SUPPORT,
+		      ar->ab->wmi_ab.svc_map)) {
+		ath12k_err(ar->ab,
+			   "Capture count support not enabled");
+		return -EOPNOTSUPP;
+	}
+
+	if (val > 0xFFFF) {
+		ath12k_err(ar->ab,
+			   "Invalid value: count must be <= 0xFFFF");
+		return -EINVAL;
+	}
+
+	rcc->capture_count = val;
+
+	return 0;
+}
+
+int
+ath12k_cfr_set_enable_bitmap(struct ath12k *ar, u32 val)
+{
+	struct cfr_rcc_param *rcc = &ar->cfr.rcc_param;
+
+	if (val > 0xffff) {
+		ath12k_err(ar->ab,
+			   "group bitmap should be in between 0 to 0xFFFF");
+		return -EINVAL;
+	}
+
+	rcc->filter_group_bitmap = val;
+
+	return 0;
+}
+
+void
+ath12k_cfr_set_ul_mu_mask(struct ath12k *ar, u64 val)
+{
+	struct cfr_rcc_param *rcc = &ar->cfr.rcc_param;
+
+	rcc->ul_mu_user_mask_lower = lower_32_bits(val);
+	rcc->ul_mu_user_mask_upper = upper_32_bits(val);
+}
+
+void
+ath12k_cfr_set_tara_group_params(struct ath12k *ar, struct cfr_rcc_param *param)
+{
+	struct cfr_rcc_param *rcc = &ar->cfr.rcc_param;
+
+	for (int i = 0; i < MAX_TA_RA_ENTRIES; i++) {
+		if (BIT(i) & param->modified_in_curr_session)
+			memcpy(&rcc->curr[i], &param->curr[i],
+			       sizeof(struct ta_ra_cfr_cfg));
+	}
+	rcc->modified_in_curr_session = param->modified_in_curr_session;
+	rcc->num_grp_tlvs = param->num_grp_tlvs;
+}
+
+/*
+ * commit: serialize all staged rcc_param state and send one WMI command.
+ * Clears modified_groups on success.
+ */
+int ath12k_peer_cfr_rcc_commit(struct ath12k *ar)
+{
+	bool rcc_enabled = false;
+	struct ath12k_base *ab = ar->ab;
+	struct cfr_rcc_param rcc_param;
+	int ret;
+	u8 rcc_type = 0;
+
+	/* check if target supports rcc via service bit, if not reject the
+	 * command
+	 */
+	if (!test_bit(WMI_SERVICE_CFR_CAPTURE_FILTER_SUPPORT, ab->wmi_ab.svc_map)) {
+		ath12k_err(ab, "RCC filter support not enabled on this target");
+		return -EINVAL;
+	}
+
+	spin_lock_bh(&ar->cfr.lock);
+
+	if (ar->cfr.cfr_enabled) {
+		ath12k_err(ar->ab,
+			   "Can't control RCC as Periodic CFR enabled on the radio");
+		spin_unlock_bh(&ar->cfr.lock);
+		return -EINVAL;
+	}
+
+	if (ar->cfr.rcc_param.m_directed_ftm)
+		rcc_type |= DP_MON_RCC_TYPE_M_DIRECTED_FTM;
+	if (ar->cfr.rcc_param.m_all_ftm_ack)
+		rcc_type |= DP_MON_RCC_TYPE_M_ALL_FTM_ACK;
+	if (ar->cfr.rcc_param.m_ndpa_ndp_directed)
+		rcc_type |= DP_MON_RCC_TYPE_M_NDPA_NDP_DIRECTED;
+	if (ar->cfr.rcc_param.m_ndpa_ndp_all)
+		rcc_type |= DP_MON_RCC_TYPE_M_NDPA_NDP_ALL;
+	if (ar->cfr.rcc_param.m_ta_ra_filter)
+		rcc_type |= DP_MON_RCC_TYPE_M_TA_RA_FILTER;
+	if (ar->cfr.rcc_param.m_all_packet)
+		rcc_type |= DP_MON_RCC_TYPE_M_ALL_PACKET;
+
+	if (rcc_type)
+		rcc_enabled = true;
+
+	/* check if any of the filter type is enabled in rcc_param
+	 * if enabled: register the rx ppdu completion event notifier.
+	 * populate the filter values and configure the monitor status ring
+	 * as per the cfr capture type. Before configuring the ring, start
+	 * lut age timer if already dp not started with cfr
+	 * if none-enabled: the rx ppdu completion event notifier.
+	 * stop the age timer if dp had cfr enabled before. then reset
+	 * the filter setting of the mon status ring
+	 */
+	if (rcc_enabled) {
+		/* check if dp cfr is disabled, then start the lut age timer
+		 */
+		if (!ath12k_dp_mon_get_cfr_rcc_filter_valid(ar)) {
+			ar->cfr.lut_age_timer_init = true;
+			mod_timer(&ar->cfr.lut_age_timer,
+				  jiffies + msecs_to_jiffies(ATH12K_CFR_LUT_AGE_TIMER));
+		}
+
+		/* subscribe the PPDU rx notifier */
+		spin_unlock_bh(&ar->cfr.lock);
+		ret = ath12k_cfr_register_ppdu_rx_notifier(ar);
+		if (ret) {
+			ath12k_err(ab, "Failed to register ppdu rx notifier");
+			return ret;
+		}
+
+		/* update the DP monitor filter as per the current CFR session */
+		ath12k_dp_mon_cfr_rcc_config(ar, true, rcc_type);
+		ret = ath12k_dp_mon_rx_update_filter(ar);
+		if (ret) {
+			ath12k_err(ab, "RCC Enable: Failed to update dp mon rx filter");
+			return ret;
+		}
+		spin_lock_bh(&ar->cfr.lock);
+	} else {
+		/* If dp cfr enabled, stop the lut age timer */
+		if (ath12k_dp_mon_get_cfr_rcc_filter_valid(ar)) {
+			ar->cfr.lut_age_timer_init = false;
+			/* release lock to avoid deadlock from already running timer
+			 * handler and timer_delete_sync
+			 */
+			spin_unlock_bh(&ar->cfr.lock);
+			timer_delete_sync(&ar->cfr.lut_age_timer);
+			spin_lock_bh(&ar->cfr.lock);
+		}
+
+		/* disable the cfr filter */
+		spin_unlock_bh(&ar->cfr.lock);
+		ath12k_dp_mon_cfr_rcc_config(ar, false, rcc_type);
+		ret = ath12k_dp_mon_rx_update_filter(ar);
+		if (ret) {
+			ath12k_err(ab, "RCC Disable: Failed to update the mon rx filter");
+			return ret;
+		}
+
+		/* unsubscribe the ppdu rx notifier */
+		ret = ath12k_cfr_unregister_ppdu_rx_notifier(ar);
+		if (ret) {
+			ath12k_err(ab, "Failed to unregister ppdu rx notifier");
+			return ret;
+		}
+		spin_lock_bh(&ar->cfr.lock);
+	}
+
+	/* save the rcc params locally and release the cfr lock temporarily
+	 * to send wmi command
+	 */
+	rcc_param = ar->cfr.rcc_param;
+	spin_unlock_bh(&ar->cfr.lock);
+	/* send the wmi command to fw */
+	ret = ath12k_wmi_send_cfr_rcc_cmd(ar, &rcc_param);
+	/* re-qcquire the cfr lock post sending wmi command */
+	spin_lock_bh(&ar->cfr.lock);
+	/* If wmi send passed, then save the configurations to global and reset
+	 * curr to default state for next commit session.
+	 */
+	if (!ret) {
+		ath12k_peer_cfr_update_global_cfg(ar);
+
+		/* Bring curr cfg to default state for next commit session.
+		 * Leave the common parameters as it is as they are non-group
+		 * parameters and can be retained across commit sessions.
+		 */
+		ath12k_peer_cfr_default_ta_ra_config(&ar->cfr.rcc_param,
+						     false, MAX_RESET_CFG_ENTRY);
+		if (rcc_enabled)
+			ar->cfr.rcc_enabled = true;
+		else
+			ar->cfr.rcc_enabled = false;
+	} else {
+		/* If fail to send WMI command, which usually should not happen,
+		 * leave the state of timer, mon ring, ppdu notifier as it is.
+		 */
+		ath12k_err(ab, "Failed to send RCC WMI command to target");
+	}
+
+	/* reset modified_in_current_session, num_grp_tlvs to 0 (despite of
+	 * wmi status)
+	 */
+	ar->cfr.rcc_param.num_grp_tlvs = 0;
+	ar->cfr.rcc_param.modified_in_curr_session = 0;
+	spin_unlock_bh(&ar->cfr.lock);
+
 	return ret;
 }

@@ -904,6 +904,33 @@ void
 ath12k_wmi_cfr_handle_aoa_data(struct ath12k *ar,
 			       struct ath12k_wmi_enhanced_aoa_phasedelta_parse *parse);
 
+int
+ath12k_cfr_set_rcc_capture_mode(struct ath12k *ar,
+				enum qca_wlan_vendor_cfr_capture_type type,
+				bool enable);
+
+int
+ath12k_cfr_set_capture_duration(struct ath12k *ar, u32 duration);
+
+int
+ath12k_cfr_set_capture_interval(struct ath12k *ar, u32 interval);
+
+int
+ath12k_cfr_set_freeze_tlv_delay_cnt(struct ath12k *ar, u32 val);
+
+int
+ath12k_cfr_set_capture_count(struct ath12k *ar, u16 val);
+
+int
+ath12k_cfr_set_enable_bitmap(struct ath12k *ar, u32 val);
+
+void
+ath12k_cfr_set_ul_mu_mask(struct ath12k *ar, u64 val);
+
+void
+ath12k_cfr_set_tara_group_params(struct ath12k *ar, struct cfr_rcc_param *param);
+
+int ath12k_peer_cfr_rcc_commit(struct ath12k *ar);
 #else
 static inline int ath12k_cfr_init(struct ath12k_base *ab)
 {

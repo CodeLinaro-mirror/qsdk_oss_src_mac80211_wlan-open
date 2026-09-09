@@ -1134,6 +1134,323 @@ ath12k_vendor_set_cfr_enabled(struct ath12k *ar, bool enable)
 	return ret;
 }
 
+static inline int
+ath12k_cfr_populate_group_params(struct ath12k *ar,
+				 struct ta_ra_cfr_cfg *cfg,
+				 struct nlattr **tb)
+{
+	if (tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_GROUP_TA]) {
+		ether_addr_copy
+			(cfg->ta_addr,
+			 nla_data(tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_GROUP_TA]));
+		cfg->valid_ta = true;
+	}
+	if (tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_GROUP_TA_MASK]) {
+		ether_addr_copy
+			(cfg->ta_addr_mask,
+			 nla_data(tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_GROUP_TA_MASK]));
+		cfg->valid_ta_mask = true;
+	}
+	if (tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_GROUP_RA]) {
+		ether_addr_copy
+			(cfg->ra_addr,
+			 nla_data(tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_GROUP_RA]));
+		cfg->valid_ra = true;
+	}
+	if (tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_GROUP_RA_MASK]) {
+		ether_addr_copy
+			(cfg->ra_addr_mask,
+			 nla_data(tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_GROUP_RA_MASK]));
+		cfg->valid_ra_mask = true;
+	}
+	if (tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_GROUP_BW]) {
+		u32 bw = nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_GROUP_BW]);
+
+		if (bw <= 0x3f) {
+			cfg->bw = bw;
+			cfg->valid_bw_mask = true;
+		} else {
+			ath12k_err(ar->ab, "Invalid BW configured");
+			return -EINVAL;
+		}
+	}
+	if (tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_GROUP_NSS]) {
+		u32 nss = nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_GROUP_NSS]);
+
+		if (nss <= 255) {
+			cfg->nss = nss;
+			cfg->valid_nss_mask = true;
+		} else {
+			ath12k_err(ar->ab, "Invalid NSS configured");
+			return -EINVAL;
+		}
+	}
+	if (tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_GROUP_MGMT_FILTER]) {
+		u32 mgmt_subtype_filter =
+			nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_GROUP_MGMT_FILTER]);
+
+		if (mgmt_subtype_filter <= 0xFFFF) {
+			cfg->mgmt_subtype_filter = mgmt_subtype_filter;
+			cfg->valid_mgmt_subtype = true;
+		} else {
+			ath12k_err(ar->ab, "Invalid mgmt_subtype_filter configured");
+			return -EINVAL;
+		}
+	}
+	if (tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_GROUP_CTRL_FILTER]) {
+		u32 ctrl_subtype_filter =
+			nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_GROUP_CTRL_FILTER]);
+
+		if (ctrl_subtype_filter <= 0xFFFF) {
+			cfg->ctrl_subtype_filter = ctrl_subtype_filter;
+			cfg->valid_ctrl_subtype = true;
+		} else {
+			ath12k_err(ar->ab, "Invalid ctrl_subtype_filter configured");
+			return -EINVAL;
+		}
+	}
+	if (tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_GROUP_DATA_FILTER]) {
+		u32 data_subtype_filter =
+			nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_GROUP_DATA_FILTER]);
+
+		if (data_subtype_filter <= 0xFFFF) {
+			cfg->data_subtype_filter = data_subtype_filter;
+			cfg->valid_data_subtype = true;
+		} else {
+			ath12k_err(ar->ab, "Invalid data_subtype_filter configured");
+			return -EINVAL;
+		}
+	}
+
+	return 0;
+}
+
+static int
+ath12k_cfr_rcc_group_handler(struct ath12k *ar, struct nlattr **tb)
+{
+	struct cfr_rcc_param rcc = { 0 };
+	struct nlattr *group_entry;
+	int rem, ret;
+
+	if (!tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_GROUP_TABLE])
+		return -EINVAL;
+
+	nla_for_each_nested(group_entry,
+			    tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_GROUP_TABLE],
+			    rem) {
+		struct nlattr *etb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_MAX + 1];
+		struct ta_ra_cfr_cfg *cfg;
+		u32 group_id;
+
+		ret = nla_parse_nested(etb, QCA_WLAN_VENDOR_ATTR_PEER_CFR_MAX,
+				       group_entry, ath12k_peer_cfr_policy,
+				       NULL);
+		if (ret) {
+			ath12k_err(ar->ab,
+				   "Failed to parse cfr group table entry");
+			return ret;
+		}
+
+		if (!etb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_GROUP_NUMBER]) {
+			ath12k_err(ar->ab,
+				   "group id attribute not present in group table");
+			return -EINVAL;
+		}
+		group_id = nla_get_u32(etb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_GROUP_NUMBER]);
+
+		if (group_id >= MAX_TA_RA_ENTRIES) {
+			ath12k_err(ar->ab, "Invalid group id");
+			return -EINVAL;
+		}
+
+		cfg = &rcc.curr[group_id];
+
+		cfg->filter_group_id = group_id;
+		if (ath12k_cfr_populate_group_params(ar, cfg, etb)) {
+			ath12k_err(ar->ab,
+				   "Invalid group params restore all groups to default");
+			return -EINVAL;
+		}
+		set_bit(group_id, &rcc.modified_in_curr_session);
+	}
+
+	rcc.num_grp_tlvs =
+		hweight_long(rcc.modified_in_curr_session);
+
+	ath12k_cfr_set_tara_group_params(ar, &rcc);
+
+	return 0;
+}
+
+/* must be cllaed with cfr lock held. This function checks if any of the RCC
+ * common parameters are requested to be updated and returns 1 if no changes
+ * to common params requested, error code on failure and 0 on success
+ */
+static int
+ath12k_cfr_rcc_parse_update_common_params(struct ath12k *ar, struct nlattr **tb)
+{
+	struct cfr_rcc_param *rcc = &ar->cfr.rcc_param;
+	int ret = 0;
+
+	/* Return 1 if none of the parameters changed. Extend this check when
+	 * new common parameters added.
+	 */
+	if (!tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_DURATION] &&
+	    !tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_INTERVAL] &&
+	    !tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_FREEZE_TLV_DELAY_COUNT] &&
+	    !tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_CAPTURE_COUNT] &&
+	    !tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_ENABLE_GROUP_BITMAP] &&
+	    !tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_TARA_FILTER_AS_FP] &&
+	    !tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_CAPTURE_INTERVALMODE_SEL] &&
+	    !tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_UL_MU_MASK])
+		return 1;
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_DURATION]) {
+		u32 duration =
+			nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_DURATION]);
+
+		ret = ath12k_cfr_set_capture_duration(ar, duration);
+		if (ret)
+			return ret;
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_INTERVAL]) {
+		u32 interval =
+			nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_INTERVAL]);
+
+		ret = ath12k_cfr_set_capture_interval(ar, interval);
+		if (ret)
+			return ret;
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_FREEZE_TLV_DELAY_COUNT]) {
+		u32 val = nla_get_u32
+			(tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_FREEZE_TLV_DELAY_COUNT]);
+
+		ret = ath12k_cfr_set_freeze_tlv_delay_cnt(ar, val);
+		if (ret)
+			return ret;
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_CAPTURE_COUNT]) {
+		u16 count =
+			nla_get_u16(tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_CAPTURE_COUNT]);
+
+		ret = ath12k_cfr_set_capture_count(ar, count);
+		if (ret)
+			return ret;
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_ENABLE_GROUP_BITMAP]) {
+		u32 val = nla_get_u32
+			(tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_ENABLE_GROUP_BITMAP]);
+
+		ret = ath12k_cfr_set_enable_bitmap(ar, val);
+		if (ret)
+			return ret;
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_TARA_FILTER_AS_FP]) {
+		if (!test_bit(WMI_SERVICE_CFR_TA_RA_AS_FP_SUPPORT,
+			      ar->ab->wmi_ab.svc_map)) {
+			ath12k_err(ar->ab,
+				   "MO marking support not available to filter as FP");
+			return -EOPNOTSUPP;
+		}
+		rcc->en_ta_ra_filter_in_as_fp = 1;
+	} else {
+		rcc->en_ta_ra_filter_in_as_fp = 0;
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_CAPTURE_INTERVALMODE_SEL])
+		rcc->capture_intval_mode_sel = 1;
+	else
+		rcc->capture_intval_mode_sel = 0;
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_UL_MU_MASK]) {
+		u64 ul_mu_mask =
+			nla_get_u64(tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_UL_MU_MASK]);
+
+		ath12k_cfr_set_ul_mu_mask(ar, ul_mu_mask);
+	}
+
+	return 0;
+}
+
+static int ath12k_cfr_handle_rcc(struct ath12k *ar, struct nlattr **tb)
+{
+	enum qca_wlan_vendor_cfr_capture_type capture_type;
+	int ret = 0;
+	bool enable = false;
+
+	spin_lock_bh(&ar->cfr.lock);
+	if (ar->cfr.cfr_enabled) {
+		ath12k_err(ar->ab,
+			   "Can't control RCC as Periodic CFR enabled on the radio");
+		ret = -EINVAL;
+		goto unlock;
+	}
+
+	enable = !!tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_ENABLE];
+
+	/* If command is to enable particular capture type, just set it and return */
+	if (tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_CAPTURE_TYPE]) {
+		capture_type =
+			nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_CAPTURE_TYPE]);
+
+		switch (capture_type) {
+		case QCA_WLAN_VENDOR_CFR_TA_RA:
+		case QCA_WLAN_VENDOR_CFR_DIRECT_NDPA_NDP:
+		case QCA_WLAN_VENDOR_CFR_NDPA_NDP_ALL:
+			ret = ath12k_cfr_set_rcc_capture_mode(ar, capture_type, enable);
+			goto unlock;
+		default:
+			ath12k_err(ar->ab, "Unknown RCC capture type %u",
+				   capture_type);
+			ret = -EINVAL;
+			goto unlock;
+		}
+	}
+
+	/* If command is to configure common parameters like capture count,
+	 * capture interval, capture duration etc, parse and update.
+	 */
+	ret = ath12k_cfr_rcc_parse_update_common_params(ar, tb);
+	if (ret < 0) {
+		ath12k_err(ar->ab,
+			   "Fail to parse common params");
+		goto unlock;
+	} else if (!ret) {
+		/* successfully updated common params */
+		goto unlock;
+	}
+
+	/* If command is to configure tara parameters, perform same and return.
+	 * Driver expects another invocation of this handler to commit the
+	 * session to firmware,
+	 */
+	if (tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_GROUP_TABLE]) {
+		ret = ath12k_cfr_rcc_group_handler(ar, tb);
+		if (ret)
+			ath12k_err(ar->ab, "Failed to parse tara group configs");
+		goto unlock;
+	}
+
+	spin_unlock_bh(&ar->cfr.lock);
+
+	/* We reached here means, the command is to commit the current configuration
+	 * to firmware.
+	 */
+	ret = ath12k_peer_cfr_rcc_commit(ar);
+	if (ret)
+		ath12k_err(ar->ab, "Failed commit the RCC config");
+
+	return ret;
+unlock:
+	spin_unlock_bh(&ar->cfr.lock);
+	return ret;
+}
+
 static int ath12k_vendor_peer_cfr_handler(struct wiphy *wiphy,
 					  struct wireless_dev *wdev,
 					  const void *data,
@@ -1218,6 +1535,14 @@ static int ath12k_vendor_peer_cfr_handler(struct wiphy *wiphy,
 	version = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_VERSION]);
 
 	if (version == 1) {
+		spin_lock_bh(&ar->cfr.lock);
+		if (ar->cfr.rcc_enabled) {
+			ath12k_err(ar->ab,
+				   "Can't control periodic CFR when RCC is enabled");
+			spin_unlock_bh(&ar->cfr.lock);
+			return -EINVAL;
+		}
+		spin_unlock_bh(&ar->cfr.lock);
 		/* NL command received to disable timer at target */
 		if (!tb[QCA_WLAN_VENDOR_ATTR_PERIODIC_CFR_CAPTURE_ENABLE]) {
 			if (!ar->cfr.cfr_enabled)
@@ -1240,6 +1565,9 @@ static int ath12k_vendor_peer_cfr_handler(struct wiphy *wiphy,
 
 		return 0;
 	}
+
+	if (version == 2)
+		return ath12k_cfr_handle_rcc(ar, tb);
 
 	return -EOPNOTSUPP;
 }
