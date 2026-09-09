@@ -420,21 +420,20 @@ ath12k_dbg_sta_open_htt_peer_stats(struct inode *inode, struct file *file)
 	int type;
 	int ret;
 
-	wiphy_lock(ah->hw->wiphy);
 	mutex_lock(&ah->hw_mutex);
 
 	if (!(BIT(link_id) & ahsta->links_map)) {
-		mutex_unlock(&ah->hw_mutex);
-		wiphy_unlock(ah->hw->wiphy);
-		return -ENOENT;
+		ret = -ENOENT;
+		goto err_unlock;
 	}
 
-	arsta = ahsta->link[link_id];
+	rcu_read_lock();
+	arsta = wiphy_dereference(ah->hw->wiphy, ahsta->link[link_id]);
 
 	if (!arsta || !arsta->arvif->ar) {
-		mutex_unlock(&ah->hw_mutex);
-		wiphy_unlock(ah->hw->wiphy);
-		return -ENOENT;
+		ret = -ENOENT;
+		rcu_read_unlock();
+		goto err_unlock;
 	}
 
 	ar = arsta->arvif->ar;
@@ -443,16 +442,17 @@ ath12k_dbg_sta_open_htt_peer_stats(struct inode *inode, struct file *file)
 	if ((type != ATH12K_DBG_HTT_EXT_STATS_PEER_INFO &&
 	     type != ATH12K_DBG_HTT_EXT_PEER_CTRL_PATH_TXRX_STATS) ||
 	     type == ATH12K_DBG_HTT_EXT_STATS_RESET) {
-		mutex_unlock(&ah->hw_mutex);
-		wiphy_unlock(ah->hw->wiphy);
-		return -EPERM;
+		ret = -EPERM;
+		rcu_read_unlock();
+		goto err_unlock;
 	}
+
+	rcu_read_unlock();
 
 	stats_req = vzalloc(sizeof(*stats_req) + ATH12K_HTT_STATS_BUF_SIZE);
 	if (!stats_req) {
-		mutex_unlock(&ah->hw_mutex);
-		wiphy_unlock(ah->hw->wiphy);
 		return -ENOMEM;
+		goto err_unlock;
 	}
 
 	ar->debug.htt_stats.stats_req = stats_req;
@@ -463,14 +463,16 @@ ath12k_dbg_sta_open_htt_peer_stats(struct inode *inode, struct file *file)
 		goto out;
 
 	file->private_data = stats_req;
+	ar->debug.htt_stats.type = ATH12K_DBG_HTT_EXT_STATS_RESET;
 	mutex_unlock(&ah->hw_mutex);
-	wiphy_unlock(ah->hw->wiphy);
 	return 0;
 out:
 	vfree(stats_req);
 	ar->debug.htt_stats.stats_req = NULL;
+err_unlock:
+	if (ar)
+		ar->debug.htt_stats.type = ATH12K_DBG_HTT_EXT_STATS_RESET;
 	mutex_unlock(&ah->hw_mutex);
-	wiphy_unlock(ah->hw->wiphy);
 	return ret;
 }
 
@@ -485,28 +487,27 @@ ath12k_dbg_sta_release_htt_peer_stats(struct inode *inode, struct file *file)
 	struct ath12k_link_sta *arsta;
 	struct ath12k *ar;
 
-	wiphy_lock(ah->hw->wiphy);
 	mutex_lock(&ah->hw_mutex);
 
 	if (!(BIT(link_id) & ahsta->links_map)) {
 		mutex_unlock(&ah->hw_mutex);
-		wiphy_unlock(ah->hw->wiphy);
 		return -ENOENT;
 	}
 
-	arsta = ahsta->link[link_id];
+	rcu_read_lock();
+	arsta = wiphy_dereference(ah->hw->wiphy, ahsta->link[link_id]);
 
 	if (!arsta || !arsta->arvif->ar) {
+		rcu_read_unlock();
 		mutex_unlock(&ah->hw_mutex);
-		wiphy_unlock(ah->hw->wiphy);
 		return -ENOENT;
 	}
 
 	ar = arsta->arvif->ar;
+	rcu_read_unlock();
 	vfree(file->private_data);
 	ar->debug.htt_stats.stats_req = NULL;
 	mutex_unlock(&ah->hw_mutex);
-	wiphy_unlock(ah->hw->wiphy);
 
 	return 0;
 }
@@ -1167,24 +1168,24 @@ ath12k_write_htt_peer_stats_reset(struct file *file,
 	if (!type)
 		return ret;
 
-	wiphy_lock(ah->hw->wiphy);
 	mutex_lock(&ah->hw_mutex);
 
 	if (!(BIT(link_id) & ahsta->links_map)) {
 		mutex_unlock(&ah->hw_mutex);
-		wiphy_unlock(ah->hw->wiphy);
 		return -ENOENT;
 	}
 
-	arsta = ahsta->link[link_id];
+	rcu_read_lock();
+	arsta = wiphy_dereference(ah->hw->wiphy, ahsta->link[link_id]);
 
 	if (!arsta || !arsta->arvif->ar) {
+		rcu_read_unlock();
 		mutex_unlock(&ah->hw_mutex);
-		wiphy_unlock(ah->hw->wiphy);
 		return -ENOENT;
 	}
 
 	ar = arsta->arvif->ar;
+	rcu_read_unlock();
 
 	cfg_params.cfg0 = HTT_STAT_PEER_INFO_MAC_ADDR;
 	cfg_params.cfg0 |= FIELD_PREP(GENMASK(15, 1),
@@ -1209,12 +1210,10 @@ ath12k_write_htt_peer_stats_reset(struct file *file,
 	if (ret) {
 		ath12k_warn(ar->ab, "failed to send htt peer stats request: %d\n", ret);
 		mutex_unlock(&ah->hw_mutex);
-		wiphy_unlock(ah->hw->wiphy);
 		return ret;
 	}
 
 	mutex_unlock(&ah->hw_mutex);
-	wiphy_unlock(ah->hw->wiphy);
 
 	ret = count;
 
