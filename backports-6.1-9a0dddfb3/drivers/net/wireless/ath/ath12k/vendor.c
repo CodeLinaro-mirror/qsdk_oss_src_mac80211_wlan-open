@@ -13900,6 +13900,9 @@ ath12k_vendor_validate_cs_time_chandef(struct wiphy *wiphy,
 	chandef->chan = channel;
 	chandef->width = ath12k_vendor_bandwidth_to_chan_width(bandwidth_attr);
 
+	if (center_freq2 && chandef->width != NL80211_CHAN_WIDTH_80P80)
+		return -EINVAL;
+
 	switch (chandef->width) {
 	case NL80211_CHAN_WIDTH_20_NOHT:
 	case NL80211_CHAN_WIDTH_20:
