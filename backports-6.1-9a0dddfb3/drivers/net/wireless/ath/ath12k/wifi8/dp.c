@@ -754,6 +754,9 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 		goto fail_pool_destroy;
 	}
 
+	ath12k_wifi8_hal_umcmn_ts_cfg(ab, HAL_TX_TS_RESOLUTION_US_1,
+				      HAL_TX_LATENCY_RESOLUTION_US_128);
+
 	ret = ath12k_wifi8_dp_telemetry_init(dp);
 	if (ret) {
 		ath12k_warn(ab, "dp telemetry init failed %d\n", ret);
