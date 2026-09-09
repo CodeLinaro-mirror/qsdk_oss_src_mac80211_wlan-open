@@ -543,10 +543,14 @@ out:
 	return ret;
 }
 
-void ath12k_thermal_event_temperature(struct ath12k *ar, int temperature)
+void ath12k_thermal_event_temperature(struct ath12k *ar, int temperature,
+				      bool rfa_temp_valid, int rfa_temperature)
 {
 	spin_lock_bh(&ar->data_lock);
 	ar->thermal.temperature = temperature;
+	ar->thermal.rfa_temp_valid = rfa_temp_valid;
+	if (rfa_temp_valid)
+		ar->thermal.rfa_temperature = rfa_temperature;
 	spin_unlock_bh(&ar->data_lock);
 	complete(&ar->thermal.wmi_sync);
 }
