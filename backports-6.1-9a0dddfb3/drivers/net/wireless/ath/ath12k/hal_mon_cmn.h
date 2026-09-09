@@ -569,6 +569,7 @@ struct hal_rx_user_status {
 	u32 errmap;
 	u32 mpdu_retry;
 	u8 filter_category;
+	u8 ra_based_monitor_direct;
 	u8 enc_type;
 	u16 retried_msdu_count;
 	u16 start_seq;
