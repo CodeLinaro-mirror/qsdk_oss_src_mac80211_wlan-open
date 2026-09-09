@@ -2846,6 +2846,17 @@ void ath12k_dp_peer_iterate_by_vif(struct ath12k_dp_hw *dp_hw,
 }
 EXPORT_SYMBOL(ath12k_dp_peer_iterate_by_vif);
 
+void ath12k_dp_peer_free(struct ath12k_dp_peer *dp_peer)
+{
+	if (dp_peer->qos && dp_peer->qos->telemetry_peer_ctx)
+		ath12k_telemetry_peer_ctx_free(dp_peer->qos->telemetry_peer_ctx);
+
+	kfree(dp_peer->qos);
+	ath12k_dp_peer_stats_free(dp_peer);
+	kfree(dp_peer);
+}
+EXPORT_SYMBOL(ath12k_dp_peer_free);
+
 struct ath12k_mac_cleanup_ctx {
 	struct ath12k    *ar;
 	struct list_head  link_peers;
@@ -2866,9 +2877,6 @@ static void ath12k_mac_dp_peer_cleanup_cb(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_dp_peer *dp_peer;
 	struct ath12k_dp_rx_tid *rx_tid;
 	int i, num_tids = ab->hal.hal_params->num_tids;
-	u16 peerid_index;
-	struct ieee80211_sta *sta;
-	struct ath12k_sta *ahsta;
 
 	spin_lock_bh(&dp->dp_lock);
 #ifdef CPTCFG_QCN_EXTN
@@ -2905,20 +2913,11 @@ static void ath12k_mac_dp_peer_cleanup_cb(struct ath12k_pdev_dp *dp_pdev,
 		}
 	}
 
+	__ath12k_dp_link_peer_unassign(ar, dp, dp_hw, link_peer, NULL, link_peer->addr);
+
 	/* cleanup dp peer */
 	if (link_peer->dp_peer) {
 		dp_peer = link_peer->dp_peer;
-
-		if (!dp_peer->is_vdev_peer)
-			dp_peer->peer_links_map &= ~BIT(link_peer->hw_link_id);
-
-		rcu_assign_pointer(dp_peer->link_peers[link_peer->hw_link_id], NULL);
-
-		if (link_peer->peer_id != ATH12K_MLO_PEER_ID_INVALID) {
-			peerid_index = ath12k_dp_peer_get_peerid_index(dp,
-								       link_peer->peer_id);
-			rcu_assign_pointer(dp_hw->dp_peer_list[peerid_index], NULL);
-		}
 
 		/*vdev peer cleanup is taken care later*/
 		if (ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE2 &&
@@ -2927,49 +2926,14 @@ static void ath12k_mac_dp_peer_cleanup_cb(struct ath12k_pdev_dp *dp_pdev,
 					 ATH12K_DBG_L0,
 					 "dp_peer %pM dosent have active link_peers\n",
 					 dp_peer->addr);
-			if (dp_peer->is_mlo &&
-			    dp_peer->peer_id != ATH12K_MLO_PEER_ID_INVALID) {
-				sta = ath12k_dp_peer_get_sta(dp_peer);
-				ahsta = ath12k_sta_to_ahsta(sta);
 
-				/* Clear bit for peer id in wifi8 case only */
-				if (dp->global_peer_id_supported)
-					clear_bit(dp_peer->peer_id,
-						  dp_hw->free_peer_id_map);
+			ath12k_dp_arch_peer_unregister(ah, dp, dp_peer);
 
-				if (ahsta->ml_peer_id != ATH12K_MLO_PEER_ID_INVALID) {
-					clear_bit(ahsta->ml_peer_id,
-						  ah->free_ml_peer_id_map);
-					ahsta->ml_peer_id = ATH12K_MLO_PEER_ID_INVALID;
-				}
-
-				ah->num_ml_peers--;
-			}
-
-			/* NULL out ahsta->dp_peer before synchronize_rcu() */
-			sta = ath12k_dp_peer_get_sta(dp_peer);
-			if (sta) {
-				ahsta = ath12k_sta_to_ahsta(sta);
-				rcu_assign_pointer(ahsta->dp_peer, NULL);
-			}
-
-			if (dp_peer->peer_id != ATH12K_MLO_PEER_ID_INVALID) {
-				peerid_index = ath12k_dp_peer_get_peerid_index(dp,
-									       dp_peer->peer_id);
-				rcu_assign_pointer(dp_hw->dp_peer_list[peerid_index], NULL);
-			}
-
-			ath12k_dp_peer_hash_table_delete(dp_hw, dp_peer);
-
-			/* Remove ath12k_dp_peer from linked list */
-			spin_lock_bh(&dp_hw->peer_list_lock);
-			list_del(&dp_peer->list);
+			/* Add dp_peer to local context linked list */
 			list_add(&dp_peer->list, &ctx->dp_peers);
-			spin_unlock_bh(&dp_hw->peer_list_lock);
 		}
 	}
 
-	ath12k_dp_link_peer_htbl_delete(dp_pdev, link_peer);
 	list_add(&link_peer->list, &ctx->link_peers);
 	spin_unlock_bh(&dp->dp_lock);
 }
@@ -2981,8 +2945,6 @@ void ath12k_dp_peer_cleanup_all(struct ath12k *ar)
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_dp_peer *dp_peer, *tmp_dp_peer;
 	int i, num_tids;
-	struct ath12k_hw *ah = ar->ah;
-	struct ath12k_dp_hw *dp_hw = &ah->dp_hw;
 	struct ath12k_dp_rx_tid *rx_tid;
 	struct ath12k_mac_cleanup_ctx ctx = {.ar = ar};
 
@@ -3015,15 +2977,8 @@ void ath12k_dp_peer_cleanup_all(struct ath12k *ar)
 	list_for_each_entry_safe(dp_peer, tmp_dp_peer, &ctx.dp_peers, list) {
 		list_del(&dp_peer->list);
 
-		if (dp_peer->qos && dp_peer->qos->telemetry_peer_ctx)
-			ath12k_telemetry_peer_ctx_free(dp_peer->qos->telemetry_peer_ctx);
-		if (dp_peer->sta_id != ATH12K_STA_ID_INVALID)
-			clear_bit(dp_peer->sta_id, dp_hw->free_sta_id_map);
-
-		if (!dp_peer->peer_links_map) {
-			kfree(dp_peer->qos);
-			kfree(dp_peer);
-		}
+		if (!dp_peer->peer_links_map)
+			ath12k_dp_peer_free(dp_peer);
 	}
 }
 

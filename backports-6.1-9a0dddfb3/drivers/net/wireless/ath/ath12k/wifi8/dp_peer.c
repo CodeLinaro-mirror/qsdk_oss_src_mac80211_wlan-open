@@ -536,6 +536,42 @@ void ath12k_wifi8_dp_peer_cleanup(struct ath12k_dp_hw *dp_hw,
 	dp_peer->dp_peer_state = ATH12K_DP_PEER_DELETED;
 }
 
+void ath12k_wifi8_dp_peer_unregister(struct ath12k_hw *ah, struct ath12k_dp *dp,
+				     struct ath12k_dp_peer *dp_peer)
+{
+	u16 peerid_index;
+	struct ath12k_sta *ahsta = NULL;
+	struct ieee80211_sta *sta = NULL;
+	struct ath12k_dp_hw *dp_hw = &ah->dp_hw;
+
+	if (dp_peer->is_mlo && dp_peer->peer_id != ATH12K_MLO_PEER_ID_INVALID) {
+		clear_bit(dp_peer->peer_id, dp_hw->free_peer_id_map);
+		ah->num_ml_peers--;
+	}
+
+	sta = ath12k_dp_peer_get_sta(dp_peer);
+	if (sta) {
+		ahsta = ath12k_sta_to_ahsta(sta);
+		rcu_assign_pointer(ahsta->dp_peer, NULL);
+	}
+
+	if (dp_peer->peer_id != ATH12K_MLO_PEER_ID_INVALID) {
+		peerid_index = ath12k_dp_peer_get_peerid_index(dp,
+							       dp_peer->peer_id);
+		rcu_assign_pointer(dp_hw->dp_peer_list[peerid_index], NULL);
+	}
+
+	if (dp_peer->sta_id != ATH12K_STA_ID_INVALID)
+		clear_bit(dp_peer->sta_id, dp_hw->free_sta_id_map);
+
+	ath12k_dp_peer_hash_table_delete(dp_hw, dp_peer);
+
+	/* Remove ath12k_dp_peer from linked list holding peer_list_lock */
+	spin_lock_bh(&dp_hw->peer_list_lock);
+	list_del(&dp_peer->list);
+	spin_unlock_bh(&dp_hw->peer_list_lock);
+}
+
 void ath12k_wifi8_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 *addr,
 				 struct ieee80211_sta *sta, u8 hw_link_id,
 				 struct ieee80211_vif *vif)

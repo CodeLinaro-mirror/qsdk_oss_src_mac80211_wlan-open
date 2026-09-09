@@ -768,6 +768,8 @@ struct ath12k_dp_arch_ops {
 	void (*dp_peer_delete)(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 *addr,
 			       struct ieee80211_sta *sta, u8 hw_link_id,
 			       struct ieee80211_vif *vif);
+	void (*dp_peer_unregister)(struct ath12k_hw *ah, struct ath12k_dp *dp,
+				   struct ath12k_dp_peer *dp_peer);
 	int (*dp_peer_assoc)(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 			     struct ath12k_dp_vif *dp_vif, u8 *addr,
 			     struct ath12k_dp_peer_create_params *params);
@@ -1523,6 +1525,14 @@ ath12k_dp_arch_peer_delete(struct ath12k_dp *dp,
 {
 	if (dp->arch_ops->dp_peer_delete)
 		dp->arch_ops->dp_peer_delete(dp, ah, addr, sta, hw_link_id, vif);
+}
+
+static inline void
+ath12k_dp_arch_peer_unregister(struct ath12k_hw *ah, struct ath12k_dp *dp,
+			       struct ath12k_dp_peer *dp_peer)
+{
+	if (dp->arch_ops->dp_peer_unregister)
+		dp->arch_ops->dp_peer_unregister(ah, dp, dp_peer);
 }
 
 static inline void
