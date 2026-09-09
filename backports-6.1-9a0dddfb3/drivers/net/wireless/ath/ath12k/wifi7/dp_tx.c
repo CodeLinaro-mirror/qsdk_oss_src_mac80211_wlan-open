@@ -1515,7 +1515,7 @@ void ath12k_wifi7_mcbc_handler(struct ath12k_dp_vif *dp_vif,
 	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
 	unsigned long links_map = 0;
 	unsigned long filtered_links_map;
-	u16 gsn;
+	u16 gsn = 0;
 	u8 ring_id = 0;
 	enum ath12k_dp_feature_result feature_ret;
 	enum ath12k_dp_tx_enq_error err;

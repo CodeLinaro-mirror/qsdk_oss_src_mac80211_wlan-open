@@ -979,7 +979,7 @@ void ath12k_qos_stats_update(struct ath12k_dp_peer *mld_peer,
 	void *telemetry_peer_ctx = NULL;
 	u64 enqueue_timestamp, total_delay_pkts, tmp_div;
 	u32 len, q_id, tid, nw_delay, sw_delay, delay_bound;
-	u32 pkt_win, num_pkts, dropped_age_out = 0;
+	u32 pkt_win, num_pkts = 0, dropped_age_out = 0;
 	u16 msduq_id;
 	u8 link_id, qos_id;
 
@@ -1114,7 +1114,7 @@ void ath12k_qos_stats_update(struct ath12k_dp_peer *mld_peer,
 		telemetry_peer_ctx = mld_peer->qos->telemetry_peer_ctx;
 
 	tmp_div = mld_qos->tx_success_pkts + mld_qos->tx_failed_pkts;
-	if ((!(do_div(tmp_div, num_pkts))) && telemetry_peer_ctx) {
+	if ((num_pkts && !(do_div(tmp_div, num_pkts))) && telemetry_peer_ctx) {
 		if (mld_peer->qos_stats_lvl == ATH12K_QOS_SINGLE_LINK_STATS) {
 			dropped_age_out = qos_tx->dropped.age_out;
 		} else {
@@ -1203,7 +1203,8 @@ void ath12k_qos_stats_update(struct ath12k_dp_peer *mld_peer,
 			qos_delay->delay_success++;
 
 		tmp_div = total_delay_pkts;
-		if (!(do_div(tmp_div, num_pkts)) && telemetry_peer_ctx) {
+		if ((num_pkts && !(do_div(tmp_div, num_pkts))) &&
+		     telemetry_peer_ctx) {
 			u64 delay_success = 0, delay_failure = 0;
 
 			if (mld_peer->qos_stats_lvl ==
