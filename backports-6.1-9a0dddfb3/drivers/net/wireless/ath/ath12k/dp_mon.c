@@ -2170,7 +2170,7 @@ int ath12k_dp_mon_rx_buf_alloc(struct ath12k_dp *dp)
 	rx_ring->bufs_max = num_entries;
 
 	req_entries =
-		ath12k_dp_mon_get_rx_free_desc_list(dp, rx_ring, &list, ring_lvl - 1);
+		ath12k_dp_mon_get_rx_free_desc_list(dp, rx_ring, &list, ring_lvl);
 	if (req_entries) {
 		ret = ath12k_dp_mon_rx_buf_replenish(dp, rx_ring, &list, req_entries);
 		if (ret)
@@ -2859,11 +2859,15 @@ int ath12k_dp_mon_rx_monitor_mode_buf_setup(struct ath12k *ar)
 	size_t req_entries;
 	LIST_HEAD(list);
 	int ret = 0;
+	u32 ring_id;
+	struct hal_srng *srng;
 
 	if (unlikely(!dp_mon))
 		return -EINVAL;
 
 	rx_ring = &dp_mon->rxdma_mon_buf_ring;
+	ring_id = rx_ring->refill_buf_ring.ring_id;
+	srng = &dp->hal->srng_list[ring_id];
 
 	/* Ensure monitor RX ring is fully replenished now that the monitor VAP
 	 * is being started. At boot we only partially filled the ring up to
@@ -2881,8 +2885,10 @@ int ath12k_dp_mon_rx_monitor_mode_buf_setup(struct ath12k *ar)
 			if (ret)
 				return ret;
 
+			spin_lock_bh(&srng->lock);
 			rx_ring->bufs_fill_lvl += (rx_ring->bufs_max -
 						   rx_ring->bufs_fill_lvl);
+			spin_unlock_bh(&srng->lock);
 		} else {
 			ath12k_warn(dp, "No required entries available for mon buf ring\n");
 			return -ENOMEM;
@@ -2894,6 +2900,35 @@ int ath12k_dp_mon_rx_monitor_mode_buf_setup(struct ath12k *ar)
 	}
 
 	return ret;
+}
+
+int ath12k_dp_mon_rx_monitor_mode_reset_buffers(struct ath12k *ar)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
+	struct dp_rxdma_mon_ring *rx_ring;
+	struct hal_srng *srng;
+	u16 ring_lvl = DP_RXDMA_MONITOR_DEFAULT_RING_FILL_LVL;
+	int ret = 0;
+
+	if (unlikely(!dp_mon))
+		return -EINVAL;
+
+	rx_ring = &dp_mon->rxdma_mon_buf_ring;
+	srng = &dp->hal->srng_list[rx_ring->refill_buf_ring.ring_id];
+
+	if (rx_ring->bufs_fill_lvl > DP_RXDMA_MONITOR_DEFAULT_RING_FILL_LVL) {
+		ret = ath12k_dp_mon_rx_set_low_threshold(dp, rx_ring, ring_lvl);
+		if (ret)
+			return ret;
+
+		spin_lock_bh(&srng->lock);
+		rx_ring->bufs_fill_lvl = DP_RXDMA_MONITOR_DEFAULT_RING_FILL_LVL;
+		spin_unlock_bh(&srng->lock);
+	}
+
+	return 0;
 }
 
 void ath12k_dp_mon_rx_process_low_thres(struct ath12k_dp *dp)
