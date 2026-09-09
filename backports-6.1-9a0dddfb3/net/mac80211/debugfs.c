@@ -959,17 +959,18 @@ void debugfs_hw_add(struct ieee80211_local *local)
 	DEBUGFS_ADD(hw_conf);
 	DEBUGFS_ADD_MODE(force_tx_status, 0600);
 	DEBUGFS_ADD_MODE(addba_req_enable, 0600);
-	DEBUGFS_ADD_MODE(aql_enable, 0600);
-	DEBUGFS_ADD(aql_pending);
 	DEBUGFS_ADD(dbg_mask);
-	DEBUGFS_ADD_MODE(aqm, 0600);
 	DEBUGFS_ADD(enable_tx_latency_stats);
 
-	DEBUGFS_ADD_MODE(airtime_flags, 0600);
-
-	DEBUGFS_ADD(aql_txq_limit);
-	debugfs_create_u32("aql_threshold", 0600,
-			   phyd, &local->aql_threshold);
+	if (!ieee80211_hw_check(&local->hw, HAS_TX_QUEUE)) {
+		DEBUGFS_ADD_MODE(aql_enable, 0600);
+		DEBUGFS_ADD(aql_pending);
+		DEBUGFS_ADD_MODE(aqm, 0600);
+		DEBUGFS_ADD_MODE(airtime_flags, 0600);
+		DEBUGFS_ADD(aql_txq_limit);
+		debugfs_create_u32("aql_threshold", 0600,
+				   phyd, &local->aql_threshold);
+	}
 
 	statsd = debugfs_create_dir("statistics", phyd);
 

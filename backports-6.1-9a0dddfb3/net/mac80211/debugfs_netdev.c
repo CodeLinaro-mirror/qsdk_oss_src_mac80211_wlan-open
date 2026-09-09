@@ -1193,7 +1193,8 @@ static void add_common_files(struct ieee80211_sub_if_data *sdata)
 	DEBUGFS_ADD(enable_mac_tid_stats);
 	DEBUGFS_ADD(hw_queues);
 
-	if (sdata->vif.type != NL80211_IFTYPE_P2P_DEVICE &&
+	if (!ieee80211_hw_check(&sdata->local->hw, HAS_TX_QUEUE) &&
+	    sdata->vif.type != NL80211_IFTYPE_P2P_DEVICE &&
 	    sdata->vif.type != NL80211_IFTYPE_NAN)
 		DEBUGFS_ADD(aqm);
 
