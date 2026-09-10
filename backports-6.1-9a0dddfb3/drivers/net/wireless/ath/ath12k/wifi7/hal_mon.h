@@ -213,6 +213,7 @@ struct hal_mon_usig_hdr {
 } __packed;
 
 #define HAL_RX_PHY_CMN_USER_INFO0_GI		GENMASK(17, 16)
+#define HAL_RX_PHY_CMN_USER_INFO0_LTF_SIZE	GENMASK(19, 18)
 #define HAL_RX_PHY_CMN_USER_INFO1_PUNC_PAT	GENMASK(31, 16)
 
 struct hal_phyrx_common_user_info {
