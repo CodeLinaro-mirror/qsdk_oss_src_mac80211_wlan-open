@@ -1803,20 +1803,54 @@ enum nl80211_he_ru_alloc ath12k_he_ru_tones_to_nl80211_he_ru_alloc(u16 ru_tones)
 	return ret;
 }
 
+#ifdef CPTCFG_QCN_EXTN
+void *ath12k_hal_dma_alloc_noncoherent(struct device *dev, size_t size,
+				       dma_addr_t *paddr,
+				       enum dma_data_direction dir,
+				       gfp_t flag);
+void *ath12k_hal_dma_alloc_coherent(struct device *dev, size_t size,
+				    dma_addr_t *paddr, gfp_t flag);
+void ath12k_hal_dma_free_noncoherent(struct device *dev, size_t size,
+				     void *vaddr, dma_addr_t paddr,
+				     enum dma_data_direction dir);
+void ath12k_hal_dma_free_coherent(struct device *dev, size_t size,
+				  void *vaddr, dma_addr_t paddr);
+#else
+static inline void *ath12k_hal_dma_alloc_noncoherent(struct device *dev, size_t size,
+						     dma_addr_t *paddr,
+						     enum dma_data_direction dir,
+						     gfp_t flag)
+{
+	void *vaddr = NULL;
+
+	vaddr = dma_alloc_noncoherent(dev, size, paddr, dir, flag);
+
+	return vaddr;
+}
+
 static inline void *ath12k_hal_dma_alloc_coherent(struct device *dev, size_t size,
 						   dma_addr_t *paddr, gfp_t flag)
 {
 	void *vaddr = NULL;
 
-#ifdef CONFIG_IO_COHERENCY
-	vaddr = kzalloc(size, flag);
-	*paddr = (dma_addr_t)virt_to_phys(vaddr);
-#else
 	vaddr = dma_alloc_coherent(dev, size, paddr, flag);
-#endif
 
 	return vaddr;
 }
+
+static inline void ath12k_hal_dma_free_noncoherent(struct device *dev, size_t size,
+						   void *vaddr, dma_addr_t paddr,
+						   enum dma_data_direction dir)
+{
+	dma_free_noncoherent(dev, size, vaddr, paddr, dir);
+}
+
+static inline void ath12k_hal_dma_free_coherent(struct device *dev, size_t size,
+						 void *vaddr, dma_addr_t paddr)
+{
+	dma_free_coherent(dev, size, vaddr, paddr);
+}
+#endif
 
 /*
  * ath12k_hal_srng_access_umac_src_ring_end_nolock_fast can be used
@@ -1865,16 +1899,6 @@ void *ath12k_hal_srng_dst_next_peek_nolock(struct hal_srng *srng)
 		return NULL;
 
 	return srng->ring_base_vaddr + next_tp;
-}
-
-static inline void ath12k_hal_dma_free_coherent(struct device *dev, size_t size,
-						 void *vaddr, dma_addr_t paddr)
-{
-#ifdef CONFIG_IO_COHERENCY
-	kfree(vaddr);
-#else
-	dma_free_coherent(dev, size, vaddr, paddr);
-#endif
 }
 
 u8 ath12k_hal_rx_get_msdu_src_link(struct ath12k_base *ab,
