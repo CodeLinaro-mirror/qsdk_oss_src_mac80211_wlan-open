@@ -1053,18 +1053,22 @@ EXPORT_SYMBOL(ieee80211_radar_detected_bitmap);
 void ieee80211_awgn_detected(struct ieee80211_hw *hw, u32 chan_bw_interference_bitmap,
 			     struct ieee80211_channel *awgn_channel)
 {
-       struct ieee80211_local *local = hw_to_local(hw);
-       struct channel_awgn_info *awgn_info;
+	struct ieee80211_local *local = hw_to_local(hw);
+	struct channel_awgn_info *awgn_info;
 
-       awgn_info = kzalloc(sizeof(*awgn_info), GFP_ATOMIC);
-       if (!awgn_info)
-	       return;
+	awgn_info = kzalloc(sizeof(*awgn_info), GFP_ATOMIC);
+	if (!awgn_info)
+		return;
 
-       INIT_LIST_HEAD(&awgn_info->list);
-       awgn_info->chan_bw_interference_bitmap = chan_bw_interference_bitmap;
-       awgn_info->awgn_channel = awgn_channel;
-       list_add_tail(&awgn_info->list, &local->awgn_info_list);
-       schedule_work(&local->awgn_detected_work);
+	INIT_LIST_HEAD(&awgn_info->list);
+	awgn_info->chan_bw_interference_bitmap = chan_bw_interference_bitmap;
+	awgn_info->awgn_channel = awgn_channel;
+
+	spin_lock_bh(&local->awgn_lock);
+	list_add_tail(&awgn_info->list, &local->awgn_info_list);
+	spin_unlock_bh(&local->awgn_lock);
+
+	schedule_work(&local->awgn_detected_work);
 }
 EXPORT_SYMBOL(ieee80211_awgn_detected);
 
@@ -4116,11 +4120,16 @@ void ieee80211_awgn_detected_work(struct work_struct *work)
 	struct channel_awgn_info *awgn_info, *temp;
 	u32 chan_bw_interference_bitmap;
 	struct ieee80211_channel *awgn_channel;
+	LIST_HEAD(local_list);
 
-	if (WARN_ON(list_empty(&local->awgn_info_list)))
+	spin_lock_bh(&local->awgn_lock);
+	list_splice_init(&local->awgn_info_list, &local_list);
+	spin_unlock_bh(&local->awgn_lock);
+
+	if (list_empty(&local_list))
 		return;
 
-	list_for_each_entry_safe(awgn_info, temp, &local->awgn_info_list, list) {
+	list_for_each_entry_safe(awgn_info, temp, &local_list, list) {
 		chan_bw_interference_bitmap = awgn_info->chan_bw_interference_bitmap;
 		awgn_channel = awgn_info->awgn_channel;
 
