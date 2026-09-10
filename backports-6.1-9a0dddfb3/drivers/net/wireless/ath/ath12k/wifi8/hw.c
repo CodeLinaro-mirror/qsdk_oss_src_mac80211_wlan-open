@@ -1623,8 +1623,19 @@ static int ath12k_wifi8_mac_op_set_smd_ctx(struct ieee80211_hw *hw,
 
 	lockdep_assert_wiphy(hw->wiphy);
 
-	/* fetch default link */
-	arvif = ath12k_get_arvif_from_link_id(ahvif, 0);
+	/* fetch first valid link */
+	if (!ahvif->links_map) {
+		ath12k_err(NULL, "No valid links for %pM\n", vif->addr);
+		return -EINVAL;
+	}
+
+	arvif = ath12k_get_arvif_from_link_id(ahvif, __ffs(ahvif->links_map));
+	if (!arvif) {
+		ath12k_err(NULL, "Invalid arvif for %pM links_map=0x%x\n",
+			   vif->addr, ahvif->links_map);
+		return -EINVAL;
+	}
+
 	ab = arvif->ar->ab;
 	dp = ab->dp;
 
