@@ -662,31 +662,34 @@ void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 		seg_info++;
 	}
 
-	for (i = 0; i < ab->qmi.mem_seg_count; i++) {
-		mem_type = ath12k_coredump_get_dump_type(ab->qmi.target_mem[i].type);
-		if (mem_type == FW_CRASH_DUMP_TYPE_MAX) {
-			ath12k_info(ab, "target mem region type %d not supported",
-				    ab->qmi.target_mem[i].type);
-			continue;
-		}
+	/* Copy target_mem segments grouped by type so that entry_start+entry_num
+	 * in the dump header always describes a contiguous run in the segment
+	 * array, even when QMI allocates the same type at scattered indices.
+	 */
+	for (mem_type = 0; mem_type < FW_CRASH_DUMP_TYPE_MAX; mem_type++) {
+		for (i = 0; i < ab->qmi.mem_seg_count; i++) {
+			if (ath12k_coredump_get_dump_type(
+					ab->qmi.target_mem[i].type) != mem_type)
+				continue;
 
-		if (mem_type == FW_CRASH_DUMP_CALDB_DATA &&
-		    !(ath12k_cold_boot_cal && ab->hw_params->cold_boot_calib))
-			continue;
+			if (mem_type == FW_CRASH_DUMP_CALDB_DATA &&
+			    !(ath12k_cold_boot_cal && ab->hw_params->cold_boot_calib))
+				continue;
 
-		if (!ab->qmi.target_mem[i].paddr) {
-			skip_count++;
-			ath12k_info(ab, "Skipping mem region type %d",
-				    ab->qmi.target_mem[i].type);
-			continue;
+			if (!ab->qmi.target_mem[i].paddr) {
+				skip_count++;
+				ath12k_info(ab, "Skipping mem region type %d",
+					    ab->qmi.target_mem[i].type);
+				continue;
+			}
+			seg_info->len = ab->qmi.target_mem[i].size;
+			seg_info->addr = ab->qmi.target_mem[i].paddr;
+			seg_info->vaddr = ab->qmi.target_mem[i].v.ioaddr;
+			seg_info->type = mem_type;
+			ath12k_info(ab, "seg vaddr is %p len is 0x%x type %d\n",
+				    seg_info->vaddr, seg_info->len, seg_info->type);
+			seg_info++;
 		}
-		seg_info->len = ab->qmi.target_mem[i].size;
-		seg_info->addr = ab->qmi.target_mem[i].paddr;
-		seg_info->vaddr = ab->qmi.target_mem[i].v.ioaddr;
-		seg_info->type = mem_type;
-		ath12k_info(ab, "seg vaddr is %p len is 0x%x type %d\n",
-			    seg_info->vaddr, seg_info->len, seg_info->type);
-		seg_info++;
 	}
 
 #ifdef CPTCFG_ATHDEBUG
