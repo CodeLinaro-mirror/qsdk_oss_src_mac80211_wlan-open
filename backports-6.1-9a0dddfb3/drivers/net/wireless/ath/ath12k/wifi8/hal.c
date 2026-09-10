@@ -1252,18 +1252,6 @@ void ath12k_wifi8_hal_txpt_classify_info_flush(struct ath12k_base *ab)
 	BUG_ON(1);
 }
 
-void ath12k_wifi8_hal_umcmn_ts_cfg(struct ath12k_base *ab, u8 ts_resolution,
-				   u8 latency_resolution)
-{
-	u32 ts_val = ts_resolution & 0x7;
-	u32 latency_val = latency_resolution & 0x7;
-
-	ath12k_hif_write32(ab, HAL_SEQ_WCSS_UMAC_UMCMN_REG +
-			   HAL_UMAC_UMCMN_TX_TIMESTAMP_RESOLUTION, ts_val);
-	ath12k_hif_write32(ab, HAL_SEQ_WCSS_UMAC_UMCMN_REG +
-			   HAL_UMAC_UMCMN_LATENCY_RESOLUTION, latency_val);
-}
-
 void ath12k_wifi8_hal_tasc_peer_tx_cfg(struct ath12k_base *ab, bool enable)
 {
 	u32 val = 0;
