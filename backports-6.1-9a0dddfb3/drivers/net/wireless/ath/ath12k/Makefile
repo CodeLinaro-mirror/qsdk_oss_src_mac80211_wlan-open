@@ -79,7 +79,6 @@ ath12k-$(CPTCFG_QCN_EXTN) += \
 	qcn_extns/sa_api.o \
 	qcn_extns/sa_core.o \
 	qcn_extns/me_extn.o \
-	qcn_extns/dp_stats_extn.o \
 	qcn_extns/ini.o \
 	qcn_extns/ini_parse.o \
 	qcn_extns/me_hmmc_extn.o \
