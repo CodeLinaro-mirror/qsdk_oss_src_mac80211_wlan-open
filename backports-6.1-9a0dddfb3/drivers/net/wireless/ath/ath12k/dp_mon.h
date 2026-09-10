@@ -149,6 +149,8 @@
 #define ATH12K_RSSI_SCALE_FACTOR		64
 #define ATH12K_RSSI_SCALE_DOWN_SHIFT		32
 
+#define ATH12K_NUM_SU_USER	1
+
 struct ath12k_mon_data;
 struct dp_mon_rx_filter;
 struct dp_mon_tx_filter;

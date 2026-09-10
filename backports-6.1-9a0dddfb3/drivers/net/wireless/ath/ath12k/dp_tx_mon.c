@@ -696,6 +696,12 @@ ath12k_dp_mon_tx_prep_ppdu_info(struct ath12k_pdev_mon_dp *dp_mon_pdev,
 		return -EINVAL;
 	}
 
+	if (num_users > HAL_MAX_UL_MU_USERS) {
+		ath12k_warn(dp_pdev->dp->ab, "num users exceeds: %u max: %u\n",
+			    num_users, HAL_MAX_UL_MU_USERS);
+		num_users = HAL_MAX_UL_MU_USERS;
+	}
+
 	mon_data->prot_ppdu_info.tx_info.num_users = 1;
 	mon_data->data_ppdu_info.tx_info.num_users = num_users;
 
@@ -1728,7 +1734,7 @@ ath12k_dp_tx_mon_gen_mu_block_ack(struct ath12k_pdev_dp *dp_pdev,
 
 	if (window_flag == RESPONSE_WINDOW) {
 		memcpy(mu_ba_hdr->ta, status_info->addr2, ETH_ALEN);
-		if (num_users > 1)
+		if (num_users > ATH12K_NUM_SU_USER)
 			memset(mu_ba_hdr->ra, 0xFF, ETH_ALEN);
 		else
 			memcpy(mu_ba_hdr->ra, status_info->addr1, ETH_ALEN);
@@ -3555,10 +3561,8 @@ int ath12k_dp_tx_mon_deliver_ppdu(struct ath12k_pdev_dp *dp_pdev,
 		return -EINVAL;
 
 	num_users = data_ppdu_info->num_users;
-	if (num_users > HAL_MAX_UL_MU_USERS) {
-		ATH12K_TX_MON_STAT_INC(dp_pdev, mu_user_frame);
+	if (num_users > HAL_MAX_UL_MU_USERS)
 		num_users = HAL_MAX_UL_MU_USERS;
-	}
 
 	for (i = 0; i < num_users; i++) {
 		mpdu_q = &data_ppdu_info->rx_status.mpdu_q[i];
@@ -3567,6 +3571,9 @@ int ath12k_dp_tx_mon_deliver_ppdu(struct ath12k_pdev_dp *dp_pdev,
 						     &mon_data->data_status_info,
 						     mpdu_q, i,
 						     &mon_data->data_ppdu_info);
+
+		if (num_users > ATH12K_NUM_SU_USER)
+			ATH12K_TX_MON_STAT_INC(dp_pdev, mu_user_frame);
 
 		mpdu_q = &prot_ppdu_info->rx_status.mpdu_q[i];
 		ath12k_dp_mon_tx_deliver_single_ppdu(dp_pdev,

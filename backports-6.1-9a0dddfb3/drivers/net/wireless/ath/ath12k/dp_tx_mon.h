@@ -160,7 +160,7 @@ struct ath12k_ext_mon_pkt_config;
  * @magic_value_error: descriptors rejected due to magic-value mismatch
  * @pkt_buf_free: packet TLV buffers released back to the page-fragment allocator
  * @status_buf_free: status buffers released back to the page-fragment allocator
- * @mu_user_frame: MU frames generated for individual users within a MU-MIMO PPDU
+ * @mu_user_frame: Frames generated for individual users within a multi-user PPDU
  * @data_ppdu_delivered: Data PPDUs successfully delivered
  * @prot_ppdu_delivered: Protection PPDUs successfully delivered
  * @total_frames_delivered: Frames successfully delivered
