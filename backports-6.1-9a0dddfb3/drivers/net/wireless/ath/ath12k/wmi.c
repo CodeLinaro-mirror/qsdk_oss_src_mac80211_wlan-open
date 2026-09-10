@@ -23107,6 +23107,7 @@ int ath12k_wmi_vdev_set_neighbor_rx_cmd(struct ath12k *ar,
 
 	return ret;
 }
+EXPORT_SYMBOL(ath12k_wmi_vdev_set_neighbor_rx_cmd);
 
 int ath12k_wmi_vdev_set_tx_peer_filter_cmd(struct ath12k *ar,
 				 struct ath12k_set_tx_peer_filter_params *param)

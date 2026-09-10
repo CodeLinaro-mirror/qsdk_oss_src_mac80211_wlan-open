@@ -153,6 +153,7 @@ struct ath12k_ext_mon_config;
 struct ath12k_ext_mon_pkt_config;
 struct ath12k_dp_rx_ext_mon;
 struct ath12k_dp_tx_ext_mon_config;
+struct ath12k_ext_mon_filter_config;
 
 struct ath12k_dp_mon_pad_params {
 	u32 frag_size;
@@ -280,6 +281,9 @@ struct ath12k_dp_arch_mon_ops {
 	void (*ext_mon_free)(struct ath12k_pdev_dp *dp_pdev);
 	void (*ext_mon_setup_rx_filter)(struct htt_rx_ring_tlv_filter *tlv_filter,
 					const struct ath12k_dp_rx_ext_mon *rx_ext_mon);
+	int (*ext_mon_set_rx_filter)
+	     (struct ath12k_pdev_dp *dp_pdev,
+	      const struct ath12k_ext_mon_filter_config *new_config);
 
 	/* Below are TxMonitor ops */
 	int (*mon_tx_srng_alloc_setup)(struct ath12k_dp *dp);
@@ -1233,6 +1237,9 @@ void ath12k_dp_ext_mon_process_request(struct ath12k_pdev_dp *dp_pdev,
 int ath12k_dp_ext_mon_alloc(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_ext_mon_free(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_ext_mon_reset(struct ath12k_pdev_dp *dp_pdev);
+void ath12k_dp_ext_mon_drain_peer_list(struct ath12k_pdev_dp *dp_pdev,
+				       struct list_head *peer_list,
+				       int vdev_id);
 void ath12k_dp_ext_mon_update_snr(struct hal_rx_mon_ppdu_info *ppdu_info,
 				  struct ath12k_dp_rx_ext_mon *config);
 
@@ -1255,6 +1262,9 @@ int
 ath12k_dp_ext_mon_subtype_check(struct ath12k_ext_mon_pkt_config *config,
 				u8 type, u8 sub_type, bool is_mcast);
 
+int
+ath12k_dp_ext_mon_set_rx_filter(struct ath12k_pdev_dp *dp_pdev,
+				const struct ath12k_ext_mon_filter_config *new_config);
 
 static inline
 int ath12k_dp_mon_rx_alloc(struct ath12k_dp *dp)
@@ -2055,10 +2065,21 @@ static inline int
 ath12k_dp_ext_mon_find_mon_vdev_id(struct ath12k_pdev_dp *dp_pdev)
 {
 	struct ath12k_link_vif *arvif;
+	struct ieee80211_vif *vif;
+	struct wireless_dev *wdev;
 
 	list_for_each_entry(arvif, &dp_pdev->ar->arvifs, list) {
-		if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR &&
-		    arvif->is_started)
+		if (!arvif->is_started)
+			continue;
+		if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR)
+			return arvif->vdev_id;
+		vif = ath12k_ahvif_to_vif(arvif->ahvif);
+		wdev = ieee80211_vif_to_wdev(vif);
+		/*
+		 * Scan-radio vdevs also support NRP WMI commands;
+		 * firmware handles them identically to monitor vdevs.
+		 */
+		if (wdev_is_scan_radio(wdev))
 			return arvif->vdev_id;
 	}
 	return -1;

@@ -22738,7 +22738,8 @@ static int ath12k_mac_vdev_delete(struct ath12k *ar, struct ath12k_link_vif *arv
 	if (unlikely(test_bit(ATH12K_FLAG_RECOVERY, &ar->ab->dev_flags)))
 		goto err_vdev_del;
 
-	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR)
+	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR ||
+	    ath12k_scan_radio_supported(ar->pdev))
 		ath12k_dp_ext_mon_reset(&ar->dp);
 
 	ret = ath12k_wmi_vdev_delete(ar, arvif->vdev_id);
@@ -25789,8 +25790,11 @@ ath12k_mac_unassign_vif_chanctx_handle(struct ieee80211_hw *hw,
 	if (ahvif->vdev_type != WMI_VDEV_TYPE_STA)
 		WARN_ON(!arvif->is_started);
 
-	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR) {
+	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR ||
+	    ath12k_scan_radio_supported(ar->pdev))
 		ath12k_dp_ext_mon_reset(&ar->dp);
+
+	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR) {
 		ret = ath12k_mac_monitor_stop(ar, ahvif);
 		if (ret)
 			return;

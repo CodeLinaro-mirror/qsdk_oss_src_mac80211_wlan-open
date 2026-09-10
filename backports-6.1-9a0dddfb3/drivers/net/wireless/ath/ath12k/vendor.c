@@ -16723,7 +16723,7 @@ ath12k_vendor_extended_monitor_handler(struct wiphy *wiphy,
 	struct ath12k_vif *ahvif = NULL;
 	int ret;
 
-	if (wdev->iftype != NL80211_IFTYPE_MONITOR) {
+	if (wdev->iftype != NL80211_IFTYPE_MONITOR && !wdev_is_scan_radio(wdev)) {
 		ath12k_err(NULL, "requested interface is not a monitor interface!\n");
 		return -EINVAL;
 	}
