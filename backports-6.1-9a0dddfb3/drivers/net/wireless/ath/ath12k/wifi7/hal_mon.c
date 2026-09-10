@@ -4055,9 +4055,12 @@ ath12k_wifi7_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 		const struct hal_phyrx_common_user_info *cmn_usr_info = tlv_data;
 		struct hal_rx_radiotap_eht *eht = &ppdu_info->eht_info.eht;
 		u32 known, data;
+		u8 ltf_size;
 
 		ppdu_info->gi = le32_get_bits(cmn_usr_info->info0,
 					      HAL_RX_PHY_CMN_USER_INFO0_GI);
+		ltf_size = le32_get_bits(cmn_usr_info->info0,
+					 HAL_RX_PHY_CMN_USER_INFO0_LTF_SIZE);
 
 		ppdu_info->punctured_pattern =
 			le32_get_bits(cmn_usr_info->info1,
@@ -4072,6 +4075,8 @@ ath12k_wifi7_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 		data = __le32_to_cpu(eht->data[0]);
 		data |= u32_encode_bits(ath12k_eht_gi_to_nl80211_eht_gi(ppdu_info->gi),
 					IEEE80211_RADIOTAP_EHT_DATA0_GI);
+		data |= u32_encode_bits(ltf_size,
+					IEEE80211_RADIOTAP_EHT_DATA0_LTF);
 		eht->data[0] = cpu_to_le32(data);
 		break;
 	}
