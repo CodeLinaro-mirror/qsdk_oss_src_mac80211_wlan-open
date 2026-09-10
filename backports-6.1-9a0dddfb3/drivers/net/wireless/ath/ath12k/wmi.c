@@ -22,6 +22,7 @@
 #include "mac.h"
 #include "hw.h"
 #include "peer.h"
+#include "ranging.h"
 #include "p2p.h"
 #include "testmode.h"
 #include "dp_mon.h"
@@ -13246,6 +13247,48 @@ skip_addba_ext:
 	spin_unlock_bh(&ar->arsta_lock);
 }
 
+static struct ath12k_link_vif *
+ath12k_mgmt_rx_get_ap_arvif_by_bssid(struct ath12k *ar, const u8 *bssid,
+				     const u8 *peer_addr)
+{
+	struct ath12k_link_vif *arvif, *match = NULL;
+
+	lockdep_assert_held(&ar->data_lock);
+
+	list_for_each_entry(arvif, &ar->arvifs, list) {
+		if (arvif->ahvif->vdev_type != WMI_VDEV_TYPE_AP)
+			continue;
+
+		if (bssid && ether_addr_equal(arvif->bssid, bssid))
+			match = arvif;
+
+		if (peer_addr &&
+		    ath12k_pasn_peer_is_fw_created(arvif, peer_addr))
+			return arvif;
+	}
+
+	return match;
+}
+
+static bool ath12k_mgmt_rx_is_pasn_peer(struct ath12k *ar,
+					struct ath12k_link_vif *arvif,
+					struct ieee80211_hdr *hdr)
+{
+	if (!ar || !hdr)
+		return false;
+
+	if (arvif && ath12k_pasn_peer_is_fw_created(arvif, hdr->addr2))
+		return true;
+
+	spin_lock_bh(&ar->data_lock);
+	arvif = ath12k_mgmt_rx_get_ap_arvif_by_bssid(ar, hdr->addr3, hdr->addr2);
+	if (!arvif)
+		arvif = ath12k_mgmt_rx_get_ap_arvif_by_bssid(ar, hdr->addr1, hdr->addr2);
+	spin_unlock_bh(&ar->data_lock);
+
+	return !!arvif;
+}
+
 static void ath12k_mgmt_rx_event(struct ath12k_base *ab, struct sk_buff *skb)
 {
 	struct ath12k_wmi_mgmt_rx_arg rx_ev = {0};
@@ -13517,27 +13560,27 @@ skip_mgmt_stats:
 	if (ieee80211_has_protected(hdr->frame_control)) {
 		struct ath12k_link_sta *arsta;
 		struct ieee80211_sta *sta;
-		bool enc_assoc;
+		bool enc_assoc = false;
 
 		spin_lock_bh(&ar->arsta_lock);
 		arsta = ath12k_link_sta_find_by_addr(ar, hdr->addr2);
-		if (!arsta) {
-			spin_unlock_bh(&ar->arsta_lock);
-			ath12k_warn(ab, "arsta not found %pM\n",
-				    hdr->addr2);
+		if (arsta) {
+			sta = ath12k_ahsta_to_sta(arsta->ahsta);
+
+			enc_assoc = sta && sta->epp_peer &&
+				    (ieee80211_is_assoc_req(hdr->frame_control) ||
+				     ieee80211_is_assoc_resp(hdr->frame_control) ||
+				     ieee80211_is_reassoc_req(hdr->frame_control) ||
+				     ieee80211_is_reassoc_resp(hdr->frame_control));
+		}
+		spin_unlock_bh(&ar->arsta_lock);
+
+		if (!arsta && !ath12k_mgmt_rx_is_pasn_peer(ar, arvif, hdr)) {
+			ath12k_warn(ab, "protected mgmt arsta not found %pM\n",
+				     hdr->addr2);
 			dev_kfree_skb(skb);
 			goto exit;
 		}
-
-		sta = ath12k_ahsta_to_sta(arsta->ahsta);
-
-		enc_assoc = sta && sta->epp_peer &&
-			    (ieee80211_is_assoc_req(hdr->frame_control) ||
-			     ieee80211_is_assoc_resp(hdr->frame_control) ||
-			     ieee80211_is_reassoc_req(hdr->frame_control) ||
-			     ieee80211_is_reassoc_resp(hdr->frame_control));
-
-		spin_unlock_bh(&ar->arsta_lock);
 		status->flag |= RX_FLAG_DECRYPTED;
 
 		if (!ieee80211_is_robust_mgmt_frame(skb) &&
