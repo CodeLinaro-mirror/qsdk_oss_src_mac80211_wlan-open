@@ -36,6 +36,9 @@
 #include "wpa.h"
 #include "wme.h"
 #include "rate.h"
+#ifdef CPTCFG_QCN_EXTN
+#include "if_meta_hdr.h"
+#endif
 
 #define IS_HW_CSUM_NOT_ENABLED(dev)             (!((dev)->features & NETIF_F_HW_CSUM))
 
@@ -5368,11 +5371,12 @@ netdev_tx_t __ieee80211_subif_start_xmit_8023(struct sk_buff *skb,
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 	struct wireless_dev *wdev;
 	struct ieee80211_vif *vif;
+	struct meta_hdr_s *mhdr;
 #endif
 	struct ethhdr *ehdr = (struct ethhdr *)skb->data;
 	struct ieee80211_key *key = NULL;
 	struct sta_info *sta;
-	bool is_eapol, is_mcast_offload = false;
+	bool is_eapol, is_mcast_offload = false, ra_lookup = true;
 	bool tid_stats_disable = sdata->local->hw.tid_stats_disable;
 
 #ifdef CPTCFG_MAC80211_NSS_SUPPORT
@@ -5409,7 +5413,17 @@ netdev_tx_t __ieee80211_subif_start_xmit_8023(struct sk_buff *skb,
 
 	rcu_read_lock();
 
-	if (ieee80211_lookup_ra_sta(sdata, skb, &sta)) {
+#ifdef CPTCFG_QCN_EXTN
+	if (sdata->wdev.vap_submode == IEEE80211_EXTN_VAP_SUBMODE_ETH_OFFLOAD_MESH) {
+		mhdr = (struct meta_hdr_s *)(skb->data - MMESH_TX_META_HDR);
+		if (!mhdr->mac_addr_valid)
+			goto out;
+
+		sta = sta_info_get_bss(sdata, mhdr->mac_addr);
+		ra_lookup = false;
+	}
+#endif
+	if (ra_lookup && ieee80211_lookup_ra_sta(sdata, skb, &sta)) {
 		if (!tid_stats_disable)
 			ieee80211_tx_drop_stats(sdata, info->tid, TX_DROP_RA_STA_FAIL);
 		kfree_skb(skb);

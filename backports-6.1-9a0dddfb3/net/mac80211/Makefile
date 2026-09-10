@@ -48,6 +48,7 @@ mac80211-$(CPTCFG_MAC80211_DEBUGFS) += \
 # Add wlan-open-extns/subsys/src to the include path so that debugfs_netdev.c
 # can resolve debugfs_bigtk.h (declared there, compiled via qcn_extns/).
 ccflags-$(CPTCFG_MAC80211_DEBUGFS) += -I$(src)/../../../../../wlan-open-extns/subsys/src
+ccflags-$(CPTCFG_QCN_EXTN) += -I$(src)/../../drivers/net/wireless/ath/ath12k/qcn_extns
 
 mac80211-$(CPTCFG_MAC80211_MESH) += \
 	mesh.o \
