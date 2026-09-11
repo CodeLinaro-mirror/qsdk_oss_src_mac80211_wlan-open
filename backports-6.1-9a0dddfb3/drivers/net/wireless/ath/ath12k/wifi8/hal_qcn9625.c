@@ -1245,6 +1245,17 @@ void ath12k_wifi8_hal_extract_rx_spd_data_qcn9625(struct hal_rx_spd_data *rx_inf
 	rx_info->rx_mpdu_info.flow_info.flow_metadata =
 		le16_get_bits(rx_desc->u.qcn9625_compact.msdu_end.fse_metadata,
 			      ATH12K_DP_RX_FSE_FLOW_METADATA_MASK);
+	rx_info->key_id_octate =
+		le32_get_bits(rx_desc->u.qcn9625_compact.mpdu_start.info4,
+			      RX_MPDU_INFO_INFO4_KEY_ID_OCTET) & 0x3;
+
+	ether_addr_copy(rx_info->ad1,
+			rx_desc->u.qcn9625_compact.mpdu_start.addr1);
+
+	if (le32_get_bits(rx_desc->u.qcn9625_compact.mpdu_start.info2,
+			  RX_MPDU_INFO_INFO2_MAC_ADDR_AD2_VALID))
+		ether_addr_copy(rx_info->ad2,
+				rx_desc->u.qcn9625_compact.mpdu_start.addr2);
 }
 
 int ath12k_wifi8_hal_srng_create_config_qcn9625(struct ath12k_hal *hal)
