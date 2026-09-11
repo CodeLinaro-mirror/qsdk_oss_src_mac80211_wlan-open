@@ -3238,6 +3238,53 @@ void ath12k_mac_bcn_tx_event(struct ath12k_link_vif *arvif)
 	}
 }
 
+static void ath12k_mac_bring_up_deferred_nontx_vdevs(struct ath12k_link_vif *tx_arvif)
+{
+	struct ath12k *ar = tx_arvif->ar;
+	struct ath12k_link_vif *arvif_itr;
+	struct ath12k_wmi_vdev_up_params params = {};
+	struct ieee80211_bss_conf *bss_conf;
+	int ret;
+
+	list_for_each_entry(arvif_itr, &ar->arvifs, list) {
+		if (!arvif_itr->pending_tx_vdev_up)
+			continue;
+		if (arvif_itr->tx_vdev_id != tx_arvif->vdev_id)
+			continue;
+		if (!arvif_itr->ahvif || !arvif_itr->ahvif->vif) {
+			ath12k_err(ar->ab,
+				   "invalid deferred non-tx vdev context for vdev %d\n",
+				   arvif_itr->vdev_id);
+			arvif_itr->pending_tx_vdev_up = false;
+			continue;
+		}
+
+		memset(&params, 0, sizeof(params));
+		params.vdev_id = arvif_itr->vdev_id;
+		params.aid = tx_arvif->ahvif->aid;
+		params.bssid = arvif_itr->bssid;
+		params.tx_bssid = tx_arvif->bssid;
+
+		bss_conf = &arvif_itr->ahvif->vif->bss_conf;
+		params.nontx_profile_idx = bss_conf->bssid_index;
+		params.nontx_profile_cnt =
+			BIT(tx_arvif->ahvif->vif->bss_conf.bssid_indicator);
+
+		ret = ath12k_wmi_vdev_up(arvif_itr->ar, &params);
+		if (ret) {
+			ath12k_err(ar->ab,
+				   "failed to bring up deferred non-tx vdev %d: %d\n",
+				   arvif_itr->vdev_id, ret);
+			continue;
+		}
+		arvif_itr->is_up = true;
+		arvif_itr->pending_tx_vdev_up = false;
+		ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+			   "Previously deferred vdev id %d is up\n",
+			   arvif_itr->vdev_id);
+	}
+}
+
 static void ath12k_control_beaconing(struct ath12k_link_vif *arvif,
 				     struct ieee80211_bss_conf *info)
 {
@@ -3295,6 +3342,15 @@ static void ath12k_control_beaconing(struct ath12k_link_vif *arvif,
 		params.nontx_profile_cnt = 1 << info->bssid_indicator;
 	}
 
+	/* For MBSSID: defer non-TX vdev_up if the TX vdev is not yet up. */
+	if (tx_arvif && tx_arvif != arvif && !tx_arvif->is_up) {
+		arvif->pending_tx_vdev_up = true;
+		ath12k_info(ar->ab,
+			    "vdev up deferred for vdev %d as tx vdev %d not yet up\n",
+			    arvif->vdev_id, tx_arvif->vdev_id);
+		return;
+	}
+
 	/* Skip VDEV UP command in case of Scan Radio */
 	if (!ath12k_scan_radio_supported(ar->pdev)) {
 #ifdef CPTCFG_QCN_EXTN
@@ -3310,8 +3366,29 @@ static void ath12k_control_beaconing(struct ath12k_link_vif *arvif,
 		arvif->is_up = true;
 		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "[radio_idx : %u] mac vdev %d up\n",
 			   ar->radio_idx, arvif->vdev_id);
+		/* Any post-vdev-up actions added here must also be applied to
+		 * deferred non-TX vdevs in the loop below.
+		 */
 		ath12k_mac_bridge_vdevs_up(arvif);
 		ath12k_query_tpc_ie_eirp_if_ready(arvif);
+
+		/* TX vdev is now up: bring up any non-TX vdevs that were
+		 * deferred waiting for this vdev (startup or post-CSA).
+		 */
+		if (!tx_arvif || tx_arvif == arvif) {
+			struct ath12k_link_vif *arvif_itr;
+
+			ath12k_mac_bring_up_deferred_nontx_vdevs(arvif);
+
+			list_for_each_entry(arvif_itr, &ar->arvifs, list) {
+				if (arvif_itr == arvif ||
+				    arvif_itr->tx_vdev_id != arvif->vdev_id ||
+				    !arvif_itr->is_up)
+					continue;
+				ath12k_mac_bridge_vdevs_up(arvif_itr);
+				ath12k_query_tpc_ie_eirp_if_ready(arvif_itr);
+			}
+		}
 	} else {
 		arvif->is_up = false;
 		ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
@@ -10264,16 +10341,16 @@ skip_tpc_update:
 			ath12k_warn(ar->ab, "failed to update bcn template: %d\n",
 				    ret);
 
-		if (!arvif->pending_csa_up || info->csa_active)
-			goto skip_pending_cs_up;
+		if (!arvif->pending_tx_vdev_up || info->csa_active)
+			goto skip_pending_tx_vdev_up;
 
 		if (!arvif->is_started &&
 		    test_bit(ATH12K_FLAG_RECOVERY, &ar->ab->dev_flags)) {
 			ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
 				   "Skip pending csa up for vdev id %d\n",
 				   arvif->vdev_id);
-			arvif->pending_csa_up = false;
-			goto skip_pending_cs_up;
+			arvif->pending_tx_vdev_up = false;
+			goto skip_pending_tx_vdev_up;
 		}
 
 		memset(&params, 0, sizeof(params));
@@ -10290,48 +10367,25 @@ skip_tpc_update:
 		}
 
 		if (info->mbssid_tx_vif && arvif != tx_arvif &&
-		    tx_arvif->pending_csa_up) {
+		    tx_arvif->pending_tx_vdev_up) {
 			/* skip non tx vif's */
-			goto skip_pending_cs_up;
+			goto skip_pending_tx_vdev_up;
 		}
 
 		clear_bit(ATH12K_FLAG_CAC_RUNNING, &ar->dev_flags);
 
 		ret = ath12k_wmi_vdev_up(arvif->ar, &params);
-		if (ret)
+		if (ret) {
 			ath12k_warn(ar->ab, "failed to bring vdev up %d: %d\n",
 				    arvif->vdev_id, ret);
+		} else {
+			arvif->is_up = true;
+			arvif->pending_tx_vdev_up = false;
 
-		arvif->pending_csa_up = false;
-
-		if (info->mbssid_tx_vif && arvif == tx_arvif) {
-			struct ath12k_link_vif *arvif_itr;
-
-			list_for_each_entry(arvif_itr, &ar->arvifs, list) {
-				if (!arvif_itr->pending_csa_up)
-					continue;
-
-				if (arvif_itr->tx_vdev_id != tx_arvif->vdev_id)
-					continue;
-
-				memset(&params, 0, sizeof(params));
-				params.vdev_id = arvif_itr->vdev_id;
-				params.aid = ahvif->aid;
-				params.bssid = arvif_itr->bssid;
-				params.tx_bssid = tx_arvif->bssid;
-				params.nontx_profile_idx =
-					ahvif->vif->bss_conf.bssid_index;
-				params.nontx_profile_cnt =
-					BIT(info->bssid_indicator);
-
-				ret = ath12k_wmi_vdev_up(arvif_itr->ar, &params);
-				if (ret)
-					ath12k_warn(ar->ab, "failed to bring vdev up %d: %d\n",
-						    arvif_itr->vdev_id, ret);
-				arvif_itr->pending_csa_up = false;
-			}
+			if (info->mbssid_tx_vif && arvif == tx_arvif)
+				ath12k_mac_bring_up_deferred_nontx_vdevs(tx_arvif);
 		}
-skip_pending_cs_up:
+skip_pending_tx_vdev_up:
 
 		if (arvif->is_up && info->he_support) {
 			param_id = WMI_VDEV_PARAM_BA_MODE;
@@ -24403,7 +24457,7 @@ static int ath12k_vdev_restart_sequence(struct ath12k_link_vif *arvif,
 beacon_tmpl_setup:
 
 	ath12k_mac_update_ru_punct_bitmap(arvif, &old_chanctx, new_ctx);
-	if (arvif->pending_csa_up)
+	if (arvif->pending_tx_vdev_up)
 		return 0;
 
 	/*
@@ -24771,7 +24825,7 @@ ath12k_mac_update_vif_chan(struct ath12k *ar,
 		link_conf = rcu_dereference(tx_ahvif->vif->link_conf[tx_arvif->link_id]);
 
 		if (link_conf->csa_active && tx_arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP)
-			tx_arvif->pending_csa_up = true;
+			tx_arvif->pending_tx_vdev_up = true;
 
 		rcu_read_unlock();
 
@@ -24807,7 +24861,7 @@ ath12k_mac_update_vif_chan(struct ath12k *ar,
 			link_conf = rcu_dereference(ahvif->vif->link_conf[arvif->link_id]);
 
 			if (link_conf->csa_active && arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP)
-				arvif->pending_csa_up = true;
+				arvif->pending_tx_vdev_up = true;
 
 			rcu_read_unlock();
 		}
@@ -24956,7 +25010,7 @@ ath12k_mac_update_vif_chan_mvr(struct ath12k *ar,
 		link = rcu_dereference(tx_ahvif->vif->link_conf[tx_arvif->link_id]);
 
 		if (link->csa_active && tx_arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP)
-			tx_arvif->pending_csa_up = true;
+			tx_arvif->pending_tx_vdev_up = true;
 
 		rcu_read_unlock();
 
@@ -25007,7 +25061,7 @@ ath12k_mac_update_vif_chan_mvr(struct ath12k *ar,
 			link = rcu_dereference(ahvif->vif->link_conf[arvif->link_id]);
 
 			if (link->csa_active && arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP)
-				arvif->pending_csa_up = true;
+				arvif->pending_tx_vdev_up = true;
 
 			rcu_read_unlock();
 		}
