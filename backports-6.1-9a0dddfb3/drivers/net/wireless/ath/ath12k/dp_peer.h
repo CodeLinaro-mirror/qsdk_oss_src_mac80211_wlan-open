@@ -211,7 +211,13 @@ struct ath12k_dp_peer {
 	/* Lock for protection of keys */
 	spinlock_t keys_lock;
 	struct ieee80211_key_conf *keys[WMI_MAX_KEY_INDEX + 1];
-	struct ath12k_dp_rx_tid rx_tid[ATH12K_MAX_TIDS];
+
+	/* Protects rx_tid[] slot pointer CAS and all per-TID state fields
+	 * (active, fragment state, paddr, smd_ctx).
+	 */
+	spinlock_t rx_tid_lock;
+	/* allocated at peer create, size = hal_params->num_tids */
+	struct ath12k_dp_rx_tid **rx_tid;
 
 	struct ath12k_dp_peer_qos *qos;
 	/* Info used in MMIC verification of * RX fragments */
