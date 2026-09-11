@@ -536,8 +536,6 @@ int ath12k_ppeds_attach_link_vif(struct ath12k_link_vif *arvif, int vp_num,
 				ppe_ops->ath12k_dp_ppeds_get_vp_profile_from_idx(prim_ab,
 							arvif->ppe_vp_profile_idx);
 			if (!prim_vp_profile) {
-				ath12k_warn(ab, "Invalid PPE VP profile idx:%d",
-						arvif->ppe_vp_profile_idx);
 				spin_unlock(&ppe->ppe_vp_tbl_lock);
 				rcu_read_unlock();
 				return 0;

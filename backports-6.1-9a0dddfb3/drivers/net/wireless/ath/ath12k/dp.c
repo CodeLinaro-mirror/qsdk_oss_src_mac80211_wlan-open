@@ -1024,7 +1024,6 @@ int ath12k_dp_tx_get_bank_profile(struct ath12k_dp *dp,
 
 	if (bank_id == DP_INVALID_BANK_ID) {
 		spin_unlock_bh(&dp->tx_bank_lock);
-		ath12k_err(ab, "unable to find TX bank!");
 		return bank_id;
 	}
 
