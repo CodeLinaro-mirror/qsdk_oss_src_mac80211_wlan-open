@@ -819,60 +819,96 @@ int ath12k_spectral_start_scan(struct ath12k *ar)
 		struct hal_srng *srng =
 			&ar->ab->hal.srng_list[dbr->refill_srng.ring_id];
 
-		/* Drain poll: wait for FW to return DMA buffers before sending
-		 * wmi_cfg_setup.  Required for both A->A and N->A transitions:
-		 * after CLEAR+DISABLE the FW spectral engine (agile or normal)
-		 * takes time to drain its pipeline and return buffers.  Sending
-		 * wmi_cfg_setup while it is still draining causes FW to silently
-		 * ignore it (no sscan_fw_param event, zero samples).
-		 * Only skipped on first-ever agile scan (boot->A, no prev mode).
+		/* Drain poll for A->A rapid-fire: agile_drain_needed is set by
+		 * configure_scan_params() when transitioning to agile from any
+		 * prior scan mode. After CLEAR+DISABLE the FW agile engine takes
+		 * time to return DMA buffers. Sending wmi_cfg_setup while it is
+		 * still draining causes FW to silently ignore it (no sscan_fw_param
+		 * event, zero samples). Poll until FW has returned enough buffers.
 		 *
-		 * Early-exit threshold: bufs_max - 1 (ring fully returned).
-		 * Otherwise wait the full 500ms - num_free reaching a partial
-		 * value (for ex: 64/255) does NOT guarantee the FW engine has fully
-		 * stopped draining.
+		 * Early-exit threshold: bufs_max -
+		 * ATH12K_SPECTRAL_DBRING_FREE_SLOTS(bufs_max).
+		 * FW permanently holds back
+		 * ATH12K_SPECTRAL_DBRING_FREE_SLOTS(bufs_max) buffers
+		 * and will never return more than
+		 * bufs_max - ATH12K_SPECTRAL_DBRING_FREE_SLOTS(bufs_max).
 		 */
 		if (ar->spectral.agile_drain_needed) {
 			unsigned long deadline = jiffies + msecs_to_jiffies(500);
 			int num_free_now;
-			u32 hp, tp;
 
 			spin_lock_bh(&srng->lock);
 			num_free_now = ath12k_hal_srng_src_num_free(ar->ab, srng,
 								    true);
-			hp = srng->u.src_ring.hp;
-			tp = srng->u.src_ring.cached_tp;
 			spin_unlock_bh(&srng->lock);
 
-			/* Wait until num_free > 0 (tp < hp, FW returned at least
-			 * one buffer) OR tp >= hp (FW consumed all buffers).
+			/* Poll until FW has returned enough DMA buffers to confirm
+			 * it has stopped consuming the ring.
 			 */
-			while (num_free_now == 0 && tp < hp &&
+			while (num_free_now <
+			       dbr->bufs_max -
+			       ATH12K_SPECTRAL_DBRING_FREE_SLOTS(dbr->bufs_max) &&
 			       time_before(jiffies, deadline)) {
 				usleep_range(5000, 10000);
 				spin_lock_bh(&srng->lock);
 				num_free_now = ath12k_hal_srng_src_num_free(ar->ab,
 									    srng,
 									    true);
-				hp = srng->u.src_ring.hp;
-				tp = srng->u.src_ring.cached_tp;
 				spin_unlock_bh(&srng->lock);
 			}
+
 			spin_lock_bh(&ar->spectral.lock);
 			ar->spectral.agile_drain_needed = false;
 			spin_unlock_bh(&ar->spectral.lock);
 		}
 
-		ret = ath12k_dbring_reset(ar, &ar->spectral.rx_ring);
-		if (ret)
-			return ret;
-		ret = ath12k_dbring_wmi_cfg_setup(ar, &ar->spectral.rx_ring,
-						  WMI_DIRECT_BUF_SPECTRAL);
+		{
+			int filled = 0;
+			int saved_bufs_max = ar->spectral.rx_ring.bufs_max;
+			bool hp_wrapped;
+
+			spin_lock_bh(&srng->lock);
+			hp_wrapped = (srng->u.src_ring.hp == 0);
+			spin_unlock_bh(&srng->lock);
+
+			if (hp_wrapped) {
+				/* HP has wrapped to 0 — firmware would compute
+				 * 0 available entries from the shadow register.
+				 * Must reset HP/TP and refill the ring.
+				 */
+				ret = ath12k_dbring_reset(ar, &ar->spectral.rx_ring,
+							  &filled);
+				if (ret)
+					return ret;
+				ar->spectral.agile_ring_filled = filled;
+				ar->spectral.rx_ring.bufs_max = filled;
+				ret = ath12k_dbring_wmi_cfg_setup(ar,
+								&ar->spectral.rx_ring,
+								WMI_DIRECT_BUF_SPECTRAL);
+				ar->spectral.rx_ring.bufs_max = saved_bufs_max;
+			} else {
+				/* HP is at a non-zero position — firmware already
+				 * knows the ring and can compute available entries
+				 * correctly. Skip dbring_reset to preserve the full
+				 * ring (all IDR entries enqueued) so firmware gets
+				 * maximum DMA slots and delivers all 4095 samples.
+				 * Store current HP/entry_size as filled count for
+				 * A->N topup.
+				 */
+				spin_lock_bh(&srng->lock);
+				filled = srng->u.src_ring.hp / srng->entry_size;
+				spin_unlock_bh(&srng->lock);
+				ar->spectral.agile_ring_filled = filled;
+				ret = ath12k_dbring_wmi_cfg_setup(ar,
+								&ar->spectral.rx_ring,
+								WMI_DIRECT_BUF_SPECTRAL);
+			}
+		}
 		if (ret)
 			return ret;
 	}
 
-	/* Clear any stale trigger state in firmware. */
+	/* Enable the spectral engine in firmware before triggering capture. */
 	ret = ath12k_wmi_vdev_spectral_enable(ar, arvif->vdev_id,
 					      ATH12K_WMI_SPECTRAL_TRIGGER_CMD_IGNORE,
 					      ATH12K_WMI_SPECTRAL_ENABLE_CMD_ENABLE);
@@ -915,6 +951,9 @@ int ath12k_spectral_start_scan(struct ath12k *ar)
 		(u64)ar->spectral.params[ar->spectral.mode].completion_timeout_us *
 				NSEC_PER_USEC;
 
+		timeout_ns =
+			(u64)ar->spectral.params[ar->spectral.mode].completion_timeout_us;
+		timeout_ns *= NSEC_PER_USEC;
 		hrtimer_start(&ar->spectral.scan_completion_timer,
 			      ns_to_ktime(timeout_ns),
 			      HRTIMER_MODE_REL_SOFT);
@@ -944,11 +983,12 @@ int ath12k_spectral_stop_scan(struct ath12k *ar)
 			    "spectral stop_scan: no active vdev on pdev %u\n",
 			    ar->pdev_idx);
 
-		/* Clean up agile DMA-cached state. No WMI possible (no vdev). */
-		spin_lock_bh(&ar->spectral.lock);
+		/* Clean up agile DMA-cached state. No WMI possible (no vdev).
+		 * rollback_agile() acquires sp->lock internally; do not hold it
+		 * here or the nested spin_lock_bh in rollback_agile() deadlocks.
+		 */
 		if (ar->spectral.mode == SPECTRAL_SCAN_MODE_AGILE)
 			ath12k_spectral_rollback_agile(ar);
-		spin_unlock_bh(&ar->spectral.lock);
 
 		return -ENODEV;
 	}
@@ -1016,8 +1056,7 @@ int ath12k_spectral_stop_scan(struct ath12k *ar)
 
 void ath12k_spectral_rollback_agile(struct ath12k *ar)
 {
-	/* State-only cleanup. This function is called from
-	 * softirq context (dbring buffer release handler / tasklet)
+	/* State-only cleanup. Called from both process and softirq contexts.
 	 * The zero-cf configure WMI to clear firmware's agile detector state
 	 * is sent from stop_scan() in process context instead.
 	 */
@@ -1117,11 +1156,25 @@ int ath12k_spectral_configure_scan_params(struct ath12k *ar,
 	if (prev_mode != SPECTRAL_SCAN_MODE_INVALID && mode == SPECTRAL_SCAN_MODE_AGILE)
 		ar->spectral.agile_drain_needed = true;
 	spin_unlock_bh(&ar->spectral.lock);
+
+	/* Agile->Normal transition: ensure normal scan gets a full ring.
+	 * When dbring_reset() ran (HP wrapped), FREE_SLOTS were left empty.
+	 * When dbring_reset() was skipped (HP non-zero), agile_ring_filled
+	 * records the current HP position so only genuinely empty slots
+	 * are filled. Either way, normal scan gets a full ring.
+	 */
+	if (prev_mode == SPECTRAL_SCAN_MODE_AGILE &&
+	    mode == SPECTRAL_SCAN_MODE_NORMAL)
+		ath12k_dbring_topup(ar, &ar->spectral.rx_ring,
+				    ar->spectral.agile_ring_filled);
 	if (ret) {
 		ath12k_warn(ar->ab, "failed to clear spectral scan config: %d\n",
 			    ret);
 		if (mode == SPECTRAL_SCAN_MODE_AGILE) {
 			ath12k_spectral_rollback_agile(ar);
+			spin_lock_bh(&ar->spectral.lock);
+			ar->spectral.mode = prev_mode;
+			spin_unlock_bh(&ar->spectral.lock);
 		} else {
 			spin_lock_bh(&ar->spectral.lock);
 			ar->spectral.mode = prev_mode;
@@ -2038,48 +2091,57 @@ static int ath12k_spectral_process_data(struct ath12k *ar,
 err:
 	kfree(fft_sample);
 unlock:
-	spin_unlock_bh(&ar->spectral.lock);
-
-	/* Clean up agile state on FFT processing error so stale frequency
-	 * and bandwidth params do not persist for the next scan attempt.
+	/* Snapshot mode under the lock before releasing it - the two reads
+	 * below must see the mode that was active for this batch of FFTs, not
+	 * a mode that a concurrent configure_scan_params() may have already
+	 * switched to (rapid A -> A retune racing with in-flight FFT delivery).
 	 */
-	if (ret && ar->spectral.mode == SPECTRAL_SCAN_MODE_AGILE)
-		ath12k_spectral_rollback_agile(ar);
+	{
+		enum spectral_scan_mode mode_snap = ar->spectral.mode;
 
-	if (!ret && send_complete) {
-		enum qca_wlan_vendor_spectral_scan_complete_status s =
-			QCA_WLAN_VENDOR_SPECTRAL_SCAN_COMPLETE_STATUS_SUCCESSFUL;
-		u32 samples_done;
-
-		/* Cancel the host-side timeout — finite scan succeeded.
-		 * Lock already dropped, so this can't deadlock against the
-		 * hrtimer callback which takes the same lock.
-		 */
-		hrtimer_cancel(&ar->spectral.scan_completion_timer);
-
-		spin_lock_bh(&ar->spectral.lock);
-		samples_done = ar->spectral.samples_done;
 		spin_unlock_bh(&ar->spectral.lock);
 
-		if (ar->spectral.mode == SPECTRAL_SCAN_MODE_AGILE) {
+		/* Clean up agile state on FFT processing error so stale frequency
+		 * and bandwidth params do not persist for the next scan attempt.
+		 */
+		if (ret && mode_snap == SPECTRAL_SCAN_MODE_AGILE)
 			ath12k_spectral_rollback_agile(ar);
-		} else {
-			/* Keep mode=NORMAL and do NOT reset to INVALID.
-			 * The next configure_scan_params() uses prev_mode to send
-			 * CLEAR+DISABLE in the correct mode to firmware.
-			 */
-			spin_lock_bh(&ar->spectral.lock);
-			ar->spectral.scan_active = false;
-			spin_unlock_bh(&ar->spectral.lock);
-		}
 
-		event_ret = ath12k_spectral_send_complete_event(ar,
-					s, samples_done);
-		if (event_ret)
-			ath12k_warn(ar->ab,
-				    "failed to send spectral scan complete event: %d\n",
-				    event_ret);
-	}
+		if (!ret && send_complete) {
+			enum qca_wlan_vendor_spectral_scan_complete_status s =
+				QCA_WLAN_VENDOR_SPECTRAL_SCAN_COMPLETE_STATUS_SUCCESSFUL;
+			u32 samples_done;
+
+			/* Cancel the host-side timeout — finite scan succeeded.
+			 * Lock already dropped, so this can't deadlock against the
+			 * hrtimer callback which takes the same lock.
+			 */
+			hrtimer_cancel(&ar->spectral.scan_completion_timer);
+
+			spin_lock_bh(&ar->spectral.lock);
+			samples_done = ar->spectral.samples_done;
+			spin_unlock_bh(&ar->spectral.lock);
+
+			if (mode_snap == SPECTRAL_SCAN_MODE_AGILE) {
+				ath12k_spectral_rollback_agile(ar);
+			} else {
+				/* Keep mode=NORMAL and do NOT reset to INVALID.
+				 * The next configure_scan_params() uses prev_mode to send
+				 * CLEAR+DISABLE in the correct mode to firmware.
+				 */
+				spin_lock_bh(&ar->spectral.lock);
+				ar->spectral.scan_active = false;
+				spin_unlock_bh(&ar->spectral.lock);
+			}
+
+			event_ret = ath12k_spectral_send_complete_event(ar, s,
+									samples_done);
+			if (event_ret)
+				ath12k_warn(ar->ab,
+					    "failed to send spectral scan complete event: %d\n",
+					    event_ret);
+		}
+	} /* end mode_snap block */
 	return ret;
 }
 
@@ -2187,6 +2249,10 @@ static void ath12k_spectral_agile_dma_rebind_work(struct work_struct *work)
 
 	ret = ath12k_dbring_wmi_cfg_setup(ar, &sp->rx_ring,
 					  WMI_DIRECT_BUF_SPECTRAL);
+	if (ret)
+		ath12k_warn(ar->ab,
+			    "spectral agile DMA rebind: dbring wmi cfg setup failed: %d\n",
+			    ret);
 }
 
 /* Process-context worker: runs when the hrtimer expires. The hrtimer
@@ -2252,11 +2318,14 @@ static void ath12k_spectral_timeout_work(struct work_struct *work)
 	received = sp->timeout_received_count;
 	vdev_id  = sp->active_vdev_id;
 	prev_mode = sp->mode;
-	/* Do NOT clear sp->mode yet — ath12k_wmi_vdev_spectral_enable() reads
+
+	ath12k_warn(ar->ab, "spectral: scan timeout mode=%d received=%u/%u vdev_id=%u\n",
+		    prev_mode, received, sp->params[prev_mode].scan_count, vdev_id);
+	/* Do NOT clear sp->mode yet - ath12k_wmi_vdev_spectral_enable() reads
 	 * ar->spectral.mode (== sp->mode) to derive the scan_mode field in the
 	 * WMI command.  If we set mode=INVALID before calling it, firmware gets
 	 * scan_mode=NORMAL even when timing out an AGILE scan, so the agile
-	 * detector is never properly torn down.  Set INVALID after the WMI call.
+	 * detector is never properly torn down. Set INVALID after the WMI call.
 	 */
 	if (prev_mode == SPECTRAL_SCAN_MODE_AGILE) {
 		/* Clear firmware-cached agile detector state */
@@ -2284,7 +2353,6 @@ static void ath12k_spectral_timeout_work(struct work_struct *work)
 		ath12k_warn(ar->ab,
 			    "failed to disable spectral scan on vdev %d after timeout: %d\n",
 			    vdev_id, ret);
-
 
 	ath12k_spectral_send_complete_event(ar,
 		QCA_WLAN_VENDOR_SPECTRAL_SCAN_COMPLETE_STATUS_TIMEOUT,
@@ -2573,7 +2641,8 @@ int ath12k_spectral_init(struct ath12k_base *ab)
 				ATH12K_WMI_SPECTRAL_RPT_MODE_DEFAULT;
 			sp->params[m].scan_bin_scale =
 				ATH12K_WMI_SPECTRAL_BIN_SCALE_DEFAULT;
-			sp->params[m].scan_dbm_adj = ATH12K_WMI_SPECTRAL_DBM_ADJ_DEFAULT;
+			sp->params[m].scan_dbm_adj =
+				ATH12K_WMI_SPECTRAL_DBM_ADJ_DEFAULT;
 			sp->params[m].scan_chn_mask = ar->cfg_rx_chainmask ?
 				ar->cfg_rx_chainmask :
 				ATH12K_WMI_SPECTRAL_CHN_MASK_DEFAULT;

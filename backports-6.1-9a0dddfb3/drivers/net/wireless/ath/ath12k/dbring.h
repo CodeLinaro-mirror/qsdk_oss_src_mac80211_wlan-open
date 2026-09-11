@@ -17,11 +17,12 @@
 /* Minimum free slots to keep in the spectral DMA ring after dbring_reset.
  * Firmware releases buffers in batches; keeping enough free slots ensures
  * all concurrent bufs_replenish calls in a batch succeed without losing IDR
- * entries. Set to 32 to absorb stale DMA drain from the previous scan that
- * arrives between dbring_reset and the next scan start, keeping num_free > 0
- * at the drain poll so consecutive agile scans work reliably.
+ * entries. Sized as bufs_max/4 to account for stale DMA drain from the
+ * previous scan arriving after dbring_reset, plus the new scan's batch
+ * replenish calls — scales correctly regardless of ring size.
+ * For a 255-entry ring this gives 63 slots of headroom.
  */
-#define ATH12K_SPECTRAL_DBRING_FREE_SLOTS 32
+#define ATH12K_SPECTRAL_DBRING_FREE_SLOTS(bufs_max)	((bufs_max) / 4)
 
 struct ath12k_dbring_element {
 	dma_addr_t paddr;
@@ -111,6 +112,9 @@ int ath12k_dbring_get_cap(struct ath12k_base *ab,
 			  struct ath12k_dbring_cap *db_cap);
 void ath12k_dbring_srng_cleanup(struct ath12k *ar, struct ath12k_dbring *ring);
 void ath12k_dbring_buf_cleanup(struct ath12k *ar, struct ath12k_dbring *ring);
-int ath12k_dbring_reset(struct ath12k *ar, struct ath12k_dbring *ring);
+int ath12k_dbring_reset(struct ath12k *ar, struct ath12k_dbring *ring,
+			int *filled_elems);
+void ath12k_dbring_topup(struct ath12k *ar, struct ath12k_dbring *ring,
+			 int already_filled);
 int ath12k_dbring_validate_buffer(struct ath12k *ar, void *data, u32 size);
 #endif /* ATH12K_DBRING_H */
