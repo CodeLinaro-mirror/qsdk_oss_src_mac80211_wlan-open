@@ -1979,6 +1979,14 @@ ath12k_cfr_set_tara_group_params(struct ath12k *ar, struct cfr_rcc_param *param)
 	rcc->num_grp_tlvs = param->num_grp_tlvs;
 }
 
+void
+ath12k_cfr_reset_group_configs_for_bitmap(struct ath12k *ar, u32 bitmap)
+{
+	ar->cfr.rcc_param.modified_in_curr_session |= bitmap;
+
+	ath12k_peer_cfr_default_ta_ra_config(&ar->cfr.rcc_param, true, bitmap);
+}
+
 /*
  * commit: serialize all staged rcc_param state and send one WMI command.
  * Clears modified_groups on success.
