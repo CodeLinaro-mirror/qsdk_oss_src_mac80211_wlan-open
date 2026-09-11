@@ -95,8 +95,6 @@ ath12k-$(CPTCFG_QCN_EXTN) += \
 	qcn_extns/ranging_extn.o \
 	qcn_extns/mapc_extn.o
 
-ath12k-$(CPTCFG_QCN_EXTN_MESH_SUPPORT) += \
-	qcn_extns/mesh-extn.o
 
 ath12k-$(CPTCFG_EXT_IPA_OFFLOAD) += \
 	qcn_extns/ipa/dp_ipa.o \

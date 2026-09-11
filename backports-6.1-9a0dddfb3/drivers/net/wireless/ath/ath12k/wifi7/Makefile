@@ -32,6 +32,7 @@ ath12k_wifi7-$(CPTCFG_EXT_IPA_OFFLOAD) += \
 		  qcn_extns/ipa/dp_ipa.o
 ath12k_wifi7-$(CPTCFG_ATH12K_PPE_DS_SUPPORT) += ppeds.o
 ath12k_wifi7-$(CPTCFG_ATH12K_AHB) += ahb.o
+ath12k_wifi7-$(CPTCFG_QCN_EXTN_MESH_SUPPORT) += qcn_extns/mesh-extn.o
 
 ifeq ($(CONFIG_KERNEL_ATH_GCOV_PROFILE),)
 GCOV_PROFILE:=y
