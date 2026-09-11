@@ -113,10 +113,10 @@ void ath12k_hw_qcn9274_fill_cfr_hdr_info(struct ath12k *ar,
 {
 	header->start_magic_num = ATH12K_CFR_START_MAGIC;
 	header->vendorid = VENDOR_QCA;
-	header->cfr_metadata_len = sizeof(struct cfr_enh_metadata);
+	header->cfr_metadata_len = ATH12K_CFR_META_LEN(0);
 	header->host_real_ts = ktime_to_ns(ktime_get_real());
 
-	header->cfr_metadata_version = ATH12K_CFR_META_VERSION_11;
+	header->cfr_metadata_version = ATH12K_CFR_META_VERSION_12;
 	if(ar->ab->hw_rev == ATH12K_HW_QCN6432_HW10)
 		header->chip_type = ATH12K_CFR_RADIO_QCN6432;
 	else if (ar->ab->hw_rev == ATH12K_HW_IPQ5424_HW10)
@@ -139,8 +139,7 @@ void ath12k_hw_qcn9274_fill_cfr_hdr_info(struct ath12k *ar,
 	header->meta_enh.gi_type = params->gi_type;
 	header->meta_enh.beamformed = 0;
 
-	memcpy(header->meta_enh.su_peer_addr,
-	       params->peer_mac_addr, ETH_ALEN);
+	memcpy(header->meta_enh.peer_addr, params->peer_mac_addr, ETH_ALEN);
 	memcpy(header->meta_enh.chain_rssi, params->chain_rssi,
 	       sizeof(params->chain_rssi));
 	memcpy(header->meta_enh.chain_phase, params->chain_phase,
@@ -157,10 +156,10 @@ void ath12k_hw_wcn7850_fill_cfr_hdr_info(struct ath12k *ar,
 {
 	header->start_magic_num = ATH12K_CFR_START_MAGIC;
 	header->vendorid = VENDOR_QCA;
-	header->cfr_metadata_len = sizeof(struct cfr_enh_metadata);
+	header->cfr_metadata_len = ATH12K_CFR_META_LEN(0);
 	header->host_real_ts = ktime_to_ns(ktime_get_real());
 
-	header->cfr_metadata_version = ATH12K_CFR_META_VERSION_11;
+	header->cfr_metadata_version = ATH12K_CFR_META_VERSION_12;
 	header->chip_type = ATH12K_CFR_RADIO_WCN7850;
 
 	header->meta_enh.status = FIELD_GET(WMI_CFR_PEER_CAPTURE_STATUS,
@@ -176,8 +175,7 @@ void ath12k_hw_wcn7850_fill_cfr_hdr_info(struct ath12k *ar,
 	header->meta_enh.gi_type = params->gi_type;
 	header->meta_enh.beamformed = 0;
 
-	memcpy(header->meta_enh.su_peer_addr,
-	       params->peer_mac_addr, ETH_ALEN);
+	memcpy(header->meta_enh.peer_addr, params->peer_mac_addr, ETH_ALEN);
 	memcpy(header->meta_enh.chain_rssi, params->chain_rssi,
 	       sizeof(params->chain_rssi));
 	memcpy(header->meta_enh.chain_phase, params->chain_phase,
@@ -703,7 +701,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		/* sizeof (ath12k_csi_cfr_header) + max cfr header(200 bytes) +
 		 * max cfr payload(16384 bytes)
 		 */
-		.cfr_stream_buf_size = sizeof(struct ath12k_csi_cfr_header) +
+		.cfr_stream_buf_size = ATH12K_CFR_HEADER_LEN(HAL_MAX_UL_MU_USERS) +
 				(CFR_HDR_MAX_LEN_WORDS_QCN9274 *4) +
 				CFR_DATA_MAX_LEN_QCN9274,
 		.mlo_3_link_tx_support = false,
@@ -819,7 +817,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		/* sizeof (ath12k_csi_cfr_header) + max cfr header(200 bytes) +
 		 * max cfr payload(16384 bytes)
 		 */
-		.cfr_stream_buf_size = sizeof(struct ath12k_csi_cfr_header) +
+		.cfr_stream_buf_size = ATH12K_CFR_HEADER_LEN(HAL_MAX_UL_MU_USERS) +
 					(CFR_HDR_MAX_LEN_WORDS_WCN7850 *4) +
 					CFR_DATA_MAX_LEN_WCN7850,
 		.mlo_3_link_tx_support = false,
@@ -958,7 +956,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		/* sizeof (ath12k_csi_cfr_header) + max cfr header(200 bytes) +
 		 * max cfr payload(16384 bytes)
 		 */
-		.cfr_stream_buf_size = sizeof(struct ath12k_csi_cfr_header) +
+		.cfr_stream_buf_size = ATH12K_CFR_HEADER_LEN(HAL_MAX_UL_MU_USERS) +
 					(CFR_HDR_MAX_LEN_WORDS_QCN9274 *4) +
 					CFR_DATA_MAX_LEN_QCN9274,
 		.mlo_3_link_tx_support = true,
@@ -1084,7 +1082,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		/* sizeof (ath12k_csi_cfr_header) + max cfr header(200 bytes) +
 		 * max cfr payload(16384 bytes)
 		 */
-		.cfr_stream_buf_size = sizeof(struct ath12k_csi_cfr_header) +
+		.cfr_stream_buf_size = ATH12K_CFR_HEADER_LEN(HAL_MAX_UL_MU_USERS) +
 					(CFR_HDR_MAX_LEN_WORDS_IPQ5332 *4) +
 					CFR_DATA_MAX_LEN_IPQ5332,
 		.mlo_3_link_tx_support = false,
@@ -1190,7 +1188,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		/* sizeof (ath12k_csi_cfr_header) + max cfr header(200 bytes) +
 		 * max cfr payload(16384 bytes)
 		 */
-		.cfr_stream_buf_size = sizeof(struct ath12k_csi_cfr_header) +
+		.cfr_stream_buf_size = ATH12K_CFR_HEADER_LEN(HAL_MAX_UL_MU_USERS) +
 					(CFR_HDR_MAX_LEN_WORDS_QCN6432 *4) +
 					CFR_DATA_MAX_LEN_QCN6432,
 		.mlo_3_link_tx_support = false,
@@ -1320,7 +1318,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		 *                    freeze_tlv len + uplink user setup info
 		 *                  = 32bytes + 32bytes + (8bytes * 4users)
 		 */
-		.cfr_stream_buf_size = sizeof(struct ath12k_csi_cfr_header) +
+		.cfr_stream_buf_size = ATH12K_CFR_HEADER_LEN(HAL_MAX_UL_MU_USERS) +
 					(CFR_HDR_MAX_LEN_WORDS_IPQ5424 * 4) +
 					CFR_DATA_MAX_LEN_IPQ5424,
 		.mlo_3_link_tx_support = false,

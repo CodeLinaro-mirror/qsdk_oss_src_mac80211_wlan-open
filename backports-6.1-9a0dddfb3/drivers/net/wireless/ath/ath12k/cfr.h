@@ -54,6 +54,7 @@
 #define CFR_HDR_MAX_LEN_WORDS_QCN9625 104
 /* 1024 tones * 4 bytes/tone * 5 chains * 4ss (or 512 tones * 8ss, same total) */
 #define CFR_DATA_MAX_LEN_QCN9625 81920
+#define ATH12K_CFR_MAX_MU_USERS 37
 
 #define VENDOR_QCA 0x8cfdf0
 #define NUM_CHAINS_FW_TO_HOST(n) ((1 << ((n) + 1)) - 1)
@@ -71,6 +72,7 @@ enum ath12k_cfr_meta_version {
 	ATH12K_CFR_META_VERSION_9,
 	ATH12K_CFR_META_VERSION_10,
 	ATH12K_CFR_META_VERSION_11,
+	ATH12K_CFR_META_VERSION_12,
 	ATH12K_CFR_META_VERSION_MAX = 0xFF,
 };
 
@@ -116,10 +118,7 @@ struct ath12k_cfr_peer_tx_param {
  * @center_freq2: secondary center frequency of the capture (160/80+80 MHz)
  *
  * @num_mu_users: 0 for an SU capture. Non-zero indicates an MU (RCC)
- * capture and gives the user count. Current metadata layout carries only
- * su_peer_addr; multi-user peer-address arrays are not part of this struct
- *
- * @su_peer_addr: peer MAC address for an SU capture
+ * capture and gives the user count
  *
  * @chain_rssi: per-chain RSSI. Not available from ucode's DMA header on
  * either wifi7 or wifi8 -- sourced from the WMI TX capture event
@@ -145,6 +144,11 @@ struct ath12k_cfr_peer_tx_param {
  * chain_rssi -- no ucode DMA-header equivalent, kept
  *
  * @puncture_bitmap: puncture pattern of the capture bandwidth
+ *
+ * @peer_addr: peer MAC array sized for max MU users. For SU, only first
+ * ETH_ALEN bytes are valid. For MU, only first num_mu_users * ETH_ALEN
+ * bytes are valid and exported to userspace. must be the last member of
+ * metadata structure to support reporting of only valid users MAC.
  */
 struct cfr_enh_metadata {
 	u8 status;
@@ -153,7 +157,6 @@ struct cfr_enh_metadata {
 	u16 center_freq1;
 	u16 center_freq2;
 	u8 num_mu_users;
-	u8 su_peer_addr[ETH_ALEN];
 	u32 chain_rssi[HOST_MAX_CHAINS];
 	u16 chain_phase[HOST_MAX_CHAINS];
 	u32 cfo_measurement;
@@ -164,6 +167,10 @@ struct cfr_enh_metadata {
 	u8 beamformed;
 	u8 agc_gain_tbl_index[HOST_MAX_CHAINS];
 	u16 puncture_bitmap;
+	/* new members */
+
+	/* peer_addr must be last member of the metadata. Add new members above */
+	u8 peer_addr[ATH12K_CFR_MAX_MU_USERS * ETH_ALEN];
 } __packed;
 
 struct ath12k_csi_cfr_header {
@@ -175,6 +182,20 @@ struct ath12k_csi_cfr_header {
 	u64 host_real_ts;
 	struct cfr_enh_metadata meta_enh;
 } __packed;
+
+#define ATH12K_CFR_SANITIZE_MU_USERS(_num_mu_users) \
+	((_num_mu_users) > ATH12K_CFR_MAX_MU_USERS ? \
+	 ATH12K_CFR_MAX_MU_USERS : (_num_mu_users))
+#define ATH12K_CFR_PEER_ADDR_COUNT(_num_mu_users) \
+	((_num_mu_users) ? ATH12K_CFR_SANITIZE_MU_USERS(_num_mu_users) : 1)
+#define ATH12K_CFR_PEER_ADDR_LEN(_num_mu_users) \
+	(ATH12K_CFR_PEER_ADDR_COUNT(_num_mu_users) * ETH_ALEN)
+#define ATH12K_CFR_META_LEN(_num_mu_users) \
+	(offsetof(struct cfr_enh_metadata, peer_addr) + \
+	 ATH12K_CFR_PEER_ADDR_LEN(_num_mu_users))
+#define ATH12K_CFR_HEADER_LEN(_num_mu_users) \
+	(offsetof(struct ath12k_csi_cfr_header, meta_enh) + \
+	 ATH12K_CFR_META_LEN(_num_mu_users))
 
 enum ath12k_cfr_preamble_type {
 	ATH12K_CFR_PREAMBLE_TYPE_LEGACY,
@@ -638,6 +659,7 @@ struct ath12k_cfr_look_up_table {
 	u32 tx_address1;
 	u32 tx_address2;
 	struct ath12k_csi_cfr_header header;
+	u32 header_len;
 	union {
 		struct ath12k_cfir_dma_hdr hdr;
 		struct ath12k_cfir_enh_dma_hdr enh_hdr;

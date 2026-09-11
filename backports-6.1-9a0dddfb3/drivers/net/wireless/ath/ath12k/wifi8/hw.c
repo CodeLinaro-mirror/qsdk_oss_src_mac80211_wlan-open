@@ -186,10 +186,10 @@ void ath12k_hw_qcn9625_fill_cfr_hdr_info(struct ath12k *ar,
 {
 	header->start_magic_num = ATH12K_CFR_START_MAGIC;
 	header->vendorid = VENDOR_QCA;
-	header->cfr_metadata_len = sizeof(struct cfr_enh_metadata);
+	header->cfr_metadata_len = ATH12K_CFR_META_LEN(0);
 	header->host_real_ts = ktime_to_ns(ktime_get_real());
 
-	header->cfr_metadata_version = ATH12K_CFR_META_VERSION_11;
+	header->cfr_metadata_version = ATH12K_CFR_META_VERSION_12;
 	header->chip_type = ATH12K_CFR_RADIO_QCN9625;
 
 	header->meta_enh.status = FIELD_GET(WMI_CFR_PEER_CAPTURE_STATUS,
@@ -205,8 +205,7 @@ void ath12k_hw_qcn9625_fill_cfr_hdr_info(struct ath12k *ar,
 	header->meta_enh.gi_type = params->gi_type;
 	header->meta_enh.beamformed = 0;
 
-	memcpy(header->meta_enh.su_peer_addr,
-	       params->peer_mac_addr, ETH_ALEN);
+	memcpy(header->meta_enh.peer_addr, params->peer_mac_addr, ETH_ALEN);
 	memcpy(header->meta_enh.chain_rssi, params->chain_rssi,
 	       sizeof(params->chain_rssi));
 	memcpy(header->meta_enh.chain_phase, params->chain_phase,
@@ -224,13 +223,10 @@ void ath12k_hw_qcn9625_fill_cfr_hdr_info(struct ath12k *ar,
  * extension of it, so it is not shared with
  * ath12k_hw_wifi7_parse_cfr_enh_dma_hdr().
  *
- * freeze_capture_tlv itself is assumed unchanged from wifi7
- * (macrx_freeze_capture_channel_v5 / MACRX_FREEZE_TLV_VERSION_5) --
- * ucode's cc_upload_header_struct_t comment lists no version beyond 5
- * and documents the freeze TLV size only as HMT vs WKK(16 x u16), which
- * matches _v5. freeze_reason_to_capture_type() only reads freeze->info0,
- * which is common to all versions, so no version dispatch is done here.
- *
+ * Peer MAC population is primarily done during TX-event correlation, where
+ * SU/MU peer lists are available in host-assembled PPDU metadata. This
+ * parser retains SU freeze-TLV fallback for buggy scenarios where RX/TX
+ * correlation metadata is missing.
  */
 int ath12k_hw_qcn9625_parse_cfr_enh_dma_hdr(struct ath12k *ar, u8 *data,
 					    struct ath12k_cfr_look_up_table *lut,
@@ -282,7 +278,7 @@ int ath12k_hw_qcn9625_parse_cfr_enh_dma_hdr(struct ath12k *ar, u8 *data,
 
 	if (capture_type != CFR_CAPTURE_METHOD_ACK_RESP_TO_TM_FTM) {
 		if (!cc_hdr.mu_rx_data_incl) {
-			peer_macaddr = meta->su_peer_addr;
+			peer_macaddr = meta->peer_addr;
 			if (cc_hdr.freeze_data_incl)
 				extract_peer_mac_from_freeze_tlv(freeze_tlv,
 								 peer_macaddr);
@@ -647,7 +643,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.cfr_support = true,
 		.cfr_dma_hdr_size = sizeof(struct ath12k_cfir_wifi8_common_hdr),
 		.cfr_num_stream_bufs = 128,
-		.cfr_stream_buf_size = sizeof(struct ath12k_csi_cfr_header) +
+		.cfr_stream_buf_size = ATH12K_CFR_HEADER_LEN(HAL_MAX_UL_MU_USERS) +
 					(CFR_HDR_MAX_LEN_WORDS_QCN9625 * 4) +
 					CFR_DATA_MAX_LEN_QCN9625,
 		.mlo_3_link_tx_support = true,
@@ -789,7 +785,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.cfr_support = true,
 		.cfr_dma_hdr_size = sizeof(struct ath12k_cfir_wifi8_common_hdr),
 		.cfr_num_stream_bufs = 128,
-		.cfr_stream_buf_size = sizeof(struct ath12k_csi_cfr_header) +
+		.cfr_stream_buf_size = ATH12K_CFR_HEADER_LEN(HAL_MAX_UL_MU_USERS) +
 					(CFR_HDR_MAX_LEN_WORDS_QCN9625 * 4) +
 					CFR_DATA_MAX_LEN_QCN9625,
 		.mlo_3_link_tx_support = true,
@@ -931,7 +927,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.cfr_support = true,
 		.cfr_dma_hdr_size = sizeof(struct ath12k_cfir_wifi8_common_hdr),
 		.cfr_num_stream_bufs = 128,
-		.cfr_stream_buf_size = sizeof(struct ath12k_csi_cfr_header) +
+		.cfr_stream_buf_size = ATH12K_CFR_HEADER_LEN(HAL_MAX_UL_MU_USERS) +
 					(CFR_HDR_MAX_LEN_WORDS_QCN9625 * 4) +
 					CFR_DATA_MAX_LEN_QCN9625,
 		.mlo_3_link_tx_support = true,
