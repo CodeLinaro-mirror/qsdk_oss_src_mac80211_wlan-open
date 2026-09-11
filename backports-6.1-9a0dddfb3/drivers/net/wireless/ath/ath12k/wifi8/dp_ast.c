@@ -1046,6 +1046,7 @@ void ath12k_dp_free_ast_entry(struct ath12k_dp_hw_group *dp_hw_grp,
 	ast_base->ast_entries[ast_index] = NULL;
 	ath12k_ast_entry_hash_delete(dp_hw_grp, sw_ast_entry);
 
+	ast_stats->num_ast_entry_delete_success++;
 	kfree(sw_ast_entry);
 	spin_unlock_bh(&ast_base->ast_lock);
 }
@@ -1094,6 +1095,7 @@ void ath12k_dp_ast_entry_delete(struct ath12k_dp_hw_group *dp_hw_grp,
 	ath12k_dp_ast_clear_rx_invalidate_status_pending(sw_ast_entry,
 							 chip_id_bitmap, true);
 
+	ast_stats->num_ast_entry_delete++;
 	ath12k_dp_hw_ast_entry_sync(dp_hw_grp, sw_ast_entry, hw_ast_entry);
 
 	spin_unlock_bh(&ast_base->ast_lock);
@@ -1107,6 +1109,7 @@ int ath12k_wifi8_dp_rx_ase_cmd_status_handler(struct ath12k_dp *dp, int budget)
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
 	struct ath12k_dp_global_ast_table *ast_base =
 				ath12k_dp_get_global_ast_table(dp->dp_hw_grp);
+	struct ath12k_dp_global_ast_stats *ast_stats = &ast_base->ast_stats;
 	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8 =
 			ath12k_get_dp_hw_group_wifi8(dp->dp_hw_grp);
 	struct ath12k_ast_entry *sw_ast_entry = NULL;
@@ -1156,8 +1159,10 @@ int ath12k_wifi8_dp_rx_ase_cmd_status_handler(struct ath12k_dp *dp, int budget)
 		ath12k_dp_ast_clear_rx_invalidate_status_pending(sw_ast_entry,
 								 chip_id,
 								 true);
-		if (!sw_ast_entry->ast_create_invalidate_status)
+		if (!sw_ast_entry->ast_create_invalidate_status) {
+			ast_stats->num_ast_entry_create_success++;
 			complete(&dp_hw_grp_wifi8->peer_init_done);
+		}
 
 		spin_unlock_bh(&ast_base->ast_lock);
 	}
@@ -1196,8 +1201,12 @@ ssize_t ath12k_wifi8_global_ast_stats(struct ath12k_dp *dp, char *buf, int size)
 			 ast_base->ase_tx_cache_en);
 	len += scnprintf(buf + len, size - len, "num_ast_entry_create_attempted:%u\n",
 			 ast_stats->num_ast_entry_create_attempted);
+	len += scnprintf(buf + len, size - len, "num_ast_entry_create_success:%u\n",
+			 ast_stats->num_ast_entry_create_success);
 	len += scnprintf(buf + len, size - len, "num_ast_entry_delete_attempted:%u\n",
 			 ast_stats->num_ast_entry_delete);
+	len += scnprintf(buf + len, size - len, "num_ast_entry_delete_success:%u\n",
+			 ast_stats->num_ast_entry_delete_success);
 	len += scnprintf(buf + len, size - len, "\nfailure stats\n");
 	len += scnprintf(buf + len, size - len, "invalid_hw_ast_entry:%u\n",
 			 ast_stats->invalid_hw_ast_entry);
@@ -1243,6 +1252,7 @@ int ath12k_wifi8_dp_tx_cmd_status_handler(struct ath12k_dp *dp,
 				ath12k_dp_get_global_ast_table(dp->dp_hw_grp);
 	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8 =
 			ath12k_get_dp_hw_group_wifi8(dp->dp_hw_grp);
+	struct ath12k_dp_global_ast_stats *ast_stats = &ast_base->ast_stats;
 	struct ath12k_base *ab = dp->ab;
 	struct hal_srng *srng;
 	struct hal_tcl_status_ring *tx_status_desc;
@@ -1296,8 +1306,10 @@ int ath12k_wifi8_dp_tx_cmd_status_handler(struct ath12k_dp *dp,
 		clear_bit(ATH12K_AST_ENTRY_TX_INVAL_STATUS,
 			  &sw_ast_entry->ast_create_invalidate_status);
 
-		if (!sw_ast_entry->ast_create_invalidate_status)
+		if (!sw_ast_entry->ast_create_invalidate_status) {
+			ast_stats->num_ast_entry_create_success++;
 			complete(&dp_hw_grp_wifi8->peer_init_done);
+		}
 
 		spin_unlock_bh(&ast_base->ast_lock);
 	}

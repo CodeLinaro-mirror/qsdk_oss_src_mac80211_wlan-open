@@ -1220,21 +1220,32 @@ int ath12k_wifi8_dp_peer_assoc(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 	ret = ath12k_dp_tx_classify_info_alloc(dp->dp_hw_grp,
 					       &tx_classify_paddr,
 					       &tx_classify_vaddr);
-	if (ret)
+	if (ret) {
+		ath12k_err(dp->ab,
+			   "wifi8: failed to alloc tx classify info for peer %pM ret=%d\n",
+			   addr, ret);
 		goto free_peer_ext_ctx;
+	}
 
 	peer_ext_ctx->tx_flow_info.hw_who_classify_info_vaddr = tx_classify_vaddr;
 	peer_ext_ctx->tx_flow_info.hw_who_classify_info_paddr = tx_classify_paddr;
 	pn_counter_paddr = ath12k_dp_get_page_paddr(dp->dp_hw_grp, dp_peer->peer_id);
 	if (!pn_counter_paddr) {
+		ath12k_err(dp->ab,
+			   "wifi8: failed to get PN counter paddr for peer %pM peer_id=%u\n",
+			   addr, dp_peer->peer_id);
 		ret = -ENOMEM;
 		goto free_tx_classify_info;
 	}
 
 	if (dp_peer->is_vdev_peer) {
 		ret = ath12k_peer_alloc_mcast_queues(dp->dp_hw_grp, dp_peer, dp_vif);
-		if (ret)
+		if (ret) {
+			ath12k_err(dp->ab,
+				   "wifi8: failed to alloc mcast queues for vdev peer %pM ret=%d\n",
+				   addr, ret);
 			goto free_queues_info;
+		}
 	} else {
 		if (ath12k_dp_peer_get_sta(dp_peer)->wme)
 			is_qos = true;
@@ -1243,17 +1254,29 @@ int ath12k_wifi8_dp_peer_assoc(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 
 		ret = ath12k_peer_alloc_default_queues(dp->dp_hw_grp, dp_peer,
 						       dp_vif, is_qos);
-		if (ret)
+		if (ret) {
+			ath12k_err(dp->ab,
+				   "wifi8: failed to alloc default queues for peer %pM ret=%d\n",
+				   addr, ret);
 			goto free_queues_info;
+		}
 
 		ret = ath12k_peer_alloc_hol_queues(dp->dp_hw_grp, dp_peer,
 						   dp_vif, is_qos);
-		if (ret)
+		if (ret) {
+			ath12k_err(dp->ab,
+				   "wifi8: failed to alloc HOL queues for peer %pM ret=%d\n",
+				   addr, ret);
 			goto free_queues_info;
+		}
 
 		ret = ath12k_peer_alloc_mgmt_queues(dp->dp_hw_grp, dp_peer, dp_vif);
-		if (ret)
+		if (ret) {
+			ath12k_err(dp->ab,
+				   "wifi8: failed to alloc mgmt queues for peer %pM ret=%d\n",
+				   addr, ret);
 			goto free_queues_info;
+		}
 	}
 
 	memcpy(ast_param.mac_addr, addr, ETH_ALEN);
@@ -1263,8 +1286,12 @@ int ath12k_wifi8_dp_peer_assoc(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 	if (dp_peer->is_vdev_peer)
 		ast_param.ast_entry_flags |= ATH12K_AST_ENTRY_IS_AP_BSS_ENTRY;
 	ret = ath12k_dp_ast_entry_create(dp->dp_hw_grp, &ast_param);
-	if (ret)
+	if (ret) {
+		ath12k_err(dp->ab,
+			   "wifi8: failed to create AST entry for peer %pM peer_id=%u ret=%d\n",
+			   addr, dp_peer->peer_id, ret);
 		goto free_queues_info;
+	}
 
 	peer_ext_ctx->ast_index = ast_param.ast_index;
 	peer_ext_ctx->ast_hash = ast_param.ast_hash;
