@@ -25795,6 +25795,7 @@ ath12k_mac_unassign_vif_chanctx_handle(struct ieee80211_hw *hw,
 		if (ret)
 			ath12k_warn(ab, "failed to stop vdev %i: %d\n",
 				    arvif->vdev_id, ret);
+		arvif->pending_csa_up = false;
 	} else if (ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
 		   arvif->is_started && !arvif->is_up) {
 		ret = ath12k_mac_vdev_stop(arvif);
