@@ -752,6 +752,42 @@ void ath12k_rtt_reconfig_responder_role(struct ath12k *ar)
 	}
 }
 
+void ath12k_rtt_reconfig_initiator_role(struct ath12k *ar)
+{
+	struct ath12k_link_vif *arvif;
+	u32 role;
+	int ret;
+
+	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	list_for_each_entry(arvif, &ar->arvifs, list) {
+		struct ath12k_vif *ahvif = arvif->ahvif;
+
+		if (!arvif->is_started || !ahvif)
+			continue;
+
+		if (ahvif->vdev_type != WMI_VDEV_TYPE_AP &&
+			ahvif->vdev_type != WMI_VDEV_TYPE_STA)
+			continue;
+
+		role = arvif->rtt_ctx.rtt_initiator_role;
+		if (!role)
+			continue;
+
+		ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
+			WMI_VDEV_PARAM_ENABLE_DISABLE_RTT_INITIATOR_ROLE,
+			role);
+		if (ret)
+			ath12k_warn(ar->ab,
+				    "failed to restore RTT initiator role %u on vdev %i after FW recovery: %d\n",
+				    role, arvif->vdev_id, ret);
+		else
+			ath12k_dbg(ar->ab, ATH12K_DBG_CFG,
+				   "restored RTT initiator role %u on vdev %i link %u after FW recovery\n",
+				   role, arvif->vdev_id, arvif->link_id);
+	}
+}
+
 /**
  * ath12k_pasn_peer_set_secure_ctx() - Update the secure-context-installed
  *	flag for a PASN peer.

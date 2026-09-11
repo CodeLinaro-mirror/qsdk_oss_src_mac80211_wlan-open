@@ -48,6 +48,7 @@ int ath12k_mac_setup_iftype_11az_ranging(struct ath12k_hw *ah);
 void ath12k_mac_cleanup_iftype_11az_ranging(struct ath12k_hw *ah);
 void ath12k_mac_set_ranging_ext_features(struct wiphy *wiphy, struct ath12k *ar);
 void ath12k_rtt_reconfig_responder_role(struct ath12k *ar);
+void ath12k_rtt_reconfig_initiator_role(struct ath12k *ar);
 
 struct ath12k_rtt_pasn_peer;
 struct ath12k_link_vif;

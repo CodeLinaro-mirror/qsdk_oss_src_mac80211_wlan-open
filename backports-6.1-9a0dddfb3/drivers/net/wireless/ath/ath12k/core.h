@@ -901,6 +901,7 @@ struct ath12k_rtt_pasn_peer {
  */
 struct ath12k_rtt_context {
 	u32 rtt_responder_role;
+	u32 rtt_initiator_role;
 	struct list_head pasn_peer_list;
 	spinlock_t pasn_peer_lock; /* protects pasn_peer_list */
 	struct wiphy_work pasn_fw_peer_create_work;
