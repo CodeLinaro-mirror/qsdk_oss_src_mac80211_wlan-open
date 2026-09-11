@@ -1176,7 +1176,6 @@ void ath12k_dp_mon_rx_nrp_reset(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_mon_rx_smart_mon_set(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_mon_rx_smart_mon_reset(struct ath12k_pdev_dp *dp_pdev);
 int ath12k_dp_mon_rx_monitor_mode_buf_setup(struct ath12k *ar);
-int ath12k_dp_mon_rx_monitor_mode_reset_buffers(struct ath12k *ar);
 int ath12k_dp_mon_set_fill_level(struct ath12k_pdev_dp *dp_pdev, u32 val);
 size_t ath12k_dp_mon_list_cut_nodes(struct list_head *list, struct list_head *head,
 				    size_t count);
