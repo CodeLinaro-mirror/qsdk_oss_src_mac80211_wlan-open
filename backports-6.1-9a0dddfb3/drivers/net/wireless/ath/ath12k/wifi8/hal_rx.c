@@ -1360,7 +1360,8 @@ void ath12k_wifi8_hal_reo_hw_setup(struct ath12k_base *ab)
 	 * WAR enablement for HW issue on tresles V1 for TRSLONE-1155
 	 * This setting should be skipped for trestles V2
 	 */
-	val &= ~HAL_REO1_MISC_CFG_1_STOP_DELINKING_DURING_CORRUPTION;
+	if (ab->hw_rev == ATH12K_HW_QCN9625_HW10)
+		val &= ~HAL_REO1_MISC_CFG_1_STOP_DELINKING_DURING_CORRUPTION;
 	val &= ~HAL_REO1_MISC_CFG_1_REO_MSDU_FETCH_OPTIMIZE;
 	val &= ~HAL_REO1_MISC_CFG_1_REO_MSDU_LINK_SHARING_EN;
 	ath12k_hif_write32(ab, reo_base + HAL_REO1_MISC_CFG_1, val);
