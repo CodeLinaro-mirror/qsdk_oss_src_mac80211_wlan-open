@@ -40,7 +40,22 @@ const char * const ath12k_dump_list[] = {
 	"wmi_cmd_comp_debug",
 	"wmi_event_debug",
 	"ieee80211_vif",
+	"dp_rxdma_ring",
+	"dp_srng",
 	"ath12k_vif",
+	"ath12k_dp_vif",
+	"ath12k_dp_hw",
+	"ath12k_dp_peer",
+	"ath12k_dp_link_peer",
+	"htt_log_buf_t htt_command_log_buf_info",
+	"htt_log_buf_t htt_event_log_buf_info",
+	"htt_logger",
+	"ath12k_pdev_mon_dp",
+	"ath12k_dp_mon",
+	"ath12k_dp_mon_ppdu_desc",
+	"ath12k_dp_mon_desc",
+	"ath12k_rtap_vendor_ns",
+	"dp_mon_tx_filter",
 };
 
 const size_t ath12k_dump_list_size = ARRAY_SIZE(ath12k_dump_list);
