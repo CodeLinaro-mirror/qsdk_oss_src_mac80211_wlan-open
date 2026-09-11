@@ -4253,6 +4253,7 @@ ath12k_wifi7_hal_mon_tx_parse_status_tlv(struct ath12k_hal *hal,
 					prot_status_info : data_status_info;
 	struct hal_tx_mon_packet_info *packet_info = NULL;
 	u32 info[7] = {0};
+	struct page *page;
 
 	switch (tlv_tag) {
 	case HAL_TX_FES_SETUP: {
@@ -4800,7 +4801,9 @@ ath12k_wifi7_hal_mon_tx_parse_status_tlv(struct ath12k_hal *hal,
 	case HAL_TX_DATA: {
 		tx_ppdu_info->cur_usr_idx = userid;
 		status_info->buffer = status_frag;
-		status_info->offset = (const u8 *)tlv_data - status_frag;
+		page = virt_to_head_page(status_info->buffer);
+		status_info->offset = (const u8 *)tlv_data -
+				       (const u8 *)page_address(page);
 		status_info->length = tlv_len;
 		status = HAL_TX_MON_DATA;
 		break;
