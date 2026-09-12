@@ -122,6 +122,10 @@ struct hal_tlv_64_hdr {
 #define HAL_RX_MAX_MCS_BE	15
 #define HAL_RX_MAX_MCS_BN       23
 #define HAL_RX_MAX_NSS		8
+
+/* 16 subbands per chain (8 for ≤160MHz + 8 ext160 for 320MHz) */
+#define HAL_RX_MAX_SUBBANDS	16
+
 #define HAL_RX_MAX_NUM_LEGACY_RATES 12
 
 #define HAL_ENCRYPT_TYPE_MAX	12

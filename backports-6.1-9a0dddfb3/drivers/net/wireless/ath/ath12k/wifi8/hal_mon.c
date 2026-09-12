@@ -3009,7 +3009,7 @@ ath12k_wifi8_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 		 * in MU case. Rssi in MU needs to be retrieved from
 		 * PHYRX_OTHER_RECEIVE_INFO TLV.
 		 */
-		ppdu_info->rssi_comb =
+		ppdu_info->rssi_db_comb_chain_pri20 =
 			u32_get_bits(info[1],
 				     HAL_RX_PHYRX_RSSI_LEGACY_INFO_INFO1_RSSI_COMB);
 

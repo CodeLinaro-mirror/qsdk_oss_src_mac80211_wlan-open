@@ -680,8 +680,8 @@ struct hal_rx_mon_ppdu_info {
 	u8 vht_flag_values5;
 	u16 vht_flag_values6;
 	u8 gi;
-	u8 rssi_comb;
-	u8 rssi_chain_pri20[HAL_RX_MAX_NSS];
+	u8 rssi_db_comb_chain_pri20;
+	u8 rssi_db_per_chain_pri20[HAL_RX_MAX_NSS];
 	u16 tid;
 	u8 fc_valid;
 	u32 ht_flags : 1,
@@ -744,7 +744,7 @@ struct hal_rx_mon_ppdu_info {
 	u8 data_sequence_control_info_valid;
 	u8 ltf_size;
 	u8 rxpcu_filter_pass;
-	s8 rssi_chain[8][8];
+	s8 rssi_db_per_chain_per_subband[HAL_RX_MAX_NSS][HAL_RX_MAX_SUBBANDS];
 	u8 num_users;
 	u8 addr1[ETH_ALEN];
 	u8 addr2[ETH_ALEN];
@@ -808,7 +808,7 @@ static inline u32 hal_rx_mon_get(const void *ptr, u32 offset, u32 mask, u8 lsb)
 
 #define HAL_RX_MON_UPDATE_PRI20_RSSI_PER_CHAIN(chain, ppdu_info, rssi_info_tlv) \
 	( \
-		(ppdu_info)->rssi_chain_pri20[(chain)] = \
+		(ppdu_info)->rssi_db_per_chain_pri20[(chain)] = \
 			hal_rx_mon_get((rssi_info_tlv), \
 				       HAL_RX_MON_OFFSET(RECEIVE_RSSI_INFO, \
 							 RSSI_PRI20_CHAIN##chain), \
