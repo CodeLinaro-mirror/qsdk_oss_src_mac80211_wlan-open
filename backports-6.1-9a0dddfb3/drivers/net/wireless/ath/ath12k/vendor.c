@@ -18905,7 +18905,20 @@ static int ath12k_vendor_secure_ranging_ctx_cmd(struct wiphy *wiphy,
 			return -EINVAL;
 	}
 
-	arvif = ath12k_pasn_arvif_from_wdev(wdev, link_id);
+	if (wdev->iftype == NL80211_IFTYPE_STATION) {
+#ifdef CPTCFG_QCN_EXTN
+		arvif = ath12k_arvif_from_peer_addr_extn(wdev, peer_addr);
+#else
+		arvif = NULL;
+#endif /* CPTCFG_QCN_EXTN */
+	} else {
+		arvif = ath12k_pasn_arvif_from_wdev(wdev, link_id);
+	}
+
+	ath12k_dbg(NULL, ATH12K_DBG_RTT,
+		   "RTT: secure_ranging_ctx iftype=%d peer=%pM link_id=%d arvif=%p\n",
+		   wdev->iftype, peer_addr, link_id, arvif);
+
 	if (!arvif || !arvif->ar)
 		return -ENOLINK;
 
@@ -18933,7 +18946,6 @@ static int ath12k_vendor_secure_ranging_ctx_cmd(struct wiphy *wiphy,
 		return -EINVAL;
 
 	memset(&arg, 0, sizeof(arg));
-	arg.vdev_id = arvif->vdev_id;
 	ether_addr_copy(arg.peer_mac, peer_addr);
 	if (tb[QCA_WLAN_VENDOR_ATTR_SECURE_RANGING_CTX_CIPHER])
 		arg.rsn_authmode =
@@ -18944,10 +18956,21 @@ static int ath12k_vendor_secure_ranging_ctx_cmd(struct wiphy *wiphy,
 	if (!arg.keyseed_len)
 		return -EINVAL;
 
-	ret = ath12k_wmi_send_ltf_key_seed(arvif->ar, &arg);
-	if (ret)
-		return ret;
-	ath12k_pasn_peer_set_ltf_keyseed(arvif, peer_addr, true);
+	if (wdev->iftype == NL80211_IFTYPE_STATION) {
+#ifdef CPTCFG_QCN_EXTN
+		ret = ath12k_wmi_send_ltf_key_seed_all_radios_extn(wdev, &arg, peer_addr);
+		if (ret)
+			return ret;
+#else
+		return -ENOLINK;
+#endif /* CPTCFG_QCN_EXTN */
+	} else {
+		arg.vdev_id = arvif->vdev_id;
+		ret = ath12k_wmi_send_ltf_key_seed(arvif->ar, &arg);
+		if (ret)
+			return ret;
+		ath12k_pasn_peer_set_ltf_keyseed(arvif, peer_addr, true);
+	}
 
 	return 0;
 }
