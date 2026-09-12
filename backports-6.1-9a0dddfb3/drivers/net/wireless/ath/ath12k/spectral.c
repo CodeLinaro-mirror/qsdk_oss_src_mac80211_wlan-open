@@ -946,7 +946,8 @@ int ath12k_spectral_start_scan(struct ath12k *ar)
 	 * scan_count FFT reports within this window we send a TIMEOUT event
 	 * with the partial count.
 	 */
-	if (ar->spectral.params[ar->spectral.mode].completion_timeout_us > 0) {
+	if (ar->spectral.params[ar->spectral.mode].completion_timeout_us > 0 &&
+	    ar->spectral.params[ar->spectral.mode].scan_count > 0) {
 		u64 timeout_ns =
 		(u64)ar->spectral.params[ar->spectral.mode].completion_timeout_us *
 				NSEC_PER_USEC;

@@ -17780,22 +17780,6 @@ ath12k_vendor_spectral_validate_agile_freq(struct wiphy *wiphy,
 			QCA_WLAN_VENDOR_SPECTRAL_SCAN_ERR_PARAM_UNSUPPORTED);
 	}
 
-	if (has_config) {
-		u32 scan_count = ar->spectral.params[SPECTRAL_SCAN_MODE_AGILE].scan_count;
-
-		if (tb[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_SCAN_COUNT])
-			scan_count = nla_get_u32(tb[
-				QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_SCAN_COUNT]);
-
-		if (tb[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_SCAN_COUNT] &&
-		    !scan_count) {
-			ath12k_warn(ar->ab,
-				    "spectral scan: agile finite scan_count required\n");
-			return ath12k_spectral_scan_start_reply_error(wiphy,
-				QCA_WLAN_VENDOR_SPECTRAL_SCAN_ERR_PARAM_INVALID_VALUE);
-		}
-	}
-
 	return 0;
 }
 
