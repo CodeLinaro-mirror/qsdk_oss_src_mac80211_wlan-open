@@ -180,6 +180,7 @@ extern unsigned int ath12k_rfs_core_mask[4];
 extern unsigned int ath12k_frame_mode;
 extern bool ath12k_fse_3_tuple_enabled;
 extern bool ath12k_rx_nwifi_err_dump;
+extern bool ath12k_upload_dump_before_bugon;
 extern bool ath12k_carrier_vow_optimization;
 extern unsigned int ath12k_reorder_VI_timeout;
 extern bool ath12k_mcast_link_bmap_enable;
