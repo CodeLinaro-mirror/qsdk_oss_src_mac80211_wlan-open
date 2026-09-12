@@ -711,6 +711,22 @@ enum mac_freeze_capture_reason {
 	FREEZE_REASON_MAX,
 };
 
+enum ath12k_cfr_chan_capture_status {
+	ATH12K_CFR_CAPTURE_IDLE = 0,
+	ATH12K_CFR_CAPTURE_BUSY,
+	ATH12K_CFR_CAPTURE_ACTIVE,
+	ATH12K_CFR_CAPTURE_NO_BUFFER,
+	ATH12K_CFR_CAPTURE_MAX,
+};
+
+struct ath12k_cfr_rcc_stats {
+	u64 bb_captured_channel_cnt;
+	u64 bb_captured_timeout_cnt;
+	u64 rx_loc_info_valid_cnt;
+	u64 chan_capture_status[ATH12K_CFR_CAPTURE_MAX];
+	u64 reason_cnt[FREEZE_REASON_MAX];
+};
+
 #define MACRX_FREEZE_CC_INFO0_FREEZE GENMASK(0, 0)
 #define MACRX_FREEZE_CC_INFO0_CAPTURE_REASON GENMASK(3, 1)
 #define MACRX_FREEZE_CC_INFO0_PKT_TYPE GENMASK(5, 4)
@@ -852,6 +868,8 @@ struct ath12k_cfr {
 	struct rchan *rfs_cfr_capture;
 	struct dentry *enable_cfr;
 	struct dentry *cfr_unassoc;
+	struct dentry *rcc_debug_counters;
+	struct dentry *clr_dbg_counters;
 	u8 cfr_enabled_peer_cnt;
 	struct ath12k_cfr_look_up_table *lut;
 	u32 lut_num;
@@ -865,6 +883,7 @@ struct ath12k_cfr {
 	u64 tx_evt_cnt;
 	u64 dbr_evt_cnt;
 	u64 total_tx_evt_cnt;
+	u64 rx_tlv_evt_cnt;
 	u64 release_cnt;
 	u64 tx_peer_status_cfr_fail;
 	u64 tx_evt_status_cfr_fail;
@@ -875,6 +894,7 @@ struct ath12k_cfr {
 	u64 clear_txrx_event;
 	u64 cfr_dma_aborts;
 	u64 flush_timeout_dbr_cnt;
+	struct ath12k_cfr_rcc_stats rcc_stats;
 	struct cfr_unassoc_pool_entry unassoc_pool[ATH12K_MAX_CFR_ENABLED_CLIENTS];
 	bool cfr_enabled;
 	bool rcc_enabled;
