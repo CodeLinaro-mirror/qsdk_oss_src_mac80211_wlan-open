@@ -622,6 +622,7 @@ static void _ieee80211_change_chanctx(struct ieee80211_local *local,
 
 	/* check if BW is wider */
 	ieee80211_chan_bw_change(local, old_ctx, false, false);
+	ieee80211_create_punct_objs_for_nol_chans(local, ctx);
 }
 
 static void ieee80211_change_chanctx(struct ieee80211_local *local,
@@ -1610,6 +1611,7 @@ ieee80211_link_use_reserved_reassign(struct ieee80211_link_data *link)
 	if (ieee80211_chanctx_refcount(local, old_ctx) == 0) {
 		ieee80211_punct_obj_migrate(local, old_ctx, new_ctx);
 		ieee80211_free_chanctx(local, old_ctx, false);
+		ieee80211_create_punct_objs_for_nol_chans(local, new_ctx);
 	}
 
 	ieee80211_recalc_chanctx_min_def(local, new_ctx, NULL, false);
@@ -2071,6 +2073,7 @@ static int ieee80211_vif_use_reserved_switch(struct ieee80211_local *local)
 
 		ieee80211_punct_obj_migrate(local, ctx, ctx->replace_ctx);
 		ieee80211_punct_obj_list_free(local, ctx);
+		ieee80211_create_punct_objs_for_nol_chans(local, ctx->replace_ctx);
 
 		ctx->replace_ctx->replace_ctx = NULL;
 		ctx->replace_ctx->replace_state =

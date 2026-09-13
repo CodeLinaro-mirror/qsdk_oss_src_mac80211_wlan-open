@@ -3473,6 +3473,30 @@ void ieee80211_punct_radar_update(struct ieee80211_local *local,
  */
 void ieee80211_start_punctured_cac(struct wiphy *wiphy,
 				   struct cfg80211_chan_def *chandef);
+/**
+ * ieee80211_create_punct_objs_for_nol_chans - create puncturing object for
+ *                                             channels in NOL.
+ * @local: mac80211 hw info struct
+ * @ctx: channel context
+ *
+ * DFS-based punctures can originate from pre-existing DFS state rather than
+ * from a radar event detected on the current channel context. For example,
+ * during AP startup or after a channel-context switch, userspace may request
+ * operation with a puncture bitmap that already excludes one or more 20 MHz
+ * subchannels because those subchannels are in a DFS Non-Occupancy Period
+ * (NOP).
+ *
+ * Such punctures must participate in the same lifecycle as punctures created
+ * in response to live radar detection. For each punctured 20 MHz subchannel,
+ * this helper checks whether the corresponding channel is currently in
+ * NL80211_DFS_UNAVAILABLE state and, if no puncturing object already exists,
+ * allocates and initializes an ieee80211_punct_obj for it.
+ *
+ * Punctured CAC is applicable only to subchannels that were punctured due to
+ * radar when they come out of the NOL.
+ */
+void ieee80211_create_punct_objs_for_nol_chans(struct ieee80211_local *local,
+					       struct ieee80211_chanctx *ctx);
 void ieee80211_awgn_detected_work(struct work_struct *work);
 int ieee80211_send_action_csa(struct ieee80211_sub_if_data *sdata,
 			      struct cfg80211_csa_settings *csa_settings);
