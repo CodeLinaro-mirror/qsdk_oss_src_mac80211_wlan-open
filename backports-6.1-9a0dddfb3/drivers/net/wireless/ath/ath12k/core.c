@@ -41,6 +41,7 @@
 #include "peer.h"
 #include "qos.h"
 #include "vendor.h"
+#include "qca-vendor.h"
 #include "telemetry.h"
 #include "ppe.h"
 #include "cfr.h"

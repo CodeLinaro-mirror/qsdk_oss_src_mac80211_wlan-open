@@ -12,6 +12,7 @@
 #include "telemetry_agent_if.h"
 #include "mac.h"
 #include "vendor.h"
+#include "qca-vendor.h"
 #include "sdwf.h"
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 #ifdef CPTCFG_QCN_EXTN

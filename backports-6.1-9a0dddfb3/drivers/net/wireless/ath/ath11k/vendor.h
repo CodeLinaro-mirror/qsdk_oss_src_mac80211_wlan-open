@@ -8,18 +8,6 @@
 
 #define QCA_NL80211_VENDOR_ID 0x001374
 
-enum qca_nl80211_vendor_subcmds {
-	/* Wi-Fi configuration subcommand */
-	QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION = 74,
-
-	/* QCA_NL80211_VENDOR_SUBCMD_BTCOEX_CONFIG: This command is used to
-	 * enable/disable BTCOEX and set priority for different type of WLAN
-	 * traffic over BT low priority traffic. This uses attributes in
-	 * enum qca-vendor_attr_btcoex_config.
-	 */
-	QCA_NL80211_VENDOR_SUBCMD_BTCOEX_CONFIG = 182,
-};
-
 /*
  * enum qca_wlan_priority_type - priority mask
  * This enum defines priority mask that user can configure
@@ -59,18 +47,6 @@ enum qca_wlan_vendor_attr_wlan_prio {
        QCA_WLAN_VENDOR_ATTR_WLAN_PRIO_LAST,
        QCA_WLAN_VENDOR_ATTR_WLAN_PRIO_MAX =
                QCA_WLAN_VENDOR_ATTR_WLAN_PRIO_LAST - 1,
-};
-
-/* Attributes for data used by
- * QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION
- */
-enum qca_wlan_vendor_attr_config {
-	QCA_WLAN_VENDOR_ATTR_CONFIG_GTX = 57,
-
-	/* keep last */
-	QCA_WLAN_VENDOR_ATTR_CONFIG_AFTER_LAST,
-	QCA_WLAN_VENDOR_ATTR_CONFIG_MAX =
-		QCA_WLAN_VENDOR_ATTR_CONFIG_AFTER_LAST - 1,
 };
 
 /**

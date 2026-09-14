@@ -13,6 +13,7 @@
 #include "../spectral_common.h"
 #include "dbring.h"
 #include "vendor.h"
+#include "qca-vendor.h"
 
 #define ATH12K_SPECTRAL_NUM_DETECTORS		2
 #define ATH12K_SPECTRAL_DETECTOR_NORMAL		0
