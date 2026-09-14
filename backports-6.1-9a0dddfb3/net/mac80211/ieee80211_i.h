@@ -3691,6 +3691,5 @@ int ieee80211_link_common_elems_size(struct ieee80211_sub_if_data *sdata,
 				     enum nl80211_iftype iftype,
 				     struct cfg80211_bss *cbss,
 				     size_t elems_len);
-
-
+void ieee80211_set_vif_encap_ops(struct ieee80211_sub_if_data *sdata);
 #endif /* IEEE80211_I_H */
