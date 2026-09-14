@@ -1895,7 +1895,7 @@ skip_hash_reinit:
 			 "ath12k mac dp peer cleanup done\n");
 }
 
-static int ath12k_mac_vdev_setup_sync(struct ath12k *ar)
+int ath12k_mac_vdev_setup_sync(struct ath12k *ar)
 {
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -22267,6 +22267,11 @@ ath12k_mac_assign_vif_to_vdev(struct ieee80211_hw *hw,
 		goto unlock;
 	}
 
+#ifdef CPTCFG_QCN_EXTN
+	if (!arvif->is_scan_vif && vif->type == NL80211_IFTYPE_STATION)
+		ath12k_rtt_vdev_assoc_extn(ar, arvif);
+#endif
+
 	ret = ath12k_mac_vdev_create(ar, arvif, is_bridge_vdev);
 	if (ret) {
 		ath12k_warn(ab, "failed to create vdev %pM ret %d", vif->addr, ret);
@@ -22627,6 +22632,9 @@ ppe_vp_config:
 	 */
 exit:
 	schedule_work(&ahvif->disable_sg_netdev_work);
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_mac_op_add_interface_extn(hw, vif);
+#endif
 	return 0;
 }
 EXPORT_SYMBOL(ath12k_mac_op_add_interface);
@@ -22977,6 +22985,9 @@ free_tstats:
 	free_percpu(ahvif->tstats);
 	ahvif->tstats = NULL;
 
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_mac_op_remove_interface_extn(hw, vif);
+#endif
 }
 EXPORT_SYMBOL(ath12k_mac_op_remove_interface);
 
