@@ -4514,8 +4514,8 @@ void ath12k_dp_mon_spl_pkt_cap_config(struct ath12k_base *ab)
 			continue;
 
 		mon_ops = ath12k_dp_mon_ops_get(ar->dp.dp);
-		if (mon_ops && mon_ops->mon_tx_get_spc_bitmap)
-			bitmap = mon_ops->mon_tx_get_spc_bitmap(ab);
+		if (mon_ops && mon_ops->mon_tx_handle_spc_bitmap)
+			bitmap = mon_ops->mon_tx_handle_spc_bitmap(ab);
 
 		ret = ath12k_wmi_tx_mon_pkt_cap_set_config(ar, bitmap);
 		if (ret)

@@ -436,7 +436,7 @@ ath12k_wifi7_dp_ext_mon_remove_wmi_tx_peers(struct ath12k_pdev_dp *dp_pdev,
 }
 
 u32
-ath12k_wifi7_dp_mon_tx_get_spc_bitmap(struct ath12k_base *ab)
+ath12k_wifi7_dp_mon_tx_handle_spc_bitmap(struct ath12k_base *ab)
 {
 	u32 bitmap = DP_TX_MON_SPC_BITMAP(ab);
 
