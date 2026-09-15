@@ -6166,6 +6166,15 @@ static bool ieee80211_assoc_config_link(struct ieee80211_link_data *link,
 						  link_sta);
 
 		bss_conf->he_support = link_sta->pub->he_cap.has_he;
+
+#ifdef CPTCFG_QCN_EXTN
+		if (elems->elems_extn.he_mcs_12_13_peer_cap_present) {
+			link_sta->pub->he_mcs_12_13_peer_cap =
+				elems->elems_extn.he_mcs_12_13_peer_cap;
+			link_sta->pub->he_mcs_12_13_peer_cap_valid = true;
+		}
+#endif /* CPTCFG_QCN_EXTN */
+
 		if (elems->rsnx && elems->rsnx_len &&
 		    (elems->rsnx[0] & WLAN_RSNX_CAPA_PROTECTED_TWT) &&
 		    wiphy_ext_feature_isset(local->hw.wiphy,
