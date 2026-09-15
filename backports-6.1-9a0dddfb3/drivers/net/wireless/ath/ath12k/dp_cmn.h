@@ -234,7 +234,10 @@ struct ath12k_per_peer_tx_stats {
 	u16 succ_mpdu_pkts;
 	u16 retried_mpdu_pkts;
 	u16 mpdu_tried;
+	s16 ack_rssi;
+	s16 ppdu_snr;
 	u8 ba_fails;
+	u8 long_retries;
 	u8 ppdu_type;
 	u8 rate_idx;
 	u8 mu_grpid;
