@@ -8753,6 +8753,13 @@ struct wmi_dbglog_config_cmd_fixed_param {
 #define WMI_MLO_CMD_TIMEOUT_HZ (5 * HZ)
 #define WMI_SERVICE_READY_TIMEOUT_HZ (5 * HZ)
 #define WMI_SEND_TIMEOUT_HZ (3 * HZ)
+/*
+ * FW INSTALL_KEY_COMPLETE response wait. Sized to match WMI_SEND_TIMEOUT_HZ:
+ * the WMI send path alone can block up to WMI_SEND_TIMEOUT_HZ on TX credits /
+ * CE descriptors, so a shorter completion wait can spuriously return
+ * -ETIMEDOUT (e.g. during firmware recovery) before the send even drains.
+ */
+#define WMI_INSTALL_KEY_TIMEOUT_HZ (3 * HZ)
 #define WMI_CTRL_STATS_READY_TIMEOUT_HZ (1 * HZ)
 
 #define WMI_DEBUG_ENTRY_MAX_LENGTH (16)
