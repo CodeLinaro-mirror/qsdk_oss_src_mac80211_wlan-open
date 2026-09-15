@@ -6843,14 +6843,15 @@ static ssize_t ath12k_write_dp_stats_mask(struct file *file,
 					   i);
 			}
 
-			/* Handle extended RX stats */
 			mode = ATH12k_DP_MON_EXTD_STATS;
-			if (debug_mask & DP_ENABLE_EXT_RX_STATS) {
-				if (!ar->ab->hw_params->rxdma1_enable)
+			if (debug_mask & (DP_ENABLE_EXT_RX_STATS |
+					  DP_ENABLE_RATE_LINK_STATS)) {
+				if ((debug_mask & DP_ENABLE_EXT_RX_STATS) &&
+				    !ar->ab->hw_params->rxdma1_enable)
 					debug_mask &= ~DP_ENABLE_EXT_RX_STATS;
 
 				ath12k_dbg(ar->ab, ATH12K_DBG_TELEMETRY,
-					   "radio[%d] enabling ext RX stats : mode : %u\n",
+					   "radio[%d] enabling extended RX TLVs: mode %u\n",
 					   i, mode);
 
 				ath12k_dp_mon_rx_stats_config(ar, true, mode);
