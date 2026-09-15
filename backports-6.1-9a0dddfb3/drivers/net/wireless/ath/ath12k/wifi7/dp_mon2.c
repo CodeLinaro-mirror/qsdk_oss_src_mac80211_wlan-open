@@ -19,6 +19,7 @@
 #include "../trace.h"
 #include "../wmi.h"
 #include "../ath12k_notif.h"
+#include "../telemetry_agent_if.h"
 #ifdef CPTCFG_QCN_EXTN
 #include "../../net/mac80211/qcn_extns/cmn_extn.h"
 #include "qcn_extns/dp_mon_extn.h"
@@ -1883,6 +1884,9 @@ ath12k_wifi7_dp_mon_rx_process_ppdu(struct work_struct *work)
 	u8 filter_category = 0, ppdu_desc_prcd = 0;
 	bool is_addr_equal;
 	struct list_head local_list;
+	struct ath12k_ppdu_rx_stats_info *rx_evt = NULL;
+	struct ath12k_ppdu_stats_event ev;
+	struct sk_buff *skb;
 
 	INIT_LIST_HEAD(&local_list);
 
@@ -1964,9 +1968,40 @@ ath12k_wifi7_dp_mon_rx_process_ppdu(struct work_struct *work)
 				ath12k_dp_mon_ppdu_rx_time_update(pdev_dp, ppdu_info, 0);
 				ath12k_dp_mon_ppdu_rssi_update(pdev_dp, ppdu_info);
 			}
+
+			if (!ath12k_dp_rate_link_stats_enabled(pdev_dp))
+				goto unlock;
+
+			rx_evt = kzalloc(sizeof(*rx_evt), GFP_ATOMIC);
+			if (!rx_evt)
+				goto unlock;
+			rx_evt->device_id = ath12k_get_ab_device_id(dp->ab);
+			rx_evt->pdev_id = ath12k_get_pdev_id(pdev_dp->ar->pdev);
+			ath12k_dp_fill_rx_ppdu_stats(pdev_dp, ppdu_info, rx_evt);
 unlock:
 			spin_unlock_bh(&dp->dp_lock);
 			rcu_read_unlock_bh();
+			if (rx_evt) {
+				if (rx_evt->num_users > 0) {
+					skb = alloc_skb(sizeof(*rx_evt), GFP_ATOMIC);
+					if (skb) {
+						memcpy(skb_put(skb, sizeof(*rx_evt)),
+						       rx_evt,
+						       sizeof(*rx_evt));
+						ev.skb = skb;
+						ath12k_ppdu_stats_notifier_call_chain
+							(ATH12K_EVENT_RX_PPDU_STATS, &ev);
+						kfree_skb(skb);
+					} else {
+						ath12k_dbg(dp->ab, ATH12K_DBG_TELEMETRY,
+							   "telemetry rx skb allocation failed ppdu id %u users %u\n",
+							   rx_evt->ppdu_id,
+							   rx_evt->num_users);
+					}
+				}
+				kfree(rx_evt);
+				rx_evt = NULL;
+			}
 free_buf:
 			ath12k_dp_rx_mon_ppdu_notify(dp, pdev_dp, ppdu_info);
 			page_frag_free(status_desc->mon_buf);

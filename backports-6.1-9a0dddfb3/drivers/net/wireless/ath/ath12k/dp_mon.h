@@ -20,6 +20,8 @@
 #endif /* CPTCFG_QCN_EXTN */
 #include "dp_tx_mon.h"
 
+struct ath12k_ppdu_rx_stats_info;
+
 #define DP_RXDMA_MONITOR_BUF_RING_SIZE(ab) \
 	((ab)->mem_params.dp_params.rxdma_monitor_buf_ring_size)
 #define DP_RXDMA_MONITOR_DST_RING_SIZE(ab) \
@@ -1175,6 +1177,9 @@ void ath12k_dp_mon_rx_update_peer_su_stats(struct ath12k_pdev_dp *pdev_dp,
 					   struct hal_rx_mon_ppdu_info *ppdu_info);
 void ath12k_dp_mon_rx_update_peer_mu_stats(struct ath12k_pdev_dp *pdev_dp,
 					   struct hal_rx_mon_ppdu_info *ppdu_info);
+void ath12k_dp_fill_rx_ppdu_stats(struct ath12k_pdev_dp *pdev_dp,
+				  struct hal_rx_mon_ppdu_info *ppdu_info,
+				  struct ath12k_ppdu_rx_stats_info *evt);
 void ath12k_dp_mon_ppdu_rx_time_update(struct ath12k_pdev_dp *dp_pdev,
 				       struct hal_rx_mon_ppdu_info *ppdu_info,
 				       bool is_stat);
