@@ -2556,7 +2556,7 @@ int ath12k_dp_mon_rx_buf_alloc(struct ath12k_dp *dp)
 	rx_ring->bufs_max = num_entries;
 
 	req_entries =
-		ath12k_dp_mon_get_rx_free_desc_list(dp, rx_ring, &list, ring_lvl - 1);
+		ath12k_dp_mon_get_rx_free_desc_list(dp, rx_ring, &list, ring_lvl);
 	if (req_entries) {
 		ret = ath12k_dp_mon_rx_buf_replenish(dp, rx_ring, &list, req_entries);
 		if (ret)
@@ -3233,14 +3233,18 @@ int ath12k_dp_mon_rx_monitor_mode_buf_setup(struct ath12k *ar)
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
 	struct dp_rxdma_mon_ring *rx_ring;
-	size_t req_entries;
+	size_t req_entries, num_free;
 	LIST_HEAD(list);
 	int ret = 0;
+	u32 ring_id;
+	struct hal_srng *srng;
 
 	if (unlikely(!dp_mon))
 		return -EINVAL;
 
 	rx_ring = &dp_mon->rxdma_mon_buf_ring;
+	ring_id = rx_ring->refill_buf_ring.ring_id;
+	srng = &dp->hal->srng_list[ring_id];
 
 	/* Ensure monitor RX ring is fully replenished now that the monitor VAP
 	 * is being started. At boot we only partially filled the ring up to
@@ -3248,6 +3252,27 @@ int ath12k_dp_mon_rx_monitor_mode_buf_setup(struct ath12k *ar)
 	 * here we replenish the remaining free entries so that the ring is full.
 	 */
 	if (rx_ring->cur_fill_lvl < rx_ring->bufs_max) {
+		/* num_free can legitimately be 0 here even though
+		 * cur_fill_lvl < bufs_max, e.g. on a fast vdev
+		 * down/up where hardware never got a chance to
+		 * consume/return any of the buffers already posted
+		 * in the ring (TP has not moved). The ring already
+		 * has usable buffers in it, so this is not a fatal
+		 * error - skip the replenish and let monitor vdev
+		 * creation proceed.
+		 */
+		spin_lock_bh(&srng->lock);
+		ath12k_hal_srng_access_begin(ab, srng);
+		num_free = ath12k_hal_srng_src_num_free(ab, srng, true);
+		if (!num_free) {
+			ath12k_hal_srng_access_end(ab, srng);
+			spin_unlock_bh(&srng->lock);
+			ath12k_err(ab, "No required entries available for mon buf ring, skip replenish\n");
+			goto skip_replenish;
+		}
+		ath12k_hal_srng_access_end(ab, srng);
+		spin_unlock_bh(&srng->lock);
+
 		req_entries =
 			ath12k_dp_mon_get_rx_free_desc_list(dp, rx_ring, &list,
 							    (rx_ring->bufs_max -
@@ -3258,12 +3283,15 @@ int ath12k_dp_mon_rx_monitor_mode_buf_setup(struct ath12k *ar)
 			if (ret)
 				return ret;
 
-			rx_ring->cur_fill_lvl += (rx_ring->bufs_max -
-						   rx_ring->cur_fill_lvl);
 		} else {
 			ath12k_warn(dp, "No required entries available for mon buf ring\n");
 			return -ENOMEM;
 		}
+skip_replenish:
+		spin_lock_bh(&srng->lock);
+		rx_ring->cur_fill_lvl += (rx_ring->bufs_max -
+					  rx_ring->cur_fill_lvl);
+		spin_unlock_bh(&srng->lock);
 
 		ret = ath12k_dp_mon_rx_set_low_threshold(dp, rx_ring, rx_ring->bufs_max);
 		if (ret)
@@ -3286,6 +3314,36 @@ void ath12k_dp_mon_rx_update_srng_low_thresh(struct ath12k_dp *dp,
 		params->low_threshold = dp_mon->default_fill_lvl >> 1;
 	else
 		params->low_threshold = num_entries >> 1;
+}
+
+int ath12k_dp_mon_rx_monitor_mode_reset_buffers(struct ath12k *ar)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
+	struct dp_rxdma_mon_ring *rx_ring;
+	struct hal_srng *srng;
+	u16 ring_lvl;
+	int ret = 0;
+
+	if (unlikely(!dp_mon))
+		return -EINVAL;
+
+	ring_lvl = dp_mon->default_fill_lvl;
+	rx_ring = &dp_mon->rxdma_mon_buf_ring;
+	srng = &dp->hal->srng_list[rx_ring->refill_buf_ring.ring_id];
+
+	if (rx_ring->cur_fill_lvl > dp_mon->default_fill_lvl) {
+		ret = ath12k_dp_mon_rx_set_low_threshold(dp, rx_ring, ring_lvl);
+		if (ret)
+			return ret;
+
+		spin_lock_bh(&srng->lock);
+		rx_ring->cur_fill_lvl = dp_mon->default_fill_lvl;
+		spin_unlock_bh(&srng->lock);
+	}
+
+	return 0;
 }
 
 void ath12k_dp_mon_rx_process_low_thres(struct ath12k_dp *dp)
@@ -4663,9 +4721,9 @@ int ath12k_dp_mon_set_fill_level(struct ath12k_pdev_dp *dp_pdev, u32 val)
 
 	spin_lock_bh(&srng->lock);
 	rx_ring->cur_fill_lvl = val;
-	ret = ath12k_dp_mon_rx_set_low_threshold(dp, rx_ring, val);
 	spin_unlock_bh(&srng->lock);
 
+	ret = ath12k_dp_mon_rx_set_low_threshold(dp, rx_ring, val);
 	if (ret) {
 		ath12k_err(dp->ab, "rx_mon_fill_lvl: failed to update low threshold: %d\n",
 			   ret);
