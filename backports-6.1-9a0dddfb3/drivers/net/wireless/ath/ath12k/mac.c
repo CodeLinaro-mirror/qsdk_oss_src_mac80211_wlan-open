@@ -6534,6 +6534,7 @@ void ath12k_bss_assoc(struct ath12k *ar,
 
         spin_lock_bh(&ar->data_lock);
         arsta->bw = bandwidth;
+	arsta->bw_prev = arsta->bw;
         spin_unlock_bh(&ar->data_lock);
 
 	rcu_read_unlock();
@@ -14212,6 +14213,7 @@ static int ath12k_mac_station_assoc(struct ath12k *ar,
 
 	spin_lock_bh(&ar->data_lock);
 	arsta->bw = bandwidth;
+	arsta->bw_prev = arsta->bw;
 	spin_unlock_bh(&ar->data_lock);
 
 	if (!arsta->is_bridge_peer)
@@ -14358,10 +14360,7 @@ static int ath12k_mac_set_peer_ch_switch_data(struct ath12k_link_vif *arvif,
 
 	spin_lock_bh(&ar->data_lock);
 
-	if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_STA)
-		num_sta_count = 1;
-	else
-		num_sta_count = arvif->num_stations;
+	num_sta_count = arvif->num_stations;
 
 	peer_data = arvif->peer_ch_width_switch_data;
 
@@ -14441,9 +14440,11 @@ static void ath12k_sta_rc_update_wk(struct wiphy *wiphy, struct wiphy_work *wk)
 	const u16 *vht_mcs_mask;
 	const u16 *he_mcs_mask;
 	const u16 *eht_mcs_mask;
-	u32 changed, bw, nss, mac_nss, smps;
+	u32 changed, bw, nss, mac_nss, smps, bw_prev;
 	int err;
+	enum wmi_phy_mode peer_phymode;
 	struct ath12k_link_sta *arsta;
+	struct ieee80211_link_sta *link_sta;
 	struct ieee80211_vif *vif;
 
 	lockdep_assert_wiphy(wiphy);
@@ -14474,6 +14475,7 @@ static void ath12k_sta_rc_update_wk(struct wiphy *wiphy, struct wiphy_work *wk)
 	arsta->changed = 0;
 
 	bw = arsta->bw;
+	bw_prev = arsta->bw_prev;
 	nss = arsta->nss;
 	smps = arsta->smps;
 	spin_unlock_bh(&ar->data_lock);
@@ -14488,19 +14490,71 @@ static void ath12k_sta_rc_update_wk(struct wiphy *wiphy, struct wiphy_work *wk)
 
 	if (changed & IEEE80211_RC_BW_CHANGED) {
 		ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L0,
-				 "mac bandwidth upgrade for sta %pM new %d\n",
+				 "mac bandwidth update for sta %pM new %d\n",
 				 arsta->addr, bw);
+		/*
+		 * Firmware supports WMI_PEER_CHWIDTH WMI in STA mode
+		 */
+		if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_STA)
+			goto legacy_wmi_send;
 
 		err = ath12k_mac_set_peer_ch_switch_data(arvif, arsta);
 		if (!err || err == -EINVAL)
 			return;
 
-		err = ath12k_wmi_set_peer_param(ar, sta->addr,
-						arvif->vdev_id, WMI_PEER_CHWIDTH,
-						bw);
-		if (err)
-			ath12k_warn(ar->ab, "failed to update STA %pM to peer bandwidth %d: %d\n",
-				    arsta->addr, bw, err);
+legacy_wmi_send:
+		struct ath12k_wmi_peer_assoc_arg *peer_arg __free(kfree) =
+			kzalloc(sizeof(*peer_arg), GFP_KERNEL);
+		if (!peer_arg)
+			return;
+
+		link_sta = ath12k_mac_get_link_sta(arsta);
+		ath12k_peer_assoc_h_phymode(ar, arvif, arsta, peer_arg, link_sta);
+		peer_phymode = peer_arg->peer_phymode;
+		if (bw > bw_prev) {
+			/* Phymode shows maximum supported channel width, if we
+			 * upgrade bandwidth then due to sanity check of firmware,
+			 * we have to send WMI_PEER_PHYMODE followed by
+			 * WMI_PEER_CHWIDTH
+			 */
+			ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "mac bandwidth upgrade for sta %pM new %d old %d\n",
+				   arsta->addr, bw, bw_prev);
+			err = ath12k_wmi_set_peer_param(ar, arsta->addr,
+							arvif->vdev_id, WMI_PEER_PHYMODE,
+							peer_phymode);
+			if (err) {
+				ath12k_warn(ar->ab, "failed to update STA %pM to peer phymode %d: %d\n",
+					    arsta->addr, peer_phymode, err);
+				return;
+			}
+			err = ath12k_wmi_set_peer_param(ar, arsta->addr,
+							arvif->vdev_id, WMI_PEER_CHWIDTH,
+							bw);
+			if (err)
+				ath12k_warn(ar->ab, "failed to update STA %pM to peer bandwidth %d: %d\n",
+					    arsta->addr, bw, err);
+		} else {
+			/* When we downgrade bandwidth this will conflict with phymode
+			 * and cause to trigger firmware crash. In this case we send
+			 * WMI_PEER_CHWIDTH followed by WMI_PEER_PHYMODE
+			 */
+			ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "mac bandwidth downgrade for sta %pM new %d old %d\n",
+				   arsta->addr, bw, bw_prev);
+			err = ath12k_wmi_set_peer_param(ar, arsta->addr,
+							arvif->vdev_id, WMI_PEER_CHWIDTH,
+							bw);
+			if (err) {
+				ath12k_warn(ar->ab, "failed to update STA %pM peer to bandwidth %d: %d\n",
+					    arsta->addr, bw, err);
+				return;
+			}
+			err = ath12k_wmi_set_peer_param(ar, arsta->addr,
+							arvif->vdev_id, WMI_PEER_PHYMODE,
+							peer_phymode);
+			if (err)
+				ath12k_warn(ar->ab, "failed to update STA %pM to peer phymode %d: %d\n",
+					    arsta->addr, peer_phymode, err);
+		}
 	}
 
 	if (changed & IEEE80211_RC_NSS_CHANGED) {
@@ -16829,6 +16883,7 @@ void ath12k_mac_op_link_sta_rc_update(struct ieee80211_hw *hw,
 
 	if (changed & IEEE80211_RC_BW_CHANGED) {
 		bw = ath12k_mac_ieee80211_sta_bw_to_wmi(ar, link_sta);
+		arsta->bw_prev = arsta->bw;
 		arsta->bw = bw;
 	}
 
@@ -24509,6 +24564,53 @@ ath12k_mac_update_peer_ru_punct_bitmap_iter(void *data,
 	wiphy_work_queue(ath12k_ar_to_hw(ar)->wiphy, &arsta->update_wk);
 }
 
+static u32 ath12k_mac_nlwidth_to_wmiwidth(enum nl80211_chan_width width)
+{
+	switch (width) {
+	case NL80211_CHAN_WIDTH_20:
+		return WMI_CHAN_WIDTH_20;
+	case NL80211_CHAN_WIDTH_40:
+		return WMI_CHAN_WIDTH_40;
+	case NL80211_CHAN_WIDTH_80:
+		return WMI_CHAN_WIDTH_80;
+	case NL80211_CHAN_WIDTH_160:
+		return WMI_CHAN_WIDTH_160;
+	case NL80211_CHAN_WIDTH_80P80:
+		return WMI_CHAN_WIDTH_80P80;
+	case NL80211_CHAN_WIDTH_5:
+		return WMI_CHAN_WIDTH_5;
+	case NL80211_CHAN_WIDTH_10:
+		return WMI_CHAN_WIDTH_10;
+	case NL80211_CHAN_WIDTH_320:
+		return WMI_CHAN_WIDTH_320;
+	default:
+		WARN_ON(1);
+		return WMI_CHAN_WIDTH_20;
+	}
+}
+
+static int ath12k_mac_update_peer_puncturing_width(struct ath12k *ar,
+						   struct ath12k_link_vif *arvif,
+						   struct cfg80211_chan_def def)
+{
+	u32 param_id, param_value;
+	int ret;
+
+	param_id = WMI_PEER_CHWIDTH_PUNCTURE_20MHZ_BITMAP;
+	param_value = ath12k_mac_nlwidth_to_wmiwidth(def.width) |
+		u32_encode_bits((~def.punctured),
+				WMI_PEER_PUNCTURE_BITMAP);
+
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L0,
+		   "punctured bitmap %02x width %d vdev %d\n",
+		   def.punctured, def.width, arvif->vdev_id);
+
+	ret = ath12k_wmi_set_peer_param(ar, arvif->bssid,
+					arvif->vdev_id, param_id,
+					param_value);
+	return ret;
+}
+
 void ath12k_mac_update_ru_punct_bitmap(struct ath12k_link_vif *arvif,
 				       struct ieee80211_chanctx_conf *old_ctx,
 				       struct ieee80211_chanctx_conf *new_ctx)
@@ -24519,6 +24621,9 @@ void ath12k_mac_update_ru_punct_bitmap(struct ath12k_link_vif *arvif,
 	if (!ath12k_mac_is_bridge_vdev(arvif) &&
 	    old_ctx->def.punctured == new_ctx->def.punctured)
 		return;
+
+	if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_STA)
+		ath12k_mac_update_peer_puncturing_width(ar, arvif, new_ctx->def);
 
 	ieee80211_iterate_stations_atomic(ah->hw,
 					  ath12k_mac_update_peer_ru_punct_bitmap_iter,
