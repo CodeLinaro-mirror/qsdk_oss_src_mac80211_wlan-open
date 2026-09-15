@@ -182,6 +182,8 @@ struct ath12k_dp_peer {
 
 	u8 primary_link_id;
 	u8 assoc_hw_link_id;
+	/* Stable generation ID shared by this MLD's link peers. */
+	u64 peer_cookie;
 
 	/* Lock for protection of link_peers*/
 	spinlock_t link_peers_lock;

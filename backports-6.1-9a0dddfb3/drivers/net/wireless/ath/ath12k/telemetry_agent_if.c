@@ -86,8 +86,28 @@ static int ath12k_telemetry_create_destroy_peer_agent(struct ath12k_base *ab,
 	peer_obj.psoc_id = ath12k_get_ab_device_id(ab);
 	peer_obj.pdev_id = ath12k_get_pdev_id(pdev);
 	ether_addr_copy(peer_obj.peer_mac_addr, peer->addr);
+	if (is_zero_ether_addr(peer->ml_addr))
+		ether_addr_copy(peer_obj.peer_mld_mac_addr, peer->addr);
+	else
+		ether_addr_copy(peer_obj.peer_mld_mac_addr, peer->ml_addr);
 	peer_obj.peer_id = ath12k_dp_link_peer_get_peer_id(ab, peer);
 	peer_obj.hw_link_id = peer->hw_link_id;
+
+	/* Populate extended peer state. */
+	if (pdev->ar && pdev->ar->ah && pdev->ar->ah->hw)
+		peer_obj.wiphy = pdev->ar->ah->hw->wiphy;
+	if (is_create && peer->dp_peer && !peer->dp_peer->peer_cookie)
+		peer->dp_peer->peer_cookie =
+			atomic64_inc_return(&ab->link_peer_session_counter);
+	peer_obj.peer_cookie     = peer->dp_peer ? peer->dp_peer->peer_cookie : 0;
+	peer_obj.is_primary_link = peer->primary_link;
+	peer_obj.ext_rate_link_enabled = pdev->ar ?
+		!!(pdev->ar->dp.dp_stats_mask & DP_ENABLE_RATE_LINK_STATS) :
+		false;
+	peer_obj.ieee_link_id = peer->link_id;
+	peer_obj.primary_link_id = peer->dp_peer ?
+		peer->dp_peer->primary_link_id : peer->link_id;
+
 	ath12k_dbg(NULL, ATH12K_DBG_RM,
 		   "id: %d peer: %p (ab:%p - pdev:%p) soc id: %d (pdev id: %d)\n",
 		   peer_obj.peer_id,
@@ -696,8 +716,27 @@ static int ath12k_telemetry_peer_agent_update(struct ath12k_base *ab,
 	peer_obj.psoc_id = ath12k_get_ab_device_id(ab);
 	peer_obj.pdev_id = ath12k_get_pdev_id(pdev);
 	ether_addr_copy(peer_obj.peer_mac_addr, peer->addr);
+	if (is_zero_ether_addr(peer->ml_addr))
+		ether_addr_copy(peer_obj.peer_mld_mac_addr, peer->addr);
+	else
+		ether_addr_copy(peer_obj.peer_mld_mac_addr, peer->ml_addr);
 	peer_obj.peer_id = ath12k_dp_link_peer_get_peer_id(ab, peer);
 	peer_obj.hw_link_id = peer->hw_link_id;
+
+	/* Populate extended peer state. */
+	if (pdev->ar && pdev->ar->ah && pdev->ar->ah->hw)
+		peer_obj.wiphy = pdev->ar->ah->hw->wiphy;
+	if (is_create && peer->dp_peer && !peer->dp_peer->peer_cookie)
+		peer->dp_peer->peer_cookie =
+			atomic64_inc_return(&ab->link_peer_session_counter);
+	peer_obj.peer_cookie     = peer->dp_peer ? peer->dp_peer->peer_cookie : 0;
+	peer_obj.is_primary_link = peer->primary_link;
+	peer_obj.ext_rate_link_enabled = pdev->ar ?
+		!!(pdev->ar->dp.dp_stats_mask & DP_ENABLE_RATE_LINK_STATS) :
+		false;
+	peer_obj.ieee_link_id = peer->link_id;
+	peer_obj.primary_link_id = peer->dp_peer ?
+		peer->dp_peer->primary_link_id : peer->link_id;
 
 	if (is_create)
 		g_agent_ops->agent_peer_create_handler(peer, &peer_obj);
@@ -788,6 +827,25 @@ void ath12k_telemetry_notify_rm(enum agent_notification_event event,
 		   event, id, category);
 	ath12k_telemetry_vendor_callback(event, id, category);
 }
+
+/**
+ * ath12k_ta_ext_rate_link_stats_pull_by_mac - Pull stats for a peer
+ * @ab: ath12k base handle
+ * @mac: peer MAC address
+ * @wiphy: wiphy used for event allocation
+ * @link_id: MLO link ID
+ */
+void ath12k_ta_ext_rate_link_stats_pull_by_mac(struct ath12k_base *ab,
+					       const u8 *mac,
+					       struct wiphy *wiphy,
+					       u8 link_id)
+{
+	if (!g_agent_ops || !g_agent_ops->agent_ext_rate_link_stats_pull_by_mac)
+		return;
+
+	g_agent_ops->agent_ext_rate_link_stats_pull_by_mac(mac, wiphy, link_id);
+}
+EXPORT_SYMBOL(ath12k_ta_ext_rate_link_stats_pull_by_mac);
 
 int register_telemetry_agent_ops(struct telemetry_agent_ops *agent_ops)
 
