@@ -119,9 +119,9 @@ u8 ath12k_wifi7_get_ext_mon_peer_filter_mode_locked(struct ath12k_pdev_dp *dp_pd
  *   - ATH12K_DP_TX_EXT_MON_SPC_PEER_FILTER (monitor_flags==PKT_CAP):
  *     special packet capture mode. The (fp_enabled, fpmo_enabled) bits are
  *     ignored; filter_mode is forced to SPC_PEER_FILTER. Peer scoping is
- *     host-side only via peer_list: a matching peer passes (return 0); a
+ *     via peer_list: a matching peer passes (return 0); a
  *     non-matching peer is passed to the frame-type filter (fp). HW
- *     peer-filter programming is skipped for this mode.
+ *     peer-filter programming is enabled for this mode.
  *
  * Return: 0 if the MPDU passes filtering for the active mode, -EINVAL
  *	if it is rejected (or if fraglist/skb fragment counts disagree).
@@ -355,7 +355,8 @@ ath12k_wifi7_dp_ext_mon_add_wmi_tx_peers(struct ath12k_pdev_dp *dp_pdev,
 
 	tx_mon = dp_pdev->dp_mon_pdev->dp_pdev_tx_mon;
 	filter_mode = ath12k_wifi7_get_ext_mon_peer_filter_mode_locked(dp_pdev);
-	hw_peer_filter_enabled = (filter_mode == ATH12K_DP_TX_EXT_MON_HW_PEER_FILTER);
+	hw_peer_filter_enabled = (filter_mode == ATH12K_DP_TX_EXT_MON_HW_PEER_FILTER) ||
+				 (filter_mode == ATH12K_DP_TX_EXT_MON_SPC_PEER_FILTER);
 
 	if (!hw_peer_filter_enabled)
 		return ret;
