@@ -13,6 +13,7 @@
 
 #include <linux/notifier.h>
 #include "ath12k_notif.h"
+#include "telemetry_agent_if.h"
 #include "debug.h"
 #include "dp.h"
 
@@ -47,6 +48,18 @@ int ath12k_ppdu_notifier_call_chain(unsigned long val, void *v)
 }
 EXPORT_SYMBOL_GPL(ath12k_ppdu_notifier_call_chain);
 
+/* Notifier chain for parsed PPDU and sojourn statistics. */
+struct atomic_notifier_head ath12k_ppdu_stats_notifier_chain =
+	ATOMIC_NOTIFIER_INIT(ath12k_ppdu_stats_notifier_chain);
+EXPORT_SYMBOL_GPL(ath12k_ppdu_stats_notifier_chain);
+
+int ath12k_ppdu_stats_notifier_call_chain(unsigned long val, void *v)
+{
+	return atomic_notifier_call_chain(&ath12k_ppdu_stats_notifier_chain,
+					  val, v);
+}
+EXPORT_SYMBOL_GPL(ath12k_ppdu_stats_notifier_call_chain);
+
 int ath12k_fse_update_notif_call_chain(void *v)
 {
 	return atomic_notifier_call_chain(&ath12k_fse_update_notifier_chain,
@@ -64,11 +77,11 @@ int ath12k_fse_update_notif_call_chain(void *v)
  * Consumer (WQ thread, process context):
  *   - O(1) splice ctx->queue -> local_list under lock; queue_depth reset to 0
  *     at splice time — producer starts counting from 0 again immediately.
- *   - alloc_skb(GFP_KERNEL) + memcpy + notifier_call_chain per item
+ *   - dispatch each item and release its owned payload after the callback
  *
- * New ingress goes into ctx->queue while the worker drains local_list
- * concurrently.  queue_depth bounds total live items to
- * ATH12K_PPDU_NOTIFY_MAX_DEPTH regardless of which list holds them.
+ * New TX ingress goes into ctx->queue while the worker drains local_list
+ * concurrently. Parsed stats SKBs use ctx->stats_queue and are bounded by
+ * the same ATH12K_PPDU_NOTIFY_MAX_DEPTH limit.
  */
 static void ath12k_ppdu_notify_work_fn(struct wiphy *wiphy,
 				       struct wiphy_work *work)
@@ -78,13 +91,29 @@ static void ath12k_ppdu_notify_work_fn(struct wiphy *wiphy,
 	struct ath12k_ppdu_notify_item *item, *tmp;
 	struct ath12k_ppdu_tx_info *ppdu_evt_data;
 	struct ath12k_ppdu_event event;
+	struct ath12k_ppdu_stats_event stats_event;
 	struct sk_buff *skb;
 	LIST_HEAD(local_list);
+	struct sk_buff_head stats_local_queue;
+
+	skb_queue_head_init(&stats_local_queue);
 
 	spin_lock_bh(&ctx->lock);
 	list_splice_tail_init(&ctx->queue, &local_list);
 	ctx->queue_depth = 0;
+	while ((skb = __skb_dequeue(&ctx->stats_queue)))
+		__skb_queue_tail(&stats_local_queue, skb);
 	spin_unlock_bh(&ctx->lock);
+
+	while ((skb = __skb_dequeue(&stats_local_queue))) {
+		memset(&stats_event, 0, sizeof(stats_event));
+		stats_event.skb = skb;
+		ath12k_ppdu_stats_notifier_call_chain
+			(ATH12K_EVENT_TX_PPDU_STATS, &stats_event);
+
+		/* The driver owns the SKB for the duration of the callback only. */
+		kfree_skb(skb);
+	}
 
 	list_for_each_entry_safe(item, tmp, &local_list, node) {
 		list_del(&item->node);
@@ -122,6 +151,7 @@ void ath12k_ppdu_notify_ctx_init(struct ath12k_ppdu_notify_ctx *ctx)
 	spin_lock_init(&ctx->lock);
 	INIT_LIST_HEAD(&ctx->queue);
 	ctx->queue_depth = 0;
+	skb_queue_head_init(&ctx->stats_queue);
 	wiphy_work_init(&ctx->work, ath12k_ppdu_notify_work_fn);
 }
 EXPORT_SYMBOL(ath12k_ppdu_notify_ctx_init);
@@ -136,17 +166,24 @@ void ath12k_ppdu_notify_ctx_deinit(struct wiphy *wiphy,
 {
 	struct ath12k_ppdu_notify_item *item, *tmp;
 	LIST_HEAD(drain_list);
+	struct sk_buff_head stats_drain_queue;
+	struct sk_buff *skb;
+
+	skb_queue_head_init(&stats_drain_queue);
 
 	/* Step 1: cancel pending/running work */
 	wiphy_work_cancel(wiphy, &ctx->work);
 
-	/* Step 2: drain ingress queue.
+	/* Step 2: drain both ingress queues.
 	 * wiphy_work_cancel ensures the worker has finished — local_list inside
-	 * the work_fn is fully drained, so only ctx->queue can hold residual items.
+	 * the work_fn is fully drained, so only the context queues can hold
+	 * residual items.
 	 */
 	spin_lock_bh(&ctx->lock);
 	list_splice_tail_init(&ctx->queue, &drain_list);
 	ctx->queue_depth = 0;
+	while ((skb = __skb_dequeue(&ctx->stats_queue)))
+		__skb_queue_tail(&stats_drain_queue, skb);
 	spin_unlock_bh(&ctx->lock);
 
 	list_for_each_entry_safe(item, tmp, &drain_list, node) {
@@ -154,6 +191,8 @@ void ath12k_ppdu_notify_ctx_deinit(struct wiphy *wiphy,
 		kfree(item->ppdu_info);
 		kfree(item);
 	}
+
+	skb_queue_purge(&stats_drain_queue);
 
 	/* Step 3: flush work queued in the splice->cancel window */
 	wiphy_work_flush(wiphy, &ctx->work);
