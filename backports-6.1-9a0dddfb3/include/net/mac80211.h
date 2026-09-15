@@ -2364,6 +2364,16 @@ struct ieee80211_advertised_ttlm_info {
  * @txq: the multicast data TX queue
  * @offload_flags: 802.3 -> 802.11 enapsulation offload flags, see
  *	&enum ieee80211_offload_flags.
+ * @diagnostic_sta: this STA vif differentiates from Standalone WDS STA/Repeater
+ *	must never participate in or block a co-channel-context AP vif's
+ *	channel switch. On any channel switch initiated by another vif sharing
+ *	this vif's channel context, mac80211 disconnects this vif and releases
+ *	its channel-context binding synchronously, before the switch's
+ *	reservation/finalize step runs.
+ *	Scan requests on this vif are also clamped to the co-channel-context
+ *	AP's current operating channel. Set by the driver once, at vif
+ *	configuration time, for a client-serving STA VAP only -- never toggled
+ *	at runtime, and only relevant for NL80211_IFTYPE_STATION vifs.
  */
 struct ieee80211_vif {
 	enum nl80211_iftype type;
@@ -2407,7 +2417,9 @@ struct ieee80211_vif {
 	u32 mdbg;
 #endif
 	bool is_roc;
-
+#ifdef CPTCFG_QCN_EXTN
+	bool diagnostic_sta;
+#endif /* CPTCFG_QCN_EXTN */
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));
 };
@@ -7801,6 +7813,21 @@ void ieee80211_chswitch_done(struct ieee80211_vif *vif, bool success,
  * a deauth frame in this case.
  */
 void ieee80211_channel_switch_disconnect(struct ieee80211_vif *vif);
+
+#ifdef CPTCFG_QCN_EXTN
+/**
+ * ieee80211_set_vif_diagnostic_sta_extn - mark/unmark a STA vif as diagnostic-STA
+ * @vif: &struct ieee80211_vif pointer from the add_interface callback.
+ * Must be a NL80211_IFTYPE_STATION vif.
+ * @diagnostic_sta: true to set @vif->diagnostic_sta, false to clear it.
+ *
+ * See &struct ieee80211_vif.diagnostic_sta for the semantics this flag
+ * carries. Intended to be called once by the driver at
+ * vif configuration time, not toggled at runtime.
+ */
+void ieee80211_set_vif_diagnostic_sta_extn(struct ieee80211_vif *vif,
+					   bool diagnostic_sta);
+#endif /* CPTCFG_QCN_EXTN */
 
 /**
  * ieee80211_awgn_detected - inform that awgn interference is detected
