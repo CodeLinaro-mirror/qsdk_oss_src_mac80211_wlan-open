@@ -25,7 +25,7 @@ static ssize_t key_##name##_read(struct file *file,			\
 }
 #define KEY_READ_X(name) KEY_READ(name, name, "0x%x\n")
 
-#if LINUX_VERSION_IS_GEQ(6,13,0)
+#if LINUX_VERSION_IS_GEQ(6, 13, 0)
 #define KEY_OPS(name)							\
 static const struct debugfs_short_fops key_ ##name## _ops = {		\
 	.read = key_##name##_read,					\
@@ -40,7 +40,7 @@ static const struct file_operations key_ ##name## _ops = {          	\
 }
 #endif
 
-#if LINUX_VERSION_IS_GEQ(6,13,0)
+#if LINUX_VERSION_IS_GEQ(6, 13, 0)
 #define KEY_OPS_W(name)							\
 static const struct debugfs_short_fops key_ ##name## _ops = {		\
 	.read = key_##name##_read,					\
@@ -65,7 +65,7 @@ static const struct file_operations key_ ##name## _ops = {           \
 	KEY_READ(conf_##name, conf.name, format_string)
 #define KEY_CONF_READ_D(name) KEY_CONF_READ(name, "%d\n")
 
-#if LINUX_VERSION_IS_GEQ(6,13,0)
+#if LINUX_VERSION_IS_GEQ(6, 13, 0)
 #define KEY_CONF_OPS(name)						\
 static const struct debugfs_short_fops key_ ##name## _ops = {		\
 	.read = key_conf_##name##_read,					\
@@ -85,7 +85,26 @@ static const struct file_operations key_ ##name## _ops = {		\
 		 KEY_CONF_OPS(name)
 
 KEY_CONF_FILE(keylen, D);
-KEY_CONF_FILE(keyidx, D);
+/* keyidx is the lazy-populate sentinel: opening it triggers
+ * ieee80211_debugfs_key_populate() to create the remaining 11 files.
+ * Defined manually instead of via KEY_CONF_FILE() to use key_keyidx_open.
+ */
+static int key_keyidx_open(struct inode *inode, struct file *file);
+KEY_CONF_READ_D(keyidx);
+#if LINUX_VERSION_IS_GEQ(6, 13, 0)
+static const struct debugfs_short_fops key_keyidx_ops = {
+	.open   = key_keyidx_open,
+	.read   = key_conf_keyidx_read,
+	.llseek = generic_file_llseek,
+};
+#else
+static const struct file_operations key_keyidx_ops = {
+	.open   = key_keyidx_open,
+	.read   = key_conf_keyidx_read,
+	.llseek = generic_file_llseek,
+};
+#endif
+
 KEY_CONF_FILE(hw_key_idx, D);
 KEY_FILE(flags, X);
 KEY_READ(ifindex, sdata->name, "%s\n");
@@ -349,6 +368,43 @@ KEY_OPS(key);
 	debugfs_create_file(#name, 0600, key->debugfs.dir, \
 			    key, &key_##name##_ops);
 
+/*
+ * ieee80211_debugfs_key_populate - lazily create the per-key debugfs files.
+ *
+ * The remaining 11 files are only allocated when a user first opens "keyidx",
+ * saving dentry/inode overhead for keys that are never inspected.  Using
+ * "keyidx" as the sentinel means the post-populate directory layout is
+ * identical to the original 12-file layout with no extra files added.
+ * The populated flag ensures population happens at most once per key.
+ */
+static void ieee80211_debugfs_key_populate(struct ieee80211_key *key)
+{
+	if (key->debugfs.populated)
+		return;
+	key->debugfs.populated = true;
+
+	DEBUGFS_ADD(keylen);
+	DEBUGFS_ADD(flags);
+	DEBUGFS_ADD(hw_key_idx);
+	DEBUGFS_ADD(algorithm);
+	DEBUGFS_ADD_W(tx_spec);
+	DEBUGFS_ADD(rx_spec);
+	DEBUGFS_ADD(replays);
+	DEBUGFS_ADD(icverrors);
+	DEBUGFS_ADD(mic_failures);
+	DEBUGFS_ADD(key);
+	DEBUGFS_ADD(ifindex);
+}
+
+static int key_keyidx_open(struct inode *inode, struct file *file)
+{
+	struct ieee80211_key *key = inode->i_private;
+
+	ieee80211_debugfs_key_populate(key);
+	file->private_data = key;
+	return 0;
+}
+
 void ieee80211_debugfs_key_add(struct ieee80211_key *key)
 {
 	static int keycount;
@@ -372,18 +428,28 @@ void ieee80211_debugfs_key_add(struct ieee80211_key *key)
 			debugfs_create_symlink("station", key->debugfs.dir, buf);
 	}
 
-	DEBUGFS_ADD(keylen);
-	DEBUGFS_ADD(flags);
+	/* Create "keyidx" as the sentinel and immediately populate the
+	 * remaining 11 files.  Tools such as the hwsim test suite call
+	 * os.listdir() on the key directory before opening any file, so
+	 * lazy population (triggered only on open("keyidx")) would leave
+	 * the other files absent from the directory listing and break
+	 * tests that read "key", "algorithm", "replays", etc. directly.
+	 * The populated flag in ieee80211_debugfs_key_populate() ensures
+	 * the files are created at most once even if key_keyidx_open()
+	 * is called later.
+	 */
 	DEBUGFS_ADD(keyidx);
-	DEBUGFS_ADD(hw_key_idx);
-	DEBUGFS_ADD(algorithm);
-	DEBUGFS_ADD_W(tx_spec);
-	DEBUGFS_ADD(rx_spec);
-	DEBUGFS_ADD(replays);
-	DEBUGFS_ADD(icverrors);
-	DEBUGFS_ADD(mic_failures);
-	DEBUGFS_ADD(key);
-	DEBUGFS_ADD(ifindex);
+
+	switch (key->conf.cipher) {
+	case WLAN_CIPHER_SUITE_AES_CMAC:
+	case WLAN_CIPHER_SUITE_BIP_CMAC_256:
+	case WLAN_CIPHER_SUITE_BIP_GMAC_128:
+	case WLAN_CIPHER_SUITE_BIP_GMAC_256:
+		ieee80211_debugfs_key_populate(key);
+		break;
+	default:
+		break;
+	}
 };
 
 void ieee80211_debugfs_key_remove(struct ieee80211_key *key)
@@ -393,6 +459,7 @@ void ieee80211_debugfs_key_remove(struct ieee80211_key *key)
 
 	debugfs_remove_recursive(key->debugfs.dir);
 	key->debugfs.dir = NULL;
+	key->debugfs.populated = false;
 }
 
 void ieee80211_debugfs_key_update_default(struct ieee80211_sub_if_data *sdata)
