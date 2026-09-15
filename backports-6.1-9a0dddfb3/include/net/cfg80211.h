@@ -1438,6 +1438,22 @@ bool cfg80211_chandef_dfs_usable(struct wiphy *wiphy,
 				 const struct cfg80211_chan_def *chandef);
 
 /**
+ * cfg80211_set_dfs_state - set the DFS state for a channel definition
+ * @wiphy: the wiphy
+ * @chandef: the channel definition
+ * @dfs_state: the new DFS state to set
+ *
+ * Sets the per-channel runtime DFS state for every radar channel covered by
+ * @chandef. Used by drivers that must invalidate a stale CAC-done state after
+ * the radar detector was offline (e.g. across an SSR firmware recovery).
+ *
+ * Context: Caller must hold the wiphy mutex (wiphy_lock()).
+ */
+void cfg80211_set_dfs_state(struct wiphy *wiphy,
+			    const struct cfg80211_chan_def *chandef,
+			    enum nl80211_dfs_state dfs_state);
+
+/**
  * cfg80211_chandef_dfs_nol_clear - Check if chandef is not present in NOL
  * @wiphy: the wiphy to validate against
  * @chandef: the channel definition to check
@@ -10849,6 +10865,23 @@ void cfg80211_cac_event(struct net_device *netdev,
 			unsigned int link_id);
 
 /**
+ * cfg80211_radar_notify - send a radar event notification for a channel
+ * @wiphy: the wiphy
+ * @chandef: the channel definition
+ * @event: the radar event (e.g. %NL80211_RADAR_PRE_CAC_EXPIRED)
+ * @gfp: context flags
+ *
+ * Send an nl80211 radar event for the given channel without requiring an
+ * active CAC session.  Use this for events like %NL80211_RADAR_PRE_CAC_EXPIRED
+ * that are not tied to a running CAC.
+ *
+ * Context: Caller must hold the wiphy mutex (wiphy_lock()).
+ */
+void cfg80211_radar_notify(struct wiphy *wiphy,
+			   const struct cfg80211_chan_def *chandef,
+			   enum nl80211_radar_event event, gfp_t gfp);
+
+/*
  * cfg80211_cac_event_wiphy - notify CAC completion at wiphy scope
  * @netdev: network device used for CAC state validation and cleanup
  * @chandef: chandef for the current channel

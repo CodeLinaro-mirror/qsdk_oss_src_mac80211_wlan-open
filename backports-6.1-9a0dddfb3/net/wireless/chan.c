@@ -851,6 +851,7 @@ void cfg80211_set_dfs_state(struct wiphy *wiphy,
 		c->dfs_state_entered = jiffies;
 	}
 }
+EXPORT_SYMBOL(cfg80211_set_dfs_state);
 
 static bool
 cfg80211_dfs_permissive_check_wdev(struct cfg80211_registered_device *rdev,
