@@ -16,6 +16,9 @@
 #include "sta_info.h"
 #include "driver-ops.h"
 
+/* Forward declaration */
+static void ieee80211_sta_debugfs_add_full(struct sta_info *sta);
+
 /* sta attributes */
 
 #define STA_READ(name, field, format_string)				\
@@ -118,7 +121,48 @@ static ssize_t sta_flags_read(struct file *file, char __user *userbuf,
 
 	return simple_read_from_buffer(userbuf, count, ppos, buf, strlen(buf));
 }
-STA_OPS(flags);
+
+/*
+ * "flags" uses a hand-rolled file_operations (not the STA_OPS macro) so that
+ * we can provide a custom .open handler on all kernel versions.  The open
+ * handler is the trigger that lazily creates every other per-sta debugfs entry
+ * the first time a user opens this file.
+ */
+static int sta_flags_open(struct inode *inode, struct file *file)
+{
+	struct sta_info *sta = inode->i_private;
+	int link_id;
+
+	file->private_data = inode->i_private;
+
+	if (sta->debugfs_full)
+		return 0;
+
+	sta->debugfs_full = true;
+
+	ieee80211_sta_debugfs_add_full(sta);
+
+	/* Also populate per-link entries for every currently valid link. */
+	for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS; link_id++) {
+		struct link_sta_info *link_sta;
+
+		link_sta = rcu_dereference_protected(
+				sta->link[link_id],
+				lockdep_is_held(&sta->local->hw.wiphy->mtx));
+		if (!link_sta)
+			continue;
+		if (!link_sta->debugfs_dir)
+			ieee80211_link_sta_debugfs_add(link_sta);
+	}
+
+	return 0;
+}
+
+static const struct file_operations sta_flags_ops = {
+	.open    = sta_flags_open,
+	.read    = sta_flags_read,
+	.llseek  = generic_file_llseek,
+};
 
 static ssize_t sta_num_ps_buf_frames_read(struct file *file,
 					  char __user *userbuf,
@@ -1542,8 +1586,6 @@ STA_OPS(eht_capa);
 
 void ieee80211_sta_debugfs_add(struct sta_info *sta)
 {
-	struct ieee80211_local *local = sta->local;
-	struct ieee80211_sub_if_data *sdata = sta->sdata;
 	struct dentry *stations_dir = sta->sdata->debugfs.subdir_stations;
 	u8 mac[3*ETH_ALEN];
 
@@ -1563,7 +1605,43 @@ void ieee80211_sta_debugfs_add(struct sta_info *sta)
 	 */
 	sta->debugfs_dir = debugfs_create_dir(mac, stations_dir);
 
+	/*
+	 * Only "flags" is created eagerly.  All other entries are created
+	 * on-demand the first time "flags" is opened (see sta_flags_open).
+	 */
 	DEBUGFS_ADD(flags);
+}
+
+void ieee80211_sta_debugfs_remove(struct sta_info *sta)
+{
+	debugfs_remove_recursive(sta->debugfs_dir);
+	sta->debugfs_dir = NULL;
+	sta->debugfs_full = false;
+}
+
+#undef DEBUGFS_ADD
+#undef DEBUGFS_ADD_COUNTER
+
+/* sta-scoped macros reused by ieee80211_sta_debugfs_add_full(). */
+#define DEBUGFS_ADD(name) \
+	debugfs_create_file(#name, 0400, \
+		sta->debugfs_dir, sta, &sta_ ##name## _ops)
+
+#define DEBUGFS_ADD_COUNTER(name, field)				\
+	debugfs_create_ulong(#name, 0400, sta->debugfs_dir, &sta->field)
+
+/*
+ * ieee80211_sta_debugfs_add_full - lazily create all per-sta debugfs entries
+ *
+ * Called the first time the "flags" file is opened.  Idempotent: the caller
+ * sets sta->debugfs_full before invoking this function so a concurrent open
+ * cannot race in and create duplicate entries.
+ */
+static void ieee80211_sta_debugfs_add_full(struct sta_info *sta)
+{
+	struct ieee80211_local *local = sta->local;
+	struct ieee80211_sub_if_data *sdata = sta->sdata;
+
 	DEBUGFS_ADD(aid);
 	DEBUGFS_ADD(num_ps_buf_frames);
 	DEBUGFS_ADD(last_seq_ctrl);
@@ -1588,12 +1666,6 @@ void ieee80211_sta_debugfs_add(struct sta_info *sta)
 			   &sta->driver_buffered_tids);
 
 	drv_sta_add_debugfs(local, sdata, &sta->sta, sta->debugfs_dir);
-}
-
-void ieee80211_sta_debugfs_remove(struct sta_info *sta)
-{
-	debugfs_remove_recursive(sta->debugfs_dir);
-	sta->debugfs_dir = NULL;
 }
 
 #undef DEBUGFS_ADD
