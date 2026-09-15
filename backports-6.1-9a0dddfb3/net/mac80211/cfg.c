@@ -5510,6 +5510,20 @@ __ieee80211_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 
 	chanctx = container_of(conf, struct ieee80211_chanctx, conf);
 
+#ifdef CPTCFG_QCN_EXTN
+	/*
+	 * Must run before ieee80211_link_reserve_chanctx() below: a
+	 * diagnostic-STA vif sharing this chanctx will never itself be
+	 * reserved for this switch, and its presence in assigned_links
+	 * would otherwise make ieee80211_vif_use_reserved_switch()'s
+	 * reservation-finalize check fail deterministically. link_data (the
+	 * initiating AP link) is never itself DIAGNOSTIC_STA -- that flag is
+	 * only ever set on STA-type vifs -- so it needs no special exclusion.
+	 */
+	ieee80211_disconnect_diagnostic_sta_on_ctx_extn(local, chanctx,
+							IEEE80211_DIAGNOSTIC_STA_DISCONNECT_CSA);
+#endif /* CPTCFG_QCN_EXTN */
+
 	ch_switch.timestamp = 0;
 	ch_switch.device_timestamp = 0;
 	ch_switch.block_tx = params->block_tx;
@@ -5977,6 +5991,9 @@ static int ieee80211_set_ap_chanwidth(struct wiphy *wiphy,
 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 	struct ieee80211_link_data *link;
 	struct ieee80211_chan_req chanreq = { .oper = *chandef };
+#ifdef CPTCFG_QCN_EXTN
+	struct ieee80211_chanctx_conf *conf;
+#endif
 	int ret;
 	u64 changed = 0;
 
@@ -5988,6 +6005,19 @@ static int ieee80211_set_ap_chanwidth(struct wiphy *wiphy,
 						   link->conf->power_type);
 	if (ret)
 		return ret;
+
+	/*
+	 * A userspace-initiated bandwidth change on this AP link mutates the
+	 * chanctx in place without going through __ieee80211_channel_switch(),
+	 * so it never reaches the CSA-isolation drop above. Disconnect any
+	 * diagnostic-STA vif sharing this chanctx before applying it.
+	 */
+
+	conf = sdata_dereference(link->conf->chanctx_conf, sdata);
+	if (conf)
+		ieee80211_disconnect_diagnostic_sta_on_ctx_extn(sdata->local,
+			container_of(conf, struct ieee80211_chanctx, conf),
+			IEEE80211_DIAGNOSTIC_STA_DISCONNECT_USERSPACE_CHANGE);
 #endif
 
 	ret = ieee80211_link_change_chanreq(link, &chanreq, &changed);

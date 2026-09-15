@@ -3460,6 +3460,25 @@ ieee80211_sta_process_chanswitch(struct ieee80211_link_data *link,
 	if (conf)
 		chanctx = container_of(conf, struct ieee80211_chanctx, conf);
 
+#ifdef CPTCFG_QCN_EXTN
+	/*
+	 * diagnostic-STA vif (vif->diagnostic_sta, see mac80211.h):
+	 * must never follow its Root AP's channel switch -- disconnect
+	 * instead of reserving/switching. Mirrors the co-channel-context
+	 * AP-initiated CSA handling in cfg.c
+	 * (ieee80211_disconnect_diagnostic_sta_on_ctx_extn()); this is the
+	 * STA-receives-CSA-over-the-air counterpart of the same policy.
+	 */
+	if (sdata->vif.diagnostic_sta) {
+		link_info(link,
+			  "diagnostic-STA vif: AP %pM switches channel, disconnecting\n",
+			  link->u.mgd.bssid);
+		drv_notify_diagnostic_sta_disconnect(local, sdata, link->link_id,
+						     IEEE80211_DIAGNOSTIC_STA_DISCONNECT_CSA);
+		goto drop_connection;
+	}
+#endif /* CPTCFG_QCN_EXTN */
+
 	if (!ieee80211_hw_check(&local->hw, CHANCTX_STA_CSA)) {
 		link_info(link,
 			  "driver doesn't support chan-switch with channel contexts\n");

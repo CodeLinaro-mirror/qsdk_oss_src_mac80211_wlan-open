@@ -4073,6 +4073,12 @@ void ieee80211_dfs_cac_cancel(struct ieee80211_local *local,
 	}
 }
 
+#ifdef CPTCFG_QCN_EXTN
+static struct ieee80211_chanctx *
+ieee80211_find_active_chanctx(struct ieee80211_local *local,
+			      struct ieee80211_channel *chan);
+#endif /* CPTCFG_QCN_EXTN */
+
 static void ieee80211_awgn_detected_processing(struct ieee80211_local *local,
 					       u32 interference_bitmap,
 					       struct ieee80211_channel *awgn_channel)
@@ -4080,6 +4086,9 @@ static void ieee80211_awgn_detected_processing(struct ieee80211_local *local,
 	struct cfg80211_chan_def chandef = local->hw.conf.chandef;
 	struct cfg80211_chan_def *awgn_chandef = NULL;
 	struct ieee80211_chanctx *ctx;
+#ifdef CPTCFG_QCN_EXTN
+	struct ieee80211_chanctx *awgn_ctx = NULL;
+#endif /* CPTCFG_QCN_EXTN */
 	int num_chanctx = 0;
 
 	lockdep_assert_wiphy(local->hw.wiphy);
@@ -4092,8 +4101,12 @@ static void ieee80211_awgn_detected_processing(struct ieee80211_local *local,
 		chandef = ctx->conf.def;
 
 		if (awgn_channel &&
-		    (chandef.chan == awgn_channel))
+		    (chandef.chan == awgn_channel)) {
 			awgn_chandef = &ctx->conf.def;
+#ifdef CPTCFG_QCN_EXTN
+			awgn_ctx = ctx;
+#endif /* CPTCFG_QCN_EXTN */
+		}
 
 	}
 
@@ -4101,6 +4114,10 @@ static void ieee80211_awgn_detected_processing(struct ieee80211_local *local,
 		if (local->hw.wiphy->flags & WIPHY_FLAG_SUPPORTS_MLO) {
 			if (WARN_ON(!awgn_chandef))
 				return;
+#ifdef CPTCFG_QCN_EXTN
+			ieee80211_disconnect_diagnostic_sta_on_ctx_extn(local, awgn_ctx,
+									IEEE80211_DIAGNOSTIC_STA_DISCONNECT_AWGN);
+#endif /* CPTCFG_QCN_EXTN */
 			cfg80211_awgn_event(local->hw.wiphy, awgn_chandef,
 					    GFP_KERNEL,
 					    interference_bitmap);
@@ -4108,9 +4125,16 @@ static void ieee80211_awgn_detected_processing(struct ieee80211_local *local,
 			/* XXX: multi-channel is not supported yet */
 			WARN_ON_ONCE(1);
 		}
-	} else
+	} else {
+#ifdef CPTCFG_QCN_EXTN
+		ctx = ieee80211_find_active_chanctx(local, NULL);
+		if (ctx)
+			ieee80211_disconnect_diagnostic_sta_on_ctx_extn(local, ctx,
+									IEEE80211_DIAGNOSTIC_STA_DISCONNECT_AWGN);
+#endif /* CPTCFG_QCN_EXTN */
 		cfg80211_awgn_event(local->hw.wiphy, &chandef, GFP_KERNEL,
 				    interference_bitmap);
+	}
 }
 
 void ieee80211_awgn_detected_work(struct work_struct *work)
@@ -4502,6 +4526,10 @@ ieee80211_dfs_radar_detected_processing(struct ieee80211_local *local,
 			if (radar_bitmap)
 				ieee80211_punct_radar_update(local, radar_chandef,
 							     radar_ctx, radar_bitmap);
+#ifdef CPTCFG_QCN_EXTN
+			ieee80211_disconnect_diagnostic_sta_on_ctx_extn(local, radar_ctx,
+									IEEE80211_DIAGNOSTIC_STA_DISCONNECT_RADAR);
+#endif /* CPTCFG_QCN_EXTN */
 			cfg80211_radar_event(local->hw.wiphy, radar_chandef, GFP_KERNEL);
 		} else {
 			/* XXX: multi-channel is not supported yet */
@@ -4516,6 +4544,11 @@ ieee80211_dfs_radar_detected_processing(struct ieee80211_local *local,
 		ctx = ieee80211_find_active_chanctx(local, NULL);
 		if (radar_bitmap && ctx)
 			ieee80211_punct_radar_update(local, &chandef, ctx, radar_bitmap);
+#ifdef CPTCFG_QCN_EXTN
+		if (ctx)
+			ieee80211_disconnect_diagnostic_sta_on_ctx_extn(local, ctx,
+									IEEE80211_DIAGNOSTIC_STA_DISCONNECT_RADAR);
+#endif /* CPTCFG_QCN_EXTN */
 		cfg80211_radar_event(local->hw.wiphy, &chandef, GFP_KERNEL);
 	}
 }
