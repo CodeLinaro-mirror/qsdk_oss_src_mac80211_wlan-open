@@ -281,6 +281,11 @@ static int ath12k_wifi8_wsi_bypass_add(struct ath12k_base *ab)
 	return 0;
 }
 
+static bool ath12k_wifi8_bridge_link_allowed(void)
+{
+	return false;
+}
+
 const struct ath12k_cp_arch_ops ath12k_wifi8_cp_ops = {
 	.cu_mem_pool_init = ath12k_wifi8_cu_mem_pool_init,
 	.cu_mem_pool_deinit = ath12k_wifi8_cu_mem_pool_deinit,
@@ -289,6 +294,7 @@ const struct ath12k_cp_arch_ops ath12k_wifi8_cp_ops = {
 	.cu_notify = ath12k_wifi8_cu_notify,
 	.wsi_bypass_remove = ath12k_wifi8_wsi_bypass_remove,
 	.wsi_bypass_add = ath12k_wifi8_wsi_bypass_add,
+	.bridge_link_allowed = ath12k_wifi8_bridge_link_allowed,
 };
 
 /* SMD feature flags - controls behaviour of SMD-related operations.
