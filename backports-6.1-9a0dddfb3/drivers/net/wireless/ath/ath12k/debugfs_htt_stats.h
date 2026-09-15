@@ -945,6 +945,7 @@ struct ath12k_htt_tx_pdev_stats_sifs_tlv {
 
 struct ath12k_htt_pdev_ctrl_path_tx_stats_tlv {
 	__le32 fw_tx_mgmt_subtype[ATH12K_HTT_STATS_SUBTYPE_MAX];
+	__le32 fw_tx_ucast_probe_resp;
 } __packed;
 
 struct ath12k_htt_peer_ctrl_path_txrx_stats_tlv {
@@ -2057,6 +2058,7 @@ struct htt_rx_pdev_fw_stats_tlv {
 	__le32 rx_hwm_prom_filter_en;
 	__le32 bytes_received_low_32;
 	__le32 bytes_received_high_32;
+	__le32 fw_ring_ucast_probe_req;
 };
 
 #define HTT_STATS_PHY_ERR_MAX 43
