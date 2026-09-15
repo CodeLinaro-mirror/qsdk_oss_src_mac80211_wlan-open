@@ -3671,6 +3671,17 @@ int ath12k_wmi_force_fw_hang_cmd(struct ath12k *ar, u32 type, u32 delay_time_ms,
 	return ret;
 }
 
+static bool ath12k_wmi_vdev_is_created(struct ath12k *ar, u32 vdev_id)
+{
+	bool created;
+
+	spin_lock_bh(&ar->data_lock);
+	created = ar->created_vdev_map & (1LL << vdev_id);
+	spin_unlock_bh(&ar->data_lock);
+
+	return created;
+}
+
 int ath12k_wmi_vdev_set_param_cmd(struct ath12k *ar, u32 vdev_id,
 				  u32 param_id, u32 param_value)
 {
@@ -3678,6 +3689,15 @@ int ath12k_wmi_vdev_set_param_cmd(struct ath12k *ar, u32 vdev_id,
 	struct wmi_vdev_set_param_cmd *cmd;
 	struct sk_buff *skb;
 	int ret;
+
+	if (!ath12k_wmi_vdev_is_created(ar, vdev_id)) {
+		ath12k_warn(ar->ab,
+			    "vdev %d set param %d value %d sent before vdev create, allocated_vdev_map 0x%llx, created_vdev_map 0x%llx\n",
+			    vdev_id, param_id, param_value, ar->allocated_vdev_map,
+			    ar->created_vdev_map);
+		WARN_ON(1);
+		return -ENOENT;
+	}
 
 	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, sizeof(*cmd));
 	if (!skb)
