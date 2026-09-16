@@ -1591,6 +1591,9 @@ void ath12k_wifi8_hal_reo_shared_qaddr_cache_clear(struct ath12k_base *ab)
 	if (!ab->hw_params->reoq_lut_support)
 		return;
 
+	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
+		return;
+
 	val = ath12k_hif_read32(ab, HAL_SEQ_WCSS_UMAC_REO_REG +
 				HAL_REO1_QDESC_ADDR(hal));
 
