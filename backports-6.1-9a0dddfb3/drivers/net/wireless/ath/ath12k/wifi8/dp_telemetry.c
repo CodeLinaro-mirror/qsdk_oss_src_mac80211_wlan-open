@@ -49,6 +49,14 @@ int ath12k_wifi8_dp_telemetry_ring_alloc(struct ath12k_base *ab)
 		goto err;
 	}
 
+	ret = ath12k_dp_srng_alloc(ab, &dp_wifi8->tx_stream_telemetry_ring,
+				   HAL_STREAM_TX_TELEMETRY, 0, 0,
+				   DP_TELEMETRY_TX_RING_SIZE);
+	if (ret) {
+		ath12k_warn(ab, "Stream Tx Telemetry ring alloc failed: %d\n", ret);
+		goto err;
+	}
+
 	return 0;
 err:
 	ath12k_wifi8_dp_telemetry_ring_cleanup(ab);
@@ -74,6 +82,13 @@ int ath12k_wifi8_dp_telemetry_ring_init(struct ath12k_base *ab)
 		return ret;
 	}
 
+	ret = ath12k_dp_srng_init(ab, &dp_wifi8->tx_stream_telemetry_ring,
+				  HAL_STREAM_TX_TELEMETRY, 0, 0);
+	if (ret) {
+		ath12k_warn(ab, "Stream Tx Telemetry ring init failed: %d\n", ret);
+		return ret;
+	}
+
 	return 0;
 }
 
@@ -83,6 +98,7 @@ int ath12k_wifi8_dp_telemetry_ring_cleanup(struct ath12k_base *ab)
 
 	ath12k_dp_srng_cleanup(ab, &dp_wifi8->tx_peer_telemetry_ring);
 	ath12k_dp_srng_cleanup(ab, &dp_wifi8->rx_peer_telemetry_ring);
+	ath12k_dp_srng_cleanup(ab, &dp_wifi8->tx_stream_telemetry_ring);
 
 	return 0;
 }
@@ -734,10 +750,184 @@ next_rx_desc:
 	return num_descs;
 }
 
+static void
+ath12k_wifi8_dp_process_tx_latency_stats(struct tx_stream_latency_stats_desc *desc)
+{
+	struct ath12k_dp_tx_stream_latency_stat stat = {};
+	struct ath12k_dp_tx_stream_latency_band_stat *b_stat;
+	const struct tx_stream_band_latency_stats *b_desc;
+	const __le32 *bin_fields;
+	u32 info67;
+	int band, bin;
+
+	for (band = 0; band < HAL_MAX_TX_STREAM_BAND; band++) {
+		b_stat = &stat.band[band];
+		b_desc = &desc->stream_band[band];
+
+		b_stat->latency =
+			(u64)le32_to_cpu(b_desc->info0) |
+			((u64)le32_to_cpu(b_desc->info1) << 32);
+
+		b_stat->num_packets      = le32_to_cpu(b_desc->info2);
+		b_stat->num_fail_packets = le32_to_cpu(b_desc->info3);
+		b_stat->num_pass_packets = le32_to_cpu(b_desc->info4);
+
+		bin_fields = &b_desc->info5;
+		for (bin = 0; bin < HAL_TX_STREAM_STATS_NUM_LATENCY_BINS; bin++)
+			b_stat->num_bin_packets[bin] = le32_to_cpu(bin_fields[bin]);
+
+		b_stat->latency_variation =
+			(u64)le32_to_cpu(b_desc->info11) |
+			((u64)le32_to_cpu(b_desc->info12) << 32);
+	}
+
+	info67 = le32_to_cpu(desc->info67);
+	stat.interframe_delay =
+		(u64)le32_to_cpu(desc->info66) |
+		((u64)le32_get_bits(info67,
+				    TX_STREAM_LAT_INFO67_INTERFRAME_DELAY_41_32) << 32);
+	stat.latency_sla_breach    = !!(info67 & TX_STREAM_LAT_INFO67_LATENCY_SLA_BREACH);
+	stat.percentile_sla_breach =
+		!!(info67 & TX_STREAM_LAT_INFO67_PERCENTILE_SLA_BREACH);
+}
+
+static void
+ath12k_wifi8_dp_process_tx_rate_stats(struct tx_stream_rate_stats_desc *desc)
+{
+	struct ath12k_dp_tx_stream_rate_stat stat = {};
+	struct ath12k_dp_tx_stream_rate_band_stat *b_stat;
+	const struct tx_stream_band_rate_stats *b_desc;
+	const __le32 *mcs_fields, *nss_fields;
+	u32 info1, info16, info87, info88;
+	int band, bin;
+
+	for (band = 0; band < HAL_MAX_TX_STREAM_BAND; band++) {
+		b_stat = &stat.band[band];
+		b_desc = &desc->stream_band[band];
+
+		info1 = le32_to_cpu(b_desc->info1);
+
+		b_stat->egress_bytes =
+			(u64)le32_to_cpu(b_desc->info0) |
+			((u64)le32_get_bits(info1,
+			 TX_STREAM_BAND_RATE_INFO1_EGRESS_BYTES_33_32) << 32);
+
+		b_stat->num_success_packets =
+			le32_get_bits(info1,
+				      TX_STREAM_BAND_RATE_INFO1_NUM_SUCCESS_PACKETS);
+
+		b_stat->num_retransmissions =
+			le32_get_bits(le32_to_cpu(b_desc->info2),
+				      TX_STREAM_BAND_RATE_INFO2_NUM_RETRANSMISSIONS);
+
+		mcs_fields = &b_desc->info3;
+		for (bin = 0; bin < HAL_TX_STREAM_STATS_NUM_MCS_BINS; bin++)
+			b_stat->num_mcs_bin_packets[bin] =
+				le32_get_bits(le32_to_cpu(mcs_fields[bin]),
+					      TX_STREAM_BAND_RATE_INFO_NUM_MCS_PACKETS);
+
+		nss_fields = &b_desc->info11;
+		for (bin = 0; bin < HAL_TX_STREAM_STATS_NUM_NSS_BINS; bin++)
+			b_stat->num_nss_bin_packets[bin] =
+				le32_get_bits(le32_to_cpu(nss_fields[bin]),
+					      TX_STREAM_BAND_RATE_INFO_NUM_NSS_PACKETS);
+
+		info16 = le32_to_cpu(b_desc->info16);
+		b_stat->sum_ack_rssi =
+			(s64)((u64)le32_to_cpu(b_desc->info15) |
+			      ((u64)le32_get_bits(info16,
+			       TX_STREAM_BAND_RATE_INFO16_SUM_ACK_RSSI_32) << 32));
+		if (b_stat->sum_ack_rssi & BIT_ULL(32))
+			b_stat->sum_ack_rssi |= ~(s64)GENMASK_ULL(32, 0);
+
+		b_stat->num_packets =
+			le32_get_bits(info16, TX_STREAM_BAND_RATE_INFO16_NUM_PACKETS);
+	}
+
+	info87 = le32_to_cpu(desc->info87);
+	info88 = le32_to_cpu(desc->info88);
+
+	stat.ingress_bytes =
+		(u64)le32_to_cpu(desc->info86) |
+		((u64)le32_get_bits(info87,
+				    TX_STREAM_RATE_INFO87_INGRESS_BYTES_33_32) << 32);
+	stat.num_lost_packets =
+		le32_get_bits(info87, TX_STREAM_RATE_INFO87_NUM_LOST_PACKETS);
+	stat.rate_avg_sla_breach  =
+		!!(info88 & TX_STREAM_RATE_INFO88_RATE_AVG_SLA_BREACH);
+	stat.rate_pct_sla_breach  =
+		!!(info88 & TX_STREAM_RATE_INFO88_RATE_PCT_SLA_BREACH);
+	stat.drop_pct_sla_breach  =
+		!!(info88 & TX_STREAM_RATE_INFO88_DROP_PCT_SLA_BREACH);
+	stat.error_pct_sla_breach =
+		!!(info88 & TX_STREAM_RATE_INFO88_ERROR_PCT_SLA_BREACH);
+}
+
+int ath12k_wifi8_dp_process_tx_stream_telemetry(struct ath12k_dp *dp, int budget)
+{
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
+	struct ath12k_base *ab = dp->ab;
+	struct hal_srng *srng;
+	const __le32 *hdr;
+	void *tx_desc;
+	u16 stream_id, type;
+	u8 ring_id, looping_count, num_windows;
+	int num_descs = 0;
+
+	srng = &ab->hal.srng_list[dp_wifi8->tx_stream_telemetry_ring.ring_id];
+
+	spin_lock_bh(&srng->lock);
+	ath12k_hal_srng_access_begin(ab, srng);
+
+	while (budget-- > 0) {
+		tx_desc = ath12k_hal_srng_dst_get_next_entry(ab, srng);
+		if (!tx_desc)
+			break;
+
+		hdr = (const __le32 *)tx_desc;
+
+		stream_id   = le32_get_bits(hdr[0],
+					    TX_STREAM_STATS_DESC_INFO0_STREAM_ID);
+
+		if (stream_id > ATH12K_MAX_STREAM_ID) {
+			ath12k_err(ab, "Tx: stream_id %u out of bounds\n", stream_id);
+			goto next_tx_desc;
+		}
+
+		num_windows = le32_get_bits(hdr[0],
+					    TX_STREAM_STATS_DESC_INFO0_NUM_WINDOW);
+		type        = le32_get_bits(hdr[0],
+					    TX_STREAM_STATS_DESC_INFO0_TYPE);
+		ring_id       = le32_get_bits(hdr[89],
+					      TX_STREAM_STATS_DESC_INFO89_RING_ID);
+		looping_count = le32_get_bits(hdr[89],
+					      TX_STREAM_STATS_DESC_INFO89_LOOPING_CNT);
+
+		ath12k_dbg(ab, ATH12K_DBG_TELEMETRY,
+			   "tx stream_id %u num_windows %u type 0x%x ring_id %u looping_count %u\n",
+			   stream_id, num_windows, type, ring_id, looping_count);
+
+		if (type == HAL_TX_STREAM_SIGNATURE_LATENCY_STATS)
+			ath12k_wifi8_dp_process_tx_latency_stats(
+				(struct tx_stream_latency_stats_desc *)tx_desc);
+		else if (type == HAL_TX_STREAM_SIGNATURE_RATE_STATS)
+			ath12k_wifi8_dp_process_tx_rate_stats(
+				(struct tx_stream_rate_stats_desc *)tx_desc);
+
+next_tx_desc:
+		num_descs++;
+	}
+
+	ath12k_hal_srng_access_end(ab, srng);
+	spin_unlock_bh(&srng->lock);
+
+	return num_descs;
+}
+
 int ath12k_wifi8_dp_telemetry_init(struct ath12k_dp *dp)
 {
 	ath12k_wifi8_hal_tasc_peer_clk_cycle_config(dp->ab);
-	ath12k_wifi8_hal_tasc_peer_tx_cfg(dp->ab, true);
+	ath12k_wifi8_hal_tasc_tx_cfg(dp->ab, true, true);
 
 	ath12k_wifi8_hal_tasc_peer_tx_window(dp->ab,
 					     DP_TELEMETRY_PEER_2PEER_WINDOW);
@@ -771,7 +961,7 @@ int ath12k_wifi8_dp_telemetry_init(struct ath12k_dp *dp)
 
 int ath12k_wifi8_dp_telemetry_deinit(struct ath12k_dp *dp)
 {
-	ath12k_wifi8_hal_tasc_peer_tx_cfg(dp->ab, false);
+	ath12k_wifi8_hal_tasc_tx_cfg(dp->ab, false, false);
 	ath12k_wifi8_hal_tasc_peer_rx_cfg(dp->ab, false);
 	return 0;
 }

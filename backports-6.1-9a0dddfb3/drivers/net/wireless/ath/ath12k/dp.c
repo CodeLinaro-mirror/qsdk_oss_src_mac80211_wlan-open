@@ -671,6 +671,9 @@ static int ath12k_dp_srng_calculate_msi_group(struct ath12k_base *ab,
 	case HAL_PEER_RX_TELEMETRY:
 		grp_mask = &ab->hw_params->ring_mask->rx_peer_telemetry[0];
 		break;
+	case HAL_STREAM_TX_TELEMETRY:
+		grp_mask = &ab->hw_params->ring_mask->tx_stream_telemetry[0];
+		break;
 	case HAL_SAM_STATUS:
 		grp_mask = &ab->hw_params->ring_mask->sam_status[0];
 		break;
@@ -906,6 +909,7 @@ int ath12k_dp_srng_init(struct ath12k_base *ab, struct dp_srng *ring,
 	case HAL_SAM_CMD:
 	case HAL_SAM_STATUS:
 	case HAL_REO_FLUSH:
+	case HAL_STREAM_TX_TELEMETRY:
 		params.intr_batch_cntr_thres_entries =
 					HAL_SRNG_INT_BATCH_THRESHOLD_OTHER;
 		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_OTHER;

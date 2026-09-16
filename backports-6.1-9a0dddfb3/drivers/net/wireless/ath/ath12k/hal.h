@@ -268,6 +268,7 @@ enum hal_srng_ring_id {
 
 	HAL_SRNG_RING_ID_PEER_TX_TELEMETRY = 57,
 	HAL_SRNG_RING_ID_PEER_RX_TELEMETRY,
+	HAL_SRNG_RING_ID_STREAM_TX_TELEMETRY = 59,
 
 	HAL_SRNG_RING_ID_CE0_SRC = 64,
 	HAL_SRNG_RING_ID_CE1_SRC,
@@ -451,6 +452,7 @@ enum hal_ring_type {
 	HAL_PEER_RX_TELEMETRY,
 	HAL_REO_FLUSH,
 	HAL_TQM2PPE,
+	HAL_STREAM_TX_TELEMETRY,
 	/*
 	 * HAL_TQM2SW_FW_COMPLETION: dedicated TQM2SW ring for FW-owned buffer
 	 * completions.  Maps to ring_mask->fw_tqm2sw[] so the MSI fires on the
