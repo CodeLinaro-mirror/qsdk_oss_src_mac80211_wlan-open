@@ -227,6 +227,7 @@ struct hal_mon_usig_hdr {
 } __packed;
 
 #define HAL_RX_PHY_CMN_USER_INFO0_GI		GENMASK(17, 16)
+#define HAL_RX_PHY_CMN_USER_INFO0_LTF_SIZE	GENMASK(19, 18)
 
 struct hal_phyrx_common_user_info {
 	__le32 rsvd0[2];
