@@ -150,6 +150,15 @@ int ath12k_wifi7_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 	dp_peer->tx_encap_type = ahvif->dp_vif.tx_encap_type;
 	dp_peer->rx_decap_type = ahvif->dp_vif.rx_decap_type;
 
+#ifdef CPTCFG_QCN_EXTN
+	if (ahvif->vap_submode == IEEE80211_EXTN_VAP_SUBMODE_ETH_OFFLOAD_MESH) {
+		if (ahsta) {
+			wiphy_work_queue(ah->hw->wiphy, &ahsta->set_4addr_wk);
+			ahsta->use_4addr_set = true;
+		}
+	}
+#endif
+
 	for (i = 0; i < ATH12K_NUM_MAX_LINKS; i++)
 		dp_peer->l2h_link_map[i] = ATH12K_DP_HW_LINK_ID_INVALID;
 

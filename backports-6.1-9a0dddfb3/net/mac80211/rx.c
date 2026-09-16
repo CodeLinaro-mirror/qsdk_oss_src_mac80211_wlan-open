@@ -5355,7 +5355,7 @@ void ieee80211_check_fast_rx(struct sta_info *sta)
 	u32 offload_flags;
 	bool set_offload = false;
 	bool assign = false;
-	bool offload;
+	bool offload, is_ap_vlan = false;
 
 	/* use sparse to check that we don't return without updating */
 	__acquire(check_fast_rx);
@@ -5418,8 +5418,14 @@ void ieee80211_check_fast_rx(struct sta_info *sta)
 			(sdata->vif.type != NL80211_IFTYPE_AP_VLAN ||
 			 !sdata->u.vlan.sta);
 
-		if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN &&
-		    sdata->u.vlan.sta) {
+		is_ap_vlan = sdata->vif.type == NL80211_IFTYPE_AP_VLAN &&
+				sdata->u.vlan.sta;
+
+#ifdef CPTCFG_QCN_EXTN
+		is_ap_vlan |= sdata->wdev.vap_submode ==
+				IEEE80211_EXTN_VAP_SUBMODE_ETH_OFFLOAD_MESH;
+#endif
+		if (is_ap_vlan) {
 			fastrx.expected_ds_bits |=
 				cpu_to_le16(IEEE80211_FCTL_FROMDS);
 			fastrx.sa_offs = offsetof(struct ieee80211_hdr, addr4);
