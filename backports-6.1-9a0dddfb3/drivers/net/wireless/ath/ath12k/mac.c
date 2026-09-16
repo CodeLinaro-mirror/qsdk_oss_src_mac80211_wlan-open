@@ -22104,7 +22104,8 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 
 	if (ath12k_frame_mode != ATH12K_HW_TXRX_ETHERNET ||
 	    (vif->type != NL80211_IFTYPE_STATION &&
-	     vif->type != NL80211_IFTYPE_AP))
+	     vif->type != NL80211_IFTYPE_AP &&
+	     vif->type != NL80211_IFTYPE_AP_VLAN))
 		vif->offload_flags &= ~(IEEE80211_OFFLOAD_ENCAP_ENABLED |
 					IEEE80211_OFFLOAD_DECAP_ENABLED);
 
