@@ -38,6 +38,7 @@
  * ATH12K_CONGSTN_CTRL_HISTORY_ENABLE: enable(1)/disable(0) history logging
  * ATH12K_CONGSTN_CTRL_RESET_USED: Reset the max used count
  * ATH12K_CONGSTN_CTRL_PPEDS_USED_THRESHOLD: set ppeds_used_threshold (u32)
+ * ATH12K_CONGSTN_CTRL_RESET_DROP: Reset the drop MSDU counter
  */
 enum ath12k_wifi8_congstn_ctrl_param_type {
 	ATH12K_CONGSTN_CTRL_USED_THRESHOLD,
@@ -45,6 +46,7 @@ enum ath12k_wifi8_congstn_ctrl_param_type {
 	ATH12K_CONGSTN_CTRL_HISTORY_ENABLE,
 	ATH12K_CONGSTN_CTRL_RESET_USED,
 	ATH12K_CONGSTN_CTRL_PPEDS_USED_THRESHOLD,
+	ATH12K_CONGSTN_CTRL_RESET_DROP,
 
 	/* keep last */
 	ATH12K_CONGSTN_CTRL_TYPE_MAX
@@ -196,4 +198,6 @@ ssize_t ath12k_wifi8_dp_tx_dump_congestion_recovery_hist(struct ath12k_dp *dp,
 							 char *buf, int size);
 int ath12k_wifi8_dp_tx_set_congestion_ctrl_param(struct ath12k_dp *dp,
 						 u32 type, u32 value);
+ssize_t ath12k_wifi8_dp_tx_dump_congestion_ctrl_param(struct ath12k_dp *dp,
+						      char *buf, int size);
 #endif

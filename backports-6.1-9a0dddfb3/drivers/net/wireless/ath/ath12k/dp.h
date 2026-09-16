@@ -896,6 +896,8 @@ struct ath12k_dp_arch_ops {
 	ssize_t (*dump_congestion_recovery_hist)(struct ath12k_dp *dp,
 						 char *buf, int size);
 	int (*set_congestion_ctrl_param)(struct ath12k_dp *dp, u32 type, u32 value);
+	ssize_t (*dump_congestion_ctrl_param)(struct ath12k_dp *dp,
+					      char *buf, int size);
 	int (*peer_tx_tid_sn_reset)(struct ath12k_base *ab,
 				    struct ath12k_dp_hw *dp_hw,
 				    struct ieee80211_vif *vif,

@@ -5044,6 +5044,8 @@ ath12k_wifi8_dp_tx_proceed_drop(struct ath12k_wifi8_dp_congestion_control *congs
 			cmd.remove_msdu_params.msdu_q_paddr = msduq->msdu_q_paddr;
 
 			tag = HAL_TQM_REMOVE_MSDU_BO;
+
+			congstn->drop_msdu[entry->svc] += cmd.remove_msdu_params.count;
 		}
 
 		ret = ath12k_wifi8_dp_tqm_cmd_send(ab, tag, &cmd, NULL, NULL);
@@ -5623,7 +5625,7 @@ ssize_t ath12k_wifi8_dp_tx_dump_congestion_ctrl_stats(struct ath12k_dp *dp,
 
 	svc = HAL_TQM_SERVICE_CATEGORY_MAX;
 	len += scnprintf(buf + len, size - len,
-			 "\nTotal active_msdu:       %u\n",
+			 "\nTotal active_msdu:         %u\n",
 			 ath12k_wifi8_hal_tqm_get_active_msdu(hal, svc));
 
 	for (svc = 0; svc < HAL_TQM_SERVICE_CATEGORY_MAX; svc++)
@@ -5631,6 +5633,19 @@ ssize_t ath12k_wifi8_dp_tx_dump_congestion_ctrl_stats(struct ath12k_dp *dp,
 				 "SC%d active_msdu: %u\n",
 				 svc,
 				 ath12k_wifi8_hal_tqm_get_active_msdu(hal, svc));
+
+	len += scnprintf(buf + len, size - len,
+			 "\nTotal drop_msdu:           %u\n",
+			 congstn->drop_msdu[HAL_TQM_SERVICE_CATEGORY_SC0] +
+			 congstn->drop_msdu[HAL_TQM_SERVICE_CATEGORY_SC1] +
+			 congstn->drop_msdu[HAL_TQM_SERVICE_CATEGORY_SC2] +
+			 congstn->drop_msdu[HAL_TQM_SERVICE_CATEGORY_SC3]);
+
+	for (svc = 0; svc < HAL_TQM_SERVICE_CATEGORY_MAX; svc++)
+		len += scnprintf(buf + len, size - len,
+				 "SC%d drop_msdu: %u\n",
+				 svc,
+				 congstn->drop_msdu[svc]);
 
 	len += scnprintf(buf + len, size - len,
 			 "\nflow_drop_grace_percent:   %u%%\n",
@@ -5882,6 +5897,11 @@ int ath12k_wifi8_dp_tx_set_congestion_ctrl_param(struct ath12k_dp *dp,
 		ath12k_dbg(dp->ab, ATH12K_DBG_DP_TX,
 			   "congestion ctrl: ppeds_used_threshold set to %u\n", value);
 		break;
+	case ATH12K_CONGSTN_CTRL_RESET_DROP:
+		memset(congstn->drop_msdu, 0, sizeof(congstn->drop_msdu));
+		ath12k_dbg(dp->ab, ATH12K_DBG_DP_TX,
+			   "congestion ctrl: Reset drop MSDU counter\n");
+		break;
 	default:
 		ath12k_warn(dp->ab,
 			    "congestion ctrl: unknown param type %u\n", type);
@@ -5889,6 +5909,70 @@ int ath12k_wifi8_dp_tx_set_congestion_ctrl_param(struct ath12k_dp *dp,
 	}
 
 	return 0;
+}
+
+ssize_t ath12k_wifi8_dp_tx_dump_congestion_ctrl_param(struct ath12k_dp *dp,
+						      char *buf, int size)
+{
+	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8;
+	struct ath12k_wifi8_dp_congestion_control *congstn;
+	u32 drop = 0, svc;
+	int len = 0;
+
+	dp = ath12k_get_central_dp(dp);
+	if (!dp)
+		goto out;
+
+	dp_hw_grp_wifi8 = ath12k_get_dp_hw_group_wifi8(dp->dp_hw_grp);
+	if (!dp_hw_grp_wifi8)
+		goto out;
+
+	congstn = &dp_hw_grp_wifi8->congstn;
+	if (!congstn->init) {
+		ath12k_warn(dp->ab,
+			    "congestion ctrl not inited\n");
+		goto out;
+	}
+
+	len += scnprintf(buf + len, size - len,
+			 "Congestion Control Set params\t\t\ttype\tvalue\n");
+	len += scnprintf(buf + len, size - len,
+			 "%s\t\t: %d\t%d\n",
+			 __stringify(ATH12K_CONGSTN_CTRL_USED_THRESHOLD),
+			 ATH12K_CONGSTN_CTRL_USED_THRESHOLD,
+			 congstn->used_threshold);
+	len += scnprintf(buf + len, size - len,
+			 "%s\t\t: %d\t%d\n",
+			 __stringify(ATH12K_CONGSTN_CTRL_FLOW_DROP_GRACE_PCT),
+			 ATH12K_CONGSTN_CTRL_FLOW_DROP_GRACE_PCT,
+			 congstn->flow_drop_grace_percent);
+	len += scnprintf(buf + len, size - len,
+			 "%s\t\t: %d\t%d\n",
+			 __stringify(ATH12K_CONGSTN_CTRL_HISTORY_ENABLE),
+			 ATH12K_CONGSTN_CTRL_HISTORY_ENABLE,
+			 congstn->history_enable);
+	len += scnprintf(buf + len, size - len,
+			 "%s\t\t\t: %d\t%d\n",
+			 __stringify(ATH12K_CONGSTN_CTRL_RESET_USED),
+			 ATH12K_CONGSTN_CTRL_RESET_USED,
+			 congstn->max_used);
+	len += scnprintf(buf + len, size - len,
+			 "%s\t: %d\t%d\n",
+			 __stringify(ATH12K_CONGSTN_CTRL_PPEDS_USED_THRESHOLD),
+			 ATH12K_CONGSTN_CTRL_PPEDS_USED_THRESHOLD,
+			 congstn->ppeds_used_threshold);
+
+	for (svc = 0; svc < HAL_TQM_SERVICE_CATEGORY_MAX; svc++)
+		drop += congstn->drop_msdu[svc];
+
+	len += scnprintf(buf + len, size - len,
+			 "%s\t\t\t: %d\t%d\n",
+			 __stringify(ATH12K_CONGSTN_CTRL_RESET_DROP),
+			 ATH12K_CONGSTN_CTRL_RESET_DROP,
+			 drop);
+
+out:
+	return len;
 }
 
 int ath12k_wifi8_dp_tx_update_msdu_flow(struct ath12k_dp *dp,
