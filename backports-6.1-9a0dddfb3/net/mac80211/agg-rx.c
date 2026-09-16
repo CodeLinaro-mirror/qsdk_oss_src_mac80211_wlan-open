@@ -71,6 +71,9 @@ void __ieee80211_stop_rx_ba_session(struct sta_info *sta, u16 tid,
 
 	lockdep_assert_wiphy(sta->local->hw.wiphy);
 
+	if (tid >= IEEE80211_NUM_TIDS)
+		return;
+
 	tid_rx = rcu_dereference_protected(sta->ampdu_mlme.tid_rx[tid],
 					lockdep_is_held(&sta->local->hw.wiphy->mtx));
 
