@@ -7405,6 +7405,11 @@ ath12k_mac_op_change_vif_links(struct ieee80211_hw *hw,
 			if (WARN_ON(!arvif_ar))
 				return -EINVAL;
 
+			ath12k_warn(arvif_ar->ab,
+				    "scan: [radio:%d] stop scan vdev scan_id=%u is_started=%d is_roc=%d\n",
+				    arvif_ar->radio_idx, arvif_ar->scan.parallel_scan_id,
+				    scan_arvif->is_started, arvif_ar->scan.is_roc);
+
 			if (scan_arvif->is_started) {
 				ret = ath12k_mac_vdev_stop(scan_arvif);
 				if (ret) {
@@ -12234,6 +12239,10 @@ void ath12k_mac_op_cancel_hw_scan(struct ieee80211_hw *hw,
 
 		ath12k_scan_abort(ar);
 		cancel_delayed_work_sync(&ar->scan.timeout);
+		ath12k_dbg(ar->ab, ATH12K_DBG_SCAN,
+			   "scan: [radio:%d] flush scan_id=%u\n",
+			   ar->radio_idx, ar->scan.parallel_scan_id);
+		wiphy_work_flush(hw->wiphy, &ar->scan.vdev_clean_wk);
 	}
 }
 EXPORT_SYMBOL(ath12k_mac_op_cancel_hw_scan);
@@ -25753,8 +25762,17 @@ ath12k_mac_unassign_vif_chanctx_handle(struct ieee80211_hw *hw,
 		arvif->is_started = false;
 
 	if (ar->scan.arvif == arvif && ar->scan.state == ATH12K_SCAN_RUNNING) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_SCAN,
+			   "scan: [radio:%d] abort and flush scan_id=%u\n",
+			   ar->radio_idx, ar->scan.parallel_scan_id);
 		ath12k_scan_abort(ar);
 		ar->scan.arvif = NULL;
+		/* Flush vdev_clean_wk synchronously so that
+		 * ieee80211_scan_completed() is called before we return.
+		 * This ensures scan_work is queued and SCAN_COMPLETED is set
+		 * in mac80211 along with notified flag set to true.
+		 */
+		wiphy_work_flush(hw->wiphy, &ar->scan.vdev_clean_wk);
 	}
 	if (test_bit(WMI_TLV_SERVICE_11D_OFFLOAD, ab->wmi_ab.svc_map) &&
 	    ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
