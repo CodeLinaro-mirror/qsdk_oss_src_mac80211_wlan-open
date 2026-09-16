@@ -491,6 +491,9 @@ void ieee80211_wake_queue_by_reason(struct ieee80211_hw *hw, int queue,
 	unsigned long flags;
 	spinlock_t *pcpu_queue_stop_reason_lock;
 
+	if (WARN_ON(queue < 0 || queue >= hw->queues))
+		return;
+
 	pcpu_queue_stop_reason_lock = this_cpu_ptr(local->queue_stop_reason_lock);
 	spin_lock_irqsave(pcpu_queue_stop_reason_lock, flags);
 	__ieee80211_wake_queue(hw, queue, reason, refcounted);
@@ -513,7 +516,7 @@ static void __ieee80211_stop_queue(struct ieee80211_hw *hw, int queue,
 	unsigned long *queue_stop_reasons;
 	int *q_stop_reasons;
 
-	if (WARN_ON(queue >= hw->queues))
+	if (WARN_ON(queue < 0 || queue >= hw->queues))
 		return;
 
 	queue_stop_reasons = this_cpu_ptr(local->queue_stop_reasons[queue]);
@@ -566,6 +569,11 @@ void ieee80211_add_pending_skb(struct ieee80211_local *local,
 		return;
 	}
 
+	if (WARN_ON(queue < 0 || queue >= hw->queues)) {
+		ieee80211_free_txskb(&local->hw, skb);
+		return;
+	}
+
 	pcpu_queue_stop_reason_lock = this_cpu_ptr(local->queue_stop_reason_lock);
 	pcpu_pending = this_cpu_ptr(local->pending[queue]);
 	spin_lock_irqsave(pcpu_queue_stop_reason_lock, flags);
@@ -603,6 +611,11 @@ void ieee80211_add_pending_skbs(struct ieee80211_local *local,
 		}
 
 		queue = info->hw_queue;
+		if (WARN_ON(queue < 0 || queue >= hw->queues)) {
+			ieee80211_free_txskb(&local->hw, skb);
+			continue;
+		}
+
 		pcpu_pending = this_cpu_ptr(local->pending[queue]);
 
 		__ieee80211_stop_queue(hw, queue,
@@ -676,7 +689,7 @@ void ieee80211_stop_queues_by_reason(struct ieee80211_hw *hw,
 	queue_info.reason = reason;
 	queue_info.refcounted = refcounted;
 
-	for_each_set_bit(i, &queues, hw->queues) {
+	for_each_set_bit(i, &queues, min_t(int, hw->queues, BITS_PER_LONG)) {
 		queue_info.queue = i;
 		on_each_cpu((void (*)(void *))ieee80211_stop_queues_one_by_one, &queue_info, 1);
 	}
@@ -742,7 +755,7 @@ void ieee80211_wake_queues_by_reason(struct ieee80211_hw *hw,
 	queue_info.reason = reason;
 	queue_info.refcounted = refcounted;
 
-	for_each_set_bit(i, &queues, hw->queues) {
+	for_each_set_bit(i, &queues, min_t(int, hw->queues, BITS_PER_LONG)) {
 		queue_info.queue = i;
 		on_each_cpu((void (*)(void *))ieee80211_wake_queues_one_by_one, &queue_info, 1);
 	}
@@ -774,11 +787,15 @@ ieee80211_get_vif_queues(struct ieee80211_local *local,
 			queues |= BIT(sdata->vif.cab_queue);
 	} else {
 		/* all queues */
-		queues = BIT(local->hw.queues) - 1;
+		if (WARN_ON(local->hw.queues >= BITS_PER_LONG))
+			queues = ~0U;
+		else
+			queues = BIT(local->hw.queues) - 1;
 	}
 
 	return queues;
 }
+
 
 void __ieee80211_flush_queues(struct ieee80211_local *local,
 			      struct ieee80211_sub_if_data *sdata,
@@ -2587,8 +2604,13 @@ size_t ieee80211_ie_split_vendor(const u8 *ies, size_t ielen, size_t offset)
 {
 	size_t pos = offset;
 
-	while (pos < ielen && ies[pos] != WLAN_EID_VENDOR_SPECIFIC)
-		pos += 2 + ies[pos + 1];
+	while (pos + 1 < ielen && ies[pos] != WLAN_EID_VENDOR_SPECIFIC) {
+		size_t elen = ies[pos + 1];
+
+		if (pos + 2 + elen > ielen)
+			break;
+		pos += 2 + elen;
+	}
 
 	return pos;
 }
@@ -4033,6 +4055,9 @@ void ieee80211_dfs_cac_cancel(struct ieee80211_local *local,
 				continue;
 
 			if (!sdata->wdev.links[link_id].cac_started)
+				continue;
+
+			if (!link->conf)
 				continue;
 
 			chandef = link->conf->chanreq.oper;
