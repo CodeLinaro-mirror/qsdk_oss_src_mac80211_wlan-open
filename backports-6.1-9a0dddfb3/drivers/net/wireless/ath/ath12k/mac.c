@@ -343,6 +343,26 @@ ath12k_phymodes_uhr[NUM_NL80211_BANDS][ATH12K_CHAN_WIDTH_NUM] = {
 #define ath12k_a_rates (ath12k_legacy_rates + 4)
 #define ath12k_a_rates_size (ARRAY_SIZE(ath12k_legacy_rates) - 4)
 
+/*
+ * Indexed by bit position in ath12k_legacy_rates[]/mask->control[band].legacy
+ * (0..3 CCK ascending, 4..11 OFDM ascending); value is the corresponding
+ * ath12k_wmi_legacy_rate_pos (see wmi.h) for VDEV_RATEMASK_TYPE_CCK_OFDM.
+ */
+const u8 ath12k_legacy_rate_wmi_pos_map[] = {
+	ATH12K_WMI_LEGACY_RATE_POS_CCK_1M,
+	ATH12K_WMI_LEGACY_RATE_POS_CCK_2M,
+	ATH12K_WMI_LEGACY_RATE_POS_CCK_5_5M,
+	ATH12K_WMI_LEGACY_RATE_POS_CCK_11M,
+	ATH12K_WMI_LEGACY_RATE_POS_OFDM_6M,
+	ATH12K_WMI_LEGACY_RATE_POS_OFDM_9M,
+	ATH12K_WMI_LEGACY_RATE_POS_OFDM_12M,
+	ATH12K_WMI_LEGACY_RATE_POS_OFDM_18M,
+	ATH12K_WMI_LEGACY_RATE_POS_OFDM_24M,
+	ATH12K_WMI_LEGACY_RATE_POS_OFDM_36M,
+	ATH12K_WMI_LEGACY_RATE_POS_OFDM_48M,
+	ATH12K_WMI_LEGACY_RATE_POS_OFDM_54M,
+};
+
 #define ATH12K_MAC_SCAN_TIMEOUT_MSECS 200 /* in msecs */
 /* Overhead due to the processing of channel switch events from FW */
 #define ATH12K_SCAN_CHANNEL_SWITCH_WMI_EVT_OVERHEAD	10 /* in msecs */
@@ -27099,6 +27119,38 @@ int ath12k_is_mcs_rate_changed(enum nl80211_band band,
 	return 0;
 }
 
+/*
+ * Translate a legacy rate mask indexed against sband->bitrates (i.e.
+ * ath12k_legacy_rates[], CCK ascending then OFDM ascending) into the
+ * bit order VDEV_RATEMASK_TYPE_CCK_OFDM expects on the WMI interface.
+ * For 5/6GHz, sband->bitrates points at the OFDM-only sub-table
+ * (ath12k_a_rates = ath12k_legacy_rates + ATH12K_MAC_FIRST_OFDM_RATE_IDX),
+ * so bit i there corresponds to ath12k_legacy_rate_wmi_pos_map[i + 4].
+ */
+static u32 ath12k_mac_legacy_rate_to_wmi_mask(enum nl80211_band band,
+					      u32 legacy)
+{
+	int i, rate_idx, num_rates;
+	u32 ratemask = 0;
+
+	num_rates = (band == NL80211_BAND_2GHZ) ?
+		    ARRAY_SIZE(ath12k_legacy_rate_wmi_pos_map) :
+		    ARRAY_SIZE(ath12k_legacy_rate_wmi_pos_map) -
+		    ATH12K_MAC_FIRST_OFDM_RATE_IDX;
+
+	for (i = 0; i < num_rates; i++) {
+		if (!(legacy & BIT(i)))
+			continue;
+
+		rate_idx = (band == NL80211_BAND_2GHZ) ?
+			   i : i + ATH12K_MAC_FIRST_OFDM_RATE_IDX;
+
+		ratemask |= BIT(ath12k_legacy_rate_wmi_pos_map[rate_idx]);
+	}
+
+	return ratemask;
+}
+
 static int ath12k_mac_apply_vdev_ratemask(struct ath12k_link_vif *arvif,
 					  enum nl80211_band band,
 					  const struct cfg80211_bitrate_mask *mask)
@@ -27131,7 +27183,7 @@ static int ath12k_mac_apply_vdev_ratemask(struct ath12k_link_vif *arvif,
 
 	/* Fill the vdev rate mask params for legacy rates */
 	arg.type = VDEV_RATEMASK_TYPE_CCK_OFDM;
-	arg.mask_lower32 = legacy;
+	arg.mask_lower32 = ath12k_mac_legacy_rate_to_wmi_mask(band, legacy);
 	ret = ath12k_wmi_vdev_rate_mask(arvif->ar, &arg);
 	if (ret)
 		return ret;
