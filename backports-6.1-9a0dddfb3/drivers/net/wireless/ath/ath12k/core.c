@@ -5929,6 +5929,11 @@ static void ath12k_core_reset(struct work_struct *work)
 	int reset_count, fail_cont_count, i;
 	long time_left;
 
+	if (ag->wsi_remap_in_progress) {
+		ath12k_info(ab, "WSI bypass in progress, can't handle SSR. Reset the system");
+		BUG_ON(1);
+	}
+
 	if (!(test_bit(ATH12K_FLAG_QMI_FW_READY_COMPLETE, &ab->dev_flags)) &&
 	    !ath12k_waltest_mode) {
 		mutex_lock(&ag->mutex);
@@ -6883,6 +6888,11 @@ int ath12k_core_wsi_mlo_teardown_umac_reset(struct ath12k_base *ab)
 	int ret = 0, i;
 	struct ath12k_hw *ah;
 	struct ath12k_hw_group *ag = ab->ag;
+
+	if (ath12k_hw_group_recovery_in_progress(ag)) {
+		ath12k_err(ab, "SSR is in progress, cannot allow remap\n");
+		return -EBUSY;
+	}
 
 	ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS, "WSI Bypass: MLO teardown with Umac reset");
 	ath12k_core_mlo_hw_queues_stop(ab->ag);
