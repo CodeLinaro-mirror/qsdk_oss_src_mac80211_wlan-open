@@ -1473,16 +1473,28 @@ ath12k_wifi8_hal_mon_parse_eht_sig_non_ofdma(const void *tlv,
 					     struct hal_rx_mon_ppdu_info *ppdu_info)
 {
 	const struct hal_eht_sig_non_ofdma_cmn_eb *eb = tlv;
+	u32 user_field;
 
 	ath12k_wifi8_hal_mon_parse_usig_overflow(tlv, ppdu_info);
 	ath12k_wifi8_hal_mon_parse_non_ofdma_users(eb, ppdu_info);
 
-	if (ath12k_wifi8_hal_mon_is_mu_mimo_user(&ppdu_info->u_sig_info))
-		ath12k_wifi8_hal_mon_parse_eht_mumimo_user(&eb->user_field.mu_mimo,
+	user_field =
+		(u32)(le64_get_bits(eb->info0,
+				    HAL_RX_EHT_SIG_NON_OFDMA_INFO0_USER_FIELD));
+
+	if (ath12k_wifi8_hal_mon_is_mu_mimo_user(&ppdu_info->u_sig_info)) {
+		struct hal_eht_sig_mu_mimo mu_mimo = {
+			.info0 = cpu_to_le32(user_field),
+		};
+		ath12k_wifi8_hal_mon_parse_eht_mumimo_user(&mu_mimo,
 							   ppdu_info);
-	else
-		ath12k_wifi8_hal_mon_parse_eht_non_mumimo_user(&eb->user_field.n_mu_mimo,
+	} else {
+		struct hal_eht_sig_non_mu_mimo n_mu_mimo = {
+			.info0 = cpu_to_le32(user_field),
+		};
+		ath12k_wifi8_hal_mon_parse_eht_non_mumimo_user(&n_mu_mimo,
 							       ppdu_info);
+	}
 }
 
 static __always_inline void
