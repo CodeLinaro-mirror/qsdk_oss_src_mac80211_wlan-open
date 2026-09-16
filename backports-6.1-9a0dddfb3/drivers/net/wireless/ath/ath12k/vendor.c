@@ -10865,6 +10865,7 @@ ath12k_vendor_set_rtt_initiator_role(struct wireless_dev *wdev,
 	u8 link_id;
 	int ret;
 
+	return 0;
 	if (!wdev || !params)
 		return -EINVAL;
 
