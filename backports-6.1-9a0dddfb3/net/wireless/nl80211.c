@@ -12596,11 +12596,6 @@ static int nl80211_trigger_scan(struct sk_buff *skb, struct genl_info *info)
 		rdev->scan_req = saved_scan_req;
 
 	dev_hold(wdev->netdev);
-	wiphy_dbg(&rdev->wiphy,
-		  "nl80211 trigger_scan: dev_hold(%s) refcnt=%d parallel_hw_scan=%d\n",
-		  wdev->netdev ? wdev->netdev->name : "<none>",
-		  wdev->netdev ? netdev_refcnt_read(wdev->netdev) : -1,
-		  request->parallel_hw_scan);
 
 	/*
 	 * Only store in parallel_scan_reqs[] if mac80211 actually accepted

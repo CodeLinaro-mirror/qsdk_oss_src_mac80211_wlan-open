@@ -53,9 +53,6 @@ ieee80211_scan_req_parallel_disjoint(const struct cfg80211_scan_request *a,
 		}
 	}
 
-	wiphy_dbg(a->wiphy, "parallel scan: req %p and %p are disjoint\n",
-		  a, b);
-
 	return true;
 }
 
@@ -90,10 +87,6 @@ ieee80211_scan_free_parallel_ctx(struct ieee80211_local *local,
 	for (slot = 0; slot < ARRAY_SIZE(local->parallel_scan_ctx); slot++) {
 		if (local->parallel_scan_ctx[slot] != ctx)
 			continue;
-
-		wiphy_dbg(local->hw.wiphy,
-			  "parallel scan: freeing ctx %p (scan_id=%u) from slot %u\n",
-			  ctx, ctx->scan_id, slot);
 
 		local->parallel_scan_ctx[slot] = NULL;
 		local->parallel_scan_ctx_bitmap &= ~BIT(slot);
@@ -742,18 +735,11 @@ void ieee80211_scan_completed(struct ieee80211_hw *hw,
 
 	trace_api_scan_completed(local, info->aborted);
 
-	if (info->scan_id) {
-		wiphy_dbg(local->hw.wiphy,
-			  "parallel scan: completion event with scan_id=%u\n",
-			  info->scan_id);
+	if (info->scan_id)
 		parallel_ctx = ieee80211_scan_get_parallel_ctx(local,
 							       info->scan_id);
-	}
 
 	if (parallel_ctx) {
-		wiphy_dbg(local->hw.wiphy,
-			  "parallel scan: matched completion scan_id=%u to ctx %p (req=%p)\n",
-			  info->scan_id, parallel_ctx, parallel_ctx->req);
 		memcpy(&parallel_ctx->scan_info, info, sizeof(*info));
 		parallel_ctx->scan_info.scan_id = parallel_ctx->scan_id;
 		parallel_ctx->scan_info.aborted = info->aborted ||
@@ -1040,6 +1026,24 @@ static int __ieee80211_start_scan(struct ieee80211_sub_if_data *sdata,
 
 	if (local->scan_req)
 		return -EBUSY;
+
+	/* Reject a normal scan if it overlaps with any active parallel
+	 * scan context.  The parallel path checks disjointness against
+	 * local->scan_req and existing parallel ctxs, but the normal
+	 * path has no such check — without this guard a normal scan can
+	 * start on channels already covered by a parallel scan.
+	 */
+	if (local->parallel_scan_ctx_bitmap) {
+		int i;
+
+		for (i = 0; i < ARRAY_SIZE(local->parallel_scan_ctx); i++) {
+			struct ieee80211_parallel_scan_ctx *ctx =
+				local->parallel_scan_ctx[i];
+
+			if (ctx && !ieee80211_scan_req_parallel_disjoint(ctx->req, req))
+				return -EBUSY;
+		}
+	}
 
 	/* For an MLO connection, if a link ID was specified, validate that it
 	 * is indeed active.
@@ -1525,12 +1529,12 @@ int ieee80211_request_scan(struct ieee80211_sub_if_data *sdata,
 {
 	struct ieee80211_local *local = sdata->local;
 	struct ieee80211_parallel_scan_ctx *parallel_ctx;
-	int ret;
 
 	lockdep_assert_wiphy(local->hw.wiphy);
 
 	parallel_ctx = ieee80211_scan_alloc_parallel_ctx(local, sdata, req);
 	if (parallel_ctx) {
+		int ret;
 		struct ieee80211_scan_request *hw_scan_req;
 		struct cfg80211_scan_request *saved_scan_req =
 			rcu_dereference_protected(local->scan_req,
@@ -1543,7 +1547,7 @@ int ieee80211_request_scan(struct ieee80211_sub_if_data *sdata,
 		u8 *ies;
 
 		wiphy_dbg(local->hw.wiphy,
-			  "parallel scan: request %p takes parallel path (ctx %p, scan_id=%u)\n",
+			  "parallel scan: request %p (ctx %p, scan_id=%u)\n",
 			  req, parallel_ctx, parallel_ctx->scan_id);
 
 		parallel_ctx->hw_scan_ies_bufsize = local->scan_ies_len + req->ie_len;
@@ -1645,19 +1649,7 @@ int ieee80211_request_scan(struct ieee80211_sub_if_data *sdata,
 		return ret;
 	}
 
-	ret = __ieee80211_start_scan(sdata, req);
-	if (ret) {
-		wiphy_dbg(local->hw.wiphy,
-			  "parallel scan: alloc failed, normal scan started (ret=%d)\n",
-			  ret);
-		if (parallel_ctx)
-			ieee80211_scan_free_parallel_ctx(local, parallel_ctx);
-	} else {
-		wiphy_dbg(local->hw.wiphy,
-			  "normal scan started for request %p\n", req);
-	}
-
-	return ret;
+	return __ieee80211_start_scan(sdata, req);
 }
 
 int ieee80211_request_ibss_scan(struct ieee80211_sub_if_data *sdata,

@@ -1222,10 +1222,6 @@ void ___cfg80211_scan_done(struct cfg80211_registered_device *rdev,
 	}
 #endif
 
-	wiphy_dbg(&rdev->wiphy,
-		  "normal scan done work: dev_put(%s) refcnt_before=%d\n",
-		  wdev->netdev ? wdev->netdev->name : "<none>",
-		  wdev->netdev ? netdev_refcnt_read(wdev->netdev) : -1);
 	dev_put(wdev->netdev);
 
 	kfree(rdev->int_scan_req);
@@ -1321,13 +1317,6 @@ void cfg80211_parallel_scan_done_work(struct wiphy *wiphy,
 
 		wdev = req->wdev;
 
-		wiphy_dbg(wiphy,
-			  "parallel scan done work: slot=%d req=%p notified=%d netdev=%s refcnt=%d aborted=%d\n",
-			  slot, req, req->notified,
-			  wdev->netdev ? wdev->netdev->name : "<none>",
-			  wdev->netdev ? netdev_refcnt_read(wdev->netdev) : -1,
-			  req->info.aborted);
-
 		if (wdev->netdev)
 			cfg80211_sme_scan_done(wdev->netdev);
 
@@ -1340,10 +1329,6 @@ void cfg80211_parallel_scan_done_work(struct wiphy *wiphy,
 
 		msg = nl80211_build_scan_msg(rdev, wdev, req);
 
-		wiphy_dbg(wiphy,
-			  "parallel scan done work: dev_put(%s) refcnt_before=%d\n",
-			  wdev->netdev ? wdev->netdev->name : "<none>",
-			  wdev->netdev ? netdev_refcnt_read(wdev->netdev) : -1);
 		dev_put(wdev->netdev);
 
 		rdev->parallel_scan_reqs[slot] = NULL;
@@ -1367,26 +1352,11 @@ void cfg80211_scan_done(struct cfg80211_scan_request *request,
 		if (rdev->parallel_scan_reqs[slot] == request) {
 			request->info = *info;
 			request->notified = true;
-			wiphy_dbg(request->wiphy,
-				  "parallel scan done: queuing work slot=%d req=%p scan_id=%u netdev=%s refcnt=%d aborted=%d\n",
-				  slot, request, info->scan_id,
-				  request->wdev && request->wdev->netdev ?
-					request->wdev->netdev->name : "<none>",
-				  request->wdev && request->wdev->netdev ?
-					netdev_refcnt_read(request->wdev->netdev) : -1,
-				  info->aborted);
 			wiphy_work_queue(request->wiphy,
 					 &rdev->parallel_scan_done_wk);
 			return;
 		}
 	}
-
-	wiphy_dbg(request->wiphy,
-		  "normal scan done: queueing work request=%p scan_id=%u netdev=%s aborted=%d rdev->scan_req=%p rdev->int_scan_req=%p\n",
-		  request, info->scan_id,
-		  request->wdev && request->wdev->netdev ?
-			request->wdev->netdev->name : "<none>",
-		  info->aborted, rdev->scan_req, rdev->int_scan_req);
 
 	request->info = *info;
 
