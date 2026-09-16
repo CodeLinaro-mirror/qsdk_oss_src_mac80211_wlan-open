@@ -2365,6 +2365,9 @@ struct ieee80211_advertised_ttlm_info {
  * @offload_flags: 802.3 -> 802.11 enapsulation offload flags, see
  *	&enum ieee80211_offload_flags.
  */
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+struct mesh_rada_entry;
+#endif
 struct ieee80211_vif {
 	enum nl80211_iftype type;
 	struct ieee80211_vif_cfg cfg;
@@ -2405,6 +2408,8 @@ struct ieee80211_vif {
 	u32 mhdr;
 	u32 mhdr_len;
 	u32 mdbg;
+	spinlock_t rada_lock;
+	struct mesh_rada_entry *rada_table; /* RADA: DA->RA override table */
 #endif
 	bool is_roc;
 

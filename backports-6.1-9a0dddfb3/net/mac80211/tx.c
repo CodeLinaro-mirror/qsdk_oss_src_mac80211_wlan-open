@@ -5360,6 +5360,32 @@ netdev_tx_t ieee80211_subif_start_xmit_8023(struct sk_buff *skb,
 
 }
 
+#ifdef CPTCFG_QCN_EXTN
+static bool ieee80211_rada_lookup_ra(struct ieee80211_vif *vif,
+				     struct sk_buff *skb, u8 *mac_addr)
+{
+	const u8 *da = skb->data;
+	bool found = false;
+	int i;
+
+	spin_lock_bh(&vif->rada_lock);
+	if (vif->rada_table) {
+		for (i = 0; i < MESH_RADA_MAX_ENTRIES; i++) {
+			if (vif->rada_table[i].valid &&
+			    ether_addr_equal(vif->rada_table[i].da, da)) {
+				memcpy(mac_addr, vif->rada_table[i].ra,
+				       ETH_ALEN);
+				found = true;
+				break;
+			}
+		}
+	}
+	spin_unlock_bh(&vif->rada_lock);
+
+	return found;
+}
+#endif /* CPTCFG_QCN_EXTN */
+
 netdev_tx_t __ieee80211_subif_start_xmit_8023(struct sk_buff *skb,
 					      struct net_device *dev,
 					      u32 info_flags,
@@ -5372,6 +5398,7 @@ netdev_tx_t __ieee80211_subif_start_xmit_8023(struct sk_buff *skb,
 	struct wireless_dev *wdev;
 	struct ieee80211_vif *vif;
 	struct meta_hdr_s *mhdr;
+	u8 mac_addr[ETH_ALEN];
 #endif
 	struct ethhdr *ehdr = (struct ethhdr *)skb->data;
 	struct ieee80211_key *key = NULL;
@@ -5415,11 +5442,19 @@ netdev_tx_t __ieee80211_subif_start_xmit_8023(struct sk_buff *skb,
 
 #ifdef CPTCFG_QCN_EXTN
 	if (sdata->wdev.vap_submode == IEEE80211_EXTN_VAP_SUBMODE_ETH_OFFLOAD_MESH) {
-		mhdr = (struct meta_hdr_s *)(skb->data - MMESH_TX_META_HDR);
-		if (!mhdr->mac_addr_valid)
-			goto out;
+		if (mmeshsim) {
+			if (!ieee80211_rada_lookup_ra(vif, skb, mac_addr))
+				goto out;
 
-		sta = sta_info_get_bss(sdata, mhdr->mac_addr);
+			skb_pull(skb, vif->mhdr_len);
+		} else {
+			mhdr = (struct meta_hdr_s *)(skb->data - MMESH_TX_META_HDR);
+			if (!mhdr->mac_addr_valid)
+				goto out;
+
+			memcpy(mac_addr, mhdr->mac_addr, ETH_ALEN);
+		}
+		sta = sta_info_get_bss(sdata, mac_addr);
 		ra_lookup = false;
 	}
 #endif
