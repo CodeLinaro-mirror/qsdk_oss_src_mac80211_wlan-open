@@ -856,11 +856,12 @@ void ath12k_dp_tx_sg_unmap_buf(struct ath12k_dp *dp,
 EXPORT_SYMBOL(ath12k_dp_tx_sg_unmap_buf);
 
 enum hal_tcl_encap_type
-ath12k_dp_tx_get_encap_type(struct ath12k_base *ab, struct sk_buff *skb)
+ath12k_dp_tx_get_encap_type(struct ath12k_base *ab, struct sk_buff *skb,
+			    struct ath12k_dp_vif *dp_vif)
 {
 	struct ieee80211_tx_info *tx_info = IEEE80211_SKB_CB(skb);
 
-	if (test_bit(ATH12K_GROUP_FLAG_RAW_MODE, &ab->ag->flags))
+	if (dp_vif->tx_encap_type == ATH12K_HW_TXRX_RAW)
 		return HAL_TCL_ENCAP_TYPE_RAW;
 
 	if (tx_info->flags & IEEE80211_TX_CTL_HW_80211_ENCAP)
@@ -975,7 +976,7 @@ void ath12k_dp_tx_stats_post_enqueue(struct ath12k_dp *dp,
 	/* --- STAGE 3: SLOW PATH (Debug Stats) --- */
 
 	/* Update EAPOL stats */
-	encap_type = ath12k_dp_tx_get_encap_type(ab, skb);
+	encap_type = ath12k_dp_tx_get_encap_type(ab, skb, dp_vif);
 
 	if (skb->protocol == cpu_to_be16(ETH_P_PAE)) {
 		dp->device_stats.tx_eapol[ring_id]++;

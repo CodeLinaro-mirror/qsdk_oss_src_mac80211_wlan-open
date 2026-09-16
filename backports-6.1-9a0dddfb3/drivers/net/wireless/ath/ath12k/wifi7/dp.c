@@ -513,7 +513,7 @@ static void ath12k_wifi7_dp_link_vif_configure(struct ath12k_dp *dp,
 				       ab->wmi_ab.svc_map);
 
 		if (ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
-		    ath12k_frame_mode == ATH12K_HW_TXRX_ETHERNET &&
+		    ahvif->dp_vif.tx_encap_type == ATH12K_HW_TXRX_ETHERNET &&
 		    mec_support) {
 			ath12k_wmi_pdev_set_timer_for_mec(ar, arvif->vdev_id,
 					WMI_PDEV_MEC_AGING_TIMER_THRESHOLD_VALUE);
