@@ -10892,12 +10892,8 @@ ath12k_vendor_set_rtt_initiator_role(struct wireless_dev *wdev,
 	} else {
 		link_id = 0;
 		/* Validate that the default link 0 is actually active */
-		if (!(ahvif->links_map & BIT(link_id))) {
-			ath12k_warn(ar->ab,
-					"RTT initiator: default link 0 not in links_map 0x%x\n",
-					ahvif->links_map);
+		if (!(ahvif->links_map & BIT(link_id)))
 			return -EINVAL;
-		}
 	}
 
 	arvif = ath12k_get_arvif_from_link_id(ahvif, link_id);
