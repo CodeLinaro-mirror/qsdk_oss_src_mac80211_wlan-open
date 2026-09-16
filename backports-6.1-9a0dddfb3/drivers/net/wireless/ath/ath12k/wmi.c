@@ -42,6 +42,9 @@
 #endif /* CPTCFG_QCN_EXTN */
 #endif
 #include "smd.h"
+#ifdef CPTCFG_QCN_EXTN
+#include "qcn_extns/vendor_extn.h"
+#endif
 
 struct ath12k_wmi_svc_ready_parse {
 	bool wmi_svc_bitmap_done;
@@ -19581,6 +19584,11 @@ static void ath12k_process_ocac_complete_event(struct ath12k_base *ab,
 		goto exit;
 	}
 
+#ifdef CPTCFG_QCN_EXTN
+	if (ar->agile_chandef.chan)
+		ath12k_dfs_update_chan_state(ar, ar->agile_chandef.chan,
+					     ATH12K_DFS_CHAN_STATE_PRECAC_COMPLETED);
+#endif
 	memset(&ar->agile_chandef, 0, sizeof(struct cfg80211_chan_def));
 	ar->ap_ps_disabled_by_agile = false;
 	/* Agile CAC succeeded: re-evaluate GAP eligibility.
