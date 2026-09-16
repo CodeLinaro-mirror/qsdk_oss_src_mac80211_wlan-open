@@ -736,6 +736,69 @@ int mesh_add_eht_oper_ie(struct ieee80211_sub_if_data *sdata, struct sk_buff *sk
 	return 0;
 }
 
+int mesh_add_uhr_cap_ie(struct ieee80211_sub_if_data *sdata,
+			struct sk_buff *skb)
+{
+	struct ieee80211_supported_band *sband;
+
+	sband = ieee80211_get_sband(sdata);
+	if (!sband)
+		return -EINVAL;
+
+	if (sdata->vif.bss_conf.chanreq.oper.width == NL80211_CHAN_WIDTH_20_NOHT ||
+	    sdata->vif.bss_conf.chanreq.oper.width == NL80211_CHAN_WIDTH_5 ||
+	    sdata->vif.bss_conf.chanreq.oper.width == NL80211_CHAN_WIDTH_10)
+		return 0;
+
+	return ieee80211_put_uhr_cap(skb, sdata, sband);
+}
+
+static int mesh_add_uhr_oper_ie_common(struct ieee80211_sub_if_data *sdata,
+				       struct sk_buff *skb)
+{
+	const struct ieee80211_sta_uhr_cap *uhr_cap;
+	struct ieee80211_supported_band *sband;
+	u32 oper_len;
+	u32 len;
+	u8 *pos;
+
+	sband = ieee80211_get_sband(sdata);
+	if (!sband)
+		return -EINVAL;
+
+	uhr_cap = ieee80211_get_uhr_iftype_cap_vif(sband, &sdata->vif);
+	if (!uhr_cap ||
+	    sdata->vif.bss_conf.chanreq.oper.width == NL80211_CHAN_WIDTH_20_NOHT ||
+	    sdata->vif.bss_conf.chanreq.oper.width == NL80211_CHAN_WIDTH_5 ||
+	    sdata->vif.bss_conf.chanreq.oper.width == NL80211_CHAN_WIDTH_10)
+		return 0;
+
+	oper_len = sizeof(struct ieee80211_uhr_operation);
+	len = 2 + 1 + oper_len;
+
+	if (skb_tailroom(skb) < len)
+		return -ENOMEM;
+
+	pos = skb_put_zero(skb, len);
+	*pos++ = WLAN_EID_EXTENSION;
+	*pos++ = 1 + oper_len;
+	*pos++ = WLAN_EID_EXT_UHR_OPER;
+	/* Operation Parameters, when present, are zero-initialized. */
+
+	return 0;
+}
+
+static int mesh_add_beacon_uhr_oper_ie(struct ieee80211_sub_if_data *sdata,
+				       struct sk_buff *skb)
+{
+	return mesh_add_uhr_oper_ie_common(sdata, skb);
+}
+
+int mesh_add_uhr_oper_ie(struct ieee80211_sub_if_data *sdata, struct sk_buff *skb)
+{
+	return mesh_add_uhr_oper_ie_common(sdata, skb);
+}
+
 static void ieee80211_mesh_path_timer(struct timer_list *t)
 {
 	struct ieee80211_sub_if_data *sdata =
@@ -1080,6 +1143,7 @@ ieee80211_mesh_build_beacon(struct ieee80211_if_mesh *ifmsh)
 		   2 + 1 + IEEE80211_EHT_OPERATION_FIXED_LEN +
 			   IEEE80211_EHT_OPERATION_INFO_FIXED_LEN +
 			   eht_optional_sz +
+		   2 + 1 + sizeof(struct ieee80211_uhr_operation) +
 		   ifmsh->ie_len;
 
 	bcn = kzalloc(sizeof(*bcn) + head_len + tail_len, GFP_KERNEL);
@@ -1218,6 +1282,7 @@ ieee80211_mesh_build_beacon(struct ieee80211_if_mesh *ifmsh)
 	    mesh_add_he_6ghz_cap_ie(sdata, skb) ||
 	    mesh_add_eht_cap_ie(sdata, skb, ie_len_eht_cap) ||
 	    mesh_add_eht_oper_ie(sdata, skb) ||
+	    mesh_add_beacon_uhr_oper_ie(sdata, skb) ||
 	    mesh_add_vendor_ies(sdata, skb))
 		goto out_free;
 
