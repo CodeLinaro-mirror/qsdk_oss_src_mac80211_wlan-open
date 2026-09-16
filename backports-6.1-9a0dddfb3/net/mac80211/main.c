@@ -1033,6 +1033,7 @@ struct ieee80211_hw *ieee80211_alloc_hw_nm(size_t priv_data_len,
 			ieee80211_dfs_radar_detected_work);
 	INIT_WORK(&local->awgn_detected_work,
 		  ieee80211_awgn_detected_work);
+	spin_lock_init(&local->awgn_lock);
 	INIT_LIST_HEAD(&local->awgn_info_list);
 	INIT_LIST_HEAD(&local->cw_info_list);
 
