@@ -2440,6 +2440,15 @@ struct ath12k_hw {
 	 */
 	struct ath12k_pending_primary_link pending_primary_link[ATH12K_GROUP_MAX_RADIO];
 
+	/* Bitmap of parallel_scan_ids that aborted during a multi-radio
+	 * split scan. Bit N is set when any radio with parallel_scan_id=N
+	 * aborts. Cleared after the final ieee80211_scan_completed() call.
+	 * Stored in ah (not ar->scan) to survive ar->scan being cleared
+	 * and reused for a new scan before the last radio consolidates.
+	 * 256 bits covers the full u8 parallel_scan_id range.
+	 */
+	DECLARE_BITMAP(scan_aborted, 256);
+
 	/* Keep last */
 	struct ath12k radio[] __aligned(sizeof(void *));
 };
