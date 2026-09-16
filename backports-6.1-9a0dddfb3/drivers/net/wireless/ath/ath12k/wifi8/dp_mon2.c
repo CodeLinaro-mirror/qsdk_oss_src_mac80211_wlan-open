@@ -2226,6 +2226,10 @@ void ath12k_wifi8_htt_tx_mon_cfg_fill_extended_wmask(
 				 HTT_TX_FILTER_MASK_IN4_UPSTREAM_TLV_FLAGS3) |
 		le32_encode_bits(htt_tlv_filter->tx_mon_downstream_tlv_flags1,
 				 HTT_TX_FILTER_MASK_IN4_DOWNSTREAM_TLV_FLAGS1);
+
+	cmd->type_en_mgmt |= cpu_to_le32(HTT_TX_MON_PKT_ALL_SUBTYPES);
+	cmd->type_en_ctrl |= cpu_to_le32(HTT_TX_MON_PKT_ALL_SUBTYPES);
+	cmd->type_en_data |= cpu_to_le32(HTT_TX_MON_PKT_ALL_SUBTYPES);
 }
 
 void
