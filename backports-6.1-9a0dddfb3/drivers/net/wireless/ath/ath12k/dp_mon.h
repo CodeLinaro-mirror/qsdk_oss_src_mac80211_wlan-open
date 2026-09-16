@@ -140,7 +140,6 @@
 	 ATH12K_EXT_MON_METADATA_OFFCHAN_PKT)
 
 #define ATH12K_EXT_MON_DEFAULT_PEER_BITMAP	0xFF
-#define ATH12K_EXT_MON_PKT_CAP_ALL_PROTOS	0x3F
 #define ATH12K_EXT_MON_MPDU_TLV_FILTER_MAX	0xF
 
 #define ATH12K_FC0_TYPE_SHIFT		2
@@ -315,7 +314,7 @@ struct ath12k_dp_arch_mon_ops {
 	int (*ext_mon_remove_wmi_tx_peers)(struct ath12k_pdev_dp *dp_pdev,
 					   struct ath12k_dp_ext_mon_tx_peer_params
 					   *peer_param);
-	u32 (*mon_tx_get_spc_bitmap)(struct ath12k_base *ab);
+	u32 (*mon_tx_handle_spc_bitmap)(struct ath12k_base *ab);
 	u8 (*ext_mon_get_filter_mode)(struct ath12k_pdev_dp *dp_pdev);
 };
 

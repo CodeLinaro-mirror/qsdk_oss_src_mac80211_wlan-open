@@ -11,6 +11,8 @@
 
 struct workqueue_struct;
 
+#define ATH12K_EXT_MON_PKT_CAP_ALL_PROTOS       0x3F
+
 /**
  * enum ath12k_dp_tx_ext_mon_peer_filter - TX ext-monitor peer-filter mode
  *
@@ -56,5 +58,5 @@ ath12k_wifi7_dp_ext_mon_remove_wmi_tx_peers(struct ath12k_pdev_dp *dp_pdev,
 					    struct ath12k_dp_ext_mon_tx_peer_params
 					    *peer_param);
 u32
-ath12k_wifi7_dp_mon_tx_get_spc_bitmap(struct ath12k_base *ab);
+ath12k_wifi7_dp_mon_tx_handle_spc_bitmap(struct ath12k_base *ab);
 #endif
