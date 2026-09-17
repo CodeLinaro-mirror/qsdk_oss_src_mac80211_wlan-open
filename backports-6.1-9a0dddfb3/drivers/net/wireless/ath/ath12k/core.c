@@ -2520,6 +2520,9 @@ static int ath12k_dp_umac_reset_init_wrapper(struct ath12k_hw_group *ag)
 		if (!ab || ab->is_bypassed)
 			continue;
 
+		if (ab->umac_reset_init_done)
+			continue;
+
 		if (ag->wsi_remap_in_progress &&
 		    ab->wsi_remap_state != ATH12K_WSI_BYPASS_ADD_DEVICE)
 			continue;
@@ -2528,12 +2531,6 @@ static int ath12k_dp_umac_reset_init_wrapper(struct ath12k_hw_group *ag)
 			continue;
 
 		mutex_lock(&ab->core_lock);
-
-		if (ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE0 &&
-		    !ab->recovery_start) {
-			mutex_unlock(&ab->core_lock);
-			continue;
-		}
 
 		ret = ath12k_dp_umac_reset_init(ab);
 		if (ret) {

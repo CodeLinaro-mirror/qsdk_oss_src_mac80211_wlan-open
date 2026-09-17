@@ -3133,6 +3133,7 @@ struct ath12k_base {
 	bool umcmn_fatal_received;
 
 	struct ath12k_wmi_enh_aoa_caps_arg enh_aoa_caps;
+	bool umac_reset_init_done;
 
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));
