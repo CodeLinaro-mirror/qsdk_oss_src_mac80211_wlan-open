@@ -779,7 +779,7 @@ void ath12k_rtt_reconfig_initiator_role(struct ath12k *ar)
 	list_for_each_entry(arvif, &ar->arvifs, list) {
 		struct ath12k_vif *ahvif = arvif->ahvif;
 
-		if (!arvif->is_started || !ahvif)
+		if (!arvif->is_started || !ahvif || !arvif->is_created)
 			continue;
 
 		if (ahvif->vdev_type != WMI_VDEV_TYPE_AP &&
