@@ -387,6 +387,7 @@ void ath12k_dp_mon_update_radiotap(struct ath12k_pdev_dp *dp_pdev,
 {
 	struct ieee80211_supported_band *sband;
 	u8 *ptr = NULL;
+	struct ath12k_pdev *pdev = dp_pdev->ar->pdev;
 
 	rxs->flag |= RX_FLAG_MACTIME_START;
 	rxs->signal = (s8)(ppduinfo->rssi_db_comb_chain_pri20 +
@@ -435,6 +436,10 @@ void ath12k_dp_mon_update_radiotap(struct ath12k_pdev_dp *dp_pdev,
 		}
 	}
 
+	ppduinfo->tsft = ppduinfo->tsft +
+					 pdev->timestamp.mlo_offset_lo +
+				     ((uint64_t)pdev->timestamp.mlo_offset_hi
+				     << 32);
 	rxs->mactime = ppduinfo->tsft;
 }
 EXPORT_SYMBOL(ath12k_dp_mon_update_radiotap);
