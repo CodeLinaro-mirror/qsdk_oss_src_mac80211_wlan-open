@@ -9050,7 +9050,7 @@ ieee80211_parse_neg_ttlm(struct ieee80211_sub_if_data *sdata,
 void ieee80211_process_neg_ttlm_req(struct ieee80211_sub_if_data *sdata,
 				    struct ieee80211_mgmt *mgmt, size_t len)
 {
-	u8 dialog_token, direction[IEEE80211_TTLM_MAX_CNT] = {}, i;
+	u8 dialog_token = 0, direction[IEEE80211_TTLM_MAX_CNT] = {}, i;
 	size_t ies_len;
 	enum ieee80211_neg_ttlm_res ttlm_res = NEG_TTLM_RES_ACCEPT;
 	struct ieee802_11_elems *elems = NULL;
