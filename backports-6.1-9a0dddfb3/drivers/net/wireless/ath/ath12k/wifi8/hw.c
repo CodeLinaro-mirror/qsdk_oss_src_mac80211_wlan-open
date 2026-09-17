@@ -1944,9 +1944,9 @@ static const struct ieee80211_ops ath12k_ops_wifi8 = {
 static const struct ath12k_mem_profile_based_param
 ath12k_mem_profile_based_param_wifi8[] = {
 	[ATH12K_MEM_PROFILE_DEFAULT] = {
-		.num_vdevs			= 16 + 1,
+		.num_vdevs			= 17 + 1,
 		.num_bridge_vdevs		= 8,
-		.num_max_vdevs_nlink		= (16 + 1) + 8,
+		.num_max_vdevs_nlink		= (17 + 1) + 8,
 		.target_mem_mode		= ATH12K_QMI_TARGET_MEM_MODE_DEFAULT,
 		.num_stations_single		= 0,
 		.num_stations_dbs		= 0,
