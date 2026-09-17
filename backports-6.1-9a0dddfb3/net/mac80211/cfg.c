@@ -3818,6 +3818,15 @@ static int ieee80211_scan(struct wiphy *wiphy,
 
 	sdata = IEEE80211_WDEV_TO_SUB_IF(req->wdev);
 
+#ifdef CPTCFG_QCN_EXTN
+	if (sdata->vif.diagnostic_sta) {
+		int ret = ieee80211_clamp_scan_to_ap_channel_extn(sdata, req);
+
+		if (ret)
+			return ret;
+	}
+#endif /* CPTCFG_QCN_EXTN */
+
 	switch (ieee80211_vif_type_p2p(&sdata->vif)) {
 	case NL80211_IFTYPE_STATION:
 	case NL80211_IFTYPE_ADHOC:
