@@ -1511,7 +1511,7 @@ static const u32 umcmn_isr_s_regs[] = {
 	[30] = HAL_UMAC_UMCMN_R0_ISR_S30,
 };
 
-static const u32 umcmn_isr_s_fatal_mask[] = {
+static const u32 umcmn_isr_s_debug_mask[] = {
 	[0]  = 0x00000000,
 	[1]  = 0x00000000,
 	[2]  = 0x0000000F,
@@ -1543,6 +1543,40 @@ static const u32 umcmn_isr_s_fatal_mask[] = {
 	[28] = 0x0AD51249,
 	[29] = 0x00000040,
 	[30] = 0x00000AAA,
+};
+
+static const u32 umcmn_isr_s_fatal_mask[] = {
+	[0]  = 0,
+	[1]  = 0,
+	[2]  = 0,
+	[3]  = 0x64008000,
+	[4]  = 0,
+	[5]  = 0x2041401E,
+	[6]  = 0,
+	[7]  = 0,
+	[8]  = 0,
+	[9]  = 0,
+	[10] = 0,
+	[11] = 0x01140415,
+	[12] = 0x0000000F,
+	[13] = 0x0002ABEA,
+	[14] = 0x00007FFD,
+	[15] = 0x00003000,
+	[16] = 0x0000000E,
+	[17] = 0,
+	[18] = 0,
+	[19] = 0,
+	[20] = 0,
+	[21] = 0,
+	[22] = 0,
+	[23] = 0,
+	[24] = 0,
+	[25] = 0,
+	[26] = 0,
+	[27] = 0,
+	[28] = 0,
+	[29] = 0,
+	[30] = 0,
 };
 
 static const struct ath12k_tqm_sm_state tqm_sm_pairs[] = {
@@ -2064,7 +2098,7 @@ irqreturn_t ath12k_wifi8_umcmn_interrupt_handler(int irq, void *arg)
 {
 	struct ath12k_base *ab = arg;
 	unsigned long isr_p_long;
-	u32 isr_p, isr_s, fatal;
+	u32 isr_p, isr_s, debug, fatal;
 	int bit;
 
 	/* Step 1: Read ISR_P to determine which block triggered the interrupt */
@@ -2082,7 +2116,13 @@ irqreturn_t ath12k_wifi8_umcmn_interrupt_handler(int irq, void *arg)
 			continue;
 
 		isr_s = ath12k_hif_read32(ab, umcmn_isr_s_regs[bit]);
+		debug = isr_s & umcmn_isr_s_debug_mask[bit];
 		fatal = isr_s & umcmn_isr_s_fatal_mask[bit];
+
+		if (debug)
+			ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET,
+				   "umcmn debug interrupt received: ISR_P bit %d, ISR_S%d: 0x%08x, debug_mask: 0x%08x\n",
+				   bit, bit, isr_s, umcmn_isr_s_debug_mask[bit]);
 
 		if (ab->hw_params->tqm_status_war &&
 		    bit == HAL_UMCMN_ISR_S14_INDEX &&
