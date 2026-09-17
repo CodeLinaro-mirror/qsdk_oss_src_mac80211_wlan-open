@@ -5480,7 +5480,9 @@ __ieee80211_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 	 * across different BSS of radio.
 	 */
 	if (chanreq.oper.punctured && !link_conf->eht_support &&
-	    !(sdata->vif.repurposed_links & BIT(link_id)))
+	    !(sdata->vif.repurposed_links & BIT(link_id)) &&
+	    !(sdata->vif.type == NL80211_IFTYPE_AP &&
+	    !sdata->vif.valid_links && link_id == 0))
 		return -EINVAL;
 
 	/* don't allow another channel switch if one is already active. */
