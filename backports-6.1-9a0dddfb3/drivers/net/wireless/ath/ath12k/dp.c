@@ -371,12 +371,41 @@ tid_clean:
 	return ret;
 }
 
+int ath12k_dp_peer_set_default_routing(struct ath12k *ar,
+				       struct ath12k_link_vif *arvif,
+				       const u8 *addr)
+{
+	struct ath12k_base *ab = ar->ab;
+	u32 reo_dest = ar->dp.mac_id + 1;
+	int ret;
+
+	if (ar->radio_cfg.pdev_to_reo_dest)
+		reo_dest = ar->radio_cfg.pdev_to_reo_dest;
+
+#ifdef CPTCFG_QCN_EXTN
+	reo_dest = ath12k_dp_ipa_arch_op_rx_default_routing(ab, reo_dest);
+#endif /* CPTCFG_QCN_EXTN */
+
+	ath12k_dbg(ab, ATH12K_DBG_DP_HTT,
+		   "WMI_PEER_SET_DEFAULT_ROUTING peer:%pM vdev_id:%u reo_dest:%u val:0x%x\n",
+		   addr, arvif->vdev_id, reo_dest,
+		   DP_RX_HASH_ENABLE | (reo_dest << 1));
+
+	ret = ath12k_wmi_set_peer_param(ar, addr, arvif->vdev_id,
+					WMI_PEER_SET_DEFAULT_ROUTING,
+					DP_RX_HASH_ENABLE | (reo_dest << 1));
+	if (ret)
+		ath12k_warn(ab, "failed to set default routing %d peer :%pM vdev_id :%d\n",
+			    ret, addr, arvif->vdev_id);
+	return ret;
+}
+
 int ath12k_dp_peer_setup(struct ath12k *ar, void *ptr, struct ath12k_link_vif *arvif,
 			 const u8 *addr, u8 link_id)
 {
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_dp_link_peer *link_peer;
-	u32 reo_dest, vdev_id = arvif->vdev_id;
+	u32 vdev_id = arvif->vdev_id;
 	struct ieee80211_vif *vif = arvif->ahvif->vif;
 	int ret = 0, tid, tid_start = 0;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
@@ -392,30 +421,9 @@ int ath12k_dp_peer_setup(struct ath12k *ar, void *ptr, struct ath12k_link_vif *a
 	if (!dp_peer)
 		return -ENOENT;
 
-	/* NOTE: reo_dest ring id starts from 1 unlike mac_id which starts from 0 */
-	reo_dest = ar->dp.mac_id + 1;
-
-	/* Override reo_dest if pdev_to_reo_dest has been configured via
-	 * PDEV_TO_REO_DEST (cfg80211 vendor cmd). This allows
-	 * the user to steer all RX traffic for this pdev to a specific
-	 * REO destination ring (ATH12K_REO2SW1_RING..ATH12K_REO2SW4_RING).
-	 */
-	if (ar->radio_cfg.pdev_to_reo_dest)
-		reo_dest = ar->radio_cfg.pdev_to_reo_dest;
-
-#ifdef CPTCFG_QCN_EXTN
-	reo_dest = ath12k_dp_ipa_arch_op_rx_default_routing(ab, reo_dest);
-#endif /* CPTCFG_QCN_EXTN */
-
-	ret = ath12k_wmi_set_peer_param(ar, addr, vdev_id,
-					WMI_PEER_SET_DEFAULT_ROUTING,
-					DP_RX_HASH_ENABLE | (reo_dest << 1));
-
-	if (ret) {
-		ath12k_warn(ab, "failed to set default routing %d peer :%pM vdev_id :%d\n",
-			    ret, addr, vdev_id);
+	ret = ath12k_dp_peer_set_default_routing(ar, arvif, addr);
+	if (ret)
 		return ret;
-	}
 
 	tfm = crypto_alloc_shash("michael_mic", 0, 0);
 	if (IS_ERR(tfm))

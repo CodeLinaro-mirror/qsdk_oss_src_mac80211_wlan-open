@@ -5169,6 +5169,19 @@ static int ath12k_core_mlo_link_readd(struct ath12k_hw_group *ag)
 						   sta->addr, link_id, ret);
 					goto readd_fallback;
 				}
+
+				/* FW was reset; re-send REO default routing so RX
+				 * frames land on the correct ring for this link.
+				 */
+				ret = ath12k_dp_peer_set_default_routing(arvif_a->ar,
+									 arvif_a,
+									 arsta_a->addr);
+				if (ret) {
+					ath12k_dbg(assert_ab, ATH12K_DBG_MODE1_RECOVERY,
+						   "Mode3: link_readd_phase set_default_routing failed for %pM link %u: %d\n",
+						   sta->addr, link_id, ret);
+					goto readd_fallback;
+				}
 			}
 
 			/* Step 3: peer_assoc on all surviving (non-asserted) links.
