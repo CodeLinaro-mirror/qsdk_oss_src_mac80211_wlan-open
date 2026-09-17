@@ -368,6 +368,49 @@ ath12k_vendor_green_ap_policy[QCA_WLAN_VENDOR_ATTR_GREEN_AP_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_GREEN_AP_LINK_ID] = { .type = NLA_U8 },
 };
 
+/**
+ * ath12k_vendor_cmd_skip_check() - Check if vendor cmd shall be allowed to process
+ *
+ * Converts a wiphy pointer and an optional radio index (from
+ * QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX) into the corresponding
+ * struct ath12k pointer.
+ *
+ * @wiphy:     wiphy associated with the vendor command
+ * @radio_idx: radio index parsed from NL attrs
+ *
+ * Return: 1 for bypass 0 for not bypass.
+ */
+static int ath12k_vendor_cmd_skip_check(struct wiphy *wiphy, struct wireless_dev *wdev,
+					struct ath12k_wifi_generic_params wifi_params,
+					int cmd)
+{
+	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
+	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
+	struct ath12k *ar;
+	int link_id, radio_idx;
+
+	if (cmd == QCA_NL80211_VENDOR_SUBCMD_GET_WIPHY_CONFIGURATION ||
+	    cmd == QCA_NL80211_VENDOR_SUBCMD_SET_WIPHY_CONFIGURATION) {
+		radio_idx = (wifi_params.radio_idx == INVALID_RADIO_INDEX) ?
+				0 : wifi_params.radio_idx;
+		ar = ath12k_ah_to_ar(ah, radio_idx);
+	} else if (cmd == QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION ||
+		   cmd == QCA_NL80211_VENDOR_SUBCMD_GET_WIFI_CONFIGURATION) {
+		link_id = (wifi_params.link_id == INVALID_LINK_ID) ?
+				0 : wifi_params.link_id;
+		ar = ath12k_get_ar_from_wdev(wdev, link_id);
+	}
+
+	if (ar && ar->ab->is_bypassed &&
+	    wifi_params.value != QCA_WLAN_VENDOR_RADIO_PARAM_WSI_BYPASS) {
+		ath12k_info(ar->ab, "vendor cmd (%d) rejected: device is in bypassed state\n",
+			    wifi_params.value);
+		return 1;
+	}
+
+	return 0;
+}
+
 static int ath12k_vendor_send_multi_bss_vdev_param_wmi_cmd(struct ath12k_link_vif *arvif,
 							   u32 param_id, u32 param_value)
 
@@ -10746,6 +10789,10 @@ static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 			   wiphy, wdev);
 		memset(&wifi_params, 0, sizeof(struct ath12k_wifi_generic_params));
 		ath12k_vendor_wifi_extract_generic_command_params(tb, &wifi_params);
+		if (ath12k_vendor_cmd_skip_check(wiphy, wdev, wifi_params,
+						 QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION))
+			return -EPERM;
+
 		switch (wifi_params.command) {
 		case QCA_NL80211_VENDOR_SUBCMD_WIFI_PARAMS:
 			if (!wifi_params.data) {
@@ -10949,6 +10996,10 @@ static int ath12k_vendor_wiphy_config_handler(struct wiphy *wiphy,
 			   wiphy, wdev);
 		memset(&wifi_params, 0, sizeof(struct ath12k_wifi_generic_params));
 		ath12k_vendor_wifi_extract_generic_command_params(tb, &wifi_params);
+		if (ath12k_vendor_cmd_skip_check(wiphy, wdev, wifi_params,
+						 QCA_NL80211_VENDOR_SUBCMD_SET_WIPHY_CONFIGURATION))
+			return -EPERM;
+
 		switch (wifi_params.command) {
 		case QCA_NL80211_VENDOR_SUBCMD_WIFI_PARAMS:
 			if (!wifi_params.data) {
@@ -11051,6 +11102,10 @@ static int ath12k_vendor_get_wifi_config_handler(struct wiphy *wiphy,
 			   wiphy, wdev);
 		memset(&wifi_params, 0, sizeof(struct ath12k_wifi_generic_params));
 		ath12k_vendor_wifi_extract_generic_command_params(tb, &wifi_params);
+		if (ath12k_vendor_cmd_skip_check(wiphy, wdev, wifi_params,
+						 QCA_NL80211_VENDOR_SUBCMD_GET_WIFI_CONFIGURATION))
+			return -EPERM;
+
 		switch (wifi_params.command) {
 		case QCA_NL80211_VENDOR_SUBCMD_WIFI_PARAMS:
 #ifdef CPTCFG_QCN_EXTN
@@ -11212,6 +11267,10 @@ static int ath12k_vendor_get_wiphy_config_handler(struct wiphy *wiphy,
 			   wiphy, wdev);
 		memset(&wifi_params, 0, sizeof(struct ath12k_wifi_generic_params));
 		ath12k_vendor_wifi_extract_generic_command_params(tb, &wifi_params);
+		if (ath12k_vendor_cmd_skip_check(wiphy, wdev, wifi_params,
+						 QCA_NL80211_VENDOR_SUBCMD_GET_WIPHY_CONFIGURATION))
+			return -EPERM;
+
 		switch (wifi_params.command) {
 		case QCA_NL80211_VENDOR_SUBCMD_WIFI_PARAMS:
 #ifdef CPTCFG_QCN_EXTN
