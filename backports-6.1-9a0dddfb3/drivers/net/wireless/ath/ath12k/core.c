@@ -6053,6 +6053,9 @@ static void ath12k_core_reset(struct work_struct *work)
 	 */
 	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE0)
 		ath12k_hif_ppe_irq_disable(ab);
+	else if (!ag->cumac_enabled)
+		ath12k_hif_ppe_irq_stop(ab);
+
 	ab->is_reset = true;
 
 	if (ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE0)
