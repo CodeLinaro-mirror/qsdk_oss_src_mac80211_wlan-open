@@ -233,6 +233,16 @@ u32 ath12k_wifi8_dp_tx_get_header_length(struct ath12k_dp_hw_group *dp_hw_grp,
 					 u8 tid_num)
 {
 	u32 header_len = 0;
+	bool add_eth_len = false;
+#ifdef CPTCFG_QCN_EXTN
+	struct wireless_dev *wdev;
+
+	if (peer)
+		wdev = ieee80211_vif_to_wdev(peer->vif);
+
+	if (wdev && wdev->vap_submode == IEEE80211_EXTN_VAP_SUBMODE_ETH_OFFLOAD_MESH)
+		add_eth_len = true;
+#endif
 
 	if (ti->encap_type == ATH12K_HW_TXRX_RAW || ti->is_mgmtq) {
 		header_len = 0;
@@ -247,6 +257,9 @@ u32 ath12k_wifi8_dp_tx_get_header_length(struct ath12k_dp_hw_group *dp_hw_grp,
 
 	if (peer->is_sta_bss_peer_4addr ||
 	    (peer->is_11s_mesh_peer && !peer->is_vdev_peer))
+		add_eth_len = true;
+
+	if (add_eth_len)
 		header_len += ETH_ALEN;
 
 	header_len += ath12k_wifi8_dp_tx_get_he_header_length(dp_hw_grp,

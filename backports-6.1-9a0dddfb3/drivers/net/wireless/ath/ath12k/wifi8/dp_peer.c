@@ -456,6 +456,15 @@ int ath12k_wifi8_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 		dp_peer->assoc_hw_link_id = params->hw_link_id;
 	}
 
+#ifdef CPTCFG_QCN_EXTN
+	if (ahvif->vap_submode == IEEE80211_EXTN_VAP_SUBMODE_ETH_OFFLOAD_MESH) {
+		if (ahsta) {
+			wiphy_work_queue(ah->hw->wiphy, &ahsta->set_4addr_wk);
+			ahsta->use_4addr_set = true;
+		}
+	}
+#endif
+
 	/* cache net dev here and reuse it during process rx */
 	wdev = ieee80211_vif_to_wdev(vif);
 	if (wdev) {
