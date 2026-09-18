@@ -295,6 +295,9 @@ static void wake_tx_push_queue(struct ieee80211_local *local,
 		if (!skb)
 			break;
 
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+		control.src_vif = NULL;
+#endif
 		drv_tx(local, &control, skb);
 	}
 }

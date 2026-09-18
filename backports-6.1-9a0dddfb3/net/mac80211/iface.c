@@ -1969,8 +1969,7 @@ static void ieee80211_setup_sdata(struct ieee80211_sub_if_data *sdata,
 	sdata->vif.ppe_vp_num = -1;
 #endif
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
-	if (!mmeshsim)
-		sdata->vif.mhdr_len =  MMESH_TX_META_HDR;
+	sdata->vif.mhdr_len =  MMESH_TX_META_HDR;
 #endif
 
 	sdata->wdev.iftype = type;
