@@ -381,6 +381,9 @@ int ath12k_wifi8_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 		return -ENOMEM;
 	}
 
+	dp_peer->dp_hw = dp_hw;
+	dp_peer->dp_hw_grp = ah->ag->dp_hw_grp;
+
 	rcu_read_lock();
 	dp_pdev = ath12k_dp_hw_grp_to_dp_pdev(ah->ag->dp_hw_grp, params->hw_link_id);
 	vow_enabled = ath12k_dp_vow_stats_enabled(dp_pdev);
@@ -502,6 +505,12 @@ int ath12k_wifi8_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 
 	}
 
+	/* For peer delete */
+	kref_init(&dp_peer->refcount);
+
+	/* Initialize TQM cleanup list node */
+	INIT_LIST_HEAD(&dp_peer->tqm_cleanup_node);
+
 	/* Add ath12k_dp_peer to the linked list holding peer_list_lock */
 	spin_lock_bh(&dp_hw->peer_list_lock);
 	list_add(&dp_peer->list, &dp_hw->peers);
@@ -520,11 +529,36 @@ int ath12k_wifi8_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 	return 0;
 }
 
-void ath12k_wifi8_dp_peer_cleanup(struct ath12k_dp_hw *dp_hw,
-				  struct ath12k_dp_peer *dp_peer)
+/*
+ * Relase all dp_peer pointer fields
+ */
+static void ath12k_wifi8_dp_peer_cleanup(struct ath12k_dp_hw *dp_hw,
+					 struct ath12k_dp_peer *dp_peer)
 {
-	clear_bit(dp_peer->peer_id, dp_hw->free_peer_id_map);
-	rcu_assign_pointer(dp_hw->dp_peer_list[dp_peer->peer_id], NULL);
+	ath12k_dbg_level(NULL, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+			 "dp-peer-cleanup: peer_id=%u\n", dp_peer->peer_id);
+
+	if (dp_peer->peer_ext_ctx) {
+		struct ath12k_dp_tx_flow_info *t = &dp_peer->peer_ext_ctx->tx_flow_info;
+		dma_addr_t tx_classify_info_paddr;
+		void *tx_classify_info_vaddr;
+
+		tx_classify_info_paddr = t->hw_who_classify_info_paddr;
+		tx_classify_info_vaddr = t->hw_who_classify_info_vaddr;
+
+		ath12k_dp_peer_free_queues(dp_peer->dp_hw_grp, dp_peer);
+		ath12k_dp_tx_classify_info_free(dp_peer->dp_hw_grp,
+						tx_classify_info_paddr,
+						tx_classify_info_vaddr);
+
+		kfree(dp_peer->peer_ext_ctx);
+		dp_peer->peer_ext_ctx = NULL;
+
+		ath12k_dbg_level(NULL, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+				 "dp-peer-cleanup: free peer_ext_ctx, peer_id=%u\n",
+				 dp_peer->peer_id);
+	}
+
 	if (dp_peer->qos) {
 		if (dp_peer->qos->telemetry_peer_ctx)
 			ath12k_telemetry_peer_ctx_free(dp_peer->qos->telemetry_peer_ctx);
@@ -533,7 +567,46 @@ void ath12k_wifi8_dp_peer_cleanup(struct ath12k_dp_hw *dp_hw,
 	}
 
 	ath12k_dp_peer_stats_free(dp_peer);
+}
+
+void ath12k_wifi8_dp_peer_release(struct kref *ref)
+{
+	struct ath12k_dp_peer *dp_peer = container_of(ref, struct ath12k_dp_peer,
+						      refcount);
+	struct ath12k_dp_hw_group *dp_hw_grp = dp_peer->dp_hw_grp;
+	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8;
+	struct ath12k_dp_hw *dp_hw = dp_peer->dp_hw;
+	struct ath12k_dp *umac_dp;
+	unsigned int num_peers;
+
+	ath12k_dbg_level(NULL, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+			 "dp-peer-release: peer_id=%u\n", dp_peer->peer_id);
+
+	dp_hw_grp_wifi8 = ath12k_get_dp_hw_group_wifi8(dp_hw_grp);
+
+	/*
+	 * Guaranteed: synchronize_net() was called by peer delete context
+	 * Hence safe to free the resources
+	 */
+	ath12k_wifi8_dp_peer_cleanup(dp_hw, dp_peer);
+
+	spin_lock_bh(&dp_hw->peer_hash_lock);
+
+	clear_bit(dp_peer->peer_id, dp_hw->free_peer_id_map);
+
+	num_peers = bitmap_weight(dp_hw->free_peer_id_map, ATH12K_MAX_PEER_ID);
+
+	list_del_init(&dp_peer->tqm_cleanup_node);
+
 	dp_peer->dp_peer_state = ATH12K_DP_PEER_DELETED;
+
+	spin_unlock_bh(&dp_hw->peer_hash_lock);
+
+	umac_dp = dp_hw_grp_wifi8->cumac_dp;
+
+	ath12k_wifi8_dp_telemetry_peer_count_update(umac_dp->ab, num_peers);
+
+	kfree(dp_peer);
 }
 
 void ath12k_wifi8_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 *addr,
@@ -548,8 +621,6 @@ void ath12k_wifi8_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 
 	struct hal_srng *srng = NULL;
 	u16 link_band_id[HAL_TASC_BAND_MAX];
 	struct ath12k_dp *umac_dp;
-	unsigned int num_peers;
-	u16 peerid_index;
 	struct ath12k_sta *ahsta;
 	int i, ret;
 
@@ -647,37 +718,24 @@ void ath12k_wifi8_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 
 		}
 	}
 
-	if (dp_peer->dp_peer_state >= ATH12K_DP_PEER_LOGICALLY_DELETED) {
-		ath12k_wifi8_dp_peer_cleanup(dp_hw, dp_peer);
-		num_peers = bitmap_weight(dp_hw->free_peer_id_map, ATH12K_MAX_PEER_ID);
-		spin_unlock_bh(&dp_hw->peer_hash_lock);
-		ath12k_wifi8_dp_telemetry_peer_count_update(umac_dp->ab, num_peers);
-		synchronize_rcu();
-		kfree(dp_peer);
+	rcu_assign_pointer(dp_hw->dp_peer_list[dp_peer->peer_id], NULL);
 
-		return;
-	} else {
-		/* peer delete before the peer assoc complete */
-		if (!dp_peer->peer_ext_ctx) {
-			peerid_index = dp_peer->peer_id;
-			rcu_assign_pointer(dp_hw->dp_peer_list[peerid_index], NULL);
-			ath12k_wifi8_dp_peer_cleanup(dp_hw, dp_peer);
-			num_peers = bitmap_weight(dp_hw->free_peer_id_map,
-						  ATH12K_MAX_PEER_ID);
-			spin_unlock_bh(&dp_hw->peer_hash_lock);
-			ath12k_wifi8_dp_telemetry_peer_count_update(umac_dp->ab,
-								    num_peers);
-			synchronize_rcu();
-			kfree(dp_peer);
-			return;
-		}
-		ath12k_dp_ast_entry_delete(dp->dp_hw_grp,
+	if (dp_peer->dp_peer_state < ATH12K_DP_PEER_LOGICALLY_DELETED &&
+	    dp_peer->peer_ext_ctx) {
+		ath12k_dp_ast_entry_delete(dp_peer->dp_hw_grp,
 					   dp_peer->peer_ext_ctx->ast_index);
-
-		dp_peer->dp_peer_state = ATH12K_DP_PEER_LOGICALLY_DELETED;
 	}
 
+	dp_peer->dp_peer_state = ATH12K_DP_PEER_LOGICALLY_DELETED;
+
 	spin_unlock_bh(&dp_hw->peer_hash_lock);
+
+	synchronize_net();
+
+	ath12k_dbg_level(NULL, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+			 "dp-peer-delete: peer_id=%u\n", dp_peer->peer_id);
+
+	kref_put(&dp_peer->refcount, ath12k_wifi8_dp_peer_release);
 }
 
 void ath12k_wifi8_dp_smd_reset_tx_queue_states(struct ath12k_base *ab,
@@ -1291,6 +1349,14 @@ int ath12k_wifi8_dp_peer_assoc(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 		dp_link_vif->ast_idx = ast_param.ast_index;
 		dp_link_vif->ast_hash =	ast_param.ast_hash;
 	}
+
+	/*
+	 * Take peer reference for TQM cleanup
+	 */
+	kref_get(&dp_peer->refcount);
+
+	/* Register in TQM cleanup list */
+	list_add_tail(&dp_peer->tqm_cleanup_node, &dp_hw->tqm_cleanup_list);
 
 	spin_unlock_bh(&dp_hw->peer_hash_lock);
 	return 0;
@@ -2139,7 +2205,7 @@ void ath12k_dp_peer_cleanup_indication(struct ath12k_dp *dp,
 	struct ath12k_dp_tx_flow_info *tx_info;
 	struct ath12k_pdev_dp *dp_pdev;
 	struct ath12k_dp_hw *dp_hw;
-	struct ath12k_dp_peer *dp_peer;
+	struct ath12k_dp_peer *dp_peer = NULL, *t;
 	u8 pdev_id;
 	int ret = 0;
 
@@ -2168,7 +2234,14 @@ void ath12k_dp_peer_cleanup_indication(struct ath12k_dp *dp,
 	}
 
 	spin_lock_bh(&dp_hw->peer_hash_lock);
-	dp_peer = rcu_dereference(dp_pdev->dp_hw->dp_peer_list[peer_id]);
+
+	list_for_each_entry(t, &dp_hw->tqm_cleanup_list, tqm_cleanup_node) {
+		if (t->peer_id == peer_id) {
+			dp_peer = t;
+			break;
+		}
+	}
+
 	if (!dp_peer) {
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		ath12k_dbg_level(dp->ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
@@ -2202,6 +2275,8 @@ void ath12k_dp_peer_cleanup_indication(struct ath12k_dp *dp,
 			dp_peer->dp_peer_state = ATH12K_DP_PEER_LOGICALLY_DELETED;
 			spin_unlock_bh(&dp_hw->peer_hash_lock);
 			rcu_read_unlock();
+			kref_put(&dp_peer->refcount,
+				 ath12k_wifi8_dp_peer_tqm_sync_release);
 			return;
 		}
 

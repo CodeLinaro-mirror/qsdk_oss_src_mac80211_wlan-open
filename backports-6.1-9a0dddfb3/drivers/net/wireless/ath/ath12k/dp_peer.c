@@ -2979,6 +2979,7 @@ static void ath12k_mac_dp_peer_cleanup_cb(struct ath12k_pdev_dp *dp_pdev,
 			/* Remove ath12k_dp_peer from linked list */
 			spin_lock_bh(&dp_hw->peer_list_lock);
 			list_del(&dp_peer->list);
+			list_del_init(&dp_peer->tqm_cleanup_node);
 			list_add(&dp_peer->list, &ctx->dp_peers);
 			spin_unlock_bh(&dp_hw->peer_list_lock);
 		}

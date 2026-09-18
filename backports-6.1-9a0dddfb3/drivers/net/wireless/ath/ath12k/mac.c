@@ -31496,6 +31496,7 @@ static struct ath12k_hw *ath12k_mac_hw_allocate(struct ath12k_hw_group *ag,
 	spin_lock_init(&ah->dp_hw.peer_list_lock);
 	INIT_LIST_HEAD(&ah->dp_hw.peers);
 	hash_init(ah->dp_hw.peer_hash);
+	INIT_LIST_HEAD(&ah->dp_hw.tqm_cleanup_list);
 	ah->dp_hw.last_peer_id = 0;
 	ah->dp_hw.last_sta_id = 0;
 	ah->free_ahvif_id_map = ~1ULL; /* All bits set except bit 0 */

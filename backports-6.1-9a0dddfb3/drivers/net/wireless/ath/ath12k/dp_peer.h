@@ -251,6 +251,11 @@ struct ath12k_dp_peer {
 
 	bool pre_rcu_remove_done;
 	struct ath12k_dp_link_peer *teardown_link_peers[ATH12K_DP_PEER_MAX_MLO_LINKS];
+
+	struct kref         refcount;          /* lifetime management */
+	struct list_head    tqm_cleanup_node;  /* node in dp_hw->tqm_cleanup_list */
+	struct ath12k_dp_hw *dp_hw;            /* back-pointer for release function */
+	struct ath12k_dp_hw_group *dp_hw_grp;  /* back-pointer for queue free */
 };
 
 #define QOS_MSDUQ_MAX ((QOS_TID_MDSUQ_MAX * QOS_TID_MAX) + MSDUQ_MAX_DEF)

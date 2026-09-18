@@ -234,20 +234,30 @@ int ath12k_wifi8_dp_tx_process_tqm_status(struct ath12k_dp *dp, int budget)
 	return quota - budget;
 }
 
+void ath12k_wifi8_dp_peer_tqm_sync_release(struct kref *ref)
+{
+	struct ath12k_dp_peer *dp_peer = container_of(ref, struct ath12k_dp_peer,
+						      refcount);
+
+	ath12k_dbg_level(NULL, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+			 "tqm-cleanup-sync: EXIT peer_id=%u cleanup complete\n",
+			 dp_peer->peer_id);
+
+	ath12k_wifi8_dp_peer_release(ref);
+}
+
 void ath12k_dp_peer_cleanup_tqm_sync(struct ath12k_dp *dp, void *ctx,
 				     struct hal_tqm_status *tqm_status)
 {
 	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
 	struct ath12k_dp_tx_queue *data = ctx;
 	struct ath12k_base *ab = dp->ab;
-	struct ath12k_dp_peer *dp_peer;
+	struct ath12k_dp_peer *dp_peer = NULL, *t;
 	struct ath12k_pdev_dp *dp_pdev;
 	struct ath12k_dp_hw *dp_hw;
 	u8 pdev_id;
 	u8 hw_link_id = data->hw_link_id;
 	u16 peer_id = data->peer_id;
-	dma_addr_t tx_classify_info_paddr;
-	void *tx_classify_info_vaddr;
 
 	/* NULL tqm_status means the TQM status ring was not drained before
 	 * cleanup (e.g. wifi down races a pending TQM_SYNC_CMD).  Treat it
@@ -283,7 +293,14 @@ void ath12k_dp_peer_cleanup_tqm_sync(struct ath12k_dp *dp, void *ctx,
 	}
 
 	spin_lock_bh(&dp_hw->peer_hash_lock);
-	dp_peer = rcu_dereference(dp_pdev->dp_hw->dp_peer_list[peer_id]);
+
+	list_for_each_entry(t, &dp_hw->tqm_cleanup_list, tqm_cleanup_node) {
+		if (t->peer_id == peer_id) {
+			dp_peer = t;
+			break;
+		}
+	}
+
 	if (!dp_peer) {
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		rcu_read_unlock();
@@ -346,57 +363,17 @@ void ath12k_dp_peer_cleanup_tqm_sync(struct ath12k_dp *dp, void *ctx,
 					   dp_peer->peer_ext_ctx->ast_index);
 	}
 
-	tx_classify_info_paddr =
-		dp_peer->peer_ext_ctx->tx_flow_info.hw_who_classify_info_paddr;
-	tx_classify_info_vaddr =
-		dp_peer->peer_ext_ctx->tx_flow_info.hw_who_classify_info_vaddr;
-
-	ath12k_dp_peer_free_queues(dp_hw_grp, dp_peer);
-	ath12k_dp_tx_classify_info_free(dp_hw_grp, tx_classify_info_paddr,
-					tx_classify_info_vaddr);
-
-	ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
-			 "tqm-cleanup-sync: freeing peer_ext_ctx\n");
-
-	kfree(dp_peer->peer_ext_ctx);
-	dp_peer->peer_ext_ctx = NULL;
-
 update_peer_state:
 
-	if (dp_peer->dp_peer_state < ATH12K_DP_PEER_LOGICALLY_DELETED) {
-		ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
-				 "tqm-cleanup-sync: setting peer_state to LOGICALLY_DELETED\n");
-		dp_peer->dp_peer_state = ATH12K_DP_PEER_LOGICALLY_DELETED;
-		spin_unlock_bh(&dp_hw->peer_hash_lock);
-		rcu_read_unlock();
-	} else {
-		/* Peer is already LOGICALLY_DELETED. Two sub-cases:
-		 *
-		 * (a) Forced cleanup (tqm_status == NULL): tqm_cmd_list_cleanup fired
-		 *     during wifi-down before the WMI peer-delete response arrived.
-		 *     ath12k_wifi8_dp_peer_delete() owns the final kfree() when the
-		 *     response arrives. Do nothing here.
-		 *
-		 * (b) Second TQM_SYNC response for a multi-link peer
-		 *     (e.g. Serving AP roam generates one peer-cleanup-ind
-		 *     per hw-link). The first tqm-cleanup-sync already set
-		 *     LOGICALLY_DELETED and then ath12k_wifi8_dp_peer_delete()
-		 *     freed dp_peer (synchronize_rcu + kfree). The dp_peer
-		 *     pointer we hold was obtained through RCU before that
-		 *     kfree, so it is dangling.  Do NOT touch dp_peer.
-		 *
-		 * In both cases: just unlock and return.
-		 */
-		ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
-				 "tqm-cleanup-sync: peer already LOGICALLY_DELETED, skip free (forced=%d peer_id=%u)\n",
-				 !tqm_status, peer_id);
-		spin_unlock_bh(&dp_hw->peer_hash_lock);
-		rcu_read_unlock();
-	}
+	dp_peer->dp_peer_state = ATH12K_DP_PEER_LOGICALLY_DELETED;
 
 	ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
-			 "tqm-cleanup-sync: EXIT peer_id=%u cleanup complete\n",
-			 peer_id);
+			 "tqm-cleanup-sync: setting peer_state to LOGICALLY_DELETED\n");
+
+	spin_unlock_bh(&dp_hw->peer_hash_lock);
+	rcu_read_unlock();
+
+	kref_put(&dp_peer->refcount, ath12k_wifi8_dp_peer_tqm_sync_release);
 }
 
 static inline u32 ath12k_qos_get_metadata(u16 qos_id)
