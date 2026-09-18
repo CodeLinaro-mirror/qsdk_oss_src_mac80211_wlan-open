@@ -158,6 +158,7 @@ int ath12k_wifi8_dp_tx_process_tqm_status(struct ath12k_dp *dp, int budget);
 void ath12k_dp_peer_cleanup_tqm_sync(struct ath12k_dp *dp, void *ctx,
 				     struct hal_tqm_status *tqm_status);
 void ath12k_wifi8_dp_tx_tqm_cmd_list_cleanup(struct ath12k_base *ab);
+void ath12k_wifi8_dp_peer_tqm_sync_release(struct kref *ref);
 int ath12k_wifi8_dp_tx_process_sam_status(struct ath12k_dp *dp, int budget);
 enum ath12k_dp_tx_enq_error
 ath12k_wifi8_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
