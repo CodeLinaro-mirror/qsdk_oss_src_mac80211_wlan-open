@@ -3319,6 +3319,10 @@ void sta_set_sinfo(struct sta_info *sta, struct station_info *sinfo,
 			BIT_ULL(NL80211_STA_INFO_ACK_SIGNAL_AVG);
 	}
 
+	/* Peer isolation state: always valid for any associated station */
+	sinfo->isolated = sta->sta.isolated;
+	sinfo->filled |= BIT_ULL(NL80211_STA_INFO_ISOLATED);
+
 	if (ieee80211_vif_is_mesh(&sdata->vif)) {
 		sinfo->filled |= BIT_ULL(NL80211_STA_INFO_AIRTIME_LINK_METRIC);
 		sinfo->airtime_link_metric =

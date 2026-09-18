@@ -3153,7 +3153,12 @@ ieee80211_deliver_skb(struct ieee80211_rx_data *rx)
 	     sdata->vif.type == NL80211_IFTYPE_AP_VLAN) &&
 	    !(sdata->flags & IEEE80211_SDATA_DONT_BRIDGE_PACKETS) &&
 	    ehdr->h_proto != rx->sdata->control_port_protocol &&
-	    (sdata->vif.type != NL80211_IFTYPE_AP_VLAN || !sdata->u.vlan.sta)) {
+	    (sdata->vif.type != NL80211_IFTYPE_AP_VLAN || !sdata->u.vlan.sta) &&
+	    !(rx->sta && rx->sta->sta.isolated)) {
+	    /* Per-station peer isolation: if source is isolated, do not
+	     * forward intra-BSS. Redirect to bridge stack instead.
+	     * Based on hairpin mode state packet is forwarded/dropped.
+	     */
 		if (is_multicast_ether_addr(ehdr->h_dest) &&
 		    ieee80211_vif_get_num_mcast_if(sdata) != 0) {
 			/*
@@ -3170,12 +3175,15 @@ ieee80211_deliver_skb(struct ieee80211_rx_data *rx)
 		} else if (!is_multicast_ether_addr(ehdr->h_dest) &&
 			   !ether_addr_equal(ehdr->h_dest, ehdr->h_source)) {
 			dsta = sta_info_get(sdata, ehdr->h_dest);
-			if (dsta) {
+			if (dsta && !dsta->sta.isolated) {
 				/*
-				 * The destination station is associated to
-				 * this AP (in this VLAN), so send the frame
-				 * directly to it and do not pass it to local
-				 * net stack.
+				 * The destination station is associated
+				 * to this AP (in this VLAN), and not isolated
+				 * so send the frame directly to it and do not
+				 * pass it to local net stack.
+				 *
+				 * If dsta is isolated, xmit_skb stays NULL and
+				 * skb continues to local stack delivery.
 				 */
 				xmit_skb = skb;
 				skb = NULL;
@@ -5440,14 +5448,24 @@ void ieee80211_check_fast_rx(struct sta_info *sta)
 						      IEEE80211_FCTL_TODS);
 		fastrx.da_offs = offsetof(struct ieee80211_hdr, addr3);
 		fastrx.sa_offs = offsetof(struct ieee80211_hdr, addr4);
-		break; 
-		
+		break;
+
 	default:
 		goto clear;
 	}
 
 	if (!test_sta_flag(sta, WLAN_STA_AUTHORIZED))
 		goto clear;
+
+	/* Per-station peer isolation: disable intra-BSS forwarding.
+	 * IMPORTANT: Do NOT use goto clear here. The clear path
+	 * invalidates sta->fast_rx and disables fast-RX processing
+	 * entirely.For peer isolation we only need to prevent
+	 * intra-BSS forwarding, so keep fast_rx active and disable
+	 * forwarding explicitly.
+	 */
+	if (sta->sta.isolated)
+		fastrx.internal_forward = false;
 
 	rcu_read_lock();
 	key = rcu_dereference(sta->ptk[sta->ptk_idx]);
@@ -5625,15 +5643,29 @@ static void ieee80211_rx_8023(struct ieee80211_rx_data *rx,
 	if (fast_rx->internal_forward) {
 		struct sk_buff *xmit_skb = NULL;
 		if (is_multicast_ether_addr(da)) {
-			xmit_skb = skb_copy(skb, GFP_ATOMIC);
-			if (!tid_stats_disable)
-				ieee80211_rx_stats_reason(rx->sdata, skb->len,
-							  status->tid,
-							  RX_MULTICAST_PKTS);
-		} else if (!ether_addr_equal(da, sa) &&
-			   sta_info_get(rx->sdata, da)) {
-			xmit_skb = skb;
-			skb = NULL;
+			/* Peer isolation: only clone for intra-BSS if source
+			 * is NOT isolated. Isolated clients still receive
+			 * multicast (ARP, DHCP, mDNS) from the network stack.
+			 */
+			if (!rx->sta->sta.isolated) {
+				xmit_skb = skb_copy(skb, GFP_ATOMIC);
+				if (!tid_stats_disable)
+					ieee80211_rx_stats_reason(rx->sdata, skb->len,
+								  status->tid,
+								  RX_MULTICAST_PKTS);
+			}
+		} else if (!ether_addr_equal(da, sa)) {
+			struct sta_info *dsta = sta_info_get(rx->sdata, da);
+
+			/* Peer isolation: only forward unicast if neither
+			 * source nor destination station is isolated.
+			 */
+			if (dsta &&
+			    !rx->sta->sta.isolated &&
+			    !dsta->sta.isolated) {
+				xmit_skb = skb;
+				skb = NULL;
+			}
 		}
 
 		if (xmit_skb) {

@@ -2902,6 +2902,15 @@ static int sta_apply_parameters(struct ieee80211_local *local,
 			return ret;
 	}
 
+	/* Peer isolation: disable intra-BSS forwarding to/from this station.
+	 * Store the value in sta->sta.isolated (struct ieee80211_sta field,
+	 * accessible to drivers) and invalidate the fast-RX cache.
+	 */
+	if (params->sta_modify_mask & STATION_PARAM_APPLY_ISOLATION) {
+		sta->sta.isolated = params->isolated;
+		ieee80211_check_fast_rx(sta);
+	}
+
 	ret = sta_link_apply_parameters(local, sta, STA_LINK_MODE_STA_MODIFY,
 					&params->link_sta_params);
 	if (ret)
