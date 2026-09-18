@@ -11340,6 +11340,26 @@ enum wmi_vdev_ratemask_type {
 	VDEV_RATEMASK_TYPE_UHR,
 };
 
+/* WMI VDEV_RATEMASK_TYPE_CCK_OFDM bit positions expected by firmware.
+ * This ordering does not match ath12k_legacy_rates[]/sband->bitrates
+ * (CCK ascending, then OFDM ascending) and must be translated before
+ * being sent over WMI.
+ */
+enum ath12k_wmi_legacy_rate_pos {
+	ATH12K_WMI_LEGACY_RATE_POS_CCK_11M = 0,
+	ATH12K_WMI_LEGACY_RATE_POS_CCK_5_5M = 1,
+	ATH12K_WMI_LEGACY_RATE_POS_CCK_2M = 2,
+	ATH12K_WMI_LEGACY_RATE_POS_CCK_1M = 3,
+	ATH12K_WMI_LEGACY_RATE_POS_OFDM_48M = 4,
+	ATH12K_WMI_LEGACY_RATE_POS_OFDM_24M = 5,
+	ATH12K_WMI_LEGACY_RATE_POS_OFDM_12M = 6,
+	ATH12K_WMI_LEGACY_RATE_POS_OFDM_6M = 7,
+	ATH12K_WMI_LEGACY_RATE_POS_OFDM_54M = 8,
+	ATH12K_WMI_LEGACY_RATE_POS_OFDM_36M = 9,
+	ATH12K_WMI_LEGACY_RATE_POS_OFDM_18M = 10,
+	ATH12K_WMI_LEGACY_RATE_POS_OFDM_9M = 11,
+};
+
 struct wmi_vdev_ratemask_arg {
 	u32 vdev_id;
 	enum wmi_vdev_ratemask_type type;
