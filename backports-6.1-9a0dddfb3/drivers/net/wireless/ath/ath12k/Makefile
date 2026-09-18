@@ -82,6 +82,10 @@ ath12k-$(CPTCFG_QCN_EXTN) += \
 	qcn_extns/ini.o \
 	qcn_extns/ini_parse.o \
 	qcn_extns/me_hmmc_extn.o \
+	qcn_extns/extap_db.o \
+	qcn_extns/extap_extn.o \
+	qcn_extns/extap_extn_rx.o \
+	qcn_extns/extap_extn_tx.o \
 	qcn_extns/dp_mon_extn.o \
 	qcn_extns/mgmt_rx_extn.o \
 	qcn_extns/dp_tx_extn.o \
