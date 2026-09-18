@@ -53,6 +53,9 @@
 #endif /* CPTCFG_QCN_EXTN */
 #include "mgmt_rx.h"
 #include "ranging.h"
+#ifdef CPTCFG_QCN_EXTN
+#include "qcn_extns/vendor_extn.h"
+#endif
 
 #define CHAN2G(_channel, _freq, _flags) { \
 	.band                   = NL80211_BAND_2GHZ, \
@@ -11754,6 +11757,12 @@ int ath12k_mac_op_set_radar_background(struct ieee80211_hw *hw,
 			 */
 			ar->agile_abort_pending = false;
 			memcpy(&ar->agile_chandef, def, sizeof(struct cfg80211_chan_def));
+#ifdef CPTCFG_QCN_EXTN
+			ath12k_dfs_update_chan_state(
+					ar,
+					def->chan,
+					ATH12K_DFS_CHAN_STATE_PRECAC_STARTED);
+#endif
 		} else {
 			ar->ap_ps_disabled_by_agile = false;
 			ath12k_mac_ap_ps_recalc(ar);
@@ -20547,7 +20556,9 @@ int ath12k_mac_start(struct ath12k *ar)
 			ret = 0;
 		goto err;
 	}
-
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_dfs_init_chan_state(ar);
+#endif
 	ar->he_dl_enabled = 1;
 	ar->he_ul_enabled = 1;
 	ar->he_dlbf_enabled = 1;
@@ -23577,6 +23588,11 @@ void ath12k_mac_background_dfs_event(struct ath12k *ar,
 		cfg80211_background_radar_event(ar->ah->hw->wiphy, &ar->agile_chandef, GFP_ATOMIC);
 		wiphy_work_queue(ar->ah->hw->wiphy, &ar->agile_cac_abort_wq);
 	} else if (ev == ATH12K_BGDFS_ABORT) {
+		if (ar->agile_chandef.chan)
+#ifdef CPTCFG_QCN_EXTN
+			ath12k_dfs_update_chan_state(ar, ar->agile_chandef.chan,
+						     ATH12K_DFS_CHAN_STATE_CAC_REQUIRED);
+#endif
 		cfg80211_background_cac_abort_by_chandef(ar->ah->hw->wiphy,
 							 &ar->agile_chandef);
 	}
