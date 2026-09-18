@@ -19715,6 +19715,15 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.policy = ath12k_hw_blocked_chans_query_policy,
 		.maxattr = QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_REQ_MAX,
 	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_EXTAP_SETUP,
+		.doit = ath12k_vendor_extap_setup_handler,
+		.policy = ath12k_vendor_extap_setup_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_EXTAP_MAX,
+		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV |
+			 WIPHY_VENDOR_CMD_NEED_RUNNING,
+	},
 #endif
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
