@@ -538,6 +538,7 @@ const char *mgmt_frame_name[] = { "AssocReq",
 			    "Auth",
 			    "Deauth",
 			    "Action"};
+EXPORT_SYMBOL(mgmt_frame_name);
 
 int ath12k_wmi_pdev_enable_telemetry_stats(struct ath12k_base *ab,
 	struct ath12k *ar,
@@ -11838,8 +11839,9 @@ static int wmi_process_mgmt_tx_comp(struct ath12k *ar, u32 desc_id,
 		}
 		if (ATH12K_MGMT_MLME_FRAME(hdr->frame_control))
 			ath12k_dbg_level(ar->ab, ATH12K_DBG_MLME, ATH12K_DBG_L0,
-					 "Tx completion for %s frame to STA %pM status %u\n",
-					 mgmt_frame_name[frm_stype], hdr->addr1, status);
+					 "Tx completion for %s frame to STA %pM from %pM tx_status %u\n",
+					 mgmt_frame_name[frm_stype], hdr->addr1,
+					 hdr->addr2, status);
 
 		if (!vif) {
 			ath12k_warn(ar->ab, "failed to find vif to update txcompl mgmt stats\n");
@@ -13383,10 +13385,21 @@ static void ath12k_mgmt_rx_event(struct ath12k_base *ab, struct sk_buff *skb)
 	fc = le16_to_cpu(hdr->frame_control);
 	frm_stype = FIELD_GET(IEEE80211_FCTL_STYPE, fc);
 
-	if (ATH12K_MGMT_MLME_FRAME(hdr->frame_control))
-		ath12k_dbg_level(ar->ab, ATH12K_DBG_MLME, ATH12K_DBG_L0,
-				 "Received %s frame from STA %pM\n",
-				 mgmt_frame_name[frm_stype], hdr->addr2);
+	if (ATH12K_MGMT_MLME_FRAME(hdr->frame_control)) {
+		u16 seq_no = ieee80211_get_sn(hdr);
+		u16 code;
+
+		if (ath12k_mlme_get_status_code(hdr, skb->len, &code))
+			ath12k_dbg_level(ar->ab, ATH12K_DBG_MLME, ATH12K_DBG_L0,
+					 "Received %s frame from STA %pM to %pM seq 0x%03x status_code %u\n",
+					 mgmt_frame_name[frm_stype], hdr->addr2,
+					 hdr->addr1, seq_no, code);
+		else
+			ath12k_dbg_level(ar->ab, ATH12K_DBG_MLME, ATH12K_DBG_L0,
+					 "Received %s frame from STA %pM to %pM seq 0x%03x\n",
+					 mgmt_frame_name[frm_stype], hdr->addr2,
+					 hdr->addr1, seq_no);
+	}
 	/* Track assoc request failure stats (bad WPAIE, no rate match, cap mismatch) */
 	if (ieee80211_is_assoc_req(hdr->frame_control) &&
 	    skb->len >= offsetof(struct ieee80211_mgmt, u.assoc_req.variable))

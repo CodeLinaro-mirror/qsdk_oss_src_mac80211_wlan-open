@@ -130,3 +130,39 @@ EXPORT_SYMBOL(ath12k_dbg_dump);
 
 #endif /* CPTCFG_ATH12K_DEBUG */
 
+/* Extract the status/reason code carried by an MLME frame for debug logging.
+ * Returns false if the frame type carries no such code, or if @len is too
+ * short to safely dereference the field (e.g. a truncated frame).
+ */
+bool ath12k_mlme_get_status_code(struct ieee80211_hdr *hdr, size_t len, u16 *code)
+{
+	struct ieee80211_mgmt *mgmt = (struct ieee80211_mgmt *)hdr;
+
+	if (ieee80211_is_auth(hdr->frame_control) &&
+	    len >= offsetofend(struct ieee80211_mgmt, u.auth.status_code)) {
+		*code = le16_to_cpu(mgmt->u.auth.status_code);
+		return true;
+	}
+
+	if ((ieee80211_is_assoc_resp(hdr->frame_control) ||
+	     ieee80211_is_reassoc_resp(hdr->frame_control)) &&
+	    len >= offsetofend(struct ieee80211_mgmt, u.assoc_resp.status_code)) {
+		*code = le16_to_cpu(mgmt->u.assoc_resp.status_code);
+		return true;
+	}
+
+	if (ieee80211_is_deauth(hdr->frame_control) &&
+	    len >= offsetofend(struct ieee80211_mgmt, u.deauth.reason_code)) {
+		*code = le16_to_cpu(mgmt->u.deauth.reason_code);
+		return true;
+	}
+
+	if (ieee80211_is_disassoc(hdr->frame_control) &&
+	    len >= offsetofend(struct ieee80211_mgmt, u.disassoc.reason_code)) {
+		*code = le16_to_cpu(mgmt->u.disassoc.reason_code);
+		return true;
+	}
+
+	return false;
+}
+EXPORT_SYMBOL(ath12k_mlme_get_status_code);

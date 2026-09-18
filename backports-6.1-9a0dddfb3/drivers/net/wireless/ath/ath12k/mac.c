@@ -19605,6 +19605,7 @@ static int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arv
 	int buf_id;
 	int ret;
 	u8 sta_addr[ETH_ALEN];
+	u8 own_addr[ETH_ALEN];
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -19668,6 +19669,7 @@ static int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arv
 	spin_unlock_bh(&ar->data_lock);
 
 	ether_addr_copy(sta_addr, hdr->addr1);
+	ether_addr_copy(own_addr, hdr->addr2);
 
 	if (is_deauth_disassoc &&
 	    ath12k_peer_deauth_disassoc_tx_inc(ar, hdr->addr1))
@@ -19687,10 +19689,19 @@ static int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arv
 		goto err_unmap_buf;
 	}
 
-	if (is_mlme)
-		ath12k_dbg_level(ab, ATH12K_DBG_MLME, ATH12K_DBG_L0,
-				 "Transmit %s to STA %pM over WMI\n",
-				 mgmt_frame_name[frm_stype], sta_addr);
+	if (is_mlme) {
+		u16 code;
+
+		if (ath12k_mlme_get_status_code(hdr, skb->len, &code))
+			ath12k_dbg_level(ab, ATH12K_DBG_MLME, ATH12K_DBG_L0,
+					 "Transmit %s to STA %pM from %pM over WMI status_code %u\n",
+					 mgmt_frame_name[frm_stype], sta_addr,
+					 own_addr, code);
+		else
+			ath12k_dbg_level(ab, ATH12K_DBG_MLME, ATH12K_DBG_L0,
+					 "Transmit %s to STA %pM from %pM over WMI\n",
+					 mgmt_frame_name[frm_stype], sta_addr, own_addr);
+	}
 	return 0;
 
 err_unmap_buf:
