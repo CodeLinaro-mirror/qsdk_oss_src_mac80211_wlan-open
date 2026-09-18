@@ -1513,7 +1513,7 @@ static void ath12k_wifi8_mac_op_tx(struct ieee80211_hw *hw,
 					   &skb_ctrl, qos_nw_delay, vlan_ahvif, dp_peer);
 	} else {
 		if (!vif->valid_links || is_dvlan || (is_eth && sta) ||
-		    test_bit(ATH12K_GROUP_FLAG_RAW_MODE, &ah->ag->flags))
+		    ahvif->dp_vif.tx_encap_type == ATH12K_HW_TXRX_RAW)
 			gsn_valid = false;
 
 		ath12k_wifi8_mcbc_handler(dp_vif, link_id, arsta, skb, is_eth,

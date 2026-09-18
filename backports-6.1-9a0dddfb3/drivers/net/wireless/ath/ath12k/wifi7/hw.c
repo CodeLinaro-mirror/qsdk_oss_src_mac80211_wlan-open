@@ -1525,13 +1525,6 @@ int ath12k_dp_mmesh_tx(struct ieee80211_hw *hw, struct ath12k_base *ab,
 		dp_peer = ath12k_sta_get_dp_peer_rcu(ahsta);
 	}
 
-	if (ahvif->dp_vif.tx_encap_type == ATH12K_HW_TXRX_NATIVE_WIFI ||
-			ahvif->dp_vif.tx_encap_type == ATH12K_HW_TXRX_RAW) {
-		pr_err("Native Wifi & Raw mode not supported\n");
-		err = DP_TX_ENQ_DROP_MISC;
-		goto fail;
-	}
-
 	len = skb->len;
 	dp_vif = &ahvif->dp_vif;
 
@@ -1805,7 +1798,7 @@ void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 
 		if (!vif->valid_links || is_dvlan || (is_eth && sta) ||
 		    (!is_eth && (hdr && !is_multicast_ether_addr(hdr->addr1))) ||
-		    test_bit(ATH12K_GROUP_FLAG_RAW_MODE, &ah->ag->flags))
+		    ahvif->dp_vif.tx_encap_type == ATH12K_HW_TXRX_RAW)
 			gsn_valid = false;
 
 		ath12k_wifi7_mcbc_handler(dp_vif, link_id, arsta, skb, is_eth,

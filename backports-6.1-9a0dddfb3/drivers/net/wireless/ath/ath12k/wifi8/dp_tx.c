@@ -940,7 +940,8 @@ ath12k_wifi8_dp_encap_mismatch_handler(struct ath12k_dp_vif *dp_vif,
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
 	enum ath12k_dp_feature_result ret = DP_TX_FEATURE_SUCCESS;
 
-	msdu_info->ext_desc.encap_type = ath12k_dp_tx_get_encap_type(dp->ab, skb);
+	msdu_info->ext_desc.encap_type = ath12k_dp_tx_get_encap_type(dp->ab, skb,
+								     dp_vif);
 	if (msdu_info->ext_desc.encap_type >= HAL_TCL_ENCAP_TYPE_802_3)
 		return DP_TX_ERROR;
 
@@ -994,7 +995,7 @@ ath12k_wifi8_dp_raw_mode_handler(struct ath12k_dp_vif *dp_vif,
 	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
 
-	if (!test_bit(ATH12K_GROUP_FLAG_RAW_MODE, &dp->ab->ag->flags))
+	if (dp_vif->tx_encap_type != ATH12K_HW_TXRX_RAW)
 		return DP_TX_ERROR;
 
 	msdu_info->ext_desc.encap_type = HAL_TCL_ENCAP_TYPE_RAW;

@@ -67,7 +67,8 @@ void ath12k_dp_tx_sg_unmap_buf(struct ath12k_dp *dp,
 			       struct ath12k_dp_ext_desc *ext_desc,
 			       struct sk_buff *skb);
 enum hal_tcl_encap_type
-ath12k_dp_tx_get_encap_type(struct ath12k_base *ab, struct sk_buff *skb);
+ath12k_dp_tx_get_encap_type(struct ath12k_base *ab, struct sk_buff *skb,
+			    struct ath12k_dp_vif *dp_vif);
 void ath12k_dp_tx_drop_tid_stats(struct ath12k_dp_vif *dp_vif,
 				 enum ath12k_dp_tx_enq_error drop_reason,
 				 u8 tid, u32 len);

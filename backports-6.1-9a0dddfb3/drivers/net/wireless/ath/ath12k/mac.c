@@ -12375,7 +12375,7 @@ int ath12k_install_key(struct ath12k_link_vif *arvif,
 		return -EOPNOTSUPP;
 	}
 
-	if (test_bit(ATH12K_GROUP_FLAG_RAW_MODE, &ar->ab->ag->flags))
+	if (arvif->ahvif->dp_vif.tx_encap_type == ATH12K_HW_TXRX_RAW)
 		key->flags |= IEEE80211_KEY_FLAG_GENERATE_IV |
 			      IEEE80211_KEY_FLAG_RESERVE_TAILROOM;
 
@@ -21110,7 +21110,7 @@ static void ath12k_mac_update_vif_offload(struct ath12k_link_vif *arvif)
 	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(ahvif);
 	struct ath12k *ar = arvif->ar;
 	struct ath12k_base *ab = ar->ab;
-	u32 param_id, param_value;
+	u32 param_id;
 	int ret;
 
 	param_id = WMI_VDEV_PARAM_TX_ENCAP_TYPE;
@@ -21124,21 +21124,18 @@ static void ath12k_mac_update_vif_offload(struct ath12k_link_vif *arvif)
 	}
 
 	param_id = WMI_VDEV_PARAM_RX_DECAP_TYPE;
-	if (vif->offload_flags & IEEE80211_OFFLOAD_DECAP_ENABLED)
-		param_value = ATH12K_HW_TXRX_ETHERNET;
-	else if (test_bit(ATH12K_GROUP_FLAG_RAW_MODE, &ab->ag->flags))
-		param_value = ATH12K_HW_TXRX_RAW;
-	else
-		param_value = ATH12K_HW_TXRX_NATIVE_WIFI;
 
 	ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
-					    param_id, param_value);
+					    param_id, ahvif->dp_vif.rx_decap_type);
 	if (ret) {
 		ath12k_warn(ab, "failed to set vdev %d rx decap mode: %d\n",
 			    arvif->vdev_id, ret);
 		/* TODO handle failure for partner VIFs */
 		vif->offload_flags &= ~IEEE80211_OFFLOAD_DECAP_ENABLED;
 	}
+
+	ath12k_dbg(ab, ATH12K_DBG_ENCAP_DECAP, "encap = %d decap = %d\n",
+		   ahvif->dp_vif.tx_encap_type, ahvif->dp_vif.rx_decap_type);
 
 	if (vif->type == NL80211_IFTYPE_AP || vif->type == NL80211_IFTYPE_STATION)
 		vif->offload_flags |= IEEE80211_OFFLOAD_TXRX_STATS;
@@ -21201,12 +21198,18 @@ void ath12k_mac_op_update_vif_offload(struct ieee80211_hw *hw,
 			if (!(arvif && arvif->ar))
 				continue;
 
+#ifdef CPTCFG_QCN_EXTN
+			ath12k_mac_update_encap_decap_ext(vif, ahvif);
+#endif
 			ath12k_mac_update_vif_offload(arvif);
 		}
 
 		return;
 	}
 
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_mac_update_encap_decap_ext(vif, ahvif);
+#endif
 	ath12k_mac_update_vif_offload(&ahvif->deflink);
 	ath12k_dp_arch_dp_vif_configure(ah->ag->dp_hw_grp, ahvif,
 					ATH12K_DP_OP_UPDATE);
@@ -21784,6 +21787,9 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 
 	spin_unlock_bh(&ar->data_lock);
 
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_mac_update_encap_decap_ext(vif, ahvif);
+#endif
 	ath12k_mac_update_vif_offload(arvif);
 
 	/* Set vdev NSS, cap by FW max Tx NSS if provided */
@@ -22632,7 +22638,7 @@ ppe_vp_config:
 
 	vif->driver_flags |= (IEEE80211_VIF_SUPPORTS_UAPSD |
 			      IEEE80211_VIF_SUPPORTS_CQM_RSSI);
-	if (ath12k_frame_mode == ATH12K_HW_TXRX_ETHERNET) {
+	if (ahvif->dp_vif.tx_encap_type == ATH12K_HW_TXRX_ETHERNET) {
 		vif->offload_flags |= IEEE80211_OFFLOAD_ENCAP_4ADDR;
 		if (vif->type != NL80211_IFTYPE_AP_VLAN)
 			vif->offload_flags |= IEEE80211_OFFLOAD_ENCAP_MCAST;
