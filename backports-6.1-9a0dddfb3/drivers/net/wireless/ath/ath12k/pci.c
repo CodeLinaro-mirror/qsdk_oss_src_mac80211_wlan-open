@@ -1090,6 +1090,13 @@ int ath12k_pci_power_up(struct ath12k_base *ab)
 		ab_pci->register_window = 0;
 
 	clear_bit(ATH12K_PCI_FLAG_INIT_DONE, &ab_pci->flags);
+
+	/* Read BCR shadow register on first boot so any stale value will get cleared
+	 */
+	if (!test_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags) &&
+	    ab_pci->device_ops->get_reset_reason)
+		ab_pci->device_ops->get_reset_reason(ab);
+
 	ath12k_pci_sw_reset(ab, true);
 
 	/* Legacy behavior: disable ASPM for stability and restore later only in
