@@ -31,10 +31,9 @@ struct workqueue_struct;
  *   A matching peer passes unconditionally (return 0);
  *   non-matching peers proceed to the fp type check.
  * @ATH12K_DP_TX_EXT_MON_SPC_PEER_FILTER: special packet capture mode
- *   (monitor_flags == ATH12K_EXT_MON_PKT_CAP).  Peer scoping stays in the
- *   host filter path via peer_list; HW peer-filter programming is skipped.
- *   A matching peer passes unconditionally (return 0); a non-matching peer
- *   is passed to the frame-type filter (fp).
+ *   (monitor_flags == ATH12K_EXT_MON_PKT_CAP). HW peer-filter
+ *   programming is enabled. A matching peer passes unconditionally (return 0);
+ *   a non-matching peer is passed to the frame-type filter (fp).
  * @ATH12K_DP_TX_EXT_MON_SW_PEER_FILTER_MAX: sentinel / array-size guard.
  */
 enum ath12k_dp_tx_ext_mon_peer_filter {

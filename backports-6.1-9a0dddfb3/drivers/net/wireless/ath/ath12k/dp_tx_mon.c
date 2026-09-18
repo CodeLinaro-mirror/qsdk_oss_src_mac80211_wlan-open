@@ -6397,13 +6397,19 @@ ath12k_dp_ext_mon_reconfigure_tx_peers(struct ath12k_pdev_dp *dp_pdev,
 	int ret = 0;
 	struct ath12k_ext_mon_peer_config *peer_config;
 	u8 old_filter_mode = (old->fp_enabled << 1) | old->fpmo_enabled;
+	u8 old_monitor_flag = old->monitor_flags;
+	u8 new_monitor_flag = new_config->monitor_flags;
 	bool fp_enabled =
 		ath12k_dp_ext_mon_is_mode_enabled(&new_config->all_peer);
 	bool fpmo_enabled =
 		ath12k_dp_ext_mon_is_mode_enabled(&new_config->target_peer);
 	u8 new_filter_mode = (fp_enabled << 1) | fpmo_enabled;
 
-	if (old_filter_mode == new_filter_mode)
+	/* Peers reconfiguration required in case of change in
+	 * monitor flag or filter mode
+	 */
+	if (old_monitor_flag == new_monitor_flag &&
+	    old_filter_mode == new_filter_mode)
 		return 0;
 
 	peer_config = kzalloc(sizeof(*peer_config), GFP_KERNEL);
