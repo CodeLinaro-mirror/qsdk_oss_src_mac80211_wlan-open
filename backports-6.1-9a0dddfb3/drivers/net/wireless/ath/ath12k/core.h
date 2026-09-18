@@ -2329,6 +2329,7 @@ struct ath12k {
 	struct work_struct erp_handle_trigger_work;
 	struct completion suspend;
 	bool pdev_suspend;
+	bool pdev_user_suspend;
 	struct completion pdev_resume;
 	struct work_struct ssr_erp_exit;
 
