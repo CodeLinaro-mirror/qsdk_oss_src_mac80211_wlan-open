@@ -3995,9 +3995,10 @@ void ieee80211_dynamic_ps_enable_work(struct wiphy *wiphy,
 		 */
 		pcpu_queue_stop_reason_lock =
 			this_cpu_ptr(local->queue_stop_reason_lock);
-		queue_stop_reasons = this_cpu_ptr(local->queue_stop_reasons[q]);
 		spin_lock_irqsave(pcpu_queue_stop_reason_lock, flags);
 		for (q = 0; q < local->hw.queues; q++) {
+			queue_stop_reasons =
+				this_cpu_ptr(local->queue_stop_reasons[q]);
 			if (*queue_stop_reasons) {
 				spin_unlock_irqrestore(pcpu_queue_stop_reason_lock,
 						       flags);
