@@ -6330,6 +6330,11 @@ static struct ath12k_hw_group *ath12k_core_hw_group_alloc(struct ath12k_base *ab
 
 	ag->cumac_enabled = ab->hw_params->cumac_support;
 
+#ifdef CPTCFG_ATH12K_PRPL
+	ag->power_save_mode = false;
+#endif
+	ag->power_save_mode = true;
+
 	return ag;
 }
 

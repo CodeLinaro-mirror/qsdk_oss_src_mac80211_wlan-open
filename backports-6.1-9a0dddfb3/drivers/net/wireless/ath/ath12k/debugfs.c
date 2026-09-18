@@ -3764,11 +3764,48 @@ static const struct file_operations fops_compress_fw_dump = {
 	.llseek = default_llseek,
 };
 
+
+static ssize_t ath12k_write_power_save_mode(struct file *file,
+					     const char __user *user_buf,
+					     size_t count, loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	bool value;
+
+	if (kstrtobool_from_user(user_buf, count, &value)) {
+		ath12k_info(ab, "Enter 1 to enable, 0 to disable power save mode\n");
+		return -EINVAL;
+	}
+
+	ab->ag->power_save_mode = value;
+	return count;
+}
+
+static ssize_t ath12k_read_power_save_mode(struct file *file,
+					    char __user *user_buf,
+					    size_t count, loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	char buf[32];
+	size_t len;
+
+	len = scnprintf(buf, sizeof(buf), "%u\n", ab->ag->power_save_mode);
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static const struct file_operations fops_power_save_mode = {
+	.open = ath12k_debugfs_open,
+	.read = ath12k_read_power_save_mode,
+	.write = ath12k_write_power_save_mode,
+	.llseek = default_llseek,
+};
+
 void ath12k_debugfs_soc_create(struct ath12k_base *ab)
 {
 	bool dput_needed;
 	char soc_name[64] = { 0 };
 	struct dentry *debugfs_ath12k;
+	struct dentry *debugfs_power_save_mode;
 	struct dentry *debugfs_ath12k_compress_dump;
 
 	debugfs_ath12k = debugfs_lookup("ath12k", NULL);
@@ -3793,6 +3830,19 @@ void ath12k_debugfs_soc_create(struct ath12k_base *ab)
 			ath12k_err(ab, "failed to create compress_dump entry\n");
 	} else {
 		dput(debugfs_ath12k_compress_dump);
+	}
+
+	debugfs_power_save_mode = debugfs_lookup("power_save_mode", debugfs_ath12k);
+	if (!debugfs_power_save_mode) {
+		debugfs_power_save_mode =
+				ath12k_debugfs_create_file("power_save_mode",
+							   0600, debugfs_ath12k,
+							   ab, ab,
+							   &fops_power_save_mode);
+		if (IS_ERR_OR_NULL(debugfs_power_save_mode))
+			ath12k_err(ab, "failed to create power_save entry\n");
+	} else {
+		dput(debugfs_power_save_mode);
 	}
 
 	scnprintf(soc_name, sizeof(soc_name), "%s-%s", ath12k_bus_str(ab->hif.bus),
@@ -4286,7 +4336,6 @@ static const struct file_operations ath12k_fops_reset_dp_tid_stats = {
 void ath12k_debugfs_soc_destroy(struct ath12k_base *ab)
 {
 	struct dentry *debugfs_ath12k;
-	struct dentry *debugfs_ath12k_compress_dump;
 
 	if(!ab->debugfs_soc)
 		return;
@@ -4297,9 +4346,8 @@ void ath12k_debugfs_soc_destroy(struct ath12k_base *ab)
 	/* Clean up compress_fw_dump file if it exists */
 	debugfs_ath12k = debugfs_lookup("ath12k", NULL);
 	if (debugfs_ath12k) {
-		debugfs_ath12k_compress_dump = debugfs_lookup("compress_fw_dump",
-							      debugfs_ath12k);
-		debugfs_remove(debugfs_ath12k_compress_dump);
+		debugfs_lookup_and_remove("compress_fw_dump", debugfs_ath12k);
+		debugfs_lookup_and_remove("power_save_mode", debugfs_ath12k);
 		dput(debugfs_ath12k);
 	}
 
