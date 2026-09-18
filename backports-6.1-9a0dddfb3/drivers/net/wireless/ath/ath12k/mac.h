@@ -52,9 +52,11 @@ struct ath12k_generic_iter {
  * won't start, we have the same functionality already in hostapd. Unit
  * is seconds.
  */
-#define ATH12K_KEEPALIVE_MIN_IDLE		3747
-#define ATH12K_KEEPALIVE_MAX_IDLE		3895
-#define ATH12K_KEEPALIVE_MAX_UNRESPONSIVE	3900
+
+/* Max idle spec (65535)  + some offset for min , max and unresponsive */
+#define ATH12K_KEEPALIVE_MIN_IDLE          65682
+#define ATH12K_KEEPALIVE_MAX_IDLE          65830
+#define ATH12K_KEEPALIVE_MAX_UNRESPONSIVE  65835
 
 #define ATH12K_PDEV_TX_POWER_INVALID		((u32)-1)
 #define ATH12K_PDEV_TX_POWER_REFRESH_TIME_MSECS	5000 /* msecs */
