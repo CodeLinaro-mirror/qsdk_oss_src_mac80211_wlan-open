@@ -838,6 +838,7 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_WIPHY_RTS_THRESHOLD] = { .type = NLA_U32 },
 	[NL80211_ATTR_WIPHY_COVERAGE_CLASS] = { .type = NLA_U8 },
 	[NL80211_ATTR_STA_DFS_EN] = NLA_POLICY_MAX(NLA_U8, 1),
+	[NL80211_ATTR_STA_ISOLATED] = NLA_POLICY_MAX(NLA_U8, 1),
 	[NL80211_ATTR_WIPHY_DYN_ACK] = { .type = NLA_FLAG },
 
 	[NL80211_ATTR_IFTYPE] = NLA_POLICY_MAX(NLA_U32, NL80211_IFTYPE_MAX),
@@ -9213,6 +9214,7 @@ static int nl80211_send_station(struct sk_buff *msg, u32 cmd, u32 portid,
 	PUT_SINFO(NONPEER_PM, nonpeer_pm, u32);
 	PUT_SINFO(CONNECTED_TO_GATE, connected_to_gate, u8);
 	PUT_SINFO(CONNECTED_TO_AS, connected_to_as, u8);
+	PUT_SINFO(ISOLATED, isolated, u8);
 
 	if (sinfo->filled & BIT_ULL(NL80211_STA_INFO_BSS_PARAM)) {
 		bss_param = nla_nest_start_noflag(msg,
@@ -10336,6 +10338,11 @@ static int nl80211_set_station(struct sk_buff *skb, struct genl_info *info)
 		params.mgmt_rts_cts =
 			nla_get_u8(info->attrs[NL80211_ATTR_STA_MGMT_RTS_CTS_CONFIG]);
 		params.sta_modify_mask |= STATION_PARAM_APPLY_MGMT_RTS_CTS;
+	}
+
+	if (info->attrs[NL80211_ATTR_STA_ISOLATED]) {
+		params.isolated = nla_get_u8(info->attrs[NL80211_ATTR_STA_ISOLATED]);
+		params.sta_modify_mask |= STATION_PARAM_APPLY_ISOLATION;
 	}
 
 	err = nl80211_parse_sta_txpower_setting(info,
