@@ -106,6 +106,10 @@ int ath12k_wifi8_dp_tqm_cmd_send(struct ath12k_base *ab,
 		dp_cmd->cmd_type = type;
 		dp_cmd->handler = callback_fn;
 		memcpy(&dp_cmd->data, data, sizeof(*data));
+		dp_cmd->cmd_num = 0;
+		spin_lock_bh(&dp->tqm_cmd_lock);
+		list_add_tail(&dp_cmd->list, &dp->tqm_cmd_list);
+		spin_unlock_bh(&dp->tqm_cmd_lock);
 	}
 
 	cmd_ring = &ab->hal.srng_list[dp_wifi8->tqm_cmd_ring.ring_id];
@@ -114,24 +118,36 @@ int ath12k_wifi8_dp_tqm_cmd_send(struct ath12k_base *ab,
 	//error, hence return error code
 	if (cmd_num < 0) {
 		ath12k_warn(ab, "Failed to send TQM command: %d", cmd_num);
-		kfree(dp_cmd);
+		if (dp_cmd) {
+			spin_lock_bh(&dp->tqm_cmd_lock);
+			list_del(&dp_cmd->list);
+			spin_unlock_bh(&dp->tqm_cmd_lock);
+			kfree(dp_cmd);
+		}
 		return cmd_num;
 	}
 
 	if (!dp_cmd)
 		return 0;
 
-	//cmd_num starts from 1
+	/* cmd_num starts from 1; 0 means the HW ring was full or the
+	 * command was not written.
+	 */
 	if (cmd_num == 0) {
 		ath12k_warn(ab, "TQM command returned zero cmd_num");
+		spin_lock_bh(&dp->tqm_cmd_lock);
+		list_del(&dp_cmd->list);
+		spin_unlock_bh(&dp->tqm_cmd_lock);
 		kfree(dp_cmd);
 		return -EINVAL;
 	}
 
-	dp_cmd->cmd_num = cmd_num;
-	spin_lock_bh(&dp->tqm_cmd_lock);
-	list_add_tail(&dp_cmd->list, &dp->tqm_cmd_list);
-	spin_unlock_bh(&dp->tqm_cmd_lock);
+	/* Publish the real cmd_num.  The status-ring processor uses
+	 * READ_ONCE() on cmd_num so it will not match this entry until
+	 * the store is visible, preventing a false-positive match on the
+	 * sentinel value 0.
+	 */
+	WRITE_ONCE(dp_cmd->cmd_num, cmd_num);
 
 	return 0;
 }
@@ -196,7 +212,8 @@ int ath12k_wifi8_dp_tx_process_tqm_status(struct ath12k_dp *dp, int budget)
 
 		spin_lock_bh(&dp->tqm_cmd_lock);
 		list_for_each_entry_safe(cmd, tmp, &dp->tqm_cmd_list, list) {
-			if (tqm_status.status_hdr.status_num == cmd->cmd_num) {
+			if (READ_ONCE(cmd->cmd_num) &&
+			    tqm_status.status_hdr.status_num == READ_ONCE(cmd->cmd_num)) {
 				found = true;
 				list_del(&cmd->list);
 				break;
