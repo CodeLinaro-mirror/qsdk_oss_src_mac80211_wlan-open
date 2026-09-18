@@ -1597,9 +1597,9 @@ int ath12k_wifi8_peer_tx_tid_update_for_smd(struct ath12k_base *ab,
 		 * ahsta->smd_info and will be pushed to FW via WMI.
 		 */
 		if (tx_tid_ctx->tid != TQM_NON_DATA_TID) {
-			ath12k_dbg(ab, ATH12K_DBG_DP_TX,
-				   "SMD TX update: no mpduq tid %d peer %pM, skip\n",
-				   tx_tid_ctx->tid, dp_peer->addr);
+			ath12k_dbg_level(ab, ATH12K_DBG_SMD, ATH12K_DBG_L3,
+					 "SMD TX update: no mpduq tid %d peer %pM, skip\n",
+					 tx_tid_ctx->tid, dp_peer->addr);
 			spin_unlock_bh(&dp_hw->peer_hash_lock);
 			return 0;
 		}
@@ -1637,9 +1637,9 @@ int ath12k_wifi8_peer_tx_tid_update_for_smd(struct ath12k_base *ab,
 	spin_unlock_bh(&tx_flow_info->tx_q_lock);
 	spin_unlock_bh(&dp_hw->peer_hash_lock);
 
-	ath12k_dbg(ab, ATH12K_DBG_DP_TX,
-		   "SMD TX update done for peer %pM tid %d: SSN=0x%x\n",
-		   peer_addr, tx_tid_ctx->tid, tx_tid_ctx->ssn);
+	ath12k_dbg_level(ab, ATH12K_DBG_SMD, ATH12K_DBG_L3,
+			 "SMD TX update done for peer %pM tid %d: SSN=0x%x\n",
+			 peer_addr, tx_tid_ctx->tid, tx_tid_ctx->ssn);
 
 	return 0;
 }
