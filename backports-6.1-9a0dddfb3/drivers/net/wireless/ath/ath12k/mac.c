@@ -376,8 +376,8 @@ static void ath12k_wmi_migration_cmd_work(struct work_struct *work);
 static void ath12k_mac_vdev_ml_max_rec_links(struct ath12k_link_vif *arvif,
 					     u8 ml_max_rec_links);
 static void ath12k_set_dscp_tid_work(struct wiphy *wiphy, struct wiphy_work *work);
-static bool ath12k_mac_is_bridge_required(struct ath12k_base *ab, u8 device_bitmap,
-					  u8 num_devices, u16 *bridge_bitmap);
+static bool ath12k_mac_is_bridge_required(u8 device_bitmap, u8 num_devices,
+					  u16 *bridge_bitmap);
 static void ath12k_mac_nrp_delete(struct ath12k *ar);
 static u8 ath12k_mac_get_num_pwr_levels(struct cfg80211_chan_def *chan_def,
 					bool is_psd);
@@ -940,11 +940,8 @@ ath12k_mac_fill_reg_tpc_info_with_psd_for_client_sp_pwr_mode(
 
 bool ath12k_mac_is_bridge_vdev(struct ath12k_link_vif *arvif)
 {
-	if (arvif->vdev_subtype == WMI_VDEV_SUBTYPE_BRIDGE) {
-		if (!ath12k_core_bridge_link_allowed(arvif->ar->ab))
-			ath12k_warn(arvif->ar->ab, "Bridge link is not allowed!");
+	if (arvif->vdev_subtype == WMI_VDEV_SUBTYPE_BRIDGE)
 		return true;
-	}
 	return false;
 }
 EXPORT_SYMBOL(ath12k_mac_is_bridge_vdev);
@@ -6413,7 +6410,7 @@ void ath12k_bss_assoc(struct ath12k *ar,
 			ag = ar->ab->ag;
 			num_devices = ag->num_devices - ag->num_bypassed;
 
-			if (!ath12k_mac_is_bridge_required(ar->ab, ahsta->device_bitmap,
+			if (!ath12k_mac_is_bridge_required(ahsta->device_bitmap,
 							   num_devices,
 							   &bridge_bitmap)) {
 				rcu_read_unlock();
@@ -7379,13 +7376,6 @@ ath12k_mac_remove_and_unassign_bridge_vdevs(struct ieee80211_hw *hw,
 				   link_id, links);
 			continue;
 		}
-
-		if (!ath12k_core_bridge_link_allowed(arvif->ar->ab)) {
-			ath12k_warn(arvif->ar->ab,
-				    "Bridge vdev is not allowed, skip remove");
-			return;
-		}
-
 		ath12k_mac_remove_link_interface(hw, arvif);
 		ath12k_mac_unassign_link_vif(arvif);
 	}
@@ -7887,17 +7877,13 @@ int ath12k_mac_get_bridge_link_id_from_ahvif(struct ath12k_vif *ahvif,
 	return ret;
 }
 
-static bool ath12k_mac_is_bridge_required(struct ath12k_base *ab, u8 device_bitmap,
-					  u8 num_devices, u16 *bridge_bitmap)
+static bool ath12k_mac_is_bridge_required(u8 device_bitmap, u8 num_devices,
+					  u16 *bridge_bitmap)
 {
 	bool bridge_needed = false;
 	u8 adj_device[ATH12K_MAX_SOCS] = {0};
 	u8 i, next, prev;
 	u8 device_idx = 0;
-
-	/* Bridging is not needed for all devices */
-	if (!ath12k_core_bridge_link_allowed(ab))
-		return false;
 
 	/* There is no need to check for bridging in-case of
 	 * number of devices less than 3 and only one link is added.
@@ -8512,13 +8498,6 @@ static void ath12k_mac_bridge_vdevs_down(struct ieee80211_hw *hw,
 				   link_id);
 			continue;
 		}
-
-		if (!ath12k_core_bridge_link_allowed(arvif->ar->ab)) {
-			ath12k_warn(arvif->ar->ab,
-				    "Bridge vdev is not allowed, skip bring-down");
-			return;
-		}
-
 		/* Proceed bridge vdev down only after all the normal vdevs are down */
 		if (link_id < IEEE80211_MLD_MAX_NUM_LINKS) {
 			if (ath12k_erp_get_sm_state() == ATH12K_ERP_ENTER_COMPLETE &&
@@ -8556,9 +8535,6 @@ static void ath12k_mac_bridge_vdevs_up(struct ath12k_link_vif *arvif)
 	u8 link_id = ATH12K_BRIDGE_LINK_MIN;
 	unsigned long links;
 
-	if (!ath12k_core_bridge_link_allowed(arvif->ar->ab))
-		return;
-
 	/* Proceed only for MLO */
 	if (!ahvif->vif->valid_links)
 		return;
@@ -8592,9 +8568,6 @@ void ath12k_mac_bridge_vdev_up(struct ath12k_link_vif *arvif)
 {
 	struct ath12k_wmi_vdev_up_params params = { 0 };
 	int ret;
-
-	if (!ath12k_core_bridge_link_allowed(arvif->ar->ab))
-		return;
 
 	if (arvif->is_up)
 		return;
@@ -15278,9 +15251,6 @@ int ath12k_mac_init_bridge_peer(struct ath12k_hw *ah, struct ieee80211_sta *sta,
 	u8 link_id = 0;
 	int ret = -EINVAL;
 
-	if (!ath12k_core_bridge_link_allowed(ah->radio->ab))
-		return 0;
-
 	if (ath12k_mac_get_bridge_link_id_from_ahvif(ahvif, bridge_bitmap,
 						     &link_id)) {
 		ath12k_err(NULL, "Unable to find Bridge link vif for bitmap 0x%x\n",
@@ -16134,8 +16104,8 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 
 	if ((ahvif->vdev_type == WMI_VDEV_TYPE_AP || ahvif->vdev_type == WMI_VDEV_TYPE_STA) &&
 	    (old_state == IEEE80211_STA_AUTH && new_state == IEEE80211_STA_ASSOC) &&
-	    ath12k_mac_is_bridge_required(ar->ab, ahsta->device_bitmap,
-					  active_num_devices, &bridge_bitmap)) {
+	    ath12k_mac_is_bridge_required(ahsta->device_bitmap, active_num_devices,
+					  &bridge_bitmap)) {
 		ret = ath12k_mac_init_bridge_peer(ah, sta, ahvif, bridge_bitmap);
 		if (ret)
 			goto exit;
@@ -25858,12 +25828,6 @@ ath12k_mac_stop_bridge_vdevs(struct ieee80211_hw *hw,
 			continue;
 		}
 
-		if (!ath12k_core_bridge_link_allowed(arvif->ar->ab)) {
-			ath12k_warn(arvif->ar->ab,
-				    "Bridge vdev is not allowed, skip stop");
-			return;
-		}
-
 		/* Proceed bridge vdev stop only after all the normal vdevs are stopped */
 		if (link_id < IEEE80211_MLD_MAX_NUM_LINKS) {
 			if (ath12k_erp_get_sm_state() == ATH12K_ERP_ENTER_COMPLETE) {
@@ -26141,13 +26105,12 @@ static void ath12k_mac_configure_bridge_vap_sta_mode(struct ieee80211_hw *hw,
 	struct ath12k_hw *ah = hw->priv;
 	struct ath12k_vif *ahvif = (void *)vif->drv_priv;
 	struct ieee80211_chanctx_conf *bridge_ctx = NULL;
-	struct ath12k *ar = ah->radio;
 	int ret;
 	u32 device_idx = 0;
 	unsigned long bridge_bitmap = 0;
 	u8 bridge_ar_link_idx;
 
-	ret = ath12k_mac_is_bridge_required(ar->ab, ahvif->device_bitmap,
+	ret = ath12k_mac_is_bridge_required(ahvif->device_bitmap,
 					    num_devices,
 					    (u16 *)&bridge_bitmap);
 	if (!ret)
@@ -26289,9 +26252,6 @@ static int ath12k_mac_create_and_start_bridge(struct ieee80211_hw *hw,
 	int ret;
 	u8 link_id = 0, bridge_ar_link_idx, curr_link_id;
 	bool bridge_needed = false;
-
-	if (!ath12k_core_bridge_link_allowed(ar->ab))
-		goto exit;
 
 	/* Currently bridge vdev addition is supported in AP and STA mode */
 	if (vif->type != NL80211_IFTYPE_AP &&
@@ -26486,9 +26446,6 @@ EXPORT_SYMBOL(ath12k_mac_op_assign_vif_chanctx);
 static bool ath12k_mac_is_bridge_vdev_present(struct ath12k *ar)
 {
 	struct ath12k_link_vif *arvif;
-
-	if (!ath12k_core_bridge_link_allowed(ar->ab))
-		return false;
 
 	list_for_each_entry(arvif, &ar->arvifs, list) {
 		if (ath12k_mac_is_bridge_vdev(arvif))
@@ -33288,9 +33245,6 @@ void ath12k_mac_add_bridge_vdevs_iter(void *data, u8 *mac,
 	rcu_read_lock();
 	arvif = rcu_dereference(ahvif->link[link_id]);
 	rcu_read_unlock();
-
-	if (!ath12k_core_bridge_link_allowed(arvif->ar->ab))
-		return;
 
 	ath12k_mac_create_and_start_bridge(ah->hw, vif, vif->link_conf[link_id],
 					   NULL, active_num_devices);
