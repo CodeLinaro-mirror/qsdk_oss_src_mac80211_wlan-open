@@ -20,6 +20,10 @@
 #define ATH12K_CFR_GAIN_INFO_L_U16 GENMASK(15, 0)
 #define ATH12K_CFR_GAIN_INFO_M_U16 GENMASK(31, 16)
 
+static void
+ath12k_cfr_update_rcc_debug_stats(struct ath12k *ar,
+				  const struct hal_rx_mon_ppdu_info *ppdu_info);
+
 static inline
 s32 ath12k_cfr_snr_to_signal_strength(u8 snr)
 {
@@ -427,7 +431,6 @@ static int ath12k_cfr_correlate_and_relay(struct ath12k *ar,
 	if (event_type == ATH12K_CORRELATE_TX_EVENT) {
 		if (lut->tx_recv)
 			cfr->cfr_dma_aborts++;
-		cfr->tx_evt_cnt++;
 		lut->tx_recv = true;
 	} else if (event_type == ATH12K_CORRELATE_DBR_EVENT) {
 		cfr->dbr_evt_cnt++;
@@ -1195,6 +1198,8 @@ static int ath12k_cfr_process_rx_tlv_ppdu(struct ath12k *ar,
 	header->meta_enh.puncture_bitmap = puncture_bitmap;
 	header->meta_enh.beamformed = ppdu_info->beamformed;
 
+	cfr->rx_tlv_evt_cnt++;
+
 	status = ath12k_cfr_correlate_and_relay(ar, lut,
 						ATH12K_CORRELATE_TX_EVENT);
 	if (status == ATH12K_CORRELATE_STATUS_RELEASE) {
@@ -1242,6 +1247,7 @@ static int ath12k_cfr_ppdu_rx_notifier(struct notifier_block *nb,
 	if (rx_evt->ppdu_info.device_id != ath12k_get_ab_device_id(ar->ab))
 		return NOTIFY_DONE;
 
+	ath12k_cfr_update_rcc_debug_stats(ar, &rx_evt->ppdu_info);
 	ath12k_cfr_process_rx_tlv_ppdu(ar, &rx_evt->ppdu_info);
 
 	return NOTIFY_DONE;
@@ -1386,6 +1392,8 @@ int ath12k_process_cfr_capture_event(struct ath12k_base *ab,
 	ab->hw_params->hw_ops->fill_cfr_hdr_info(ar, header, params);
 	lut->header_len = ATH12K_CFR_HEADER_LEN(0);
 	header->meta_enh.puncture_bitmap = arvif->chanctx.def.punctured;
+
+	cfr->tx_evt_cnt++;
 
 	status = ath12k_cfr_correlate_and_relay(ar, lut,
 						ATH12K_CORRELATE_TX_EVENT);
@@ -1629,12 +1637,228 @@ static const struct file_operations fops_configure_cfr_unassoc = {
 	.llseek = default_llseek,
 };
 
+static void
+ath12k_cfr_update_rcc_debug_stats(struct ath12k *ar,
+				  const struct hal_rx_mon_ppdu_info *ppdu_info)
+{
+	struct ath12k_cfr *cfr = &ar->cfr;
+	const struct hal_rx_ppdu_cfr_info *cfr_info = &ppdu_info->cfr_info;
+
+	spin_lock_bh(&cfr->lock);
+
+	if (cfr_info->chan_capture_status < ATH12K_CFR_CAPTURE_MAX)
+		cfr->rcc_stats.chan_capture_status[cfr_info->chan_capture_status]++;
+
+	if (cfr_info->rx_location_info_valid) {
+		cfr->rcc_stats.rx_loc_info_valid_cnt++;
+
+		if (cfr_info->bb_captured_channel) {
+			cfr->rcc_stats.bb_captured_channel_cnt++;
+			if (cfr_info->bb_captured_reason < FREEZE_REASON_MAX)
+				cfr->rcc_stats.reason_cnt[cfr_info->bb_captured_reason]++;
+		} else if (cfr_info->bb_captured_timeout) {
+			cfr->rcc_stats.bb_captured_timeout_cnt++;
+			if (cfr_info->bb_captured_reason < FREEZE_REASON_MAX)
+				cfr->rcc_stats.reason_cnt[cfr_info->bb_captured_reason]++;
+		}
+	}
+
+	spin_unlock_bh(&cfr->lock);
+}
+
+static const char *
+ath12k_cfr_rcc_capture_status_to_str(u32 capture_status)
+{
+	switch (capture_status) {
+	case ATH12K_CFR_CAPTURE_IDLE:
+		return "CAPTURE_IDLE";
+	case ATH12K_CFR_CAPTURE_BUSY:
+		return "CAPTURE_BUSY";
+	case ATH12K_CFR_CAPTURE_ACTIVE:
+		return "CAPTURE_ACTIVE";
+	case ATH12K_CFR_CAPTURE_NO_BUFFER:
+		return "CAPTURE_NO_BUFFER";
+	default:
+		return "UNKNOWN";
+	}
+}
+
+static const char *
+ath12k_cfr_rcc_freeze_reason_to_str(u32 freeze_reason)
+{
+	switch (freeze_reason) {
+	case FREEZE_REASON_TM:
+		return "FREEZE_REASON_TM";
+	case FREEZE_REASON_FTM:
+		return "FREEZE_REASON_FTM";
+	case FREEZE_REASON_ACK_RESP_TO_TM_FTM:
+		return "FREEZE_REASON_ACK_RESP_TO_TM_FTM";
+	case FREEZE_REASON_TA_RA_TYPE_FILTER:
+		return "FREEZE_REASON_TA_RA_TYPE_FILTER";
+	case FREEZE_REASON_NDPA_NDP:
+		return "FREEZE_REASON_NDPA_NDP";
+	case FREEZE_REASON_ALL_PACKET:
+		return "FREEZE_REASON_ALL_PACKET";
+	default:
+		return "UNKNOWN";
+	}
+}
+
+static int
+ath12k_cfr_append_rcc_debug_stats(struct ath12k_cfr *cfr,
+				  char *buf, size_t size)
+{
+	int len = 0;
+	u32 i;
+
+	spin_lock_bh(&cfr->lock);
+
+	len += scnprintf(buf + len, size - len,
+			 "bb_captured_channel_cnt: %llu\n",
+			 cfr->rcc_stats.bb_captured_channel_cnt);
+	len += scnprintf(buf + len, size - len,
+			 "bb_captured_timeout_cnt: %llu\n",
+			 cfr->rcc_stats.bb_captured_timeout_cnt);
+	len += scnprintf(buf + len, size - len,
+			 "rx_loc_info_valid_cnt: %llu\n",
+			 cfr->rcc_stats.rx_loc_info_valid_cnt);
+
+	len += scnprintf(buf + len, size - len, "Channel capture status:\n");
+	for (i = 0; i < ATH12K_CFR_CAPTURE_MAX; i++)
+		len += scnprintf(buf + len, size - len, "%s = %llu\n",
+				 ath12k_cfr_rcc_capture_status_to_str(i),
+				 cfr->rcc_stats.chan_capture_status[i]);
+
+	len += scnprintf(buf + len, size - len, "Freeze reason:\n");
+	for (i = 0; i < FREEZE_REASON_MAX; i++)
+		len += scnprintf(buf + len, size - len, "%s = %llu\n",
+				 ath12k_cfr_rcc_freeze_reason_to_str(i),
+				 cfr->rcc_stats.reason_cnt[i]);
+
+	spin_unlock_bh(&cfr->lock);
+
+	return len;
+}
+
+static ssize_t ath12k_read_file_rcc_debug_counters(struct file *file,
+						   char __user *user_buf,
+						   size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	struct ath12k_cfr *cfr = &ar->cfr;
+	char *buf;
+	const size_t buf_size = 4096;
+	ssize_t ret;
+	int len = 0;
+
+	buf = kzalloc(buf_size, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	spin_lock_bh(&cfr->lut_lock);
+
+	len += scnprintf(buf + len, buf_size - len,
+			 "dbr_evt_cnt = %llu\n", cfr->dbr_evt_cnt);
+	len += scnprintf(buf + len, buf_size - len,
+			 "tx_evt_cnt = %llu\n", cfr->tx_evt_cnt);
+	len += scnprintf(buf + len, buf_size - len,
+			 "rx_tlv_evt_cnt = %llu\n", cfr->rx_tlv_evt_cnt);
+	len += scnprintf(buf + len, buf_size - len,
+			 "release_cnt = %llu\n", cfr->release_cnt);
+	len += scnprintf(buf + len, buf_size - len, "Error cnt:\n");
+	len += scnprintf(buf + len, buf_size - len,
+			 "flush_dbr_cnt = %llu\n", cfr->flush_dbr_cnt);
+	len += scnprintf(buf + len, buf_size - len,
+			 "invalid_dma_length_cnt = %llu\n",
+			 cfr->invalid_dma_length_cnt);
+	len += scnprintf(buf + len, buf_size - len,
+			 "flush_timeout_dbr_cnt = %llu\n",
+			 cfr->flush_timeout_dbr_cnt);
+	len += scnprintf(buf + len, buf_size - len,
+			 "tx_dbr_cookie_lookup_fail = %llu\n",
+			 cfr->tx_dbr_lookup_fail);
+	len += scnprintf(buf + len, buf_size - len,
+			 "clear_txrx_event = %llu\n", cfr->clear_txrx_event);
+	len += scnprintf(buf + len, buf_size - len,
+			 "cfr_dma_aborts = %llu\n", cfr->cfr_dma_aborts);
+
+	spin_unlock_bh(&cfr->lut_lock);
+
+	len += scnprintf(buf + len, buf_size - len,
+			 "tx_peer_status_cfr_fail = %llu\n",
+			 cfr->tx_peer_status_cfr_fail);
+	len += scnprintf(buf + len, buf_size - len,
+			 "tx_evt_status_cfr_fail = %llu\n",
+			 cfr->tx_evt_status_cfr_fail);
+
+	len += ath12k_cfr_append_rcc_debug_stats(cfr, buf + len,
+						 buf_size - len);
+
+	ret = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	kfree(buf);
+
+	return ret;
+}
+
+static ssize_t ath12k_write_file_clr_dbg_counters(struct file *file,
+						  const char __user *ubuf,
+						  size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	struct ath12k_cfr *cfr = &ar->cfr;
+
+	if (!count)
+		return -EINVAL;
+
+	spin_lock_bh(&cfr->lut_lock);
+
+	cfr->tx_evt_cnt = 0;
+	cfr->dbr_evt_cnt = 0;
+	cfr->rx_tlv_evt_cnt = 0;
+	cfr->release_cnt = 0;
+	cfr->tx_dbr_lookup_fail = 0;
+	cfr->flush_dbr_cnt = 0;
+	cfr->invalid_dma_length_cnt = 0;
+	cfr->clear_txrx_event = 0;
+	cfr->cfr_dma_aborts = 0;
+	cfr->flush_timeout_dbr_cnt = 0;
+
+	spin_unlock_bh(&cfr->lut_lock);
+
+	cfr->tx_peer_status_cfr_fail = 0;
+	cfr->tx_evt_status_cfr_fail = 0;
+
+	spin_lock_bh(&cfr->lock);
+	memset(&cfr->rcc_stats, 0, sizeof(cfr->rcc_stats));
+	spin_unlock_bh(&cfr->lock);
+
+	return count;
+}
+
+static const struct file_operations fops_rcc_debug_counters = {
+	.read = ath12k_read_file_rcc_debug_counters,
+	.open = ath12k_debugfs_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+static const struct file_operations fops_clr_dbg_counters = {
+	.write = ath12k_write_file_clr_dbg_counters,
+	.open = ath12k_debugfs_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 static inline void ath12k_cfr_debug_unregister(struct ath12k *ar)
 {
 	debugfs_remove(ar->cfr.enable_cfr);
 	ar->cfr.enable_cfr = NULL;
 	debugfs_remove(ar->cfr.cfr_unassoc);
 	ar->cfr.cfr_unassoc = NULL;
+	debugfs_remove(ar->cfr.rcc_debug_counters);
+	ar->cfr.rcc_debug_counters = NULL;
+	debugfs_remove(ar->cfr.clr_dbg_counters);
+	ar->cfr.clr_dbg_counters = NULL;
 
 	if (ar->cfr.rfs_cfr_capture) {
 		relay_close(ar->cfr.rfs_cfr_capture);
@@ -1676,6 +1900,30 @@ static inline int ath12k_cfr_debug_register(struct ath12k *ar)
 	if (!ar->cfr.cfr_unassoc) {
 		ath12k_warn(ar->ab,
 			    "failed to open debugfs for unassoc pool in pdev %d\n",
+			    ar->pdev_idx);
+		ret = -EINVAL;
+		goto debug_unregister;
+	}
+
+	ar->cfr.rcc_debug_counters =
+		ath12k_debugfs_create_file("rcc_debug_counters",
+					   0400, ar->debug.debugfs_pdev,
+					   ar->ab, ar, &fops_rcc_debug_counters);
+	if (!ar->cfr.rcc_debug_counters) {
+		ath12k_warn(ar->ab,
+			    "failed to create RCC debug counters file in pdev %d\n",
+			    ar->pdev_idx);
+		ret = -EINVAL;
+		goto debug_unregister;
+	}
+
+	ar->cfr.clr_dbg_counters =
+		ath12k_debugfs_create_file("clr_dbg_counters",
+					   0200, ar->debug.debugfs_pdev,
+					   ar->ab, ar, &fops_clr_dbg_counters);
+	if (!ar->cfr.clr_dbg_counters) {
+		ath12k_warn(ar->ab,
+			    "failed to create RCC counter clear file in pdev %d\n",
 			    ar->pdev_idx);
 		ret = -EINVAL;
 		goto debug_unregister;
