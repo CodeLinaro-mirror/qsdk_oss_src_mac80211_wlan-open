@@ -2922,6 +2922,10 @@ int ath12k_wifi7_dp_rx_flow_fse_cache_operation(struct ath12k_base *ab,
 		if (!partner_ab || partner_ab->is_bypassed)
 			continue;
 
+		if (partner_ab->ag->wsi_remap_in_progress &&
+		    partner_ab->wsi_remap_state == ATH12K_WSI_BYPASS_ADD_DEVICE)
+			continue;
+
 		/* Skip sending HTT command during recovery, crash flush, or
 		 * when CE pipes are not yet initialized. Accessing an
 		 * uninitialized CE source ring causes a NULL dereference in
