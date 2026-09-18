@@ -1123,7 +1123,7 @@ static bool ieee80211_set_sdata_offload_flags(struct ieee80211_sub_if_data *sdat
 	return true;
 }
 
-static void ieee80211_set_vif_encap_ops(struct ieee80211_sub_if_data *sdata)
+void ieee80211_set_vif_encap_ops(struct ieee80211_sub_if_data *sdata)
 {
 	struct ieee80211_local *local = sdata->local;
 	struct ieee80211_sub_if_data *bss = sdata;
@@ -1149,6 +1149,7 @@ static void ieee80211_set_vif_encap_ops(struct ieee80211_sub_if_data *sdata)
 	sdata->dev->netdev_ops = enabled ? &ieee80211_dataif_8023_ops :
 					   &ieee80211_dataif_ops;
 }
+EXPORT_SYMBOL(ieee80211_set_vif_encap_ops);
 
 static void ieee80211_recalc_sdata_offload(struct ieee80211_sub_if_data *sdata)
 {
