@@ -1524,6 +1524,60 @@ int sta_info_move_state(struct sta_info *sta,
 	return _sta_info_move_state(sta, new_state, true);
 }
 
+static void ieee80211_purge_sta_pending(struct sta_info *sta)
+{
+	struct ieee80211_local *local = sta->local;
+	struct ieee80211_tx_info *info;
+	struct sk_buff_head *pending, freed;
+	struct ieee80211_key *key;
+	struct sk_buff *skb, *tmp;
+	spinlock_t *lock;
+	unsigned long flags;
+	int i, cpu;
+
+	__skb_queue_head_init(&freed);
+
+	for (i = 0; i < local->hw.queues; i++) {
+		for_each_possible_cpu(cpu) {
+			pending = per_cpu_ptr(local->pending[i], cpu);
+			lock = per_cpu_ptr(local->queue_stop_reason_lock, cpu);
+
+			spin_lock_irqsave(lock, flags);
+			if (skb_queue_empty(pending)) {
+				spin_unlock_irqrestore(lock, flags);
+				continue;
+			}
+
+			skb_queue_walk_safe(pending, skb, tmp) {
+				info = IEEE80211_SKB_CB(skb);
+
+				/* Match on the key's own sta back-pointer,
+				 * not the skb's addresses: those can be a
+				 * link address (MLO), or -- for a 4-address
+				 * WDS client behind an AP_VLAN using HW
+				 * 80211 encap offload -- a downstream
+				 * bridged device's address that has nothing
+				 * to do with this STA at all.
+				 */
+				if (!info->control.hw_key)
+					continue;
+
+				key = container_of(info->control.hw_key,
+						   struct ieee80211_key, conf);
+				if (key->sta != sta)
+					continue;
+
+				__skb_unlink(skb, pending);
+				__skb_queue_tail(&freed, skb);
+			}
+			spin_unlock_irqrestore(lock, flags);
+		}
+	}
+
+	while ((skb = __skb_dequeue(&freed)))
+		__ieee80211_free_txskb(&local->hw, skb);
+}
+
 static void __sta_info_destroy_part2(struct sta_info *sta, bool recalc)
 {
 	struct ieee80211_local *local = sta->local;
@@ -1557,6 +1611,14 @@ static void __sta_info_destroy_part2(struct sta_info *sta, bool recalc)
 		ret = _sta_info_move_state(sta, IEEE80211_STA_ASSOC, recalc);
 		WARN_ON_ONCE(ret);
 	}
+
+	/* Drop any skbs still sitting in the percpu queue-stop pending
+	 * lists (e.g. queued while TX was stopped for a channel switch)
+	 * that reference this STA, since they can carry a cached hw_key
+	 * pointer that ieee80211_free_sta_keys() below is about to free.
+	 */
+	if (!ieee80211_hw_check(&local->hw, HAS_TX_QUEUE))
+		ieee80211_purge_sta_pending(sta);
 
 	/* now keys can no longer be reached */
 	ieee80211_free_sta_keys(local, sta);
