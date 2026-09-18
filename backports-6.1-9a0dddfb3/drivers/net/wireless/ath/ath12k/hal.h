@@ -1474,6 +1474,12 @@ struct ath12k_hal {
 	const struct hal_ops *hal_ops;
 	const struct hal_mon_ops *hal_mon_ops;
 	u8 tlv_hdr_tag_shift;
+
+	/* HW capability to support full-band RSSI accuracy computation */
+	bool rssi_full_band_accuracy_en;
+
+	/* Gain correction in reserved fields of phyrx_rssi_legacy TLV */
+	bool rssi_gain_corr_in_rssi_legacy;
 	const struct ath12k_hw_regs *regs;
 	const struct ath12k_hw_hal_params *hal_params;
 	/* Available REO blocking resources bitmap */

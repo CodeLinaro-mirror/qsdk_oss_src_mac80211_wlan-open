@@ -385,15 +385,49 @@ void ath12k_dp_mon_update_radiotap(struct ath12k_pdev_dp *dp_pdev,
 				   struct sk_buff *mon_skb,
 				   struct ieee80211_rx_status *rxs)
 {
-	struct ieee80211_supported_band *sband;
-	u8 *ptr = NULL;
+
+	struct wmi_rssi_dbm_conv_offsets *rssi_offsets = NULL;
 	struct ath12k_pdev *pdev = dp_pdev->ar->pdev;
+	struct ieee80211_supported_band *sband;
+	s8 active_max_nf = S8_MIN;
+	u32 rx_chainmask = 0;
+	u8 *ptr = NULL;
+	int i;
 
 	rxs->flag |= RX_FLAG_MACTIME_START;
+
+	/*
+	 * Legacy signal/noise using scalar rssi_offset and avg_nf_dbm
+	 */
 	rxs->signal = (s8)(ppduinfo->rssi_db_comb_chain_pri20 +
-				dp_pdev->ar->rssi_offsets.rssi_offset);
+			   dp_pdev->ar->rssi_offsets.rssi_offset);
 	rxs->flag &= ~RX_FLAG_NO_SIGNAL_VAL;
 	rxs->noise = dp_pdev->ar->rssi_offsets.avg_nf_dbm;
+
+	/*
+	 * We perform this when RSSI Accuracy is enabled for the radio.
+	 * Override rxs->signal and rxs->noise using only active chains
+	 * (curr_rx_chainmask) to avoid inactive chains
+	 * biasing the noise floor upward.
+	 */
+	if (ath12k_hal_get_rssi_full_band_accuracy_en(&dp_pdev->ar->ab->hal)) {
+		rssi_offsets = &dp_pdev->ar->rssi_offsets;
+		rx_chainmask = rssi_offsets->curr_rx_chainmask;
+
+		for (i = 0; i < MAX_NUM_ANTENNA; i++) {
+			if (!(rx_chainmask & BIT(i)))
+				continue;
+			if (rssi_offsets->nf_dbm_per_chain[i] > active_max_nf)
+				active_max_nf =
+					rssi_offsets->nf_dbm_per_chain[i];
+		}
+		if (active_max_nf != S8_MIN) {
+			rxs->signal =
+				(s8)(ppduinfo->rssi_db_comb_chain_pri20
+				     + active_max_nf);
+			rxs->noise = active_max_nf;
+		}
+	}
 	rxs->nss = ppduinfo->nss + 1;
 
 	if (ppduinfo->userstats[ppduinfo->user_id].ampdu_present) {
@@ -1853,6 +1887,281 @@ ath12k_dp_mon_ppdu_per_user_rx_time_update(struct ath12k_pdev_dp *dp_pdev,
 }
 
 #define RSSI_OFFSET 100
+
+/**
+ * ath12k_dp_mon_compute_rssi_accuracy() - Compute full-band RSSI accuracy metrics
+ * @stats: RX signal statistics structure to be updated with the computed
+ *	full-band per-chain and combined RSSI/SNR values.
+ * @ppdu_info: Monitor PPDU information containing per-chain, per-subband
+ *	RSSI measurements and related PHY reception statistics.
+ * @rssi_offsets: RSSI-to-dBm conversion offsets and noise floor correction
+ *	values used for signal power calculations.
+ * @frame_type: Pre-classified frame type provided by the caller:
+ *	0 - Other/unknown frames.
+ *	1 - Data frames carrying payload.
+ *	2 - Management frames.
+ *	3 - Control/ACK frames.
+ *
+ * Computes full-band RSSI and signal power metrics for WiFi 8 PPDUs by
+ * aggregating per-subband RSSI measurements into full-band RSSI values on
+ * a per-chain basis and then combining them across all active receive
+ * chains. The function derives RSSI values in both dB and dBm domains using
+ * the configured RSSI conversion offsets and noise floor information.
+ *
+ * RSSI aggregation is performed in a firmware-compatible scaled domain
+ * (×64) using ath12k_db_add_array(). Intermediate arrays used during the
+ * computation are:
+ *
+ * - scaled[]: Per-subband RSSI values scaled to the ×64 domain (u16).
+ * - per_chain_scaled[]: Per-chain combined RSSI values in the ×64 domain.
+ * - per_chain_full_band[]: Per-chain full-band RSSI values converted back
+ *   to the dB domain (s16).
+ * - active_chain_scaled[]: Compacted array of active-chain scaled RSSI
+ *   values, ensuring inactive receive chains are excluded from combined
+ *   RSSI calculations.
+ *
+ * Scale-up:
+ *	u16 = (u8)(raw_rssi + linear_gain_correction) * 64
+ *
+ * Scale-down:
+ *	s8 = (s8)((scaled_value + 32) / 64)
+ *
+ * The use of u8 arithmetic during the scale-up step intentionally matches
+ * the firmware RSSI_SCALE_UP behaviour, where addition is performed in the
+ * unsigned byte domain and naturally wraps on overflow.
+ *
+ * The receive chain mask is obtained from
+ * rssi_offsets->curr_rx_chainmask, populated through the WMI RSSI dBm
+ * conversion event. RSSI aggregation and combined-chain computations are
+ * performed only for active receive chains indicated by this chain mask.
+ *
+ * In addition, the function updates per-chain and combined-chain RSSI
+ * statistics, computes the corresponding signal power values, and maintains
+ * EWMA-based averaging of the combined full-band RSSI metric for the
+ * specified frame type.
+ *
+ * The frame type classification is passed by the caller to avoid duplicating
+ * frame control parsing and frame categorization logic within this function.
+ */
+static void
+ath12k_dp_mon_compute_rssi_accuracy(struct ath12k_dp_link_peer_rx_signal_stats *stats,
+				    struct hal_rx_mon_ppdu_info *ppdu_info,
+				    struct wmi_rssi_dbm_conv_offsets *rssi_offsets,
+				    u8 frame_type)
+{
+	s16 per_chain_full_band[HAL_RX_MAX_NSS];
+	u16 active_chain_scaled[HAL_RX_MAX_NSS];
+	u16 per_chain_scaled[HAL_RX_MAX_NSS];
+	u16 scaled[HAL_RX_MAX_SUBBANDS];
+	s16 max_nf = S16_MIN;
+	int chain, seg, n_subbands, n_active_chains = 0;
+	u32 rx_chainmask = rssi_offsets->curr_rx_chainmask;
+	s8 lin_corr;
+	const s8 *rssi_sb = NULL;
+	int n_active_segs = 0;
+	s8 rssi_db_per_seg = 0;
+	u8 rssi_db_per_seg_with_corr = 0;
+	s16 nf = 0;	/* Noise floor */
+	unsigned long rssi_sc, rssi_sc_avg = 0;
+
+	/* Determine number of active subbands from ppdu bw */
+	switch (ppdu_info->bw) {
+	case HAL_RX_BW_40MHZ:
+		n_subbands = 2;
+		break;
+	case HAL_RX_BW_80MHZ:
+		n_subbands = 4;
+		break;
+	case HAL_RX_BW_160MHZ:
+		n_subbands = 8;
+		break;
+	case HAL_RX_BW_320MHZ:
+		n_subbands = 16;
+		break;
+	default:
+		n_subbands = 1;
+		break;
+	}
+
+	/*
+	 * Compute rssi_db_per_chain_full_band :
+	 * Scale each subband value up (×64), combine with binary tree reduction,
+	 * then scale the result back down to integer dB.
+	 * Only active chains (rx_chainmask bit set) contribute; inactive chains
+	 * are zeroed so they do not pollute the combined RSSI.
+	 */
+	for (chain = 0; chain < HAL_RX_MAX_NSS; chain++) {
+		if (!(rx_chainmask & BIT(chain))) {
+			per_chain_scaled[chain] = 0;
+			per_chain_full_band[chain] = 0;
+			stats->rssi_db_per_chain_full_band[chain] = 0;
+			continue;
+		}
+
+		lin_corr = ppdu_info->rssi_db_lin_corr_per_gain_per_chain[chain];
+
+		/*
+		 * FW/HAL PHY use ATH12K_RSSI_DB_PER_SUBBAND_INVALID as
+		 * the sentinel value for inactive subbands.  Skip those
+		 * entries so they do not bias the per-chain full-band
+		 * RSSI downward. Compact active subbands into scaled[]
+		 * before passing to ath12k_db_add_array().
+		 */
+		rssi_sb = ppdu_info->rssi_db_per_chain_per_subband[chain];
+		n_active_segs = 0;
+
+		for (seg = 0; seg < n_subbands && seg < HAL_RX_MAX_SUBBANDS; seg++) {
+			rssi_db_per_seg = rssi_sb[seg];
+
+			/* 128 (0x80 as u8) == inactive subband marker */
+			if ((u8)rssi_db_per_seg == ATH12K_RSSI_DB_PER_SUBBAND_INVALID)
+				continue;
+			/* u8 addition matches FW's RSSI_SCALE_UP(raw_val + gcomp) */
+			rssi_db_per_seg_with_corr = (u8)rssi_db_per_seg + (u8)lin_corr;
+			scaled[n_active_segs++] = (u16)rssi_db_per_seg_with_corr *
+							ATH12K_RSSI_SCALE_FACTOR;
+		}
+
+		if (n_active_segs == 0) {
+			/* All subbands inactive for this chain */
+			per_chain_scaled[chain] = 0;
+			per_chain_full_band[chain] = 0;
+			stats->rssi_db_per_chain_full_band[chain] = 0;
+			continue;
+		}
+
+		per_chain_scaled[chain] =
+			ath12k_db_add_array(scaled, n_active_segs);
+
+		/* Scale down: (x + 32) / 64, then reinterpret as signed dB */
+		per_chain_full_band[chain] =
+			(s8)((per_chain_scaled[chain] + ATH12K_RSSI_SCALE_DOWN_SHIFT) /
+					ATH12K_RSSI_SCALE_FACTOR);
+		stats->rssi_db_per_chain_full_band[chain] = per_chain_full_band[chain];
+		active_chain_scaled[n_active_chains++] = per_chain_scaled[chain];
+	}
+
+	/*
+	 * Compute rssi_db_comb_chain_full_band :
+	 * Combine only active-chain scaled values with binary tree reduction,
+	 * then scale down to integer dB.  Using active_chain_scaled[] (compacted)
+	 * avoids including zero-padded inactive chains in the combination.
+	 */
+	if (n_active_chains > 0)
+		stats->rssi_db_comb_chain_full_band =
+			(s8)((ath12k_db_add_array(active_chain_scaled,
+						  n_active_chains) +
+				ATH12K_RSSI_SCALE_DOWN_SHIFT) / ATH12K_RSSI_SCALE_FACTOR);
+	else
+		stats->rssi_db_comb_chain_full_band = 0;
+
+	/*
+	 * Compute rssi_dbm_comb_chain_full_band :
+	 * rssi_db_comb + max(nf_dbm_per_chain)
+	 * Only consider active chains when finding the maximum NF_DBM.
+	 */
+	for (chain = 0; chain < HAL_RX_MAX_NSS; chain++) {
+		if (!(rx_chainmask & BIT(chain)))
+			continue;
+
+		nf = (s16)rssi_offsets->nf_dbm_per_chain[chain];
+		if (nf > max_nf)
+			max_nf = nf;
+	}
+
+	if (max_nf == S16_MIN)
+		max_nf = (s16)rssi_offsets->rssi_offset; /* fallback to legacy */
+
+	stats->rssi_dbm_comb_chain_full_band =
+		stats->rssi_db_comb_chain_full_band + max_nf;
+
+	/*
+	 * Compute rssi_dbm_per_chain_full_band :
+	 * rssi_db_per_chain + nf_dbm_per_chain
+	 * Only compute for active chains; inactive chains are left as 0.
+	 */
+	for (chain = 0; chain < HAL_RX_MAX_NSS; chain++) {
+		if (!(rx_chainmask & BIT(chain))) {
+			stats->rssi_dbm_per_chain_full_band[chain] = 0;
+			continue;
+		}
+
+		nf = (s16)rssi_offsets->nf_dbm_per_chain[chain];
+		stats->rssi_dbm_per_chain_full_band[chain] =
+			per_chain_full_band[chain] + nf;
+	}
+
+	/*
+	 * Compute EWMA averaging on rssi_dbm_comb_chain_full_band (factor 1/8)
+	 */
+	ewma_avg_rssi_dbm_comb_add(&stats->avg_rssi_dbm_comb,
+				   (unsigned long)((stats->rssi_dbm_comb_chain_full_band +
+						    128) << 8));
+
+	stats->rssi_dbm_comb_chain_full_band_avg =
+		(s16)((ewma_avg_rssi_dbm_comb_read(&stats->avg_rssi_dbm_comb)
+		       >> 8) - 128);
+
+	/*
+	 * Compute Per-frame-type EWMA averaging :
+	 * Frame_type is pre-classified by the caller (ATH12K_FRAME_*)
+	 */
+	switch (frame_type) {
+	case ATH12K_FRAME_DATA: {
+		stats->rssi_dbm_comb_chain_full_band_data =
+			stats->rssi_dbm_comb_chain_full_band;
+		rssi_sc = (unsigned long)((stats->rssi_dbm_comb_chain_full_band_data +
+				       128) << 8);
+		ewma_avg_rssi_dbm_comb_data_add(&stats->avg_rssi_dbm_comb_data, rssi_sc);
+		rssi_sc_avg =
+			ewma_avg_rssi_dbm_comb_data_read(&stats->avg_rssi_dbm_comb_data);
+		stats->rssi_dbm_comb_chain_full_band_avg_data =
+			(s16)((rssi_sc_avg >> 8) - 128);
+		break;
+	}
+	case ATH12K_FRAME_MGMT: {
+		stats->rssi_dbm_comb_chain_full_band_mgmt =
+			stats->rssi_dbm_comb_chain_full_band;
+		rssi_sc = (unsigned long)((stats->rssi_dbm_comb_chain_full_band_mgmt +
+				       128) << 8);
+		ewma_avg_rssi_dbm_comb_mgmt_add(&stats->avg_rssi_dbm_comb_mgmt, rssi_sc);
+		rssi_sc_avg =
+			ewma_avg_rssi_dbm_comb_mgmt_read(&stats->avg_rssi_dbm_comb_mgmt);
+		stats->rssi_dbm_comb_chain_full_band_avg_mgmt =
+			(s16)((rssi_sc_avg >> 8) - 128);
+		break;
+	}
+	case ATH12K_FRAME_CTL: {
+		stats->rssi_dbm_comb_chain_full_band_ack =
+			stats->rssi_dbm_comb_chain_full_band;
+		rssi_sc = (unsigned long)((stats->rssi_dbm_comb_chain_full_band_ack +
+				       128) << 8);
+		ewma_avg_rssi_dbm_comb_ack_add(&stats->avg_rssi_dbm_comb_ack, rssi_sc);
+		rssi_sc_avg =
+			ewma_avg_rssi_dbm_comb_ack_read(&stats->avg_rssi_dbm_comb_ack);
+		stats->rssi_dbm_comb_chain_full_band_avg_ack =
+			(s16)((rssi_sc_avg >> 8) - 128);
+		break;
+	}
+	default: /* ATH12K_FRAME_OTHER: NULL, QOS_NULL, fc_valid=false */
+		break;
+	}
+
+	/*
+	 * Compute Per-chain EWMA averaging on rssi_dbm_per_chain_full_band
+	 */
+	for (chain = 0; chain < HAL_RX_MAX_NSS; chain++) {
+		rssi_sc = (unsigned long)((stats->rssi_dbm_per_chain_full_band[chain] +
+				       128) << 8);
+		ewma_avg_rssi_dbm_per_chain_add(&stats->avg_rssi_dbm_per_chain[chain],
+						rssi_sc);
+		rssi_sc_avg =
+		ewma_avg_rssi_dbm_per_chain_read(&stats->avg_rssi_dbm_per_chain[chain]);
+		stats->rssi_dbm_per_chain_full_band_avg[chain] =
+			(s16)((rssi_sc_avg >> 8) - 128);
+	}
+}
+
 static void
 ath12k_dp_calc_rx_peer_rssi(struct ath12k_pdev_dp *dp_pdev,
 			    struct ath12k_dp_link_peer *link_peer)
@@ -1888,10 +2197,16 @@ ath12k_dp_mon_link_peer_signal_stats(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_dp_link_peer *peer;
 	struct ath12k_dp_link_peer_rx_signal_stats *stats = NULL;
 	u32 last_rx_rate;
+	u16 stype = 0;
+	u8 frame_type;
 	u16 peer_id;
 	u8 pdev_id;
+	u16 fc = 0;
 	u8 soc_id;
 	u8 i;
+	bool rssi_acc_en;
+	bool fc_valid;
+	u16 frame_ctrl;
 
 	if (!dp_pdev)
 		return;
@@ -1917,29 +2232,102 @@ ath12k_dp_mon_link_peer_signal_stats(struct ath12k_pdev_dp *dp_pdev,
 	for (i = 0; i < HAL_RX_MAX_NSS; i++)
 		stats->rssi_db_per_chain_pri20[i] = ppdu_info->rssi_db_per_chain_pri20[i];
 
-	if (likely(ppdu_info->fc_valid)) {
-		switch (ppdu_info->frame_control & 0x00F0) {
-		case IEEE80211_STYPE_DATA:
-		case IEEE80211_STYPE_DATA_CFACK:
-		case IEEE80211_STYPE_DATA_CFPOLL:
-		case IEEE80211_STYPE_DATA_CFACKPOLL:
-		case IEEE80211_STYPE_QOS_DATA:
-		case IEEE80211_STYPE_QOS_DATA_CFACK:
-		case IEEE80211_STYPE_QOS_DATA_CFPOLL:
-		case IEEE80211_STYPE_QOS_DATA_CFACKPOLL:
-			if ((ppdu_info->preamble_type != HAL_RX_PREAMBLE_11A &&
-			     ppdu_info->preamble_type != HAL_RX_PREAMBLE_11B)) {
-				stats->snr_dp = ppdu_info->rssi_db_comb_chain_pri20;
-				ewma_avg_snr_dp_add(&stats->avg_snr_dp, stats->snr_dp);
-				stats->snr_dp_avg =
+	/*
+	 * Classify frame type to perform per-frame-type RSSI computations.
+	 *
+	 * frame_type values (ATH12K_FRAME_*):
+	 *   DATA (1): payload-carrying data subtypes (same list as WiFi7 snr_dp)
+	 *   MGMT (2): management frames
+	 *   CTL  (3): control/ACK frames
+	 *   OTHER(0): NULL, QOS_NULL, CF-only, or fc_valid=false
+	 */
+	frame_type = ATH12K_FRAME_OTHER;
+
+	/*
+	 * When rssi_full_band_accuracy_en is enabled,
+	 * use ppdu_info->nrp_info.fc_valid and ppdu_info->nrp_info.frame_control
+	 * for frame_type retrieval (populated from the monitor ring MPDU_START
+	 * TLV). Otherwise fall back to ppdu_info->fc_valid and
+	 * ppdu_info->frame_control.
+	 */
+	rssi_acc_en =
+		ath12k_hal_get_rssi_full_band_accuracy_en(&dp_pdev->ar->ab->hal);
+	fc_valid = rssi_acc_en ? (bool)ppdu_info->nrp_info.fc_valid
+				: (bool)ppdu_info->fc_valid;
+	frame_ctrl = rssi_acc_en ? (u16)ppdu_info->nrp_info.frame_control
+				: ppdu_info->frame_control;
+
+	if (likely(fc_valid)) {
+		fc = frame_ctrl;
+		stype = fc & IEEE80211_FCTL_STYPE;
+
+		if (ieee80211_is_data(fc)) {
+			/* Data frame: classify by subtype */
+			switch (stype) {
+			case IEEE80211_STYPE_DATA:
+			case IEEE80211_STYPE_DATA_CFACK:
+			case IEEE80211_STYPE_DATA_CFPOLL:
+			case IEEE80211_STYPE_DATA_CFACKPOLL:
+			case IEEE80211_STYPE_QOS_DATA:
+			case IEEE80211_STYPE_QOS_DATA_CFACK:
+			case IEEE80211_STYPE_QOS_DATA_CFPOLL:
+			case IEEE80211_STYPE_QOS_DATA_CFACKPOLL:
+				if (ppdu_info->preamble_type !=
+						HAL_RX_PREAMBLE_11A &&
+				    ppdu_info->preamble_type !=
+						HAL_RX_PREAMBLE_11B) {
+					stats->snr_dp =
+					ppdu_info->rssi_db_comb_chain_pri20;
+
+					ewma_avg_snr_dp_add(&stats->avg_snr_dp,
+							    stats->snr_dp);
+					stats->snr_dp_avg =
 					ewma_avg_snr_dp_read(&stats->avg_snr_dp);
+				}
+				frame_type = ATH12K_FRAME_DATA;
+				break;
+			default:
+				/* NULL, QOS_NULL, CF-only: ATH12K_FRAME_OTHER */
+				break;
 			}
-			break;
-		default:
-			break;
+		} else if (ieee80211_is_mgmt(fc)) {
+			frame_type = ATH12K_FRAME_MGMT;
+		} else if (ieee80211_is_ctl(fc)) {
+			frame_type = ATH12K_FRAME_CTL;
 		}
 	}
+
 	ath12k_dp_calc_rx_peer_rssi(dp_pdev, peer);
+
+	/*
+	 * Perform the following RSSI Accuracy Computation when
+	 * rssi_full_band_accuracy_en is enabled for the radio.
+	 */
+	if (ath12k_hal_get_rssi_full_band_accuracy_en(&dp_pdev->ar->ab->hal)) {
+		ath12k_dp_mon_compute_rssi_accuracy(stats, ppdu_info,
+						&dp_pdev->ar->rssi_offsets,
+						frame_type);
+		/*
+		 * Override stats->rssi / rssi_avg / rssi_dp / rssi_dp_avg
+		 * with the accurate full-band dBm values computed above.
+		 * Guard: rssi_dbm_comb_chain_full_band < 0 ensures this only
+		 * activates when the full-band computation produced a valid
+		 * negative dBm value.
+		 */
+		if (stats->rssi_dbm_comb_chain_full_band < 0) {
+			stats->rssi =
+				(s8)stats->rssi_dbm_comb_chain_full_band;
+			stats->rssi_avg =
+				(s8)stats->rssi_dbm_comb_chain_full_band_avg;
+
+			if (stats->rssi_dbm_comb_chain_full_band_data < 0) {
+				stats->rssi_dp =
+					(s8)stats->rssi_dbm_comb_chain_full_band_data;
+				stats->rssi_dp_avg =
+					(s8)stats->rssi_dbm_comb_chain_full_band_avg_data;
+			}
+		}
+	}
 
 	if (IS_VALID_RSSI(stats->rssi)) {
 		peer->max_rssi = max(peer->max_rssi, stats->rssi);

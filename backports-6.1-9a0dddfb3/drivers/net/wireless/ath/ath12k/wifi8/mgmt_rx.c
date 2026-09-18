@@ -378,8 +378,11 @@ ath12k_wifi8_mgmt_rx_h_ppdu(struct ath12k *partner_ar, struct sk_buff *mmpdu,
 	u8 channel_num, bw, sgi, rate_mcs, nss;
 	struct ath12k_link_sta *arsta;
 	struct ieee80211_hw *hw;
+	u32 rx_chainmask = 0;
+	s8 max_nf = S8_MIN;
 	bool is_cck;
 	s8 rssi;
+	int i;
 
 	status->freq = 0;
 	status->rate_idx = 0;
@@ -432,8 +435,30 @@ ath12k_wifi8_mgmt_rx_h_ppdu(struct ath12k *partner_ar, struct sk_buff *mmpdu,
 	sgi = desc_data->sgi;
 	rate_mcs = desc_data->rate_mcs;
 	nss = desc_data->nss;
+
+	/*
+	 * Legacy rssi: rssi_dbm_comb_chain_pri20 using scalar rssi_offset.
+	 * desc_data->snr = rssi_db_comb_chain_pri20 (combined SNR, pri20 MHz).
+	 */
 	rssi = desc_data->snr + partner_ar->rssi_offsets.rssi_offset;
 
+	/*
+	 * Perform the following when RSSI Accuracy is enabled for the radio.
+	 * Override using only active chains (curr_rx_chainmask)
+	 * to avoid inactive chains biasing the noise floor upward.
+	 */
+	if (ath12k_hal_get_rssi_full_band_accuracy_en(&partner_ar->ab->hal)) {
+		rx_chainmask = partner_ar->rssi_offsets.curr_rx_chainmask;
+
+		for (i = 0; i < MAX_NUM_ANTENNA; i++) {
+			if (!(rx_chainmask & BIT(i)))
+				continue;
+			if (partner_ar->rssi_offsets.nf_dbm_per_chain[i] > max_nf)
+				max_nf = partner_ar->rssi_offsets.nf_dbm_per_chain[i];
+		}
+		if (max_nf != S8_MIN)
+			rssi = desc_data->snr + max_nf;
+	}
 	status->signal = rssi;
 
 	switch (pkt_type) {

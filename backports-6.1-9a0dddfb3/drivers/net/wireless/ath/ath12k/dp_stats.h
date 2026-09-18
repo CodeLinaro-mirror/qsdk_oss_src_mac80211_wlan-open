@@ -1367,6 +1367,11 @@ DECLARE_EWMA(avg_snr, 0, 8)
 DECLARE_EWMA(avg_snr_dp, 0, 8)
 DECLARE_EWMA(avg_rssi, 10, 8)
 DECLARE_EWMA(avg_rssi_dp, 10, 8)
+DECLARE_EWMA(avg_rssi_dbm_comb, 10, 8)		/*EWMA for rssi_dbm_comb_chain_full_band*/
+DECLARE_EWMA(avg_rssi_dbm_comb_data, 10, 8)	/*EWMA for data frame RSSI*/
+DECLARE_EWMA(avg_rssi_dbm_comb_mgmt, 10, 8)	/*EWMA for mgmt frame RSSI*/
+DECLARE_EWMA(avg_rssi_dbm_comb_ack, 10, 8)	/*EWMA for ACK frame RSSI*/
+DECLARE_EWMA(avg_rssi_dbm_per_chain, 10, 8)	/*EWMA for per-chain full-band RSSI*/
 
 /**
  * struct ath12k_dp_link_peer_rx_signal_stats - Per-peer signal statistics
@@ -1384,34 +1389,71 @@ DECLARE_EWMA(avg_rssi_dp, 10, 8)
  * @rssi:             Current received signal strength indicator (RSSI) in dBm
  * @rssi_dp:          Data path specific RSSI value
  * @channel_bw:       Represents the effective channel width (in MHz) associated with
- *                    the peer’s signal. Used to compute bandwidth-dependent offsets
+ *                    the peer's signal. Used to compute bandwidth-dependent offsets
  *                    during RSSI calculations.
  *
- * @rssi_db_per_chain_pri20: Represents the per chain primary 20 RSSI (raw unsigned/SNR).
+ * @rssi_db_per_chain_pri20: Per-chain primary 20 MHz SNR (raw unsigned, from HW TLV).
  *
  * This structure holds both instantaneous and averaged signal quality
  * metrics (SNR and RSSI) for a given peer, including data path specific
  * values and EWMA smoothing helpers along with current bw info of signal.
  *
- * Fields are ordered largest-alignment-first to minimize struct padding.
+ * Fields are grouped by alignment (largest first) to eliminate padding:
+ *   Group 1 (8-byte): all EWMA trackers (unsigned long each)
+ *   Group 2 (2-byte): all s16/u16 scalars and arrays
+ *   Group 3 (1-byte): all u8/s8 scalars and arrays
  */
 struct ath12k_dp_link_peer_rx_signal_stats {
-	struct ewma_avg_snr avg_snr;
+	/* Legacy SNR/RSSI EWMA trackers */
+	struct ewma_avg_snr    avg_snr;
 	struct ewma_avg_snr_dp avg_snr_dp;
-	struct ewma_avg_rssi avg_rssi;
+	struct ewma_avg_rssi   avg_rssi;
 	struct ewma_avg_rssi_dp avg_rssi_dp;
 
+	/* RSSI Accuracy: EWMA trackers for full-band dBm values */
+	struct ewma_avg_rssi_dbm_comb      avg_rssi_dbm_comb;
+	struct ewma_avg_rssi_dbm_comb_data avg_rssi_dbm_comb_data;
+	struct ewma_avg_rssi_dbm_comb_mgmt avg_rssi_dbm_comb_mgmt;
+	struct ewma_avg_rssi_dbm_comb_ack  avg_rssi_dbm_comb_ack;
+
+	/* RSSI Accuracy: Per-chain EWMA tracker for rssi_dbm_per_chain_full_band */
+	struct ewma_avg_rssi_dbm_per_chain avg_rssi_dbm_per_chain[HAL_RX_MAX_NSS];
+
+	/* Legacy averaged SNR/RSSI */
 	u16 snr_avg;
 	u16 snr_dp_avg;
 	s16 rssi_avg;
 	s16 rssi_dp_avg;
 
+	/* RSSI Accuracy: Full-band dB (linear domain) per chain and combined */
+	s16 rssi_db_per_chain_full_band[HAL_RX_MAX_NSS];
+	s16 rssi_db_comb_chain_full_band;
+
+	/* RSSI Accuracy: Full-band dBm (absolute) per chain and combined */
+	s16 rssi_dbm_per_chain_full_band[HAL_RX_MAX_NSS];
+	s16 rssi_dbm_comb_chain_full_band;
+
+	/* RSSI Accuracy: Per-frame-type instantaneous full-band dBm */
+	s16 rssi_dbm_comb_chain_full_band_data;
+	s16 rssi_dbm_comb_chain_full_band_mgmt;
+	s16 rssi_dbm_comb_chain_full_band_ack;
+
+	/* RSSI Accuracy: EWMA-averaged full-band dBm (factor 1/8) */
+	s16 rssi_dbm_comb_chain_full_band_avg;
+	s16 rssi_dbm_comb_chain_full_band_avg_data;
+	s16 rssi_dbm_comb_chain_full_band_avg_mgmt;
+	s16 rssi_dbm_comb_chain_full_band_avg_ack;
+	s16 rssi_dbm_per_chain_full_band_avg[HAL_RX_MAX_NSS];
+
+	/* Legacy instantaneous SNR/RSSI */
 	u8 snr;
 	s8 rssi_region_offset;
 	u8 snr_dp;
 	s8 rssi;
 	s8 rssi_dp;
 	u8 channel_bw;
+
+	/* RSSI Accuracy: Per-chain primary 20 MHz RSSI (raw unsigned, from HW TLV) */
 	u8 rssi_db_per_chain_pri20[HAL_RX_MAX_NSS];
 };
 
@@ -2068,4 +2110,112 @@ void ath12k_dp_netstats_peer_update(struct ath12k_dp_hw *dp_hw,
 				    const u8 *peer_mac_filter,
 				    struct rtnl_link_stats64 *stats,
 				    struct ieee80211_vif *vif);
+
+/*
+ * Frame type classification for RSSI Accuracy Computations
+ */
+#define ATH12K_FRAME_OTHER  0
+#define ATH12K_FRAME_DATA   1
+#define ATH12K_FRAME_MGMT   2
+#define ATH12K_FRAME_CTL    3
+
+/*
+ * struct ath12k_db_add_table - Calibration table for RSSI
+ *
+ * Logarithmic power addition: result = max(a,b) + table[clamp((max-min)/16, 40)]
+ *
+ * Aligned with FW's calcRssiComb_fast / COMB_R implementation:
+ *   - Values are scaled ×64 (RSSI_SCALE_UP) for sub-dB precision
+ *   - Table has 41 entries indexed at delta/16 in the scaled domain
+ *   - table[k] = round(10*log10(1 + 10^(-k*16/64/10)) * 64)
+ *     = round(10*log10(1 + 10^(-k/40)) * 64)
+ *
+ * RSSI_SCALE_UP(x)         = ((x) & 0xFF) * 64
+ * RSSI_SCALE_DOWN_ROUND(x) = ((x) + 32) / 64
+ */
+static const u8 ath12k_db_add_table[41] = {
+	193, 185, 177, 170, 162, 156, 149, 142, 136, 130,
+	124, 118, 113, 108, 103,  98,  93,  89,  84,  80,
+	 76,  73,  69,  66,  62,  59,  56,  53,  51,  48,
+	 45,  43,  41,  39,  37,  35,  33,  31,  30,  28,
+	 26
+};
+
+/**
+ * ath12k_db_add() - Log-domain addition of two x64-scaled RSSI values
+ * @a: First RSSI value in x64-scaled dB domain (dBm * 64).
+ * @b: Second RSSI value in x64-scaled dB domain (dBm * 64).
+ *
+ * Combines two RSSI measurements represented in the ath12k internal
+ * x64-scaled logarithmic domain. Since RSSI values are expressed in dB,
+ * direct linear addition is not possible. The function approximates
+ * logarithmic power summation using a lookup table.
+ *
+ * The larger of the two inputs is selected as the base value and the
+ * difference between the larger and smaller values is quantized in
+ * 1/16 dB steps. The quantized delta is used to index
+ * ath12k_db_add_table[], which contains the corresponding logarithmic
+ * correction factors. The correction is then added to the larger RSSI
+ * value to obtain the equivalent combined power level.
+ *
+ * The lookup table index is saturated at 40 to avoid out-of-range
+ * accesses and because larger RSSI differences contribute negligibly
+ * to the combined result.
+ *
+ * Return: Combined RSSI value in the same x64-scaled dB domain
+ * (dBm * 64).
+ */
+static inline u16 ath12k_db_add(u16 a, u16 b)
+{
+	u16 mx = max(a, b);
+	u16 d  = (u16)((mx - min(a, b)) / 16);
+
+	return mx + ath12k_db_add_table[min_t(u16, d, 40)];
+}
+
+/**
+ * ath12k_db_add_array() - Aggregate multiple x64-scaled RSSI values
+ * @vals: Array containing RSSI values in the x64-scaled dB domain
+ *	(dBm * 64). The array is updated in place during processing.
+ * @n: Number of valid RSSI entries in @vals.
+ *
+ * Combines a set of RSSI values represented in the ath12k internal
+ * x64-scaled logarithmic domain into a single equivalent RSSI value.
+ * The aggregation is performed using repeated log-domain addition via
+ * ath12k_db_add(), preserving the logarithmic power relationship
+ * between the input measurements.
+ *
+ * To maintain alignment with the firmware implementation, the function
+ * uses an in-place binary tree reduction algorithm. During each pass,
+ * adjacent value pairs are combined and written back into the same
+ * array, reducing the number of active elements by approximately half.
+ * This process continues for log2(N) reduction stages until a single
+ * combined value remains.
+ *
+ * When the number of active elements in a reduction stage is odd, the
+ * final unpaired element is propagated unchanged to the next stage,
+ * ensuring that all input values contribute to the final result.
+ *
+ * Return: Combined RSSI value in the x64-scaled dB domain (dBm * 64).
+ * Returns 0 when @n is less than or equal to zero.
+ */
+static inline u16 ath12k_db_add_array(u16 *vals, int n)
+{
+	int ns, i;
+
+	if (n <= 0)
+		return 0;
+	if (n == 1)
+		return vals[0];
+
+	/* In-place binary tree reduction: log2(n) passes */
+	for (ns = n; ns > 1; ns = (ns + 1) / 2) {
+		for (i = 0; i < ns / 2; i++)
+			vals[i] = ath12k_db_add(vals[i * 2], vals[i * 2 + 1]);
+		if (ns & 1) /* odd: carry last element forward */
+			vals[ns / 2] = vals[ns - 1];
+	}
+	return vals[0];
+}
+
 #endif
