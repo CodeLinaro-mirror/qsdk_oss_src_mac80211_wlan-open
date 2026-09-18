@@ -19616,6 +19616,7 @@ int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	struct ath12k_mgmt_frame_stats *stats;
 	enum hal_encrypt_type enctype;
 	bool is_cfr = false;
+	bool skip = false;
 	bool is_deauth_disassoc;
 	unsigned int mic_len;
 	bool mlo_params_valid;
@@ -19641,6 +19642,53 @@ int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		return -ENOSPC;
 
 	if (!(skb_cb->flags & ATH12K_SKB_HW_80211_ENCAP)) {
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+		if ((skb_cb->flags & ATH12K_SKB_MONRAW_TX) &&
+		    (skb_cb->flags & ATH12K_SKB_CIPHER_SET) &&
+		    ieee80211_has_protected(hdr->frame_control)) {
+			size_t hdr_len = ieee80211_hdrlen(hdr->frame_control);
+			unsigned int iv_len, icv_len;
+			u32 mhdr_len = arvif->ahvif->dp_vif.dp_extn.mhdr_len;
+			u8 mhdr_save[sizeof(struct meta_hdr_s)];
+
+			enctype = ath12k_dp_tx_get_encrypt_type(skb_cb->cipher);
+			iv_len = ath12k_dp_rx_crypto_param_len(ar->dp.dp, enctype);
+			mic_len = ath12k_dp_rx_crypto_mic_len(ar->dp.dp, enctype);
+			icv_len = ath12k_dp_rx_crypto_icv_len(ar->dp.dp, enctype);
+
+			if (iv_len) {
+				/* Save the meta header that sits just before skb->data
+				 * so it is not overwritten when skb_push
+				 * shifts data back.
+				 */
+				if (mhdr_len && mhdr_len <= sizeof(mhdr_save))
+					memcpy(mhdr_save, skb->data - mhdr_len, mhdr_len);
+
+				if (skb_headroom(skb) < iv_len) {
+					ret = pskb_expand_head(skb,
+							       iv_len - skb_headroom(skb),
+							       0, GFP_KERNEL);
+					if (ret) {
+						ath12k_err(ab, "failed to expand skb for crypto ret %d\n",
+							   ret);
+						goto err_free_idr;
+					}
+				}
+				skb_push(skb, iv_len);
+				memmove(skb->data, skb->data + iv_len, hdr_len);
+				memset(skb->data + hdr_len, 0, iv_len);
+
+				/* Restore the meta header at its new position
+				 * in headroom.
+				 */
+				if (mhdr_len && mhdr_len <= sizeof(mhdr_save))
+					memcpy(skb->data - mhdr_len, mhdr_save, mhdr_len);
+			}
+			skb_put(skb, mic_len + icv_len);
+			skip = true;
+
+		}
+#endif
 		if ((ieee80211_is_action(hdr->frame_control) ||
 		     ieee80211_is_deauth(hdr->frame_control) ||
 		     ieee80211_is_disassoc(hdr->frame_control) ||
@@ -19648,7 +19696,7 @@ int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		     ieee80211_is_reassoc_req(hdr->frame_control) ||
 		     ieee80211_is_assoc_resp(hdr->frame_control) ||
 		     ieee80211_is_reassoc_resp(hdr->frame_control)) &&
-		     ieee80211_has_protected(hdr->frame_control)) {
+		     ieee80211_has_protected(hdr->frame_control) && !skip) {
 			if (!(skb_cb->flags & ATH12K_SKB_CIPHER_SET))
 				ath12k_warn(ab, "WMI protected management tx frame without ATH12K_SKB_CIPHER_SET");
 
@@ -19688,6 +19736,10 @@ int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		spin_lock_bh(&ar->data_lock);
 		stats = &arvif->ahvif->mgmt_stats;
 		stats->aggr_tx_mgmt_cnt++;
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+		if (skb_cb->flags & ATH12K_SKB_MONRAW_TX)
+			stats->mon_tx_mesh_mgmt++;
+#endif
 		spin_unlock_bh(&ar->data_lock);
 	}
 

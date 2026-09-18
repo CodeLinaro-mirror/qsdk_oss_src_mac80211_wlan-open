@@ -1485,7 +1485,8 @@ int ath12k_wmi_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 	rate_present = ath12k_get_skb_rate(arvif, frame, &mcs, &preamble);
 #ifdef CPTCFG_QCN_EXTN
 	if (is_cfr || rate_present ||
-	    ATH12K_CUSTOM_TX_PARAM_CONFIGURED_EXTN(skb_cb->u.ar))
+	    ATH12K_CUSTOM_TX_PARAM_CONFIGURED_EXTN(skb_cb->u.ar) ||
+	    ATH12K_IS_MONRAW_TXPKT(skb_cb))
 		tx_params_valid = true;
 #else
 	if (is_cfr || rate_present)
@@ -1556,7 +1557,7 @@ int ath12k_wmi_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 			params->tx_param_dword1 |= WMI_TX_PARAMS_DWORD1_CFR_CAPTURE;
 
 #ifdef CPTCFG_QCN_EXTN
-		ath12k_wmi_prepare_tx_params_extn(skb_cb, params);
+		ath12k_wmi_prepare_tx_params_extn(frame, skb_cb, params);
 #endif /* CPTCFG_QCN_EXTN */
 	}
 
@@ -1706,7 +1707,7 @@ int ath12k_wmi_offchan_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 					     sizeof(struct wmi_mgmt_send_params));
 
 #ifdef CPTCFG_QCN_EXTN
-	ath12k_wmi_prepare_tx_params_extn(ATH12K_SKB_CB(frame), ptr);
+	ath12k_wmi_prepare_tx_params_extn(frame, ATH12K_SKB_CB(frame), ptr);
 #endif /* CPTCFG_QCN_EXTN */
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_OFFCHAN_DATA_TX_SEND_CMDID);
@@ -11810,7 +11811,9 @@ static int wmi_process_mgmt_tx_comp(struct ath12k *ar, u32 desc_id,
 	struct ath12k_skb_cb *skb_cb;
 	struct ieee80211_hdr *hdr;
 	struct ieee80211_vif *vif;
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 	struct ath12k_vif *ahvif;
+#endif
 	struct ath12k_mgmt_frame_stats *mgmt_stats;
 	u16 frm_stype;
 	int num_mgmt;
@@ -11839,6 +11842,16 @@ static int wmi_process_mgmt_tx_comp(struct ath12k *ar, u32 desc_id,
 		skb_cb->flags &= ~ATH12K_SKB_DEAUTH_DISASSOC_TRACKED;
 	}
 
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	vif = skb_cb->vif;
+	if (vif) {
+		ahvif = ath12k_vif_to_ahvif(vif);
+		mgmt_stats = &ahvif->mgmt_stats;
+		if (skb_cb->flags & ATH12K_SKB_MONRAW_TX)
+			mgmt_stats->mon_tx_mesh_mgmt_cmpl++;
+	}
+#endif
+
 	if (ieee80211_is_mgmt(hdr->frame_control)) {
 		frm_stype = FIELD_GET(IEEE80211_FCTL_STYPE, hdr->frame_control);
 		vif = skb_cb->vif;
@@ -11858,9 +11871,6 @@ static int wmi_process_mgmt_tx_comp(struct ath12k *ar, u32 desc_id,
 			ath12k_warn(ar->ab, "failed to find vif to update txcompl mgmt stats\n");
 			goto skip_mgmt_stats;
 		}
-
-	        ahvif = ath12k_vif_to_ahvif(vif);
-		mgmt_stats = &ahvif->mgmt_stats;
 
 		if (!status)
 			mgmt_stats->tx_compl_succ[frm_stype]++;

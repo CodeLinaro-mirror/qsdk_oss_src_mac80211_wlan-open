@@ -1443,7 +1443,7 @@ static void ath12k_wifi7_mgmt_handler(struct ieee80211_hw *hw,
 	}
 
 	if ((control_flags & IEEE80211_TX_CTRL_MGMT_RATE_EXIST) &&
-	    rate.idx >= 0) {
+	     rate.idx >= 0) {
 		if (ath12k_skb_rhash_insert(ar, skb, rate))
 			ath12k_warn(ar->ab,
 				    "tx skb rhash entry creation failed\n");
@@ -1547,7 +1547,7 @@ int ath12k_dp_mmesh_tx(struct ieee80211_hw *hw, struct ath12k_base *ab,
 	len = skb->len;
 	dp_vif = &ahvif->dp_vif;
 
-	if (mmeshsim) {
+	if (ahvif->vap_submode == QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_MESH && mmeshsim) {
 		/* Add meta header */
 		if (ahvif->dp_vif.dp_extn.mdbg & MESH_DBG_TX)
 			print_hex_dump(KERN_INFO, "PREBUF: ", DUMP_PREFIX_OFFSET, 16, 1,
@@ -1671,6 +1671,11 @@ void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 	struct ieee80211_vif *vif = info->control.vif;
 	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	struct ath12k_vif *src_ahvif = control->src_vif ?
+					ath12k_vif_to_ahvif(control->src_vif) : NULL;
+	u32 control_flags = info->control.flags;
+#endif
 	struct ath12k_dp_vif *dp_vif = &ahvif->dp_vif;
 	struct ieee80211_key_conf *key = info->control.hw_key;
 	struct ath12k_link_vif *arvif = NULL;
@@ -1690,7 +1695,7 @@ void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 	int ret;
 	bool is_eth = false, gsn_valid = true;
 	bool is_dvlan = false, is_sta = false;
-	bool htt_mesh = false;
+	bool htt_mesh = false, mon_tx;
 	struct ath12k_dp_peer *dp_peer = NULL;
 
 	/* Check queue stop */
@@ -1712,11 +1717,28 @@ void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 	skb_cb = ATH12K_SKB_CB(skb);
 	memset(skb_cb, 0, sizeof(*skb_cb));
 
+	mon_tx = false;
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	if (src_ahvif && src_ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR &&
+	    (control_flags & IEEE80211_TX_CTRL_MON_RAW_TX)) {
+		mon_tx = true;
+	}
+#endif
+
 	/* Check monitor mode */
-	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR) {
-		ath12k_mac_ieee80211_free_txskb(hw, skb, NULL, sta, dp_vif,
-						DP_TX_ENQ_DROP_VIF_TYPE_MON,
-						0, false);
+	if ((ahvif && ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR) || mon_tx) {
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+		if (mon_tx) {
+			skb_cb->flags |= ATH12K_SKB_MONRAW_TX;
+			ath12k_wifi7_mgmt_handler(hw, control, &info_tx, skb);
+		} else {
+#endif
+			ath12k_mac_ieee80211_free_txskb(hw, skb, NULL, sta, dp_vif,
+							DP_TX_ENQ_DROP_VIF_TYPE_MON,
+							0, false);
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+		}
+#endif
 		return;
 	}
 

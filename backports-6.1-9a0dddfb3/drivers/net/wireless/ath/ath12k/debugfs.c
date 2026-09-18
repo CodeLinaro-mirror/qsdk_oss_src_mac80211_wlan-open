@@ -702,6 +702,14 @@ static ssize_t ath12k_dump_mgmt_stats(struct file *file,
 		mgmt_stats = &arvif->ahvif->mgmt_stats;
 		len += scnprintf(buf + len, size - len, "MGMT frame stats for vdev %u :\n", arvif->vdev_id);
 		len += scnprintf(buf + len, size - len, "  TX stats :\n ");
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+		len += scnprintf(buf + len, size - len,
+				 "  Total Tx Mgmt MonMesh= %llu\n",
+				 mgmt_stats->mon_tx_mesh_mgmt);
+		len += scnprintf(buf + len, size - len,
+				 "  Total Tx Mgmt Cmpl MonMesh= %llu\n",
+				 mgmt_stats->mon_tx_mesh_mgmt_cmpl);
+#endif
 		len += scnprintf(buf + len, size - len,
 				 "  Total TX Mgmt frames = %llu\n",
 				 mgmt_stats->aggr_tx_mgmt_cnt);

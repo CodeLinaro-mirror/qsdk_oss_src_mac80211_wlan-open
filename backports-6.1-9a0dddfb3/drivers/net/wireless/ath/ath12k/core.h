@@ -393,6 +393,9 @@ enum ath12k_skb_flags {
 	ATH12K_SKB_MGMT_MLO_PARAMS = BIT(9),
 	ATH12K_SKB_MCAST_LINK_BMAP_VALID = BIT(10),
 	ATH12K_SKB_MGMT_SMD_HI_PRI = BIT(11),
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	ATH12K_SKB_MONRAW_TX = BIT(12),
+#endif
 };
 
 struct ath12k_skb_cb {
@@ -637,6 +640,10 @@ struct ath12k_mgmt_frame_stats {
 	u32 rx_cnt[ATH12K_STATS_MGMT_FRM_TYPE_MAX];
 	u32 tx_compl_succ[ATH12K_STATS_MGMT_FRM_TYPE_MAX];
 	u32 tx_compl_fail[ATH12K_STATS_MGMT_FRM_TYPE_MAX];
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	u64 mon_tx_mesh_mgmt;
+	u64 mon_tx_mesh_mgmt_cmpl;
+#endif
 	u64 aggr_tx_mgmt_cnt;
 	u64 aggr_rx_mgmt;
 	u64 aggr_tx_mgmt_fail_cnt;
