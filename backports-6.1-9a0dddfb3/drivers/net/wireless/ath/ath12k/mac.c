@@ -11234,7 +11234,17 @@ static void ath12k_scan_vdev_clean_work(struct wiphy *wiphy, struct wiphy_work *
 
 	lockdep_assert_wiphy(wiphy);
 
+	/* Take a one-time snapshot of the cached scan vif and clear the shared
+	 * owner pointer before dereferencing deeper state. The local arvif remains
+	 * valid for this cleanup attempt, while ar->scan.arvif is cleared so later
+	 * cleanup paths cannot reuse the same pointer after this worker removes or
+	 * unassigns it.
+	 */
+	spin_lock_bh(&ar->data_lock);
 	arvif = ar->scan.arvif;
+	ar->scan.arvif = NULL;
+	spin_unlock_bh(&ar->data_lock);
+
 	/* The scan vdev has already been deleted. This can occur when a
 	 * new scan request is made on the same vif with a different
 	 * frequency, causing the scan arvif to move from one radio to
@@ -11242,8 +11252,16 @@ static void ath12k_scan_vdev_clean_work(struct wiphy *wiphy, struct wiphy_work *
 	 * arvif is already deleted. Alternatively, if the scan vdev is not
 	 * being used as an actual vdev, then do not delete it.
 	 */
-	if (!arvif || arvif->is_started || !arvif->is_scan_vif)
+
+	/* Validate that the cached scan vif still represents a created scan
+	 * vdev owned by this radio. If another path already stopped,
+	 * unassigned, or moved the scan vdev, skip teardown here so we do not
+	 * dereference stale arvif->ar in ath12k_mac_remove_link_interface().
+	 */
+	if (!arvif || arvif->is_started || !arvif->is_scan_vif ||
+	    !arvif->is_created || arvif->ar != ar) {
 		goto work_complete;
+	}
 
 	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
 			 "mac clean scan vdev (link id %u)", arvif->link_id);
@@ -11253,7 +11271,6 @@ static void ath12k_scan_vdev_clean_work(struct wiphy *wiphy, struct wiphy_work *
 
 work_complete:
 	spin_lock_bh(&ar->data_lock);
-	ar->scan.arvif = NULL;
 	if (!ar->scan.is_roc && ar->scan.scan_id != ATH12K_ROC_SCAN_ID) {
 		struct cfg80211_scan_info info = {
 			.aborted = ((ar->scan.state ==
@@ -28618,6 +28635,12 @@ int ath12k_mac_op_remain_on_channel(struct ieee80211_hw *hw,
 		if (ret) {
 			ath12k_warn(ab, "unable to create scan vdev for roc: %d\n",
 				    ret);
+			/* Release the scan vif allocated for ROC creation failure. Since
+			 * firmware never created this vdev, no remove command is needed,
+			 * but the link-vif slot must be cleared so later scan cleanup
+			 * does not find partially initialized scan state.
+			 */
+			ath12k_mac_unassign_link_vif(arvif);
 			return ret;
 		}
 	}
