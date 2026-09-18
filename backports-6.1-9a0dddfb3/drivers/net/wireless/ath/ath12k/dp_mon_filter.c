@@ -1175,6 +1175,12 @@ ath12k_dp_mon_rx_setup_cfr_rcc_status(struct htt_rx_ring_tlv_filter *tlv_filter,
 
 		tlv_filter->fp_mgmt_filter = FILTER_MGMT_ACTION;
 		tlv_filter->mo_mgmt_filter = FILTER_MGMT_ACTION;
+
+		tlv_filter->enable_fp_packet = 1;
+		tlv_filter->enable_mo_packet = 1;
+
+		tlv_filter->fp_packet_mgmt_filter = FILTER_MGMT_ACTION;
+		tlv_filter->mo_packet_mgmt_filter = FILTER_MGMT_ACTION;
 	}
 
 	if (rcc_type & DP_MON_RCC_TYPE_M_NDPA_NDP_ALL) {
@@ -1183,6 +1189,13 @@ ath12k_dp_mon_rx_setup_cfr_rcc_status(struct htt_rx_ring_tlv_filter *tlv_filter,
 
 		tlv_filter->fp_ctrl_filter |= FILTER_CTRL_VHT_NDP;
 		tlv_filter->mo_ctrl_filter |= FILTER_CTRL_VHT_NDP;
+
+		tlv_filter->enable_fp_packet = 1;
+		tlv_filter->enable_mo_packet = 1;
+
+		tlv_filter->fp_packet_ctrl_filter |= FILTER_CTRL_VHT_NDP;
+		tlv_filter->mo_packet_ctrl_filter |= FILTER_CTRL_VHT_NDP;
+
 	}
 
 	if (rcc_type & DP_MON_RCC_TYPE_M_ALL_PACKET) {
@@ -1195,6 +1208,16 @@ ath12k_dp_mon_rx_setup_cfr_rcc_status(struct htt_rx_ring_tlv_filter *tlv_filter,
 		tlv_filter->mo_ctrl_filter |= FILTER_CTRL_ALL;
 		tlv_filter->fp_data_filter |= FILTER_DATA_ALL;
 		tlv_filter->mo_data_filter |= FILTER_DATA_ALL;
+
+		tlv_filter->enable_fp_packet = 1;
+		tlv_filter->enable_mo_packet = 1;
+
+		tlv_filter->fp_packet_mgmt_filter |= FILTER_MGMT_ALL;
+		tlv_filter->mo_packet_mgmt_filter |= FILTER_MGMT_ALL;
+		tlv_filter->fp_packet_ctrl_filter |= FILTER_CTRL_ALL;
+		tlv_filter->mo_packet_ctrl_filter |= FILTER_CTRL_ALL;
+		tlv_filter->fp_packet_data_filter |= FILTER_DATA_ALL;
+		tlv_filter->mo_packet_data_filter |= FILTER_DATA_ALL;
 	}
 
 	if (rcc_type & DP_MON_RCC_TYPE_M_TA_RA_FILTER) {
@@ -1207,18 +1230,36 @@ ath12k_dp_mon_rx_setup_cfr_rcc_status(struct htt_rx_ring_tlv_filter *tlv_filter,
 		tlv_filter->mo_ctrl_filter |= FILTER_CTRL_ALL;
 		tlv_filter->fp_data_filter |= FILTER_DATA_ALL;
 		tlv_filter->mo_data_filter |= FILTER_DATA_ALL;
+
+		tlv_filter->enable_fp_packet = 1;
+		tlv_filter->enable_mo_packet = 1;
+
+		tlv_filter->fp_packet_mgmt_filter |= FILTER_MGMT_ALL;
+		tlv_filter->mo_packet_mgmt_filter |= FILTER_MGMT_ALL;
+		tlv_filter->fp_packet_ctrl_filter |= FILTER_CTRL_ALL;
+		tlv_filter->mo_packet_ctrl_filter |= FILTER_CTRL_ALL;
+		tlv_filter->fp_packet_data_filter |= FILTER_DATA_ALL;
+		tlv_filter->mo_packet_data_filter |= FILTER_DATA_ALL;
+
 	}
 
 	if (rcc_type & DP_MON_RCC_TYPE_M_DIRECTED_FTM) {
 		tlv_filter->enable_fp = 1;
 
 		tlv_filter->fp_mgmt_filter |= FILTER_MGMT_ACTION;
+
+		tlv_filter->enable_fp_packet = 1;
+		tlv_filter->fp_packet_mgmt_filter |= FILTER_MGMT_ACTION;
 	}
 
 	if (rcc_type & DP_MON_RCC_TYPE_M_NDPA_NDP_DIRECTED) {
 		tlv_filter->enable_fp = 1;
 
 		tlv_filter->fp_ctrl_filter |= FILTER_CTRL_VHT_NDP;
+
+		tlv_filter->enable_fp_packet = 1;
+
+		tlv_filter->fp_packet_ctrl_filter |= FILTER_CTRL_VHT_NDP;
 	}
 }
 
