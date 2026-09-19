@@ -14,6 +14,7 @@
 #include "../peer.h"
 #include "../dp_mon_filter.h"
 #include "dp_mon2.h"
+#include "dp_tx_mon.h"
 #include "../trace.h"
 #include "../ath12k_notif.h"
 
@@ -69,13 +70,15 @@ const struct ath12k_dp_arch_mon_ops ath12k_wifi8_dp_arch_mon_dual_ring_ops = {
 	/* At VAP up/down */
 	.mon_tx_htt_srng_setup = ath12k_dp_mon_tx_htt_srng_setup,
 	.mon_tx_htt_srng_cleanup = ath12k_dp_mon_tx_htt_srng_cleanup,
-	.mon_tx_filter_configure = ath12k_dp_mon_tx_config_filter,
+	.mon_tx_filter_configure = ath12k_wifi8_dp_mon_tx_config_filter,
 	.mon_tx_filter_update = ath12k_dp_mon_tx_update_ring_filter,
 	/* At Pdev Init/Exit */
 	.mon_tx_dst_ring_alloc_setup = ath12k_dp_mon_tx_dst_ring_alloc_setup,
 	.mon_tx_dst_ring_cleanup = ath12k_dp_mon_tx_dst_ring_cleanup,
 	.mon_tx_wq_start = ath12k_dp_mon_tx_wq_start,
 	.mon_tx_wq_stop = ath12k_dp_mon_tx_wq_stop,
+	.ext_mon_tx_alloc = ath12k_dp_ext_mon_tx_alloc,
+	.ext_mon_tx_free = ath12k_dp_ext_mon_tx_free,
 	.htt_tx_mon_cfg_fill_extended_wmask =
 		ath12k_wifi8_htt_tx_mon_cfg_fill_extended_wmask,
 };
@@ -2155,6 +2158,7 @@ int ath12k_wifi8_dp_ext_mon_validate_request(struct ath12k_pdev_dp *dp_pdev,
 {
 	struct ath12k_pdev_mon_dp *dp_mon_pdev;
 	const struct ath12k_ext_mon_peer_info *peer = NULL;
+	const struct ath12k_ext_mon_filter_config *fc = NULL;
 	int i, ret;
 
 	dp_mon_pdev = dp_pdev->dp_mon_pdev;
@@ -2204,32 +2208,28 @@ int ath12k_wifi8_dp_ext_mon_validate_request(struct ath12k_pdev_dp *dp_pdev,
 					return ret;
 			}
 		}
+
+		/*
+		 * The status tier (-F / status_filter[]) is a TX-only feature:
+		 * the RX filter setup (ath12k_wifi8_dp_ext_mon_setup_rx_filter)
+		 * never reads status_filter[], so silently accepting it on RX
+		 * would give the impression it did something. Reject instead.
+		 */
+
+		fc = &req->filter;
+
+		if (req->direction == QCA_VENDOR_EXT_MON_DIRECTION_RX &&
+		    (ath12k_dp_ext_mon_is_status_filter_set(&fc->all_peer) ||
+		     ath12k_dp_ext_mon_is_status_filter_set(&fc->all_neighbor) ||
+		     ath12k_dp_ext_mon_is_status_filter_set(&fc->target_peer) ||
+		     ath12k_dp_ext_mon_is_status_filter_set(&fc->target_neighbor))) {
+			ath12k_warn(dp_pdev->dp,
+				    "status_filter is not supported for RX direction\n");
+			return -EINVAL;
+		}
 	}
 
 	return 0;
-}
-
-void ath12k_wifi8_htt_tx_mon_cfg_fill_extended_wmask(
-		struct htt_tx_mon_ring_selection_cfg_cmd *cmd,
-		const struct htt_tx_ring_tlv_filter *htt_tlv_filter)
-{
-	/*word 13*/
-	cmd->tlv_word_mask_in6 |=
-		le32_encode_bits(htt_tlv_filter->wmask.mactx_user_desc_common,
-				 HTT_TX_MON_WMASK_IN6_MACTX_USR_DESC_CMN_MASK);
-	/*word 14*/
-	cmd->tlv_word_mask_in7 |=
-		le32_encode_bits(htt_tlv_filter->wmask.rx_resp_required_info,
-				 HTT_TX_MON_WMASK_IN7_RX_RESP_REQD_INFO_MASK);
-	cmd->tlv_filter_mask_in4 |=
-		le32_encode_bits(htt_tlv_filter->tx_mon_upstream_tlv_flags3,
-				 HTT_TX_FILTER_MASK_IN4_UPSTREAM_TLV_FLAGS3) |
-		le32_encode_bits(htt_tlv_filter->tx_mon_downstream_tlv_flags1,
-				 HTT_TX_FILTER_MASK_IN4_DOWNSTREAM_TLV_FLAGS1);
-
-	cmd->type_en_mgmt |= cpu_to_le32(HTT_TX_MON_PKT_ALL_SUBTYPES);
-	cmd->type_en_ctrl |= cpu_to_le32(HTT_TX_MON_PKT_ALL_SUBTYPES);
-	cmd->type_en_data |= cpu_to_le32(HTT_TX_MON_PKT_ALL_SUBTYPES);
 }
 
 void

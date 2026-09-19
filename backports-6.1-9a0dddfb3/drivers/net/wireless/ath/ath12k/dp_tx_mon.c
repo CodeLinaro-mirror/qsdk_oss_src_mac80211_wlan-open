@@ -5124,8 +5124,22 @@ void ath12k_dp_mon_tx_display_filters(struct ath12k_dp *dp,
 			   src_tlv_filter->data_log_typ);
 		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "mac_addr_filter_en: %d",
 			   src_tlv_filter->mac_addr_filter_en);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "peer_ppdu_drop: %d",
+			   src_tlv_filter->peer_ppdu_drop);
 		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "pkt_buf_cnt_en: %d",
 			   src_tlv_filter->pkt_buf_cnt_en);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "pkt_subtype_mgmt: 0x%X",
+			   src_tlv_filter->pkt_subtype_mgmt);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "stat_subtype_mgmt: 0x%X",
+			   src_tlv_filter->stat_subtype_mgmt);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "pkt_subtype_ctrl: 0x%X",
+			   src_tlv_filter->pkt_subtype_ctrl);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "stat_subtype_ctrl: 0x%X",
+			   src_tlv_filter->stat_subtype_ctrl);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "pkt_subtype_data: 0x%X",
+			   src_tlv_filter->pkt_subtype_data);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "stat_subtype_data: 0x%X",
+			   src_tlv_filter->stat_subtype_data);
 	}
 }
 EXPORT_SYMBOL(ath12k_dp_mon_tx_display_filters);
@@ -5260,6 +5274,25 @@ void ath12k_dp_mon_tx_prepare_filter(struct ath12k_dp *dp,
 		dst_tlv_filter->pkt_buf_cnt_en |= src_tlv_filter->pkt_buf_cnt_en;
 		dst_tlv_filter->mac_addr_filter_en |=
 					src_tlv_filter->mac_addr_filter_en;
+
+		/* wifi8 global type+subtype filter and info0 control bits.
+		 * Zero on wifi7 (never set), so the OR-merge is a no-op there.
+		 */
+		dst_tlv_filter->pkt_subtype_mgmt |=
+					src_tlv_filter->pkt_subtype_mgmt;
+		dst_tlv_filter->pkt_subtype_ctrl |=
+					src_tlv_filter->pkt_subtype_ctrl;
+		dst_tlv_filter->pkt_subtype_data |=
+					src_tlv_filter->pkt_subtype_data;
+		dst_tlv_filter->stat_subtype_mgmt |=
+					src_tlv_filter->stat_subtype_mgmt;
+		dst_tlv_filter->stat_subtype_ctrl |=
+					src_tlv_filter->stat_subtype_ctrl;
+		dst_tlv_filter->stat_subtype_data |=
+					src_tlv_filter->stat_subtype_data;
+		dst_tlv_filter->peer_ppdu_drop |=
+					src_tlv_filter->peer_ppdu_drop;
+
 		dst_tlv_filter->tx_mon_mgmt_pkt_dma_len |=
 					src_tlv_filter->tx_mon_mgmt_pkt_dma_len;
 		dst_tlv_filter->tx_mon_data_pkt_dma_len |=
