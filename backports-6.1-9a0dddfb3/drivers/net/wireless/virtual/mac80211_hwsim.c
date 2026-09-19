@@ -565,6 +565,12 @@ static const u32 hwsim_ciphers[] = {
 
 #define OUI_QCA 0x001374
 #define QCA_NL80211_SUBCMD_TEST 1
+#ifndef QCA_NL80211_VENDOR_SUBCMD_REPURPOSE_LINK_INDICATION
+#define QCA_NL80211_VENDOR_SUBCMD_REPURPOSE_LINK_INDICATION 516
+#endif
+#ifndef QCA_WLAN_VENDOR_ATTR_CONFIG_MLO_LINK_ID
+#define QCA_WLAN_VENDOR_ATTR_CONFIG_MLO_LINK_ID 99
+#endif
 enum qca_nl80211_vendor_subcmds {
 	QCA_WLAN_VENDOR_ATTR_TEST = 8,
 	QCA_WLAN_VENDOR_ATTR_MAX = QCA_WLAN_VENDOR_ATTR_TEST
@@ -573,6 +579,11 @@ enum qca_nl80211_vendor_subcmds {
 static const struct nla_policy
 hwsim_vendor_test_policy[QCA_WLAN_VENDOR_ATTR_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_MAX] = { .type = NLA_U32 },
+};
+
+static const struct nla_policy
+hwsim_vendor_repurpose_policy[QCA_WLAN_VENDOR_ATTR_CONFIG_MLO_LINK_ID + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_CONFIG_MLO_LINK_ID] = { .type = NLA_U8 },
 };
 
 static int mac80211_hwsim_vendor_cmd_test(struct wiphy *wiphy,
@@ -626,6 +637,37 @@ static int mac80211_hwsim_vendor_cmd_test(struct wiphy *wiphy,
 	return cfg80211_vendor_cmd_reply(skb);
 }
 
+static int
+mac80211_hwsim_vendor_cmd_repurpose_link_indication(struct wiphy *wiphy,
+						    struct wireless_dev *wdev,
+						    const void *data,
+						    int data_len)
+{
+	struct ieee80211_vif *vif;
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_CONFIG_MLO_LINK_ID + 1];
+	int err;
+	u8 link_id;
+
+	if (!wdev || !data || data_len <= 0)
+		return -EINVAL;
+
+	err = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_CONFIG_MLO_LINK_ID, data,
+			data_len, hwsim_vendor_repurpose_policy, NULL);
+	if (err)
+		return err;
+
+	if (!tb[QCA_WLAN_VENDOR_ATTR_CONFIG_MLO_LINK_ID])
+		return -EINVAL;
+
+	link_id = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_CONFIG_MLO_LINK_ID]);
+
+	vif = wdev_to_ieee80211_vif(wdev);
+	if (!vif)
+		return -EINVAL;
+
+	return ieee80211_set_repurpose_link(vif, link_id);
+}
+
 static struct wiphy_vendor_command mac80211_hwsim_vendor_commands[] = {
 	{
 		.info = { .vendor_id = OUI_QCA,
@@ -634,6 +676,14 @@ static struct wiphy_vendor_command mac80211_hwsim_vendor_commands[] = {
 		.doit = mac80211_hwsim_vendor_cmd_test,
 		.policy = hwsim_vendor_test_policy,
 		.maxattr = QCA_WLAN_VENDOR_ATTR_MAX,
+	},
+	{
+		.info = { .vendor_id = OUI_QCA,
+			  .subcmd = QCA_NL80211_VENDOR_SUBCMD_REPURPOSE_LINK_INDICATION },
+		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
+		.doit = mac80211_hwsim_vendor_cmd_repurpose_link_indication,
+		.policy = hwsim_vendor_repurpose_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_CONFIG_MLO_LINK_ID,
 	}
 };
 
