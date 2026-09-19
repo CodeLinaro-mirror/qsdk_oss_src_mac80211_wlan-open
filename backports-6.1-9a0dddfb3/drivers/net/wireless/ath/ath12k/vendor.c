@@ -1277,10 +1277,17 @@ ath12k_cfr_rcc_group_handler(struct ath12k *ar, struct nlattr **tb)
 {
 	struct cfr_rcc_param rcc = { 0 };
 	struct nlattr *group_entry;
+	u32 enable_bitmap;
 	int rem, ret;
 
 	if (!tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_GROUP_TABLE])
 		return -EINVAL;
+
+	if (!tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_ENABLE_GROUP_BITMAP])
+		return -EINVAL;
+
+	enable_bitmap = nla_get_u32
+		(tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_ENABLE_GROUP_BITMAP]);
 
 	nla_for_each_nested(group_entry,
 			    tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_GROUP_TABLE],
@@ -1310,6 +1317,11 @@ ath12k_cfr_rcc_group_handler(struct ath12k *ar, struct nlattr **tb)
 			return -EINVAL;
 		}
 
+		if (!(BIT(group_id) & enable_bitmap)) {
+			ath12k_err(ar->ab,
+				   "Group config of group not enabled in enable_bitmap");
+			return -EINVAL;
+		}
 		cfg = &rcc.curr[group_id];
 
 		cfg->filter_group_id = group_id;
@@ -1323,6 +1335,10 @@ ath12k_cfr_rcc_group_handler(struct ath12k *ar, struct nlattr **tb)
 
 	rcc.num_grp_tlvs =
 		hweight_long(rcc.modified_in_curr_session);
+
+	ret = ath12k_cfr_set_enable_bitmap(ar, enable_bitmap);
+	if (ret)
+		return ret;
 
 	ath12k_cfr_set_tara_group_params(ar, &rcc);
 
@@ -1346,7 +1362,6 @@ ath12k_cfr_rcc_parse_update_common_params(struct ath12k *ar, struct nlattr **tb)
 	    !tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_INTERVAL] &&
 	    !tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_FREEZE_TLV_DELAY_COUNT] &&
 	    !tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_CAPTURE_COUNT] &&
-	    !tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_ENABLE_GROUP_BITMAP] &&
 	    !tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_TARA_FILTER_AS_FP] &&
 	    !tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_CAPTURE_INTERVALMODE_SEL] &&
 	    !tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_UL_MU_MASK])
@@ -1384,15 +1399,6 @@ ath12k_cfr_rcc_parse_update_common_params(struct ath12k *ar, struct nlattr **tb)
 			nla_get_u16(tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_CAPTURE_COUNT]);
 
 		ret = ath12k_cfr_set_capture_count(ar, count);
-		if (ret)
-			return ret;
-	}
-
-	if (tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_ENABLE_GROUP_BITMAP]) {
-		u32 val = nla_get_u32
-			(tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_ENABLE_GROUP_BITMAP]);
-
-		ret = ath12k_cfr_set_enable_bitmap(ar, val);
 		if (ret)
 			return ret;
 	}
@@ -1476,10 +1482,19 @@ static int ath12k_cfr_handle_rcc(struct ath12k *ar, struct nlattr **tb)
 	 * Driver expects another invocation of this handler to commit the
 	 * session to firmware,
 	 */
-	if (tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_GROUP_TABLE]) {
+	if (tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_ENABLE_GROUP_BITMAP] &&
+	    tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_GROUP_TABLE]) {
 		ret = ath12k_cfr_rcc_group_handler(ar, tb);
 		if (ret)
 			ath12k_err(ar->ab, "Failed to parse tara group configs");
+		goto unlock;
+	} else if (tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_ENABLE_GROUP_BITMAP]) {
+		u32 bitmap = nla_get_u32
+			(tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_ENABLE_GROUP_BITMAP]);
+
+		/* command is to reset the default ta/ra settings of given groups */
+		ath12k_cfr_reset_group_configs_for_bitmap(ar, bitmap);
+		ret = 0;
 		goto unlock;
 	}
 
