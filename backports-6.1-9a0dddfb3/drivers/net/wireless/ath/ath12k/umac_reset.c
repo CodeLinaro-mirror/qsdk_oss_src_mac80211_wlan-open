@@ -477,6 +477,7 @@ int ath12k_dp_umac_reset_init(struct ath12k_base *ab)
 	}
 
 	ath12k_hif_dp_umac_reset_enable_irq(ab);
+	ab->umac_reset_init_done = true;
 	return 0;
 
 free_irq:
@@ -487,6 +488,7 @@ shmem_free:
 			  umac_reset->shmem_vaddr_unaligned,
 			  umac_reset->shmem_paddr_unaligned);
 	umac_reset->shmem_vaddr_unaligned = NULL;
+	ab->umac_reset_init_done = false;
 	return ret;
 }
 
@@ -1675,4 +1677,5 @@ void ath12k_dp_umac_reset_deinit(struct ath12k_base *ab)
 			  umac_reset->shmem_paddr_unaligned);
 
 	umac_reset->shmem_vaddr_unaligned = NULL;
+	ab->umac_reset_init_done = false;
 }
