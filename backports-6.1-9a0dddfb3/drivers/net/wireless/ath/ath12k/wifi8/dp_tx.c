@@ -2478,10 +2478,10 @@ ath12k_wifi8_dp_tx_process_htt_tx_complete(struct ath12k_dp *dp,
 	case HAL_WBM_REL_HTT_TX_COMP_STATUS_TTL:
 	case HAL_WBM_REL_HTT_TX_COMP_STATUS_REINJ:
 	case HAL_WBM_REL_HTT_TX_COMP_STATUS_INSPECT:
-		ath12k_warn(dp->ab,
-			    "smd-tx-dbg: FW TX drop htt_status=%u peer_id=%u ppdu_id=%u hw_link=%u\n",
-			    htt_status, ts->peer_id, ts->ppdu_id,
-			    ts->hw_link_id);
+		ath12k_dbg(dp->ab, ATH12K_DBG_DP_TX,
+			   "tx-dbg: FW TX drop htt_status=%u peer_id=%u ppdu_id=%u hw_link=%u\n",
+			   htt_status, ts->peer_id, ts->ppdu_id,
+			   ts->hw_link_id);
 		switch (htt_status) {
 		case HAL_WBM_REL_HTT_TX_COMP_STATUS_DROP:
 			ts->status = HAL_WBM_TQM_REL_REASON_CMD_REMOVE_MPDU;
