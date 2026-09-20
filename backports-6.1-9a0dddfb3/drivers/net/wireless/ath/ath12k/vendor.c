@@ -20614,6 +20614,12 @@ static const struct nl80211_vendor_cmd_info ath12k_vendor_events[] = {
 		.vendor_id = QCA_NL80211_VENDOR_ID,
 		.subcmd = QCA_NL80211_VENDOR_SUBCMD_PASN,
 	},
+#ifdef CPTCFG_QCN_EXTN
+	[QCA_NL80211_VENDOR_SUBCMD_DRIVER_DISCONNECT_REASON_INDEX] = {
+		.vendor_id = QCA_NL80211_VENDOR_ID,
+		.subcmd = QCA_NL80211_VENDOR_SUBCMD_DRIVER_DISCONNECT_REASON,
+	},
+#endif /* CPTCFG_QCN_EXTN */
 };
 
 int ath12k_vendor_register(struct ath12k_hw *ah)

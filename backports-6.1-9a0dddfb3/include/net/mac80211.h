@@ -5815,6 +5815,20 @@ struct ieee80211_ops {
 	int (*get_smd_ctx)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 			   struct ieee80211_sta *sta,
 			   struct cfg80211_smd_transition_info *st_info);
+#ifdef CPTCFG_QCN_EXTN
+	/**
+	 * @notify_diagnostic_sta_disconnect: mac80211 calls this right after
+	 *	disconnecting a diagnostic_sta @vif on link @link_id, so the
+	 *	driver can log/report the disconnect @reason (e.g. to
+	 *	userspace via a vendor event). Optional; called with the
+	 *	wiphy mutex held. See &enum
+	 *	ieee80211_diagnostic_sta_disconnect_reason.
+	 */
+	void (*notify_diagnostic_sta_disconnect)(struct ieee80211_hw *hw,
+						 struct ieee80211_vif *vif,
+						 unsigned int link_id,
+						 enum ieee80211_diagnostic_sta_disconnect_reason reason);
+#endif /* CPTCFG_QCN_EXTN */
 };
 
 /**

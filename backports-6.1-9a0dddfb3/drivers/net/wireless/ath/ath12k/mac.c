@@ -51,6 +51,7 @@
 #include "qcn_extns/ath12k_cmn_extn.h"
 #include "qcn_extns/mapc_extn.h"
 #include "qcn_extns/ipa/dp_ipa_pub.h"
+#include "qcn_extns/vendor_extn.h"
 #endif /* CPTCFG_QCN_EXTN */
 #include "mgmt_rx.h"
 #include "ranging.h"
@@ -27764,6 +27765,12 @@ ath12k_mac_reconfig_complete(struct ieee80211_hw *hw,
 					ieee80211_hw_restart_disconnect(ahvif->vif);
 
 					ath12k_dbg(ab, ATH12K_DBG_BOOT, "restart disconnect\n");
+
+#ifdef CPTCFG_QCN_EXTN
+					if (ahvif->vif->diagnostic_sta)
+						ath12k_mac_notify_diagnostic_sta_pdev_restart(ar,
+											      ahvif->vif);
+#endif /* CPTCFG_QCN_EXTN */
 				}
 			}
 		}

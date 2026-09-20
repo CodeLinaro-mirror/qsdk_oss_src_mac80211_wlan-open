@@ -35,6 +35,7 @@
 #ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/wifi8_dp_extn.h"
 #include "../qcn_extns/ipa/dp_ipa_pub.h"
+#include "../qcn_extns/vendor_extn.h"
 #endif /* CPTCFG_QCN_EXTN */
 #include "../cfr.h"
 
@@ -1934,6 +1935,7 @@ static const struct ieee80211_ops ath12k_ops_wifi8 = {
 	.get_smd_ctx			= ath12k_wifi8_mac_op_get_smd_ctx,
 #ifdef CPTCFG_QCN_EXTN
 	.set_muedca_mode		= ath12k_mac_set_muedca_mode,
+	.notify_diagnostic_sta_disconnect	= ath12k_mac_op_notify_diagnostic_sta_disconnect,
 #endif /* CPTCFG_QCN_EXTN */
 };
 
