@@ -997,7 +997,7 @@ struct ath12k_link_vif {
 	struct completion peer_ch_width_switch_send;
 	struct wiphy_work peer_ch_width_switch_work;
 	struct ath12k_peer_ch_width_switch_data *peer_ch_width_switch_data;
-	bool pending_csa_up;
+	bool pending_tx_vdev_up;
 	u32 tx_vdev_id;
 	struct ath12k_prb_resp_tmpl_ml_info ml_info;
 	bool ftm_responder;
