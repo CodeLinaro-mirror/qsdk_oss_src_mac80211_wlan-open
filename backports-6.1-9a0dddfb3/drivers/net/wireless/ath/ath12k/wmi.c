@@ -32,6 +32,7 @@
 #ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/ini.h"
 #include "qcn_extns/ranging_extn.h"
+#include "qcn_extns/ath12k_cmn_extn.h"
 #endif
 #ifdef CPTCFG_ATHDEBUG
 #include "athdbg_if.h"
@@ -1379,6 +1380,11 @@ static u32 ath12k_wmi_mgmt_get_freq(struct ath12k *ar,
 	    (info->flags & IEEE80211_TX_CTL_TX_OFFCHAN))
 		freq = ar->scan.roc_freq;
 
+#ifdef CPTCFG_QCN_EXTN
+	if (!freq)
+		freq = ath12k_wmi_mgmt_get_freq_extn(ar);
+#endif
+
 	return freq;
 }
 
@@ -1463,6 +1469,11 @@ int ath12k_wmi_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 #ifdef CPTCFG_QCN_EXTN
 	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(frame);
 #endif /* CPTCFG_QCN_EXTN */
+
+#ifdef CPTCFG_QCN_EXTN
+	if (!arvif)
+		arvif = ath12k_wmi_mgmt_send_extn(ar, vdev_id);
+#endif
 
 	if (!arvif)
 		return -EINVAL;
@@ -13478,6 +13489,11 @@ static void ath12k_mgmt_rx_event(struct ath12k_base *ab, struct sk_buff *skb)
 	rcu_read_lock();
 	arvif = ath12k_mac_get_arvif(ar, vdev_id);
 
+#ifdef CPTCFG_QCN_EXTN
+	if (ath12k_ranging_deliver_pasn_mgmt_rx_extn(ar, skb))
+		goto exit;
+#endif
+
 	if (rx_ev.status & WMI_RX_STATUS_ERR_PN) {
 		mgmt_stats->rx_pn_err_cnt++;
 		if (arvif)
@@ -24379,6 +24395,10 @@ int ath12k_wmi_send_ltf_key_seed(struct ath12k *ar,
 	int keyseed_len_aligned;
 	int len, ret;
 
+	ath12k_dbg(NULL, ATH12K_DBG_RTT,
+		   "RTT: send_ltf_key_seed vdev=%u peer=%pM rsn_authmode=%u keyseed_len=%u\n",
+		   arg->vdev_id, arg->peer_mac, arg->rsn_authmode, arg->keyseed_len);
+
 	keyseed_len_aligned = roundup(arg->keyseed_len, 4);
 	len = sizeof(*cmd) + TLV_HDR_SIZE + keyseed_len_aligned;
 	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
@@ -24591,7 +24611,11 @@ ath12k_wmi_pasn_notify_delete(struct ath12k_link_vif *arvif,
 
 	ret = ath12k_vendor_send_pasn_event(
 			ath12k_ar_to_hw(arvif->ar)->wiphy,
+#ifdef CPTCFG_QCN_EXTN
+			get_pasn_auth_wdev_extn(arvif),
+#else
 			ieee80211_vif_to_wdev(arvif->ahvif->vif),
+#endif
 			arvif->link_id,
 			QCA_WLAN_VENDOR_PASN_ACTION_DELETE_SECURE_RANGING_CONTEXT,
 			NULL, peer->peer_mac_addr.addr,
@@ -24660,6 +24684,10 @@ void ath12k_wmi_rtt_pasn_peer_delete_event(struct ath12k_base *ab,
 
 	rcu_read_lock();
 	arvif = ath12k_mac_get_arvif_by_vdev_id(ab, vdev_id);
+#ifdef CPTCFG_QCN_EXTN
+	if (!arvif)
+		arvif = ath12k_get_rtt_vif_by_vdev_id_extn(ab, vdev_id);
+#endif
 	if (!arvif) {
 		rcu_read_unlock();
 		ath12k_warn(ab, "invalid vdev id %u in RTT PASN peer delete event\n",
@@ -24766,6 +24794,11 @@ ath12k_wmi_send_pasn_auth_status(struct ath12k *ar,
 		ath12k_warn(ar->ab, "failed to send RTT PASN auth status: %d\n", ret);
 		dev_kfree_skb(skb);
 	}
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_RTT,
+		   "RTT PASN WMI sent succuss auth_status: peer=%pM src=%pM status=%u akm=%u cipher=%u comeback_after=%u\n",
+		   arg->peer_mac, arg->source_mac, arg->status, arg->akm,
+		   arg->cipher, arg->comeback_after);
 
 	return ret;
 }

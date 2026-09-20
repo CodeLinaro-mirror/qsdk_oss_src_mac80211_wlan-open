@@ -18968,6 +18968,7 @@ static int ath12k_vendor_secure_ranging_ctx_cmd(struct wiphy *wiphy,
 	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_SECURE_RANGING_CTX_MAX + 1];
 	struct ath12k_wmi_ltf_keyseed_arg arg;
 	struct ath12k_link_vif *arvif;
+	struct ieee80211_vif *vif;
 	const u8 *src_addr = NULL;
 	const u8 *peer_addr;
 	u8 link_id = INVALID_LINK_ID;
@@ -19000,9 +19001,23 @@ static int ath12k_vendor_secure_ranging_ctx_cmd(struct wiphy *wiphy,
 			return -EINVAL;
 	}
 
-	arvif = ath12k_pasn_arvif_from_wdev(wdev, link_id);
-	if (!arvif || !arvif->ar)
+	/* IF AP Mode Only, or STA Mode already associated */
+	vif = wdev_to_ieee80211_vif(wdev);
+	if (wdev->iftype == NL80211_IFTYPE_AP ||
+	    (wdev->iftype == NL80211_IFTYPE_STATION && vif && vif->cfg.assoc))
+		arvif = ath12k_pasn_arvif_from_wdev(wdev, link_id);
+	else
+		/* call EXTN API to get right arvif from wdev */
+		arvif = ath12k_rtt_arvif_from_wdev_extn(wiphy, wdev);
+
+	ath12k_dbg(NULL, ATH12K_DBG_RTT,
+		   "RTT: secure_ranging_ctx iftype=%d peer=%pM link_id=%d arvif=%p\n",
+		   wdev->iftype, peer_addr, link_id, arvif);
+
+	if (!arvif || !arvif->ar) {
+		ath12k_err(NULL, "arvif or ar is NULL");
 		return -ENOLINK;
+	}
 
 	if (action == QCA_WLAN_VENDOR_SECURE_RANGING_CTX_ACTION_DELETE) {
 		ret = ath12k_wmi_send_rtt_pasn_deauth(arvif->ar, peer_addr);
@@ -19039,10 +19054,20 @@ static int ath12k_vendor_secure_ranging_ctx_cmd(struct wiphy *wiphy,
 	if (!arg.keyseed_len)
 		return -EINVAL;
 
-	ret = ath12k_wmi_send_ltf_key_seed(arvif->ar, &arg);
-	if (ret)
-		return ret;
-	ath12k_pasn_peer_set_ltf_keyseed(arvif, peer_addr, true);
+	if (wdev->iftype == NL80211_IFTYPE_STATION) {
+		/* STA may be MLO; push the keyseed to every started link's
+		 * own vdev/radio, not just the link resolved into arvif.
+		 */
+		ret = ath12k_wmi_send_ltf_key_seed_all_radios_extn(wdev, &arg,
+								   peer_addr);
+		if (ret)
+			return ret;
+	} else {
+		ret = ath12k_wmi_send_ltf_key_seed(arvif->ar, &arg);
+		if (ret)
+			return ret;
+		ath12k_pasn_peer_set_ltf_keyseed(arvif, peer_addr, true);
+	}
 
 	return 0;
 }
@@ -19245,13 +19270,18 @@ static int ath12k_vendor_pasn_auth_peer(struct ath12k_link_vif *arvif,
 		arg.comeback_after = nla_get_u16(
 			peer[QCA_WLAN_VENDOR_ATTR_PASN_PEER_COMEBACK_AFTER]);
 
+	ath12k_dbg(NULL, ATH12K_DBG_RTT,
+		   "RTT PASN auth_peer: vdev=%u peer=%pM src=%pM status=%u akm=%u cipher=%u comeback_after=%u\n",
+		   arvif->vdev_id, arg.peer_mac, arg.source_mac, arg.status,
+		   arg.akm, arg.cipher, arg.comeback_after);
+
 	ath12k_pasn_peer_set_auth_status(arvif, arg.source_mac,
 					 arg.peer_mac, !arg.status);
+
 	if (ath12k_pasn_peer_auth_status_sent(arvif, arg.peer_mac))
-		return 0;
+		ath12k_dbg(NULL, ATH12K_DBG_RTT, "RTT PASN auth already sent\n");
 
 	ath12k_pasn_peer_set_auth_status_sent(arvif, arg.peer_mac);
-
 	return ath12k_wmi_send_pasn_auth_status(arvif->ar, &arg);
 }
 
@@ -19281,6 +19311,8 @@ static int ath12k_vendor_pasn_cmd(struct wiphy *wiphy,
 	u8 link_id = INVALID_LINK_ID;
 	int rem, ret = 0;
 
+	ath12k_dbg(NULL, ATH12K_DBG_RTT, "PASN: %s\n", __func__);
+
 	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_PASN_MAX, data, data_len,
 			ath12k_vendor_pasn_policy, NULL);
 	if (ret)
@@ -19298,7 +19330,18 @@ static int ath12k_vendor_pasn_cmd(struct wiphy *wiphy,
 			return -EINVAL;
 	}
 
-	arvif = ath12k_pasn_arvif_from_wdev(wdev, link_id);
+	/* IF AP Mode Only*/
+	if (wdev->iftype == NL80211_IFTYPE_AP)
+		arvif = ath12k_pasn_arvif_from_wdev(wdev, link_id);
+	else {
+#ifdef CPTCFG_QCN_EXTN
+		/* call EXTN API to get right arvif from wdev */
+		arvif = ath12k_rtt_arvif_from_wdev_extn(wiphy, wdev);
+#else
+		arvif = NULL;
+#endif
+	}
+
 	if (!arvif || !arvif->ar)
 		return -ENOLINK;
 
@@ -19340,6 +19383,10 @@ static int ath12k_vendor_pasn_cmd(struct wiphy *wiphy,
 		if (peer_ret)
 			ret = peer_ret;
 	}
+
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_rtt_arvif_cleanup_extn(arvif);
+#endif
 
 	return ret;
 }

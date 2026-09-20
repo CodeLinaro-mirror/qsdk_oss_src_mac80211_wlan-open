@@ -4562,10 +4562,17 @@ enum ieee80211_rate_control_changed {
  * @IEEE80211_ROC_TYPE_NORMAL: There are no special requirements for this ROC.
  * @IEEE80211_ROC_TYPE_MGMT_TX: The remain on channel request is required
  *	for sending management frames offchannel.
+ * @IEEE80211_ROC_TYPE_MGMT_TX_PASN: The remain on channel request is for
+ *	sending a PASN Authentication frame offchannel; drivers with a
+ *	dedicated RTT/ranging vdev can redirect this ROC to that vdev
+ *	instead of creating a scan vdev.
  */
 enum ieee80211_roc_type {
 	IEEE80211_ROC_TYPE_NORMAL = 0,
 	IEEE80211_ROC_TYPE_MGMT_TX,
+#ifdef CPTCFG_QCN_EXTN
+	IEEE80211_ROC_TYPE_MGMT_TX_PASN,
+#endif
 };
 
 /**

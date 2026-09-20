@@ -1149,9 +1149,18 @@ int ieee80211_mgmt_tx(struct wiphy *wiphy, struct wireless_dev *wdev,
 		ret = -EINVAL;
 		goto out_unlock;
 	}
+
+#ifdef CPTCFG_QCN_EXTN
 	ret = ieee80211_start_roc_work(local, sdata, &params->chandef,
-				       params->wait, cookie, skb,
-				       IEEE80211_ROC_TYPE_MGMT_TX);
+			params->wait, cookie, skb,
+			(params->len >= IEEE80211_MIN_ACTION_SIZE +
+			sizeof(mgmt->u.auth.auth_alg) &&
+			ieee80211_is_auth(mgmt->frame_control) &&
+			le16_to_cpu(mgmt->u.auth.auth_alg) == 7) ?
+			IEEE80211_ROC_TYPE_MGMT_TX_PASN :
+			IEEE80211_ROC_TYPE_MGMT_TX);
+#endif
+
 	if (ret)
 		ieee80211_free_txskb(&local->hw, skb);
 

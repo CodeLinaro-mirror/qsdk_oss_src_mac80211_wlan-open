@@ -907,6 +907,9 @@ struct ath12k_rtt_context {
 	struct list_head pasn_peer_list;
 	spinlock_t pasn_peer_lock; /* protects pasn_peer_list */
 	struct wiphy_work pasn_fw_peer_create_work;
+#ifdef CPTCFG_QCN_EXTN
+	struct ath12k_rtt_context_extn rtt_ctx_extn;
+#endif
 };
 
 /**
