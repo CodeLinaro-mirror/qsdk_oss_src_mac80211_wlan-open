@@ -275,6 +275,7 @@ struct hal_eht_sig_non_mu_mimo {
 #define HAL_RX_EHT_SIG_MUMIMO_USER_INFO0_MCS		GENMASK(14, 11)
 #define HAL_RX_EHT_SIG_MUMIMO_USER_INFO0_CODING		BIT(15)
 #define HAL_RX_EHT_SIG_MUMIMO_USER_INFO0_SPATIAL_CODING	GENMASK(21, 16)
+#define HAL_RX_EHT_SIG_MUMIMO_USER_INFO0_CRC		GENMASK(25, 22)
 
 struct hal_eht_sig_mu_mimo {
 	__le32 info0;
