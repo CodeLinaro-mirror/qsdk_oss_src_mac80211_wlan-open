@@ -223,6 +223,11 @@ unsigned int ath12k_ssr_failsafe_mode = true;
 module_param_named(ssr_failsafe_mode, ath12k_ssr_failsafe_mode, uint, 0644);
 MODULE_PARM_DESC(ssr_failsafe_mode, "ssr failsafe mode: 0-disable, 1-enable");
 
+bool ath12k_upload_dump_before_bugon;
+EXPORT_SYMBOL(ath12k_upload_dump_before_bugon);
+module_param_named(upload_q6dump_to_cloud, ath12k_upload_dump_before_bugon, bool, 0644);
+MODULE_PARM_DESC(upload_q6dump_to_cloud, "Upload Q6 FW dump to cloud server: 0-disable (default), 1-enable");
+
 bool ath12k_rx_nwifi_err_dump = false;
 module_param_named(rx_nwifi_err_dump, ath12k_rx_nwifi_err_dump, bool, 0644);
 MODULE_PARM_DESC(rx_nwifi_err_dump, "rx nwifi err dump: 0-disable, 1-enable");
@@ -5682,7 +5687,8 @@ static void ath12k_core_update_userpd_state(struct work_struct *work)
 			if (!ab->is_reset)
 				ath12k_hif_irq_disable(ab);
 
-			if (ab->fw_recovery_support &&
+			if ((ab->fw_recovery_support ||
+			     ath12k_upload_dump_before_bugon) &&
 			    !test_bit(ATH12K_GROUP_FLAG_UNREGISTER, &ag->flags))
 				set_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags);
 			else
@@ -6150,7 +6156,7 @@ static void ath12k_core_reset(struct work_struct *work)
 	if (ab->hif.bus == ATH12K_BUS_PCI) {
 		ath12k_coredump_download_rddm(ab);
 	} else if ((ab->hif.bus == ATH12K_BUS_AHB || ab->hif.bus == ATH12K_BUS_HYBRID) &&
-		   !ab->fw_recovery_support) {
+		   !ab->fw_recovery_support && !ath12k_upload_dump_before_bugon) {
 		ath12k_core_trigger_bug_on(ab);
 	}
 
@@ -6160,13 +6166,19 @@ static void ath12k_core_reset(struct work_struct *work)
 	    ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE3)
 		ath12k_partner_chip_power_state_info(ag, FW_ASSERTED_CHIP_PWR_DOWN);
 
-	if (ab->fw_recovery_support) {
+	if (ab->fw_recovery_support || ath12k_upload_dump_before_bugon) {
 		if (ab->hif.bus == ATH12K_BUS_PCI) {
 			ath12k_hif_power_down(ab, false);
 		} else {
 			if (!test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 				ath12k_core_upd_power_down(ab);
 		}
+	}
+
+	if (!ab->fw_recovery_support && ath12k_upload_dump_before_bugon) {
+		ath12k_core_trigger_bug_on(ab);
+		mutex_unlock(&ag->mutex);
+		return;
 	}
 
 	/* prepare for power up */
@@ -7519,6 +7531,14 @@ int ath12k_core_init(struct ath12k_base *ab)
 	bool is_ready;
 	int ret;
 
+	/* Enable dump upload for Trestles (QCN9625). Set once; subsequent
+	 * radios in the same group inherit the value via the global flag.
+	 */
+	if (!ath12k_upload_dump_before_bugon &&
+	    (ab->hw_rev == ATH12K_HW_QCN9625_HW10 ||
+	     ab->hw_rev == ATH12K_HW_QCN9625_HW20))
+		ath12k_upload_dump_before_bugon = true;
+
 	ret = ath12k_core_panic_notifier_register(ab);
 	if (ret)
 		ath12k_warn(ab, "failed to register panic handler: %d\n", ret);
@@ -7526,6 +7546,7 @@ int ath12k_core_init(struct ath12k_base *ab)
 #ifdef CPTCFG_ATHDEBUG
 	athdbg_ops_register(ab);
 #endif
+
 	mutex_lock(&ath12k_hw_group_mutex);
 
 	ag = ath12k_core_hw_group_assign(ab);
@@ -7722,29 +7743,43 @@ err_sc_free:
 
 void ath12k_core_issue_bug_on(struct ath12k_base *ab)
 {
-        struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k_hw_group *ag = ab->ag;
 
-        if (ab->in_panic)
-                goto out;
+	if (ab->in_panic)
+		goto out;
 
-        /* set in_panic to true to avoid multiple rddm download during
-         * firmware crash
-         */
-        ab->in_panic = true;
+	/* set in_panic to true to avoid multiple rddm download during
+	 * firmware crash
+	 */
+	ab->in_panic = true;
 
-        if (!ag->mlo_capable)
-                BUG_ON(1);
+	if (!ag->mlo_capable) {
+#ifdef CPTCFG_ATHDEBUG
+		if (athdbg_if_get_service(ab, ATHDBG_SRV_CHECK_DUMP_UPLOAD)) {
+			ath12k_info(ab, "Waiting to upload dump to cloud\n");
+			msleep(90000);
+		}
+#endif
+		BUG_ON(1);
+	}
 
 	if (atomic_read(&ath12k_coredump_ram_info.num_chip) >=
-			(ab->ag->num_started - ab->ag->num_bypassed))
-                BUG_ON(1);
-        else
-                goto out;
+			(ab->ag->num_started - ab->ag->num_bypassed)) {
+#ifdef CPTCFG_ATHDEBUG
+		if (athdbg_if_get_service(ab, ATHDBG_SRV_CHECK_DUMP_UPLOAD)) {
+			ath12k_info(ab, "all chip dumps collected, waiting to upload dump to cloud\n");
+			msleep(90000);
+		}
+#endif
+		BUG_ON(1);
+	} else {
+		goto out;
+	}
 
 out:
-        ath12k_info(ab,
-                    "%d chip dump collected and waiting for partner chips\n",
-                    atomic_read(&ath12k_coredump_ram_info.num_chip));
+	ath12k_info(ab,
+		    "%d chip dump collected and waiting for partner chips\n",
+		    atomic_read(&ath12k_coredump_ram_info.num_chip));
 }
 
 struct ath12k_breach_ctx {

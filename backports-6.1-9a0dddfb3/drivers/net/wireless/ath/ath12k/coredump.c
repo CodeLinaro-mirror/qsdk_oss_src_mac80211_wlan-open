@@ -716,7 +716,8 @@ void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 	collect_dump = ath12k_fw_q6_dump_collection &&
 			!test_bit(ATH12K_FLAG_QMI_FW_READY_COMPLETE, &ab->dev_flags);
 
-	if (no_recovery && !collect_dump) {
+	if (no_recovery && !collect_dump &&
+	    (!ath12k_upload_dump_before_bugon || ab->in_panic)) {
 		if (ag->mlo_capable) {
 			dump_count = atomic_read(&ath12k_coredump_ram_info.num_chip);
 			if (dump_count >= ATH12K_MAX_SOCS) {

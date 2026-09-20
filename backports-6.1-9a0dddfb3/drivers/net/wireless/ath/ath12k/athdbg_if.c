@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 /* Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.*/
 #include "athdbg_if.h"
+#include "ath_debug/athdbg_uio.h"
 #include "ath_debug/athdbg_core.h"
 #include "ath_debug/athdbg_minidump.h"
 #include "ath_debug/athdbg_mhi.h"
@@ -143,6 +144,9 @@ int athdbg_if_get_service(struct ath12k_base *ab, enum athdbg_service srv)
 		break;
 	case ATHDBG_SRV_QMI_INIT:
 		ret = athdbg_qmi_worker_init(ab);
+		break;
+	case ATHDBG_SRV_CHECK_DUMP_UPLOAD:
+		ret = athdbg_uio_check_dump_upload();
 		break;
 	}
 
