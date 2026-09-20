@@ -2755,6 +2755,7 @@ struct ath12k_hw_group {
 	bool cumac_enabled;
 	struct ath12k_base *assert_ab;
 	bool recovery_t2lm_active;
+	bool power_save_mode;
 };
 
 /* Holds WSI info specific to each device, excluding WSI group info */
