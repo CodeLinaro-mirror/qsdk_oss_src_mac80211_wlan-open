@@ -2246,6 +2246,15 @@ ath12k_wifi7_hal_mon_tx_fes_setup_info_parse(const void *tlv_data, u32 userid,
 		ath12k_wifi7_hal_mon_tx_fes_setup_info_get(tlv_data,
 							   userid,
 							   ppdu_info);
+
+	/* HAL_TX_MON_FES_SETUP_INFO0_NUM_OF_USERS[_CMPCT] is a 6-bit HW/FW
+	 * field (GENMASK(28,23), range 0-63), while ppdu_info->rx_status.userstats[]
+	 * is statically sized to HAL_MAX_UL_MU_USERS (37).
+	 * Clamp so an out-of-range TLV value can't drive the per-user
+	 * processing loops past the end of userstats[].
+	 */
+	if (ppdu_info->num_users > HAL_MAX_UL_MU_USERS)
+		ppdu_info->num_users = HAL_MAX_UL_MU_USERS;
 }
 
 static __always_inline void
