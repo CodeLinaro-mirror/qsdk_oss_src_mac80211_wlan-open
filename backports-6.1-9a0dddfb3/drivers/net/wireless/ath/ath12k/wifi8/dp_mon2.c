@@ -665,6 +665,9 @@ ath12k_wifi8_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 
 	type = ((__le16_to_cpu(hdr->frame_control) & IEEE80211_FCTL_FTYPE) >>
 		ATH12K_FC0_TYPE_SHIFT);
+	sub_type = ((__le16_to_cpu(hdr->frame_control) &
+		     IEEE80211_FCTL_STYPE) >> ATH12K_FC0_SUBTYPE_SHIFT);
+	is_mcast = is_multicast_ether_addr(hdr->addr1);
 
 	if (unlikely(type >= ATH12K_EXT_MON_FRAME_MAX)) {
 		spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
@@ -681,9 +684,6 @@ ath12k_wifi8_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 			 * are ORed in, extra frame type/subtypes may be received;
 			 * explicitly filter out those unintended frames here.
 			 */
-			sub_type = ((__le16_to_cpu(hdr->frame_control) &
-				     IEEE80211_FCTL_STYPE) >> ATH12K_FC0_SUBTYPE_SHIFT);
-			is_mcast = is_multicast_ether_addr(hdr->addr1);
 			ret = ath12k_dp_ext_mon_subtype_check(pkt_config, type,
 							      sub_type, is_mcast);
 			if (unlikely(ret)) {
@@ -708,8 +708,21 @@ ath12k_wifi8_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 			pkt_config = &config->mo;
 		break;
 	case DP_MPDU_FILTER_CATEGORY_FP_MO:
-		if (config->fpmo_enabled)
+		if (config->fpmo_enabled) {
 			pkt_config = &config->fpmo;
+			/* When FPMO statistics are enabled and extended monitor filters
+			 * are ORed in, extra frame type/subtypes may be received;
+			 * explicitly filter out those unintended frames here.
+			 */
+			ret = ath12k_dp_ext_mon_subtype_check(pkt_config, type,
+							      sub_type, is_mcast);
+			if (unlikely(ret)) {
+				spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
+				ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON,
+					   "Filtered subtype %x\n", sub_type);
+				return -EINVAL;
+			}
+		}
 		break;
 	default:
 		spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
