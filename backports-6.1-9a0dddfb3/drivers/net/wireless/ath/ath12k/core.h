@@ -2686,6 +2686,10 @@ enum ath12k_cumac_band {
 	ATH12K_CUMAC_BAND_2GHZ,
 	ATH12K_CUMAC_BAND_5GHZ,
 	ATH12K_CUMAC_BAND_6GHZ,
+	ATH12K_CUMAC_BAND_5GHZ_LOW,
+	ATH12K_CUMAC_BAND_5GHZ_HIGH,
+	ATH12K_CUMAC_BAND_6GHZ_LOW,
+	ATH12K_CUMAC_BAND_6GHZ_HIGH,
 };
 
 /* Holds info on the group of devices that are registered as a single
