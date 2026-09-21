@@ -17301,7 +17301,7 @@ static int ath12k_vendor_get_sta_info_dumpit(struct wiphy *wiphy,
 }
 
 int
-ath12k_vendor_send_es_oem_data(struct ieee80211_hw *hw, u8 radio_id, u32 content_type,
+ath12k_vendor_send_es_oem_data(struct ieee80211_hw *hw, u32 content_type,
 			       u32 num_bytes_valid, const u8 *data)
 {
 	struct sk_buff *vendor_event = NULL;
@@ -17329,7 +17329,11 @@ ath12k_vendor_send_es_oem_data(struct ieee80211_hw *hw, u8 radio_id, u32 content
 		goto out;
 	}
 
-	packaged->l_radio_id = radio_id;
+	/* Link id is used when sending data from ES to FW. When sending FW to
+	 * ES, link id is not utilized
+	 */
+	packaged->l_ifidx = INVALID_IFIDX;
+	packaged->l_link_id = INVALID_LINK_ID;
 	packaged->l_content_type = cpu_to_le32(content_type);
 	packaged->l_num_bytes_valid = cpu_to_le32(num_bytes_valid);
 	memcpy(packaged->l_data, data, num_bytes_valid);
@@ -17359,16 +17363,18 @@ static int ath12k_vendor_oem_data(struct wiphy *wiphy, struct wireless_dev *wdev
 				  const void *data, int data_len)
 {
 	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_OEM_DATA_PARAMS_MAX + 1];
-	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
-	struct ath12k_hw *ah = hw->priv;
 	struct ath12k *ar;
 	const struct oem_vendor_build *packaged;
 	u32 content_type, num_bytes_valid;
-	u8 *data_ptr, radio_id;
+	u8 *data_ptr, link_id;
+	u32 ifidx;
 #ifdef CPTCFG_QCN_EXTN
 	u8 device_info;
+	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
+	struct ath12k_hw *ah = hw->priv;
 #endif
 	int ret, payload_len;
+	struct net_device *dev;
 
 	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_OEM_DATA_PARAMS_MAX,
 			(struct nlattr *)data, data_len,
@@ -17402,7 +17408,8 @@ static int ath12k_vendor_oem_data(struct wiphy *wiphy, struct wireless_dev *wdev
 		return -EINVAL;
 	}
 
-	radio_id = packaged->l_radio_id;
+	ifidx = packaged->l_ifidx;
+	link_id = packaged->l_link_id;
 	content_type = le32_to_cpu(packaged->l_content_type);
 	num_bytes_valid = le32_to_cpu(packaged->l_num_bytes_valid);
 	if (payload_len - sizeof(*packaged) < num_bytes_valid) {
@@ -17413,12 +17420,17 @@ static int ath12k_vendor_oem_data(struct wiphy *wiphy, struct wireless_dev *wdev
 
 	data_ptr = (u8 *)packaged->l_data;
 
-	rcu_read_lock();
-	ar = ath12k_ah_to_ar(ah, radio_id);
-	rcu_read_unlock();
+	dev = dev_get_by_index(&init_net, ifidx);
+	if (!dev) {
+		ath12k_err(NULL, "OEM data: no netdev for ifidx %u\n", ifidx);
+		return -ENODEV;
+	}
+
+	ar = ath12k_get_ar_from_wdev(dev->ieee80211_ptr, link_id);
+	dev_put(dev);
 
 	if (!ar) {
-		ath12k_warn(ar->ab, "invalid ar for Energy Service OEM data\n");
+		ath12k_err(NULL, "invalid ar for Energy Service OEM data\n");
 		return -EINVAL;
 	}
 

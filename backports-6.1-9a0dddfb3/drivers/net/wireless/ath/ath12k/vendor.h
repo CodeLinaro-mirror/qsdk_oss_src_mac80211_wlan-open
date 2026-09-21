@@ -9,7 +9,8 @@
 
 #define QCA_NL80211_VENDOR_ID 0x001374
 
-#define INVALID_LINK_ID 0xFF
+#define INVALID_IFIDX	0xFF
+#define INVALID_LINK_ID	0xFF
 #define is_valid_link_id(X) !((X) >= INVALID_LINK_ID)
 
 #define QCA_NL80211_AFC_REQ_RESP_BUF_MAX_SIZE          5000
@@ -88,7 +89,8 @@ struct ieee80211_wlanconfig_me_list {
 };
 
 struct oem_vendor_build {
-	u8 l_radio_id;
+	u8 l_ifidx;
+	u8 l_link_id;
 	__le32 l_content_type;
 	__le32 l_num_bytes_valid;
 	u8 l_data[];
@@ -215,7 +217,7 @@ void ath12k_vendor_rssi_rate_notify_breach(struct ieee80211_vif *vif, u8 *mac_ad
 					   u8 breach_type, u32 threshold_value,
 					   u32 detected_value, bool set_clear,
 					   u8 *mld_addr);
-int ath12k_vendor_send_es_oem_data(struct ieee80211_hw *hw, u8 radio_id, u32 content_type,
+int ath12k_vendor_send_es_oem_data(struct ieee80211_hw *hw, u32 content_type,
 				   u32 num_bytes_valid, const u8 *data);
 int ath12k_vendor_send_pasn_event(struct wiphy *wiphy, struct wireless_dev *wdev,
 				  u8 link_id, u32 action, const u8 *src_addr,

@@ -20467,7 +20467,6 @@ static void ath12k_wmi_energy_mgmt_oem_data_event(struct ath12k_base *ab,
 	struct ath12k *ar;
 	u32 content_type, num_bytes_valid;
 	const void **tb;
-	u8 radio_id;
 
 	tb = ath12k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
 	if (IS_ERR(tb)) {
@@ -20493,13 +20492,12 @@ static void ath12k_wmi_energy_mgmt_oem_data_event(struct ath12k_base *ab,
 		goto end;
 	}
 	hw = ar->ah->hw;
-	radio_id = ar->radio_idx;
 	rcu_read_unlock();
 
 	ath12k_dbg(ab, ATH12K_DBG_WMI, "Energy Service OEM data event");
 
-	ath12k_vendor_send_es_oem_data(hw, radio_id, content_type,
-				       num_bytes_valid, tlv->value);
+	ath12k_vendor_send_es_oem_data(hw, content_type, num_bytes_valid,
+				       tlv->value);
 end:
 	kfree(tb);
 }
