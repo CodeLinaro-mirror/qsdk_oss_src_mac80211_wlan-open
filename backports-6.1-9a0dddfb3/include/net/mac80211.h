@@ -1175,6 +1175,9 @@ enum mac80211_tx_control_flags {
 	IEEE80211_TX_CTRL_MCAST_MLO_FIRST_TX	= BIT(9),
 	IEEE80211_TX_CTRL_DONT_USE_RATE_MASK	= BIT(10),
 	IEEE80211_TX_CTRL_MGMT_RATE_EXIST	= BIT(11),
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	IEEE80211_TX_CTRL_MON_RAW_TX		= BIT(12),
+#endif
 	IEEE80211_TX_CTRL_MLO_LINK		= 0xf0000000,
 };
 
@@ -3232,10 +3235,18 @@ enum sta_notify_cmd {
  *	%IEEE80211_HW_VLAN_GROUP_KEY_HW_OFFLOAD and allows the driver
  *	to select VLAN-specific group keys (GTKs) in hardware. For drivers
  *	that do not implement VLAN group key offload this field will be %NULL.
+ * @src_vif: Actual vif through which the frame arrived. During 802.11 Raw Frame
+ *      transmission through the monitor interface, the transmitting interface
+ *      would be selected based on the transmit or bssid mac address in the 802.11 frame.
+ *      This src_vif helps recognize the special transmit happens through the monitor
+ *      interface and access the monitor interface structure easily.
  */
 struct ieee80211_tx_control {
 	struct ieee80211_sta *sta;
 	struct ieee80211_vif *vlan_vif;
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	struct ieee80211_vif *src_vif;
+#endif
 };
 
 /**

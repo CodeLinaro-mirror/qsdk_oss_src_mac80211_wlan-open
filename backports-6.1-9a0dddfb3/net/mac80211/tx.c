@@ -27,6 +27,9 @@
 #include <asm/unaligned.h>
 #include <net/fq_impl.h>
 #include <net/gso.h>
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+#include "qcn_extns/cmn_extn.h"
+#endif
 
 #include "ieee80211_i.h"
 #include "driver-ops.h"
@@ -1970,7 +1973,9 @@ static bool ieee80211_tx_frags(struct ieee80211_local *local,
 		__skb_unlink(skb, skbs);
 		if (local->enable_tx_latency_stats)
 			info->latency.tx_start_time =  ieee80211_txdelay_get_time();
-
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+		control.src_vif = NULL;
+#endif
 		drv_tx(local, &control, skb);
 	}
 
@@ -2550,12 +2555,24 @@ bool ieee80211_parse_tx_radiotap(struct sk_buff *skb,
 netdev_tx_t ieee80211_monitor_start_xmit(struct sk_buff *skb,
 					 struct net_device *dev)
 {
-	struct ieee80211_local *local = wdev_priv(dev->ieee80211_ptr);
-	struct ieee80211_chanctx_conf *chanctx_conf;
-	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
-	struct ieee80211_hdr *hdr;
+	struct wireless_dev *wdev = (struct wireless_dev *)dev->ieee80211_ptr;
 	struct ieee80211_sub_if_data *tmp_sdata, *sdata;
-	struct cfg80211_chan_def *chandef;
+	struct ieee80211_local *local = wdev_priv(wdev);
+	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
+	struct ieee80211_chanctx_conf *chanctx_conf;
+	struct cfg80211_chan_def *chandef = NULL;
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	struct wiphy *wiphy = wdev->wiphy;
+	struct ieee80211_sub_if_data *sdata1 = NULL;
+	struct ieee80211_tx_control control = {};
+	int mon_center_freq1, tmp_center_freq;
+	struct ieee80211_bss_conf *bss_conf;
+	struct ieee80211_key *key = NULL;
+	struct sta_info *sta = NULL;
+	int i;
+#endif
+	bool mon_raw_tx = false;
+	struct ieee80211_hdr *hdr;
 	u16 len_rthdr;
 	int hdrlen;
 	bool tid_stats_disable = local->hw.tid_stats_disable;
@@ -2569,7 +2586,25 @@ netdev_tx_t ieee80211_monitor_start_xmit(struct sk_buff *skb,
 	info->flags = IEEE80211_TX_CTL_REQ_TX_STATUS |
 		      IEEE80211_TX_CTL_INJECTED;
 
-	if (!tid_stats_disable) {
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	if (!cfg80211_is_driver_mac80211_hwsim(wiphy)) {
+		if (skb->len && skb->data[0] == MMESH_MON_RAW_TX_MAGIC)
+			mon_raw_tx = true;
+		else
+			goto fail;
+	}
+
+	if (mon_raw_tx) {
+
+		/* SKB pull the MMESH header infront the SKB */
+		skb_pull(skb, sdata->vif.mhdr_len);
+
+		/* Reset the info flags here */
+		info->flags = 0;
+	}
+#endif
+
+	if (!tid_stats_disable && !mon_raw_tx) {
 		skb->priority = cfg80211_classify8021d(skb, NULL);
 		ieee80211_tid_classifier(skb, sdata, false, TX_MONITOR_PKT);
 	}
@@ -2580,6 +2615,13 @@ netdev_tx_t ieee80211_monitor_start_xmit(struct sk_buff *skb,
 						TX_DROP_SDATA_STATE);
 		goto fail;
 	}
+
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	if (mon_raw_tx) {
+		len_rthdr = 0;
+		goto montxpath;
+	}
+#endif
 
 	/* Sanity-check the length of the radiotap header */
 	if (!ieee80211_validate_radiotap_len(skb)) {
@@ -2613,6 +2655,9 @@ netdev_tx_t ieee80211_monitor_start_xmit(struct sk_buff *skb,
 		goto fail;
 	}
 
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+montxpath:
+#endif
 	hdr = (struct ieee80211_hdr *)(skb->data + len_rthdr);
 	hdrlen = ieee80211_hdrlen(hdr->frame_control);
 
@@ -2656,10 +2701,12 @@ netdev_tx_t ieee80211_monitor_start_xmit(struct sk_buff *skb,
 			continue;
 		if (ether_addr_equal(tmp_sdata->vif.addr, hdr->addr2)) {
 			sdata = tmp_sdata;
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+			sdata1 = tmp_sdata;
+#endif
 			break;
 		}
 	}
-
 	chanctx_conf = rcu_dereference(sdata->vif.bss_conf.chanctx_conf);
 	if (!chanctx_conf) {
 		tmp_sdata = rcu_dereference(local->monitor_sdata);
@@ -2674,9 +2721,83 @@ netdev_tx_t ieee80211_monitor_start_xmit(struct sk_buff *skb,
 		if (!tid_stats_disable)
 			ieee80211_tx_drop_stats(sdata, info->tid,
 						TX_DROP_BAD_CHANCTX_CONF);
-		goto fail_rcu;
+
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+		for (i = 0; i < IEEE80211_MLD_MAX_NUM_LINKS; i++) {
+			bss_conf = rcu_dereference(sdata->vif.link_conf[i]);
+			if (bss_conf) {
+				chanctx_conf = rcu_dereference(bss_conf->chanctx_conf);
+				if (chanctx_conf)
+					chandef = &chanctx_conf->def;
+				break;
+			}
+		}
+		if (!chandef)
+			goto fail_rcu;
+#endif
 	}
 
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	if (!mon_raw_tx)
+		goto skip_if_select;
+
+	if (chandef)
+		mon_center_freq1 = chandef->center_freq1;
+
+	/* Transmit interface found sdata1 */
+	if (sdata1)
+		goto montxpath1;
+
+	/* No matching interface found in sdata1.
+	 * Select the Mesh interface for transmit.
+	 */
+	list_for_each_entry_rcu(tmp_sdata, &local->interfaces, list) {
+		if (!ieee80211_sdata_running(tmp_sdata))
+			continue;
+
+		if (tmp_sdata->vif.type == NL80211_IFTYPE_MONITOR ||
+		    tmp_sdata->vif.type == NL80211_IFTYPE_AP_VLAN) {
+			continue;
+		}
+
+		if (tmp_sdata->wdev.vap_submode != WDEV_VAP_SUBMODE_MESH)
+			continue;
+
+		tmp_center_freq = 0;
+		chanctx_conf = rcu_dereference(tmp_sdata->vif.bss_conf.chanctx_conf);
+		if (chanctx_conf) {
+			chandef = &chanctx_conf->def;
+			tmp_center_freq = chandef->center_freq1;
+		} else {
+			tmp_center_freq = 0;
+			for (i = 0; i < IEEE80211_MLD_MAX_NUM_LINKS; i++) {
+				bss_conf = rcu_dereference(tmp_sdata->vif.link_conf[i]);
+				if (bss_conf) {
+					chanctx_conf =
+						rcu_dereference(bss_conf->chanctx_conf);
+					break;
+				}
+			}
+			if (chanctx_conf) {
+				chandef = &chanctx_conf->def;
+				tmp_center_freq = chandef->center_freq1;
+			}
+		}
+
+		if (mon_center_freq1 != tmp_center_freq)
+			continue;
+
+		if (tmp_sdata->vif.type == NL80211_IFTYPE_AP) {
+			sdata1 = tmp_sdata;
+			sdata = tmp_sdata;
+		}
+	}
+
+	if (mon_raw_tx)
+		goto montxpath1;
+
+skip_if_select:
+#endif
 	/*
 	 * If driver/HW supports IEEE80211_CHAN_CAN_MONITOR we still
 	 * shouldn't transmit on disabled channels.
@@ -2736,10 +2857,37 @@ netdev_tx_t ieee80211_monitor_start_xmit(struct sk_buff *skb,
 		goto fail_rcu;
 	}
 
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+montxpath1:
+	if (mon_raw_tx) {
+		sta = NULL;
+		if (sdata->vif.type == NL80211_IFTYPE_AP)
+			sta = sta_info_get_bss(sdata, hdr->addr1);
+
+		if (sta)
+			key = rcu_dereference(sta->ptk[sta->ptk_idx]);
+
+		if (!key && sdata)
+			key = rcu_dereference(sdata->default_unicast_key);
+
+		if (key)
+			info->control.hw_key = &key->conf;
+
+		info->control.vif = &sdata->vif;
+		info->control.flags |= IEEE80211_TX_CTRL_MON_RAW_TX;
+		control.src_vif =  wdev_to_ieee80211_vif(wdev);
+		/* Deliver the frame to vendor driver directly from here */
+		drv_tx(local, &control, skb);
+		goto montxpath2;
+	}
+#endif
 	/* remove the injection radiotap header */
 	skb_pull(skb, len_rthdr);
-
 	ieee80211_xmit(sdata, NULL, skb);
+
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+montxpath2:
+#endif
 	rcu_read_unlock();
 
 	return NETDEV_TX_OK;
@@ -4080,6 +4228,9 @@ void __ieee80211_xmit_fast(struct ieee80211_sub_if_data *sdata,
 	if (likely(skip_tx_queue)) {
 		info->control.vif = &sdata->vif;
 		control.sta = sta ? &sta->sta : NULL;
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+		control.src_vif = NULL;
+#endif
 		drv_tx(local, &control, skb);
 	} else {
 		__skb_queue_tail(&tx.skbs, skb);
@@ -5044,6 +5195,9 @@ static bool __ieee80211_tx_8023(struct ieee80211_sub_if_data *sdata,
 	if (local->enable_tx_latency_stats)
 		info->latency.tx_start_time =  ieee80211_txdelay_get_time();
 
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	control.src_vif = NULL;
+#endif
 	drv_tx(local, &control, skb);
 
 	if (sta)
@@ -5069,6 +5223,9 @@ static bool ieee80211_tx_8023(struct ieee80211_sub_if_data *sdata,
 			pubsta = &sta->sta;
 
 		control.sta = pubsta;
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+		control.src_vif = NULL;
+#endif
 		drv_tx(local, &control, skb);
 		return ret;
 	}
@@ -5303,7 +5460,9 @@ void ieee80211_8023_xmit_ap(struct ieee80211_sub_if_data *sdata,
 		pubsta = &sta->sta;
 
 	control.sta = pubsta;
-
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	control.src_vif = NULL;
+#endif
 	drv_tx(local, &control, skb);
 
 	if (sta)
@@ -5345,6 +5504,9 @@ netdev_tx_t ieee80211_subif_start_xmit_8023(struct sk_buff *skb,
 		info->flags = IEEE80211_TX_CTL_HW_80211_ENCAP;
 
 		control.sta = NULL;
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+		control.src_vif = NULL;
+#endif
 		drv_tx(sdata->local, &control,  skb);
 
 		return NETDEV_TX_OK;
