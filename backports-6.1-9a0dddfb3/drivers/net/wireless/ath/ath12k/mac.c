@@ -10916,9 +10916,11 @@ skip_pending_tx_vdev_up:
 	if (changed & BSS_CHANGED_ML_MAX_REC_LINKS)
 		ath12k_mac_vdev_ml_max_rec_links(arvif, info->ml_max_rec_links);
 
-	if (changed & BSS_CHANGED_AP_DPS_ASSIST)
+	if (changed & BSS_CHANGED_AP_DPS_ASSIST) {
+		arvif->dps_assist_enabled = info->dps_assist_support;
 		ath12k_wmi_send_dps_assist_cmd(ar, arvif->vdev_id,
 					       info->dps_assist_support);
+	}
 }
 
 static struct ath12k_vif_cache *ath12k_ahvif_get_link_cache(struct ath12k_vif *ahvif,
@@ -20418,6 +20420,57 @@ void ath12k_mac_drain_tx(struct ath12k *ar)
 	ath12k_mgmt_over_wmi_tx_purge(ar);
 }
 
+static void ath12k_mac_set_powersave(struct ath12k *ar)
+{
+	if (ar->pcie_params_set) {
+		struct cfg80211_pcie_params *p = &ar->pcie_params;
+		u32 wmi_config_type;
+
+		switch (p->cmd) {
+		case CFG80211_PCIE_CMD_GEN_LANE:
+			ath12k_wmi_send_pcie_gen_lane(ar, p->enable,
+						      p->config_type ?
+						      WMI_PCIE_FORCED_STATIC :
+						      WMI_PCIE_CHANNEL_BANDWIDTH,
+						      p->pcie_gen, p->pcie_lane);
+			break;
+		case CFG80211_PCIE_CMD_LOW_POWER:
+			if (!p->enable)
+				wmi_config_type = WMI_PCIE_LPM_UNKNOWN;
+			else if (p->config_type == CFG80211_PCIE_LOW_POWER_L0S)
+				wmi_config_type = WMI_PCIE_LPM_L0S;
+			else if (p->config_type == CFG80211_PCIE_LOW_POWER_L1)
+				wmi_config_type = WMI_PCIE_LPM_L1;
+			else
+				wmi_config_type = WMI_PCIE_LPM_L0S_L1;
+			ath12k_wmi_send_pcie_low_power(ar, p->enable,
+						       wmi_config_type);
+			break;
+		default:
+			break;
+		}
+	}
+
+	if (ar->dcvs_mode_set) {
+		switch (ar->dcvs_mode) {
+		case CFG80211_DCVS_CMD_ON:
+			ath12k_wmi_send_dcvs_cmd(ar, WMI_DCVS_ENABLE);
+			break;
+		case CFG80211_DCVS_CMD_OFF:
+			ath12k_wmi_send_dcvs_cmd(ar, WMI_DCVS_DISABLE);
+			break;
+		case CFG80211_DCVS_CMD_NO_LIMIT:
+			ath12k_wmi_send_dcvs_cmd(ar, WMI_DCVS_NO_LIMITATION);
+			break;
+		default:
+			break;
+		}
+	}
+
+	if (ar->low_power_20mhz_enabled)
+		ath12k_wmi_send_low_power_20mhz(ar, ar->low_power_20mhz_enabled);
+}
+
 int ath12k_mac_start(struct ath12k *ar)
 {
 	struct ath12k_hw *ah = ar->ah;
@@ -20648,6 +20701,9 @@ int ath12k_mac_start(struct ath12k *ar)
 		wiphy_delayed_work_queue(ath12k_ar_to_hw(ar)->wiphy,
 					 &ar->pdev_stats_timer,
 					 msecs_to_jiffies(ar->pdev_stats_timer_interval));
+
+	ath12k_mac_set_powersave(ar);
+
 	return 0;
 err:
 
@@ -22011,6 +22067,10 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 #endif /* CPTCFG_QCN_EXTN */
 
 	ath12k_mac_ap_ps_recalc(ar);
+
+	if (arvif->dps_assist_enabled)
+		ath12k_wmi_send_dps_assist_cmd(ar, arvif->vdev_id,
+					       WMI_DPS_ASSIST_ENABLE);
 
 	/* for scan radio DP attach is not required as there
 	 * is no tx or rx from datapath
@@ -33957,10 +34017,12 @@ EXPORT_SYMBOL(ath12k_mac_op_set_monitor_flags);
 #define ATH12K_PCIE_MIN_LANE	1
 #define ATH12K_PCIE_MAX_LANE	2
 
-static int ath12k_mac_op_pcie(struct ath12k *ar,
+static int ath12k_mac_op_pcie(struct ath12k_link_vif *arvif,
 			      struct cfg80211_pcie_params *params)
 {
+	struct ath12k *ar = arvif->ar;
 	u32 wmi_config_type;
+	int ret;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -33986,12 +34048,13 @@ static int ath12k_mac_op_pcie(struct ath12k *ar,
 			return -EINVAL;
 		}
 
-		return ath12k_wmi_send_pcie_gen_lane(ar, params->enable,
+		ret = ath12k_wmi_send_pcie_gen_lane(ar, params->enable,
 						     params->config_type ?
 						     WMI_PCIE_FORCED_STATIC :
 						     WMI_PCIE_CHANNEL_BANDWIDTH,
 						     params->pcie_gen,
 						     params->pcie_lane);
+		break;
 	case CFG80211_PCIE_CMD_LOW_POWER:
 		if (!params->enable)
 			wmi_config_type = WMI_PCIE_LPM_UNKNOWN;
@@ -34007,48 +34070,84 @@ static int ath12k_mac_op_pcie(struct ath12k *ar,
 			return -EINVAL;
 		}
 
-		return ath12k_wmi_send_pcie_low_power(ar, params->enable,
+		ret = ath12k_wmi_send_pcie_low_power(ar, params->enable,
 						      wmi_config_type);
+		break;
 	default:
 		return -EINVAL;
 	}
+
+	if (!ret) {
+		ar->pcie_params = *params;
+		ar->pcie_params_set = true;
+	}
+
+	return ret;
 }
 
-static int ath12k_mac_op_dcvs(struct ath12k *ar, u32 dcvs_mode)
+static int ath12k_mac_op_dcvs(struct ath12k_link_vif *arvif, u32 dcvs_mode)
 {
+	struct ath12k *ar = arvif->ar;
+	int ret;
+
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
 	switch (dcvs_mode) {
 	case CFG80211_DCVS_CMD_ON:
-		return ath12k_wmi_send_dcvs_cmd(ar, WMI_DCVS_ENABLE);
+		ret = ath12k_wmi_send_dcvs_cmd(ar, WMI_DCVS_ENABLE);
+		break;
 	case CFG80211_DCVS_CMD_OFF:
-		return ath12k_wmi_send_dcvs_cmd(ar, WMI_DCVS_DISABLE);
+		ret = ath12k_wmi_send_dcvs_cmd(ar, WMI_DCVS_DISABLE);
+		break;
 	case CFG80211_DCVS_CMD_NO_LIMIT:
-		return ath12k_wmi_send_dcvs_cmd(ar, WMI_DCVS_NO_LIMITATION);
+		ret = ath12k_wmi_send_dcvs_cmd(ar, WMI_DCVS_NO_LIMITATION);
+		break;
 	default:
 		return -EINVAL;
 	}
+
+	if (!ret) {
+		ar->dcvs_mode = dcvs_mode;
+		ar->dcvs_mode_set = true;
+	}
+
+	return ret;
 }
 
-static int ath12k_mac_op_dps_assist(struct ath12k *ar, u32 vdev_id,
+static int ath12k_mac_op_dps_assist(struct ath12k_link_vif *arvif,
 				    bool dps_assist_enable)
 {
-	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+	int ret;
+
+	lockdep_assert_wiphy(ath12k_ar_to_hw(arvif->ar)->wiphy);
 
 	if (dps_assist_enable)
-		return ath12k_wmi_send_dps_assist_cmd(ar, vdev_id,
+		ret = ath12k_wmi_send_dps_assist_cmd(arvif->ar, arvif->vdev_id,
 						      WMI_DPS_ASSIST_ENABLE);
 	else
-		return ath12k_wmi_send_dps_assist_cmd(ar, vdev_id,
-						      WMI_DPS_ASSIST_DISABLE);
+		ret = ath12k_wmi_send_dps_assist_cmd(arvif->ar, arvif->vdev_id,
+						     WMI_DPS_ASSIST_DISABLE);
+
+	if (!ret)
+		arvif->dps_assist_enabled = dps_assist_enable;
+
+	return ret;
 }
 
-static int ath12k_mac_op_low_power_20mhz(struct ath12k *ar, bool low_power_20mhz_enable)
+static int ath12k_mac_op_low_power_20mhz(struct ath12k_link_vif *arvif,
+					 bool low_power_20mhz_enable)
 {
+	struct ath12k *ar = arvif->ar;
+	int ret;
+
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
-	return ath12k_wmi_send_low_power_20mhz(ar, low_power_20mhz_enable);
+	ret = ath12k_wmi_send_low_power_20mhz(ar, low_power_20mhz_enable);
 
+	if (!ret)
+		ar->low_power_20mhz_enabled = low_power_20mhz_enable;
+
+	return ret;
 }
 
 int ath12k_mac_op_ap_power_save(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
@@ -34069,26 +34168,26 @@ int ath12k_mac_op_ap_power_save(struct ieee80211_hw *hw, struct ieee80211_vif *v
 	}
 
 	if (params->types & CFG80211_TYPE_PCIE) {
-		ret = ath12k_mac_op_pcie(arvif->ar, &params->pcie);
+		ret = ath12k_mac_op_pcie(arvif, &params->pcie);
 		if (ret)
 			return ret;
 	}
 
 	if (params->types & CFG80211_TYPE_DCVS) {
-		ret = ath12k_mac_op_dcvs(arvif->ar, params->dcvs_mode);
+		ret = ath12k_mac_op_dcvs(arvif, params->dcvs_mode);
 		if (ret)
 			return ret;
 	}
 
 	if (params->types & CFG80211_TYPE_DPS_ASSIST) {
-		ret = ath12k_mac_op_dps_assist(arvif->ar, arvif->vdev_id,
+		ret = ath12k_mac_op_dps_assist(arvif,
 					       params->dps_assist_enable);
 		if (ret)
 			return ret;
 	}
 
 	if (params->types & CFG80211_TYPE_LOW_POWER_20MHZ) {
-		ret = ath12k_mac_op_low_power_20mhz(arvif->ar,
+		ret = ath12k_mac_op_low_power_20mhz(arvif,
 						    params->low_power_20mhz_enable);
 		if (ret)
 			return ret;
