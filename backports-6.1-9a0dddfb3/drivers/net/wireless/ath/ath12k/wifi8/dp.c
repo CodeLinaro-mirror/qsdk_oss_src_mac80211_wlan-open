@@ -1842,6 +1842,7 @@ static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 	.dump_congestion_ctrl_stats = ath12k_wifi8_dp_tx_dump_congestion_ctrl_stats,
 	.dump_congestion_recovery_hist = ath12k_wifi8_dp_tx_dump_congestion_recovery_hist,
 	.set_congestion_ctrl_param = ath12k_wifi8_dp_tx_set_congestion_ctrl_param,
+	.dump_congestion_ctrl_param = ath12k_wifi8_dp_tx_dump_congestion_ctrl_param,
 	.dp_smd_prep_transfer_ext_ctx = ath12k_wifi8_dp_smd_prep_transfer_ext_ctx,
 	.dp_smd_exec_activate_links = ath12k_wifi8_dp_smd_exec_activate_links,
 	.dp_smd_prep_rx_tid = ath12k_wifi8_dp_smd_prep_rx_tid,

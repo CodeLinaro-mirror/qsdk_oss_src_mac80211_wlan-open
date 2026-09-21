@@ -8881,9 +8881,34 @@ static ssize_t ath12k_write_congestion_ctrl_param(struct file *file,
 	return count;
 }
 
+static ssize_t ath12k_read_congestion_ctrl_param(struct file *file,
+						 char __user *user_buf,
+						 size_t count, loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	char *buf;
+	const int size = 1024;
+	int len = 0, retval;
+
+	buf = kzalloc(size, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	if (ab->dp->arch_ops->dump_congestion_ctrl_param)
+		len += ab->dp->arch_ops->dump_congestion_ctrl_param(ab->dp,
+								    buf + len,
+								    size - len);
+
+	retval = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	kfree(buf);
+
+	return retval;
+}
+
 static const struct file_operations fops_congestion_ctrl_set = {
 	.open = ath12k_debugfs_open,
 	.write = ath12k_write_congestion_ctrl_param,
+	.read = ath12k_read_congestion_ctrl_param,
 	.owner = THIS_MODULE,
 };
 

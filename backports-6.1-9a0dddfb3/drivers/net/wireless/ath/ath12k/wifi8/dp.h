@@ -145,6 +145,7 @@ struct ath12k_wifi8_dp_congestion_control {
 	u32 max_used;
 	u8 flow_drop_grace_percent;
 	u32 weights[HAL_TQM_SERVICE_CATEGORY_MAX];
+	u32 drop_msdu[HAL_TQM_SERVICE_CATEGORY_MAX];
 	unsigned long last_jiffies;
 	unsigned long last_drop_jiffies;
 	u32 continuous_drop_threshold;
