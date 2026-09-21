@@ -990,4 +990,34 @@ bool ath12k_mac_mgmt_need_smd_sta_session_ctx(struct sk_buff *skb);
 
 struct ieee80211_chanctx_conf*
 ath12k_mac_get_ctx_for_bridge_recovery(struct ath12k *ar);
+/**
+ * ath12k_ahvif_from_wdev - get ath12k_vif from a wireless_dev
+ * @wdev: wdev of any interface type, including NL80211_IFTYPE_AP_VLAN
+ *
+ * Unlike wdev_to_ieee80211_vif() and wdev_to_ieee80211_vif_vlan() which
+ * both redirect AP_VLAN wdevs to the master AP's vif, this function always
+ * returns the interface's OWN ath12k_vif via IEEE80211_WDEV_TO_SUB_IF.
+ *
+ * Use this wherever the caller needs the AP_VLAN's own ahvif — e.g. to
+ * read ahvif_id, dp_vif.ast_idx, dp_vif.bank_id for IPA VP programming.
+ */
+struct ath12k_vif *ath12k_ahvif_from_wdev(struct wireless_dev *wdev);
+
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+/**
+ * ath12k_mac_ipa_wds_apvlan_connect - call apvlan_connect after bank+TCL setup
+ * Called from wifi8/hw.c sta_set_4addr after wds_bank_srch_setup completes.
+ */
+void ath12k_mac_ipa_wds_apvlan_connect(struct ieee80211_hw *hw,
+				       struct ath12k_vif *ahvif);
+
+/**
+ * ath12k_mac_ipa_wds_apvlan_disconnect - call apvlan_disconnect on AP_VLAN
+ * teardown. Called from ath12k_mac_op_remove_interface()'s AP_VLAN
+ * per-link loop.
+ */
+void ath12k_mac_ipa_wds_apvlan_disconnect(struct ath12k_vif *ahvif,
+					  struct ath12k_link_vif *parent_arvif,
+					  struct ieee80211_vif *vlan_master_vif);
+#endif
 #endif

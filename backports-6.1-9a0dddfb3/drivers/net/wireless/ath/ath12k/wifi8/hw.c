@@ -28,12 +28,19 @@
 #include "dp_tx.h"
 #include "dp.h"
 #include "hal_qcn9625.h"
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+/* ath12k_dp_tx_get_bank_profile() is declared in dp.h (not wifi8/dp.h) */
+#include "../dp.h"
+/* ath12k_hif_write32() is in hif.h (not transitively included via core.h) */
+#include "../hif.h"
+#endif
 #include "mgmt_rx.h"
 #include "dp_peer.h"
 #include "dp_tx_queue.h"
 #include "../dp_mon.h"
 #ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/wifi8_dp_extn.h"
+#include "../qcn_extns/ipa/dp_ipa_pub.h"
 #endif /* CPTCFG_QCN_EXTN */
 #include "../cfr.h"
 
@@ -732,7 +739,11 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 
 		.iova_mask = 0,
 
+#ifdef PLATFORM_SDX
+		.supports_aspm = false,
+#else
 		.supports_aspm = true,
+#endif
 
 		.current_cc_support = false,
 
@@ -1480,6 +1491,13 @@ static void ath12k_wifi8_mac_op_tx(struct ieee80211_hw *hw,
 		dp_peer = ath12k_sta_get_dp_peer_rcu(ahsta);
 	}
 
+#ifdef CPTCFG_QCN_EXTN
+	/* ULSO: IPA TX accelerator bypass */
+	if (ath12k_wifi8_dp_ipa_xmit(arvif->ar, skb, skb_cb,
+				     ahvif, ahsta, arvif, is_mcast) == 0)
+		return;
+#endif
+
 	/* Checking if it is a DVLAN frame */
 	if (!test_bit(ATH12K_GROUP_FLAG_HW_CRYPTO_DISABLED, &ah->ag->flags) &&
 	    !(skb_cb->flags & ATH12K_SKB_HW_80211_ENCAP) &&
@@ -1507,7 +1525,180 @@ static void ath12k_wifi8_mac_op_tx(struct ieee80211_hw *hw,
 
 	local_bh_enable();
 }
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+/**
+ * ath12k_wifi8_dp_ipa_wds_bank_srch_setup - configure bank and TCL search
+ *    index table for a WDS STA (AP_VLAN) in IPA offload mode.
+ *
+ * Called from sta_set_4addr() after dp_vif_update_4addr() has set
+ * dp_vif->ast_idx and dp_vif->ast_hash.  Programs two hardware entities:
+ *
+ *  1. TCL bank with INDEX_LOOKUP_EN=1
+ *     The bank_id is stored in dp_vif->bank_id so that
+ *     ath12k_dp_ipa_set_ppe_vp_entry_config() can use it.
+ *
+ *  2. TCL PPE search-index table at slot = ahvif_id & 63
+ *     Value = packed(ast_idx[19:0] | ast_hash[3:0] << 20).
+ *     The slot number is stored in SRCH_IDX_REG_NUM of the VP config
+ *     register, telling hardware which table slot to look up for
+ *     AST-based peer resolution on the WDS STA TX path.
+ */
+static void ath12k_wifi8_dp_ipa_wds_bank_srch_setup(struct ath12k_hw *ah,
+						     struct ath12k_vif *ahvif)
+{
+	struct ath12k_dp_vif *dp_vif = &ahvif->dp_vif;
+	struct ath12k_vif *parent_ahvif;
+	struct ath12k_link_vif *parent_arvif = NULL;
+	struct ath12k_base *ab, *central_ab;
+	struct ath12k_dp *central_dp;
+	u32 bank_config;
+	int bank_id;
+	u8 slot;
+	u32 ppeds_idx_map_val;
+	int l;
 
+	if (!dp_vif->is_wds_4addr)
+		return;
+
+	if (!ahvif->vlan_iface || !ahvif->vlan_iface->parent_vif) {
+		printk(KERN_ERR "WDS_IPA_DBG: %s: vlan_iface=%p or parent_vif NULL"
+		       " ahvif_id=%u, bank/TCL setup SKIPPED\n",
+		       __func__, ahvif->vlan_iface, dp_vif->ahvif_id);
+		return;
+	}
+
+	parent_ahvif = ath12k_vif_to_ahvif(ahvif->vlan_iface->parent_vif);
+	if (!parent_ahvif) {
+		printk(KERN_ERR "WDS_IPA_DBG: %s: parent_ahvif NULL ahvif_id=%u,"
+		       " bank/TCL setup SKIPPED\n",
+		       __func__, dp_vif->ahvif_id);
+		return;
+	}
+
+	/* Find a live parent link to get ab */
+	for (l = 0; l < ATH12K_NUM_MAX_LINKS; l++) {
+		parent_arvif = wiphy_dereference(ah->hw->wiphy,
+						 parent_ahvif->link[l]);
+		if (parent_arvif && parent_arvif->ar)
+			break;
+		parent_arvif = NULL;
+	}
+	if (!parent_arvif) {
+		printk(KERN_ERR "WDS_IPA_DBG: %s: no live parent link found"
+		       " ahvif_id=%u, bank/TCL setup SKIPPED (dp_vif->bank_id"
+		       " stays DP_INVALID_BANK_ID)\n",
+		       __func__, dp_vif->ahvif_id);
+		return;
+	}
+
+	ab = parent_arvif->ar->ab;
+	central_ab = ath12k_dp_get_ab_from_dp_hw_group(ab->dp->dp_hw_grp);
+	if (!central_ab) {
+		printk(KERN_ERR "WDS_IPA_DBG: %s: central_ab NULL ahvif_id=%u,"
+		       " bank/TCL setup SKIPPED\n",
+		       __func__, dp_vif->ahvif_id);
+		return;
+	}
+	central_dp = ath12k_ab_to_dp(central_ab);
+
+	/*
+	 * Compute the WDS STA bank config: same as the normal AP_VLAN config
+	 * (encap type, addr search flags) but with INDEX_LOOKUP_EN=1 so the
+	 * hardware uses the TCL search-index table for AST-based peer lookup.
+	 * ath12k_wifi8_dp_tx_get_vdev_bank_config() sets INDEX_LOOKUP_EN=1
+	 * only for STA vdev type; for AP_VLAN we override it explicitly.
+	 */
+	bank_config = ath12k_wifi8_dp_tx_get_vdev_bank_config(ab, ahvif, 0, false);
+	bank_config |= u32_encode_bits(1, HAL_TX_BANK_CONFIG_INDEX_LOOKUP_EN);
+
+	bank_id = ath12k_dp_tx_get_bank_profile(central_dp, bank_config);
+	if (bank_id == DP_INVALID_BANK_ID) {
+		printk(KERN_ERR "WDS_IPA_DBG: %s: bank alloc FAILED"
+		       " ahvif_id=%u bank_config=0x%x\n",
+		       __func__, dp_vif->ahvif_id, bank_config);
+		return;
+	}
+	dp_vif->bank_id = bank_id;
+
+	printk(KERN_ERR "WDS_IPA_DBG: %s: bank_id=%d allocated"
+	       " (INDEX_LOOKUP_EN=1) ahvif_id=%u bank_config=0x%x\n",
+	       __func__, bank_id, dp_vif->ahvif_id, bank_config);
+
+	/*
+	 * Program TCL_PPE_INDEX_MAPPING_TABLE[slot] = packed(ast_idx, ast_hash).
+	 *  slot = ahvif_id & 0x3F  (6-bit, from SRCH_IDX_REG_NUM = GENMASK(25,20))
+	 *  value bits 19:0  = ast_idx   (fits in 20 bits, 754 ok)
+	 *  value bits 23:20 = ast_hash  (lower 4 bits used as cache-set)
+	 * SRCH_IDX_REG_NUM in the VP config register will hold this slot number.
+	 */
+	slot = dp_vif->ahvif_id & 0x3F; /* SRCH_IDX_REG_NUM is GENMASK(25,20) = 6 bits */
+	ppeds_idx_map_val =
+		u32_encode_bits(dp_vif->ast_idx,  HAL_TX_PPEDS_CFG_SEARCH_IDX) |
+		u32_encode_bits(dp_vif->ast_hash, HAL_TX_PPEDS_CFG_CACHE_SET);
+
+	/*
+	 * Write directly to TCL_PPE_INDEX_MAPPING_TABLE[slot] using ath12k_hif_write32.
+	 *
+	 * We cannot call ath12k_hal_ppeds_cfg_ast_override_map_reg() or
+	 * ath12k_wifi8_hal_ppeds_cfg_ast_override_map_reg() because both are
+	 * defined/declared under CPTCFG_ATH12K_PPE_DS_SUPPORT which is disabled
+	 * for SDX/IPA platform.
+	 *
+	 * The underlying operation is identical: write the packed AST value to
+	 *   HAL_SEQ_WCSS_UMAC_TCL_REG + 0x670 + (4 * slot)
+	 * using the central SoC's ath12k_base.
+	 * HAL_TCL_PPE_INDEX_MAPPING_TABLE_n_ADDR and HAL_SEQ_WCSS_UMAC_TCL_REG
+	 * are NOT guarded by PPE_DS — they are plain macros in wifi8/hal.h.
+	 */
+	{
+		u32 tcl_map_reg =
+			HAL_TCL_PPE_INDEX_MAPPING_TABLE_n_ADDR(
+				HAL_SEQ_WCSS_UMAC_TCL_REG, slot);
+
+		printk(KERN_ERR "WDS_IPA_DBG: %s: TCL_PPE_IDX_MAP[%u]=0x%08x"
+		       " ast_idx=%u ast_hash=%u reg_addr=0x%08x"
+		       " bank_id=%d ahvif_id=%u\n",
+		       __func__, slot, ppeds_idx_map_val,
+		       dp_vif->ast_idx, dp_vif->ast_hash,
+		       tcl_map_reg, bank_id, dp_vif->ahvif_id);
+
+		ath12k_hif_write32(central_ab, tcl_map_reg, ppeds_idx_map_val);
+	}
+}
+
+/**
+ * ath12k_wifi8_dp_ipa_wds_bank_srch_clear - clear the TCL search-index
+ *    table slot programmed by ath12k_wifi8_dp_ipa_wds_bank_srch_setup().
+ * @central_ab: central SoC ath12k_base (same one the setup write targeted)
+ * @dp_vif: the WDS AP_VLAN's dp_vif (provides ahvif_id for the slot)
+ *
+ * Called from ath12k_wifi8_dp_vif_configure(ATH12K_DP_OP_DEINIT) so it
+ * runs unconditionally whenever a WDS-EXT AP_VLAN ahvif is torn down,
+ * regardless of how removal was triggered. Writes 0 to
+ * TCL_PPE_INDEX_MAPPING_TABLE[ahvif_id & 0x3F] so a removed WDS STA's
+ * stale ast_idx/ast_hash cannot be looked up after teardown.
+ */
+void ath12k_wifi8_dp_ipa_wds_bank_srch_clear(struct ath12k_base *central_ab,
+					     struct ath12k_dp_vif *dp_vif)
+{
+	u32 tcl_map_reg;
+	u8 slot;
+
+	if (!central_ab)
+		return;
+
+	slot = dp_vif->ahvif_id & 0x3F;
+	tcl_map_reg = HAL_TCL_PPE_INDEX_MAPPING_TABLE_n_ADDR(
+				HAL_SEQ_WCSS_UMAC_TCL_REG, slot);
+
+	printk(KERN_ERR "WDS_IPA_DBG: %s: clearing TCL_PPE_IDX_MAP[%u]"
+	       	" reg_addr=0x%08x ahvif_id=%u (was ast_idx=%u ast_hash=%u)\n",
+	       	__func__, slot, tcl_map_reg, dp_vif->ahvif_id,
+	       	dp_vif->ast_idx, dp_vif->ast_hash);
+
+	ath12k_hif_write32(central_ab, tcl_map_reg, 0);
+}
+#endif /* CPTCFG_EXT_IPA_OFFLOAD */
 static void ath12k_wifi8_mac_op_sta_set_4addr(struct ieee80211_hw *hw,
 					      struct ieee80211_vif *vif,
 					      struct ieee80211_sta *sta,
@@ -1531,6 +1722,27 @@ static void ath12k_wifi8_mac_op_sta_set_4addr(struct ieee80211_hw *hw,
 
 			ath12k_wifi8_dp_vif_update_4addr(&ah->dp_hw, &ahvif->dp_vif,
 							 sta->addr);
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+			/*
+			 * ORDER MATTERS:
+			 *
+			 * 1. dp_vif_update_4addr() sets ast_idx + ast_hash (above)
+			 * 2. wds_bank_srch_setup() allocates bank (INDEX_LOOKUP_EN=1)
+			 *    and programs TCL_PPE_INDEX_MAPPING_TABLE[slot]=ast_idx
+			 * 3. ath12k_mac_ipa_wds_apvlan_connect() THEN queues
+			 *    WLAN_AP_CONNECT to system_unbound_wq
+			 *
+			 * system_unbound_wq runs without wiphy lock.  Enqueueing
+			 * the WQ event only AFTER steps 1+2 guarantees that when
+			 * the worker calls set_vp_num() it reads:
+			 *   dp_vif->bank_id  = valid (not DP_INVALID_BANK_ID)
+			 *   TCL table[slot]  = programmed with ast_idx
+			 * Enqueueing at add_interface time (before sta_set_4addr)
+			 * would lose the race on SMP.
+			 */
+			ath12k_wifi8_dp_ipa_wds_bank_srch_setup(ah, ahvif);  /* step 2 */
+			ath12k_mac_ipa_wds_apvlan_connect(hw, ahvif);         /* step 3 */
+#endif
 		}
 	}
 }
