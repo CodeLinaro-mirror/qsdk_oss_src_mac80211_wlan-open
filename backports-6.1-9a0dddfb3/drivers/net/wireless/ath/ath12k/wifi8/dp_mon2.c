@@ -1569,10 +1569,6 @@ static void ath12k_dp_rx_mon_ppdu_notify(struct ath12k_dp *dp,
 	struct ath12k_ppdu_rx_info *ppdu_evt_data;
 	unsigned int len;
 
-	/* Early exit if no one is listening for RX events - avoid unnecessary work */
-	if (!ath12k_ppdu_notifier_has_listeners(ATH12K_EVENT_PPDU_RX_COMPLETE))
-		return;
-
 	if (ppdu_info->peer_id == HAL_INVALID_PEERID) {
 		if (unlikely(!ath12k_dp_mon_get_rx_cfr_rcc_filter_valid(pdev_dp)))
 			return;
