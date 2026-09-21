@@ -353,9 +353,12 @@ ath12k_wifi7_dp_prepare_mesh_htt_metadata(struct ath12k_base *ab,
 
 	mhdr = (struct meta_hdr_s *)(skb->data - msdu_info->mhdr_len);
 
-	if (!(mhdr->flags & METAHDR_FLAG_NOENCRYPT))
-		htt_desc_ext->info5 =
+	htt_desc_ext->info5 |=
 			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO5_LEARNING_FRAME);
+
+	if (mhdr->flags & METAHDR_FLAG_NOENCRYPT)
+		htt_desc_ext->info5 &=
+			~le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO5_LEARNING_FRAME);
 
 	if (!(mhdr->flags & METAHDR_FLAG_AUTO_RATE)) {
 		htt_desc_ext->info0 |=
@@ -383,7 +386,7 @@ ath12k_wifi7_dp_prepare_mesh_htt_metadata(struct ath12k_base *ab,
 
 		htt_desc_ext->info2 |=
 			le32_encode_bits((mhdr->keyix & 0x3),
-					  HAL_TX_MSDU_METADATA_INFO2_KEY_FLAGS);
+					 HAL_TX_MSDU_METADATA_INFO2_KEY_FLAGS);
 	}
 
 	if (mhdr->flags & METAHDR_FLAG_NOENCRYPT) {

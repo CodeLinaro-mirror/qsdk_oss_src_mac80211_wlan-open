@@ -11370,8 +11370,13 @@ static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 		if (vif)
 			ahvif = ath12k_vif_to_ahvif(vif);
 
-		if (ahvif)
+		if (ahvif) {
 			ahvif->dp_vif.dp_features |= DP_FEATURE_MESH;
+			ahvif->vap_submode = vap_submode;
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+			vif->mhdr_len =  MMESH_TX_META_HDR;
+#endif
+		}
 
 		ath12k_dbg(NULL, ATH12K_DBG_CFG,
 			   "%s-configured vap_submode: %d for(%s)\n", __func__,
