@@ -5032,7 +5032,7 @@ static const struct ath12k_qmi_shmem_tlv_policy ath12k_qmi_tlv_policies[] = {
 };
 
 /* TODO:Calculate this dynamically in cleanup*/
-#define QMI_TLV_MAX_LEN	424
+#define QMI_TLV_MAX_LEN	584
 
 /**
  * ath12k_qmi_parse_mlo_mem_arena() - Parse MLO Global shared memory arena
