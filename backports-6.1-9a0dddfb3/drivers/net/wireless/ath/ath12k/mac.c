@@ -1175,26 +1175,18 @@ static void ath12k_get_arvif_iter(void *data, u8 *mac,
 {
 	struct ath12k_vif_iter *arvif_iter = data;
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
-	unsigned long links_map = ahvif->links_map;
 	struct ath12k_link_vif *arvif;
 	u8 link_id;
 
-	for_each_set_bit(link_id, &links_map, ATH12K_NUM_MAX_LINKS) {
-		arvif = wiphy_dereference(ahvif->ah->hw->wiphy, ahvif->link[link_id]);
-
-		if (!arvif) {
-			/* Adding this debug to find out how rcu-dereference
-			 * is returing NULL when link address is present.
-			 * There could be two reasons. Either read lock is
-			 * not proper or link_id retrieved by for_each_set_bit
-			 * is not right
-			 */
-			ath12k_err(NULL,
-				   "func %s arvif is NULL: link_id %d links_map 0x%lx\n",
-				   __func__, link_id, links_map);
-			WARN_ON(1);
+	/*
+	 * Lockless readers must not rely on ahvif->links_map because link[] and
+	 * links_map are updated in separate stores and can be transiently out of
+	 * sync. In RCU read-side, link[] is the authoritative source.
+	 */
+	for (link_id = 0; link_id < ATH12K_NUM_MAX_LINKS; link_id++) {
+		arvif = rcu_dereference(ahvif->link[link_id]);
+		if (!arvif)
 			continue;
-		}
 
 		if (arvif->vdev_id == arvif_iter->vdev_id &&
 		    arvif->ar == arvif_iter->ar) {
