@@ -1910,13 +1910,11 @@ dp_tx_mon_setup_buf_from_status(struct ath12k_pdev_dp *dp_pdev,
 	if (!status_info->buffer || !status_info->length)
 		return -ENOENT;
 
-	if (!ppdu_info->buffer_addr) {
-		ppdu_info->buffer_addr = status_info->buffer;
-		ppdu_info->buffer_length = status_info->length;
-		ppdu_info->has_buffer_data = true;
-		ppdu_info->page = virt_to_head_page(ppdu_info->buffer_addr);
-		ppdu_info->frag_offset = status_info->offset;
-	}
+	ppdu_info->buffer_addr = status_info->buffer;
+	ppdu_info->buffer_length = status_info->length;
+	ppdu_info->has_buffer_data = true;
+	ppdu_info->page = virt_to_head_page(ppdu_info->buffer_addr);
+	ppdu_info->frag_offset = status_info->offset;
 
 	return 0;
 }
