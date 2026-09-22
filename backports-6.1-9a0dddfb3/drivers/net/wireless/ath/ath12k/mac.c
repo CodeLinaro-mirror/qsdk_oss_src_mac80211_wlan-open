@@ -22621,6 +22621,16 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 		return -ENODEV;
 	}
 
+#ifdef CPTCFG_QCN_EXTN
+	if (vif->type == NL80211_IFTYPE_STATION &&
+	    ath12k_mac_diagnostic_sta_vap_exists_extn(ah)) {
+		ath12k_warn(ar->ab,
+			    "refusing to add STA vif %s: a diagnostic STA VAP already exists\n",
+			    wdev->netdev ? wdev->netdev->name : "(null)");
+		return -EBUSY;
+	}
+#endif /* CPTCFG_QCN_EXTN */
+
 	ahvif->dp_vif.dp_features = 0;
 	/* Get the VP number from the nss-wifi plugin,
 	 * which is allocated during netdev initialization.
