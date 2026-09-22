@@ -1260,7 +1260,7 @@ ath12k_dp_rx_ppeds_fse_add_flow_entry(struct ppe_drv_fse_rule_info *ppe_flow_inf
 	ret = ath12k_dp_rx_flow_add_entry(ab, &flow_info);
 
 	/* Fire FSE_UPDATE notification for PPE flow addition */
-	if (!ret && ath12k_fse_update_notif_has_listeners()) {
+	if (!ret) {
 		ev.op = ATH12K_FSE_OP_ADD;
 		ath12k_fse_update_notif_call_chain(&ev);
 	}
@@ -1323,7 +1323,7 @@ ath12k_dp_rx_ppeds_fse_del_flow_entry(struct ppe_drv_fse_rule_info *ppe_flow_inf
 	ret = ath12k_dp_rx_flow_delete_entry(ab, &flow_info);
 
 	/* Fire FSE_UPDATE notification for PPE flow deletion */
-	if (!ret && ath12k_fse_update_notif_has_listeners()) {
+	if (!ret) {
 		ev.op = ATH12K_FSE_OP_DELETE;
 		ath12k_fse_update_notif_call_chain(&ev);
 	}

@@ -137,11 +137,6 @@ void ath12k_ppdu_notify_ctx_deinit(struct wiphy *wiphy,
 int ath12k_ppdu_notifier_call_chain(unsigned long val, void *v);
 
 /* FSE_UPDATE notifier APIs */
-int ath12k_register_fse_update_notifier(struct notifier_block *nb,
-					 unsigned long event_mask);
-int ath12k_unregister_fse_update_notifier(struct notifier_block *nb,
-					   unsigned long event_mask);
-bool ath12k_fse_update_notif_has_listeners(void);
 int ath12k_fse_update_notif_call_chain(void *v);
 
 #endif /* _ATH12K_NOTIF_H_ */
