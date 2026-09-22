@@ -13136,6 +13136,31 @@ int ath12k_mac_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 }
 EXPORT_SYMBOL(ath12k_mac_op_set_key);
 
+void ath12k_mac_op_set_default_unicast_key(struct ieee80211_hw *hw,
+					   struct ieee80211_vif *vif,
+					   int idx)
+{
+	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
+	struct ath12k_link_vif *arvif = &ahvif->deflink;
+	struct ath12k *ar = arvif->ar;
+	int ret;
+
+	lockdep_assert_wiphy(hw->wiphy);
+
+	if (idx < 0)
+		return;
+
+	if (!ar)
+		return;
+
+	ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
+					    WMI_VDEV_PARAM_DEF_KEYID, idx);
+	if (ret)
+		ath12k_warn(ar->ab, "failed to set default unicast key idx %d for vdev %d: %d\n",
+			    idx, arvif->vdev_id, ret);
+}
+EXPORT_SYMBOL(ath12k_mac_op_set_default_unicast_key);
+
 static int
 ath12k_mac_bitrate_mask_num_ht_rates(struct ath12k *ar,
 				     enum nl80211_band band,

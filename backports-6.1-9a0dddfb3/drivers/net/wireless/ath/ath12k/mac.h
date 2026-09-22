@@ -469,6 +469,9 @@ void ath12k_mac_op_cancel_hw_scan(struct ieee80211_hw *hw,
 int ath12k_mac_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 			  struct ieee80211_vif *vif, struct ieee80211_sta *sta,
 			  struct ieee80211_key_conf *key);
+void ath12k_mac_op_set_default_unicast_key(struct ieee80211_hw *hw,
+					   struct ieee80211_vif *vif,
+					   int idx);
 void ath12k_mac_op_set_rekey_data(struct ieee80211_hw *hw,
 				  struct ieee80211_vif *vif,
 				  struct cfg80211_gtk_rekey_data *data);
