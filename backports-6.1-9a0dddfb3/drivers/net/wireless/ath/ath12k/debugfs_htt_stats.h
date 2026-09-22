@@ -16,6 +16,7 @@
 #define ATH12K_HTT_STATS_SUBTYPE_MAX		16
 #define ATH12K_HTT_MAX_STRING_LEN		256
 #define ATH12K_HTT_STATS_MGMT_FRM_TYPE_MAX	16
+#define ATH12K_HTT_STATS_MAX_DATA_TID_COUNT	8
 
 
 #define ATH12K_HTT_STATS_RESET_BITMAP32_OFFSET(_idx)	((_idx) & 0x1f)
@@ -862,6 +863,10 @@ struct ath12k_htt_tx_pdev_stats_cmn_tlv {
 	__le32 hw_reaped_sp;
 	__le32 hw_reaped_vlp;
 	__le32 avg_channel_access_latency_per_ac[ATH12K_HTT_NUM_AC_WMM];
+	__le32 seq_posted_per_tid[ATH12K_HTT_STATS_MAX_DATA_TID_COUNT];
+	__le32 cts_cnt;
+	__le32 cts_data_cnt;
+	__le32 cts_data_hist[4];
 } __packed;
 
 
