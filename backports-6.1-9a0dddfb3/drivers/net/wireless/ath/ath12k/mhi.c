@@ -9,6 +9,10 @@
 #include <linux/firmware.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
+#if IS_ENABLED(CONFIG_IOMMU_DMA)
+#include <linux/iommu.h>
+#include <linux/of_iommu.h>
+#endif
 
 #include "core.h"
 #include "debug.h"
@@ -281,15 +285,57 @@ static void ath12k_mhi_op_write_reg(struct mhi_controller *mhi_cntrl,
 	writel(val, addr);
 }
 
+#if IS_ENABLED(CONFIG_IOMMU_DMA)
+static void ath12k_mhi_set_iova(struct ath12k_pci *ab_pci,
+				struct mhi_controller *mhi_ctrl)
+{
+	struct ath12k_base *ab = ab_pci->ab;
+	LIST_HEAD(resv_list);
+	struct iommu_resv_region *region;
+	dma_addr_t iova_start = 0;
+	dma_addr_t iova_stop  = ab_pci->dma_mask;
+
+	of_iommu_get_resv_regions(ab->dev, &resv_list);
+
+	if (!list_empty(&resv_list)) {
+		/*
+		 * Each restricted region in iommu-addresses narrows the allowed
+		 * IOVA window:
+		 *   start == 0  -> bottom restriction, gap opens at its end
+		 *   start >  0  -> top restriction, gap closes before its start
+		 *
+		 * iova_stop is pre-capped to ab_pci->dma_mask so any restriction
+		 * above 32 bits is automatically ignored.
+		 */
+		list_for_each_entry(region, &resv_list, list) {
+			dma_addr_t r_start = (dma_addr_t)region->start;
+			dma_addr_t r_end   = r_start + (dma_addr_t)region->length;
+
+			if (r_start == 0)
+				iova_start = min(r_end, iova_stop);
+			else
+				iova_stop = min(r_start - 1, iova_stop);
+		}
+		iommu_put_resv_regions(ab->dev, &resv_list);
+	}
+
+	mhi_ctrl->iova_start = iova_start;
+	mhi_ctrl->iova_stop  = iova_stop;
+}
+#endif /* IS_ENABLED(CONFIG_IOMMU_DMA)*/
+
 int ath12k_mhi_register(struct ath12k_pci *ab_pci)
 {
 	struct ath12k_base *ab = ab_pci->ab;
 	struct mhi_controller *mhi_ctrl;
 	unsigned int board_id;
-	int ret, idx = 0;
+	int ret = 0;
 	bool dualmac = false;
+#if !IS_ENABLED(CONFIG_IOMMU_DMA)
+	int idx = 0;
 	struct device_node *dev_node;
 	struct resource memory;
+#endif
 
 	mhi_ctrl = mhi_alloc_controller();
 	if (!mhi_ctrl)
@@ -361,6 +407,9 @@ int ath12k_mhi_register(struct ath12k_pci *ab_pci)
 	if (!test_bit(ATH12K_PCI_FLAG_MULTI_MSI_VECTORS, &ab_pci->flags))
 		mhi_ctrl->irq_flags = IRQF_SHARED | IRQF_NOBALANCING;
 
+#if IS_ENABLED(CONFIG_IOMMU_DMA)
+	ath12k_mhi_set_iova(ab_pci, mhi_ctrl);
+#else
 	dev_node = of_find_node_by_type(NULL, "memory");
 	if (dev_node) {
 		while (of_address_to_resource(dev_node, idx, &memory) == 0) {
@@ -390,6 +439,7 @@ int ath12k_mhi_register(struct ath12k_pci *ab_pci)
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 	mhi_ctrl->iova_stop = min(mhi_ctrl->iova_stop, (dma_addr_t)DMA_BIT_MASK(32));
 #endif
+#endif /* IS_ENABLED(CONFIG_IOMMU_DMA)*/
 
 	ath12k_dbg(ab, ATH12K_DBG_PCI, "iova start:%pa iova stop: %pa\n",
 		   &mhi_ctrl->iova_start, &mhi_ctrl->iova_stop);
