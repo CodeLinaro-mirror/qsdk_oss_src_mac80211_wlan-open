@@ -32030,6 +32030,10 @@ int ath12k_mac_allocate(struct ath12k_hw_group *ag)
 			continue;
 
 		ath12k_mac_set_device_defaults(ab);
+#ifdef CPTCFG_QCN_EXTN
+		ath12k_mac_build_radio_order_extn(ab);
+#endif /* CPTCFG_QCN_EXTN */
+
 		total_radio += ab->num_radios;
 		if (ag->mlo_capable) {
 			for (j = 0; j < ab->num_radios; j++) {
@@ -32095,7 +32099,11 @@ int ath12k_mac_allocate(struct ath12k_hw_group *ag)
 			}
 
 			pdev_map[j].ab = ab;
+#ifdef CPTCFG_QCN_EXTN
+			pdev_map[j].pdev_idx = ath12k_mac_get_radio_idx_extn(ab, mac_id);
+#else
 			pdev_map[j].pdev_idx = mac_id;
+#endif /* CPTCFG_QCN_EXTN */
 			mac_id++;
 
 			/* If mac_id falls beyond the current device MACs then
@@ -32109,7 +32117,11 @@ int ath12k_mac_allocate(struct ath12k_hw_group *ag)
 
 		ab = pdev_map->ab;
 		if (!ag->mlo_capable) {
+#ifdef CPTCFG_QCN_EXTN
+			pdev = &ab->pdevs[ath12k_mac_get_radio_idx_extn(ab, pdev_index)];
+#else
 			pdev = &ab->pdevs[pdev_index];
+#endif /* CPTCFG_QCN_EXTN */
 			pdev_index++;
 			if (pdev_index >= ab->num_radios)
 				pdev_index = 0;

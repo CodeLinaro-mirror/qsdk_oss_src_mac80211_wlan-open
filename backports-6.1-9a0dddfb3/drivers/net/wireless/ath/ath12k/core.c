@@ -2580,6 +2580,24 @@ static int ath12k_dp_umac_reset_init_wrapper(struct ath12k_hw_group *ag)
 	return 0;
 }
 
+#ifdef CPTCFG_QCN_EXTN
+static u32 ath12k_cfg_get_soc_key(struct ath12k_base *ab)
+{
+	struct pci_dev *pdev;
+
+	switch (ab->hif.bus) {
+	case ATH12K_BUS_PCI:
+		pdev = ath12k_pci_get_dev_by_ab(ab);
+		return pdev ? pci_domain_nr(pdev->bus) : ab->device_id;
+	case ATH12K_BUS_AHB:
+	case ATH12K_BUS_HYBRID:
+		return ath12k_ab_to_ahb(ab)->userpd_id;
+	default:
+		return ab->device_id;
+	}
+}
+#endif
+
 static int ath12k_core_hw_group_start(struct ath12k_hw_group *ag)
 {
 	struct ath12k_base *ab = NULL;
@@ -2630,6 +2648,15 @@ static int ath12k_core_hw_group_start(struct ath12k_hw_group *ag)
 	 */
 
 	if (!ag->wsi_remap_in_progress) {
+#ifdef CPTCFG_QCN_EXTN
+		for (i = 0; i < ag->num_devices; i++) {
+			if (!ag->ab[i])
+				continue;
+
+			ath12k_cfg_parse_soc_section_extn(ag->ab[i],
+						     ath12k_cfg_get_soc_key(ag->ab[i]));
+		}
+#endif
 		ret = ath12k_mac_allocate(ag);
 		if (WARN_ON(ret))
 			return ret;
