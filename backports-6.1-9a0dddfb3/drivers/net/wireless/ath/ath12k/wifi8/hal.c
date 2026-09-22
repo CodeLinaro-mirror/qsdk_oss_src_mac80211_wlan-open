@@ -1060,6 +1060,14 @@ void ath12k_wifi8_hal_reo_config_reo2ppe_dest_info(struct ath12k_base *ab)
 	val |= HAL_REO_PPE_DEST_OVERRIDE_EN;
 	ath12k_hif_write32(ab, reo_base + HAL_REO_MISC_CFG_BN_2,
 			   val);
+
+	/*
+	 * Enable PPE multi-MSDU check
+	 */
+	val = ath12k_hif_read32(ab, reo_base + HAL_REO_PPE_DEST_OVERRIDE);
+	val |= HAL_REO_PPE_DEST_OVERRIDE_VAL;
+	ath12k_hif_write32(ab, reo_base + HAL_REO_PPE_DEST_OVERRIDE,
+			   val);
 }
 
 void ath12k_wifi8_hal_hw_ase_init(struct ath12k_base *ab,
