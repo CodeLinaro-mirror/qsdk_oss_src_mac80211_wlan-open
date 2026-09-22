@@ -1430,7 +1430,7 @@ int ath12k_wifi8_fetch_smd_ctx(struct ath12k_base *ab, struct ath12k_dp_hw *dp_h
 	int ret, tid;
 	bool sent = false;
 	bool clear_vld = ath12k_wifi8_clear_vld_after_smd_ctx_fetch &&
-			 ctx->in.rx_tid_bitmap == 0xff;
+			 ctx->in.clear_rx_vld;
 
 	spin_lock_bh(&dp_hw->peer_hash_lock);
 	dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, ctx->peer_addr, vif);

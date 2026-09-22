@@ -681,6 +681,7 @@ struct ath12k_dp_smd_ctx {
 			u32 rx_tid_bitmap;
 			u32 tx_tid_bitmap;
 			u16 tx_tid_ba_size[8];
+			bool clear_rx_vld;
 		} in;
 		struct {
 			u8 tid;
