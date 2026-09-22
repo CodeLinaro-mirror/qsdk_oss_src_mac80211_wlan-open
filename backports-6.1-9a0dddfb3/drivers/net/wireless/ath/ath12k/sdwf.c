@@ -66,7 +66,7 @@ static u32 ath12k_get_enabled_param_mask(struct ath12k_base *ab, u8 qos_id)
 	struct ath12k_qos_ctx *qos_ctx;
 
 	qos_ctx = ath12k_get_qos(ab);
-	if (!qos_ctx)
+	if (!qos_ctx || (qos_id >= QOS_PROFILES_MAX))
 		return 0;
 
 	return ath12k_get_enabled_sdwf_params_mask(&qos_ctx->profiles[qos_id].params);
@@ -96,10 +96,10 @@ int ath12k_sdwf_map_service_class(struct ath12k_base *ab, u16 svc_id,
 	qos_ctx->svc_class[svc_id].ul_qos_id = ul_qos_id;
 	qos_ctx->svc_class[svc_id].configured = true;
 
-	if (dl_qos_id != QOS_ID_INVALID)
+	if ((dl_qos_id != QOS_ID_INVALID) && (dl_qos_id < QOS_DL_PROFILE_MAX))
 		qos_ctx->profiles[dl_qos_id].svc_id = svc_id;
 
-	if (ul_qos_id != QOS_ID_INVALID)
+	if ((ul_qos_id != QOS_ID_INVALID) && (ul_qos_id < QOS_UL_PROFILE_MAX))
 		qos_ctx->profiles[ul_qos_id].svc_id = svc_id;
 
 	ath12k_dbg(ab, ATH12K_DBG_QOS,
@@ -486,10 +486,14 @@ u8 ath12k_sdwf_get_peer_msduq(struct ath12k_base *ab,
 
        if (peer->primary_link &&
            ab->hw_params->mlo_3_link_tx_support) {
-               if (pcp)
-                       queue_id = dscp_pcp;
-               else
-                       queue_id = dscp_tid_map[dscp_pcp];
+		if (pcp) {
+			queue_id = dscp_pcp;
+		} else {
+			if (dscp_pcp >= WMI_HOST_DSCP_MAP_MAX)
+				return QOS_INVALID_MSDUQ;
+
+			queue_id = dscp_tid_map[dscp_pcp];
+		}
 
                queue_id = ath12k_sdwf_get_3_link_queue_id(ab->dp,
 							  peer, queue_id);
