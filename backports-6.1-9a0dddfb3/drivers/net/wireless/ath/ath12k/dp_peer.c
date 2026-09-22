@@ -2949,8 +2949,6 @@ static void ath12k_mac_dp_peer_cleanup_cb(struct ath12k_pdev_dp *dp_pdev,
 
 			ath12k_dp_arch_peer_unregister(ah, dp, dp_peer);
 
-			list_del_init(&dp_peer->tqm_cleanup_node);
-
 			/* Add dp_peer to local context linked list */
 			list_add(&dp_peer->list, &ctx->dp_peers);
 		}
