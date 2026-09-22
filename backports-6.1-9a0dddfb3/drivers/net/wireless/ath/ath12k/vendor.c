@@ -10842,10 +10842,11 @@ ath12k_vendor_set_rtt_responder_role(struct wireless_dev *wdev,
 	}
 
 	arvif = ath12k_get_arvif_from_link_id(ahvif, link_id);
-	if (!arvif || !arvif->ar)
+	if (!arvif || !arvif->ar || !arvif->is_created)
 		return -EINVAL;
 
 	ar = arvif->ar;
+
 	if (role) {
 		supported_role = ath12k_supported_rtt_responder_roles(ar->ab);
 		role &= supported_role;
