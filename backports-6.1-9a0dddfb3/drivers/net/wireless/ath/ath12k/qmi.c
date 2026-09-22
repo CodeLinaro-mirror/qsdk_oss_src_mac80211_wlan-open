@@ -7505,7 +7505,8 @@ static void ath12k_qmi_driver_event_work(struct work_struct *work)
 				if (ret || !is_ready)
 					break;
 
-				ath12k_core_en_ssr(ab, ATH12K_FW_RECOVERY_ENABLE_MODE2);
+				ath12k_core_en_ssr(ab,
+						   ab->ag->user_selected_recovery_mode);
 			}
 
 			break;

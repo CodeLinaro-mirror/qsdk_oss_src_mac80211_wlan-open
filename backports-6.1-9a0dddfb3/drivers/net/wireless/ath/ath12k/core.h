@@ -2767,6 +2767,10 @@ struct ath12k_hw_group {
 	struct ath12k_base *assert_ab;
 	bool recovery_t2lm_active;
 	bool power_save_mode;
+	/* Stores the user-selected firmware recovery mode.
+	 * Defaults to ATH12K_FW_RECOVERY_ENABLE_MODE2 for Wi-Fi 7.
+	 */
+	enum ath12k_fw_recovery_option user_selected_recovery_mode;
 };
 
 /* Holds WSI info specific to each device, excluding WSI group info */
@@ -3347,6 +3351,7 @@ struct reserved_mem *ath12k_core_get_reserved_mem_by_name(struct ath12k_base *ab
 						  const char* name);
 u8 ath12k_core_get_total_num_vdevs(struct ath12k_base *ab);
 bool ath12k_core_is_vdev_limit_reached(struct ath12k *ar, bool is_bridge_vdev);
+bool ath12k_core_complete_teardown_required(struct ath12k_hw *ah);
 void ath12k_core_cleanup_power_down_q6(struct ath12k_hw_group *ag, bool standby_mode);
 int ath12k_core_power_up(struct ath12k_hw_group *ag);
 
