@@ -616,9 +616,9 @@ struct hal_rx_he_sig_b2_ofdma_info {
  *   words 0-3  (bytes  0-15): receive_pkt_start_info (4 DWORDs)
  *     → info0 (bytes 0-1) + rsvd0 (bytes 2-3) + info2[0..2] (bytes 4-15)
  *   word  4    (bytes 16-19): sw_phy_meta_data [31:0]       → info2[3]
- *   word  5    (bytes 20-23): gain_corr chains 0-3 [31:0]   → info2[4]
+ *   word  5    (bytes 20-23): reserved_4a [31:0]            → info2[4]
  *   word  6    (bytes 24-27): reserved_6a [31:0]            → info2[5]
- *   word  7    (bytes 28-31): reserved_7a [31:0]            → info2[6]
+ *   word  7    (bytes 28-31): gain_corr chains 0-3 [31:0]   → info2[6]
  *   word  8    (bytes 32-35): preamble_rssi_pri20_chain0[7:0]
  *                             + gain_corr chain4 [15:8]
  *                             + reserved_8a [31:16]         → info2[7]
@@ -626,11 +626,11 @@ struct hal_rx_he_sig_b2_ofdma_info {
  *     → info1 (bytes 36-37) + rsvd2 (bytes 38-39) + info3[0..3] (bytes 40-55)
  *
  * FW packs rx_gain_offset_per_chain[] into:
- *   info2[4] (word 5, bytes 20-23): chains 0-3, 8 bits each
- *     chain 0: info2[4] bits  [7:0]
- *     chain 1: info2[4] bits [15:8]
- *     chain 2: info2[4] bits [23:16]
- *     chain 3: info2[4] bits [31:24]
+ *   info2[6] (word 7, bytes 28-31): chains 0-3, 8 bits each
+ *     chain 0: info2[6] bits  [7:0]
+ *     chain 1: info2[6] bits [15:8]
+ *     chain 2: info2[6] bits [23:16]
+ *     chain 3: info2[6] bits [31:24]
  *   info2[7] (word 8, bytes 32-35): chain 4, 8 bits
  *     chain 4: info2[7] bits [15:8]
  *
@@ -1009,7 +1009,7 @@ struct hal_rx_mon_ppdu_end_user_stats_compact {
 	__le16 info1;
 	__le32 info2;
 	__le16 ast_index;
-	__le16 rsvd1;
+	__le16 frame_control_field;
 	__le16 first_data_seq_ctrl;
 	__le16 qos_control_field;
 	__le32 ht_ctrl;

@@ -1887,6 +1887,7 @@ ath12k_dp_mon_ppdu_per_user_rx_time_update(struct ath12k_pdev_dp *dp_pdev,
 }
 
 #define RSSI_OFFSET 100
+#define RSSI_ACCURACY_OFFSET 128
 
 /**
  * ath12k_dp_mon_compute_rssi_accuracy() - Compute full-band RSSI accuracy metrics
@@ -2096,11 +2097,11 @@ ath12k_dp_mon_compute_rssi_accuracy(struct ath12k_dp_link_peer_rx_signal_stats *
 	 */
 	ewma_avg_rssi_dbm_comb_add(&stats->avg_rssi_dbm_comb,
 				   (unsigned long)((stats->rssi_dbm_comb_chain_full_band +
-						    128) << 8));
+						    RSSI_ACCURACY_OFFSET) << 8));
 
 	stats->rssi_dbm_comb_chain_full_band_avg =
 		(s16)((ewma_avg_rssi_dbm_comb_read(&stats->avg_rssi_dbm_comb)
-		       >> 8) - 128);
+		       >> 8) - RSSI_ACCURACY_OFFSET);
 
 	/*
 	 * Compute Per-frame-type EWMA averaging :
@@ -2111,36 +2112,36 @@ ath12k_dp_mon_compute_rssi_accuracy(struct ath12k_dp_link_peer_rx_signal_stats *
 		stats->rssi_dbm_comb_chain_full_band_data =
 			stats->rssi_dbm_comb_chain_full_band;
 		rssi_sc = (unsigned long)((stats->rssi_dbm_comb_chain_full_band_data +
-				       128) << 8);
+				       RSSI_ACCURACY_OFFSET) << 8);
 		ewma_avg_rssi_dbm_comb_data_add(&stats->avg_rssi_dbm_comb_data, rssi_sc);
 		rssi_sc_avg =
 			ewma_avg_rssi_dbm_comb_data_read(&stats->avg_rssi_dbm_comb_data);
 		stats->rssi_dbm_comb_chain_full_band_avg_data =
-			(s16)((rssi_sc_avg >> 8) - 128);
+			(s16)((rssi_sc_avg >> 8) - RSSI_ACCURACY_OFFSET);
 		break;
 	}
 	case ATH12K_FRAME_MGMT: {
 		stats->rssi_dbm_comb_chain_full_band_mgmt =
 			stats->rssi_dbm_comb_chain_full_band;
 		rssi_sc = (unsigned long)((stats->rssi_dbm_comb_chain_full_band_mgmt +
-				       128) << 8);
+				       RSSI_ACCURACY_OFFSET) << 8);
 		ewma_avg_rssi_dbm_comb_mgmt_add(&stats->avg_rssi_dbm_comb_mgmt, rssi_sc);
 		rssi_sc_avg =
 			ewma_avg_rssi_dbm_comb_mgmt_read(&stats->avg_rssi_dbm_comb_mgmt);
 		stats->rssi_dbm_comb_chain_full_band_avg_mgmt =
-			(s16)((rssi_sc_avg >> 8) - 128);
+			(s16)((rssi_sc_avg >> 8) - RSSI_ACCURACY_OFFSET);
 		break;
 	}
 	case ATH12K_FRAME_CTL: {
 		stats->rssi_dbm_comb_chain_full_band_ack =
 			stats->rssi_dbm_comb_chain_full_band;
 		rssi_sc = (unsigned long)((stats->rssi_dbm_comb_chain_full_band_ack +
-				       128) << 8);
+				       RSSI_ACCURACY_OFFSET) << 8);
 		ewma_avg_rssi_dbm_comb_ack_add(&stats->avg_rssi_dbm_comb_ack, rssi_sc);
 		rssi_sc_avg =
 			ewma_avg_rssi_dbm_comb_ack_read(&stats->avg_rssi_dbm_comb_ack);
 		stats->rssi_dbm_comb_chain_full_band_avg_ack =
-			(s16)((rssi_sc_avg >> 8) - 128);
+			(s16)((rssi_sc_avg >> 8) - RSSI_ACCURACY_OFFSET);
 		break;
 	}
 	default: /* ATH12K_FRAME_OTHER: NULL, QOS_NULL, fc_valid=false */
@@ -2152,13 +2153,13 @@ ath12k_dp_mon_compute_rssi_accuracy(struct ath12k_dp_link_peer_rx_signal_stats *
 	 */
 	for (chain = 0; chain < HAL_RX_MAX_NSS; chain++) {
 		rssi_sc = (unsigned long)((stats->rssi_dbm_per_chain_full_band[chain] +
-				       128) << 8);
+				       RSSI_ACCURACY_OFFSET) << 8);
 		ewma_avg_rssi_dbm_per_chain_add(&stats->avg_rssi_dbm_per_chain[chain],
 						rssi_sc);
 		rssi_sc_avg =
 		ewma_avg_rssi_dbm_per_chain_read(&stats->avg_rssi_dbm_per_chain[chain]);
 		stats->rssi_dbm_per_chain_full_band_avg[chain] =
-			(s16)((rssi_sc_avg >> 8) - 128);
+			(s16)((rssi_sc_avg >> 8) - RSSI_ACCURACY_OFFSET);
 	}
 }
 
@@ -2201,12 +2202,10 @@ ath12k_dp_mon_link_peer_signal_stats(struct ath12k_pdev_dp *dp_pdev,
 	u8 frame_type;
 	u16 peer_id;
 	u8 pdev_id;
-	u16 fc = 0;
 	u8 soc_id;
 	u8 i;
-	bool rssi_acc_en;
 	bool fc_valid;
-	u16 frame_ctrl;
+	u16 frame_ctrl = 0;
 
 	if (!dp_pdev)
 		return;
@@ -2244,24 +2243,16 @@ ath12k_dp_mon_link_peer_signal_stats(struct ath12k_pdev_dp *dp_pdev,
 	frame_type = ATH12K_FRAME_OTHER;
 
 	/*
-	 * When rssi_full_band_accuracy_en is enabled,
-	 * use ppdu_info->nrp_info.fc_valid and ppdu_info->nrp_info.frame_control
-	 * for frame_type retrieval (populated from the monitor ring MPDU_START
-	 * TLV). Otherwise fall back to ppdu_info->fc_valid and
-	 * ppdu_info->frame_control.
+	 * Extract frame_control fields from ppdu_info
+	 * i.e, ppdu_info->fc_valid and ppdu_info->frame_control.
 	 */
-	rssi_acc_en =
-		ath12k_hal_get_rssi_full_band_accuracy_en(&dp_pdev->ar->ab->hal);
-	fc_valid = rssi_acc_en ? (bool)ppdu_info->nrp_info.fc_valid
-				: (bool)ppdu_info->fc_valid;
-	frame_ctrl = rssi_acc_en ? (u16)ppdu_info->nrp_info.frame_control
-				: ppdu_info->frame_control;
+	fc_valid = (bool)ppdu_info->fc_valid;
+	frame_ctrl = ppdu_info->frame_control;
 
 	if (likely(fc_valid)) {
-		fc = frame_ctrl;
-		stype = fc & IEEE80211_FCTL_STYPE;
+		stype = frame_ctrl & IEEE80211_FCTL_STYPE;
 
-		if (ieee80211_is_data(fc)) {
+		if (ieee80211_is_data(frame_ctrl)) {
 			/* Data frame: classify by subtype */
 			switch (stype) {
 			case IEEE80211_STYPE_DATA:
@@ -2290,9 +2281,9 @@ ath12k_dp_mon_link_peer_signal_stats(struct ath12k_pdev_dp *dp_pdev,
 				/* NULL, QOS_NULL, CF-only: ATH12K_FRAME_OTHER */
 				break;
 			}
-		} else if (ieee80211_is_mgmt(fc)) {
+		} else if (ieee80211_is_mgmt(frame_ctrl)) {
 			frame_type = ATH12K_FRAME_MGMT;
-		} else if (ieee80211_is_ctl(fc)) {
+		} else if (ieee80211_is_ctl(frame_ctrl)) {
 			frame_type = ATH12K_FRAME_CTL;
 		}
 	}
@@ -2305,8 +2296,8 @@ ath12k_dp_mon_link_peer_signal_stats(struct ath12k_pdev_dp *dp_pdev,
 	 */
 	if (ath12k_hal_get_rssi_full_band_accuracy_en(&dp_pdev->ar->ab->hal)) {
 		ath12k_dp_mon_compute_rssi_accuracy(stats, ppdu_info,
-						&dp_pdev->ar->rssi_offsets,
-						frame_type);
+						    &dp_pdev->ar->rssi_offsets,
+						    frame_type);
 		/*
 		 * Override stats->rssi / rssi_avg / rssi_dp / rssi_dp_avg
 		 * with the accurate full-band dBm values computed above.

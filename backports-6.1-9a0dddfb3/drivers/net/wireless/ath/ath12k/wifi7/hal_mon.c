@@ -1965,6 +1965,9 @@ ath12k_wifi7_hal_mon_rx_ppdu_eu_stats_info_get(const void *tlv_data, u32 userid,
 	ppdu_info->ast_index =
 		u32_get_bits(info[3],
 			     HAL_RX_PPDU_END_USER_STATS_INFO3_AST_INDEX);
+	ppdu_info->frame_control =
+		u32_get_bits(info[3],
+			     HAL_RX_PPDU_END_USER_STATS_INFO3_FRAME_CTRL);
 	ppdu_info->tcp_msdu_count =
 		u32_get_bits(info[5],
 			     HAL_RX_PPDU_END_USER_STATS_INFO5_TCP_MSDU_CNT);
@@ -2056,6 +2059,9 @@ ath12k_wifi7_hal_mon_rx_ppdu_eu_stats_info_get_compact(const void *tlv_data, u32
 	ppdu_info->ast_index =
 		u32_get_bits(info[3],
 			     HAL_RX_PPDU_END_USER_STATS_INFO3_AST_INDEX_CMPCT);
+	ppdu_info->frame_control =
+		u32_get_bits(info[3],
+			     HAL_RX_PPDU_END_USER_STATS_INFO3_FRAME_CTRL_CMPCT);
 	ppdu_info->tcp_msdu_count =
 		u32_get_bits(info[5],
 			     HAL_RX_PPDU_END_USER_STATS_INFO5_TCP_MSDU_CNT_CMPCT);

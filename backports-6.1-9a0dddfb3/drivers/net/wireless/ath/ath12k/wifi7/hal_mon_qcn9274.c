@@ -78,6 +78,9 @@ ath12k_wifi7_hal_mon_rx_ppdu_eu_stats_info_get_qcn9274(const void *tlv_data,
 	ppdu_info->ast_index =
 		u32_get_bits(info[3],
 			     HAL_RX_PPDU_END_USER_STATS_INFO3_AST_INDEX_QCN9274);
+	ppdu_info->frame_control =
+		u32_get_bits(info[3],
+			     HAL_RX_PPDU_END_USER_STATS_INFO3_FRAME_CTRL_QCN9274);
 	ppdu_info->tcp_msdu_count =
 		u32_get_bits(info[5],
 			     HAL_RX_PPDU_END_USER_STATS_INFO5_TCP_MSDU_CNT_QCN9274);
@@ -191,6 +194,9 @@ ath12k_wifi7_hal_mon_rx_ppdu_eu_stats_info_get_compact_qcn9274(const void *tlv_d
 	ppdu_info->ast_index =
 		u32_get_bits(info[3],
 			     HAL_RX_PPDU_END_USER_STATS_INFO3_AST_INDEX_CMPCT_QCN9274);
+	ppdu_info->frame_control =
+		u32_get_bits(info[3],
+			     HAL_RX_PPDU_END_USER_STATS_INFO3_FRAME_CTRL_CMPCT_QCN9274);
 	ppdu_info->tcp_msdu_count =
 		u32_get_bits(info[5],
 			     HAL_RX_PPDU_END_USER_STATS_INFO5_TCP_MSDU_CNT_CMPCT_QCN9274);

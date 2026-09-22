@@ -2760,6 +2760,7 @@ ath12k_wifi8_hal_mon_rx_ppdu_eu_stats_info_get(const void *tlv_data, u32 userid,
 		u32_get_bits(info[2],
 			     HAL_RX_PPDU_END_USER_STATS_INFO2_MPDU_CNT_FCS_OK);
 	ppdu_info->ast_index = le16_to_cpu(ppdu_eu_stats->ast_index);
+	ppdu_info->frame_control = le16_to_cpu(ppdu_eu_stats->frame_control_field);
 	ppdu_info->tcp_msdu_count = le16_to_cpu(ppdu_eu_stats->tcp_msdu_count);
 	ppdu_info->udp_msdu_count = le16_to_cpu(ppdu_eu_stats->udp_msdu_count);
 	ppdu_info->other_msdu_count = le16_to_cpu(ppdu_eu_stats->other_msdu_count);
@@ -2834,6 +2835,7 @@ ath12k_wifi8_hal_mon_rx_ppdu_eu_stats_info_get_compact(
 		u32_get_bits(info[2],
 			     HAL_RX_PPDU_END_USER_STATS_INFO2_MPDU_CNT_FCS_OK_CMPCT);
 	ppdu_info->ast_index = le16_to_cpu(ppdu_eu_stats->ast_index);
+	ppdu_info->frame_control = le16_to_cpu(ppdu_eu_stats->frame_control_field);
 	ppdu_info->tcp_msdu_count = le16_to_cpu(ppdu_eu_stats->tcp_msdu_count);
 	ppdu_info->udp_msdu_count = le16_to_cpu(ppdu_eu_stats->udp_msdu_count);
 	ppdu_info->other_msdu_count = le16_to_cpu(ppdu_eu_stats->other_msdu_count);
@@ -3001,7 +3003,7 @@ ath12k_wifi8_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 	case HAL_PHYRX_RSSI_LEGACY: {
 		const struct hal_rx_phyrx_rssi_legacy_info *rssi = tlv_data;
 		u32 info[2];
-		u32 info2_4;
+		u32 info2_6;
 		u32 info2_7;
 
 		info[0] = __le32_to_cpu(rssi->info0);
@@ -3022,7 +3024,7 @@ ath12k_wifi8_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 		 * Parse gain correction values from info2[] struct fields
 		 * of phyrx_rssi_legacy TLV (struct hal_rx_phyrx_rssi_legacy_info).
 		 *
-		 * Chains 0–3: 8-bit signed values in info2[4] (word 5)
+		 * Chains 0–3: 8-bit signed values in info2[6] (word 7)
 		 * Chain 4:    8-bit signed value in info2[7] bits [15:8] (word 8)
 		 *
 		 * Minimum TLV length check: need at least info2[7] + 4 bytes.
@@ -3030,21 +3032,21 @@ ath12k_wifi8_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 		if (hal->rssi_gain_corr_in_rssi_legacy &&
 		    tlv_len >= offsetof(struct hal_rx_phyrx_rssi_legacy_info,
 					info2[7]) + sizeof(u32)) {
-			info2_4 = le32_to_cpu(rssi->info2[4]);
+			info2_6 = le32_to_cpu(rssi->info2[6]);
 			info2_7 = le32_to_cpu(rssi->info2[7]);
 
 			/* Sign-extend: direct s8 cast (8-bit signed, no extn needed) */
 			ppdu_info->rssi_db_lin_corr_per_gain_per_chain[0] =
-				(s8)u32_get_bits(info2_4,
+				(s8)u32_get_bits(info2_6,
 					HAL_RX_PHYRX_RSSI_LEGACY_INFO2_GAIN_CORR_CHAIN0);
 			ppdu_info->rssi_db_lin_corr_per_gain_per_chain[1] =
-				(s8)u32_get_bits(info2_4,
+				(s8)u32_get_bits(info2_6,
 					HAL_RX_PHYRX_RSSI_LEGACY_INFO2_GAIN_CORR_CHAIN1);
 			ppdu_info->rssi_db_lin_corr_per_gain_per_chain[2] =
-				(s8)u32_get_bits(info2_4,
+				(s8)u32_get_bits(info2_6,
 					HAL_RX_PHYRX_RSSI_LEGACY_INFO2_GAIN_CORR_CHAIN2);
 			ppdu_info->rssi_db_lin_corr_per_gain_per_chain[3] =
-				(s8)u32_get_bits(info2_4,
+				(s8)u32_get_bits(info2_6,
 					HAL_RX_PHYRX_RSSI_LEGACY_INFO2_GAIN_CORR_CHAIN3);
 			ppdu_info->rssi_db_lin_corr_per_gain_per_chain[4] =
 				(s8)u32_get_bits(info2_7,
