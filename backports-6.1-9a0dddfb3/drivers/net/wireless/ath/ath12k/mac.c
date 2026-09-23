@@ -24599,6 +24599,11 @@ beacon_tmpl_setup:
 	if (arvif->pending_tx_vdev_up)
 		return 0;
 
+
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
+			 "Proceeding with vdev up for vdev_id : %d vdev_type : %d\n",
+			 arvif->vdev_id, ahvif->vdev_type);
+
 	/*
 	 * STA vdev switching to a NOL-history channel must not issue vdev_up
 	 * until CAC completes. Return early here; BSS_CHANGED_STA_NOL_CAC_DONE
@@ -24880,19 +24885,19 @@ ath12k_mac_update_vif_chan(struct ath12k *ar,
 			   u8 *vifs_bridge_link_id,
 			   int n_vifs)
 {
-	struct ath12k_link_vif *arvif, *tx_arvif;
+	struct ieee80211_hw *hw = ath12k_ar_to_hw(ar);
+	struct ath12k_link_vif *arvif;
 	struct ieee80211_bss_conf *link_conf;
 	struct ath12k_base *ab = ar->ab;
 	struct ieee80211_vif *vif;
-	struct ath12k_vif *ahvif, *tx_ahvif = NULL;
-	u64 vif_down_failed_map = 0;
+	struct ath12k_vif *ahvif;
+	u64 vif_down_failed_map = 0, tx_vif_bitmap = 0;
 	u8 link_id;
-	struct ieee80211_vif *tx_vif;
+	unsigned long i;
 	int ret;
-	int i, trans_vdev_index = 0;
-	bool monitor_vif = false;
+	bool monitor_vif = false, is_bridge_vdev;
 
-	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+	lockdep_assert_wiphy(hw->wiphy);
 
 	/* Each vif is mapped to each bit of vif_down_failed_map. */
 	if (n_vifs > sizeof(vif_down_failed_map)*__CHAR_BIT__) {
@@ -24900,8 +24905,6 @@ ath12k_mac_update_vif_chan(struct ath12k *ar,
 			    n_vifs);
 		return;
 	}
-
-	tx_arvif = NULL;
 
 	for (i = 0; i < n_vifs; i++) {
 		vif = vifs[i].vif;
@@ -24913,8 +24916,7 @@ ath12k_mac_update_vif_chan(struct ath12k *ar,
 		else
 			link_id = vifs[i].link_conf->link_id;
 
-		arvif = wiphy_dereference(ath12k_ar_to_hw(ar)->wiphy,
-					  ahvif->link[link_id]);
+		arvif = ath12k_get_arvif_from_link_id(ahvif, link_id);
 
 		if (vif->type == NL80211_IFTYPE_MONITOR) {
 			monitor_vif = true;
@@ -24942,12 +24944,10 @@ ath12k_mac_update_vif_chan(struct ath12k *ar,
 
 		if (!ath12k_mac_is_bridge_vdev(arvif) &&
 		    vifs[i].link_conf->mbssid_tx_vif &&
-		    ahvif == (struct ath12k_vif *)vifs[i].link_conf->mbssid_tx_vif->drv_priv) {
-			tx_vif = vifs[i].link_conf->mbssid_tx_vif;
-			tx_ahvif = ath12k_vif_to_ahvif(tx_vif);
-			tx_arvif = tx_ahvif->link[vifs[i].link_conf->mbssid_tx_vif_linkid];
-			trans_vdev_index = i;
-		}
+		    ahvif == (struct ath12k_vif *)
+			     vifs[i].link_conf->mbssid_tx_vif->drv_priv)
+			tx_vif_bitmap |= BIT_ULL(i);
+
 		ret = ath12k_wmi_vdev_down(ar, arvif->vdev_id);
 		if (ret) {
 			vif_down_failed_map |= BIT_ULL(i);
@@ -24959,19 +24959,34 @@ ath12k_mac_update_vif_chan(struct ath12k *ar,
 
 	ath12k_mac_update_rx_channel(ar, NULL, vifs, n_vifs);
 
-	if (tx_arvif) {
-		rcu_read_lock();
-		link_conf = rcu_dereference(tx_ahvif->vif->link_conf[tx_arvif->link_id]);
+	unsigned long bitmap[] = { BITMAP_FROM_U64(tx_vif_bitmap) };
+
+	for_each_set_bit(i, bitmap, n_vifs) {
+		struct ath12k_link_vif *tx_arvif;
+		struct ath12k_vif *tx_ahvif;
+
+		tx_ahvif = (void *)vifs[i].vif->drv_priv;
+
+		if (vifs_bridge_link_id &&
+		    (ATH12K_BRIDGE_LINKS_MASK & BIT(vifs_bridge_link_id[i])))
+			link_id = vifs_bridge_link_id[i];
+		else
+			link_id = vifs[i].link_conf->link_id;
+
+		tx_arvif = ath12k_get_arvif_from_link_id(tx_ahvif, link_id);
+
+		if (WARN_ON(!tx_arvif))
+			continue;
+
+		link_conf = wiphy_dereference(hw->wiphy,
+					      tx_ahvif->vif->link_conf[link_id]);
 
 		if (link_conf->csa_active && tx_arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP)
 			tx_arvif->pending_tx_vdev_up = true;
 
-		rcu_read_unlock();
-
 		ret = ath12k_vdev_restart_sequence(tx_arvif,
-						   vifs[trans_vdev_index].new_ctx,
-						   vif_down_failed_map,
-						   trans_vdev_index);
+						   vifs[i].new_ctx,
+						   vif_down_failed_map, i);
 
 		if (ret)
 			ath12k_warn(ab, "failed to restart vdev:%d: %d\n",
@@ -24987,22 +25002,25 @@ ath12k_mac_update_vif_chan(struct ath12k *ar,
 		else
 			link_id = vifs[i].link_conf->link_id;
 
-		arvif = ahvif->link[link_id];
+		arvif = ath12k_get_arvif_from_link_id(ahvif, link_id);
 		if (WARN_ON(!arvif))
 			continue;
 
-		if (!ath12k_mac_is_bridge_vdev(arvif)) {
-			if (vifs[i].link_conf->mbssid_tx_vif &&
-			    arvif == tx_arvif)
-				continue;
+		is_bridge_vdev = ath12k_mac_is_bridge_vdev(arvif);
 
-			rcu_read_lock();
-			link_conf = rcu_dereference(ahvif->vif->link_conf[arvif->link_id]);
+		/* Since tx_vif_map already keep track of tx vdev indices
+		 * use that to avoid tx vdev restart.
+		 */
+		if (!is_bridge_vdev && (tx_vif_bitmap & BIT_ULL(i)))
+			continue;
+
+		if (!is_bridge_vdev) {
+			link_conf = wiphy_dereference(hw->wiphy,
+						      ahvif->vif->link_conf[link_id]);
 
 			if (link_conf->csa_active && arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP)
 				arvif->pending_tx_vdev_up = true;
 
-			rcu_read_unlock();
 		}
 
 		ret = ath12k_vdev_restart_sequence(arvif,
@@ -25021,23 +25039,23 @@ ath12k_mac_update_vif_chan_mvr(struct ath12k *ar,
 			       u8 *vifs_bridge_link_id,
 			       int n_vifs)
 {
+	struct ieee80211_hw *hw = ath12k_ar_to_hw(ar);
 	struct ath12k_base *ab = ar->ab;
-	struct ath12k_link_vif *arvif, *tx_arvif;
-	struct ath12k_vif *ahvif, *tx_ahvif;
+	struct ath12k_link_vif *arvif;
+	struct ath12k_vif *ahvif;
 	struct cfg80211_chan_def *chandef;
-	struct ieee80211_vif *tx_vif;
-	int ret, i, time_left, trans_vdev_index = 0, vdev_idx, n_vdevs = 0;
+	int ret, time_left, vdev_idx, n_vdevs = 0;
+	u64 tx_vif_bitmap = 0;
+	unsigned long i;
 	u32 *vdev_ids;
 	u8 size, link_id = 0;
-	bool is_bridge_vdev;
 	struct ieee80211_bss_conf *link;
 	struct wmi_npca_arg npca_arg = {};
-	bool npca_collected = false;
+	bool npca_collected = false, is_bridge_vdev;
 
 	chandef = &vifs[0].new_ctx->def;
-	tx_arvif = NULL;
 
-	ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L1, "mac chanctx switch via mvr");
+	lockdep_assert_wiphy(hw->wiphy);
 
 	ath12k_mac_update_rx_channel(ar, NULL, vifs, n_vifs);
 
@@ -25057,7 +25075,7 @@ ath12k_mac_update_vif_chan_mvr(struct ath12k *ar,
 		else
 			link_id = vifs[i].link_conf->link_id;
 
-		arvif = ahvif->link[link_id];
+		arvif = ath12k_get_arvif_from_link_id(ahvif, link_id);
 		if (WARN_ON(!arvif))
 			continue;
 
@@ -25079,12 +25097,9 @@ ath12k_mac_update_vif_chan_mvr(struct ath12k *ar,
 
 		if (!ath12k_mac_is_bridge_vdev(arvif) &&
 		    vifs[i].link_conf->mbssid_tx_vif &&
-		    ahvif == (struct ath12k_vif *)vifs[i].link_conf->mbssid_tx_vif->drv_priv) {
-			tx_vif = vifs[i].link_conf->mbssid_tx_vif;
-			tx_ahvif = ath12k_vif_to_ahvif(tx_vif);
-			tx_arvif = tx_ahvif->link[vifs[i].link_conf->mbssid_tx_vif_linkid];
-			trans_vdev_index = i;
-		}
+		    ahvif == (struct ath12k_vif *)
+			     vifs[i].link_conf->mbssid_tx_vif->drv_priv)
+			tx_vif_bitmap |= BIT_ULL(i);
 
 		arvif->mvr_processing = true;
 		vdev_ids[n_vdevs++] = arvif->vdev_id;
@@ -25132,32 +25147,45 @@ ath12k_mac_update_vif_chan_mvr(struct ath12k *ar,
 		}
 	}
 
-	if (tx_arvif) {
+	unsigned long bitmap[] = { BITMAP_FROM_U64(tx_vif_bitmap) };
+
+	for_each_set_bit(i, bitmap, n_vifs) {
+		struct ath12k_link_vif *tx_arvif;
+		struct ath12k_vif *tx_ahvif;
+
+		tx_ahvif = (void *)vifs[i].vif->drv_priv;
+
 		vdev_idx = -1;
+		if (vifs_bridge_link_id &&
+		    (ATH12K_BRIDGE_LINKS_MASK & BIT(vifs_bridge_link_id[i])))
+			link_id = vifs_bridge_link_id[i];
+		else
+			link_id = vifs[i].link_conf->link_id;
+
+		tx_arvif = ath12k_get_arvif_from_link_id(tx_ahvif, link_id);
+		if (WARN_ON(!tx_arvif))
+			continue;
 
 		if (tx_arvif->mvr_processing && !ath12k_scan_radio_supported(ar->pdev)) {
 			/* failed to restart tx vif via mvr, fallback */
-			arvif->mvr_processing = false;
-			vdev_idx = trans_vdev_index;
+			tx_arvif->mvr_processing = false;
+			vdev_idx = i;
 			ath12k_err(ab,
 				   "[radio_idx : %u] mac failed to restart mbssid tx vdev %d via mvr cmd\n",
 				   ar->radio_idx, tx_arvif->vdev_id);
 			ath12k_critical_failure_trigger(ar->ab, ATH12K_CRIT_MVR_FAILURE);
 		}
-
-		rcu_read_lock();
-		link = rcu_dereference(tx_ahvif->vif->link_conf[tx_arvif->link_id]);
+		link = wiphy_dereference(hw->wiphy,
+					 tx_ahvif->vif->link_conf[link_id]);
 
 		if (link->csa_active && tx_arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP)
 			tx_arvif->pending_tx_vdev_up = true;
 
-		rcu_read_unlock();
-
 		WARN_ON(ath12k_mac_is_bridge_vdev(tx_arvif));
 
 		ret = ath12k_vdev_restart_sequence(tx_arvif,
-						   vifs[trans_vdev_index].new_ctx,
-						   BIT_ULL(trans_vdev_index),
+						   vifs[i].new_ctx,
+						   BIT_ULL(i),
 						   vdev_idx);
 		if (ret) {
 			ath12k_warn(ab,
@@ -25176,14 +25204,17 @@ ath12k_mac_update_vif_chan_mvr(struct ath12k *ar,
 		else
 			link_id = vifs[i].link_conf->link_id;
 
-		arvif = ahvif->link[link_id];
+		arvif = ath12k_get_arvif_from_link_id(ahvif, link_id);
 		if (WARN_ON(!arvif))
 			continue;
 
 		vdev_idx = -1;
 		is_bridge_vdev = ath12k_mac_is_bridge_vdev(arvif);
 
-		if (!is_bridge_vdev && vifs[i].link_conf->mbssid_tx_vif && arvif == tx_arvif)
+		/* Since tx_idx_map already keep track of tx vdev indices
+		 * use that to avoid tx vdev restart.
+		 */
+		if (!is_bridge_vdev && (tx_vif_bitmap & BIT_ULL(i)))
 			continue;
 
 		if (arvif->mvr_processing && !ath12k_scan_radio_supported(ar->pdev)) {
@@ -25196,13 +25227,11 @@ ath12k_mac_update_vif_chan_mvr(struct ath12k *ar,
 		}
 
 		if (!is_bridge_vdev) {
-			rcu_read_lock();
-			link = rcu_dereference(ahvif->vif->link_conf[arvif->link_id]);
+			link = wiphy_dereference(hw->wiphy,
+						 ahvif->vif->link_conf[link_id]);
 
 			if (link->csa_active && arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP)
 				arvif->pending_tx_vdev_up = true;
-
-			rcu_read_unlock();
 		}
 		ret = ath12k_vdev_restart_sequence(arvif, vifs[i].new_ctx,
 						   BIT_ULL(i), vdev_idx);
@@ -25523,6 +25552,8 @@ ath12k_mac_process_update_vif_chan(struct ath12k *ar,
 {
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_hw_group *ag = ab->ag;
+
+	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
 	if (ag && ag->num_devices >= ATH12K_MIN_NUM_DEVICES_NLINK) {
 		if (WARN_ON(n_vifs > TARGET_NUM_VDEVS + TARGET_NUM_BRIDGE_VDEVS))
