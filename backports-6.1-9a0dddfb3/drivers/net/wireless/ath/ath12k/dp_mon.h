@@ -259,7 +259,8 @@ struct ath12k_dp_arch_mon_ops {
 	int  (*rx_undecoded_metadata_capture_set)(struct ath12k_pdev_dp *dp_pdev,
 					      u32 value);
 	int  (*rx_undecoded_phy_err_mask_set)(struct ath12k_pdev_dp *dp_pdev,
-					      u32 mask, u32 mask_cont);
+					      u32 mask, u32 mask_cont,
+					      u32 mask_cont2, u32 mask_cont3);
 	int (*setup_ppdu_desc)(struct ath12k_pdev_dp *pdev_dp);
 	void (*cleanup_ppdu_desc)(struct ath12k_pdev_dp *pdev_dp);
 	int (*mon_rx_wq_init)(struct ath12k_pdev_dp *pdev_dp);

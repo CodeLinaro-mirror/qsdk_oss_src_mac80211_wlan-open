@@ -460,6 +460,10 @@ void ath12k_dp_mon_rx_prepare_filter(struct ath12k_dp *dp,
 		dst_tlv_filter->phy_err_mask |= src_tlv_filter->phy_err_mask;
 		dst_tlv_filter->phy_err_mask_cont |=
 					src_tlv_filter->phy_err_mask_cont;
+		dst_tlv_filter->phy_err_mask_cont2 |=
+					src_tlv_filter->phy_err_mask_cont2;
+		dst_tlv_filter->phy_err_mask_cont3 |=
+					src_tlv_filter->phy_err_mask_cont3;
 		dst_tlv_filter->phy_err_filter_valid |=
 					src_tlv_filter->phy_err_filter_valid;
 		dst_tlv_filter->fp_fpmo_data_mpdu_filter_in_en |=
