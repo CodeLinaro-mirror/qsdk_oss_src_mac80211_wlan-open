@@ -2518,6 +2518,14 @@ static void ath12k_dp_cc_rx_desc_deinit(struct ath12k_base *ab)
 			if (!skb)
 				continue;
 
+			if (desc_info[j].paddr) {
+				ATH12K_DMA_UNMAP_SINGLE(ab->dev,
+							desc_info[j].paddr,
+							DP_RX_BUFFER_SIZE,
+							DMA_FROM_DEVICE);
+				desc_info[j].paddr = 0;
+			}
+
 			end = desc_info[j].vaddr + DP_RX_BUFFER_SIZE;
 			ath12k_core_dmac_inv_range(desc_info[j].vaddr, end);
 			dev_kfree_skb_any(skb);

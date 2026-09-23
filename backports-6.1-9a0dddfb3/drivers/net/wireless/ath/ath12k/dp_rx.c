@@ -2259,7 +2259,8 @@ void ath12k_dp_rx_skb_free(struct sk_buff *skb, struct ath12k_dp *dp, int ring,
 		}
 	}
 
-	IPA_SET_RX_BUF_SMMU_UNMAP(dp->ab, skb, true);
+	if (drop_reason != DP_RX_ERR_DROP_REPLENISH)
+		IPA_SET_RX_BUF_SMMU_UNMAP(dp->ab, skb, true);
 	dev_kfree_skb_any(skb);
 }
 EXPORT_SYMBOL(ath12k_dp_rx_skb_free);
