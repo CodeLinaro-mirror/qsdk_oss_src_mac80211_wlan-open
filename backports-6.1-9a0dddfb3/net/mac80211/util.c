@@ -4048,6 +4048,7 @@ void ieee80211_dfs_cac_cancel(struct ieee80211_local *local,
 		for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS;
 		     link_id++) {
 			struct ieee80211_chanctx *curr_ctx;
+			bool bootup_cac = false;
 
 			link = sdata_dereference(sdata->link[link_id],
 						 sdata);
@@ -4080,15 +4081,15 @@ void ieee80211_dfs_cac_cancel(struct ieee80211_local *local,
 			hrtimer_cancel(&curr_ctx->dfs_cac_timer);
 			wiphy_work_cancel(wiphy, &curr_ctx->dfs_cac_timer_work);
 
+#ifdef CPTCFG_QCN_EXTN
+			bootup_cac = cfg80211_support_bootup_cac(wiphy,
+						curr_ctx->conf.radio_idx);
+#endif /* CPTCFG_QCN_EXTN */
 			/*
 			 * Release monitor VAP first to avoid
 			 * channel change in radar channel
 			 */
-			if (!link->conf->deferred_up
-#ifdef CPTCFG_QCN_EXTN
-			    && !cfg80211_support_bootup_cac(wiphy)
-#endif /* CPTCFG_QCN_EXTN */
-			) {
+			if (!link->conf->deferred_up && !bootup_cac) {
 				ieee80211_release_monitor_chandef(wiphy, curr_ctx,
 								  &chandef);
 				ieee80211_link_release_channel(link);

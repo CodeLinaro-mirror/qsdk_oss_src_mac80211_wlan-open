@@ -70,6 +70,7 @@ ath12k_wifi_config_policy[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1] = {
 #ifdef CPTCFG_QCN_EXTN
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_NON_BEACON_BSS] = { .type = NLA_U8 },
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_DIAGNOSTIC_STA_VAP] = { .type = NLA_U8 },
+	[QCA_WLAN_VENDOR_ATTR_CONFIG_BOOTUP_CAC_FEATURE] = { .type = NLA_U8 },
 #endif /* CPTCFG_QCN_EXTN */
 };
 
@@ -11519,6 +11520,11 @@ static int ath12k_vendor_wiphy_config_handler(struct wiphy *wiphy,
 			return -EOPNOTSUPP;
 		}
 	}
+
+#ifdef CPTCFG_QCN_EXTN
+	if (ath12k_vendor_set_wiphy_config_extn(wiphy, tb, wdev))
+		return -EINVAL;
+#endif /* CPTCFG_QCN_EXTN */
 
 	return 0;
 }

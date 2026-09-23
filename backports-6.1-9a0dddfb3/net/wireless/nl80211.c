@@ -13415,7 +13415,9 @@ static int nl80211_start_radar_detection(struct sk_buff *skb,
 				NL80211_RADAR_CAC_FINISHED,
 				GFP_KERNEL, link_id);
 #ifdef CPTCFG_QCN_EXTN
-		if (!cfg80211_support_bootup_cac(wiphy)) {
+		if (!cfg80211_support_bootup_cac(wiphy,
+				nl80211_get_radio_idx_by_chan(wiphy,
+							      chandef.chan))) {
 #endif /* CPTCFG_QCN_EXTN */
 			/* Set cac_started true for ieee80211_link_release_channel() */
 			wdev->links[link_id].cac_started = false;
