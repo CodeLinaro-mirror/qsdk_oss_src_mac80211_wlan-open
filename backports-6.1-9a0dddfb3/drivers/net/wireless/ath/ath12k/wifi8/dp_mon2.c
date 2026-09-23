@@ -81,6 +81,11 @@ const struct ath12k_dp_arch_mon_ops ath12k_wifi8_dp_arch_mon_dual_ring_ops = {
 	.ext_mon_tx_free = ath12k_dp_ext_mon_tx_free,
 	.htt_tx_mon_cfg_fill_extended_wmask =
 		ath12k_wifi8_htt_tx_mon_cfg_fill_extended_wmask,
+	/* TX ext_mon */
+	.ext_mon_filter = ath12k_wifi8_dp_ext_mon_filter,
+	.ext_mon_add_wmi_tx_peers = ath12k_wifi8_dp_ext_mon_add_wmi_tx_peers,
+	.ext_mon_remove_wmi_tx_peers = ath12k_wifi8_dp_ext_mon_remove_wmi_tx_peers,
+	.ext_mon_get_filter_mode = ath12k_wifi8_get_ext_mon_peer_filter_mode_locked,
 };
 
 static inline void
@@ -2166,13 +2171,39 @@ ath12k_wifi8_ext_mon_validate_pkt_data_mpdu_tlv(struct ath12k_dp *dp,
 	return 0;
 }
 
+static int
+ath12k_wifi8_ext_mon_rx_validate_peer_req(struct ath12k_dp *dp,
+					  const struct ath12k_ext_mon_peer_config
+					  *peer_cfg)
+{
+	const struct ath12k_ext_mon_peer_info *peer = NULL;
+	int i;
+
+	if (peer_cfg->action == ATH12K_EXT_MON_PEER_ACTION_ADD) {
+		for (i = 0; i < peer_cfg->count; i++) {
+			peer = &peer_cfg->peer_info[i];
+			/*
+			 * For wifi8, ra_addr is not supported in rx direction.
+			 * Reject any request with ra_addr set or a non-default bitmap.
+			 */
+			if (peer->ra_addr || peer->ta_info.bitmap !=
+					ATH12K_EXT_MON_DEFAULT_PEER_BITMAP) {
+				ath12k_warn(dp,
+					    "invalid ra_addr: %d or bitmap: %02x",
+					    peer->ra_addr, peer->ta_info.bitmap);
+				return -EINVAL;
+			}
+		}
+	}
+	return 0;
+}
+
 int ath12k_wifi8_dp_ext_mon_validate_request(struct ath12k_pdev_dp *dp_pdev,
 					     const struct ath12k_ext_mon_config *req)
 {
 	struct ath12k_pdev_mon_dp *dp_mon_pdev;
-	const struct ath12k_ext_mon_peer_info *peer = NULL;
 	const struct ath12k_ext_mon_filter_config *fc = NULL;
-	int i, ret;
+	int ret = 0;
 
 	dp_mon_pdev = dp_pdev->dp_mon_pdev;
 	if (!dp_mon_pdev) {
@@ -2181,22 +2212,11 @@ int ath12k_wifi8_dp_ext_mon_validate_request(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 	if (req->cmd_type == ATH12K_EXT_MON_CMD_TYPE_SET_PEER) {
-		if (req->peer.action == ATH12K_EXT_MON_PEER_ACTION_ADD) {
-			for (i = 0; i < req->peer.count; i++) {
-				peer = &req->peer.peer_info[i];
-				/*
-				 * For wifi8, ra_addr is not supported. Reject any
-				 * request with ra_addr set or a non-default bitmap.
-				 */
-				if (peer->ra_addr || peer->ta_info.bitmap !=
-						ATH12K_EXT_MON_DEFAULT_PEER_BITMAP) {
-					ath12k_warn(dp_pdev->dp,
-						    "invalid ra_addr: %d or bitmap: %02x",
-						    peer->ra_addr, peer->ta_info.bitmap);
-					return -EINVAL;
-				}
-			}
-		}
+		if (req->direction == QCA_VENDOR_EXT_MON_DIRECTION_RX)
+			ret = ath12k_wifi8_ext_mon_rx_validate_peer_req(dp_pdev->dp,
+									&req->peer);
+		if (ret)
+			return ret;
 	}
 
 	if (req->cmd_type == ATH12K_EXT_MON_CMD_TYPE_SET_FILTER) {
