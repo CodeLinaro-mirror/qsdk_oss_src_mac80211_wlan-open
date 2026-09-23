@@ -411,8 +411,32 @@ ath12k_wifi7_dp_process_wbm_rx_packets(struct ath12k_dp *dp,
 		hw_link_id = ath12k_wifi7_dp_rx_get_msdu_src_link(dp, rx_desc);
 
 		if (drop) {
-			dev_kfree_skb_any(spd_desc_l->msdu);
-			spd_desc_l->msdu = NULL;
+			/* For FRAME_OOR: rescue ARP packets that arrived
+			 * out-of-order, then forward ARP instead of dropping.
+			 * Check decap type before adjust_skb to avoid touching
+			 * the skb for frames that will be dropped anyway.
+			 */
+			if (spd_desc_l->wbm.reo_error_code ==
+				HAL_REO_DEST_RING_ERROR_CODE_FRAME_OOR &&
+			    spd_desc_l->msdu &&
+			    spd_desc_l->tlv_info.decap ==
+				DP_RX_DECAP_TYPE_ETHERNET2_DIX) {
+				ath12k_wifi7_dp_adjust_skb(spd_desc_l, NULL,
+							   &msdu_idx,
+							   hal_rx_desc_sz);
+				if (spd_desc_l->msdu &&
+				    spd_desc_l->msdu->len >= sizeof(struct ethhdr)) {
+					struct ethhdr *ehdr =
+						(struct ethhdr *)spd_desc_l->msdu->data;
+
+					if (ehdr->h_proto == htons(ETH_P_ARP))
+						drop = false;
+				}
+			}
+			if (drop) {
+				dev_kfree_skb_any(spd_desc_l->msdu);
+				spd_desc_l->msdu = NULL;
+			}
 		}
 
 		device_id = hw_links[hw_link_id].device_id;
@@ -544,6 +568,22 @@ ath12k_wifi7_dp_process_wbm_rx_packets(struct ath12k_dp *dp,
 				if (vow_stats_needed)
 					ath12k_dp_tid_wbm_err_stats(dp_pdev, tid, true,
 								    error_code);
+
+				if (!drop && msdu &&
+				    error_code == HAL_REO_DEST_RING_ERROR_CODE_FRAME_OOR) {
+					if (peer) {
+						ath12k_wifi7_wbm_process_frame(dp_pdev,
+									       spd_desc_l,
+									       peer,
+									       &rx_status,
+									       napi,
+									       &prev_tlv);
+					} else {
+						dev_kfree_skb_any(spd_desc_l->msdu);
+					}
+					spd_desc_l->msdu = NULL;
+					msdu = NULL;
+				}
 			} else {
 				reason = WBM_ERR_DROP_INVALID_PUSH_REASON;
 				ath12k_dp_rx_wbm_err_dev_free_skb(dp, msdu, reason);
