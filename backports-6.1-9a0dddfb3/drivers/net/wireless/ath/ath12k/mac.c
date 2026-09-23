@@ -2339,6 +2339,8 @@ int ath12k_mac_vdev_stop(struct ath12k_link_vif *arvif)
 			   "peer del all vdev %u ar[%u] num_ml_peers=%u num_ml_peers_del_all=%u\n",
 			   arvif->vdev_id, ar->radio_idx,
 			   arvif->num_ml_peers, arvif->num_ml_peers_del_all);
+		ath12k_wait_pending_deauth_disassoc_tx_arvif(
+			arvif, ATH12K_PEER_DELETE_MGMT_TX_WAIT_MS);
 		ret = ath12k_wmi_peer_delete_all(arvif);
 		if (ret) {
 			ath12k_warn(ar->ab, "[radio_idx : %u] failed to submit peer delete all for vdev_id:%d\n",
@@ -6950,6 +6952,7 @@ static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 	arvif->num_stations = 0;
 	arvif->num_peers = 0;
 	arvif->num_ml_peers = 0;
+	atomic_set(&arvif->pending_deauth_disassoc_tx, 0);
 	arvif->splitphy_ds_bank_id = DP_INVALID_BANK_ID;
 	arvif->tpc_ie_eirp = INT_MIN;
 
@@ -19685,6 +19688,7 @@ void ath12k_mgmt_over_wmi_tx_drop(struct ath12k *ar, struct sk_buff *skb)
 	if (skb_cb->flags & ATH12K_SKB_DEAUTH_DISASSOC_TRACKED) {
 		ath12k_peer_deauth_disassoc_tx_dec(ar, hdr->addr1);
 		skb_cb->flags &= ~ATH12K_SKB_DEAUTH_DISASSOC_TRACKED;
+		ath12k_arvif_deauth_disassoc_tx_dec(ar, skb_cb);
 	}
 
 	ath12k_skb_rhash_remove(ar, skb);
@@ -19892,8 +19896,10 @@ int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	ether_addr_copy(own_addr, hdr->addr2);
 
 	if (arvif->ahvif && is_deauth_disassoc &&
-	    ath12k_peer_deauth_disassoc_tx_inc(ar, hdr->addr1))
+	    ath12k_peer_deauth_disassoc_tx_inc(ar, hdr->addr1)) {
 		skb_cb->flags |= ATH12K_SKB_DEAUTH_DISASSOC_TRACKED;
+		atomic_inc(&arvif->pending_deauth_disassoc_tx);
+	}
 
 	if (info->flags & IEEE80211_TX_CTL_TX_OFFCHAN)
 		ret = ath12k_wmi_offchan_mgmt_send(ar, arvif->vdev_id, buf_id, skb);
@@ -19905,6 +19911,7 @@ int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		if (skb_cb->flags & ATH12K_SKB_DEAUTH_DISASSOC_TRACKED) {
 			ath12k_peer_deauth_disassoc_tx_dec(ar, hdr->addr1);
 			skb_cb->flags &= ~ATH12K_SKB_DEAUTH_DISASSOC_TRACKED;
+			atomic_dec_if_positive(&arvif->pending_deauth_disassoc_tx);
 		}
 		goto err_unmap_buf;
 	}

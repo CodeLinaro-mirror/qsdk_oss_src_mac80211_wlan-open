@@ -80,6 +80,10 @@ bool ath12k_peer_deauth_disassoc_tx_inc(struct ath12k *ar, const u8 *addr);
 void ath12k_peer_deauth_disassoc_tx_dec(struct ath12k *ar, const u8 *addr);
 int ath12k_wait_pending_deauth_disassoc_tx(struct ath12k *ar, const u8 *addr,
 					   unsigned long timeout_ms);
+void ath12k_arvif_deauth_disassoc_tx_dec(struct ath12k *ar,
+					 struct ath12k_skb_cb *skb_cb);
+int ath12k_wait_pending_deauth_disassoc_tx_arvif(struct ath12k_link_vif *arvif,
+						 unsigned long timeout_ms);
 
 /**
  * ath12k_link_sta_for_each - iterate over all link STAs on a radio
