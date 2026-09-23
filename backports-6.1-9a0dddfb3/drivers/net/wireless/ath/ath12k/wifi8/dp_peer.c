@@ -629,6 +629,8 @@ void ath12k_wifi8_dp_peer_unregister(struct ath12k_hw *ah, struct ath12k_dp *dp,
 	if (dp_peer->sta_id != ATH12K_STA_ID_INVALID)
 		clear_bit(dp_peer->sta_id, dp_hw->free_sta_id_map);
 
+	list_del_init(&dp_peer->tqm_cleanup_node);
+
 	ath12k_dp_peer_hash_table_delete(dp_hw, dp_peer);
 
 	/* Remove ath12k_dp_peer from linked list holding peer_list_lock */
