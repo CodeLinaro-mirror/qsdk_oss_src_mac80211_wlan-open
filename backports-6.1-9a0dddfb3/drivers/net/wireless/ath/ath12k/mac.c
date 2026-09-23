@@ -34064,6 +34064,7 @@ ath12k_mac_fill_npca_arg(struct ath12k_link_vif *arvif,
 	enum wmi_phy_mode mode;
 	u32 cf_device = 0;
 	u32 width_device = 0;
+	u16 bitmap = 0;
 
 	arg->npca.vdev_id = arvif->vdev_id;
 
@@ -34128,7 +34129,10 @@ ath12k_mac_fill_npca_arg(struct ath12k_link_vif *arvif,
 
 	if (le32_get_bits(npca->params,
 			  IEEE80211_UHR_NPCA_PARAMS_DIS_SUBCH_BMAP_PRES))
-		arg->npca.npca_cap2 = le16_to_cpu(npca->dis_subch_bmap[0]);
+		bitmap = le16_to_cpu(npca->dis_subch_bmap[0]);
+
+	arg->npca.puncture_20mhz_bitmap = bitmap;
+	arg->npca.npca_cap2 = bitmap;
 
 out:
 	ath12k_dbg(arvif->ar->ab, ATH12K_DBG_MAC | ATH12K_DBG_CU,
