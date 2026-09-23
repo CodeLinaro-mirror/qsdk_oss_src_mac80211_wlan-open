@@ -15726,6 +15726,41 @@ exit:
 	rcu_read_unlock();
 }
 
+#ifdef CPTCFG_QCN_EXTN
+/* Piggyback csa_finish for co-located non-beaconing vdevs.
+ * They doesn't participate in CSA as they have no beacon countdown.
+ * Finish their CSA here when the beaconing vdev reaches count=0.
+ */
+static void ath12k_mark_non_beacon_bss_csa_finish(struct ath12k_base *ab,
+						  struct ath12k_link_vif *arvif)
+{
+	struct ath12k_link_vif *nb_arvif;
+	struct ath12k_vif *nb_ahvif;
+
+	list_for_each_entry(nb_arvif, &arvif->ar->arvifs, list) {
+		if (nb_arvif == arvif)
+			continue;
+		if (!nb_arvif->arvif_extn.non_beacon_bss)
+			continue;
+		nb_ahvif = nb_arvif->ahvif;
+		if (!nb_ahvif || !nb_ahvif->vif)
+			continue;
+		/* Use pending_tx_vdev_up instead of csa_active —
+		 * hostapd skips NL80211_CMD_CHANNEL_SWITCH for
+		 * non_beacon_bss so csa_active is never set.
+		 */
+		if (!nb_arvif->pending_tx_vdev_up)
+			continue;
+
+		ath12k_dbg_level(ab, ATH12K_DBG_WMI, ATH12K_DBG_L3,
+				 "non_beacon_bss: CSA piggyback: vdev %d vif %pM\n",
+				 nb_arvif->vdev_id, nb_ahvif->vif->addr);
+
+		ieee80211_csa_finish(nb_ahvif->vif, nb_arvif->link_id);
+	}
+}
+#endif
+
 static void
 ath12k_wmi_process_csa_switch_count_event(struct ath12k_base *ab,
 					  const struct ath12k_wmi_pdev_csa_event *ev,
@@ -15789,6 +15824,9 @@ ath12k_wmi_process_csa_switch_count_event(struct ath12k_base *ab,
 					  num_vdevs, conf->csa_active);
 			ieee80211_csa_finish(ahvif->vif, arvif->link_id);
 			arvif->current_cntdown_counter = 0;
+#ifdef CPTCFG_QCN_EXTN
+			ath12k_mark_non_beacon_bss_csa_finish(ab, arvif);
+#endif /* CPTCFG_QCN_EXTN */
 		} else if (current_switch_count > 1) {
 			/* If the count in event is not what we expect, don't update the
 			 * mac80211 count. Since during beacon Tx failure, count in the

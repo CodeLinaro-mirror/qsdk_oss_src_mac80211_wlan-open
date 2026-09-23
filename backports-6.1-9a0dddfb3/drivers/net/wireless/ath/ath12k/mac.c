@@ -3351,6 +3351,14 @@ static void ath12k_control_beaconing(struct ath12k_link_vif *arvif,
 		arvif->is_up = true;
 		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "[radio_idx : %u] mac vdev %d up\n",
 			   ar->radio_idx, arvif->vdev_id);
+#ifdef CPTCFG_QCN_EXTN
+		if (arvif->arvif_extn.non_beacon_bss) {
+			ath12k_info(ar->ab,
+				    "non_beacon_bss: bring up vdev %d [%pM] and disable beacon\n",
+				    arvif->vdev_id, ahvif->vif->addr);
+			ath12k_wmi_send_bcn_offload_control_cmd(ar, arvif->vdev_id, 0);
+		}
+#endif
 		/* Any post-vdev-up actions added here must also be applied to
 		 * deferred non-TX vdevs in the loop below.
 		 */
@@ -7292,6 +7300,9 @@ ath12k_mac_assign_link_vif(struct ath12k_hw *ah, struct ieee80211_vif *vif,
 {
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
 	struct ath12k_link_vif *arvif;
+#ifdef CPTCFG_QCN_EXTN
+	bool saved_non_beacon = false;
+#endif
 
 	lockdep_assert_wiphy(ah->hw->wiphy);
 
@@ -7309,8 +7320,18 @@ ath12k_mac_assign_link_vif(struct ath12k_hw *ah, struct ieee80211_vif *vif,
 	 */
 	if (!ahvif->links_map && link_id < ATH12K_DEFAULT_SCAN_LINK) {
 		arvif = &ahvif->deflink;
+#ifdef CPTCFG_QCN_EXTN
+		/* Preserve non_beacon_bss across deflink reset — set by
+		 * hostapd vendor cmd before start_ap; hostapd does not
+		 * re-send it after FW recovery / SSR.
+		 */
+		saved_non_beacon = arvif->arvif_extn.non_beacon_bss;
+		memset(arvif, 0, sizeof(*arvif));
+		arvif->arvif_extn.non_beacon_bss = saved_non_beacon;
+#else
 		/* Clear pre-allocated deflink to reset the old residual data */
 		memset(arvif, 0, sizeof(*arvif));
+#endif
 	} else {
 		arvif = (struct ath12k_link_vif *)
 		kzalloc(sizeof(struct ath12k_link_vif), GFP_KERNEL);
@@ -10464,7 +10485,12 @@ skip_tpc_update:
 		} else {
 			arvif->is_up = true;
 			arvif->pending_tx_vdev_up = false;
-
+#ifdef CPTCFG_QCN_EXTN
+			if (arvif->arvif_extn.non_beacon_bss)
+				ath12k_wmi_send_bcn_offload_control_cmd(ar,
+									arvif->vdev_id,
+									0);
+#endif
 			if (info->mbssid_tx_vif && arvif == tx_arvif)
 				ath12k_mac_bring_up_deferred_nontx_vdevs(tx_arvif);
 		}
@@ -24611,6 +24637,10 @@ beacon_tmpl_setup:
 				    arvif->vdev_id, ret);
 			return ret;
 		}
+#ifdef CPTCFG_QCN_EXTN
+		if (arvif->arvif_extn.non_beacon_bss)
+			ath12k_wmi_send_bcn_offload_control_cmd(ar, arvif->vdev_id, 0);
+#endif
 	}
 
 	if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR) {
@@ -24954,6 +24984,16 @@ ath12k_mac_update_vif_chan(struct ath12k *ar,
 
 			if (link_conf->csa_active && arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP)
 				arvif->pending_tx_vdev_up = true;
+#ifdef CPTCFG_QCN_EXTN
+			/* Non-beaconing BSS does not participate in the CSA
+			 * beacon countdown (hostapd skips NL80211_CMD_CHANNEL_SWITCH
+			 * for it). Mark pending_tx_vdev_up so the driver calls vdev_up
+			 * on the new channel after the chanctx switch completes.
+			 */
+			else if (arvif->arvif_extn.non_beacon_bss &&
+				 arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP)
+				arvif->pending_tx_vdev_up = true;
+#endif /* CPTCFG_QCN_EXTN */
 
 			rcu_read_unlock();
 		}

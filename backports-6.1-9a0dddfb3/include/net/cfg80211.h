@@ -8254,6 +8254,7 @@ struct wireless_dev {
 	spinlock_t ttlm_expec_dur_lock; /* protects TTLM expected duration state */
 	u8 vap_submode;
 	u16 repurposed_links;
+	bool non_beacon_bss;
 };
 
 #define WDEV_VAP_SUBMODE_NONE  0
