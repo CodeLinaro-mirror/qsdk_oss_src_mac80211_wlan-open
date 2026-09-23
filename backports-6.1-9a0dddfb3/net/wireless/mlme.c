@@ -1516,9 +1516,15 @@ void cfg80211_cac_event(struct net_device *netdev,
 
 	switch (event) {
 	case NL80211_RADAR_CAC_FINISHED:
+		unsigned long now;
+
 		timeout = wdev->links[link_id].cac_start_time +
 			  msecs_to_jiffies(wdev->links[link_id].cac_time_ms);
-		WARN_ON(!time_after_eq(jiffies, timeout));
+		now = jiffies;
+		pr_info("CAC_TIMEOUT: netdev=%s link=%u cac_start_time=%lu cac_time_ms=%u jiffies=%lu timeout=%lu\n",
+			netdev->name, link_id, wdev->links[link_id].cac_start_time,
+			wdev->links[link_id].cac_time_ms, now, timeout);
+		WARN_ON(!time_after_eq(now, timeout));
 		cfg80211_set_dfs_state(wiphy, chandef, NL80211_DFS_AVAILABLE);
 		memcpy(&rdev->cac_done_chandef, chandef,
 		       sizeof(struct cfg80211_chan_def));
