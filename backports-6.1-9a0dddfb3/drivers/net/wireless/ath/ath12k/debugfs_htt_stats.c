@@ -16139,7 +16139,13 @@ int ath12k_debugfs_htt_stats_req(struct ath12k *ar)
 			return ret;
 		}
 
+		/* Release the wiphy lock before blocking wait to avoid holding it
+		 * for up to 3 seconds, which would delay concurrent nl80211 operations
+		 * such as authentication frame processing.
+		 */
+		wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
 		if (!wait_for_completion_timeout(&stats_req->htt_stats_rcvd, 3 * HZ)) {
+			wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
 			spin_lock_bh(&ar->data_lock);
 			if (!stats_req->done) {
 				stats_req->done = true;
@@ -16148,6 +16154,8 @@ int ath12k_debugfs_htt_stats_req(struct ath12k *ar)
 				return -ETIMEDOUT;
 			}
 			spin_unlock_bh(&ar->data_lock);
+		} else {
+			wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
 		}
 
 		spin_lock_bh(&ar->data_lock);
