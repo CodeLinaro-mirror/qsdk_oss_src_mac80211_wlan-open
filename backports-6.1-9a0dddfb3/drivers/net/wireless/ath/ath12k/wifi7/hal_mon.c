@@ -4079,7 +4079,7 @@ ath12k_wifi7_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 		}
 
 		return HAL_RX_MON_STATUS_MSDU_END;
-	case HAL_RX_MPDU_END:
+	case HAL_RX_MPDU_END: {
 		const struct hal_rx_mpdu_end *mpdu_end = tlv_data;
 		u32 info0;
 
@@ -4090,6 +4090,7 @@ ath12k_wifi7_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 				u32_get_bits(info0, HAL_RX_MPDU_END_INFO0_FCS_ERR);
 
 		return HAL_RX_MON_STATUS_MPDU_END;
+	}
 	case HAL_PHYRX_GENERIC_U_SIG:
 		ath12k_wifi7_hal_mon_rx_parse_u_sig_hdr(tlv_data, ppdu_info);
 		break;

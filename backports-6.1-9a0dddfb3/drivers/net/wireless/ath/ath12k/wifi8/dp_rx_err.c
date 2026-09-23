@@ -1255,7 +1255,7 @@ static bool ath12k_wifi8_dp_unauth_wds_err(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 	switch (peer->rx_decap_type) {
-	case DP_RX_DECAP_TYPE_ETHERNET2_DIX:
+	case DP_RX_DECAP_TYPE_ETHERNET2_DIX: {
 		struct ethhdr *ehdr = (struct ethhdr *)msdu->data;
 
 		if (ehdr->h_proto != cpu_to_be16(ETH_P_PAE))
@@ -1266,8 +1266,9 @@ static bool ath12k_wifi8_dp_unauth_wds_err(struct ath12k_pdev_dp *dp_pdev,
 							napi,
 							prev_tlv_info);
 		return false;
+	}
 	case DP_RX_DECAP_TYPE_RAW:
-	case DP_RX_DECAP_TYPE_NATIVE_WIFI:
+	case DP_RX_DECAP_TYPE_NATIVE_WIFI: {
 		struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)msdu->data;
 		int hdr_len = ieee80211_hdrlen(hdr->frame_control);
 		struct ath12k_dp_rx_rfc1042_hdr *llc =
@@ -1279,6 +1280,7 @@ static bool ath12k_wifi8_dp_unauth_wds_err(struct ath12k_pdev_dp *dp_pdev,
 
 		ath12k_dp_rx_update_eapol_stats(dp, msdu);
 		break;
+	}
 	default:
 		return true;
 	}

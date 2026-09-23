@@ -2052,7 +2052,7 @@ ath12k_dp_tx_mon_update_ppdu_info_status(struct ath12k_pdev_dp *dp_pdev,
 		}
 		break;
 
-	case HAL_TX_MON_FES_STATUS_END:
+	case HAL_TX_MON_FES_STATUS_END: {
 		/*
 		 * FES status end - clean up incomplete MPDUs for all users
 		 */
@@ -2065,7 +2065,7 @@ ath12k_dp_tx_mon_update_ppdu_info_status(struct ath12k_pdev_dp *dp_pdev,
 							  i);
 		}
 		break;
-
+	}
 	case HAL_TX_MON_RESPONSE_END_STATUS_INFO:
 		ret = ath12k_dp_tx_mon_generated_response_frm(dp_pdev,
 							      tx_ppdu_info);

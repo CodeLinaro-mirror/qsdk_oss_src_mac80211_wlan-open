@@ -37,6 +37,8 @@ struct ath12k_sta;
 #define ATH12K_DMA_UNMAP_SINGLE(...) ((void)0)
 #else
 #define VIRT_TO_PHYS(...) ((void)0)
+#define IPA_SET_RX_BUF_SMMU_MAP(...) ((void)0)
+#define IPA_SET_RX_BUF_SMMU_UNMAP(...) ((void)0)
 #define ATH12K_DMA_MAP_SINGLE(ab, defrag_skb, buf_paddr) do { \
 	__typeof__(ab) _ab = (ab); \
 	__typeof__(defrag_skb) _skb = (defrag_skb); \

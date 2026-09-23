@@ -10250,7 +10250,7 @@ static int ath12k_wmi_afc_event_parser(struct ath12k_base *ab,
 		   tag, len, afc->event_type);
 
 	switch (tag) {
-	case WMI_TAG_AFC_EVENT_FIXED_PARAM:
+	case WMI_TAG_AFC_EVENT_FIXED_PARAM: {
 		struct wmi_afc_event_fixed_param *fixed_param;
 
 		if (!ptr || !len || len < sizeof(*fixed_param)) {
@@ -10267,6 +10267,7 @@ static int ath12k_wmi_afc_event_parser(struct ath12k_base *ab,
 			   "Received AFC event of type %d for pdev: %d\n",
 			   afc->event_type, afc->phy_id);
 		break;
+	}
 	case WMI_TAG_AFC_EXPIRY_EVENT_PARAM:
 		if (len == 0) {
 			ath12k_warn(ab, "len should not be zero\n");

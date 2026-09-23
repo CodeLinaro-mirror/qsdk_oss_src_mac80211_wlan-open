@@ -10469,7 +10469,7 @@ static int ath12k_vendor_get_wifi_config_handler(struct wiphy *wiphy,
 
 	if (tb[QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_COMMAND]) {
 		switch (wifi_params.command) {
-		case QCA_NL80211_VENDOR_SUBCMD_HE_MCS_12_13_SUPP:
+		case QCA_NL80211_VENDOR_SUBCMD_HE_MCS_12_13_SUPP: {
 			__le16 cap = cpu_to_le16((u16)value);
 
 			if (nla_put(skb, QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_DATA,
@@ -10478,6 +10478,7 @@ static int ath12k_vendor_get_wifi_config_handler(struct wiphy *wiphy,
 				goto err;
 			}
 			goto send_reply;
+		}
 		default:
 			break;
 		}
