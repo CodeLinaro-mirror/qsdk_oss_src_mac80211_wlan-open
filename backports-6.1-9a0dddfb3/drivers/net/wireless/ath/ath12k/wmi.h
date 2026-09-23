@@ -2667,6 +2667,8 @@ enum wmi_tlv_tag {
 	WMI_TAG_MAPC_PEER_SETUP_STATUS_EVENT_FIXED_PARAM = 0x05AF,
 	WMI_TAG_PEER_UHR_OMP_DSO_PARAMS = 0x5B1,
 	WMI_TAG_MAPC_COTDMA_E2E_CONFIG = 0x05BE,
+	WMITLV_TAG_STRUC_wmi_tpc_pwr_breakdown_entry = 0x5DC,
+	WMITLV_TAG_STRUC_wmi_halphy_enhanced_stats_query_param = 0x5DD,
 	WMI_TAG_MAX
 };
 
@@ -10381,10 +10383,16 @@ struct ath12k_fw_stats_req_params {
 
 enum wmi_halphy_ctrl_path_stats_id {
 	WMI_HALPHY_PDEV_TX_SU_STATS = 0,
-	WMI_HALPHY_PDEV_TX_SUTXBF_STATS,
-	WMI_HALPHY_PDEV_TX_MU_STATS,
-	WMI_HALPHY_PDEV_TX_MUTXBF_STATS,
-	WMI_HALPHY_PDEV_TX_STATS_MAX,
+	WMI_HALPHY_PDEV_TX_SUTXBF_STATS = 1,
+	WMI_HALPHY_PDEV_TX_MU_STATS = 2,
+	WMI_HALPHY_PDEV_TX_MUTXBF_STATS = 3,
+	/* Enhanced DispTPC. ENHANCED_MUTXBF not defined — not valid. */
+	WMI_HALPHY_PDEV_TX_ENHANCED_SU_STATS = 4,
+	WMI_HALPHY_PDEV_TX_ENHANCED_SUTXBF_STATS = 5,
+	WMI_HALPHY_PDEV_TX_ENHANCED_MU_STATS = 6,
+	/* Per-combo query (sub_id 7) */
+	WMI_HALPHY_PDEV_TX_COMBO_QUERY = 7,
+	WMI_HALPHY_PDEV_TX_STATS_MAX = 8, /* = FW WMI_HALPHY_CTRL_PATH_STATS_MAX */
 };
 
 enum ath12k_wmi_tpc_stats_rates_array {
@@ -10398,13 +10406,14 @@ enum ath12k_wmi_tpc_stats_ctl_array {
 };
 
 enum ath12k_wmi_tpc_stats_events {
-	ATH12K_TPC_STATS_CONFIG_REG_PWR_EVENT,
-	ATH12K_TPC_STATS_RATES_EVENT1,
+	ATH12K_TPC_STATS_CONFIG_REG_PWR_EVENT = 0,
+	ATH12K_TPC_STATS_RATES_EVENT1 = 1,
 	/* event 2: EHT rates array; UHR target powers are identical so the
 	 * host reuses this same array for all UHR preambles as well.
 	 */
-	ATH12K_TPC_STATS_RATES_EVENT2,
-	ATH12K_TPC_STATS_CTL_TABLE_EVENT
+	ATH12K_TPC_STATS_RATES_EVENT2 = 2,
+	ATH12K_TPC_STATS_CTL_TABLE_EVENT = 3,
+	ATH12K_TPC_STATS_ENHANCED_BREAKDOWN_EVENT = 6,
 };
 
 struct wmi_request_halphy_ctrl_path_stats_cmd_fixed_params {
@@ -10415,11 +10424,97 @@ struct wmi_request_halphy_ctrl_path_stats_cmd_fixed_params {
 	__le32 subid;
 } __packed;
 
+/* Moved from debugfs.h — WMI protocol-level definition used across
+ * multiple host driver components, not just debugfs.
+ */
+enum wmi_tpc_pream_bw {
+	WMI_TPC_PREAM_CCK,
+	WMI_TPC_PREAM_OFDM,
+	WMI_TPC_PREAM_HT20,
+	WMI_TPC_PREAM_HT40,
+	WMI_TPC_PREAM_VHT20,
+	WMI_TPC_PREAM_VHT40,
+	WMI_TPC_PREAM_VHT80,
+	WMI_TPC_PREAM_VHT160,
+	WMI_TPC_PREAM_HE20,
+	WMI_TPC_PREAM_HE40,
+	WMI_TPC_PREAM_HE80,
+	WMI_TPC_PREAM_HE160,
+	WMI_TPC_PREAM_EHT20,
+	WMI_TPC_PREAM_EHT40,
+	WMI_TPC_PREAM_EHT60,
+	WMI_TPC_PREAM_EHT80,
+	WMI_TPC_PREAM_EHT120,
+	WMI_TPC_PREAM_EHT140,
+	WMI_TPC_PREAM_EHT160,
+	WMI_TPC_PREAM_EHT200,
+	WMI_TPC_PREAM_EHT240,
+	WMI_TPC_PREAM_EHT280,
+	WMI_TPC_PREAM_EHT320,
+	WMI_TPC_PREAM_UHR20,
+	WMI_TPC_PREAM_UHR40,
+	WMI_TPC_PREAM_UHR60,
+	WMI_TPC_PREAM_UHR80,
+	WMI_TPC_PREAM_UHR120,
+	WMI_TPC_PREAM_UHR140,
+	WMI_TPC_PREAM_UHR160,
+	WMI_TPC_PREAM_UHR200,
+	WMI_TPC_PREAM_UHR240,
+	WMI_TPC_PREAM_UHR280,
+	WMI_TPC_PREAM_UHR320,
+	WMI_TPC_PREAM_MAX
+};
+
+/* per-{phymode,num_chains,nss,mcs} power breakdown entry.
+ * dword0: phymode[7:0], num_chains[15:8], nss[23:16], mcs[31:24]
+ * dword1: target_power[15:0], reg_power[31:16]   (s16 raw bits)
+ * dword2: ctl_power[15:0],    final_power[31:16]  (s16 raw bits)
+ */
+struct wmi_tpc_pwr_breakdown_entry {
+	__le32 tlv_header;
+	__le32 dword0;  /* phymode[7:0], num_chains[15:8], nss[23:16], mcs[31:24] */
+	__le32 dword1;  /* target_power[15:0], reg_power[31:16] */
+	__le32 dword2;  /* ctl_power[15:0], final_power[31:16] */
+} __packed;
+
+/* Accessors — pass le32_to_cpu(entry->dwordN) as argument */
+#define WMI_DISP_TPC_PWR_PHYMODE_GET(d0)       (((d0) >> 0) & 0xff)
+#define WMI_DISP_TPC_PWR_NUM_CHAINS_GET(d0)    (((d0) >> 8) & 0xff)
+#define WMI_DISP_TPC_PWR_NSS_GET(d0)           (((d0) >> 16) & 0xff)
+#define WMI_DISP_TPC_PWR_MCS_GET(d0)           (((d0) >> 24) & 0xff)
+#define WMI_DISP_TPC_PWR_TARGET_PWR_GET(d1)    ((s16)(((d1) >> 0) & 0xffff))
+#define WMI_DISP_TPC_PWR_REG_PWR_GET(d1)       ((s16)(((d1) >> 16) & 0xffff))
+#define WMI_DISP_TPC_PWR_CTL_PWR_GET(d2)       ((s16)(((d2) >> 0) & 0xffff))
+#define WMI_DISP_TPC_PWR_FINAL_PWR_GET(d2)     ((s16)(((d2) >> 16) & 0xffff))
+
+struct wmi_halphy_enhanced_stats_query_param {
+	__le32 tlv_header;
+	__le32 phymode;
+	__le32 nss;
+	__le32 num_chains;
+} __packed;
+
 struct ath12k_wmi_pdev_tpc_stats_event_fixed_params {
 	__le32 request_id;
 	__le32 end_of_event;
 	__le32 event_count;
 	__le32 pdev_id;
+} __packed;
+
+struct wmi_halphy_ctrl_path_stats_event_fixed_param_v2 {
+	__le32 request_id;
+	__le32 end_of_event;
+	__le32 event_count;
+	__le32 pdev_id;
+	__le32 radio_band;
+	__le32 chan_freq;
+	__le32 user_power_limit;
+	__le32 dev_max_pwr_cap_pwr;
+	__le32 dev_max_pwr_cap_phy_mode;
+	__le32 dev_max_pwr_cap_nss;
+	__le32 dev_max_pwr_cap_num_chains;
+	__le32 dev_max_pwr_cap_mcs;
+	__le32 dev_max_pwr_cap_chain_gain_pwr;
 } __packed;
 
 struct wmi_tpc_config_params {
@@ -10487,6 +10582,17 @@ struct wmi_tpc_stats_arg {
 	struct wmi_tpc_rates_array_arg rates_array2;
 	struct wmi_tpc_config_params tpc_config;
 	struct wmi_tpc_ctl_pwr_table_arg ctl_array;
+	struct wmi_tpc_pwr_breakdown_entry *pwr_breakdown;
+	u32 pwr_breakdown_count;
+	u32 radio_band;
+	u32 chan_freq;
+	s32 user_power_limit;
+	s32 dev_max_pwr_cap_pwr;
+	u32 dev_max_pwr_cap_phy_mode;
+	u32 dev_max_pwr_cap_nss;
+	u32 dev_max_pwr_cap_num_chains;
+	u32 dev_max_pwr_cap_mcs;
+	s32 dev_max_pwr_cap_chain_gain_pwr;
 };
 
 struct wmi_pdev_wsi_stats_info_cmd {

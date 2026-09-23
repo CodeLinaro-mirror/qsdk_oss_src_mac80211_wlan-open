@@ -1733,6 +1733,10 @@ struct ath12k_debug {
 	spinlock_t wmi_ctrl_path_stats_lock;
 	bool wmi_ctrl_path_stats_more_enabled;
 	enum wmi_halphy_ctrl_path_stats_id tpc_stats_type;
+	/* mandatory phyMode filter; WMI_TPC_PREAM_MAX = all modes (default) */
+	enum wmi_tpc_pream_bw tpc_stats_pream_filter;
+	u32 tpc_stats_nss_filter;        /* 0xFF = sweep all NSS (default) */
+	u32 tpc_stats_num_chains_filter; /* 0xFF = sweep all ntx chains (default) */
 	bool tpc_request;
 	struct completion tpc_complete;
 	struct wmi_tpc_stats_arg *tpc_stats;

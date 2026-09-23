@@ -17879,6 +17879,12 @@ static int ath12k_wmi_tpc_stats_copy_buffer(struct ath12k_base *ab,
 			memcpy(dst_ptr_ctl, ptr, len4);
 		}
 		break;
+	case ATH12K_TPC_STATS_ENHANCED_BREAKDOWN_EVENT: /* = 6; FR203283 */
+		/* Entries parsed in ath12k_wmi_process_tpc_stats() */
+		break;
+	default:
+		/* Unknown event_count: skip gracefully (forward-compat) */
+		break;
 	}
 	return 0;
 }
@@ -18028,6 +18034,10 @@ static int ath12k_tpc_get_ctl_pwr_tbl(struct ath12k_base *ab,
 	return 0;
 }
 
+static int ath12k_tpc_parse_pwr_breakdown(struct ath12k_base *ab,
+					  struct wmi_tpc_stats_arg *tpc_stats,
+					  const void *ptr, u32 len);
+
 static int ath12k_wmi_tpc_stats_subtlv_parser(struct ath12k_base *ab,
 					      u16 tag, u16 len,
 					      const void *ptr, void *data)
@@ -18088,6 +18098,8 @@ static int ath12k_wmi_tpc_stats_event_parser(struct ath12k_base *ab,
 		 */
 		if (len == 0)
 			return 0;
+		if (tpc_stats->event_count >= ATH12K_TPC_STATS_ENHANCED_BREAKDOWN_EVENT)
+			return ath12k_tpc_parse_pwr_breakdown(ab, tpc_stats, ptr, len);
 		ret = ath12k_wmi_tlv_iter(ab, ptr, len,
 					  ath12k_wmi_tpc_stats_subtlv_parser,
 					  tpc_stats);
@@ -18107,11 +18119,56 @@ static int ath12k_wmi_tpc_stats_event_parser(struct ath12k_base *ab,
 						       len, tpc_stats);
 		break;
 	default:
+		if (tpc_stats->event_count >= ATH12K_TPC_STATS_ENHANCED_BREAKDOWN_EVENT)
+			return 0;
 		ath12k_warn(ab, "Received invalid tag for tpc stats\n");
 		ret = -EINVAL;
 		break;
 	}
 	return ret;
+}
+
+static int ath12k_tpc_parse_pwr_breakdown(struct ath12k_base *ab,
+					  struct wmi_tpc_stats_arg *tpc_stats,
+					  const void *ptr, u32 len)
+{
+	const struct wmi_tpc_pwr_breakdown_entry *fw_entry;
+	struct wmi_tpc_pwr_breakdown_entry *new_entries;
+	u32 entry_size, entry_count, new_count;
+
+	if (!ptr || len < sizeof(*fw_entry))
+		return 0;
+
+	fw_entry = (const struct wmi_tpc_pwr_breakdown_entry *)ptr;
+	/* Validate first entry's inner TLV len against our struct size */
+	entry_size = sizeof(__le32) + (le32_to_cpu(fw_entry->tlv_header) & 0xFFFF);
+	if (entry_size != sizeof(*fw_entry)) {
+		ath12k_warn(ab,
+			    "tpc breakdown: unexpected entry size %u (expected %zu)\n",
+			    entry_size, sizeof(*fw_entry));
+		return -EINVAL;
+	}
+
+	entry_count = len / entry_size;
+	if (!entry_count)
+		return 0;
+
+	new_count = tpc_stats->pwr_breakdown_count + entry_count;
+	new_entries = kcalloc(new_count, sizeof(*fw_entry), GFP_ATOMIC);
+	if (!new_entries)
+		return -ENOMEM;
+
+	if (tpc_stats->pwr_breakdown && tpc_stats->pwr_breakdown_count)
+		memcpy(new_entries, tpc_stats->pwr_breakdown,
+		       tpc_stats->pwr_breakdown_count * sizeof(*fw_entry));
+
+	kfree(tpc_stats->pwr_breakdown);
+	tpc_stats->pwr_breakdown = new_entries;
+
+	memcpy(new_entries + tpc_stats->pwr_breakdown_count, fw_entry,
+	       entry_count * sizeof(*fw_entry));
+	tpc_stats->pwr_breakdown_count = new_count;
+	return 0;
 }
 
 void ath12k_wmi_free_tpc_stats_mem(struct ath12k *ar)
@@ -18125,6 +18182,8 @@ void ath12k_wmi_free_tpc_stats_mem(struct ath12k *ar)
 		kfree(tpc_stats->rates_array1.rate_array);
 		kfree(tpc_stats->rates_array2.rate_array);
 		kfree(tpc_stats->ctl_array.ctl_pwr_table);
+		kfree(tpc_stats->pwr_breakdown);
+		tpc_stats->pwr_breakdown = NULL;
 		kfree(tpc_stats);
 		ar->debug.tpc_stats = NULL;
 	}
@@ -18184,8 +18243,7 @@ static void ath12k_wmi_process_tpc_stats(struct ath12k_base *ab,
 	event_count = le32_to_cpu(fixed_param->event_count);
 	if (event_count == 0) {
 		if (ar->debug.tpc_stats) {
-			ath12k_warn(ab,
-				    "Invalid tpc memory present\n");
+			ath12k_warn(ab, "Invalid tpc memory present\n");
 			goto unlock;
 		}
 		ar->debug.tpc_stats =
@@ -18196,6 +18254,32 @@ static void ath12k_wmi_process_tpc_stats(struct ath12k_base *ab,
 				    "Failed to allocate memory for tpc stats\n");
 			goto unlock;
 		}
+	} else if (event_count >= ATH12K_TPC_STATS_ENHANCED_BREAKDOWN_EVENT) {
+		if (event_count == ATH12K_TPC_STATS_ENHANCED_BREAKDOWN_EVENT) {
+			if (!ar->debug.tpc_stats) {
+				ar->debug.tpc_stats =
+					kzalloc(sizeof(struct wmi_tpc_stats_arg),
+						GFP_ATOMIC);
+				if (!ar->debug.tpc_stats) {
+					ath12k_warn(ab,
+						    "Failed to allocate memory for tpc stats\n");
+					goto unlock;
+				}
+			} else {
+				kfree(ar->debug.tpc_stats->pwr_breakdown);
+				ar->debug.tpc_stats->pwr_breakdown = NULL;
+				ar->debug.tpc_stats->pwr_breakdown_count = 0;
+				ar->debug.tpc_stats->end_of_event = 0;
+			}
+		} else {
+			/* Subsequent NSS events: tpc_stats must already exist */
+			if (!ar->debug.tpc_stats) {
+				ath12k_warn(ab,
+					    "tpc stats unavailable for event_count %u\n",
+					    event_count);
+				goto unlock;
+			}
+		}
 	}
 
 	tpc_stats = ar->debug.tpc_stats;
@@ -18204,7 +18288,8 @@ static void ath12k_wmi_process_tpc_stats(struct ath12k_base *ab,
 		goto unlock;
 	}
 
-	if (!(event_count == 0)) {
+	if (event_count != 0 &&
+	    event_count != ATH12K_TPC_STATS_ENHANCED_BREAKDOWN_EVENT) {
 		if (event_count != tpc_stats->event_count + 1) {
 			ath12k_warn(ab,
 				    "Invalid tpc event received\n");
@@ -18224,6 +18309,38 @@ static void ath12k_wmi_process_tpc_stats(struct ath12k_base *ab,
 		ath12k_wmi_free_tpc_stats_mem(ar);
 		ath12k_warn(ab, "failed to parse tpc_stats tlv: %d\n", ret);
 		goto unlock;
+	}
+
+	/* store header fields from extended fixed_param for enhanced events */
+	if (tpc_stats->event_count >= ATH12K_TPC_STATS_ENHANCED_BREAKDOWN_EVENT) {
+		struct wmi_halphy_ctrl_path_stats_event_fixed_param_v2 *fp_v2 =
+			(struct wmi_halphy_ctrl_path_stats_event_fixed_param_v2 *)
+			(skb->data + sizeof(struct wmi_tlv));
+		/* Only read new fields if event is large enough */
+		if ((le32_to_cpu(((struct wmi_tlv *)skb->data)->header) & 0xFFFF) >=
+		    offsetof(struct wmi_halphy_ctrl_path_stats_event_fixed_param_v2,
+			     radio_band)) {
+			tpc_stats->radio_band = le32_to_cpu(fp_v2->radio_band);
+			tpc_stats->chan_freq = le32_to_cpu(fp_v2->chan_freq);
+			tpc_stats->user_power_limit =
+				le32_to_cpu(fp_v2->user_power_limit);
+		}
+		/* Only read if FW is new enough (TLV covers the full extended struct) */
+		if ((le32_to_cpu(((struct wmi_tlv *)skb->data)->header) & 0xFFFF) >=
+		    sizeof(struct wmi_halphy_ctrl_path_stats_event_fixed_param_v2)) {
+			tpc_stats->dev_max_pwr_cap_pwr =
+				(s32)le32_to_cpu(fp_v2->dev_max_pwr_cap_pwr);
+			tpc_stats->dev_max_pwr_cap_chain_gain_pwr =
+				(s32)le32_to_cpu(fp_v2->dev_max_pwr_cap_chain_gain_pwr);
+			tpc_stats->dev_max_pwr_cap_phy_mode =
+				le32_to_cpu(fp_v2->dev_max_pwr_cap_phy_mode);
+			tpc_stats->dev_max_pwr_cap_nss =
+				le32_to_cpu(fp_v2->dev_max_pwr_cap_nss);
+			tpc_stats->dev_max_pwr_cap_num_chains =
+				le32_to_cpu(fp_v2->dev_max_pwr_cap_num_chains);
+			tpc_stats->dev_max_pwr_cap_mcs =
+				le32_to_cpu(fp_v2->dev_max_pwr_cap_mcs);
+		}
 	}
 
 	if (tpc_stats->end_of_event)
@@ -21707,6 +21824,9 @@ int ath12k_wmi_send_tpc_stats_request(struct ath12k *ar,
 	int ret;
 
 	buf_len = sizeof(*cmd) + TLV_HDR_SIZE + sizeof(u32) + TLV_HDR_SIZE + TLV_HDR_SIZE;
+	if (tpc_stats_type >= WMI_HALPHY_PDEV_TX_ENHANCED_SU_STATS)
+		buf_len += TLV_HDR_SIZE +
+			sizeof(struct wmi_halphy_enhanced_stats_query_param);
 
 	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, buf_len);
 	if (!skb)
@@ -21748,6 +21868,24 @@ int ath12k_wmi_send_tpc_stats_request(struct ath12k *ar,
 	tlv = ptr;
 	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_FIXED_STRUCT, 0);
 	ptr += TLV_HDR_SIZE;
+
+	/*  for enhanced sub_ids 4-7, pack optional query TLV */
+	if (tpc_stats_type >= WMI_HALPHY_PDEV_TX_ENHANCED_SU_STATS) {
+		struct wmi_halphy_enhanced_stats_query_param *qparam;
+		const u32 qtag =
+			WMITLV_TAG_STRUC_wmi_halphy_enhanced_stats_query_param;
+
+		tlv = ptr;
+		tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, sizeof(*qparam));
+		ptr += TLV_HDR_SIZE;
+		qparam = ptr;
+		qparam->tlv_header = ath12k_wmi_tlv_cmd_hdr(qtag, sizeof(*qparam));
+		spin_lock_bh(&ar->data_lock);
+		qparam->phymode    = cpu_to_le32(ar->debug.tpc_stats_pream_filter);
+		qparam->nss        = cpu_to_le32(ar->debug.tpc_stats_nss_filter);
+		qparam->num_chains = cpu_to_le32(ar->debug.tpc_stats_num_chains_filter);
+		spin_unlock_bh(&ar->data_lock);
+	}
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_REQUEST_HALPHY_CTRL_PATH_STATS_CMDID);
 	if (ret) {
