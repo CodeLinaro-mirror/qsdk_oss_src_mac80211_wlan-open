@@ -2527,6 +2527,8 @@ struct ath12k_pdev_cap {
 	u32 tx_chain_mask_shift;
 	u32 rx_chain_mask_shift;
 	u32 chainmask_table_id;
+	struct ath12k_chainmask_caps *chainmask_caps;
+	u32 num_chainmask_caps;
 	unsigned long adfs_chain_mask;
 	bool agile_spectral_cap;
 	bool agile_spectral_cap_160;

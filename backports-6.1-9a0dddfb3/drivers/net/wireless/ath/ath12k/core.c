@@ -7768,6 +7768,11 @@ void ath12k_core_deinit(struct ath12k_base *ab)
 
 void ath12k_core_free(struct ath12k_base *ab)
 {
+	int i;
+
+	for (i = 0; i < MAX_RADIOS; i++)
+		kfree(ab->pdevs[i].cap.chainmask_caps);
+
 	destroy_workqueue(ab->workqueue_aux);
 	destroy_workqueue(ab->workqueue);
 	kfree(ab);

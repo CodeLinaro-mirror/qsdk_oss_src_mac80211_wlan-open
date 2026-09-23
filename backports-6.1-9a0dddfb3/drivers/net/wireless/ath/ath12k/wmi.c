@@ -8940,6 +8940,9 @@ static int ath12k_wmi_tlv_mac_phy_chainmask_caps(struct ath12k_base *soc,
 		bool chainmask_table_found = false;
 
 		pdev_cap = &soc->pdevs[i].cap;
+		kfree(pdev_cap->chainmask_caps);
+		pdev_cap->chainmask_caps = NULL;
+		pdev_cap->num_chainmask_caps = 0;
 		pdev_cap->agile_spectral_cap = false;
 		pdev_cap->agile_spectral_cap_160 = false;
 		pdev_cap->agile_spectral_cap_80p80 = false;
@@ -8960,6 +8963,16 @@ static int ath12k_wmi_tlv_mac_phy_chainmask_caps(struct ath12k_base *soc,
 				    pdev_cap->chainmask_table_id, i);
 			continue;
 		}
+
+		pdev_cap->chainmask_caps = kmemdup(
+			cmask_table->cap_list,
+			array_size(cmask_table->num_valid_chainmasks,
+				   sizeof(*pdev_cap->chainmask_caps)),
+			GFP_ATOMIC);
+		if (!pdev_cap->chainmask_caps) {
+			return -ENOMEM;
+		}
+		pdev_cap->num_chainmask_caps = cmask_table->num_valid_chainmasks;
 
 		for (j = 0; j < cmask_table->num_valid_chainmasks; j++) {
 			if (cmask_table->cap_list[j].supported_caps &
