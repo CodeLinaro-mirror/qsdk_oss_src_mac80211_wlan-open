@@ -1355,13 +1355,34 @@ static const struct file_operations fops_peer_cfr_capture = {
 };
 #endif /* CPTCFG_ATH12K_CFR */
 
-void ath12k_debugfs_sta_op_add(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
-			       struct ieee80211_sta *sta, struct dentry *dir)
+static void
+ath12k_debugfs_aggr_stats_create_sta(struct ieee80211_sta *sta,
+				     struct dentry *dir)
 {
+	lockdep_assert_wiphy(ath12k_sta_to_ahsta(sta)->ahvif->ah->hw->wiphy);
+
+	if (!dir)
+		return;
+
 	debugfs_create_file("aggr_mode", 0644, dir, sta, &fops_aggr_mode);
 	debugfs_create_file("addba", 0200, dir, sta, &fops_addba);
 	debugfs_create_file("addba_resp", 0200, dir, sta, &fops_addba_resp);
 	debugfs_create_file("delba", 0200, dir, sta, &fops_delba);
+}
+
+void ath12k_debugfs_sta_op_add(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+			       struct ieee80211_sta *sta, struct dentry *dir)
+{
+	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
+	struct ath12k *ar = &ah->radio[0];
+
+	/* aggr_mode/addba/addba_resp/delba are created on demand when
+	 * DP_ENABLE_AGGR_CNTRL is set in dp_stats_mask.  If the bit is
+	 * already set on this radio at association time, create them now.
+	 */
+	if (ar->dp.dp_stats_mask & DP_ENABLE_AGGR_CNTRL)
+		ath12k_debugfs_aggr_stats_create_sta(sta, dir);
+
 	debugfs_create_file("primary_link_id", 0400, dir, sta, &fops_primary_link_id);
 	debugfs_create_file("primary_link_info", 0400, dir, sta, &fops_primary_link_info);
 }
