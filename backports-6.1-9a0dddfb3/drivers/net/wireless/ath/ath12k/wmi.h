@@ -11633,14 +11633,29 @@ struct wmi_anomaly_beacon_ctx_t {
 };
 
 /*
- * Context for halPhy bucket groups
- * (ID 5000–9999)
+ * Context for halPhy Cal bucket groups
+ * (ID 6000–6999)
  */
 struct wmi_anomaly_halphy_ctx_t {
 	__le32 phy_err_code; /* Hardware PHY error code at fault time */
 	__le32 chain_mask;   /* Active RX/TX chain mask at fault time */
 	__le32 cal_step;     /* Calibration step index; 0 if not applicable */
 	__le32 hw_status;    /* Raw hardware status register snapshot */
+};
+
+/*
+ * Context for halPhy Tx bucket group
+ * (ID 8000–8999)
+ */
+struct wmi_anomaly_halphy_tx_ctx_t {
+	/* TPC Anomaly ctxt */
+	struct {
+		__le32 tpc_max_error;              /* Worst per-pkt TPC error (dB) */
+		__le32 tpc_max_consecutive_errors; /* Longest run of bad pkts */
+		__le32 tpc_ema;                    /* TPC error trend (dB) */
+		__le32 tpc_verdict;                /* TPC_CLPC verdict */
+		__le32 tpc_anomaly_rate;           /* % of pkts exceeding threshold */
+	} tpc_ctx;
 };
 
 /*
@@ -11665,7 +11680,8 @@ struct wmi_anomaly_entry_t {
 		struct wmi_anomaly_vdev_ctx_t   vdev;    /* ID 0000–0999 */
 		struct wmi_anomaly_peer_ctx_t   peer;    /* ID 1000–1999 */
 		struct wmi_anomaly_beacon_ctx_t beacon;  /* ID 2000–2999 */
-		struct wmi_anomaly_halphy_ctx_t halphy;  /* ID 5000–9999 */
+		struct wmi_anomaly_halphy_ctx_t halphy;  /* ID 6000–6999 */
+		struct wmi_anomaly_halphy_tx_ctx_t phyrf_tx; /* ID 8000-8999 */
 		struct wmi_anomaly_ucode_ctx_t  ucode;   /* ID 10000–14999 */
 	} ctx;
 	/* NOTE:
