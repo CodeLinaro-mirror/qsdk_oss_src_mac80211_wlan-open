@@ -5618,8 +5618,6 @@ netdev_tx_t __ieee80211_subif_start_xmit_8023(struct sk_buff *skb,
 		if (mmeshsim) {
 			if (!ieee80211_rada_lookup_ra(vif, skb, mac_addr))
 				goto out;
-
-			skb_pull(skb, vif->mhdr_len);
 		} else {
 			mhdr = (struct meta_hdr_s *)(skb->data - MMESH_TX_META_HDR);
 			if (!mhdr->mac_addr_valid)
