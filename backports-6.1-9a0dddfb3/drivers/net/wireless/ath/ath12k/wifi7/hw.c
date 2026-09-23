@@ -1332,6 +1332,237 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 	},
 };
 
+static bool ath12k_wifi7_mac_is_mgmt_action_link_agnostic(struct ath12k_base *ab,
+							  struct sk_buff *skb)
+{
+	struct ieee80211_mgmt *mgmt = (struct ieee80211_mgmt *)skb->data;
+	const u8 *buf = (u8 *)&mgmt->u.action;
+	u8 category, action_code;
+
+	buf += ath12k_mac_get_iv_len(skb);
+	category = *buf++;
+	action_code = *buf++;
+
+	switch (category) {
+	case WLAN_CATEGORY_SPECTRUM_MGMT:
+		if (ath12k_mgmt_has_ml_link_info_ie(ab, skb))
+			return true;
+		break;
+	case WLAN_CATEGORY_RADIO_MEASUREMENT:
+		switch (action_code) {
+		case WLAN_ACTION_RADIO_MSR_LINK_MSR_REQ:
+		case WLAN_ACTION_RADIO_MSR_LINK_MSR_REP:
+			return false;
+		default:
+#ifdef CPTCFG_QCN_EXTN
+		if (ath12k_is_beacon_report_elem(action_code, buf, skb->data + skb->len))
+			return false;
+#endif
+		}
+			return true;
+		break;
+	case WLAN_CATEGORY_PROTECTED_EHT:
+		return true;
+	case WLAN_CATEGORY_WNM:
+		switch (action_code) {
+		case WLAN_WNM_ACTION_BSS_TM_REQ:
+		case WLAN_WNM_ACTION_BSS_TM_RESP:
+			return true;
+		default:
+			return false;
+		}
+		break;
+	case WLAN_CATEGORY_BACK:
+		switch (action_code) {
+		case WLAN_ACTION_ADDBA_REQ:
+		case WLAN_ACTION_ADDBA_RESP:
+			return true;
+		default:
+			return false;
+		}
+		break;
+	default:
+#ifdef CPTCFG_QCN_EXTN
+		if (ath12k_vs_action_has_ml_link_info_ie_extn(ab->pdevs[0].ar,
+							      category, buf,
+							      skb->data + skb->len)) {
+			return true;
+		}
+#endif /* CPTCFG_QCN_EXTN */
+		return false;
+	}
+	return false;
+}
+
+static bool ath12k_wifi7_mac_is_mgmt_link_agnostic(struct ath12k_base *ab,
+						   struct sk_buff *skb)
+{
+	struct ieee80211_mgmt *mgmt = (struct ieee80211_mgmt *)skb->data;
+	u16 fc = le16_to_cpu(mgmt->frame_control);
+
+	switch (fc & IEEE80211_FCTL_STYPE) {
+	case IEEE80211_STYPE_ACTION:
+		return ath12k_wifi7_mac_is_mgmt_action_link_agnostic(ab, skb);
+	default:
+		break;
+	}
+
+	return false;
+}
+
+/* Note: called under rcu_read_lock() */
+static u8 ath12k_wifi7_mac_get_tx_link(struct ieee80211_sta *sta,
+				       struct ieee80211_vif *vif, u8 link,
+				       struct sk_buff *skb, u32 info_flags)
+{
+	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
+	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
+	struct ieee80211_link_sta *link_sta;
+	struct ieee80211_bss_conf *bss_conf;
+	struct ath12k_sta *ahsta;
+	struct ath12k_link_sta *arsta;
+	u8 link_id;
+	unsigned long links;
+	struct ath12k_base *ab = NULL;
+
+	/* Use the link id passed or the first available link */
+	if (!sta) {
+		if (link != IEEE80211_LINK_UNSPECIFIED &&
+		    (ahvif->links_map & BIT(link)))
+			return link;
+
+		link_id = ffs(ahvif->links_map) - 1;
+		return link_id;
+	}
+
+	ahsta = ath12k_sta_to_ahsta(sta);
+
+	/* Below translation ensures we pass proper A2 & A3 for non ML clients.
+	 * Also it assumes for now support only for MLO AP in this path
+	 */
+	if (!sta->mlo) {
+		link = ahsta->deflink.link_id;
+
+		if (info_flags & IEEE80211_TX_CTL_HW_80211_ENCAP)
+			return link;
+
+		bss_conf = rcu_dereference(vif->link_conf[link]);
+		if (bss_conf) {
+			ether_addr_copy(hdr->addr2, bss_conf->addr);
+			if (!ieee80211_has_tods(hdr->frame_control) &&
+			    !ieee80211_has_fromds(hdr->frame_control))
+				ether_addr_copy(hdr->addr3, bss_conf->addr);
+		}
+
+		return link;
+	}
+
+	/* enqueue eth enacap & data frames on primary link, FW does link
+	 * selection and address translation.
+	 */
+	if (info_flags & IEEE80211_TX_CTL_HW_80211_ENCAP ||
+	    ieee80211_is_data(hdr->frame_control))
+		return ahsta->primary_link_id;
+
+	/* 802.11 frame cases */
+	if (link == IEEE80211_LINK_UNSPECIFIED)
+		link = ahsta->deflink.link_id;
+
+	if (!ieee80211_is_mgmt(hdr->frame_control))
+		return link;
+
+	/*Check on the link on which the frame came from hostapd*/
+	arsta = rcu_dereference(ahsta->link[link]);
+	ab = arsta->arvif->ar->ab;
+
+	if (ab && test_bit(ATH12K_GROUP_FLAG_HW_CRYPTO_DISABLED, &ab->ag->flags) &&
+	    ieee80211_has_protected(hdr->frame_control))
+		goto skip_link_agnostic_tx;
+
+	if (ab &&  test_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags) &&
+	    ab->ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2) {
+		/* If disassoc frame comes in crash link, need to
+		 * change the link which is active at that instance.
+		 */
+		if (ieee80211_is_disassoc(hdr->frame_control)) {
+			link = ahsta->deflink.link_id;
+			links = ahsta->links_map;
+			for_each_set_bit(link_id, &links, ATH12K_NUM_MAX_LINKS) {
+				arsta = rcu_dereference(ahsta->link[link_id]);
+				if (!arsta)
+					continue;
+				ab = arsta->arvif->ar->ab;
+				if (test_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags))
+					continue;
+
+				link = arsta->link_id;
+				ATH12K_SKB_CB(skb)->flags |=
+							ATH12K_SKB_MGMT_LINK_AGNOSTIC;
+				ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
+						 "using link %d to send disassoc for %pM\n",
+						 link, arsta->addr);
+				break;
+			}
+			goto skip_link_agnostic_tx;
+		}
+	}
+
+	if (!ath12k_wifi7_mac_is_mgmt_link_agnostic(ab, skb))
+		goto skip_link_agnostic_tx;
+
+	ATH12K_SKB_CB(skb)->flags |= ATH12K_SKB_MGMT_LINK_AGNOSTIC;
+	link = ahsta->primary_link_id;
+
+skip_link_agnostic_tx:
+	/* Perform address conversion for ML STA Tx */
+	bss_conf = rcu_dereference(vif->link_conf[link]);
+	link_sta = rcu_dereference(sta->link[link]);
+
+	if (bss_conf && link_sta) {
+		if (!(vif->type == NL80211_IFTYPE_AP &&
+		     (ieee80211_is_probe_resp(hdr->frame_control) ||
+		     ieee80211_is_auth(hdr->frame_control) ||
+		     ieee80211_is_reassoc_resp(hdr->frame_control) ||
+		     ieee80211_is_assoc_resp(hdr->frame_control))))
+			ether_addr_copy(hdr->addr1, link_sta->addr);
+
+		ether_addr_copy(hdr->addr2, bss_conf->addr);
+		if (vif->type == NL80211_IFTYPE_STATION && bss_conf->bssid)
+			ether_addr_copy(hdr->addr3, bss_conf->bssid);
+		else if (vif->type == NL80211_IFTYPE_AP)
+			ether_addr_copy(hdr->addr3, bss_conf->addr);
+
+		return link;
+	}
+
+	if (bss_conf) {
+		/* In certain cases where a ML sta associated and added subset of
+		 * links on which the ML AP is active, but now sends some frame
+		 * (ex. Probe request) on a different link which is active in our
+		 * MLD but was not added during previous association, we can
+		 * still honor the Tx to that ML STA via the requested link.
+		 * The control would reach here in such case only when that link
+		 * address is same as the MLD address or in worst case clients
+		 * used MLD address at TA wrongly which would have helped
+		 * identify the ML sta object and pass it here.
+		 * If the link address of that STA is different from MLD address,
+		 * then the sta object would be NULL and control won't reach
+		 * here but return at the start of the function itself with !sta
+		 * check. Also this would not need any translation at hdr->addr1
+		 * from MLD to link address since the RA is the MLD address
+		 * (same as that link address ideally) already.
+		 */
+		ether_addr_copy(hdr->addr2, bss_conf->addr);
+
+		if (vif->type == NL80211_IFTYPE_STATION && bss_conf->bssid)
+			ether_addr_copy(hdr->addr3, bss_conf->bssid);
+		else if (vif->type == NL80211_IFTYPE_AP)
+			ether_addr_copy(hdr->addr3, bss_conf->addr);
+	}
+
+	return link;
+}
+
 static void ath12k_wifi7_mgmt_handler(struct ieee80211_hw *hw,
 				      struct ieee80211_tx_control *control,
 				      struct ieee80211_tx_info *info,
@@ -1366,12 +1597,15 @@ static void ath12k_wifi7_mgmt_handler(struct ieee80211_hw *hw,
 	skb_cb->vif = vif;
 	link_id = u32_get_bits(info->control.flags, IEEE80211_TX_CTRL_MLO_LINK);
 	if (ieee80211_vif_is_mld(vif)) {
-		link_id = ath12k_mac_get_tx_link(sta, vif, link_id, skb, info_flags);
+		link_id = ath12k_wifi7_mac_get_tx_link(sta, vif,
+						       link_id, skb,
+						       info_flags);
 		if (link_id >= ATH12K_NUM_MAX_LINKS ||
 		    (ATH12K_SCAN_LINKS_MASK & BIT(link_id))) {
 			ath12k_mac_ieee80211_free_txskb(hw, skb, dp_pdev, sta,
 							dp_vif, DP_TX_ENQ_DROP_INV_LINK,
 							ring_id, false);
+			return;
 		}
 	} else {
 		link_id = 0;
@@ -1493,7 +1727,9 @@ int ath12k_wifi7_tx_setup_link(struct ieee80211_vif *vif,
 	*link_id = u32_get_bits(info->control.flags, IEEE80211_TX_CTRL_MLO_LINK);
 
 	if (ieee80211_vif_is_mld(vif)) {
-		*link_id = ath12k_mac_get_tx_link(sta, vif, *link_id, skb, info_flags);
+		*link_id = ath12k_wifi7_mac_get_tx_link(sta, vif,
+							*link_id, skb,
+							info_flags);
 		if (*link_id >= ATH12K_NUM_MAX_LINKS ||
 		    (ATH12K_SCAN_LINKS_MASK & BIT(*link_id))) {
 			return -EINVAL;

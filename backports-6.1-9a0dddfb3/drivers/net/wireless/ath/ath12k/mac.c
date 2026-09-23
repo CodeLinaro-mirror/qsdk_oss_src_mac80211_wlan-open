@@ -20041,23 +20041,11 @@ static int ath12k_mac_mgmt_action_frame_fill_elem(struct ath12k_link_vif *arvif,
 	u8 action_code, dialog_token;
 	bool can_override_mld_tx = ath12k_mgmt_override_mld_tx(ar->ab);
 
-#define MGMT_SET_LINK_AGNOSTIC(x, _skb_cb)					\
-	do {									\
-		if ((x))							\
-			(_skb_cb)->flags |= ATH12K_SKB_MGMT_LINK_AGNOSTIC;	\
-	} while (0)
-
 #define MGMT_RESET_LINK_AGNOSTIC(x, _skb_cb)					\
 	do {									\
 		if ((x))							\
 			(_skb_cb)->flags &= ~ATH12K_SKB_MGMT_LINK_AGNOSTIC;	\
 	} while (0)
-
-	/* make sure category field is present */
-	if (skb->len < IEEE80211_MIN_ACTION_SIZE) {
-		MGMT_RESET_LINK_AGNOSTIC(can_override_mld_tx, skb_cb);
-		return -EINVAL;
-	}
 
 	has_protected = ieee80211_has_protected(hdr->frame_control);
 
@@ -20070,6 +20058,11 @@ static int ath12k_mac_mgmt_action_frame_fill_elem(struct ath12k_link_vif *arvif,
 		return -EOPNOTSUPP;
 	}
 
+	/* make sure category field is present */
+	if (skb->len < IEEE80211_MIN_ACTION_SIZE) {
+		MGMT_RESET_LINK_AGNOSTIC(can_override_mld_tx, skb_cb);
+		return -EINVAL;
+	}
 
 	mgmt = (struct ieee80211_mgmt *)hdr;
 	buf = (u8 *)&mgmt->u.action;
@@ -20098,7 +20091,6 @@ static int ath12k_mac_mgmt_action_frame_fill_elem(struct ath12k_link_vif *arvif,
 			iv_len = 0;
 			break;
 		default:
-			MGMT_RESET_LINK_AGNOSTIC(can_override_mld_tx, skb_cb);
 			return -EINVAL;
 		}
 
@@ -20113,12 +20105,10 @@ static int ath12k_mac_mgmt_action_frame_fill_elem(struct ath12k_link_vif *arvif,
 			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
 					 "spectrum_mgmt: set link-agnostic (can_override_mld_tx=%u)\n",
 					 can_override_mld_tx);
-			MGMT_SET_LINK_AGNOSTIC(can_override_mld_tx, skb_cb);
 		} else {
 			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
 					 "spectrum_mgmt: clear link-agnostic (can_override_mld_tx=%u)\n",
 					 can_override_mld_tx);
-			MGMT_RESET_LINK_AGNOSTIC(can_override_mld_tx, skb_cb);
 		}
 		break;
 	case WLAN_CATEGORY_RADIO_MEASUREMENT:
@@ -20181,7 +20171,6 @@ check_rm_action_frame:
 			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
 					 "RRM: Link Measurement Req dialog_token=%u, cur_tx_power=%d, max_tx_power=%d\n",
 					 dialog_token, cur_tx_power, max_tx_power);
-			MGMT_RESET_LINK_AGNOSTIC(can_override_mld_tx, skb_cb);
 			break;
 		case WLAN_ACTION_RADIO_MSR_LINK_MSR_REP:
 			/* Variable Len Format:
@@ -20197,23 +20186,10 @@ check_rm_action_frame:
 			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
 					 "RRM: Link Measurement Resp dialog_token=%u, cur_tx_power=%d\n",
 					 dialog_token, cur_tx_power);
-			MGMT_RESET_LINK_AGNOSTIC(can_override_mld_tx, skb_cb);
 			break;
 		default:
-			/* Beaon Report Response should go in requested frequency */
-#ifdef CPTCFG_QCN_EXTN
-			if (ath12k_is_beacon_report_elem(action_code, buf,
-							 skb->data + skb->len))
-				MGMT_RESET_LINK_AGNOSTIC(can_override_mld_tx, skb_cb);
-#endif /* CPTCFG_QCN_EXTN */
 			return -EINVAL;
 		}
-		break;
-	case WLAN_CATEGORY_PROTECTED_EHT:
-		/* Set the link agnostic bit for
-		 * protected eht action frames
-		 */
-		MGMT_SET_LINK_AGNOSTIC(can_override_mld_tx, skb_cb);
 		break;
 	case WLAN_CATEGORY_PROTECTED_UHR:
 		action_code = *buf++;
@@ -20222,51 +20198,12 @@ check_rm_action_frame:
 			skb_cb->flags |= ATH12K_SKB_MGMT_SMD_HI_PRI;
 		}
 		break;
-	case WLAN_CATEGORY_WNM:
-		action_code = *buf++;
-
-		switch (action_code) {
-		case WLAN_WNM_ACTION_BSS_TM_REQ:
-		case WLAN_WNM_ACTION_BSS_TM_RESP:
-			/* Set the link agnostic bit for
-			 * BTM request and response as per
-			 * IEEE Std 802.11be Draft 7.0,
-			 * section 35.3.14
-			 *
-			 * Intentionally leaving the switch case empty
-			 * to avoid resetting the link agnostic bit in
-			 * default case.
-			 */
-			break;
-		default:
-			MGMT_RESET_LINK_AGNOSTIC(can_override_mld_tx, skb_cb);
-		}
-		break;
-	case WLAN_CATEGORY_BACK:
-		action_code = *buf++;
-		switch (action_code) {
-		case WLAN_ACTION_ADDBA_REQ:
-		case WLAN_ACTION_ADDBA_RESP:
-			break;
-		default:
-			MGMT_RESET_LINK_AGNOSTIC(can_override_mld_tx, skb_cb);
-		}
-		break;
 	default:
-#ifdef CPTCFG_QCN_EXTN
-		if (ath12k_vs_action_has_ml_link_info_ie_extn(ar, category, buf,
-							      skb->data + skb->len)) {
-			MGMT_SET_LINK_AGNOSTIC(can_override_mld_tx, skb_cb);
-			break;
-		}
-#endif /* CPTCFG_QCN_EXTN */
 		/* nothing to fill */
-		MGMT_RESET_LINK_AGNOSTIC(can_override_mld_tx, skb_cb);
-		return 0;
+		break;
 	}
 
 #undef MGMT_RESET_LINK_AGNOSTIC
-#undef MGMT_SET_LINK_AGNOSTIC
 
 	/* For devices which allow link-agnostic tx flag overrides here, MLO params TLV
 	 * is added only when they are link-agnostic.
@@ -20442,181 +20379,36 @@ void ath12k_mlo_mcast_update_tx_link_address(struct ieee80211_vif *vif,
 }
 EXPORT_SYMBOL(ath12k_mlo_mcast_update_tx_link_address);
 
-/* This function should be called only for a mgmt frame to a ML STA,
- * hence, such sanity checks are skipped
- */
-static bool ath12k_mac_is_mgmt_link_agnostic(struct sk_buff *skb)
+u8 ath12k_mac_get_iv_len(struct sk_buff *skb)
 {
-	struct ieee80211_mgmt *mgmt;
-	mgmt = (struct ieee80211_mgmt *)skb->data;
+	struct ieee80211_mgmt *mgmt = (struct ieee80211_mgmt *)skb->data;
+	u8 iv_len = 0;
 
-	if (ieee80211_is_action(mgmt->frame_control))
-		return true;
-
-	/* TODO Extend as per requirement */
-	return false;
-}
-
-/* Note: called under rcu_read_lock() */
-u8 ath12k_mac_get_tx_link(struct ieee80211_sta *sta, struct ieee80211_vif *vif,
-			  u8 link, struct sk_buff *skb, u32 info_flags)
-{
-	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
-	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
-	struct ieee80211_link_sta *link_sta;
-	struct ieee80211_bss_conf *bss_conf;
-	struct ath12k_sta *ahsta;
-	struct ath12k_link_sta *arsta;
-	u8 link_id;
-	unsigned long links;
-	struct ath12k_base *ab = NULL;
-
-	/* Use the link id passed or the first available link */
-	if (!sta) {
-		if (link != IEEE80211_LINK_UNSPECIFIED &&
-		    (ahvif->links_map & BIT(link)))
-			return link;
-
-		link_id = ffs(ahvif->links_map) - 1;
-		return link_id;
-	}
-
-	ahsta = ath12k_sta_to_ahsta(sta);
-
-	/* Below translation ensures we pass proper A2 & A3 for non ML clients.
-	 * Also it assumes for now support only for MLO AP in this path
-	 */
-	if (!sta->mlo) {
-		link = ahsta->deflink.link_id;
-
-		if (info_flags & IEEE80211_TX_CTL_HW_80211_ENCAP)
-			return link;
-
-		bss_conf = rcu_dereference(vif->link_conf[link]);
-		if (bss_conf) {
-			ether_addr_copy(hdr->addr2, bss_conf->addr);
-			if (!ieee80211_has_tods(hdr->frame_control) &&
-			    !ieee80211_has_fromds(hdr->frame_control))
-				ether_addr_copy(hdr->addr3, bss_conf->addr);
-		}
-
-		return link;
-	}
-
-	/* enqueue eth enacap & data frames on primary link, FW does link
-	 * selection and address translation.
-	 */
-	if (info_flags & IEEE80211_TX_CTL_HW_80211_ENCAP ||
-	    ieee80211_is_data(hdr->frame_control))
-		return ahsta->primary_link_id;
-
-	/* Check if this mgmt frame can be queued at MLD level, in that
-	 * case the FW can decide on which link it needs to be finally
-	 * transmitted based on the power state of that link.
-	 * The link param returned by this function still needs
-	 * to be valid to get queued to one of the valid link FW
-	 */
-	if (ath12k_mac_is_mgmt_link_agnostic(skb)) {
-		ATH12K_SKB_CB(skb)->flags |= ATH12K_SKB_MGMT_LINK_AGNOSTIC;
-		/* For action frames this will be reset if not needed
-		 * later based on action category.
-		 */
-	}
-
-	/* 802.11 frame cases */
-	if (link == IEEE80211_LINK_UNSPECIFIED)
-		link = ahsta->deflink.link_id;
-
-	if (!ieee80211_is_mgmt(hdr->frame_control))
-		return link;
-
-	if (ahsta->deflink.arvif && ahsta->deflink.arvif->ar) {
-		ab = ahsta->deflink.arvif->ar->ab;
-	} else if (ieee80211_is_action(hdr->frame_control)) {
-		/* deflink.arvif is stale (ar cleared); find first valid link */
-		links = ahsta->links_map;
-		for_each_set_bit(link_id, &links, ATH12K_NUM_MAX_LINKS) {
-			arsta = rcu_dereference(ahsta->link[link_id]);
-			if (!arsta || !arsta->arvif || !arsta->arvif->ar)
-				continue;
-			ab = arsta->arvif->ar->ab;
-			link = link_id;
+	if (ieee80211_has_protected(mgmt->frame_control)) {
+		switch (ATH12K_SKB_CB(skb)->cipher) {
+		case WLAN_CIPHER_SUITE_CCMP:
+		case WLAN_CIPHER_SUITE_CCMP_256:
+			iv_len = IEEE80211_CCMP_HDR_LEN;
+			break;
+		case WLAN_CIPHER_SUITE_GCMP:
+		case WLAN_CIPHER_SUITE_GCMP_256:
+			iv_len = IEEE80211_GCMP_HDR_LEN;
+			break;
+		case WLAN_CIPHER_SUITE_TKIP:
+		case WLAN_CIPHER_SUITE_AES_CMAC:
+		case WLAN_CIPHER_SUITE_BIP_GMAC_128:
+		case WLAN_CIPHER_SUITE_BIP_GMAC_256:
+		case WLAN_CIPHER_SUITE_BIP_CMAC_256:
+			iv_len = 0;
+			break;
+		default:
 			break;
 		}
 	}
 
-	if (ab && test_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags) &&
-	    ab->ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2) {
-		/* If disassoc frame comes in crash link, need to
-		 * change the link which is active at that instance.
-		 */
-		if (ieee80211_is_disassoc(hdr->frame_control)) {
-			link = ahsta->deflink.link_id;
-			links = ahsta->links_map;
-			for_each_set_bit(link_id, &links, ATH12K_NUM_MAX_LINKS) {
-				arsta = rcu_dereference(ahsta->link[link_id]);
-				if (!arsta)
-					continue;
-				ab = arsta->arvif->ar->ab;
-				if (!test_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags)) {
-					link = arsta->link_id;
-					ATH12K_SKB_CB(skb)->flags |= ATH12K_SKB_MGMT_LINK_AGNOSTIC;
-					break;
-				}
-			}
-		}
-	}
-
-	/* Perform address conversion for ML STA Tx */
-	bss_conf = rcu_dereference(vif->link_conf[link]);
-	link_sta = rcu_dereference(sta->link[link]);
-
-	if (bss_conf && link_sta) {
-		if (!(vif->type == NL80211_IFTYPE_AP &&
-		    (ieee80211_is_probe_resp(hdr->frame_control) ||
-		     ieee80211_is_auth(hdr->frame_control) ||
-		     ieee80211_is_reassoc_resp(hdr->frame_control) ||
-		     ieee80211_is_assoc_resp(hdr->frame_control))))
-			ether_addr_copy(hdr->addr1, link_sta->addr);
-
-		ether_addr_copy(hdr->addr2, bss_conf->addr);
-		if (vif->type == NL80211_IFTYPE_STATION && bss_conf->bssid)
-			ether_addr_copy(hdr->addr3, bss_conf->bssid);
-		else if (vif->type == NL80211_IFTYPE_AP)
-			ether_addr_copy(hdr->addr3, bss_conf->addr);
-
-		return link;
-	}
-
-	if (bss_conf) {
-		/* In certain cases where a ML sta associated and added subset of
-		 * links on which the ML AP is active, but now sends some frame
-		 * (ex. Probe request) on a different link which is active in our
-		 * MLD but was not added during previous association, we can
-		 * still honor the Tx to that ML STA via the requested link.
-		 * The control would reach here in such case only when that link
-		 * address is same as the MLD address or in worst case clients
-		 * used MLD address at TA wrongly which would have helped
-		 * identify the ML sta object and pass it here.
-		 * If the link address of that STA is different from MLD address,
-		 * then the sta object would be NULL and control won't reach
-		 * here but return at the start of the function itself with !sta
-		 * check. Also this would not need any translation at hdr->addr1
-		 * from MLD to link address since the RA is the MLD address
-		 * (same as that link address ideally) already.
-		 */
-		ether_addr_copy(hdr->addr2, bss_conf->addr);
-
-		if (vif->type == NL80211_IFTYPE_STATION && bss_conf->bssid)
-			ether_addr_copy(hdr->addr3, bss_conf->bssid);
-		else if (vif->type == NL80211_IFTYPE_AP)
-			ether_addr_copy(hdr->addr3, bss_conf->addr);
-	}
-
-
-	return link;
+	return iv_len;
 }
-EXPORT_SYMBOL(ath12k_mac_get_tx_link);
+EXPORT_SYMBOL(ath12k_mac_get_iv_len);
 
 void ath12k_mac_drain_tx(struct ath12k *ar)
 {

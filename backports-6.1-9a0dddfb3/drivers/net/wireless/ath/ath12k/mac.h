@@ -601,9 +601,6 @@ void ath12k_mac_add_p2p_noa_ie(struct ath12k *ar,
 			       struct ieee80211_vif *vif,
 			       struct sk_buff *skb,
 			       bool is_prb_rsp);
-u8 ath12k_mac_get_tx_link(struct ieee80211_sta *sta, struct ieee80211_vif *vif,
-			  u8 link, struct sk_buff *skb, u32 info_flags);
-
 void ath12k_mlo_mcast_update_tx_link_address(struct ieee80211_vif *vif,
 					     u8 link_id, struct sk_buff *skb,
 					     u32 info_flags);
@@ -1003,6 +1000,7 @@ struct ath12k_netstats_iter_ctx {
 };
 
 bool ath12k_mac_mgmt_need_smd_sta_session_ctx(struct sk_buff *skb);
+u8 ath12k_mac_get_iv_len(struct sk_buff *skb);
 
 struct ieee80211_chanctx_conf*
 ath12k_mac_get_ctx_for_bridge_recovery(struct ath12k *ar);
