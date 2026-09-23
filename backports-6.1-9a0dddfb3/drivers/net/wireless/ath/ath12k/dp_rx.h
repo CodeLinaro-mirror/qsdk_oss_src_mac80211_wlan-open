@@ -364,9 +364,11 @@ ath12k_dp_err_drop_needed(enum hal_wbm_rel_src_module src,
 		int err_rsn = HAL_REO_DEST_RING_PUSH_REASON_ERR_DETECTED;
 		int add_zero = HAL_REO_DEST_RING_ERROR_CODE_DESC_ADDR_ZERO;
 		int rout_inst = HAL_REO_DEST_RING_PUSH_REASON_ROUTING_INSTRUCTION;
+		int frame_oor = HAL_REO_DEST_RING_ERROR_CODE_FRAME_OOR;
 
 		if (reo_push_reason == rout_inst ||
-		    (reo_push_reason == err_rsn && reo_error_code == add_zero))
+		    (reo_push_reason == err_rsn && reo_error_code == add_zero) ||
+		    (reo_push_reason == err_rsn && reo_error_code == frame_oor))
 			return false;
 
 		return true;

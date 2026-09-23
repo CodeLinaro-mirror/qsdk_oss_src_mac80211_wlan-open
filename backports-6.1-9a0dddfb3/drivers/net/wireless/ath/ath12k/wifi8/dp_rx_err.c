@@ -1216,6 +1216,35 @@ static bool ath12k_wifi8_handle_reo_route(struct ath12k_pdev_dp *dp_pdev,
 	return false;
 }
 
+static bool
+ath12k_wifi8_handler_eapol_oor(struct ath12k_pdev_dp *dp_pdev,
+			       struct ath12k_dp_peer *peer,
+			       struct ieee80211_rx_status *rx_status,
+			       struct hal_rx_spd_data *spd_desc_l,
+			       struct napi_struct *napi,
+			       struct rx_tlv_info_1 *prev_tlv_info,
+			       u32 *drop_reason)
+{
+	bool drop = true;
+
+	if (spd_desc_l->cce_match &&
+	    spd_desc_l->cce_metadata == ATH12K_ROUTE_EAP_METADATA) {
+		/* CR4669570: EAPOL packet with REO Frame_OOR error - deliver */
+		drop = ath12k_wifi8_handle_reo_route(dp_pdev, peer,
+						     rx_status,
+						     spd_desc_l,
+						     napi, prev_tlv_info);
+		if (drop)
+			*drop_reason = ATH_RX_ERR_OOR;
+	} else {
+		/* Non-EAPOL FRAME_OOR: drop it */
+		drop = true;
+		*drop_reason = ATH_RX_ERR_OOR;
+	}
+
+	return drop;
+}
+
 bool ath12k_wifi8_handle_null_queue(struct ath12k_pdev_dp *dp_pdev,
 				    struct ath12k_dp_peer *peer,
 				    u8 tid,
@@ -1540,7 +1569,18 @@ ath12k_wifi8_dp_process_reo_rx_err_packets(struct ath12k_dp *dp,
 				 * fse_tagged stays false (initialized at loop top)
 				 */
 				error_code = rx_mpdu_info->reo_error_code;
+
 				if (error_code ==
+				    HAL_REO_DEST_RING_ERROR_CODE_FRAME_OOR) {
+					drop =
+					ath12k_wifi8_handler_eapol_oor(dp_pdev,
+								       peer,
+								       &rx_status,
+								       spd_desc_l,
+								       napi,
+								       &prev_tlv,
+								       &drop_reason);
+				} else if (error_code ==
 					HAL_REO_DEST_RING_ERROR_CODE_DESC_ADDR_ZERO) {
 					drop = ath12k_wifi8_handle_null_queue(dp_pdev,
 									      peer,
@@ -1554,7 +1594,6 @@ ath12k_wifi8_dp_process_reo_rx_err_packets(struct ath12k_dp *dp,
 						drop_reason = ATH_RX_NULL_Q_DESC;
 				} else {
 					reason = WBM_ERR_DROP_REO_GENERIC;
-
 					DP_DEVICE_STATS_INC(dp, wbm_err.drop[reason], 1);
 					drop_reason =
 						ath12k_fill_reo_drop_reason(error_code);
