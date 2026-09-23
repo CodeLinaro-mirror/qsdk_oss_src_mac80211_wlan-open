@@ -2230,7 +2230,7 @@ enum ieee80211_encrypt {
 	ENCRYPT_DATA,
 };
 
-static int ieee80211_skb_resize(struct ieee80211_sub_if_data *sdata,
+int ieee80211_skb_resize(struct ieee80211_sub_if_data *sdata,
 				struct sk_buff *skb,
 				int head_need,
 				enum ieee80211_encrypt encrypt)
@@ -5094,6 +5094,12 @@ netdev_tx_t ieee80211_subif_start_xmit(struct sk_buff *skb,
 #ifdef CPTCFG_MAC80211_ATHMEMDEBUG
 	ath_update_alloc(skb, skb->truesize, __LINE__, __func__, 1);
 #endif
+
+#ifdef CPTCFG_QCN_EXTN
+	if (sdata->wdev.vap_submode == IEEE80211_EXTN_VAP_SUBMODE_RAW_MODE_MESH)
+		return ieee80211_subif_start_xmit_raw_mesh(sdata, skb);
+#endif
+
 #ifdef CPTCFG_MAC80211_NSS_SUPPORT
 	ieee80211_xmit_nss_fixup(skb, dev);
 #endif
@@ -5485,6 +5491,11 @@ netdev_tx_t ieee80211_subif_start_xmit_8023(struct sk_buff *skb,
 
 	if (!tid_stats_disable)
 		skb->priority = cfg80211_classify8021d(skb, NULL);
+
+#ifdef CPTCFG_QCN_EXTN
+	if (unlikely(IEEE80211_EXTN_VAP_IS_MESH_MODE(sdata->wdev.vap_submode)))
+		skb->fast_xmit = false;
+#endif
 
 	if (likely(ieee80211_sdata_running(sdata) && skb->fast_xmit &&
 		   (skb->pkt_type != PACKET_MULTICAST &&
