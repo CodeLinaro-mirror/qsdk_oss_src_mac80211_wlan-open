@@ -2922,6 +2922,7 @@ static int ath12k_core_wsi_remap_radio_start(struct ath12k_base *ab)
 	int ret = 0, i;
 	struct ath12k *ar = NULL;
 	struct ath12k_bridge_iter bridge_iter = {};
+	struct wiphy *wiphy;
 	u8 active_num_devices;
 
 	for (i = 0; i < ab->num_radios; i++) {
@@ -2952,10 +2953,13 @@ static int ath12k_core_wsi_remap_radio_start(struct ath12k_base *ab)
 		iterator = ath12k_mac_add_bridge_vdevs_iter;
 		bridge_iter.ah = ar->ah;
 		bridge_iter.active_num_devices = active_num_devices;
+		wiphy = ar->ah->hw->wiphy;
+		wiphy_lock(wiphy);
 		ieee80211_iterate_interfaces(ar->ah->hw,
 					     IEEE80211_IFACE_ITER_NORMAL,
 					     iterator,
 					     &bridge_iter);
+		wiphy_unlock(wiphy);
 	}
 
 	ath12k_info(ab, "WSI remap: Device re-addition completed\n");
