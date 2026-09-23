@@ -160,6 +160,8 @@ struct ath12k_ppdu_rx_stats_info;
 
 #define ATH12K_NUM_SU_USER	1
 
+#define ATH12K_DP_TX_MONITOR_RING_FILL_LVL_MIN	256
+
 struct ath12k_mon_data;
 struct dp_mon_rx_filter;
 struct dp_mon_tx_filter;
@@ -198,6 +200,12 @@ struct dp_mon_desc_list_params {
 	struct page_frag_cache *pf_cache;
 	size_t buff_size;
 	bool is_tx_monitor;
+};
+
+struct dp_mon_srng_params {
+	struct dp_rxdma_mon_ring *srng;
+	enum hal_ring_type type;
+	u32 low_threshold;
 };
 
 enum dp_mon_stats_mode {
@@ -710,6 +718,7 @@ struct ath12k_pdev_mon_dp_stats {
  * @tx_num_frag_free: Count of freed TX monitor fragments
  * @tx_mon_buf_ring_ready: Refill ring descriptor availability state
  * @tx_mon_stats: Buffer lifecycle statistics at SOC level
+ * @default_fill_lvl: Default ring fill level for tx monitor source ring
  */
 struct ath12k_dp_tx_mon {
 	struct dp_rxdma_mon_ring tx_mon_buf_ring;
@@ -721,6 +730,7 @@ struct ath12k_dp_tx_mon {
 	u32 tx_num_frag_free;
 	bool tx_mon_buf_ring_ready;
 	struct ath12k_dp_tx_mon_stats tx_mon_stats;
+	u32 default_fill_lvl;
 };
 
 struct ath12k_pdev_mon_dp;
@@ -1227,6 +1237,8 @@ void ath12k_dp_mon_rx_nrp_set(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_mon_rx_nrp_reset(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_mon_rx_smart_mon_set(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_mon_rx_smart_mon_reset(struct ath12k_pdev_dp *dp_pdev);
+int ath12k_dp_mon_set_low_threshold(struct ath12k_dp *dp,
+				    struct dp_mon_srng_params *srng_params);
 int ath12k_dp_mon_rx_monitor_mode_buf_setup(struct ath12k *ar);
 int ath12k_dp_mon_rx_monitor_mode_reset_buffers(struct ath12k *ar);
 int ath12k_dp_mon_set_fill_level(struct ath12k_pdev_dp *dp_pdev, u32 val);

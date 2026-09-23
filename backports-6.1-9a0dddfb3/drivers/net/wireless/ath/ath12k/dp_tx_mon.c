@@ -4599,6 +4599,7 @@ int ath12k_dp_mon_tx_config_full_monitor(struct ath12k *ar, bool set)
 	struct ath12k_pdev_mon_dp *dp_mon_pdev;
 	struct ath12k_pdev_tx_mon *tx_mon;
 	int ret = -EINVAL;
+	u32 default_fill_lvl;
 
 	if (unlikely(!ar || !ar->ab)) {
 		ath12k_err(NULL, "Invalid Radio / Radio base\n");
@@ -4623,6 +4624,9 @@ int ath12k_dp_mon_tx_config_full_monitor(struct ath12k *ar, bool set)
 	ret = ath12k_dp_mon_tx_filter_cfg(mon_ops, dp_pdev,
 					  DP_MON_TX_FULL_MONITOR, set);
 	ath12k_dp_tx_mon_reset_ext_mon_config(dp_pdev);
+
+	default_fill_lvl = dp->dp_mon->dp_tx_mon->default_fill_lvl;
+	ath12k_dp_tx_mon_set_fill_level(&ar->dp, default_fill_lvl);
 
 	return ret;
 }
@@ -4813,6 +4817,7 @@ int ath12k_dp_mon_tx_buff_alloc(struct ath12k_dp *dp)
 	struct dp_rxdma_mon_ring *tx_ring;
 	int num_entries, ret = -EINVAL, free_list_count;
 	size_t ring_lvl = DP_TX_MON_BUF_RING_FILL_LVL(ab);
+	size_t ring_size = DP_TX_MON_BUF_RING_SIZE(ab);
 	LIST_HEAD(list);
 
 	if (!dp_tx_mon)
@@ -4833,6 +4838,8 @@ int ath12k_dp_mon_tx_buff_alloc(struct ath12k_dp *dp)
 	num_entries =  tx_ring->refill_buf_ring.size /
 		ath12k_hal_srng_get_entrysize(ab, HAL_TX_MONITOR_BUF);
 	tx_ring->bufs_max = num_entries;
+	if (tx_ring->bufs_max > ring_size)
+		tx_ring->bufs_max = ring_size;
 
 	free_list_count =
 		ath12k_dp_mon_get_tx_free_desc_list(dp, tx_ring, &list, ring_lvl);
@@ -4848,12 +4855,14 @@ int ath12k_dp_mon_tx_buff_alloc(struct ath12k_dp *dp)
 		return ret;
 	}
 
+	spin_lock_bh(&dp_tx_mon->tx_mon_desc_lock);
+
 	if (tx_ring->bufs_max > ring_lvl)
 		tx_ring->cur_fill_lvl = ring_lvl;
 	else
 		tx_ring->cur_fill_lvl = tx_ring->bufs_max;
 
-	spin_lock_bh(&dp_tx_mon->tx_mon_desc_lock);
+	dp_tx_mon->default_fill_lvl = tx_ring->cur_fill_lvl;
 	dp_tx_mon->tx_mon_buf_ring_ready = true;
 	spin_unlock_bh(&dp_tx_mon->tx_mon_desc_lock);
 
@@ -5714,14 +5723,18 @@ void ath12k_dp_mon_tx_update_buf_ownership_stats(struct ath12k_dp *dp)
 	struct ath12k_dp_tx_mon_stats *stats;
 	struct ath12k_dp_mon_desc *desc;
 	u32 with_hw = 0, in_reap = 0, free = 0, proc_err = 0, replenish_err = 0, i;
+	u32 null_bufs = 0;
 
 	if (!mon_dp || !mon_dp->dp_tx_mon)
 		return;
 
 	stats = &mon_dp->dp_tx_mon->tx_mon_stats;
-	/* lockdep_assert_held(&dp_mon->tx_mon_desc_lock) */
+	spin_lock_bh(&mon_dp->dp_tx_mon->tx_mon_desc_lock);
 	for (i = 0; i < DP_TX_MON_BUF_RING_SIZE(dp->ab); i++) {
 		desc = &mon_dp->dp_tx_mon->tx_mon_desc_pool[i];
+		if (!desc->mon_buf)
+			null_bufs++;
+
 		switch (desc->in_use) {
 		case DP_MON_DESC_TO_HW:
 			with_hw++;
@@ -5741,11 +5754,13 @@ void ath12k_dp_mon_tx_update_buf_ownership_stats(struct ath12k_dp *dp)
 			break;
 		}
 	}
+	spin_unlock_bh(&mon_dp->dp_tx_mon->tx_mon_desc_lock);
 	stats->with_hw = with_hw;
 	stats->in_reap = in_reap;
 	stats->free = free;
 	stats->proc_err = proc_err;
 	stats->replenish_err = replenish_err;
+	stats->null_bufs = null_bufs;
 }
 EXPORT_SYMBOL(ath12k_dp_mon_tx_update_buf_ownership_stats);
 
@@ -6716,3 +6731,93 @@ ath12k_dp_ext_mon_filter_subtype(struct ieee80211_hdr *wh,
 					       is_mcast);
 }
 EXPORT_SYMBOL(ath12k_dp_ext_mon_filter_subtype);
+
+int ath12k_dp_tx_mon_get_fill_level(struct ath12k_pdev_dp *dp_pdev, u64 *value)
+{
+	struct ath12k_dp_mon *dp_mon = dp_pdev->dp->dp_mon;
+	struct ath12k_dp_tx_mon *dp_tx_mon = dp_mon ? dp_mon->dp_tx_mon : NULL;
+
+	if (!ath12k_dp_tx_mon_feature_eval(dp_pdev->dp)) {
+		ath12k_err(NULL, "get_tx_mon_fill_lvl: TX Mon Disabled/Not Supported\n");
+		return -EINVAL;
+	}
+
+	if (!dp_tx_mon) {
+		ath12k_err(NULL, "get_tx_mon_fill_lvl: dp tx mon not initialized\n");
+		return -EINVAL;
+	}
+
+	spin_lock_bh(&dp_tx_mon->tx_mon_desc_lock);
+	*value = (u64)dp_tx_mon->tx_mon_buf_ring.cur_fill_lvl;
+	spin_unlock_bh(&dp_tx_mon->tx_mon_desc_lock);
+
+	ath12k_dbg(NULL, ATH12K_DBG_DP_MON_TX,
+		   "get_tx_mon_fill_lvl: get fill level=%llu\n", *value);
+	return 0;
+}
+
+int ath12k_dp_tx_mon_set_fill_level(struct ath12k_pdev_dp *dp_pdev, u32 val)
+{
+	struct ath12k_dp *dp = dp_pdev->dp;
+	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
+	struct ath12k_dp_tx_mon *dp_tx_mon = dp_mon ? dp_mon->dp_tx_mon : NULL;
+	struct dp_rxdma_mon_ring *tx_mon_srng;
+	struct dp_mon_srng_params srng_params;
+	int ret = 0;
+
+	if (!ath12k_dp_tx_mon_feature_eval(dp)) {
+		ath12k_err(dp->ab,
+			   "set_tx_mon_fill_lvl: tx mon not supported\n");
+		return -EOPNOTSUPP;
+	}
+
+	if (!dp_tx_mon) {
+		ath12k_err(dp->ab,
+			   "set_tx_mon_fill_lvl: tx mon not initialized\n");
+		return -EINVAL;
+	}
+	/* Serialise against the tx_mon_buf_ring_ready flag published in
+	 * ath12k_dp_tx_mon_buf_alloc().
+	 */
+	spin_lock_bh(&dp_tx_mon->tx_mon_desc_lock);
+
+	/* Rings are not initialized - defer setting fill level */
+	if (!dp_tx_mon->tx_mon_buf_ring_ready) {
+		spin_unlock_bh(&dp_tx_mon->tx_mon_desc_lock);
+		ath12k_err(dp->ab,
+			   "set_tx_mon_fill_lvl: tx monitor ring not initialized\n");
+		return -EINVAL;
+	}
+	spin_unlock_bh(&dp_tx_mon->tx_mon_desc_lock);
+
+	tx_mon_srng = &dp_tx_mon->tx_mon_buf_ring;
+
+	/* ATH12K_DP_TX_MONITOR_RING_FILL_LVL_MIN is the minimum ring fill threshold
+	 * for current memory profiles;update if a smaller threshold requirement is added
+	 */
+	if (val < (u32)ATH12K_DP_TX_MONITOR_RING_FILL_LVL_MIN ||
+	    val > tx_mon_srng->bufs_max) {
+		ath12k_err(dp->ab, "set_tx_mon_fill_lvl: %u should be within [%d, %d]\n",
+			   val, ATH12K_DP_TX_MONITOR_RING_FILL_LVL_MIN,
+			   tx_mon_srng->bufs_max);
+		return -EINVAL;
+	}
+
+	srng_params.srng = tx_mon_srng;
+	srng_params.low_threshold = val;
+	srng_params.type = HAL_TX_MONITOR_BUF;
+
+	ret = ath12k_dp_mon_set_low_threshold(dp, &srng_params);
+	if (!ret) {
+		spin_lock_bh(&dp_tx_mon->tx_mon_desc_lock);
+		/* Commit cur_fill_lvl only if HAL/HTT threshold update is succeeded */
+		tx_mon_srng->cur_fill_lvl = val;
+		spin_unlock_bh(&dp_tx_mon->tx_mon_desc_lock);
+	} else {
+		ath12k_err(dp->ab,
+			   "set_tx_mon_fill_lvl: failed to update low threshold: %d\n",
+			   ret);
+	}
+
+	return ret;
+}
