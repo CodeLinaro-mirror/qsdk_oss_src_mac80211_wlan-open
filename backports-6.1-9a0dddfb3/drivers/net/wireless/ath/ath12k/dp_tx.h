@@ -57,12 +57,19 @@ ath12k_tx_desc_info *ath12k_dp_tx_assign_buffer(struct ath12k_dp_hw_group *dp_hw
 int ath12k_dp_tx_htt_h2t_vdev_stats_ol_req(struct ath12k *ar, u64 reset_bitmask);
 int ath12k_sdwf_reinject_handler(struct ath12k_base *ab, struct sk_buff *skb,
 				 struct htt_tx_completion *status_desc, u8 mac_id);
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+void ath12k_dp_tx_update_mmesh_stats_common(struct ath12k_dp *dp,
+					    struct ath12k_pdev_dp *dp_pdev,
+					    struct sk_buff *skb,
+					    struct ath12k_dp_peer *peer,
+					    int reason);
 int ath12k_dp_mmesh_tx(struct ieee80211_hw *hw, struct ath12k_base *ab,
 		       struct ath12k_link_vif *arvif, struct ieee80211_vif *vlan_vif,
 		       struct sk_buff *skb, struct ieee80211_sta *sta,
 		       struct ath12k_dp_skb_ctrl *skb_ctrl, bool is_eth,
 		       u8 link_id, bool is_mcast, bool *htt_mesh,
 		       struct ieee80211_tx_info *info, u32 qos_nw_delay);
+#endif /* CPTCFG_QCN_EXTN_MESH_SUPPORT */
 void ath12k_dp_tx_sg_unmap_buf(struct ath12k_dp *dp,
 			       struct ath12k_dp_ext_desc *ext_desc,
 			       struct sk_buff *skb);

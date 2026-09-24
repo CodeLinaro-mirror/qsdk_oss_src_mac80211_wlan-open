@@ -1062,3 +1062,46 @@ void ath12k_dp_tx_stats_post_enqueue(struct ath12k_dp *dp,
 		tx_desc->hw_enqueue_tstamp = (u32)ktime_to_us(ktime_get_real());
 }
 EXPORT_SYMBOL(ath12k_dp_tx_stats_post_enqueue);
+
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+/**
+ * ath12k_dp_tx_update_mmesh_stats_common() - Update per-peer mesh TX statistics
+ * @dp: DP structure
+ * @dp_pdev: DP pdev structure
+ * @skb: Socket buffer
+ * @peer: DP peer
+ * @reason: WBM release source module
+ *
+ * Updates mesh-specific TX statistics for a mesh peer based on the
+ * meta header flags embedded in the SKB. Shared between wifi7 and wifi8.
+ */
+void ath12k_dp_tx_update_mmesh_stats_common(struct ath12k_dp *dp,
+					    struct ath12k_pdev_dp *dp_pdev,
+					    struct sk_buff *skb,
+					    struct ath12k_dp_peer *peer,
+					    int reason)
+{
+	struct meta_hdr_s *mhdr;
+
+	if (!peer)
+		return;
+
+	if (reason == HAL_WBM_REL_SRC_MODULE_FW) {
+		DP_PEER_MISC_STATS_INC(peer, mmesh_stat, tofw, 0, 1);
+	} else {
+		DP_PEER_MISC_STATS_INC(peer, mmesh_stat, direct, 0, 1);
+		return;
+	}
+
+	mhdr = (struct meta_hdr_s *)(skb->data - sizeof(struct meta_hdr_s));
+	if (mhdr->flags & METAHDR_FLAG_NOQOS)
+		DP_PEER_MISC_STATS_INC(peer, mmesh_stat, no_qos, 0, 1);
+	if (mhdr->flags & METAHDR_FLAG_NOENCRYPT)
+		DP_PEER_MISC_STATS_INC(peer, mmesh_stat, no_enc, 0, 1);
+	if (mhdr->flags & METAHDR_FLAG_INFO_UPDATED)
+		DP_PEER_MISC_STATS_INC(peer, mmesh_stat, txinfo, 0, 1);
+	if (mhdr->flags & METAHDR_FLAG_AUTO_RATE)
+		DP_PEER_MISC_STATS_INC(peer, mmesh_stat, auto_rate, 0, 1);
+}
+EXPORT_SYMBOL(ath12k_dp_tx_update_mmesh_stats_common);
+#endif /* CPTCFG_QCN_EXTN_MESH_SUPPORT */
