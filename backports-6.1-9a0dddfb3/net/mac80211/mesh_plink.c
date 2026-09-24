@@ -491,9 +491,6 @@ static void mesh_sta_info_init(struct ieee80211_sub_if_data *sdata,
 						    elems->uhr_cap_len,
 						    &sta->deflink);
 
-	ieee80211_uhr_cap_ie_to_sta_uhr_cap(sdata, sband, elems->uhr_cap,
-					    elems->uhr_cap_len, &sta->deflink);
-
 	if (bw != sta->sta.deflink.bandwidth)
 		changed |= IEEE80211_RC_BW_CHANGED;
 
