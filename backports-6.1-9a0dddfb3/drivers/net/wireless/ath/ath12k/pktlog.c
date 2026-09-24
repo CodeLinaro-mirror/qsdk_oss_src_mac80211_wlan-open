@@ -792,19 +792,30 @@ static char *ath12k_pktlog_getbuf(struct ath12k_pktlog *pl_info,
 	return log_ptr;
 }
 
-static  vm_fault_t pktlog_pgfault(struct vm_fault *vmf)
+static vm_fault_t pktlog_pgfault(struct vm_fault *vmf)
 {
 	struct vm_area_struct *vma = vmf->vma;
-	unsigned long address = vmf->address;
+	struct ath12k *ar = vma->vm_file->private_data;
+	struct ath12k_pktlog *pl_info = &ar->debug.pktlog;
+	struct ath12k_pktlog_buf *buf = pl_info->buf;
+	unsigned long page_cnt;
+	struct page *page;
+	void *kaddr;
 
-	if (address == 0UL)
-		return VM_FAULT_NOPAGE;
-
-	if (vmf->pgoff > ((vma->vm_end - vma->vm_start) >> PAGE_SHIFT))
+	if (!buf)
 		return VM_FAULT_SIGBUS;
 
-	get_page(virt_to_page((void *)address));
-	vmf->page = virt_to_page((void *)address);
+	page_cnt = DIV_ROUND_UP(sizeof(*buf) + pl_info->buf_alloc_size,
+			       PAGE_SIZE);
+	if (vmf->pgoff >= page_cnt)
+		return VM_FAULT_SIGBUS;
+
+	kaddr = (char *)buf + (vmf->pgoff << PAGE_SHIFT);
+	page = vmalloc_to_page(kaddr);
+	if (!page)
+		return VM_FAULT_SIGBUS;
+	get_page(page);
+	vmf->page = page;
 
 	return 0;
 }
