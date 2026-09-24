@@ -1294,16 +1294,34 @@ static void ath12k_wifi8_mgmt_handler(struct ieee80211_hw *hw,
 
 	arvif = rcu_dereference(ahvif->link[link_id]);
 	if (!arvif || !arvif->ar) {
-		ath12k_mac_ieee80211_free_txskb(hw, skb, dp_pdev,
-						sta, dp_vif,
-						DP_TX_ENQ_DROP_INV_ARVIF,
-						ring_id, false);
-		return;
+#ifdef CPTCFG_QCN_EXTN
+		arvif = ath12k_wifi8_mgmt_handler_extn(hw, vif, skb);
+#endif
+		if (!arvif || !arvif->ar) {
+			ath12k_mac_ieee80211_free_txskb(hw, skb, dp_pdev,
+							sta, dp_vif,
+							DP_TX_ENQ_DROP_INV_ARVIF,
+							ring_id, false);
+			return;
+		}
 	}
 
 	ar = arvif->ar;
 	skb_cb->link_id = link_id;
 	skb_cb->vif = vif;
+
+#ifdef CPTCFG_QCN_EXTN
+	if (ieee80211_is_auth(hdr->frame_control)) {
+		struct ieee80211_mgmt *auth_mgmt = (struct ieee80211_mgmt *)hdr;
+
+		if (skb->len >= (IEEE80211_MIN_ACTION_SIZE +
+				 sizeof(auth_mgmt->u.auth.auth_alg)) &&
+		    le16_to_cpu(auth_mgmt->u.auth.auth_alg) == 7 /* WLAN_AUTH_PASN */)
+			ath12k_dbg(ar->ab, ATH12K_DBG_RTT,
+				   "PASN auth mgmt_tx: vdev=%u link_id=%u rtt_vif=%p\n",
+				   arvif->vdev_id, link_id, ar->ar_extn.rtt_vif);
+	}
+#endif
 
 	if (unlikely(test_bit(ATH12K_FLAG_RECOVERY, &ar->ab->dev_flags))) {
 		ieee80211_free_txskb(hw, skb);
