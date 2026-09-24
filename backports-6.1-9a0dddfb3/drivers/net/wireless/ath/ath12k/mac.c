@@ -10057,15 +10057,124 @@ static bool ath12k_mac_sta_sp_tpe_defer_needed(struct ath12k *ar,
 		 tpe->additional_max_reg_client[client_type].valid);
 }
 
+/**
+ * ath12k_mac_copy_colocated_sta_tpe - Copy Root AP TPE from colocated STA
+ * @ar: Radio instance containing the repeater links
+ * @cur_arvif: Repeater AP link receiving the copied TPE
+ *
+ * Refresh the TPE parsed on a colocated STA operating under an SP root AP and
+ * copy the resulting PSD/EIRP limits into the repeater AP TPC context.
+ *
+ * Return: true when valid STA TPE was copied, or false when no usable TPE is
+ * available.
+ */
+static bool ath12k_mac_copy_colocated_sta_tpe(struct ath12k *ar,
+					      struct ath12k_link_vif *cur_arvif)
+{
+	struct ath12k_reg_tpc_power_info *dst_tpc_info;
+	struct ath12k_reg_tpc_power_info *src_tpc_info;
+	struct ath12k_link_vif *arvif_itr;
+	struct ieee80211_bss_conf *bss_conf;
+
+	if (!cur_arvif || !cur_arvif->ahvif)
+		return false;
+
+	dst_tpc_info = &cur_arvif->reg_tpc_info;
+	rcu_read_lock();
+	list_for_each_entry(arvif_itr, &ar->arvifs, list) {
+		if (arvif_itr == cur_arvif || !arvif_itr->ahvif)
+			continue;
+
+		if (arvif_itr->ahvif->vdev_type != WMI_VDEV_TYPE_STA)
+			continue;
+
+		bss_conf = ath12k_get_link_bss_conf(arvif_itr);
+		if (!bss_conf || bss_conf->power_type != IEEE80211_REG_SP_AP)
+			continue;
+
+		src_tpc_info = &arvif_itr->reg_tpc_info;
+		ath12k_mac_parse_tx_pwr_env(ar, arvif_itr);
+
+		if (!src_tpc_info->num_tpe_psd && !src_tpc_info->num_tpe_eirp)
+			continue;
+
+		dst_tpc_info->num_tpe_psd = src_tpc_info->num_tpe_psd;
+		dst_tpc_info->num_tpe_eirp = src_tpc_info->num_tpe_eirp;
+		memcpy(dst_tpc_info->tpe_psd, src_tpc_info->tpe_psd,
+		       sizeof(dst_tpc_info->tpe_psd));
+		memcpy(dst_tpc_info->tpe_eirp, src_tpc_info->tpe_eirp,
+		       sizeof(dst_tpc_info->tpe_eirp));
+
+		rcu_read_unlock();
+		return true;
+	}
+	rcu_read_unlock();
+
+	return false;
+}
+
+/**
+ * ath12k_mac_fill_reg_tpc_sp - Fill TPC for 6 GHz SP operation
+ * @ar: Radio instance
+ * @ahvif: Virtual interface context
+ * @arvif: Link virtual interface being configured
+ * @decision: Resolved 6 GHz power-mode decision
+ * @chanctx: Channel context used for the TPC tables
+ *
+ * Select the client-SP or AP-SP TPC path. For a repeater AP operating as an
+ * SP client, copy valid TPE from the colocated STA before filling the TPC
+ * tables and refuse to proceed when that TPE is unavailable.
+ *
+ * Return: true when TPC filling completed or was not applicable, or false when
+ * TPC must be deferred because required TPE is unavailable.
+ */
+static bool ath12k_mac_fill_reg_tpc_sp(struct ath12k *ar,
+				       struct ath12k_vif *ahvif,
+				       struct ath12k_link_vif *arvif,
+				       struct ath12k_6ghz_pwr_mode_decision *decision,
+				       struct ieee80211_chanctx_conf *chanctx)
+{
+	bool client_sp_path =
+		(ahvif->vdev_type == WMI_VDEV_TYPE_AP &&
+		 decision->ap_repeater_sp_client) ||
+		(ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
+		 !ar->afc.is_6ghz_afc_power_event_received);
+
+	if (client_sp_path) {
+		if (ahvif->vdev_type == WMI_VDEV_TYPE_AP &&
+		    decision->ap_repeater_sp_client &&
+		    !ath12k_mac_copy_colocated_sta_tpe(ar, arvif))
+			return false;
+
+		if (ath12k_mac_sta_sp_tpe_defer_needed(ar, arvif))
+			return false;
+
+		ath12k_mac_fill_reg_tpc_info_with_psd_eirp_pwr_for_client_sp
+				(ar, arvif, chanctx);
+	} else if (ahvif->vdev_type == WMI_VDEV_TYPE_AP ||
+		   (ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
+		    ar->afc.is_6ghz_afc_power_event_received)) {
+		ath12k_mac_fill_reg_tpc_info_with_psd_eirp_pwr_for_sp
+				(ar, arvif, chanctx);
+	}
+
+	return true;
+}
+
 static bool ath12k_mac_fill_reg_tpc(struct ath12k *ar, struct wireless_dev *wdev,
 				    struct ath12k_link_vif *arvif,
 				    struct ieee80211_chanctx_conf *chanctx)
 {
-	struct ath12k_vif *ahvif = arvif->ahvif;
+	struct ath12k_vif *ahvif;
 	struct ath12k_6ghz_pwr_mode_decision decision;
 	u8 reg_6g_power_mode;
-	struct ieee80211_bss_conf *bss_conf = ath12k_get_link_bss_conf(arvif);
+	struct ieee80211_bss_conf *bss_conf;
 
+	if (!arvif || !arvif->ahvif)
+		return false;
+
+	ahvif = arvif->ahvif;
+	bss_conf = ath12k_get_link_bss_conf(arvif);
 	if (!bss_conf) {
 		ath12k_warn(ar->ab, "BSS conf is NULL for link %d\n", arvif->link_id);
 		return false;
@@ -10079,30 +10188,12 @@ static bool ath12k_mac_fill_reg_tpc(struct ath12k *ar, struct wireless_dev *wdev
 
 	if (test_bit(WMI_TLV_SERVICE_BOTH_PSD_EIRP_FOR_AP_SP_CLIENT_SP_SUPPORT,
 		     ar->ab->wmi_ab.svc_map) &&
-		     (reg_6g_power_mode == IEEE80211_REG_SP_AP)) {
-		if ((ahvif->vdev_type == WMI_VDEV_TYPE_AP &&
-		     decision.ap_repeater_sp_client) ||
-		    (ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
-		    !ar->afc.is_6ghz_afc_power_event_received)) {
-			/* Safety net: if TPE is not yet available, refuse to fill
-			 * with sentinel-derived values. A later TPE-ready SET_TPC path
-			 * will re-run with valid TPE.
-			 */
-			if (ath12k_mac_sta_sp_tpe_defer_needed(ar, arvif))
-				return false;
-			ath12k_mac_fill_reg_tpc_info_with_psd_eirp_pwr_for_client_sp
-								(ar,
-								 arvif,
-								 chanctx);
-		} else if (ahvif->vdev_type == WMI_VDEV_TYPE_AP ||
-			   (ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
-			    ar->afc.is_6ghz_afc_power_event_received)) {
-			ath12k_mac_fill_reg_tpc_info_with_psd_eirp_pwr_for_sp
-									(ar, arvif,
-									chanctx);
-		}
-	} else if (test_bit(WMI_TLV_SERVICE_EIRP_PREFERRED_SUPPORT,
-			    ar->ab->wmi_ab.svc_map)) {
+		     reg_6g_power_mode == IEEE80211_REG_SP_AP)
+		return ath12k_mac_fill_reg_tpc_sp(ar, ahvif, arvif, &decision,
+						   chanctx);
+
+	if (test_bit(WMI_TLV_SERVICE_EIRP_PREFERRED_SUPPORT,
+		     ar->ab->wmi_ab.svc_map)) {
 		/* In EIRP-preferred mode, use PSD-only encoding for punctured
 		 * channels where appropriate; otherwise fall back to pure EIRP.
 		 */
@@ -32762,7 +32853,10 @@ ath12k_mac_fill_eirp_power_level(struct ath12k *ar,
 	min_psd = ath12k_mac_get_min_psd_for_eirp(ar, sub_chans, start_freq,
 						  n_subchans, tpe_psd, max_n_subchans,
 						  punc);
-	eirp_psd = ath12k_reg_psd_2_eirp(min_psd, eff_bw);
+	if (min_psd == ATH12K_MAX_TX_POWER)
+		eirp_psd = ATH12K_MAX_TX_POWER;
+	else
+		eirp_psd = ath12k_reg_psd_2_eirp(min_psd, eff_bw);
 
 	min_eirp = min(min(tpe_eirp[idx], eirp_psd), reg_eirp[idx]);
 
