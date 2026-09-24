@@ -18929,12 +18929,15 @@ ath12k_wmi_rssi_dbm_conv_subtlv_parser(struct ath12k_base *ab,
 
 		/* Using minimum pri20 Noise Floor across active chains instead
 		 * of all sub-bands*/
-		for (i = 0; i < num_rx_ant; i++) {
-			if (param_info->curr_rx_chainmask & (0x01 << i))
-				avg_nf += param_info->nf_dbm_per_chain_per_subband[i][0];
+		for (i = 0; i < MAX_NUM_ANTENNA; i++) {
+			if (!(param_info->curr_rx_chainmask & BIT(i)))
+				continue;
+			avg_nf += param_info->nf_dbm_per_chain_per_subband[i][0];
 		}
-		if (avg_nf)
-			avg_nf = avg_nf / num_rx_ant;
+
+		if (num_rx_ant)
+			avg_nf /= num_rx_ant;
+
 		rssi_offsets->avg_nf_dbm = (s8)avg_nf;
 
 		/*
@@ -18959,23 +18962,24 @@ ath12k_wmi_rssi_dbm_conv_subtlv_parser(struct ath12k_base *ab,
 			break;
 		}
 
-		for (i = 0; i < num_rx_ant; i++) {
-			if (param_info->curr_rx_chainmask & (0x01 << i)) {
-				nf_sb = param_info->nf_dbm_per_chain_per_subband[i];
-				max_nf = S8_MIN;
+		for (i = 0; i < MAX_NUM_ANTENNA; i++) {
+			if (!(param_info->curr_rx_chainmask & BIT(i)))
+				continue;
 
-				for (j = 0; j < n_subbands; j++) {
-					nf = nf_sb[j];
+			nf_sb = param_info->nf_dbm_per_chain_per_subband[i];
+			max_nf = S8_MIN;
 
-					if (nf == 1)
-						continue;
-					if (nf > max_nf)
-						max_nf = nf;
-				}
-				if (max_nf == S8_MIN)
-					max_nf = nf_sb[0];
-				rssi_offsets->nf_dbm_per_chain[i] = max_nf;
+			for (j = 0; j < n_subbands; j++) {
+				nf = nf_sb[j];
+
+				if (nf == 1)
+					continue;
+				if (nf > max_nf)
+					max_nf = nf;
 			}
+			if (max_nf == S8_MIN)
+				max_nf = nf_sb[0];
+			rssi_offsets->nf_dbm_per_chain[i] = max_nf;
 		}
 		rssi_offsets->xlna_bypass_offset = param_info->xlna_bypass_offset;
 		rssi_offsets->xlna_bypass_threshold = param_info->xlna_bypass_threshold;
