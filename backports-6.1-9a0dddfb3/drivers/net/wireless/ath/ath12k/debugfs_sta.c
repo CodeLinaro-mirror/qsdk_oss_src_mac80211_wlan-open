@@ -2126,7 +2126,7 @@ static ssize_t ath12k_dbg_sta_reset_rx_stats(struct file *file,
 	}
 
 	rcu_read_lock();
-	link_peer = ath12k_dp_link_peer_find_by_hw_link_id(dp_peer, link_id);
+	link_peer = ath12k_dp_link_peer_find_by_hw_link_id(dp_peer, ar->hw_link_id);
 	if (!link_peer) {
 		ret = -ENOENT;
 		goto unlock_rcu;
@@ -2156,18 +2156,83 @@ static const struct file_operations fops_reset_rx_stats = {
 };
 
 
+static void
+ath12k_debugfs_htt_peer_stats_create_arsta(struct ath12k *ar,
+					   struct ath12k_link_sta *arsta,
+					   struct ieee80211_link_sta *link_sta)
+{
+	struct dentry *file;
+
+	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	if (!arsta->debugfs_dir)
+		return;
+
+	file = debugfs_lookup("htt_peer_stats", arsta->debugfs_dir);
+	if (file) {
+		dput(file);
+		return;
+	}
+
+	debugfs_create_file("htt_peer_stats", 0400,
+			    arsta->debugfs_dir,
+			    link_sta, &fops_htt_peer_stats);
+}
+
+static void
+ath12k_debugfs_htt_peer_stats_reset_create_arsta(struct ath12k *ar,
+						  struct ath12k_link_sta *arsta,
+						  struct ieee80211_link_sta *link_sta)
+{
+	struct dentry *file;
+
+	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	if (!arsta->debugfs_dir)
+		return;
+
+	if (!test_bit(WMI_TLV_SERVICE_PER_PEER_HTT_STATS_RESET,
+		      ar->ab->wmi_ab.svc_map))
+		return;
+
+	file = debugfs_lookup("htt_peer_stats_reset", arsta->debugfs_dir);
+	if (file) {
+		dput(file);
+		return;
+	}
+
+	debugfs_create_file("htt_peer_stats_reset", 0600,
+			    arsta->debugfs_dir,
+			    link_sta, &fops_htt_peer_stats_reset);
+}
+
+static bool ath12k_htt_stats_type_is_peer(enum ath12k_dbg_htt_ext_stats_type type)
+{
+	return type == ATH12K_DBG_HTT_EXT_STATS_PEER_INFO ||
+	       type == ATH12K_DBG_HTT_EXT_PEER_CTRL_PATH_TXRX_STATS;
+}
+
 void ath12k_debugfs_link_sta_op_add(struct ieee80211_hw *hw,
 				    struct ieee80211_vif *vif,
 				    struct ieee80211_link_sta *link_sta,
 				    struct dentry *dir)
 {
 	struct ath12k *ar;
+	struct ath12k_sta *ahsta;
+	struct ath12k_link_sta *arsta;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
 	ar = ath12k_get_ar_by_vif(hw, vif, link_sta->link_id);
 	if (!ar)
 		return;
+
+	ahsta = ath12k_sta_to_ahsta(link_sta->sta);
+	arsta = wiphy_dereference(hw->wiphy, ahsta->link[link_sta->link_id]);
+	if (!arsta)
+		return;
+
+	arsta->debugfs_dir = dir;
 
 	if (ath12k_extd_tx_stats_enabled(&ar->dp)) {
                 debugfs_create_file("tx_stats", 0400, dir, link_sta,
@@ -2185,13 +2250,20 @@ void ath12k_debugfs_link_sta_op_add(struct ieee80211_hw *hw,
 				    &fops_driver_rx_pkts_flow);
 	}
 
-	debugfs_create_file("htt_peer_stats", 0400, dir, link_sta,
-			    &fops_htt_peer_stats);
+	/* htt_peer_stats is created on demand when htt_stats_type is set
+	 * to a peer-stats type (11 or 29). If the type is already active on
+	 * this radio, create the entry immediately for this newly associated
+	 * link
+	 */
+	if (ath12k_htt_stats_type_is_peer(ar->debug.htt_stats.type))
+		ath12k_debugfs_htt_peer_stats_create_arsta(ar, arsta, link_sta);
 
-	if (test_bit(WMI_TLV_SERVICE_PER_PEER_HTT_STATS_RESET,
-		     ar->ab->wmi_ab.svc_map))
-		debugfs_create_file("htt_peer_stats_reset", 0600, dir, link_sta,
-				    &fops_htt_peer_stats_reset);
+	/* htt_peer_stats_reset is created on demand alongside htt_peer_stats
+	 * when htt_stats_type is set to a peer-stats type (11 or 29), provided
+	 * the firmware advertises WMI_TLV_SERVICE_PER_PEER_HTT_STATS_RESET.
+	 */
+	if (ath12k_htt_stats_type_is_peer(ar->debug.htt_stats.type))
+		ath12k_debugfs_htt_peer_stats_reset_create_arsta(ar, arsta, link_sta);
 
 	if (ath12k_dp_qos_msduq_stats_enabled(&ar->dp))
 		debugfs_create_file("qos_msduq", 0400, dir, link_sta->sta,
@@ -2214,3 +2286,74 @@ void ath12k_debugfs_link_sta_op_add(struct ieee80211_hw *hw,
 
 }
 EXPORT_SYMBOL(ath12k_debugfs_link_sta_op_add);
+
+struct ath12k_htt_peer_stats_iter_data {
+	struct ath12k *ar;
+	bool create;
+};
+
+static void
+ath12k_debugfs_htt_peer_stats_iter(void *data, struct ieee80211_sta *sta)
+{
+	struct ath12k_htt_peer_stats_iter_data *iter = data;
+	struct ath12k *ar = iter->ar;
+	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
+	struct ath12k_link_sta *arsta;
+	unsigned int link_id;
+	struct wiphy *wiphy = ath12k_ar_to_hw(ar)->wiphy;
+	struct ieee80211_sta *sta_ptr = ath12k_ahsta_to_sta(ahsta);
+
+	/* For MLO STAs, links may be on different radios. htt_stats.type is
+	 * per-radio, but htt_peer_stats should exist for all links of the STA.
+	 * Iterate all links regardless of which radio they belong to, using
+	 * each link's own ar for the create call.
+	 */
+	for (link_id = 0; link_id < ATH12K_NUM_MAX_LINKS; link_id++) {
+		struct ath12k *link_ar;
+
+		arsta = rcu_dereference_protected(ahsta->link[link_id],
+			lockdep_is_held(&wiphy->mtx));
+		if (!arsta || arsta->is_self_peer || !arsta->arvif)
+			continue;
+
+		link_ar = arsta->arvif->ar;
+		if (!link_ar)
+			continue;
+
+		if (iter->create) {
+			struct ieee80211_link_sta *link_sta;
+
+			link_sta = rcu_dereference_protected(sta_ptr->link[link_id],
+				lockdep_is_held(&wiphy->mtx));
+			if (link_sta) {
+				ath12k_debugfs_htt_peer_stats_create_arsta(link_ar,
+									   arsta,
+									   link_sta);
+				ath12k_debugfs_htt_peer_stats_reset_create_arsta(link_ar,
+									     arsta,
+									     link_sta);
+			}
+		}
+	}
+}
+
+void ath12k_debugfs_htt_peer_stats_update(struct ath12k *ar,
+					  enum ath12k_dbg_htt_ext_stats_type old_type,
+					  enum ath12k_dbg_htt_ext_stats_type new_type)
+{
+	struct ath12k_htt_peer_stats_iter_data iter;
+
+	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	if (ath12k_htt_stats_type_is_peer(old_type) ==
+	    ath12k_htt_stats_type_is_peer(new_type))
+		return;
+
+	iter.ar     = ar;
+	iter.create = ath12k_htt_stats_type_is_peer(new_type);
+
+	ieee80211_iterate_stations_mtx(ath12k_ar_to_hw(ar),
+				       ath12k_debugfs_htt_peer_stats_iter,
+				       &iter);
+}
+EXPORT_SYMBOL(ath12k_debugfs_htt_peer_stats_update);

@@ -1495,6 +1495,9 @@ struct ath12k_link_sta {
 
 	bool is_mode3_link_recovery;
 	enum wmi_phy_mode phymode;
+#ifdef CPTCFG_ATH12K_DEBUGFS
+	struct dentry *debugfs_dir;
+#endif
 	bool is_secured_peer;
 };
 
