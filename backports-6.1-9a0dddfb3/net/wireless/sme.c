@@ -179,6 +179,7 @@ static int cfg80211_conn_do_work(struct wireless_dev *wdev,
 		auth_req.key_len = params->key_len;
 		auth_req.key_idx = params->key_idx;
 		auth_req.auth_type = params->auth_type;
+		auth_req.channel_width = params->channel_width; /* force_bw */
 		auth_req.bss = cfg80211_get_bss(&rdev->wiphy, params->channel,
 						params->bssid,
 						params->ssid, params->ssid_len,
@@ -207,6 +208,7 @@ static int cfg80211_conn_do_work(struct wireless_dev *wdev,
 		req.ht_capa_mask = params->ht_capa_mask;
 		req.vht_capa = params->vht_capa;
 		req.vht_capa_mask = params->vht_capa_mask;
+		req.channel_width = params->channel_width; /* force_bw */
 		req.link_id = -1;
 
 		req.bss = cfg80211_get_bss(&rdev->wiphy, params->channel,

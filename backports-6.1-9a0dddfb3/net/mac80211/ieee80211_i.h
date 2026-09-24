@@ -771,6 +771,14 @@ struct ieee80211_if_managed {
 	struct ieee80211_s1g_cap s1g_capa; /* configured S1G overrides */
 	struct ieee80211_s1g_cap s1g_capa_mask; /* valid s1g_capa bits */
 
+	/*
+	 * force_bw: user-requested maximum channel width for this STA.
+	 * Set from cfg80211_auth/assoc_request::channel_width.
+	 * NL80211_CHAN_WIDTH_20_NOHT (0) means no restriction.
+	 * Applied as min_t() cap on conn.bw_limit after hw-cap derivation.
+	 */
+	enum nl80211_chan_width sta_max_channel_width;
+
 	/* TDLS support */
 	u8 tdls_peer[ETH_ALEN] __aligned(2);
 	struct wiphy_delayed_work tdls_peer_del_work;

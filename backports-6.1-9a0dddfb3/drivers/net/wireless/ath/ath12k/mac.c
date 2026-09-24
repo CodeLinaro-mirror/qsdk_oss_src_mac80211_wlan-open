@@ -23897,13 +23897,42 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 		arg.max_reg_power = channel->max_reg_power;
 		arg.max_antenna_gain = channel->max_antenna_gain;
 	} else {
+		enum nl80211_chan_width vdev_width = chandef->width;
+
+		/*
+		 * For STA vdevs, the shared channel context may be wider than the
+		 * per-STA bandwidth limit (e.g. AP at 80 MHz, STA at 20 MHz).
+		 * mac80211 stores the capped width in link_conf->chanreq.oper.
+		 * Use it to derive the correct phymode for firmware.
+		 */
+		if (link_conf &&
+		    ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
+		    link_conf->chanreq.oper.width < vdev_width) {
+			ath12k_err(ab,
+				   "[radio_idx : %u] STA vdev %u: capping phymode width to %d MHz (chanctx: %d MHz)\n",
+				   ar->radio_idx, arvif->vdev_id,
+				   link_conf->chanreq.oper.width, vdev_width);
+			vdev_width = link_conf->chanreq.oper.width;
+		}
+
 		arg.freq = chandef->chan->center_freq;
-		arg.band_center_freq1 = chandef->center_freq1;
-		arg.band_center_freq2 = chandef->center_freq2;
+		/*
+		 * Use per-link center frequencies when the STA vdev operates at
+		 * a narrower width than the shared channel context.
+		 */
+		if (link_conf &&
+		    ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
+		    vdev_width < chandef->width) {
+			arg.band_center_freq1 = link_conf->chanreq.oper.center_freq1;
+			arg.band_center_freq2 = link_conf->chanreq.oper.center_freq2;
+		} else {
+			arg.band_center_freq1 = chandef->center_freq1;
+			arg.band_center_freq2 = chandef->center_freq2;
+		}
 
 		arg.mode = ath12k_mac_get_phymode(ar,
 						  chandef->chan->band,
-						  chandef->width);
+						  vdev_width);
 
 		arg.mode = ath12k_mac_check_down_grade_phy_mode(ar, arg.mode,
 								chandef->chan->band,
@@ -24030,6 +24059,37 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 	 * This fires as WARN_ON so the crash is attributed to the right place in
 	 * the host rather than appearing as a mysterious target assert.
 	 */
+	/*
+	 * Scan-during-CSA guard: if this is a scan vdev and any other started,
+	 * non-bridge, non-scan vdev on the same radio has csa_active set, the
+	 * firmware cannot handle the dual home channel that would result from
+	 * starting the scan on a different channel.  Return -ECANCELED so
+	 * mac80211 reschedules the scan after the CSA channel switch completes.
+	 */
+	if (arvif->is_scan_vif && !ath12k_scan_radio_supported(ar->pdev) && arg.freq) {
+		struct ath12k_link_vif *itr_arvif;
+
+		list_for_each_entry(itr_arvif, &ar->arvifs, list) {
+			struct ieee80211_bss_conf *_itr_conf;
+
+			if (itr_arvif == arvif || !itr_arvif->is_started)
+				continue;
+			if (itr_arvif->is_scan_vif || ath12k_mac_is_bridge_vdev(itr_arvif))
+				continue;
+			if (itr_arvif->ar != ar)
+				continue;
+
+			_itr_conf = ath12k_mac_get_link_bss_conf(itr_arvif);
+			if (_itr_conf && _itr_conf->csa_active) {
+				ath12k_dbg(ab, ATH12K_DBG_MAC,
+					   "[radio_idx : %u] scan vdev %u start at %u MHz deferred: vdev %u CSA in progress\n",
+					   ar->radio_idx, arvif->vdev_id, arg.freq,
+					   itr_arvif->vdev_id);
+				return -ECANCELED;
+			}
+		}
+	}
+
 	if (!is_bridge_vdev && !arvif->is_scan_vif &&
 	    !ath12k_scan_radio_supported(ar->pdev) && arg.freq) {
 		struct ath12k_link_vif *itr_arvif;
