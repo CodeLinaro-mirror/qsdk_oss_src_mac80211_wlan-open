@@ -16009,6 +16009,7 @@ static ssize_t ath12k_read_htt_stats_type(struct file *file,
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
 
 	if (ar->ab->is_bypassed ||
+	    atomic_read(&ar->ab->wsi_remap_in_progress) ||
 	    test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)) {
 		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "device is in bypassed state\n");
 		wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
@@ -16062,6 +16063,7 @@ static ssize_t ath12k_write_htt_stats_type(struct file *file,
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
 
 	if (ar->ab->is_bypassed ||
+	    atomic_read(&ar->ab->wsi_remap_in_progress) ||
 	    test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)) {
 		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "device is in bypassed state\n");
 		wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
@@ -16189,7 +16191,8 @@ static int ath12k_open_htt_stats(struct inode *inode,
 		goto err_unlock;
 	}
 
-	if (ar->ab->is_bypassed) {
+	if (ar->ab->is_bypassed ||
+	    atomic_read(&ar->ab->wsi_remap_in_progress)) {
 		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "device is in bypassed state\n");
 		ret = -EPERM;
 		goto err_unlock;
@@ -16298,6 +16301,7 @@ static ssize_t ath12k_read_htt_stats_reset(struct file *file,
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
 
 	if (ar->ab->is_bypassed ||
+	    atomic_read(&ar->ab->wsi_remap_in_progress) ||
 	    test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)) {
 		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "device is in bypassed state\n");
 		wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
@@ -16331,6 +16335,7 @@ static ssize_t ath12k_write_htt_stats_reset(struct file *file,
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
 
 	if (ar->ab->is_bypassed ||
+	    atomic_read(&ar->ab->wsi_remap_in_progress) ||
 	    test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)) {
 		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "device is in bypassed state\n");
 		wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);

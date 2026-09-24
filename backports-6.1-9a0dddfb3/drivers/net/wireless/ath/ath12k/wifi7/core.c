@@ -91,6 +91,7 @@ static int ath12k_wifi7_wsi_bypass_remove(struct ath12k_base *ab)
 	 * the re-add path can identify this chip later.
 	 */
 	ag->wsi_remap_in_progress = false;
+	atomic_set(&ab->wsi_remap_in_progress, 0);
 	ab->wsi_remap_state = ATH12K_WSI_BYPASS_REMOVE_DEVICE;
 	ath12k_info(ab, "WSI remap: Device bypass completed\n");
 

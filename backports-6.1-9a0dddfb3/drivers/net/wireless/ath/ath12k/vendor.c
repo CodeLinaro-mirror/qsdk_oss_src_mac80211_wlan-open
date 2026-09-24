@@ -407,8 +407,9 @@ static int ath12k_vendor_cmd_skip_check(struct wiphy *wiphy, struct wireless_dev
 		ar = ath12k_get_ar_from_wdev(wdev, link_id);
 	}
 
-	if (ar && ar->ab->is_bypassed &&
-	    wifi_params.value != QCA_WLAN_VENDOR_RADIO_PARAM_WSI_BYPASS) {
+	if (ar && ((ar->ab->is_bypassed &&
+	    wifi_params.value != QCA_WLAN_VENDOR_RADIO_PARAM_WSI_BYPASS) ||
+	    atomic_read(&ar->ab->wsi_remap_in_progress))) {
 		ath12k_info(ar->ab, "vendor cmd (%d) rejected: device is in bypassed state\n",
 			    wifi_params.value);
 		return 1;

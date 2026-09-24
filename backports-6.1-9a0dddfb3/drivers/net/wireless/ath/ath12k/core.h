@@ -3140,6 +3140,7 @@ struct ath12k_base {
 	struct ath12k_wsi_info bypass_wsi_info;
 	bool is_bypassed;
 	enum ath12k_wsi_bypass_action wsi_remap_state;
+	atomic_t wsi_remap_in_progress;
 	bool is_static_bypassed;
 	u32 num_max_vdev_supported;
 #ifdef CPTCFG_ATHDEBUG

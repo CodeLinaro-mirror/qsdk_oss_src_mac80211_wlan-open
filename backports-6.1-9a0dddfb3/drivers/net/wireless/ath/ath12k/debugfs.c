@@ -57,6 +57,11 @@ int ath12k_debugfs_open(struct inode *inode, struct file *file)
 		return -EPERM;
 	}
 
+	if (atomic_read(&ctx->ab->wsi_remap_in_progress)) {
+		pr_info("athdbg: device is undergoing wsi remap, skipping cmd\n");
+		return -EPERM;
+	}
+
 	if (test_bit(ATH12K_FLAG_RECOVERY, &ctx->ab->dev_flags)) {
 		ath12k_info(ctx->ab, "Device is in recovery, skipping cmd\n");
 		return -EBUSY;
@@ -238,6 +243,7 @@ ath12k_debug_write_wsi_bypass_device(struct file *file,
 		/* Reset the flags if there is a failure */
 		ath12k_err(ab, "WSI bypass has failed with error %d\n", ret);
 		ab->ag->wsi_remap_in_progress = false;
+		atomic_set(&ab->wsi_remap_in_progress, 0);
 		ab->wsi_remap_state = ATH12K_WSI_BYPASS_DEFAULT;
 		ab->is_bypassed = false;
 		goto exit;
@@ -2456,6 +2462,11 @@ static int ath12k_open_tpc_stats(struct inode *inode, struct file *file)
 
 	if (ar->ab->is_bypassed) {
 		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "device is in bypassed state\n");
+		return -EPERM;
+	}
+
+	if (atomic_read(&ar->ab->wsi_remap_in_progress)) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "device is undergoing wsi remap\n");
 		return -EPERM;
 	}
 
