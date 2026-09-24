@@ -962,7 +962,7 @@ ath12k_wifi8_dp_encap_mismatch_handler(struct ath12k_dp_vif *dp_vif,
 		return DP_TX_ERROR;
 
 	msdu_info->mpsk_diff_encap = true;
-	msdu_info->is_null = ieee80211_is_nullfunc(hdr->frame_control);
+	msdu_info->is_null = ieee80211_is_any_nullfunc(hdr->frame_control);
 	if (unlikely(dp_vif->tx_encap_type == HAL_TCL_ENCAP_TYPE_ETHERNET)) {
 		msdu_info->ext_kmem = true;
 		msdu_info->to_fw = true;
