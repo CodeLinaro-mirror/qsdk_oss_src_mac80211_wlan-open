@@ -671,7 +671,7 @@ static void ath12k_wifi8_ucast_setup_msdu_info(struct ath12k_link_vif *arvif,
 			rcu_read_lock();
 			dp_peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev,
 								      ahsta->dp_peer_id);
-			if (!dp_peer) {
+			if (!dp_peer || !dp_peer->peer_ext_ctx) {
 				rcu_read_unlock();
 				return;
 			}
