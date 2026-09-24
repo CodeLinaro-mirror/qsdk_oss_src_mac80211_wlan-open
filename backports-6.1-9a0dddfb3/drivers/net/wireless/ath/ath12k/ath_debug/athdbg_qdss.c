@@ -374,6 +374,9 @@ void athdbg_coredump_qdss_dump(struct ath12k_base *ab,
 	if (ab->is_bypassed)
 		return;
 
+	if (atomic_read(&ab->wsi_remap_in_progress))
+		return;
+
 	num_seg = event_data->mem_seg_len;
 	len = sizeof(*segment);
 	segment = vzalloc(len);

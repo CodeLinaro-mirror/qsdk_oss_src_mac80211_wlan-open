@@ -134,6 +134,7 @@ static int ath12k_wifi8_wsi_bypass_remove(struct ath12k_base *ab)
 	if (ab->is_cumac_chip) {
 		ath12k_core_pci_link_speed(ab, 1, 1);
 		ag->wsi_remap_in_progress = false;
+		atomic_set(&ab->wsi_remap_in_progress, 0);
 		return 0;
 	}
 
@@ -189,6 +190,7 @@ static int ath12k_wifi8_wsi_bypass_remove(struct ath12k_base *ab)
 	 * the re-add path can identify this chip later.
 	 */
 	ag->wsi_remap_in_progress = false;
+	atomic_set(&ab->wsi_remap_in_progress, 0);
 	ab->wsi_remap_state = ATH12K_WSI_BYPASS_REMOVE_DEVICE;
 	ath12k_info(ab, "WSI remap: Device bypass completed\n");
 
@@ -228,11 +230,13 @@ static int ath12k_wifi8_wsi_bypass_add(struct ath12k_base *ab)
 					   i, ret);
 				ar->pdev_suspend = false;
 				ag->wsi_remap_in_progress = false;
+				atomic_set(&ab->wsi_remap_in_progress, 0);
 				return ret;
 			}
 		}
 
 		ag->wsi_remap_in_progress = false;
+		atomic_set(&ab->wsi_remap_in_progress, 0);
 		ab->wsi_remap_state = ATH12K_WSI_BYPASS_DEFAULT;
 		ath12k_info(ab, "WSI re-add: CUMAC chip resumed\n");
 	} else {

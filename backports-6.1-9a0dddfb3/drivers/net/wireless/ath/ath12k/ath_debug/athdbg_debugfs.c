@@ -36,6 +36,11 @@ static int athdbg_debugfs_open(struct inode *inode, struct file *file)
 		return -EPERM;
 	}
 
+	if (atomic_read(&ctx->ab->wsi_remap_in_progress)) {
+		pr_info("athdbg: device is undergoing wsi remap, skipping cmd\n");
+		return -EPERM;
+	}
+
 	if (test_bit(ATH12K_FLAG_RECOVERY, &ctx->ab->dev_flags)) {
 		pr_info("athdbg: device is in recovery, skipping cmd\n");
 		return -EBUSY;
