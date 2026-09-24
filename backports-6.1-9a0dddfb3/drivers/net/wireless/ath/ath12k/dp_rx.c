@@ -29,6 +29,7 @@
 #endif /* CPTCFG_QCN_EXTN */
 #endif
 #include "vendor.h"
+#include "qca-vendor.h"
 
 void ath12k_dp_rx_tid_free_desc(struct ath12k_base *ab,
 				struct ath12k_dp_rx_tid *rx_tid)

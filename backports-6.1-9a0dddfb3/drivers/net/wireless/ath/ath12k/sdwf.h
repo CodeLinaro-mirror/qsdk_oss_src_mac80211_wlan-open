@@ -8,6 +8,7 @@
 
 #include "ath/ath_dp_accel_cfg.h"
 #include "vendor.h"
+#include "qca-vendor.h"
 
 #define SDWF_PEER_MSDUQ_INVALID 0xFFFF
 #define SDWF_METADATA_INVALID   0xFFFFFFFF

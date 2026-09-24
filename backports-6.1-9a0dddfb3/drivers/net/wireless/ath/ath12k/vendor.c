@@ -23,6 +23,7 @@
 #include "mac.h"
 #include "ppe.h"
 #include "vendor.h"
+#include "qca-vendor.h"
 #include "debugfs_htt_stats.h"
 #include "spectral.h"
 #include "telemetry.h"
@@ -55,7 +56,7 @@ ath12k_wifi_config_policy[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_FLAGS] = {.type = NLA_U32 },
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_IFINDEX] = {.type = NLA_U32 },
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_MLO_LINK_ID] = {.type = NLA_U8 },
-	[QCA_WLAN_VENDOR_ATTR_IF_OFFLOAD_TYPE] = {.type = NLA_U8},
+	[QCA_WLAN_VENDOR_ATTR_CONFIG_INTF_OFFLOAD_TYPE] = {.type = NLA_U8},
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX] = {.type = NLA_U8 },
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_6GHZ_VLP_PRIORITY_THRESH_FREQ] = {.type = NLA_U16 },
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_AGILE_CAPABLE] = { .type = NLA_U8 },
@@ -1644,7 +1645,7 @@ static int ath12k_vendor_receive_afc_response(struct wiphy *wiphy,
 	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_AFC_RESP_MAX + 1];
 	struct ath12k_afc_host_resp *afc_rsp = NULL;
 	int afc_resp_len = 0;
-	enum ath12k_nl_afc_resp_type afc_resp_format;
+	enum qca_nl_afc_resp_type afc_resp_format;
 	int ret = 0, hw_idx = -1;
 	u8 i;
 
@@ -10836,8 +10837,9 @@ static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 		}
 	}
 
-	if (tb[QCA_WLAN_VENDOR_ATTR_IF_OFFLOAD_TYPE]) {
-		ppe_vp_type = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_IF_OFFLOAD_TYPE]);
+	if (tb[QCA_WLAN_VENDOR_ATTR_CONFIG_INTF_OFFLOAD_TYPE]) {
+		ppe_vp_type =
+			nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_CONFIG_INTF_OFFLOAD_TYPE]);
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (ppe_vp_type > PPE_VP_USER_TYPE_DS) {
@@ -11184,7 +11186,7 @@ static int ath12k_vendor_get_wifi_config_handler(struct wiphy *wiphy,
 			break;
 		}
 	}
-	if (tb[QCA_WLAN_VENDOR_ATTR_IF_OFFLOAD_TYPE]) {
+	if (tb[QCA_WLAN_VENDOR_ATTR_CONFIG_INTF_OFFLOAD_TYPE]) {
 		vif = wdev_to_ieee80211_vif_vlan(wdev, false);
 		if (!vif) {
 			ret = -EINVAL;
@@ -11204,7 +11206,8 @@ static int ath12k_vendor_get_wifi_config_handler(struct wiphy *wiphy,
 		}
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-		if (nla_put_u8(skb, QCA_WLAN_VENDOR_ATTR_IF_OFFLOAD_TYPE, ahvif->dp_vif.ppe_vp_type)) {
+		if (nla_put_u8(skb, QCA_WLAN_VENDOR_ATTR_CONFIG_INTF_OFFLOAD_TYPE,
+			       ahvif->dp_vif.ppe_vp_type)) {
 			ret = -EINVAL;
 			goto err;
 		}

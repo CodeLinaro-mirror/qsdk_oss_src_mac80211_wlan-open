@@ -11,6 +11,7 @@
 
 #include "core.h"
 #include "vendor.h"
+#include "qca-vendor.h"
 
 enum ath12k_vendor_service_id {
 	ATH12K_RM_MAIN_SERVICE = 0,

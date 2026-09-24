@@ -6,6 +6,7 @@
 #include "core.h"
 #include "debug.h"
 #include "vendor.h"
+#include "qca-vendor.h"
 #include "telemetry.h"
 #include <linux/module.h>
 #include "telemetry_agent_if.h"
