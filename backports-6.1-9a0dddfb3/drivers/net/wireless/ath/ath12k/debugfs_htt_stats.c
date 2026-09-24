@@ -13539,7 +13539,7 @@ static void ath12k_htt_print_ani_pkt_cnt_tlv(const void *tag_buf, u16 tag_len,
 		len += scnprintf(buf + len, buf_len - len,
 				 "rx_pkt_cnt:\n");
 		len += scnprintf(buf + len, buf_len - len,
-				 "  11a  |  11b  |  11n  | 11ac  | 11ax  |   GF  |  EHT  |  WUR  |   AZ  |\n");
+				 "  11a  |  11b  |  11n  | 11ac  | 11ax  |   GF  |  EHT  |  WUR  |   AZ  |  UHR  |\n");
 	}
 
 	for (i = 0; i < ATH12K_HTT_STATS_NUM_ANI_HIST_RX_PKT_CNT_MAX; i++)
@@ -13573,7 +13573,7 @@ static void ath12k_htt_print_ani_crc_pass_tlv(const void *tag_buf, u16 tag_len,
 		len += scnprintf(buf + len, buf_len - len,
 				 "rx_pkt_crc_pass_cnt:\n");
 		len += scnprintf(buf + len, buf_len - len,
-				 "  11a  |  11b  |  11n  | 11ac  | 11ax  |   GF  |  EHT  |  WUR  |   AZ  |\n");
+				 "  11a  |  11b  |  11n  | 11ac  | 11ax  |   GF  |  EHT  |  WUR  |   AZ  |  UHR  |\n");
 	}
 
 	for (i = 0; i < ATH12K_HTT_STATS_NUM_ANI_HIST_RX_PKT_CRC_PASS_CNT_MAX; i++)
