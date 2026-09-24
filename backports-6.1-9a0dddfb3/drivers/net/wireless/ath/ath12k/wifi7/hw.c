@@ -1783,7 +1783,7 @@ int ath12k_dp_mmesh_tx(struct ieee80211_hw *hw, struct ath12k_base *ab,
 	len = skb->len;
 	dp_vif = &ahvif->dp_vif;
 
-	if (ahvif->vap_submode == QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_MESH && mmeshsim) {
+	if (QCA_WLAN_VENDOR_VAP_IS_MESH_MODE(ahvif->vap_submode) && mmeshsim) {
 		/* Add meta header */
 		if (ahvif->dp_vif.dp_extn.mdbg & MESH_DBG_TX)
 			print_hex_dump(KERN_INFO, "PREBUF: ", DUMP_PREFIX_OFFSET, 16, 1,
