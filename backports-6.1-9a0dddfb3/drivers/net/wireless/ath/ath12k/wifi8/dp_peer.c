@@ -1937,7 +1937,8 @@ int ath12k_dp_peer_fetch_smd_tx_ctx(struct ath12k_base *ab,
 int ath12k_dp_tqm_remove_msduq_send(struct ath12k_base *ab,
 				    struct ath12k_dp_msdu_q_info *sw_msduq_ptr,
 				    struct ath12k_dp_peer *dp_peer,
-				    u16 count)
+				    u16 count,
+				    u8 remove_type)
 {
 	struct ath12k_hal_tqm_cmd cmd;
 	int ret = 0;
@@ -1951,11 +1952,7 @@ int ath12k_dp_tqm_remove_msduq_send(struct ath12k_base *ab,
 	cmd.remove_msdu_params.count = count;
 	cmd.remove_msdu_params.qtype = sw_msduq_ptr->flow_info.flow_type;
 	cmd.remove_msdu_params.msdu_q_paddr = sw_msduq_ptr->msdu_q_paddr;
-
-	if (count == ATH12K_MAX_MSDU_COUNT)
-		cmd.remove_msdu_params.type = HAL_WIFIREMOVE_MSDUS_AND_DISABLE_FLOW;
-	else
-		cmd.remove_msdu_params.type = HAL_WIFIREMOVE_HEAD_MSDUS;
+	cmd.remove_msdu_params.type = remove_type;
 
 	ret = ath12k_wifi8_dp_tqm_cmd_send(ab, HAL_TQM_REMOVE_MSDU_BO, &cmd,
 					   NULL, NULL);
@@ -2001,7 +1998,8 @@ int ath12k_dp_tqm_remove_mcast_queues(struct ath12k_base *ab,
 	ret = ath12k_dp_tqm_remove_msduq_send(ab,
 					      sw_msduq_ptr,
 					      dp_peer,
-					      ATH12K_MAX_MSDU_COUNT);
+					      ATH12K_MAX_MSDU_COUNT,
+					      HAL_WIFIREMOVE_MSDUS_AND_DISABLE_FLOW);
 	if (ret) {
 		ath12k_err(ab,
 			   "TQM MSDUQ send failed for MCAST frame for peer %pM id %d",
@@ -2046,7 +2044,8 @@ int ath12k_dp_tqm_remove_data_queues(struct ath12k_base *ab,
 	ret = ath12k_dp_tqm_remove_msduq_send(ab,
 					      sw_msduq_ptr,
 					      dp_peer,
-					      ATH12K_MAX_MSDU_COUNT);
+					      ATH12K_MAX_MSDU_COUNT,
+					      HAL_WIFIREMOVE_MSDUS_AND_DISABLE_FLOW);
 	if (ret) {
 		ath12k_err(ab,
 			   "TQM MSDUQ send failed for HOL frame for peer %pM id %d",
@@ -2063,7 +2062,8 @@ int ath12k_dp_tqm_remove_data_queues(struct ath12k_base *ab,
 			ret = ath12k_dp_tqm_remove_msduq_send(ab,
 							      sw_msduq_ptr,
 							      dp_peer,
-							      ATH12K_MAX_MSDU_COUNT);
+							      ATH12K_MAX_MSDU_COUNT,
+					      HAL_WIFIREMOVE_MSDUS_AND_DISABLE_FLOW);
 			if (ret) {
 				ath12k_err(
 				ab,
@@ -2111,9 +2111,10 @@ int ath12k_dp_tqm_remove_mgmt_queues(struct ath12k_base *ab,
 		if (!sw_msduq_ptr || sw_msduq_ptr->tqm_send)
 			continue;
 		ret = ath12k_dp_tqm_remove_msduq_send(ab,
-						      sw_msduq_ptr,
-						      dp_peer,
-						      ATH12K_MAX_MSDU_COUNT);
+					      sw_msduq_ptr,
+					      dp_peer,
+					      ATH12K_MAX_MSDU_COUNT,
+					      HAL_WIFIREMOVE_MSDUS_AND_DISABLE_FLOW);
 		if (ret) {
 			ath12k_err(ab,
 				   "TQM MSDUQ fail: MGMT frame %d peer %pM id %d",
@@ -2157,9 +2158,16 @@ int ath12k_dp_tqm_remove_link_mgmt_queues(struct ath12k_base *ab,
 
 	idx = ATH12K_LINK_TO_MGMT_TYPE(hw_link_id);
 	sw_msduq_ptr = tx_flow_info->mgmt_msduq[idx];
-	ret = ath12k_dp_tqm_remove_msduq_send(ab, sw_msduq_ptr,
+	if (dp_peer->is_sta_bss_peer)
+		ret = ath12k_dp_tqm_remove_msduq_send(ab, sw_msduq_ptr,
+						      dp_peer,
+						      ATH12K_MAX_MSDU_COUNT,
+						      HAL_WIFIREMOVE_HEAD_MSDUS);
+	else
+		ret = ath12k_dp_tqm_remove_msduq_send(ab, sw_msduq_ptr,
 					      dp_peer,
-					      ATH12K_MAX_MSDU_COUNT);
+					      ATH12K_MAX_MSDU_COUNT,
+					      HAL_WIFIREMOVE_MSDUS_AND_DISABLE_FLOW);
 	if (ret) {
 		ath12k_err(ab,
 			   "TQM Link mgmt MSDUQ fail: peer %pM linkid %d",
@@ -2435,7 +2443,7 @@ void ath12k_dp_peer_cleanup_indication(struct ath12k_dp *dp,
 	spin_unlock_bh(&dp_hw_grp->smd_transition_lock);
 
 	ath12k_dbg_level(dp->ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
-			 "peer-cleanup-ind: before clear_bit txq_links=0x%lx\n",
+			 "peer-cleanup-ind: clearing txq_links=0x%lx\n",
 			 tx_info->txq_hw_links_bitmap);
 
 	clear_bit(hw_link_id, &tx_info->txq_hw_links_bitmap);
@@ -2446,21 +2454,15 @@ void ath12k_dp_peer_cleanup_indication(struct ath12k_dp *dp,
 			   "ERROR: TQM REMOVE MGMT LINK QUEUE CMD peer %d link %d",
 			   dp_peer->peer_id, hw_link_id);
 	}
-	ath12k_dbg_level(dp->ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
-			 "peer-cleanup-ind: after clear_bit txq_links=0x%lx\n",
-			 tx_info->txq_hw_links_bitmap);
 
 	/* Check whether event is for last link or not */
 	if (tx_info->txq_hw_links_bitmap) {
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
+		rcu_read_unlock();
 		ath12k_dbg_level(dp->ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
 				 "peer-cleanup-ind: not last link, skipping TQM remove\n");
-		rcu_read_unlock();
 		return;
 	}
-
-	ath12k_dbg_level(dp->ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
-			 "peer-cleanup-ind: last link, calling TQM remove queues\n");
 
 	ret = ath12k_dp_tqm_remove_queues_cmd(dp->ab, dp_peer, hw_link_id);
 	if (ret) {
