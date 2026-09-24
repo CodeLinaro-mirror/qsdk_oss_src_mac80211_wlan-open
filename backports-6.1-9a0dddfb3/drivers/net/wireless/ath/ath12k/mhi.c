@@ -374,7 +374,7 @@ int ath12k_mhi_register(struct ath12k_pci *ab_pci)
 			idx++;
 		}
 
-		if (!mhi_ctrl->iova_start || !mhi_ctrl->iova_stop) {
+		if (!idx || mhi_ctrl->iova_stop < mhi_ctrl->iova_start) {
 			ath12k_err(ab, "Unable to get resource from the dts node memory. iova start:%pa iova stop:%pa\n",
 				   &mhi_ctrl->iova_start, &mhi_ctrl->iova_stop);
 			of_node_put(dev_node);
