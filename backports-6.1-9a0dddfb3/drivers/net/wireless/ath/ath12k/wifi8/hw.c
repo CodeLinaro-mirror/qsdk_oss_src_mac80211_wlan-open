@@ -1121,7 +1121,8 @@ ath12k_wifi8_mac_get_tx_link(struct ieee80211_sta *sta, struct ieee80211_vif *vi
 		goto skip_link_agnostic_tx;
 
 	if (ab && test_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags) &&
-	    ab->ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2) {
+	    (ab->ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2 ||
+	     ab->ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE3)) {
 		/* If disassoc frame comes in crash link, need to
 		 * change the link which is active at that instance.
 		 */
