@@ -473,6 +473,33 @@ int ath12k_wifi7_deliver_raw_frame(struct ath12k_pdev_dp *dp_pdev,
 		return 1;
 	}
 
+
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	if (peer && peer->is_mmesh_peer) {
+		if (ath12k_dp_mesh_rx_filter_mesh_packets(dp_pdev->dp->ab, peer,
+							  rx_spd)) {
+			DP_PEER_MISC_STATS_INC(peer, mmesh_stat, filter_drop, 0,
+					       1);
+			dev_kfree_skb(msdu);
+			return -1;
+		}
+		ath12k_dp_rx_fill_mesh_metadata(dp_pdev, peer, msdu, rx_spd);
+		ieee80211_mark_mmesh_frame(status);
+
+		/*
+		 * At this stage, the complete RX frame, including the customer
+		 * mesh header, is available.
+		 *
+		 * Customers can add their hooks here to adjust the SKB data
+		 * pointer by sizeof(struct mesh_recv_hdr_s) and deliver the
+		 * frame to the customer layer for further processing.
+		 *
+		 * After this stage, the frame will be trimmed, converted to
+		 * 802.3 format, and delivered to the bridge.
+		 */
+	}
+#endif
+
 	ath12k_dp_rx_h_undecap_raw(dp_pdev, msdu,
 				   (struct hal_rx_desc *)rx_tlv_hdr,
 				   enctype,
