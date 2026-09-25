@@ -1880,12 +1880,6 @@ static void ath12k_dp_htt_ppdu_enqueue_notify(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_ppdu_notify_item *item, *evict;
 	struct wiphy *wiphy = ath12k_ar_to_hw(dp_pdev->ar)->wiphy;
 
-	/* Early exit if no one is listening for TX events. */
-	if (!ath12k_ppdu_notifier_has_listeners(ATH12K_EVENT_PPDU_TX_COMPLETE)) {
-		kfree(ppdu_info);
-		return;
-	}
-
 	item = kmalloc(sizeof(*item), GFP_ATOMIC);
 	if (!item) {
 		kfree(ppdu_info);

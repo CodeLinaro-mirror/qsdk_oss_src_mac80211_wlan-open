@@ -129,12 +129,11 @@ struct ath12k_fse_update_event {
 	u8  op;
 };
 
+extern struct atomic_notifier_head ath12k_ppdu_notifier_chain;
+
 void ath12k_ppdu_notify_ctx_init(struct ath12k_ppdu_notify_ctx *ctx);
 void ath12k_ppdu_notify_ctx_deinit(struct wiphy *wiphy,
 				   struct ath12k_ppdu_notify_ctx *ctx);
-int ath12k_register_ppdu_notifier(struct notifier_block *nb, unsigned long event_mask);
-int ath12k_unregister_ppdu_notifier(struct notifier_block *nb, unsigned long event_mask);
-bool ath12k_ppdu_notifier_has_listeners(enum ath12k_event_type event_type);
 int ath12k_ppdu_notifier_call_chain(unsigned long val, void *v);
 
 /* FSE_UPDATE notifier APIs */
