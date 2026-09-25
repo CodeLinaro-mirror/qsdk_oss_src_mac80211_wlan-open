@@ -4452,6 +4452,22 @@ void ieee80211_punct_radar_update(struct ieee80211_local *local,
 	}
 }
 
+static unsigned int ieee80211_get_punct_cac_time(struct wiphy *wiphy,
+						 u32 center_freq_mhz)
+{
+	bool is_etsi = regulatory_pre_cac_allowed(wiphy);
+	bool is_weather;
+
+	if (!is_etsi)
+		return IEEE80211_PUNCT_CAC_TIME_MS;
+
+	is_weather = (center_freq_mhz >= IEEE80211_WEATHER_RADAR_BAND_LOW_MHZ &&
+		      center_freq_mhz <= IEEE80211_WEATHER_RADAR_BAND_HIGH_MHZ);
+
+	return is_weather ? IEEE80211_PUNCT_ETSI_WEATHER_CAC_TIME_MS :
+			    IEEE80211_PUNCT_ETSI_CAC_TIME_MS;
+}
+
 void ieee80211_start_punctured_cac(struct wiphy *wiphy,
 				   struct cfg80211_chan_def *chandef)
 {
@@ -4464,10 +4480,6 @@ void ieee80211_start_punctured_cac(struct wiphy *wiphy,
 	if (!chandef || !chandef->chan)
 		return;
 
-	cac_time = cfg80211_chandef_dfs_cac_time(wiphy, chandef, true, false);
-	if (!cac_time)
-		cac_time = IEEE80211_DFS_MIN_CAC_TIME_MS;
-
 	list_for_each_entry(ctx, &local->chanctx_list, list) {
 		struct ieee80211_punct_obj *obj;
 
@@ -4479,6 +4491,8 @@ void ieee80211_start_punctured_cac(struct wiphy *wiphy,
 			    obj->center_freq != chandef->chan->center_freq)
 				continue;
 
+			cac_time = ieee80211_get_punct_cac_time(wiphy,
+								obj->center_freq);
 			wiphy_dbg(wiphy,
 				  "DFS puncture: CAC started freq=%u cac_time=%lu ctx=%p\n",
 				  obj->center_freq, cac_time, ctx);
