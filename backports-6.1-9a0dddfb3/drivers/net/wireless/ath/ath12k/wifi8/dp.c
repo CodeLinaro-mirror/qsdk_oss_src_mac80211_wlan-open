@@ -1553,99 +1553,6 @@ bool ath12k_wifi8_dp_ast_coredump_ready(struct ath12k_dp_hw_group_wifi8 *dp_hw_g
 	       ast_base->hw_ast_table_size;
 }
 
-static u64 ath12k_wifi8_dp_ast_who_classify_paddr(struct hal_ast_entry *hw_ast_entry)
-{
-	u64 paddr_hi = le32_get_bits(hw_ast_entry->info3,
-				     HAL_AST_ENTRY_INFO3_WHO_CLASSIFY_INFO_39_32);
-	u32 paddr_lo = le32_get_bits(hw_ast_entry->info2,
-				     HAL_AST_ENTRY_INFO2_WHO_CLASSIFY_INFO_31_0);
-
-	return (paddr_hi << 32) | paddr_lo;
-}
-
-static int
-ath12k_wifi8_dp_who_classify_seg_count(struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8)
-{
-	struct ath12k_dp_global_ast_table *ast_base = &dp_hw_grp_wifi8->dp_ast_base;
-	struct hal_ast_entry *ast_table;
-	struct hal_ast_entry *entry;
-	u64 paddr;
-	int cnt = 0;
-	u16 i;
-
-	if (!ast_base->ast_vaddr_aligned)
-		return 0;
-
-	ast_table = (struct hal_ast_entry *)ast_base->ast_vaddr_aligned;
-
-	for (i = 0; i < ast_base->num_ast_entries; i++) {
-		entry = &ast_table[i];
-		paddr = ath12k_wifi8_dp_ast_who_classify_paddr(entry);
-		if (!paddr || !pfn_valid(PHYS_PFN(paddr)))
-			continue;
-
-		cnt++;
-	}
-
-	return cnt;
-}
-
-static int
-ath12k_wifi8_dp_who_classify_get_segs(struct ath12k_base *ab,
-				      struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8,
-				      struct ath12k_dump_segment *seg_arr,
-				      int max_segs)
-{
-	struct ath12k_dp_global_ast_table *ast_base = &dp_hw_grp_wifi8->dp_ast_base;
-	struct hal_ast_entry *ast_table;
-	struct hal_ast_entry *entry;
-	void *vaddr;
-	u64 paddr;
-	int cnt = 0;
-	int skipped_paddr = 0;
-	int skipped_vaddr = 0;
-	u16 i;
-
-	if (!ast_base->ast_vaddr_aligned || max_segs < 1)
-		return 0;
-
-	ast_table = (struct hal_ast_entry *)ast_base->ast_vaddr_aligned;
-
-	for (i = 0; i < ast_base->num_ast_entries && cnt < max_segs; i++) {
-		entry = &ast_table[i];
-		paddr = ath12k_wifi8_dp_ast_who_classify_paddr(entry);
-		if (!paddr || !pfn_valid(PHYS_PFN(paddr))) {
-			skipped_paddr++;
-			continue;
-		}
-
-		vaddr = phys_to_virt(paddr);
-		if (!vaddr || !virt_addr_valid(vaddr)) {
-			skipped_vaddr++;
-			ath12k_dbg(ab, ATH12K_DBG_DP_TX,
-				   "who_classify coredump: ast_idx=%u paddr=0x%llx invalid vaddr=%p, skipping\n",
-				   i, paddr, vaddr);
-			continue;
-		}
-
-		seg_arr[cnt].vaddr = vaddr;
-		seg_arr[cnt].addr  = paddr;
-		seg_arr[cnt].len   = ATH12K_NUM_TX_CLASSIFY_BANKS *
-				     ATH12K_TX_CLASSIFY_INFO_SIZE_SINGLE;
-		seg_arr[cnt].type  = FW_CRASH_DUMP_WHO_CLASSIFY_DATA;
-		ath12k_dbg(ab, ATH12K_DBG_DP_TX,
-			   "who_classify coredump: ast_idx=%u vaddr=%p paddr=0x%llx len=0x%x\n",
-			   i, vaddr, paddr, seg_arr[cnt].len);
-		cnt++;
-	}
-
-	ath12k_dbg(ab, ATH12K_DBG_DP_TX,
-		   "who_classify coredump: collected %d segments, skipped %d (bad paddr) %d (bad vaddr)\n",
-		   cnt, skipped_paddr, skipped_vaddr);
-
-	return cnt;
-}
-
 static int ath12k_wifi8_dp_get_coredump_seg_count(struct ath12k_dp *dp)
 {
 	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8;
@@ -1664,7 +1571,6 @@ static int ath12k_wifi8_dp_get_coredump_seg_count(struct ath12k_dp *dp)
 
 	seg_cnt += ath12k_wifi8_dp_pool_coredump_seg_count(dp_hw_grp_wifi8->msduq_ctxt);
 	seg_cnt += ath12k_wifi8_dp_pool_coredump_seg_count(dp_hw_grp_wifi8->mpduq_ctxt);
-	seg_cnt += ath12k_wifi8_dp_who_classify_seg_count(dp_hw_grp_wifi8);
 
 	ath12k_dbg(dp->ab, ATH12K_DBG_DP_TX,
 		   "coredump seg count query: total required=%d\n", seg_cnt);
@@ -1749,15 +1655,13 @@ static int ath12k_wifi8_dp_get_coredump_segs(struct ath12k_dp *dp,
 							  "MPDU",
 							  &seg_arr[seg_cnt],
 							  max_segs - seg_cnt);
-	seg_cnt += ath12k_wifi8_dp_who_classify_get_segs(dp->ab, dp_hw_grp_wifi8,
-							  &seg_arr[seg_cnt],
-							  max_segs - seg_cnt);
 
 	ath12k_dbg(dp->ab, ATH12K_DBG_DP_TX,
 		   "coredump segs filled: total=%d\n", seg_cnt);
 
 	return seg_cnt;
 }
+
 static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 	.dp_op_device_init = ath12k_wifi8_dp_op_device_init,
 	.dp_op_device_deinit = ath12k_wifi8_dp_op_device_deinit,
