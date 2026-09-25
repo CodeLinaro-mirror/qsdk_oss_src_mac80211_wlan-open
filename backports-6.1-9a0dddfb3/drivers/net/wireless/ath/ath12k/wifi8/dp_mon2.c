@@ -1801,8 +1801,8 @@ ath12k_wifi8_dp_mon_rx_process_ppdu(struct work_struct *work)
 unlock:
 			spin_unlock_bh(&dp->dp_lock);
 			rcu_read_unlock_bh();
-			ath12k_dp_rx_mon_ppdu_notify(dp, pdev_dp, ppdu_info);
 free_buf:
+			ath12k_dp_rx_mon_ppdu_notify(dp, pdev_dp, ppdu_info);
 			page_frag_free(status_desc->mon_buf);
 			mon_stats->status_buf_free++;
 		}
