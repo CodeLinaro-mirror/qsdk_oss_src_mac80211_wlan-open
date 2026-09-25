@@ -645,7 +645,8 @@ static void ath12k_wifi8_ucast_setup_msdu_info(struct ath12k_link_vif *arvif,
 					       struct ath12k_dp_tx_msdu_info *msdu_info,
 					       struct sk_buff *skb,
 					       struct ath12k_pdev_dp *dp_pdev,
-					       struct ath12k_vif *vlan_ahvif)
+					       struct ath12k_vif *vlan_ahvif,
+					       bool htt_mesh)
 {
 	struct ath12k_vif *ahvif = arvif->ahvif;
 	struct ath12k_dp_vif *dp_vif = &ahvif->dp_vif;
@@ -691,6 +692,7 @@ static void ath12k_wifi8_ucast_setup_msdu_info(struct ath12k_link_vif *arvif,
 	msdu_info->vdev_id = dp_vif->dp_vif_id;
 	msdu_info->type = HAL_TCL_DESC_TYPE_BUFFER;
 	msdu_info->pkt_offset = 0;
+	msdu_info->ext_kmem = htt_mesh;
 }
 
 /**
@@ -722,7 +724,8 @@ static int ath12k_wifi8_mcbc_setup_msdu_info(struct ath12k_link_vif *arvif,
 					     u16 gsn, bool gsn_valid,
 					     struct sk_buff *skb,
 					     bool is_eth, struct ath12k_pdev_dp *dp_pdev,
-					     struct ath12k_vif *vlan_ahvif)
+					     struct ath12k_vif *vlan_ahvif,
+					     bool htt_mesh)
 {
 	struct ath12k_vif *ahvif = arvif->ahvif;
 	struct ath12k_dp_vif *dp_vif = &ahvif->dp_vif;
@@ -790,6 +793,7 @@ static int ath12k_wifi8_mcbc_setup_msdu_info(struct ath12k_link_vif *arvif,
 	msdu_info->vdev_id = dp_vif->dp_vif_id;
 	msdu_info->type = HAL_TCL_DESC_TYPE_BUFFER;
 	msdu_info->pkt_offset = 0;
+	msdu_info->ext_kmem = htt_mesh;
 
 	if (gsn_valid && !arsta)
 		msdu_info->vdev_id += HTT_TX_MLO_MCAST_HOST_REINJECT_BASE_VDEV_ID;
@@ -1104,6 +1108,12 @@ ath12k_wifi8_dp_tx_process_features(struct ath12k_dp_vif *dp_vif,
 	if (ath12k_dp_feature_enabled(dp_vif, DP_FEATURE_ME)) {
 		if (!ath12k_dp_me_tx(dp_vif, skb, msdu_info))
 			return DP_TX_RETURN;
+	}
+
+	if (ath12k_dp_feature_enabled(dp_vif, DP_FEATURE_MESH)) {
+		msdu_info->ext_desc.ext_feature |= DP_EXT_MESH;
+		msdu_info->ext_desc.encap_type = dp_vif->tx_encap_type;
+		msdu_info->ext_desc.encrypt_type = HAL_ENCRYPT_TYPE_OPEN;
 	}
 
 	/* Process Scatter-Gather Feature */
@@ -1466,12 +1476,18 @@ ath12k_wifi8_dp_ext_desc_populate(struct ath12k_dp *dp,
 
 		break;
 	case DP_EXT_ENCAP_OVERRIDE:
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	case DP_EXT_MESH:
+#endif
 		ath12k_dp_ext_desc_set_buf0(ext_desc, msdu_info->paddr,
 					    msdu_info->data_len);
 		ath12k_dp_ext_desc_override_set(&ext_desc->desc,
 						ext_msdu_info);
 		ext_data_len = ATH12K_TX_MSDU_EXT_SZ;
-
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+		if (msdu_info->ext_desc.ext_feature == DP_EXT_MESH)
+			ext_data_len = ATH12K_DP_EXT_DESC_SZ;
+#endif
 		break;
 	case DP_EXT_TSO:
 	case DP_EXT_SG:
@@ -1616,6 +1632,96 @@ ath12k_wifi8_dp_prepare_group_htt_metadata(struct sk_buff *skb,
 	return 0;
 }
 
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+static int
+ath12k_wifi8_dp_prepare_mesh_htt_metadata(struct ath12k_base *ab,
+					  struct sk_buff *skb,
+					  struct ath12k_dp_ext_desc *ext_desc,
+					  struct ath12k_dp_tx_msdu_info *msdu_info)
+{
+	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
+	struct hal_tx_msdu_metadata *htt_desc_ext;
+	struct meta_hdr_s *mhdr;
+	u8 htt_desc_size;
+
+	if (!(skb_cb->flags & ATH12K_SKB_MESH_TX_INFO)) {
+		msdu_info->to_fw = 0;
+		goto skip;
+	}
+
+	htt_desc_size = sizeof(struct hal_tx_msdu_metadata);
+	htt_desc_ext = (struct hal_tx_msdu_metadata *)
+		    ath12k_dp_ext_desc_get_rsvd0(ext_desc);
+
+	if (!htt_desc_ext)
+		return -ENOMEM;
+
+	msdu_info->to_fw = 1;
+	msdu_info->data_len = ATH12K_TX_MSDU_EXT_SZ + htt_desc_size;
+
+	htt_desc_ext->info0 =
+		le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_HOST_TX_DESC_POOL);
+	htt_desc_ext->info1 =
+		le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO1_UPDATE_PEER_CACHE);
+
+	mhdr = (struct meta_hdr_s *)(skb->data - msdu_info->mhdr_len);
+
+	/* Set LEARNING_FRAME in info5 when NOT NOENCRYPT — matches WiFi7 behavior.
+	 * Both structs are 28 bytes; WiFi8 info5 is at the same offset as WiFi7 info5.
+	 */
+	if (!(mhdr->flags & METAHDR_FLAG_NOENCRYPT))
+		htt_desc_ext->info5 =
+			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO5_LEARNING_FRAME);
+
+	if (!(mhdr->flags & METAHDR_FLAG_AUTO_RATE)) {
+		htt_desc_ext->info0 |=
+			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_MCS_MASK) |
+			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_PWR)        |
+			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_NSS_MASK)   |
+			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_PREAM_TYPE) |
+			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_BW_INFO)    |
+			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_KEY_FLAGS)  |
+			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_DYN_BW)     |
+			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_RETRIES)    |
+			le32_encode_bits(mhdr->rate_info[0].max_tries,
+					 HAL_TX_MSDU_METADATA_INFO0_RETRY_LIMIT);
+
+		htt_desc_ext->info1 |=
+			le32_encode_bits(mhdr->power, HAL_TX_MSDU_METADATA_INFO1_POWER) |
+			le32_encode_bits(mhdr->rate_info[0].mcs,
+					 HAL_TX_MSDU_METADATA_INFO1_MCS_MASK) |
+			le32_encode_bits(mhdr->rate_info[0].nss,
+					 HAL_TX_MSDU_METADATA_INFO1_NSS_MASK) |
+			le32_encode_bits(mhdr->rate_info[0].preamble_type,
+					 HAL_TX_MSDU_METADATA_INFO1_PREAM_TYPE);
+
+		htt_desc_ext->info2 |=
+			le32_encode_bits((mhdr->keyix & 0x3),
+					 HAL_TX_MSDU_METADATA_INFO2_KEY_FLAGS);
+	}
+
+	if (mhdr->flags & METAHDR_FLAG_NOENCRYPT) {
+		htt_desc_ext->info0 |=
+			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_ENCRYPT_FLAG) |
+			le32_encode_bits(0, HAL_TX_MSDU_METADATA_INFO0_ENCRYPT_TYPE);
+	}
+
+	ath12k_dbg_level(ab, ATH12K_DBG_MMESH, ATH12K_DBG_L1,
+			 "wifi8 mesh htt: skb %p pwr %d mcs 0x%x nss %d preamble %d",
+			 skb, mhdr->power, mhdr->rate_info[0].mcs,
+			 mhdr->rate_info[0].nss, mhdr->rate_info[0].preamble_type);
+
+	ath12k_dbg_level(ab, ATH12K_DBG_MMESH, ATH12K_DBG_L1,
+			 "wifi8 mesh htt: retries %d auto %d encrypt %d to_fw %u",
+			 mhdr->rate_info[0].max_tries,
+			 !!(mhdr->flags & METAHDR_FLAG_AUTO_RATE),
+			 !!(mhdr->flags & METAHDR_FLAG_NOENCRYPT),
+			 msdu_info->to_fw);
+skip:
+	return 0;
+}
+#endif /* CPTCFG_QCN_EXTN_MESH_SUPPORT */
+
 enum ath12k_dp_tx_enq_error
 ath12k_wifi8_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
 			      struct ath12k_vif *ahvif,
@@ -1676,6 +1782,13 @@ ath12k_wifi8_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
 	msdu_info->desc_id = tx_desc->desc_id;
 	tx_desc->hw_link_id = dp_pdev->hw_link_id;
 
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	tx_desc->mmesh = (ahvif &&
+			  QCA_WLAN_VENDOR_VAP_IS_MESH_MODE(ahvif->vap_submode));
+	/* mmesh uses msdu ext desc to program rates to firmware */
+	msdu_info->mhdr_len = ahvif->dp_vif.dp_extn.mhdr_len;
+#endif
+
 	if (msdu_info->me_convert) {
 		gsn_valid = false;
 		msdu_info->tx_notify_frame = 0;
@@ -1690,6 +1803,26 @@ ath12k_wifi8_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
 		drop_reason = DP_TX_ENQ_DROP_TCL_DESC_NA;
 		goto fail;
 	}
+
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	if (msdu_info->ext_kmem && tx_desc->ext_desc) {
+		int mesh_ret =
+			ath12k_wifi8_dp_prepare_mesh_htt_metadata(central_dp->ab,
+								  skb,
+								  tx_desc->ext_desc,
+								  msdu_info);
+		if (mesh_ret) {
+			drop_reason = DP_TX_ENQ_DROP_MISC;
+			goto fail;
+		}
+		if (ATH12K_SKB_CB(skb)->flags & ATH12K_SKB_MESH_TX_INFO) {
+			msdu_info->meta_data_flags |= HTT_TCL_META_DATA_VALID_HTT_V3;
+			msdu_info->flags0 |= u32_encode_bits(1,
+					HAL_TCL_DATA_CMD_INFO2_TO_FW_SW);
+			tx_desc->to_fw = msdu_info->to_fw;
+		}
+	}
+#endif
 
 	/* mcast maps skb->len (includes HTT header); fix up tx_desc->len so
 	 * the completion-path unmap covers the same region.
@@ -1755,11 +1888,13 @@ void ath12k_wifi8_dp_tx_set_ast(struct ath12k_dp_peer *dp_peer,
  * and enqueues the frame to the TCL hardware ring.
  *
  */
+
+
 void ath12k_wifi8_ucast_handler(struct ath12k_dp_vif *dp_vif, u8 link_id,
 				struct ath12k_link_sta *arsta, struct sk_buff *skb,
 				struct ath12k_dp_skb_ctrl *skb_ctrl, u32 qos_nw_delay,
 				struct ath12k_vif *vlan_ahvif,
-				struct ath12k_dp_peer *dp_peer)
+				struct ath12k_dp_peer *dp_peer, bool htt_mesh)
 {
 	struct ath12k_vif *ahvif = container_of(dp_vif, struct ath12k_vif, dp_vif);
 	struct ath12k_link_vif *arvif = rcu_dereference(ahvif->link[link_id]);
@@ -1809,7 +1944,7 @@ void ath12k_wifi8_ucast_handler(struct ath12k_dp_vif *dp_vif, u8 link_id,
 
 	/* Setup MSDU info */
 	ath12k_wifi8_ucast_setup_msdu_info(arvif, arsta, central_dp, &msdu_info, skb,
-					   dp_pdev, vlan_ahvif);
+					   dp_pdev, vlan_ahvif, htt_mesh);
 	msdu_info.meta_data_flags = dp_link_vif->tcl_metadata;
 
 	/* Fast path: no features enabled */
@@ -1872,12 +2007,43 @@ void ath12k_wifi8_ucast_handler(struct ath12k_dp_vif *dp_vif, u8 link_id,
 	msdu_info.mpsk_diff_encap = 0;
 	tx_desc->hw_link_id = dp_pdev->hw_link_id;
 
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	tx_desc->mmesh = (ahvif &&
+			  QCA_WLAN_VENDOR_VAP_IS_MESH_MODE(ahvif->vap_submode));
+	msdu_info.mhdr_len = dp_vif->dp_extn.mhdr_len;
+#endif
+
 	ret = ath12k_wifi8_dp_tx_desc_populate(central_dp, skb, dp_vif, dp_link_vif,
 					       &msdu_info, tx_desc, false, 0, ring_id);
 	if (ret != DP_TX_FEATURE_SUCCESS) {
 		drop_reason = DP_TX_ENQ_DROP_TCL_DESC_NA;
 		goto fail;
 	}
+
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	if (msdu_info.ext_kmem && tx_desc->ext_desc) {
+		int mesh_ret =
+			ath12k_wifi8_dp_prepare_mesh_htt_metadata(central_dp->ab,
+								  skb,
+								  tx_desc->ext_desc,
+								  &msdu_info);
+		if (mesh_ret) {
+			drop_reason = DP_TX_ENQ_DROP_MISC;
+			goto fail;
+		}
+		/* Tell firmware there is valid HTT metadata in the ext_desc.
+		 * Without this bit set in tcl_cmd_number, the firmware ignores
+		 * the HTT metadata (rate override, encrypt flags, etc.).
+		 * Matches WiFi7: meta_data_flags |= HTT_TCL_META_DATA_VALID_HTT
+		 */
+		if (ATH12K_SKB_CB(skb)->flags & ATH12K_SKB_MESH_TX_INFO) {
+			msdu_info.meta_data_flags |= HTT_TCL_META_DATA_VALID_HTT_V3;
+			msdu_info.flags0 |= u32_encode_bits(1,
+					HAL_TCL_DATA_CMD_INFO2_TO_FW_SW);
+			tx_desc->to_fw = msdu_info.to_fw;
+		}
+	}
+#endif
 
 	/* Enqueue to hardware */
 	ret = ath12k_wifi8_dp_tx_hw_enqueue(dp_link_vif, dp_pdev, &msdu_info, ring_id,
@@ -2081,7 +2247,8 @@ void ath12k_wifi8_mcbc_handler(struct ath12k_dp_vif *dp_vif, u8 link_id,
 		ret = ath12k_wifi8_mcbc_setup_msdu_info(arvif, dp_link_vif, arsta,
 							central_dp, &msdu_info, gsn,
 							gsn_valid, skb_new, is_eth,
-							dp_pdev, vlan_ahvif);
+							dp_pdev, vlan_ahvif,
+							htt_mesh);
 		if (ret < 0) {
 			dev_kfree_skb_any(skb_new);
 			goto next;
@@ -2362,7 +2529,8 @@ ath12k_wifi8_dp_tx_htt_update_peer_stats(struct ath12k_dp *dp,
 					 struct hal_tx_status *ts,
 					 u32 msdu_len, u32 htt_status,
 					 int link_id, int ring_id,
-					 u8 tx_desc_flags)
+					 u8 tx_desc_flags,
+					 struct sk_buff *skb)
 {
 	u8 vow_tid = 0;
 
@@ -2374,7 +2542,14 @@ ath12k_wifi8_dp_tx_htt_update_peer_stats(struct ath12k_dp *dp,
 									  tx_desc_flags,
 									  link_id,
 									  msdu_len);
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+			u8 rel_src = ts->buf_rel_source;
 
+			if (peer->is_mmesh_peer)
+				ath12k_dp_tx_update_mmesh_stats_common(dp, dp_pdev,
+								       skb, peer,
+								       rel_src);
+#endif
 			if (unlikely(ath12k_dp_vow_stats_enabled(dp_pdev))) {
 				vow_tid = ath12k_vow_tid_validate(ts->tid);
 
@@ -2457,7 +2632,7 @@ ath12k_wifi8_dp_tx_process_htt_tx_complete(struct ath12k_dp *dp,
 		ath12k_wifi8_dp_tx_htt_update_peer_stats(dp, dp_pdev, peer, ts,
 							 msdu_len, htt_status,
 							 link_id, ring_id,
-							 tx_desc_flags);
+							 tx_desc_flags, msdu);
 
 		dev_kfree_skb_any(msdu);
 		rcu_read_unlock();
@@ -2513,7 +2688,7 @@ ath12k_wifi8_dp_tx_process_htt_tx_complete(struct ath12k_dp *dp,
 	ath12k_wifi8_dp_tx_htt_update_peer_stats(dp, dp_pdev, peer, ts,
 						 msdu_len, htt_status,
 						 link_id, ring_id,
-						 tx_desc_flags);
+						 tx_desc_flags, msdu);
 
 	rcu_read_unlock();
 }
@@ -2805,6 +2980,15 @@ static void ath12k_wifi8_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 								     TX_COMP,
 								     ring);
 
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+			u8 rel_src = ts->buf_rel_source;
+
+			if (peer->is_mmesh_peer)
+				ath12k_dp_tx_update_mmesh_stats_common(dp, dp_pdev,
+								       msdu, peer,
+								       rel_src);
+#endif
+
 			if (unlikely(ath12k_dp_vow_stats_enabled(dp_pdev))) {
 				vow_tid = ath12k_vow_tid_validate(ts->tid);
 
@@ -3085,8 +3269,10 @@ int ath12k_wifi8_dp_tx_mec_handler(struct ath12k_dp *dp,
 						  NULL, skb, is_eth, false, false,
 						  &skb_ctrl, 0, false, NULL, info, NULL);
 		else
-			ath12k_wifi8_ucast_handler(&arvif->ahvif->dp_vif, arvif->link_id,
-						   NULL, skb, &skb_ctrl, 0, NULL, NULL);
+			ath12k_wifi8_ucast_handler(&arvif->ahvif->dp_vif,
+						   arvif->link_id, NULL, skb,
+						   &skb_ctrl, 0, NULL, NULL,
+						   false);
 
 		rcu_read_unlock();
 	} else if (status == HAL_WBM_TQM_REL_REASON_TCL_MEC_KEEP_ALIVE_FOR_VDEV) {
@@ -3256,6 +3442,9 @@ int ath12k_wifi8_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 		sw_metadata->paddr = tx_desc->paddr;
 		sw_metadata->len = tx_desc->len;
 		sw_metadata->flags = tx_desc->flags;
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+		sw_metadata->mmesh = tx_desc->mmesh;
+#endif
 		sw_metadata->hw_enqueue_tstamp = tx_desc->hw_enqueue_tstamp;
 
 		if (unlikely(!(sw_metadata->flags & DP_TX_DESC_FLAG_FAST))) {
@@ -3283,6 +3472,9 @@ int ath12k_wifi8_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 
 		tx_desc->skb = NULL;
 		tx_desc->in_use = false;
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+		tx_desc->mmesh = 0;
+#endif
 		tx_desc->flags = 0;
 	}
 
@@ -3530,7 +3722,8 @@ int ath12k_wifi8_sdwf_reinject_handler(struct ath12k_pdev_dp *dp_pdev,
 					  0, false, NULL, info, NULL);
 	else
 		ath12k_wifi8_ucast_handler(dp_vif, arvif->link_id,
-					   arsta, skb, &skb_ctrl, 0, NULL, dp_peer);
+					   arsta, skb, &skb_ctrl, 0,
+					   NULL, dp_peer, false);
 	return 0;
 }
 

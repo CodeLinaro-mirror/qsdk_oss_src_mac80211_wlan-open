@@ -1345,6 +1345,164 @@ static void ath12k_wifi8_mgmt_handler(struct ieee80211_hw *hw,
 	}
 }
 
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+/**
+ * ath12k_wifi8_dp_mmesh_tx() - WiFi8 mesh meta-header pre-TX processing
+ *
+ * WiFi8-specific version of ath12k_dp_mmesh_tx(). Parses the mesh meta
+ * header prepended by userspace, extracts flags (NOENCRYPT, NOQOS,
+ * INFO_UPDATED), and routes the optional rate-info clone through the
+ * WiFi8 ucast/mcbc handlers.  The original SKB is returned to the caller
+ * with htt_mesh set appropriately.
+ */
+static int ath12k_wifi8_dp_mmesh_tx(struct ieee80211_hw *hw,
+				    struct ath12k_base *ab,
+				    struct ath12k_link_vif *arvif,
+				    struct ieee80211_vif *vlan_vif,
+				    struct sk_buff *skb,
+				    struct ieee80211_sta *sta,
+				    struct ath12k_dp_skb_ctrl *skb_ctrl,
+				    bool is_eth, u8 link_id, bool is_mcast,
+				    bool *htt_mesh,
+				    struct ieee80211_tx_info *info,
+				    u32 qos_nw_delay)
+{
+	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
+	struct ath12k_vif *ahvif = arvif->ahvif;
+	struct ath12k_dp_vif *dp_vif = NULL;
+	struct ath12k *ar = arvif->ar;
+	struct sk_buff *skb_cloned = NULL;
+	struct ath12k_skb_cb *skb_clone_cb = NULL;
+	enum ath12k_dp_tx_enq_error err;
+	struct meta_hdr_s *mhdr = NULL;
+	struct ath12k_link_sta *arsta = NULL;
+	struct ath12k_vif *vlan_ahvif = vlan_vif ? ath12k_vif_to_ahvif(vlan_vif) : NULL;
+	u8 qos_tag;
+	u8 no_enc_frame = 0;
+	bool is_sta = false;
+	struct ath12k_pdev_dp *dp_pdev = NULL;
+	u8 ring_id = smp_processor_id();
+	bool checkhdr = false;
+	u8 flags;
+	u16 len;
+	int ret;
+	struct ath12k_sta *ahsta = NULL;
+	struct ath12k_dp_peer *dp_peer = NULL;
+
+	/* Get station info if needed */
+	if (sta) {
+		is_sta = true;
+		ahsta = ath12k_sta_to_ahsta(sta);
+		qos_tag = u32_get_bits(skb->mark, QOS_TAG_MASK);
+		if (ahsta->use_4addr_set || qos_tag)
+			arsta = rcu_dereference(ahsta->link[link_id]);
+		dp_peer = ath12k_sta_get_dp_peer_rcu(ahsta);
+	}
+
+	len = skb->len;
+	dp_vif = &ahvif->dp_vif;
+
+	if (mmeshsim) {
+		/* Add meta header in simulation mode */
+		if (ahvif->dp_vif.dp_extn.mdbg & MESH_DBG_TX)
+			print_hex_dump(KERN_INFO, "PREBUF: ", DUMP_PREFIX_OFFSET,
+				       16, 1, skb->data, 64, false);
+
+		ret = ath12k_dp_add_mesh_meta_hdr(skb, ahvif,
+						  !!ahvif->dp_vif.dp_extn.mdbg,
+						  &checkhdr);
+		if (ret) {
+			pr_err("Drop frames. Failure in adding mesh header in simulation\n");
+			err = DP_TX_ENQ_DROP_MHDR_ERR;
+			goto fail;
+		}
+
+		if (ahvif->dp_vif.dp_extn.mdbg & MESH_DBG_TX)
+			print_hex_dump(KERN_INFO, "POSTBUF: ", DUMP_PREFIX_OFFSET,
+				       16, 1, skb->data, 64, false);
+	}
+
+	/* Move the skb data pointer back to expose the meta header */
+	if (!mmeshsim)
+		skb_push(skb, ahvif->dp_vif.dp_extn.mhdr_len);
+
+	mhdr = (struct meta_hdr_s *)skb->data;
+	if (mmeshsim && !checkhdr)
+		mhdr = NULL;
+
+	if (mhdr) {
+		flags = mhdr->flags;
+		skb_pull(skb, ahvif->dp_vif.dp_extn.mhdr_len);
+
+		if (arvif->key_cipher != INVALID_CIPHER &&
+		    (mhdr->flags & METAHDR_FLAG_NOENCRYPT))
+			no_enc_frame = 1;
+
+		if (mhdr->flags & METAHDR_FLAG_NOQOS)
+			skb->priority = HTT_TX_EXT_TID_NON_QOS_MCAST_BCAST;
+
+		if ((mhdr->flags & METAHDR_FLAG_INFO_UPDATED) && !no_enc_frame) {
+			skb_cloned = skb_clone(skb, GFP_ATOMIC);
+			if (!skb_cloned) {
+				err = DP_TX_ENQ_DROP_CLONE;
+				goto fail;
+			}
+
+			skb_clone_cb = ATH12K_SKB_CB(skb_cloned);
+			skb_clone_cb->flags |= ATH12K_SKB_MESH_TX_INFO;
+			*htt_mesh = true;
+		}
+
+		if (skb_cloned) {
+			/*
+			 * Send the cloned SKB to firmware with updated rate
+			 * info so FW can refresh its cached peer rate.
+			 */
+			local_bh_disable();
+			if (!is_mcast) {
+				ath12k_wifi8_ucast_handler(dp_vif, link_id, arsta,
+							   skb_cloned, skb_ctrl,
+							   qos_nw_delay,
+							   vlan_ahvif, dp_peer, true);
+			} else {
+				ath12k_wifi8_mcbc_handler(dp_vif, link_id, arsta,
+							  skb_cloned, is_eth,
+							  false, is_sta,
+							  skb_ctrl, qos_nw_delay,
+							  false, vlan_ahvif,
+							  info, sta);
+				ieee80211_free_txskb(hw, skb_cloned);
+			}
+			local_bh_enable();
+		}
+
+		if (no_enc_frame) {
+			skb_cb->flags |= ATH12K_SKB_MESH_TX_INFO;
+			*htt_mesh = true;
+		} else {
+			skb_cb->flags &= ~ATH12K_SKB_MESH_TX_INFO;
+			*htt_mesh = false;
+		}
+	}
+
+	ath12k_dbg_level(ab, ATH12K_DBG_MMESH, ATH12K_DBG_L1,
+			 "wifi8 mesh: skb %p clone %p no_enc_frm %d skb->pri %d tx_info_flag %d",
+			 skb, skb_cloned, no_enc_frame, skb->priority,
+			 !!(skb_cb->flags & ATH12K_SKB_MESH_TX_INFO));
+
+	ath12k_dbg_level(ab, ATH12K_DBG_MMESH, ATH12K_DBG_L1,
+			 "wifi8 mesh: hdr len %d skb->len %d mhdr flags 0x%x mhdr %p htt_mesh %d\n",
+			 skb->len - len, skb->len, flags, mhdr, *htt_mesh);
+	return 0;
+fail:
+	dp_pdev = ath12k_dp_to_dp_pdev(ar->ab->dp, ar->pdev_idx);
+	ath12k_mac_ieee80211_free_txskb(hw, skb, dp_pdev,
+					ahsta ? ath12k_ahsta_to_sta(ahsta) : NULL,
+					&ahvif->dp_vif, err, ring_id, true);
+	return -EINVAL;
+}
+#endif /* CPTCFG_QCN_EXTN_MESH_SUPPORT */
+
 /* Note: called under rcu_read_lock() */
 static void ath12k_wifi8_mac_op_tx(struct ieee80211_hw *hw,
 				   struct ieee80211_tx_control *control,
@@ -1375,7 +1533,7 @@ static void ath12k_wifi8_mac_op_tx(struct ieee80211_hw *hw,
 	u8 qos_tag;
 	bool is_pkt_classified = false, gsn_valid = true;
 	struct ath12k_dp_skb_ctrl skb_ctrl = {0};
-	bool htt_mesh;
+	bool htt_mesh = false;
 	int ret;
 	struct ath12k_dp_peer *dp_peer = NULL;
 	struct ath12k *ar = NULL;
@@ -1389,7 +1547,6 @@ static void ath12k_wifi8_mac_op_tx(struct ieee80211_hw *hw,
 	}
 
 #ifdef CPTCFG_QCN_EXTN
-	/* Fast path.*/
 	if (likely(ath12k_wifi8_dp_tx_check_fast_path(skb, info_flags, dp_vif, &skb_ctrl,
 						      qos_nw_delay, vlan_ahvif)))
 		return;
@@ -1489,11 +1646,23 @@ static void ath12k_wifi8_mac_op_tx(struct ieee80211_hw *hw,
 		skb_ctrl.features |= DP_FEATURE_SW_ENCRPT;
 	}
 
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	if (QCA_WLAN_VENDOR_VAP_IS_MESH_MODE(ahvif->vap_submode)) {
+		ret = ath12k_wifi8_dp_mmesh_tx(hw, arvif->ar->ab, arvif,
+					       vlan_vif, skb, sta,
+					       &skb_ctrl, is_eth, link_id, is_mcast,
+					       &htt_mesh, &info_tx, qos_nw_delay);
+		if (ret)
+			return;
+	}
+#endif
+
 	local_bh_disable();
 	/* Route based on multicast/unicast. */
 	if (!is_mcast) {
 		ath12k_wifi8_ucast_handler(dp_vif, link_id, arsta, skb,
-					   &skb_ctrl, qos_nw_delay, vlan_ahvif, dp_peer);
+					   &skb_ctrl, qos_nw_delay,
+					   vlan_ahvif, dp_peer, false);
 	} else {
 		if (!vif->valid_links || is_dvlan || (is_eth && sta) ||
 		    ahvif->dp_vif.tx_encap_type == ATH12K_HW_TXRX_RAW)
