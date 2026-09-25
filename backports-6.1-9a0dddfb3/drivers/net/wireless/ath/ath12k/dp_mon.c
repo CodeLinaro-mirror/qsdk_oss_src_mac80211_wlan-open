@@ -417,13 +417,13 @@ void ath12k_dp_mon_update_radiotap(struct ath12k_pdev_dp *dp_pdev,
 		rxs->encoding = RX_ENC_HE;
 		ptr = skb_push(mon_skb, sizeof(struct ieee80211_radiotap_he));
 		ath12k_dp_mon_rx_update_radiotap_he(ppduinfo, ptr);
-		rxs->rate_idx = ppduinfo->mcs;
+		rxs->rate_idx = ppduinfo->rate;
 	} else if (ppduinfo->vht_flags) {
 		rxs->encoding = RX_ENC_VHT;
-		rxs->rate_idx = ppduinfo->mcs;
+		rxs->rate_idx = ppduinfo->rate;
 	} else if (ppduinfo->ht_flags) {
 		rxs->encoding = RX_ENC_HT;
-		rxs->rate_idx = ppduinfo->mcs;
+		rxs->rate_idx = ppduinfo->rate;
 	} else {
 		rxs->encoding = RX_ENC_LEGACY;
 		if (rxs->band < NUM_NL80211_BANDS) {
@@ -3129,13 +3129,13 @@ ath12k_dp_mon_fill_rx_rate(struct ath12k_pdev_dp *dp_pdev,
 	case RX_MSDU_START_PKT_TYPE_11N:
 		rx_status->encoding = RX_ENC_HT;
 		rx_status->bw = ath12k_mac_bw_to_mac80211_bw(bw);
-		if (rate_mcs > HAL_RX_MAX_MCS_HT) {
+		if (rate_mcs > ATH12K_HT_MCS_MAX) {
 			ath12k_warn(ar->ab,
 				    "Received with invalid mcs in HT mode %d\n",
 				     rate_mcs);
 			break;
 		}
-		rx_status->rate_idx = rate_mcs;
+		rx_status->rate_idx = rate_mcs + (8 * (nss - 1));
 		if (sgi)
 			rx_status->enc_flags |= RX_ENC_FLAG_SHORT_GI;
 		break;
