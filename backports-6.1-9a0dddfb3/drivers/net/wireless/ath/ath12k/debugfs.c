@@ -8691,6 +8691,56 @@ static const struct file_operations fops_device_mgmt_srng_stats = {
 	.llseek = default_llseek,
 };
 
+static ssize_t ath12k_debugfs_dump_device_mgmt_config(struct file *file,
+						       char __user *user_buf,
+						       size_t count,
+						       loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	int len = 0;
+	const int size = 4096;
+
+	char *buf __free(kfree) = kzalloc(size, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	if (!ab->mgmt)
+		return 0;
+
+#ifdef CPTCFG_QCN_EXTN
+	if (ath12k_cfg_get(ab, ATH12K_CFG_REO_MGMT_PATH_DISABLE))
+		return 0;
+#endif
+
+	len += scnprintf(buf + len, size - len, "MGMT RX SRNG CONFIG:\n\n");
+	len += scnprintf(buf + len, size - len, "num_chips:          %u\n",
+			 ab->ag->num_devices);
+	len += scnprintf(buf + len, size - len, "desc_per_chip:      %u\n",
+			 ath12k_mgmt_desc_per_chip);
+	len += scnprintf(buf + len, size - len, "num_desc:           %u\n",
+			 ath12k_mgmt_num_desc);
+	len += scnprintf(buf + len, size - len, "num_blocks:         %u\n",
+			 ath12k_mgmt_num_rx_desc_blocks);
+	len += scnprintf(buf + len, size - len, "wm_high:            %u words\n",
+			 ath12k_mgmt_wm_high);
+	len += scnprintf(buf + len, size - len, "wm_low:             %u words\n",
+			 ath12k_mgmt_wm_low);
+
+	if (ab->mgmt->arch_ops->mgmt_op_dump_ring_sizes)
+		len += ab->mgmt->arch_ops->mgmt_op_dump_ring_sizes(ab->mgmt,
+								    buf + len,
+								    size - len);
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static const struct file_operations fops_device_mgmt_config = {
+	.read = ath12k_debugfs_dump_device_mgmt_config,
+	.open = ath12k_debugfs_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 static ssize_t ath12k_dump_svc_sorted_list(struct file *file,
 					   char __user *user_buf,
 					   size_t count, loff_t *ppos)
@@ -9067,6 +9117,9 @@ void ath12k_debugfs_pdev_create(struct ath12k_base *ab) {
 	ath12k_debugfs_create_file("device_mgmt_srng_stats", 0600, ab->debugfs_soc,
 				   ab, ab,
 				   &fops_device_mgmt_srng_stats);
+	ath12k_debugfs_create_file("device_mgmt_srng_config", 0400, ab->debugfs_soc,
+				   ab, ab,
+				   &fops_device_mgmt_config);
 	if (test_bit(WMI_TLV_SERVICE_DYNAMIC_WSI_REMAP_SUPPORT, ab->wmi_ab.svc_map))
 		ath12k_debugfs_create_file("wsi_bypass_device", 0600, ab->debugfs_soc,
 					   ab, ab,

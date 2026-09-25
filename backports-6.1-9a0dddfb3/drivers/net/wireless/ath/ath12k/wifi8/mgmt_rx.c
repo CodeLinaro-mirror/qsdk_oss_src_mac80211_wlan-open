@@ -1757,6 +1757,25 @@ ath12k_wifi8_mgmt_dump_ring_stats(struct ath12k_mgmt *mgmt, char *buf, int size)
 	return len;
 }
 
+static int
+ath12k_wifi8_mgmt_dump_ring_sizes(struct ath12k_mgmt *mgmt, char *buf, int size)
+{
+	int len = 0;
+
+	len += scnprintf(buf + len, size - len, "rx_ring_size:       %u\n",
+			 MGMT_REO_DST_RING_SIZE);
+	len += scnprintf(buf + len, size - len, "rx_err_ring_size:   %u\n",
+			 MGMT_REO_EXCEPTION_RING_SIZE);
+	len += scnprintf(buf + len, size - len, "idle_buf_ring_size: %u\n",
+			 MGMT_WBM_IDLE_BUF_RING_SIZE);
+
+#ifdef CPTCFG_QCN_EXTN
+	len += ath12k_wifi8_mgmt_dump_ring_sizes_extn(mgmt, buf + len, size - len);
+#endif
+
+	return len;
+}
+
 static void ath12k_wifi8_mgmt_rx_replenish_buffs_wrapper(struct ath12k_mgmt *mgmt,
 							 struct list_head *used_list,
 							 bool reuse)
@@ -1772,6 +1791,7 @@ static struct ath12k_mgmt_arch_ops ath12k_wifi8_mgmt_arch_ops = {
 	.mgmt_op_device_deinit = ath12k_wifi8_mgmt_op_device_deinit,
 	.mgmt_op_htt_setup = ath12k_wifi8_mgmt_op_htt_setup,
 	.mgmt_op_dump_ring_stats = ath12k_wifi8_mgmt_dump_ring_stats,
+	.mgmt_op_dump_ring_sizes = ath12k_wifi8_mgmt_dump_ring_sizes,
 	.mgmt_rx_replenish_buffs = ath12k_wifi8_mgmt_rx_replenish_buffs_wrapper,
 	.mgmt_op_override_mld_tx = ath12k_wifi8_mgmt_op_override_mld_tx,
 };
