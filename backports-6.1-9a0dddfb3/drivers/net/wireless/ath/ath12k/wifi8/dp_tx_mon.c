@@ -213,8 +213,17 @@ ath12k_wifi8_htt_tx_mon_cfg_fill_extended_wmask(struct htt_tx_mon_ring_selection
 		le32_encode_bits(htt_tlv_filter->stat_subtype_data,
 				 HTT_TX_MON_TYPE_EN_STATUS_SUBTYPE_MASK);
 
+	/* Default to capturing all subtypes only when NEITHER tier is
+	 * configured for ANY type. A pkt_subtype_*-only check would also
+	 * fire for a pure status-tier request (-F, stat_subtype_* set,
+	 * pkt_subtype_* legitimately clear), forcing full-payload capture
+	 * for every subtype and silently overriding the status-only filter
+	 * - pkt tier takes priority over status tier on the wire.
+	 */
 	if (!htt_tlv_filter->pkt_subtype_mgmt && !htt_tlv_filter->pkt_subtype_ctrl &&
-	    !htt_tlv_filter->pkt_subtype_data) {
+	    !htt_tlv_filter->pkt_subtype_data &&
+	    !htt_tlv_filter->stat_subtype_mgmt && !htt_tlv_filter->stat_subtype_ctrl &&
+	    !htt_tlv_filter->stat_subtype_data) {
 		cmd->type_en_mgmt |= cpu_to_le32(HTT_TX_MON_PKT_ALL_SUBTYPES);
 		cmd->type_en_ctrl |= cpu_to_le32(HTT_TX_MON_PKT_ALL_SUBTYPES);
 		cmd->type_en_data |= cpu_to_le32(HTT_TX_MON_PKT_ALL_SUBTYPES);
