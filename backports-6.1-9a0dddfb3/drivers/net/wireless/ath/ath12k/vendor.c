@@ -1432,7 +1432,7 @@ ath12k_cfr_rcc_parse_update_common_params(struct ath12k *ar, struct nlattr **tb)
 	return 0;
 }
 
-static int ath12k_cfr_handle_rcc(struct ath12k *ar, struct nlattr **tb)
+static int ath12k_cfr_handle_rcc(struct ath12k *ar, int vdev_id, struct nlattr **tb)
 {
 	enum qca_wlan_vendor_cfr_capture_type capture_type;
 	int ret = 0;
@@ -1505,6 +1505,7 @@ static int ath12k_cfr_handle_rcc(struct ath12k *ar, struct nlattr **tb)
 	/* We reached here means, the command is to commit the current configuration
 	 * to firmware.
 	 */
+	ar->cfr.rcc_param.vdev_id = vdev_id;
 	ret = ath12k_peer_cfr_rcc_commit(ar);
 	if (ret)
 		ath12k_err(ar->ab, "Failed commit the RCC config");
@@ -1631,7 +1632,7 @@ static int ath12k_vendor_peer_cfr_handler(struct wiphy *wiphy,
 	}
 
 	if (version == 2)
-		return ath12k_cfr_handle_rcc(ar, tb);
+		return ath12k_cfr_handle_rcc(ar, arvif->vdev_id, tb);
 
 	return -EOPNOTSUPP;
 }
