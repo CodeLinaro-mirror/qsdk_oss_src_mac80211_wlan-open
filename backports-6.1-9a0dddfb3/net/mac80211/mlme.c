@@ -7116,9 +7116,13 @@ static bool ieee80211_assoc_success(struct ieee80211_sub_if_data *sdata,
 				link->u.mgd.have_beacon = true;
 			else
 				ies = rcu_dereference(cbss->ies);
-			ieee80211_get_dtim(ies,
-					   &link->conf->sync_dtim_count,
-					   &link->u.mgd.dtim_period);
+			if (ies)
+				ieee80211_get_dtim(ies,
+						   &link->conf->sync_dtim_count,
+						   &link->u.mgd.dtim_period);
+			else
+				link->conf->sync_dtim_count =
+					link->u.mgd.dtim_period = 0;
 			link->conf->beacon_int = cbss->beacon_interval;
 			rcu_read_unlock();
 		}
