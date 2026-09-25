@@ -235,6 +235,13 @@ EXPORT_SYMBOL(ath12k_wifi8_htt_tx_mon_cfg_fill_extended_wmask);
  * Mirrors ath12k_wifi7_dp_mon_tx_setup_ext_mon_filter, but translates the
  * per-type subtype masks into the wifi8 pkt/status subtype fields. The pkt
  * tier comes from fp.filter[]; the status tier from fp.status_filter[].
+ *
+ * Also mirrors wifi7's payload DMA length (fp.len[]) and MPDU/PPDU log-type
+ * config. Without these, tx_mon_{mgmt,ctrl,data}_pkt_dma_len stay 0, which
+ * HTT encodes literally as CONF_DMA_LEN_* = 0 (not "full packet") whenever
+ * the corresponding tx_mon_*_filter is set - i.e. the frame type is enabled
+ * for capture but its payload DMA length is programmed to zero, producing
+ * a malformed/truncated payload in the captured pcap.
  */
 static void
 ath12k_wifi8_dp_mon_tx_setup_ext_mon_filter(struct ath12k_pdev_dp *dp_pdev,
@@ -244,6 +251,7 @@ ath12k_wifi8_dp_mon_tx_setup_ext_mon_filter(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_dp_tx_ext_mon *tx_ext_mon =
 		&dp_mon_pdev->dp_pdev_tx_mon->tx_ext_mon;
 	struct ath12k_dp_tx_ext_mon_config *cfg;
+	u8 mgmt_len, ctrl_len, data_len;
 
 	/* TLV subscription — same defaults as full monitor mode */
 	f->tx_mon_downstream_tlv_flags = HTT_TX_MON_FILTER_DW_STRM_TLV_DEFAULT_MODE;
@@ -273,6 +281,39 @@ ath12k_wifi8_dp_mon_tx_setup_ext_mon_filter(struct ath12k_pdev_dp *dp_pdev,
 		f->tx_mon_ctrl_filter = 0x1;
 	if (f->pkt_subtype_data || f->stat_subtype_data)
 		f->tx_mon_data_filter = 0x1;
+
+	/* Only the pkt tier carries payload. A status-tier-only request
+	 * (stat_subtype_* set, pkt_subtype_* clear) must not get a payload
+	 * DMA length programmed - that would contradict the status tier's
+	 * "MPDU status TLVs only, no payload" design intent.
+	 */
+	mgmt_len = cfg->fp.len[ATH12K_EXT_MON_FRAME_MGMT];
+	ctrl_len = cfg->fp.len[ATH12K_EXT_MON_FRAME_CTRL];
+	data_len = cfg->fp.len[ATH12K_EXT_MON_FRAME_DATA];
+
+	if (f->pkt_subtype_mgmt)
+		f->tx_mon_mgmt_pkt_dma_len =
+			ath12k_dp_mon_tx_get_ext_mon_filter_len(mgmt_len);
+	if (f->pkt_subtype_ctrl)
+		f->tx_mon_ctrl_pkt_dma_len =
+			ath12k_dp_mon_tx_get_ext_mon_filter_len(ctrl_len);
+	if (f->pkt_subtype_data)
+		f->tx_mon_data_pkt_dma_len =
+			ath12k_dp_mon_tx_get_ext_mon_filter_len(data_len);
+
+	switch (cfg->level) {
+	case ATH12K_EXT_MON_FILTER_LEVEL_MPDU:
+	case ATH12K_EXT_MON_FILTER_LEVEL_PPDU:
+		f->mgmt_mpdu_msdu_log_en = 1;
+		f->mgmt_log_typ = HTT_TX_MON_WMASK_IN2_MPDU_LOG;
+		f->ctrl_mpdu_msdu_log_en = 1;
+		f->ctrl_log_typ = HTT_TX_MON_WMASK_IN2_MPDU_LOG;
+		f->data_mpdu_msdu_log_en = 1;
+		f->data_log_typ = HTT_TX_MON_WMASK_IN2_MPDU_LOG;
+		break;
+	default:
+		break;
+	}
 
 	spin_unlock(&tx_ext_mon->tx_ext_mon_lock);
 }
