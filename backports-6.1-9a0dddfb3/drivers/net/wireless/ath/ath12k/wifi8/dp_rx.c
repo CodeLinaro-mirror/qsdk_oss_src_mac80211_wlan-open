@@ -3560,13 +3560,10 @@ static void ath12k_configure_wbm_rxdma_watermark(struct ath12k_base *ab)
 	int i;
 	int val;
 	int sfe_watermark[] = HAL_UMAC_WBM_BUFF_DESC_RING_CFG1;
-	int mgmt_watermark[] = HAL_UMAC_WBM_BUFF_DESC_RING_CFG2;
 	int ppe_watermark[] = HAL_UMAC_WBM_BUFF_DESC_RING_CFG3;
 	int wbm_base = HAL_SEQ_WCSS_UMAC_WBM_REG;
 	u32 sfe_val = ((DP_WBM_SFE_HIGH_WATERMARK - HAL_UMAC_WBM_LOW_WATERMARK_DIFF) <<
 			HAL_UMAC_WBM_LOW_WATERMARK_SHIFT) | DP_WBM_SFE_HIGH_WATERMARK;
-	u32 mgmt_val = ((DP_WBM_MGMT_HIGH_WATERMARK - HAL_UMAC_WBM_LOW_WATERMARK_DIFF) <<
-			HAL_UMAC_WBM_LOW_WATERMARK_SHIFT) | DP_WBM_MGMT_HIGH_WATERMARK;
 	u32 ppe_val = ((DP_WBM_PPE_HIGH_WATERMARK - HAL_UMAC_WBM_LOW_WATERMARK_DIFF) <<
 			HAL_UMAC_WBM_LOW_WATERMARK_SHIFT) | DP_WBM_PPE_HIGH_WATERMARK;
 
@@ -3577,7 +3574,6 @@ static void ath12k_configure_wbm_rxdma_watermark(struct ath12k_base *ab)
 
 	for (i = 0; i < HAL_UMAC_WBM_MAX_WATERMARK_CFG_REGS; i++) {
 		ath12k_hif_write32(ab, wbm_base + sfe_watermark[i], sfe_val);
-		ath12k_hif_write32(ab, wbm_base + mgmt_watermark[i], mgmt_val);
 		ath12k_hif_write32(ab, wbm_base + ppe_watermark[i], ppe_val);
 	}
 }

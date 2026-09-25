@@ -1555,6 +1555,36 @@ struct ath12k_mgmt *ath12k_wifi8_get_cumac_mgmt(struct ath12k_mgmt *mgmt)
 	return NULL;
 }
 
+static void ath12k_wifi8_mgmt_configure_wbm_watermark(struct ath12k_base *ab)
+{
+	int i;
+	int mgmt_watermark[] = HAL_UMAC_WBM_BUFF_DESC_RING_CFG2;
+	int wbm_base = HAL_SEQ_WCSS_UMAC_WBM_REG;
+	u32 high = MGMT_WBM_HIGH_WATERMARK;
+	u32 diff = MGMT_WBM_LOW_WATERMARK_DIFF;
+	u32 max_high = MGMT_WBM_BUFFER_TO_WORDS(ath12k_mgmt_desc_per_chip);
+	u32 low;
+	u32 mgmt_val;
+
+	/* Cap high watermark if it exceeds per-chip descriptor capacity */
+	if (high > max_high) {
+		ath12k_warn(ab, "mgmt wm_high %u words exceeds per-chip desc %u buffers, capping\n",
+			    high, ath12k_mgmt_desc_per_chip);
+		high = max_high;
+	}
+
+	low = high - diff;
+
+	/* Store actual used values in globals for debugfs visibility */
+	ath12k_mgmt_wm_high = high;
+	ath12k_mgmt_wm_low = low;
+
+	mgmt_val = (low << HAL_UMAC_WBM_LOW_WATERMARK_SHIFT) | high;
+
+	for (i = 0; i < HAL_UMAC_WBM_MAX_WATERMARK_CFG_REGS; i++)
+		ath12k_hif_write32(ab, wbm_base + mgmt_watermark[i], mgmt_val);
+}
+
 int ath12k_wifi8_mgmt_op_device_init(struct ath12k_mgmt *mgmt)
 {
 	struct ath12k_base *ab = mgmt->ab;
@@ -1578,6 +1608,8 @@ int ath12k_wifi8_mgmt_op_device_init(struct ath12k_mgmt *mgmt)
 		ath12k_warn(ab, "Failed to initialize mgmt rx desc: %d", ret);
 		return ret;
 	}
+
+	ath12k_wifi8_mgmt_configure_wbm_watermark(ab);
 
 	ret = ath12k_wifi8_mgmt_rx_ring_setup(ab);
 	if (ret) {
