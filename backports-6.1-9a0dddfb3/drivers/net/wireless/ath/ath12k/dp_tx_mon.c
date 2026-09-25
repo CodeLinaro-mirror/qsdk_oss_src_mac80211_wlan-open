@@ -470,14 +470,14 @@ ath12k_dp_mon_tx_free_pkt_buf(struct ath12k_pdev_dp *dp_pdev,
 				goto next_tlv;
 			}
 
-			list_add_tail(&pkt_desc->list, &mon_desc_used_list);
-
 			if (unlikely(pkt_desc->in_use != DP_MON_DESC_TO_HW)) {
 				ath12k_warn(ab,
 					    "mon_flush: invalid in_use=[%d] flag, macid %d\n",
 					    pkt_desc->in_use, dp_pdev->mac_id);
 				goto next_tlv;
 			}
+
+			list_add_tail(&pkt_desc->list, &mon_desc_used_list);
 
 			ath12k_core_dma_unmap_page(dp->dev, pkt_desc->paddr,
 						   ATH12K_DP_MON_TX_BUF_SIZE,
@@ -1296,17 +1296,25 @@ int ath12k_dp_tx_mon_generate_data_frm(struct ath12k_pdev_dp *dp_pdev,
 	u32 buffer_length;
 	struct page *page;
 	int frag_offset;
+	int ret = -EINVAL;
 
-	if (!ppdu_info || user_idx >= HAL_MAX_UL_MU_USERS)
+	if (!ppdu_info)
 		return -EINVAL;
+
+	if (user_idx >= HAL_MAX_UL_MU_USERS) {
+		ret = -EINVAL;
+		goto return_status;
+	}
 
 	tx_info = &ppdu_info->tx_info;
 	rx_status = &tx_info->rx_status;
 	mpdu_q = &rx_status->mpdu_q[user_idx];
 
 	skb = skb_peek_tail(mpdu_q);
-	if (!skb)
-		return -ENOENT;
+	if (!skb) {
+		ret = -ENOENT;
+		goto return_status;
+	}
 
 	if (ppdu_info->has_buffer_data && ppdu_info->buffer_addr) {
 		buffer_addr = ppdu_info->buffer_addr;
@@ -1322,7 +1330,8 @@ int ath12k_dp_tx_mon_generate_data_frm(struct ath12k_pdev_dp *dp_pdev,
 				ath12k_warn(dp_pdev->dp->ab,
 					    "TX Mon: SKB allocation failed for frag renewal, user %u\n",
 					    user_idx);
-				return -ENOMEM;
+				ret = -ENOMEM;
+				goto return_status;
 			}
 			ath12k_dp_mon_append_skb(skb, tmp_skb);
 		}
@@ -1338,8 +1347,19 @@ int ath12k_dp_tx_mon_generate_data_frm(struct ath12k_pdev_dp *dp_pdev,
 
 		if (take_ref)
 			skb_frag_ref(tmp_skb, skb_shinfo(tmp_skb)->nr_frags - 1);
+		ret = 0;
 	}
-	return 0;
+
+return_status:
+	if (ret) {
+		if (ppdu_info->has_buffer_data && ppdu_info->buffer_addr) {
+			if (!take_ref)
+				page_frag_free(ppdu_info->buffer_addr);
+			ppdu_info->buffer_addr = NULL;
+			ppdu_info->has_buffer_data = false;
+		}
+	}
+	return ret;
 }
 
 /**
@@ -1379,7 +1399,7 @@ ath12k_dp_tx_mon_extract_buffer_info(struct ath12k_pdev_dp *dp_pdev,
 		ath12k_dbg(dp_mon->dp->ab, ATH12K_DBG_DP_MON_TX,
 			   "TX Mon: No packet buffer info for user %u\n",
 			   usr_idx);
-		return 0;
+		return -EINVAL;
 	}
 
 	mon_desc = (struct ath12k_dp_mon_desc *)(uintptr_t)(packet_info->sw_cookie);
@@ -1864,7 +1884,7 @@ ath12k_dp_tx_mon_generated_response_frm(struct ath12k_pdev_dp *dp_pdev,
 			break;
 
 		ret = ath12k_dp_tx_mon_gen_block_ack(dp_pdev,
-								tx_data_ppdu_info,
+						     tx_data_ppdu_info,
 						     tx_status_info,
 						     RESPONSE_WINDOW);
 		break;
