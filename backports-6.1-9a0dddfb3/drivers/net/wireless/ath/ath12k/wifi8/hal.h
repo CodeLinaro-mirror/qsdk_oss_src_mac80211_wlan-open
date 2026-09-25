@@ -1885,11 +1885,10 @@ struct hal_rx_spd_data {
 		};
 	};
 
-	u8	reserved_0;
+	u8	key_id_octate;
 	u16	cce_metadata;
-	u32	reserved_1;
-
-	u64	reserved_2;
+	u8	ad1[ETH_ALEN];
+	u8	ad2[ETH_ALEN];
 } __packed;
 
 static_assert(sizeof(struct hal_rx_spd_data) == 64,

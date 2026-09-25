@@ -96,6 +96,7 @@
 #define RX_MPDU_INFO_INFO2_MPDU_FRAME_CONTROL_VALID_V1		BIT(0)
 #define RX_MPDU_INFO_INFO2_MPDU_SEQUENCE_CONTROL_VALID_V1	BIT(6)
 #define RX_MPDU_INFO_INFO2_MPDU_SEQUENCE_NUMBER_V1		GENMASK(31, 20)
+#define RX_MPDU_INFO_INFO2_ENCRYPTED_V1				BIT(18)
 #define RX_MPDU_INFO_INFO4_KEY_ID_OCTET_V1			GENMASK(7, 0)
 
 /* --- PN byte extraction helpers (V1 layout) --- */
@@ -878,6 +879,16 @@ void ath12k_wifi8_hal_extract_rx_spd_data_qcn9625_v1(struct hal_rx_spd_data *rx_
 		hweight8(ath12k_wifi8_hal_rx_h_nss_qcn9625_v1(rx_desc));
 	rx_info->tlv_info.sgi =
 		ath12k_wifi8_hal_rx_h_sgi_qcn9625_v1(rx_desc);
+	rx_info->tlv_info.is_decrypted =
+		ath12k_wifi8_hal_rx_h_is_decrypted_qcn9625_v1(rx_desc);
+	rx_info->tlv_info.encrypt_info_valid =
+		ath12k_wifi8_hal_encrypt_valid_qcn9625_v1(rx_desc);
+	rx_info->tlv_info.mpdu_frame_control_valid =
+		!!le32_get_bits(rx_desc->u.qcn9625_compact_v1.mpdu_start.info2,
+				RX_MPDU_INFO_INFO2_MPDU_FRAME_CONTROL_VALID_V1);
+	rx_info->tlv_info.encrypted =
+		!!le32_get_bits(rx_desc->u.qcn9625_compact_v1.mpdu_start.info2,
+				RX_MPDU_INFO_INFO2_ENCRYPTED_V1);
 	rx_info->cce_metadata =
 		__le16_to_cpu(rx_desc->u.qcn9625_compact_v1.msdu_end.cce_metadata);
 	rx_info->cce_match =
@@ -891,6 +902,17 @@ void ath12k_wifi8_hal_extract_rx_spd_data_qcn9625_v1(struct hal_rx_spd_data *rx_
 	rx_info->rx_mpdu_info.flow_info.flow_metadata =
 		le16_get_bits(rx_desc->u.qcn9625_compact_v1.msdu_end.fse_metadata,
 			      ATH12K_DP_RX_FSE_FLOW_METADATA_MASK);
+	rx_info->key_id_octate =
+		le32_get_bits(rx_desc->u.qcn9625_compact_v1.mpdu_start.info4,
+			      RX_MPDU_INFO_INFO4_KEY_ID_OCTET_V1) & 0x3;
+
+	ether_addr_copy(rx_info->ad1,
+			rx_desc->u.qcn9625_compact_v1.mpdu_start.addr1);
+
+	if (le32_get_bits(rx_desc->u.qcn9625_compact_v1.mpdu_start.info2,
+			  RX_MPDU_INFO_INFO2_MAC_ADDR_AD2_VALID_V1))
+		ether_addr_copy(rx_info->ad2,
+				rx_desc->u.qcn9625_compact_v1.mpdu_start.addr2);
 }
 
 /* -----------------------------------------------------------------------
