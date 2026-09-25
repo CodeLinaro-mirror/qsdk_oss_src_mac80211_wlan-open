@@ -4202,6 +4202,42 @@ void ieee80211_punct_obj_init(struct ieee80211_local *local,
 	wiphy_work_init(&obj->cac_work, ieee80211_punct_cac_work);
 }
 
+/**
+ * ieee80211_punct_obj_add() - allocate and register a puncture object
+ * @local: mac80211 hw info struct
+ * @ctx: channel context that owns the puncture object
+ * @freq: center frequency of the punctured 20 MHz subchannel, in MHz
+ * @ts: puncture creation timestamp, in jiffies
+ *
+ * Allocate, initialize and register a new puncture tracking object for
+ * the specified 20 MHz subchannel. The new object is added to the
+ * channel context's puncture object list.
+ *
+ * Return: Pointer to the newly created puncture object on success, or
+ * %NULL if the per-channel-context object limit has been reached or
+ * memory allocation fails.
+ */
+static struct ieee80211_punct_obj *
+ieee80211_punct_obj_add(struct ieee80211_local *local,
+			struct ieee80211_chanctx *ctx,
+			u32 freq, unsigned long ts)
+{
+	struct ieee80211_punct_obj *new_obj;
+
+	if (ctx->punct_obj_count >= IEEE80211_MAX_PUNCT_OBJS)
+		return NULL;
+
+	new_obj = kzalloc(sizeof(*new_obj), GFP_KERNEL);
+	if (!new_obj)
+		return NULL;
+
+	ieee80211_punct_obj_init(local, ctx, new_obj, freq, ts);
+	list_add_tail(&new_obj->list, &ctx->punct_obj_list);
+	ctx->punct_obj_count++;
+
+	return new_obj;
+}
+
 void ieee80211_punct_obj_free(struct ieee80211_local *local,
 			      struct ieee80211_chanctx *ctx,
 			      struct ieee80211_punct_obj *obj)
@@ -4423,7 +4459,7 @@ void ieee80211_punct_radar_update(struct ieee80211_local *local,
 	radar_hit_ts = jiffies;
 	start_freq = KHZ_TO_MHZ(cfg80211_get_start_freq(chandef, 1));
 	for (bit = 0; bit < IEEE80211_MAX_20MHZ_SUBCHANS; bit++) {
-		struct ieee80211_punct_obj *new_obj, *existing_obj;
+		struct ieee80211_punct_obj *existing_obj;
 
 		if (!(radar_bitmap & BIT(bit)))
 			continue;
@@ -4439,16 +4475,8 @@ void ieee80211_punct_radar_update(struct ieee80211_local *local,
 			continue;
 		}
 
-		if (ctx->punct_obj_count >= IEEE80211_MAX_PUNCT_OBJS)
+		if (!ieee80211_punct_obj_add(local, ctx, freq, radar_hit_ts))
 			continue;
-
-		new_obj = kzalloc(sizeof(*new_obj), GFP_KERNEL);
-		if (!new_obj)
-			continue;
-
-		ieee80211_punct_obj_init(local, ctx, new_obj, freq, radar_hit_ts);
-		list_add_tail(&new_obj->list, &ctx->punct_obj_list);
-		ctx->punct_obj_count++;
 	}
 }
 
@@ -4502,6 +4530,40 @@ void ieee80211_start_punctured_cac(struct wiphy *wiphy,
 				      ms_to_ktime(cac_time),
 				      HRTIMER_MODE_REL);
 		}
+	}
+}
+
+void ieee80211_create_punct_objs_for_nol_chans(struct ieee80211_local *local,
+					       struct ieee80211_chanctx *ctx)
+{
+	struct cfg80211_chan_def *def = &ctx->conf.def;
+	u32 start_freq;
+	unsigned long ts;
+	int bit;
+
+	lockdep_assert_wiphy(local->hw.wiphy);
+	if (!def->chan || !def->punctured)
+		return;
+
+	ts = jiffies;
+	start_freq = KHZ_TO_MHZ(cfg80211_get_start_freq(def, 1));
+	for (bit = 0; bit < IEEE80211_MAX_20MHZ_SUBCHANS; bit++) {
+		struct ieee80211_channel *sub_chan;
+		u32 freq;
+
+		if (!(def->punctured & BIT(bit)))
+			continue;
+
+		freq = start_freq + bit * 20;
+		if (ieee80211_punct_obj_find_in_ctx(ctx, freq))
+			continue;
+
+		sub_chan = ieee80211_get_channel(local->hw.wiphy, freq);
+		if (!sub_chan || sub_chan->dfs_state != NL80211_DFS_UNAVAILABLE)
+			continue;
+
+		if (!ieee80211_punct_obj_add(local, ctx, freq, ts))
+			continue;
 	}
 }
 
