@@ -30,7 +30,6 @@ const struct ath12k_dp_arch_mon_ops ath12k_wifi8_dp_arch_mon_dual_ring_ops = {
 	.mon_pdev_rx_srng_cleanup = ath12k_dp_mon_pdev_rx_srng_cleanup,
 	.mon_pdev_rx_htt_srng_setup = ath12k_dp_mon_pdev_rx_htt_srng_setup,
 	.mon_pdev_rx_attach = ath12k_dp_mon_pdev_rx_attach,
-	.mon_pdev_rx_mpdu_list_init = ath12k_dp_mon_pdev_rx_mpdu_list_init,
 	.rx_filter_alloc = ath12k_dp_mon_rx_filter_alloc,
 	.rx_filter_free = ath12k_dp_mon_rx_filter_free,
 	.rx_stats_enable = ath12k_dp_mon_rx_stats_enable,
