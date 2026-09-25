@@ -1715,6 +1715,47 @@ int ath12k_wifi8_dp_ppeds_get_bank_lmac_id(struct ath12k_base *ab,
 	return 0;
 }
 
+ssize_t ath12k_wifi8_dp_ppeds_dump_srng_stats(struct ath12k_dp *dp,
+					    const struct ath12k_srng_dump_filter *filter,
+					    char *buf, int size)
+{
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
+	int len = 0, idx;
+	struct ath12k_base *ab = dp->ab;
+	u32 ring_id;
+
+	for (idx = 0; idx < ath12k_ppeds_ppe2tcl_rings_max; idx++)
+		len += ath12k_hal_dump_ring_stats(ab, HAL_PPE2TCL,
+						  dp->ppe.ppe2tcl_ring[idx].ring_id,
+						  filter, buf + len, size - len);
+
+	for (idx = 0; idx < ath12k_ppeds_reo2ppe_rings_max; idx++)
+		len += ath12k_hal_dump_ring_stats(ab, HAL_REO2PPE,
+						  dp->ppe.reo2ppe_ring[idx].ring_id,
+						  filter, buf + len, size - len);
+
+	if (dp->ppe.hw_buff_mgmt)
+		len += ath12k_hal_dump_ring_stats(ab, HAL_TQM2PPE,
+						  dp->ppe.tqm2ppe_txcmp_ring.ring_id,
+						  filter, buf + len, size - len);
+
+	if (dp_wifi8->dp_ppe2wbm_use_dedicated_pool) {
+		for (idx = 0; idx < DP_PPE2WBM_REFILL_RING_MAX; idx++) {
+			ring_id = dp_wifi8->ppe2wbm_refill_ring[idx].ring_id;
+			len += ath12k_hal_dump_ring_stats(ab, HAL_PPE2WBM_BUF,
+							  ring_id, filter,
+							  buf + len, size - len);
+		}
+	}
+
+	ring_id = dp->ppe.ppeds_comp_ring.ppeds_txcmpl_ring.ring_id;
+	len += ath12k_hal_dump_ring_stats(ab, HAL_TX_COMPLETION,
+					  ring_id, filter,
+					  buf + len, size - len);
+
+	return len;
+}
+
 struct ath12k_ppeds_arch_ops ath12k_wifi8_arch_ppeds_ops  = {
 	.ath12k_ppeds_ppe2tcl_irq_handler = ath12k_wifi8_ds_ppe2tcl_irq_handler,
 	.ath12k_ppeds_reo2ppe_irq_handler = ath12k_wifi8_ds_reo2ppe_irq_handler,
@@ -1738,4 +1779,6 @@ struct ath12k_ppeds_arch_ops ath12k_wifi8_arch_ppeds_ops  = {
 				ath12k_wifi8_dp_ppeds_get_vp_profile_from_idx,
 	.ath12k_dp_ppeds_get_bank_lmac_id =
 				ath12k_wifi8_dp_ppeds_get_bank_lmac_id,
+	.ath12k_dp_ppeds_dump_srng_stats =
+				ath12k_wifi8_dp_ppeds_dump_srng_stats,
 };

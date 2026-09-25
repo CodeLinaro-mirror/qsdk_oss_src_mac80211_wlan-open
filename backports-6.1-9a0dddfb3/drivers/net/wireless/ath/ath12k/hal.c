@@ -1320,40 +1320,146 @@ void ath12k_hal_get_sw_hptp(struct hal_srng *srng, uint32_t *hp, uint32_t *tp)
         }
 }
 
-ssize_t ath12k_hal_dump_ring_stats(struct ath12k_base *ab, enum hal_ring_type type,
-				int ring_id, char *buf, int size)
+static inline void
+ath12k_hal_srng_dump_filter_init(struct ath12k_srng_dump_filter *filter,
+				 u32 mask)
 {
+	filter->dump_all = !mask;
 
+	if (mask) {
+		filter->dp_tx_dump =
+			(mask & ATH12K_SRNG_DUMP_DP_TX_SW ?
+			 ATH12K_SRNG_DUMP_SW : 0) |
+			(mask & ATH12K_SRNG_DUMP_DP_TX_HW ?
+			 ATH12K_SRNG_DUMP_HW : 0);
+		filter->dp_rx_dump =
+			(mask & ATH12K_SRNG_DUMP_DP_RX_SW ?
+			 ATH12K_SRNG_DUMP_SW : 0) |
+			(mask & ATH12K_SRNG_DUMP_DP_RX_HW ?
+			 ATH12K_SRNG_DUMP_HW : 0);
+		filter->dp_ppeds_dump =
+			(mask & ATH12K_SRNG_DUMP_DP_PPEDS_SW ?
+			 ATH12K_SRNG_DUMP_SW : 0) |
+			(mask & ATH12K_SRNG_DUMP_DP_PPEDS_HW ?
+			 ATH12K_SRNG_DUMP_HW : 0);
+	}
+}
+
+static bool
+ath12k_hal_srng_ring_id_matches(const struct dp_srng *srng, int ring_id)
+{
+	return srng->vaddr_unaligned && srng->ring_id == ring_id;
+}
+
+static inline u8
+ath12k_hal_srng_dump_flags_for_type(struct ath12k_base *ab,
+				    const struct ath12k_srng_dump_filter *filter,
+				    enum hal_ring_type type, int ring_id)
+{
+	struct ath12k_dp *dp = ab->dp;
+	int i;
+
+	if (filter->dump_all)
+		return ATH12K_SRNG_DUMP_BOTH;
+
+	switch (type) {
+	case HAL_TCL_DATA:
+	case HAL_TX_EXCEPTION:
+		return filter->dp_tx_dump;
+
+	case HAL_REO_DST:
+	case HAL_REO_DST_ROAMING:
+	case HAL_REO_EXCEPTION:
+	case HAL_REO_REINJECT:
+		return filter->dp_rx_dump;
+
+	case HAL_RXDMA_BUF:
+	case HAL_WBM_BUF:
+		return filter->dp_rx_dump | filter->dp_ppeds_dump;
+
+	case HAL_WBM_IDLE_LINK:
+		return filter->dp_tx_dump | filter->dp_rx_dump;
+
+	case HAL_PPE2TCL:
+	case HAL_REO2PPE:
+	case HAL_TQM2PPE:
+	case HAL_PPE2WBM_BUF:
+		return filter->dp_ppeds_dump;
+
+	case HAL_TX_COMPLETION:
+	case HAL_WBM2SW_RELEASE:
+		if (ath12k_hal_srng_ring_id_matches(&dp->rx_rel_ring, ring_id))
+			return filter->dp_rx_dump;
+
+		if (ath12k_hal_srng_ring_id_matches(
+				&dp->ppe.ppeds_comp_ring.ppeds_txcmpl_ring, ring_id))
+			return filter->dp_ppeds_dump;
+
+		for (i = 0; i < ab->hw_params->max_tx_ring; i++) {
+			if (ath12k_hal_srng_ring_id_matches(
+					&dp->tx_ring[i].tcl_comp_ring, ring_id))
+				return filter->dp_tx_dump;
+		}
+
+		return 0;
+
+	default:
+		return 0;
+	}
+}
+
+ssize_t ath12k_hal_dump_ring_stats(struct ath12k_base *ab,
+				   enum hal_ring_type type,
+				   int ring_id,
+				   const struct ath12k_srng_dump_filter *filter,
+				   char *buf, int size)
+{
 	struct ath12k_hal *hal = &ab->hal;
 	struct hal_srng *srng;
 	u32 tp, hp, ring_usage;
 	int hw_hp = -1, hw_tp = -1;
 	const char *ring_name;
 	int len = 0;
+	int entry_size = 0;
+	u8 ring_dump_flags;
+
+	ring_dump_flags = filter ?
+		ath12k_hal_srng_dump_flags_for_type(ab, filter, type, ring_id) :
+		ATH12K_SRNG_DUMP_BOTH;
+	if (!ring_dump_flags)
+		return 0;
 
 	srng = &hal->srng_list[ring_id];
 
 	spin_lock_bh(&srng->lock);
 	if (srng && srng->initialized) {
 		ring_name = hal->srng_config[type].name;
+		entry_size = ath12k_hal_srng_get_entrysize(ab, type);
 
-		ath12k_hal_get_sw_hptp(srng, &hp, &tp);
-		ring_usage = ath12k_hal_get_ring_usage(hal, srng, type, &hp, &tp);
-		len += scnprintf(buf + len, size - len,
-				 "%-20s %-20s %10d %10d %12u %12u\n",
-				 ring_name, "SW ", hp, tp, ring_usage,
-				 jiffies_to_msecs(jiffies - srng->timestamp));
-
-		ath12k_hal_get_hw_hptp(ab, type, srng, &hw_hp, &hw_tp);
-		ring_usage = 0;
-
-		if (hw_hp >= 0 && hw_tp >= 0)
+		if (ring_dump_flags & ATH12K_SRNG_DUMP_SW) {
+			ath12k_hal_get_sw_hptp(srng, &hp, &tp);
 			ring_usage = ath12k_hal_get_ring_usage(hal, srng, type,
-					&hw_hp, &hw_tp);
-		len += scnprintf(buf + len, size - len,
-				 "%-20s %-20s %10d %10d %12u %12u\n",
-				 ring_name, "HW ", hw_hp, hw_tp, ring_usage,
-				 jiffies_to_msecs(jiffies - srng->timestamp));
+							&hp, &tp);
+			len += scnprintf(buf + len, size - len,
+					 "%-20s %-20s %10d %12u %10d %10d %12u %12u\n",
+					 ring_name, "SW ", entry_size,
+					 srng->num_entries, hp, tp, ring_usage,
+					 jiffies_to_msecs(jiffies - srng->timestamp));
+		}
+
+		if (ring_dump_flags & ATH12K_SRNG_DUMP_HW) {
+			ath12k_hal_get_hw_hptp(ab, type, srng, &hw_hp, &hw_tp);
+			ring_usage = 0;
+
+			if (hw_hp >= 0 && hw_tp >= 0)
+				ring_usage = ath12k_hal_get_ring_usage(hal, srng, type,
+								       &hw_hp, &hw_tp);
+			len += scnprintf(buf + len, size - len,
+					 "%-20s %-20s %10d %12u %10d %10d %12u %12u\n",
+					 ring_name, "HW ", entry_size,
+					 srng->num_entries, hw_hp, hw_tp, ring_usage,
+					 jiffies_to_msecs(jiffies - srng->timestamp));
+		}
 	}
 	spin_unlock_bh(&srng->lock);
 	return len;
@@ -1414,82 +1520,96 @@ ssize_t ath12k_debugfs_hal_dump_srng_stats(struct ath12k_base *ab, char *buf, in
 	struct ath12k_ce_pipe *ce_pipe;
 	int len = 0, ring_id;
 	u32 i, pdev;
+	struct ath12k_srng_dump_filter filter;
 
-	len += scnprintf(buf + len, size - len, "Last interrupt received for each CE:\n");
-	for (i = 0; i < ab->hw_params->ce_count; i++) {
-		ce_pipe = &ab->ce.ce_pipe[i];
+	ath12k_hal_srng_dump_filter_init(&filter,
+					 READ_ONCE(dp->srng_dump_mask));
 
-		if (ath12k_ce_get_attr_flags(ab, i) & CE_ATTR_DIS_INTR)
+	if (filter.dump_all) {
+		len += scnprintf(buf + len, size - len,
+				 "Last interrupt received for each CE:\n");
+		for (i = 0; i < ab->hw_params->ce_count; i++) {
+			ce_pipe = &ab->ce.ce_pipe[i];
+
+			if (ath12k_ce_get_attr_flags(ab, i) & CE_ATTR_DIS_INTR)
 				continue;
 
-		spin_lock_bh(&ab->ce.ce_lock);
+			spin_lock_bh(&ab->ce.ce_lock);
+			len += scnprintf(buf + len, size - len,
+					"CE_id %d pipe_num %d %ums before ce_manual_poll_count %d ",
+					i, ce_pipe->pipe_num,
+					jiffies_to_msecs(jiffies - ce_pipe->timestamp),
+					ce_pipe->ce_manual_poll_count);
+			len += scnprintf(buf + len, size - len,
+					"ce_last_manual_tasklet_schedule_ts %ums before\n",
+					jiffies_to_msecs(jiffies -
+							ce_pipe->last_ce_manual_poll_ts));
+			spin_unlock_bh(&ab->ce.ce_lock);
+		}
+
 		len += scnprintf(buf + len, size - len,
-				"CE_id %d pipe_num %d %ums before ce_manual_poll_count %d ce_last_manual_tasklet_schedule_ts %ums before\n",
-				i, ce_pipe->pipe_num,
-				jiffies_to_msecs(jiffies - ce_pipe->timestamp),
-				ce_pipe->ce_manual_poll_count,
-				jiffies_to_msecs(jiffies - ce_pipe->last_ce_manual_poll_ts));
-		spin_unlock_bh(&ab->ce.ce_lock);
+				"\nLast interrupt received for each group:\n");
+		len += scnprintf(buf + len, size - len,
+			 "%5s %20s\n", "group_id", "delay in ms");
+		for (i = 0; i < ab->hw_params->ext_irq_grp_num_max; i++) {
+			irq_grp = &ab->ext_irq_grp[i];
+			len += scnprintf(buf + len, size - len, "%-20d  %-20u\n",
+					irq_grp->grp_id,
+					jiffies_to_msecs(jiffies - irq_grp->timestamp));
+		}
 	}
 
-	len += scnprintf(buf + len, size - len, "\nLast interrupt received for each group:\n");
-	len += scnprintf(buf + len, size - len, "%5s %20s\n", "group_id", "delay in ms");
-	for (i = 0; i < ab->hw_params->ext_irq_grp_num_max; i++) {
-		irq_grp = &ab->ext_irq_grp[i];
-		len += scnprintf(buf + len, size - len, "%-20d  %-20u\n",
-				 irq_grp->grp_id,
-				 jiffies_to_msecs(jiffies - irq_grp->timestamp));
-	}
-
-	len += scnprintf(buf + len, size - len, "%-20s %-20s %10s %10s %12s %12s\n",
-			 "Ring Name", "SW/HW", "Head",
+	len += scnprintf(buf + len, size - len,
+			 "%-20s %-20s %10s %12s %10s %10s %12s %12s\n",
+			 "Ring Name", "SW/HW", "Desc Size", "Num Entries", "Head",
 			 "Tail", "Ring Usage", "napi processed before ms");
 
 	/*umac rings*/
 	len += ath12k_hal_dump_ring_stats(ab, HAL_WBM_IDLE_LINK,
-			dp->wbm_idle_ring.ring_id,
+			dp->wbm_idle_ring.ring_id, &filter,
 			buf + len, size - len);
 
 	len += ath12k_hal_dump_ring_stats(ab, HAL_REO_EXCEPTION,
-			dp->reo_except_ring.ring_id,
+			dp->reo_except_ring.ring_id, &filter,
 			buf + len, size - len);
 
 	len += ath12k_hal_dump_ring_stats(ab, HAL_REO_REINJECT,
-			dp->reo_reinject_ring.ring_id,
+			dp->reo_reinject_ring.ring_id, &filter,
 			buf + len, size - len);
 
 	len += ath12k_hal_dump_ring_stats(ab, HAL_REO_CMD,
-			dp->reo_cmd_ring.ring_id,
+			dp->reo_cmd_ring.ring_id, &filter,
 			buf + len, size - len);
 
 	len += ath12k_hal_dump_ring_stats(ab, HAL_REO_STATUS,
-			dp->reo_status_ring.ring_id,
+			dp->reo_status_ring.ring_id, &filter,
 			buf + len, size - len);
 
 	len += ath12k_hal_dump_ring_stats(ab, HAL_SW2WBM_RELEASE,
-			dp->wbm_desc_rel_ring.ring_id,
+			dp->wbm_desc_rel_ring.ring_id, &filter,
 			buf + len, size - len);
 
 	for (i = 0; i < ATH12K_DP_RX_REGULAR_RING_MAX; i++)
 		len += ath12k_hal_dump_ring_stats(ab, HAL_REO_DST,
-				dp->reo_dst_ring[i].ring_id,
+				dp->reo_dst_ring[i].ring_id, &filter,
 				buf + len, size - len);
 
 	if (dp->reo_dst_ring[ATH12K_DP_RX_ROAMING_RING1].vaddr_unaligned) {
 		ring_id = dp->reo_dst_ring[ATH12K_DP_RX_ROAMING_RING1].ring_id;
 		len += ath12k_hal_dump_ring_stats(ab, HAL_REO_DST_ROAMING, ring_id,
-						  buf + len, size - len);
+				&filter, buf + len, size - len);
 	}
 
 	for (i = 0; i < ab->hw_params->max_tx_ring; i++)
 		len += ath12k_hal_dump_ring_stats(ab, HAL_TCL_DATA,
 				dp->tx_ring[i].tcl_data_ring.ring_id,
-				buf + len, size - len);
+				&filter, buf + len, size - len);
 
 	if (likely(dp->dp_mon)) {
 		ring_id = dp->dp_mon->rxdma_mon_buf_ring.refill_buf_ring.ring_id;
-		len += ath12k_hal_dump_ring_stats(ab, HAL_RXDMA_MONITOR_BUF, ring_id,
-						  buf + len, size - len);
+		len += ath12k_hal_dump_ring_stats(ab,
+				HAL_RXDMA_MONITOR_BUF, ring_id, &filter,
+				buf + len, size - len);
 	}
 
 	for (pdev = 0; pdev < ab->hw_params->max_radios; pdev++) {
@@ -1501,24 +1621,37 @@ ssize_t ath12k_debugfs_hal_dump_srng_stats(struct ath12k_base *ab, char *buf, in
 		}
 		dp_mon_pdev = dp_pdev->dp_mon_pdev;
 		for (i = 0; i < ab->hw_params->num_rxdma_per_pdev; i++) {
-			len += ath12k_hal_dump_ring_stats(ab, HAL_RXDMA_MONITOR_DST,
-				dp_mon_pdev->rxdma_mon_dst_ring[i].ring_id,
-				buf + len, size - len);
+			len += ath12k_hal_dump_ring_stats(ab,
+					HAL_RXDMA_MONITOR_DST,
+					dp_mon_pdev->rxdma_mon_dst_ring[i].ring_id,
+					&filter, buf + len, size - len);
 		}
 		rcu_read_unlock();
 	}
 
 	for (i = 0; i < ab->hw_params->num_rxdma_dst_ring; i++)
 		len += ath12k_hal_dump_ring_stats(ab, HAL_RXDMA_DST,
-			dp->rxdma_err_dst_ring[i].ring_id,
-			buf + len, size - len);
+				dp->rxdma_err_dst_ring[i].ring_id,
+				&filter, buf + len, size - len);
 
 	if (dp->arch_ops->dump_srng_stats)
-		len += dp->arch_ops->dump_srng_stats(dp, buf + len, size - len);
+		len += dp->arch_ops->dump_srng_stats(dp, &filter,
+				buf + len, size - len);
 
-	if (mgmt && mgmt->arch_ops->mgmt_op_dump_ring_stats)
-		len += mgmt->arch_ops->mgmt_op_dump_ring_stats(mgmt, buf + len,
-							       size - len);
+	if (filter.dump_all && mgmt &&
+	    mgmt->arch_ops->mgmt_op_dump_ring_stats)
+		len += mgmt->arch_ops->mgmt_op_dump_ring_stats(mgmt, &filter,
+							       buf + len, size - len);
+
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	if (dp->ppe.ppe_ops &&
+	    test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags) &&
+	    dp->ppe.ppe_ops->ath12k_dp_ppeds_dump_srng_stats)
+		len += dp->ppe.ppe_ops->ath12k_dp_ppeds_dump_srng_stats(dp,
+				&filter,
+				buf + len,
+				size - len);
+#endif
 
 	return len;
 }

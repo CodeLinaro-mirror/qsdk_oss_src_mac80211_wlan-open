@@ -8090,6 +8090,7 @@ void ath12k_debugfs_register(struct ath12k *ar)
 }
 
 struct ath12k_srng_stats_priv {
+	struct ath12k_base *ab;
 	char *buf;
 	int len;
 };
@@ -8109,14 +8110,19 @@ static int ath12k_debugfs_hal_dump_srng_stats_open(struct inode *inode, struct f
 	if (!priv)
 		return -ENOMEM;
 
-	priv->buf = vmalloc(size);
-	if (!priv->buf) {
-		kfree(priv);
-		return -ENOMEM;
-	}
+	priv->ab = ab;
 
-	priv->len = ath12k_debugfs_hal_dump_srng_stats(ab, priv->buf, size);
-	priv->len = min_t(int, priv->len, size);
+	if (file->f_mode & FMODE_READ) {
+		priv->buf = vmalloc(size);
+		if (!priv->buf) {
+			kfree(priv);
+			return -ENOMEM;
+		}
+
+		priv->len = ath12k_debugfs_hal_dump_srng_stats(ab,
+							       priv->buf, size);
+		priv->len = min_t(int, priv->len, size);
+	}
 
 	file->private_data = priv;
 
@@ -8124,12 +8130,38 @@ static int ath12k_debugfs_hal_dump_srng_stats_open(struct inode *inode, struct f
 }
 
 static ssize_t ath12k_debugfs_hal_dump_srng_stats_read(struct file *file,
-                                               char __user *user_buf,
-                                               size_t count, loff_t *ppos)
+						       char __user *user_buf,
+						       size_t count, loff_t *ppos)
 {
 	struct ath12k_srng_stats_priv *priv = file->private_data;
 
-	return simple_read_from_buffer(user_buf, count, ppos, priv->buf, priv->len);
+	if (!priv->buf)
+		return -EINVAL;
+
+	return simple_read_from_buffer(user_buf, count, ppos,
+					       priv->buf, priv->len);
+}
+
+static ssize_t ath12k_debugfs_hal_dump_srng_stats_write(struct file *file,
+							const char __user *user_buf,
+							size_t count, loff_t *ppos)
+{
+	struct ath12k_srng_stats_priv *priv = file->private_data;
+	struct ath12k_base *ab = priv->ab;
+	u32 mask;
+
+	if (!ab || !ab->dp)
+		return -ENODEV;
+
+	if (kstrtou32_from_user(user_buf, count, 0, &mask))
+		return -EINVAL;
+
+	if (mask & ~ATH12K_SRNG_DUMP_MASK_VALID)
+		return -EINVAL;
+
+	WRITE_ONCE(ab->dp->srng_dump_mask, mask);
+
+	return count;
 }
 
 static int ath12k_debugfs_hal_dump_srng_stats_release(struct inode *inode,
@@ -8145,6 +8177,7 @@ static int ath12k_debugfs_hal_dump_srng_stats_release(struct inode *inode,
 
 static const struct file_operations fops_dump_hal_stats = {
 	.read = ath12k_debugfs_hal_dump_srng_stats_read,
+	.write = ath12k_debugfs_hal_dump_srng_stats_write,
 	.open = ath12k_debugfs_hal_dump_srng_stats_open,
 	.release = ath12k_debugfs_hal_dump_srng_stats_release,
 	.owner = THIS_MODULE,
