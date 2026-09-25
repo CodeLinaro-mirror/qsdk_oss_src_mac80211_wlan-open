@@ -472,6 +472,7 @@ static void ath12k_dp_rx_enqueue_free(struct ath12k_dp *dp,
 							     DMA_FROM_DEVICE);
 #endif
 
+			rx_desc->skb = NULL;
 			dev_kfree_skb_any(skb);
 		}
 		dp->device_stats.free_excess_alloc_skb++;
