@@ -2950,6 +2950,7 @@ static void ieee80211_csa_switch_work(struct wiphy *wiphy,
 	}
 
 	link->u.mgd.csa.waiting_bcn = true;
+	link->u.mgd.beacon_crc_valid = false;
 
 	/* apply new TPE restrictions immediately on the new channel */
 	if (link->u.mgd.csa.ap_chandef.chan->band == NL80211_BAND_6GHZ &&
