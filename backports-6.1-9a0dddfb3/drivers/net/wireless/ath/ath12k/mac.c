@@ -33867,7 +33867,8 @@ int ath12k_mac_dynamic_wsi_remap(struct ath12k_base *ab)
 
 	if (!ah) {
 		ath12k_err(ab, "Failed to find hw, Dynamic remap failed\n");
-		return -EINVAL;
+		ret = -EINVAL;
+		goto fail;
 	}
 	wiphy = ah->hw->wiphy;
 
@@ -33911,7 +33912,8 @@ int ath12k_mac_dynamic_wsi_remap(struct ath12k_base *ab)
 		if (!time_left) {
 			ath12k_err(ab, "peer cleanup didn't get completed within %lld ms, pending peers %d\n",
 				   ag->wsi_peer_clean_timeout, ah->num_ml_peers);
-			return -ETIMEDOUT;
+			ret = -ETIMEDOUT;
+			goto fail;
 		}
 	} else {
 		ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS,
@@ -33947,6 +33949,11 @@ int ath12k_mac_dynamic_wsi_remap(struct ath12k_base *ab)
 
 	ret = ath12k_core_dynamic_wsi_remap(ab);
 
+	return ret;
+
+fail:
+	if (ag->wsi_remap_in_progress)
+		ag->wsi_remap_in_progress = false;
 	return ret;
 }
 

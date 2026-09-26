@@ -7086,7 +7086,9 @@ int ath12k_core_dynamic_wsi_remap(struct ath12k_base *ab)
 			goto fail;
 	}
 
+	return ret;
 fail:
+	ab->ag->wsi_remap_in_progress = false;
 	return ret;
 }
 
