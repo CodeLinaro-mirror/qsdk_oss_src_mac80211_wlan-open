@@ -6456,8 +6456,9 @@ static struct ath12k_hw_group *ath12k_core_hw_group_alloc(struct ath12k_base *ab
 
 #ifdef CPTCFG_ATH12K_PRPL
 	ag->power_save_mode = false;
-#endif
+#else
 	ag->power_save_mode = true;
+#endif
 
 	ag->user_selected_recovery_mode = ATH12K_FW_RECOVERY_ENABLE_MODE2;
 	return ag;

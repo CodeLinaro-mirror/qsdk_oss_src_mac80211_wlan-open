@@ -3040,7 +3040,8 @@ int ath12k_wifi7_dp_pdev_alloc(struct ath12k_base *ab)
 		dp_pdev->hw_link_id = ar->hw_link_id;
 
 		/* Restore dp_stats_mask from INI to persist value across reboots */
-		ar->dp.dp_stats_mask = DP_STATS_MASK;
+		if (!test_bit(ATH12K_GROUP_FLAG_HIF_POWER_DOWN, &ab->ag->flags))
+			ar->dp.dp_stats_mask = DP_STATS_MASK;
 
 		if (!dp_pdev->dp_mon_pdev_configured) {
 			ret = ath12k_dp_mon_pdev_init(dp_pdev);
