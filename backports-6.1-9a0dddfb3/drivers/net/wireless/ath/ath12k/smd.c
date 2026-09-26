@@ -1439,6 +1439,8 @@ int ath12k_smd_post_sta_session_ctx_req(struct ath12k_vif *ahvif,
 	dp_ctx.in.rx_tid_bitmap = bitmap_read(req->ctx.ul.valid_tid_bmap,
 					      0, IEEE80211_MAX_NUM_TIDS);
 	dp_ctx.in.rx_tid_bitmap |= BIT(ATH12K_SMD_RX_MGMT_TID);
+	dp_ctx.in.clear_rx_vld =
+		req->type == IEEE80211_UHR_LINK_RECONF_TYPE_ST_EXEC;
 
 	if (test_bit(ATH12K_SMD_CTX_VALID_BA_PARAMS, req->ctx.valid_ctx_bmap)) {
 		dl_sn_transfer =
