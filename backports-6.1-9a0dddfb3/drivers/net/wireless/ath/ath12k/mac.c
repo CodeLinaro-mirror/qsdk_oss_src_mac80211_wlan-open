@@ -29310,6 +29310,8 @@ int ath12k_mac_handle_rf_path_switch(struct ath12k *ar, u32 rf_path_index)
 	ar->chan_info.high_freq = freq_high;
 	ar->freq_range.start_freq = MHZ_TO_KHZ(freq_low);
 	ar->freq_range.end_freq   = MHZ_TO_KHZ(freq_high);
+	ar->hw_freq_range.start_freq = MHZ_TO_KHZ(freq_low);
+	ar->hw_freq_range.end_freq   = MHZ_TO_KHZ(freq_high);
 
 	ath12k_dbg(ab, ATH12K_DBG_MAC,
 		   "rf_path_switch: pdev %u Layer 2 updated freq [%u, %u] MHz\n",
@@ -30272,7 +30274,7 @@ static int ath12k_mac_setup_iface_combinations(struct ath12k_hw *ah)
 			goto err_free_radios;
 		}
 
-		radio[i].freq_range = &ar->freq_range;
+		radio[i].freq_range = &ar->hw_freq_range;
 		radio[i].n_freq_range = 1;
 
 		radio[i].iface_combinations = comb;
@@ -30708,6 +30710,61 @@ static u32 ath12k_mac_mapc_hw_cap_bitmap(struct ath12k_base *ab)
 	return bitmap;
 }
 
+/**
+ * ath12k_mac_update_hw_frequency - populate hardware frequency range
+ * @ar: radio context
+ *
+ * Build ar->hw_freq_range from the frequency limits advertised by firmware. This range
+ * describes the radio's hardware capability and remains independent of the active
+ * regulatory domain.
+ *
+ * For dual-band radios, the 2.4 GHz and 5/6 GHz ranges are merged using the lowest
+ * supported frequency and highest supported frequency so that the resulting range covers
+ * the full hardware capability.
+ */
+static void ath12k_mac_update_hw_frequency(struct ath12k *ar)
+{
+	struct ath12k_wmi_hal_reg_capabilities_ext_arg *reg_cap;
+	struct ath12k_base *ab = ar->ab;
+	u32 supported_bands;
+
+	supported_bands = ar->pdev->cap.supported_bands;
+	reg_cap = &ab->hal_reg_cap[ar->pdev_idx];
+
+	ar->hw_freq_range.start_freq = 0;
+	ar->hw_freq_range.end_freq = 0;
+
+	if (supported_bands & WMI_HOST_WLAN_2GHZ_CAP) {
+		ar->hw_freq_range.start_freq = MHZ_TO_KHZ(reg_cap->low_2ghz_chan);
+		ar->hw_freq_range.end_freq = MHZ_TO_KHZ(reg_cap->high_2ghz_chan);
+	}
+
+	if (supported_bands & WMI_HOST_WLAN_5GHZ_CAP) {
+		u32 reg_cap_5g_low = MHZ_TO_KHZ(reg_cap->low_5ghz_chan);
+		u32 reg_cap_5g_high = MHZ_TO_KHZ(reg_cap->high_5ghz_chan);
+
+		if (ar->hw_freq_range.start_freq)
+			ar->hw_freq_range.start_freq = min(ar->hw_freq_range.start_freq,
+							   reg_cap_5g_low);
+		else
+			ar->hw_freq_range.start_freq = reg_cap_5g_low;
+
+		if (ar->hw_freq_range.end_freq)
+			ar->hw_freq_range.end_freq = max(ar->hw_freq_range.end_freq,
+							 reg_cap_5g_high);
+		else
+			ar->hw_freq_range.end_freq = reg_cap_5g_high;
+	}
+
+	if (!ar->hw_freq_range.start_freq || !ar->hw_freq_range.end_freq)
+		ath12k_err(ab, "%s: invalid hw_freq_range start_freq %u end_freq %u\n",
+			   __func__,
+			   ar->hw_freq_range.start_freq, ar->hw_freq_range.end_freq);
+	else
+		ath12k_info(ab, "%s: start_freq : %u end_freq : %u\n", __func__,
+			    ar->hw_freq_range.start_freq, ar->hw_freq_range.end_freq);
+}
+
 static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 {
 	struct ieee80211_hw *hw = ah->hw;
@@ -30795,6 +30852,8 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 			mac_addr = ar->mac_addr;
 
 		mbssid_max_interfaces += ATH12K_MBSSID_MAX_INTERFACES;
+
+		ath12k_mac_update_hw_frequency(ar);
 	}
 
 	wiphy->available_antennas_rx = antennas_rx;
