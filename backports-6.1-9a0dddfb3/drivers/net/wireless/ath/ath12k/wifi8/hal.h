@@ -572,6 +572,23 @@ enum rdi_based_source_ring_selection {
 #define HAL_REO_FW_MGMT_ROUTING_CFG		0x1c90
 #define HAL_REO_RX_SDWF_CFG			0x1c94
 #define HAL_REO_BACKPRESSURE_DROP_EN		0x1c98
+
+/* REO PPE destination override field definitions */
+#define HAL_RE02PPE_OVERRIDE_RING		GENMASK(4, 0)
+#define HAL_RE02PPE1_OVERRIDE_RING		GENMASK(9, 5)
+#define HAL_RE02PPE2_OVERRIDE_RING		GENMASK(14, 10)
+
+/* HAL_REO_PPE_DEST_OVERRIDE_VAL
+ *
+ * REO2PPE  -> ring 1
+ * REO2PPE1 -> ring 2
+ * REO2PPE2 -> ring 3
+ */
+#define HAL_REO_PPE_DEST_OVERRIDE_VAL				\
+	(u32_encode_bits(HAL_SRNG_RING_ID_REO2SW1, HAL_RE02PPE_OVERRIDE_RING) | \
+	 u32_encode_bits(HAL_SRNG_RING_ID_REO2SW2, HAL_RE02PPE1_OVERRIDE_RING) | \
+	 u32_encode_bits(HAL_SRNG_RING_ID_REO2SW3, HAL_RE02PPE2_OVERRIDE_RING))
+
 /* Bit definitions for HAL_REO_BACKPRESSURE_DROP_EN
  * (UMAC_REO_R0_BACKPRESSURE_DROP_EN, full addr 0xF23C98)
  * Setting a bit enables backpressure-drop for the corresponding ring:
