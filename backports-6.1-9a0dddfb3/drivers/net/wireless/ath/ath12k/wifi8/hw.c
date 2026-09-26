@@ -944,9 +944,27 @@ static bool ath12k_wifi8_mac_is_mgmt_action_link_agnostic(struct ath12k_base *ab
 {
 	struct ieee80211_mgmt *mgmt = (struct ieee80211_mgmt *)skb->data;
 	const u8 *buf = (u8 *)&mgmt->u.action;
-	u8 category, action_code;
+	u8 category, action_code, iv_len;
 
-	buf += ath12k_mac_get_iv_len(skb);
+	/* Offset by iv_len if it is a protected frame */
+	if (ieee80211_has_protected(mgmt->frame_control)) {
+		switch (ATH12K_SKB_CB(skb)->cipher) {
+		case WLAN_CIPHER_SUITE_CCMP:
+		case WLAN_CIPHER_SUITE_CCMP_256:
+			iv_len = IEEE80211_CCMP_HDR_LEN;
+			break;
+		case WLAN_CIPHER_SUITE_GCMP:
+		case WLAN_CIPHER_SUITE_GCMP_256:
+			iv_len = IEEE80211_GCMP_HDR_LEN;
+			break;
+		default:
+			iv_len = 0;
+			break;
+		}
+
+		buf += iv_len;
+	}
+
 	category = *buf++;
 	action_code = *buf++;
 
