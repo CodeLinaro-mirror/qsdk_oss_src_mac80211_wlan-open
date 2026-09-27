@@ -13469,7 +13469,7 @@ skip_mgmt_stats:
 			goto exit;
 		}
 
-		sta = ath12k_ahsta_to_sta(arsta->ahsta);
+		sta = arsta->ahsta ? ath12k_ahsta_to_sta(arsta->ahsta) : NULL;
 
 		enc_assoc = sta && sta->epp_peer &&
 			    (ieee80211_is_assoc_req(hdr->frame_control) ||
