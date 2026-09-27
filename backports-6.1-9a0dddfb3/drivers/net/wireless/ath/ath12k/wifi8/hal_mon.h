@@ -873,19 +873,19 @@ struct hal_rx_ppdu_rtt_info {
 } __packed;
 
 #define MPDU_START_SELECT_INFO0_ENCYRPT_TYP                      BIT(1)
-#define MPDU_START_SELECT_INFO1_RA_BASED_MD                     BIT(3)
-#define MPDU_START_SELECT_INFO1_FC_ADDR2_DS_RETRY                BIT(4)
-#define MPDU_START_SELECT_INFO2                                  BIT(5)
-#define MPDU_START_SELECT_INFO3_INFO4                            BIT(6)
+#define MPDU_START_SELECT_INFO1_RA_BASED_MD                      BIT(3)
+#define MPDU_START_SELECT_INFO2_FC_ADDR2_DS_RETRY                BIT(4)
+#define MPDU_START_SELECT_INFO3                                  BIT(5)
+#define MPDU_START_SELECT_INFO4_INFO5                            BIT(6)
 #define MPDU_START_SELECT_FC                                     BIT(7)
 #define MPDU_START_SELECT_AD2                                    BIT(8)
 
 #define RX_MON_MPDU_START_WMASK \
 		(MPDU_START_SELECT_INFO0_ENCYRPT_TYP |                \
-		 MPDU_START_SELECT_INFO1_RA_BASED_MD |               \
-		 MPDU_START_SELECT_INFO1_FC_ADDR2_DS_RETRY |          \
-		 MPDU_START_SELECT_INFO2 |                            \
-		 MPDU_START_SELECT_INFO3_INFO4 |                      \
+		 MPDU_START_SELECT_INFO1_RA_BASED_MD |                \
+		 MPDU_START_SELECT_INFO2_FC_ADDR2_DS_RETRY |          \
+		 MPDU_START_SELECT_INFO3 |                            \
+		 MPDU_START_SELECT_INFO4_INFO5 |                      \
 		 MPDU_START_SELECT_FC |                               \
 		 MPDU_START_SELECT_AD2)
 
