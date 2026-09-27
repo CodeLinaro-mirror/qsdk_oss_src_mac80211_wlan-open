@@ -93,7 +93,6 @@ static int key_keyidx_open(struct inode *inode, struct file *file);
 KEY_CONF_READ_D(keyidx);
 #if LINUX_VERSION_IS_GEQ(6, 13, 0)
 static const struct debugfs_short_fops key_keyidx_ops = {
-	.open   = key_keyidx_open,
 	.read   = key_conf_keyidx_read,
 	.llseek = generic_file_llseek,
 };
