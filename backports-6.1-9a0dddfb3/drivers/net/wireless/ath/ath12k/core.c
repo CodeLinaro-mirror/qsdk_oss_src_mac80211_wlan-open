@@ -1369,6 +1369,9 @@ static void ath12k_core_stop(struct ath12k_base *ab)
 		ath12k_hif_stop(ab);
 	ath12k_wmi_detach(ab);
 	ath12k_mgmt_device_deinit(ab->mgmt);
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	ath12k_dp_ipa_uc_ol_deinit(ab);
+#endif
 	ath12k_dp_cmn_device_deinit(ab->dp);
 
 	/* De-Init of components as needed */
