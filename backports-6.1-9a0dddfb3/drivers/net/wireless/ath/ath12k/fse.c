@@ -143,8 +143,7 @@ int ath12k_sfe_add_flow_entry(void *ptr,
 	 * the FSE.  The hot-path guard ensures we only build the payload when
 	 * at least one listener is registered, keeping the fast path cheap.
 	 */
-	if (!ret &&
-	    ath12k_fse_update_notif_has_listeners()) {
+	if (!ret) {
 		struct ath12k_fse_update_event ev = {};
 
 		memcpy(ev.src_ip,  src_ip,  sizeof(ev.src_ip));
@@ -189,8 +188,7 @@ int ath12k_sfe_delete_flow_entry(void *ptr,
 	ret = ath12k_dp_rx_flow_delete_entry(ar->ab, &flow_info);
 
 	/* Notify external listeners that a flow has been removed from the FSE. */
-	if (!ret &&
-	    ath12k_fse_update_notif_has_listeners()) {
+	if (!ret) {
 		struct ath12k_fse_update_event ev = {};
 
 		memcpy(ev.src_ip,  src_ip,  sizeof(ev.src_ip));
