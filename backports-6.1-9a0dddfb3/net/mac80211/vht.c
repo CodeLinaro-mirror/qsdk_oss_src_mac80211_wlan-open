@@ -351,6 +351,7 @@ __ieee80211_sta_cap_rx_bw(struct link_sta_info *link_sta,
 	if (he_cap->has_he) {
 		enum nl80211_band band;
 		u8 info;
+		bool he_160_bw, he_4080_bw;
 
 		chan = chandef ? chandef->chan : NULL;
 		if (!chan) {
@@ -374,6 +375,11 @@ __ieee80211_sta_cap_rx_bw(struct link_sta_info *link_sta,
 
 		band = chan->band;
 
+		he_4080_bw = he_cap->he_cap_elem.phy_cap_info[0] &
+			     IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_40MHZ_80MHZ_IN_5G;
+		he_160_bw = he_cap->he_cap_elem.phy_cap_info[0] &
+			    IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_160MHZ_IN_5G;
+
  		/* TODO: 5GHz is reusing the same PHY capability
 		 * to advertise the 320MHz support. Removind band
 		 * specific check for now.
@@ -381,8 +387,12 @@ __ieee80211_sta_cap_rx_bw(struct link_sta_info *link_sta,
 		if (eht_cap->has_eht && band != NL80211_BAND_2GHZ) {
 			info = eht_cap->eht_cap_elem.phy_cap_info[0];
 
-			if (info & IEEE80211_EHT_PHY_CAP0_320MHZ_IN_6GHZ)
+			if (info & IEEE80211_EHT_PHY_CAP0_320MHZ_IN_6GHZ) {
+				if (!he_4080_bw || !he_160_bw)
+					return IEEE80211_STA_RX_BW_20;
+
 				return IEEE80211_STA_RX_BW_320;
+			}
 		}
 
 		info = he_cap->he_cap_elem.phy_cap_info[0];
@@ -393,11 +403,11 @@ __ieee80211_sta_cap_rx_bw(struct link_sta_info *link_sta,
 			return IEEE80211_STA_RX_BW_20;
 		}
 
-		if (info & IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_160MHZ_IN_5G ||
+		if (he_160_bw ||
 		    info & IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_80PLUS80_MHZ_IN_5G)
 			return IEEE80211_STA_RX_BW_160;
 
-		if (info & IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_40MHZ_80MHZ_IN_5G)
+		if (he_4080_bw)
 			return IEEE80211_STA_RX_BW_80;
 
 		return IEEE80211_STA_RX_BW_20;
