@@ -33941,6 +33941,7 @@ int ath12k_mac_dynamic_wsi_remap(struct ath12k_base *ab)
 
 	ag->wsi_remap_in_progress = true;
 	active_num_devices = ag->num_devices - ag->num_bypassed;
+	atomic_set(&ab->wsi_remap_in_progress, 1);
 	ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS,
 		   "active num_devices before proceeding bypass %d\n",
 		   active_num_devices);

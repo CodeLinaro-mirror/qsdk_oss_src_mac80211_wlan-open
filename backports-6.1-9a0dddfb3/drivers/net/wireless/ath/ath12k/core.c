@@ -3072,6 +3072,7 @@ static int ath12k_core_wsi_remap_radio_start(struct ath12k_base *ab)
 exit:
 	/* Reset the WSI flags */
 	ag->wsi_remap_in_progress = false;
+	atomic_set(&ab->wsi_remap_in_progress, 0);
 	ab->wsi_remap_state = 0;
 
 	return ret;
