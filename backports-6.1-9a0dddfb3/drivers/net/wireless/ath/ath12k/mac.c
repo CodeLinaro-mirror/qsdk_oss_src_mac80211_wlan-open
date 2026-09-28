@@ -2261,12 +2261,16 @@ static void ath12k_mac_nrp_delete(struct ath12k *ar)
 			   ar->radio_idx);
 }
 
-static void ath12k_mac_reset_mbssid_info(struct ath12k_link_vif *arvif)
+void ath12k_mac_reset_mbssid_info(struct ath12k_link_vif *arvif)
 {
 	struct ath12k_mbssid_info *mbssid_info = arvif->mbssid_info;
 	struct ath12k *ar = arvif->ar;
 
 	if (!mbssid_info)
+		return;
+
+	if (arvif->ahvif->vdev_type != WMI_VDEV_TYPE_AP ||
+	    arvif->ahvif->vap_submode || ath12k_mac_is_bridge_vdev(arvif))
 		return;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
@@ -2411,9 +2415,7 @@ int ath12k_mac_vdev_stop(struct ath12k_link_vif *arvif)
 
 	ar->num_started_vdevs--;
 
-	if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP &&
-	    !arvif->ahvif->vap_submode && !ath12k_mac_is_bridge_vdev(arvif))
-		ath12k_mac_reset_mbssid_info(arvif);
+	ath12k_mac_reset_mbssid_info(arvif);
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "[radio_idx : %u] vdev %pM stopped, vdev_id %d\n",
 		   ar->radio_idx, ahvif->vif->addr, arvif->vdev_id);
@@ -2428,7 +2430,6 @@ int ath12k_mac_vdev_stop(struct ath12k_link_vif *arvif)
 #ifdef CPTCFG_QCN_EXTN
 	ath12k_dp_ipa_vif_notify(arvif, false, false);
 #endif /* CPTCFG_QCN_EXTN */
-
 	return 0;
 err:
 	return ret;
@@ -11017,27 +11018,64 @@ static u32 ath12k_mac_beacon_tx_rate(struct cfg80211_bitrate_mask *mask,
 	return 0;
 }
 
+static int ath12k_update_non_tx_mbssid_info(struct ath12k_link_vif *arvif,
+					    struct ieee80211_bss_conf *bss_conf)
+{
+	struct ath12k_link_vif *tx_arvif = ath12k_mac_get_tx_arvif(arvif, bss_conf);
+	struct ath12k_mbssid_info *mbssid_info = tx_arvif->mbssid_info;
+	struct ath12k_base *ab = arvif->ar->ab;
+
+	if (test_bit(arvif->vdev_id, mbssid_info->nontx_vdev_bmap))
+		return 0;
+
+	if (mbssid_info->nontx_cnt + 1 <=
+	    ATH12K_MAX_MBSSID_NONTX_INTERFACES) {
+		mbssid_info->nontx_cnt++;
+		set_bit(arvif->vdev_id, mbssid_info->nontx_vdev_bmap);
+		ath12k_info(ab,
+			    "Added Non-Tx BSS:%u BSSID:%pM SSID:%.*s nontx_bmap:%*pb ntxcnt:%u",
+			    arvif->vdev_id, bss_conf->bssid,
+			    (int)bss_conf->ssid_len, bss_conf->ssid,
+			    ATH12K_MAX_NUM_VDEVS,
+			    mbssid_info->nontx_vdev_bmap,
+			    mbssid_info->nontx_cnt);
+		arvif->mbssid_info = mbssid_info;
+	} else {
+		ath12k_err(ab, "Nontx_cnt %u exceeds max MBSSID Nontx interfaces:%d",
+			   mbssid_info->nontx_cnt + 1,
+			   ATH12K_MAX_MBSSID_NONTX_INTERFACES);
+		return -EINVAL;
+	}
+	return 0;
+}
+
 static int ath12k_mac_set_mbssid_info(struct ieee80211_bss_conf *bss_conf,
 				      struct ath12k_link_vif *arvif)
 {
-	struct ath12k_link_vif *tx_arvif;
+	struct ath12k_link_vif *tx_arvif, *arvif_itr;
 	struct ath12k *ar = arvif->ar;
+	struct ieee80211_bss_conf *bss_conf_itr;
 	struct ath12k_mbssid_info *mbssid_info;
 	struct ath12k_base *ab = ar->ab;
+	int ret = 0, status = 0;
 
 	if (!bss_conf->mbssid_tx_vif)
 		return 0;
 
+	if (arvif->ahvif->vdev_type != WMI_VDEV_TYPE_AP ||
+	    arvif->ahvif->vap_submode || ath12k_mac_is_bridge_vdev(arvif))
+		return 0;
+
 	tx_arvif = ath12k_mac_get_tx_arvif(arvif, bss_conf);
 	if (!tx_arvif) {
-		ath12k_err(ar->ab, "Failed to get tx_arvif from arvif vdev_id:%d",
+		ath12k_err(ab, "Failed to get tx_arvif from arvif vdev_id:%d",
 			   arvif->vdev_id);
 		return -EINVAL;
 	}
 
 	if (arvif == tx_arvif) {
 		if (arvif->mbssid_info) {
-			ath12k_err(ar->ab, "mbssid_info is already allocated (unexpected)");
+			ath12k_err(ab, "mbssid_info is already allocated (unexpected)");
 			kfree(arvif->mbssid_info);
 		}
 
@@ -11047,37 +11085,42 @@ static int ath12k_mac_set_mbssid_info(struct ieee80211_bss_conf *bss_conf,
 
 		mbssid_info->tx_vdev_id = tx_arvif->vdev_id;
 		tx_arvif->mbssid_info = mbssid_info;
-		ath12k_info(ar->ab, "Tx BSS vdev_id: %u BSSID: %pM SSID: %.*s",
+		ath12k_info(ab, "Tx BSS vdev_id: %u BSSID: %pM SSID: %.*s",
 			    mbssid_info->tx_vdev_id, bss_conf->bssid,
 			    (int)bss_conf->ssid_len, bss_conf->ssid);
+		list_for_each_entry(arvif_itr, &ar->arvifs, list) {
+			bss_conf_itr = ath12k_mac_get_link_bss_conf(arvif_itr);
+
+			if (!bss_conf_itr) {
+				ath12k_warn(ab, "bss link conf dosent exist vif %pM link %u\n",
+					    arvif_itr->addr, arvif_itr->link_id);
+				status = -EINVAL;
+				continue;
+			}
+
+			if (tx_arvif == arvif_itr)
+				continue;
+
+			if (tx_arvif == ath12k_mac_get_tx_arvif(arvif_itr,
+								bss_conf_itr)) {
+				ret = ath12k_update_non_tx_mbssid_info(arvif_itr,
+								       bss_conf_itr);
+				if (ret)
+					status = ret;
+			}
+		}
 	} else {
 		mbssid_info = tx_arvif->mbssid_info;
 		if (!mbssid_info) {
-			ath12k_err(ar->ab, "mbssid_info is NULL");
-			return -EINVAL;
+			ath12k_warn(ab,
+				    "mbssid_info is NULL, updates deferred for vdev %d\n",
+				    arvif->vdev_id);
+			return 0;
 		}
-
-		if (mbssid_info->nontx_cnt + 1 <=
-		    ATH12K_MAX_MBSSID_NONTX_INTERFACES) {
-			mbssid_info->nontx_cnt++;
-			set_bit(arvif->vdev_id, mbssid_info->nontx_vdev_bmap);
-			ath12k_info(ar->ab,
-				    "Added Non-Tx BSS:%u BSSID:%pM SSID:%.*s nontx_bmap:%*pb ntxcnt:%u",
-				    arvif->vdev_id, bss_conf->bssid,
-				    (int)bss_conf->ssid_len, bss_conf->ssid,
-				    ATH12K_MAX_NUM_VDEVS,
-				    mbssid_info->nontx_vdev_bmap,
-				    mbssid_info->nontx_cnt);
-			arvif->mbssid_info = mbssid_info;
-		} else {
-			ath12k_err(ar->ab, "Nontx_cnt %u exceeds max MBSSID Nontx interfaces:%d",
-				   mbssid_info->nontx_cnt + 1,
-				   ATH12K_MAX_MBSSID_NONTX_INTERFACES);
-			return -EINVAL;
-		}
+		return ath12k_update_non_tx_mbssid_info(arvif, bss_conf);
 	}
 
-	return 0;
+	return status;
 }
 
 static int ath12k_mac_config_beacon_tx_rate(struct wiphy *wiphy,
@@ -11140,18 +11183,12 @@ int ath12k_mac_op_start_ap(struct ieee80211_hw *hw,
 			    "failed to configure beacon tx rate for vdev %d: %d\n",
 			    arvif->vdev_id, ret);
 
-	if (ahvif->vdev_type == WMI_VDEV_TYPE_AP && !ahvif->vap_submode &&
-	    !ath12k_mac_is_bridge_vdev(arvif)) {
-		ret = ath12k_mac_set_mbssid_info(bss_conf, arvif);
-		if (ret) {
-			ath12k_err(arvif->ar->ab,
-				   "failed to set mbssid info for vdev %d: %d\n",
-				   arvif->vdev_id, ret);
-			if (arvif->mbssid_info && !bss_conf->nontransmitted)
-				kfree(arvif->mbssid_info);
-			arvif->mbssid_info = NULL;
-			return ret;
-		}
+	ret = ath12k_mac_set_mbssid_info(bss_conf, arvif);
+	if (ret) {
+		ath12k_err(arvif->ar->ab,
+			   "failed to set mbssid info for vdev %d: %d\n",
+			   arvif->vdev_id, ret);
+		return ret;
 	}
 
 	return 0;

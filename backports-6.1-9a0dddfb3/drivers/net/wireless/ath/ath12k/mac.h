@@ -995,6 +995,7 @@ void ath12k_mac_peer_assoc_prepare_smd(struct ath12k *ar,
 enum wmi_phy_mode ath12k_mac_get_phymode(struct ath12k *ar,
 					 enum nl80211_band band,
 					 enum nl80211_chan_width width);
+void ath12k_mac_reset_mbssid_info(struct ath12k_link_vif *arvif);
 /* Context passed through the arsta iterator in ath12k_mac_op_get_netstats */
 struct ath12k_netstats_iter_ctx {
 	struct rtnl_link_stats64 *stats;

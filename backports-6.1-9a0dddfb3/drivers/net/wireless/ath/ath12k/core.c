@@ -3699,6 +3699,7 @@ static void ath12k_core_pre_reconfigure_recovery(struct ath12k_base *ab)
 			arvif->is_created = false;
 			arvif->is_up = false;
 			arvif->spectral_enabled = false;
+			ath12k_mac_reset_mbssid_info(arvif);
 			ath12k_dbg(ab, ATH12K_DBG_MAC,
 				   "init flags reset for MAC %pM vdev %d\n",
 				   arvif->addr, arvif->vdev_id);
