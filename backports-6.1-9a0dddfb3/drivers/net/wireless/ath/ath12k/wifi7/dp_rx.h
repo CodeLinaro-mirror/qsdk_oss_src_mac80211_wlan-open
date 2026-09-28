@@ -13,6 +13,9 @@
 #include "hal.h"
 #include "../fse.h"
 #include "../debug.h"
+#ifdef CPTCFG_QCN_EXTN
+#include "../qcn_extns/ath12k_cmn_extn.h"
+#endif
 
 #define MAX_TP_TIDS	8
 
