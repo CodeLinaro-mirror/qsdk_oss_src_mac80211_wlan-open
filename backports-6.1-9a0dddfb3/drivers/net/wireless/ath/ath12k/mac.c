@@ -12480,8 +12480,8 @@ void ath12k_mac_op_cancel_hw_scan(struct ieee80211_hw *hw,
 		if (!ar || ar->scan.state == ATH12K_SCAN_IDLE)
 			continue;
 
+		cancel_delayed_work(&ar->scan.timeout);
 		ath12k_scan_abort(ar);
-		cancel_delayed_work_sync(&ar->scan.timeout);
 		ath12k_dbg(ar->ab, ATH12K_DBG_SCAN,
 			   "scan: [radio:%d] flush scan_id=%u\n",
 			   ar->radio_idx, ar->scan.parallel_scan_id);
@@ -21126,8 +21126,9 @@ void ath12k_mac_stop(struct ath12k *ar)
 	clear_bit(ATH12K_FLAG_CAC_RUNNING, &ar->dev_flags);
 
 	wiphy_delayed_work_cancel(ath12k_ar_to_hw(ar)->wiphy, &ar->pdev_stats_timer);
-	cancel_delayed_work_sync(&ar->scan.timeout);
-	wiphy_work_cancel(ath12k_ar_to_hw(ar)->wiphy, &ar->scan.vdev_clean_wk);
+	cancel_delayed_work(&ar->scan.timeout);
+	ath12k_scan_abort(ar);
+	wiphy_work_flush(ath12k_ar_to_hw(ar)->wiphy, &ar->scan.vdev_clean_wk);
 	cancel_work_sync(&ar->regd_update_work);
 	cancel_work_sync(&ar->reg_set_previous_country);
 	cancel_work_sync(&ar->change_6g_txpow_sta_mode_work);
@@ -28866,6 +28867,7 @@ int ath12k_mac_op_cancel_remain_on_channel(struct ieee80211_hw *hw,
 	ar->scan.roc_notify = false;
 	spin_unlock_bh(&ar->data_lock);
 
+	cancel_delayed_work(&ar->scan.timeout);
 	ath12k_scan_abort(ar);
 
 	/* ath12k_scan_abort() may resolve is_roc via the normal scan cleanup
@@ -28881,7 +28883,6 @@ int ath12k_mac_op_cancel_remain_on_channel(struct ieee80211_hw *hw,
 	ar->scan.is_roc = false;
 	spin_unlock_bh(&ar->data_lock);
 
-	cancel_delayed_work_sync(&ar->scan.timeout);
 	cancel_delayed_work_sync(&ar->scan.roc_done);
 
 	return 0;
