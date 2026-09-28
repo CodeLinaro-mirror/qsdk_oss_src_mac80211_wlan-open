@@ -67,6 +67,7 @@ ath12k_wifi_config_policy[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_VHT_MCS_10_11_PEER_SUPP] = { .type = NLA_U8 },
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_HE_CAP_INFO_INTERNAL] = { .type = NLA_U32 },
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_PEER_MAC] = { .type = NLA_BINARY, .len = ETH_ALEN },
+	[QCA_WLAN_VENDOR_ATTR_CONFIG_CRYPTO_TEST_MODE_ENABLE] = { .type = NLA_U8 },
 #ifdef CPTCFG_QCN_EXTN
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_NON_BEACON_BSS] = { .type = NLA_U8 },
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_DIAGNOSTIC_STA_VAP] = { .type = NLA_U8 },
@@ -11194,6 +11195,9 @@ ath12k_vendor_iface_mode_config(struct wireless_dev *wdev,
 }
 
 
+static struct ath12k *ath12k_get_radio_by_index(struct wiphy *wiphy,
+					struct nlattr *tb[]);
+
 static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 					     struct wireless_dev *wdev,
 					     const void *data, int data_len)
@@ -11410,6 +11414,49 @@ static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 			   "%s-configured dynamic_vlan: %u for(%s)\n",
 			   __func__, ahvif->u.ap.dynamic_vlan,
 			   wdev->netdev->name);
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_CONFIG_CRYPTO_TEST_MODE_ENABLE]) {
+		struct ath12k *ar;
+		u8 enable;
+
+		ar = ath12k_get_radio_by_index(wiphy, tb);
+		if (!ar) {
+			ath12k_err(NULL, "crypto test mode: radio not found, pass RADIO_INDEX\n");
+			return -EINVAL;
+		}
+
+		enable =
+		nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_CONFIG_CRYPTO_TEST_MODE_ENABLE]);
+
+		/*
+		 * Avoid sending a duplicate enable/disable command because
+		 * firmware may assert if the requested state is unchanged.
+		 */
+		if (!!enable == ar->crypto_test_mode_enabled) {
+			ath12k_dbg(ar->ab, ATH12K_DBG_CFG,
+				   "crypto test mode already %s, skipping WMI send\n",
+				   enable ? "enabled" : "disabled");
+			return 0;
+		}
+
+		/* restart the per-radio cookie counter each time crypto
+		 * test mode is (re-)enabled, so cookies are scoped to a
+		 * single fipstool session rather than growing forever
+		 * across invocations.
+		 */
+		if (enable)
+			ar->crypto_test_cookie = 0;
+
+		ret = ath12k_wmi_pdev_fips_mode_set(ar, enable);
+		if (ret) {
+			ath12k_warn(ar->ab,
+				    "crypto test mode enable: WMI send failed: %d\n", ret);
+			return ret;
+		}
+
+		ar->crypto_test_mode_enabled = !!enable;
+		return ret;
 	}
 
 #ifdef CPTCFG_QCN_EXTN
@@ -19619,6 +19666,225 @@ static int ath12k_vendor_rf_path_mode_handler(struct wiphy *wiphy,
 	return any_failed ? -EIO : 0;
 }
 
+const struct nla_policy
+ath12k_crypto_test_policy[QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_INVALID]  = { .type = NLA_UNSPEC },
+	[QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_DECRYPT]  = { .type = NLA_FLAG },
+	[QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_MODE]     = { .type = NLA_U8 },
+	[QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_KEY]      = { .type = NLA_BINARY, .len  = 32 },
+	[QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_NONCE]    = { .type = NLA_BINARY, .len  = 16 },
+	[QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_TAG]      = { .type = NLA_BINARY, .len  = 16 },
+	[QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_AAD]      = { .type = NLA_BINARY, .len  = 256 },
+	[QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_PAYLOAD]  = { .type = NLA_BINARY,
+							.len  = 1400 },
+	[QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_COOKIE]   = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_FRAG_IDX] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_MORE_BIT] = { .type = NLA_FLAG },
+	[QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_TOTAL_LEN] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_RADIO_INDEX] = { .type = NLA_U8 },
+};
+
+int ath12k_vendor_crypto_test_handler(struct wiphy *wiphy,
+				      struct wireless_dev *wdev,
+				      const void *data,
+				      int data_len)
+{
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_MAX + 1];
+	struct ath12k *ar;
+	struct sk_buff *skb;
+	u32 fips_cmd, mode, cookie, frag_idx;
+	u8 more_frags;
+	const u8 *key     = NULL, *nonce = NULL, *tag   = NULL;
+	const u8 *aad     = NULL, *payload = NULL;
+	u32  klen = 0, nlen = 0, tlen = 0, alen = 0, plen = 0;
+	u32 total_len = 0;
+	u8 radio_idx;
+	bool more_bit;
+	int ret;
+
+	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_MAX,
+			data, data_len, ath12k_crypto_test_policy, NULL);
+	if (ret) {
+		ath12k_err(NULL, "CRYPTO_TEST: nla_parse failed: %d\n", ret);
+		return ret;
+	}
+
+	/* mandatory attributes; COOKIE is driver-assigned for frag_idx == 0
+	 * and required as userspace-echoed input only for later fragments.
+	 */
+	if (!tb[QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_MODE] ||
+	    !tb[QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_KEY] ||
+	    !tb[QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_NONCE] ||
+	    !tb[QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_TAG] ||
+	    !tb[QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_FRAG_IDX] ||
+	    !tb[QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_TOTAL_LEN]) {
+		ath12k_err(NULL, "CRYPTO_TEST: missing mandatory attributes\n");
+		return -EINVAL;
+	}
+
+	/* decrypt flag: absent = encrypt (0), present = decrypt (1) */
+	fips_cmd  = tb[QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_DECRYPT] ? 1 : 0;
+	mode      = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_MODE]);
+	frag_idx  = nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_FRAG_IDX]);
+	more_bit = !!tb[QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_MORE_BIT];
+	more_frags = more_bit ? 1 : 0;
+	key   = nla_data(tb[QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_KEY]);
+	klen  = nla_len(tb[QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_KEY]);
+	nonce = nla_data(tb[QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_NONCE]);
+	nlen  = nla_len(tb[QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_NONCE]);
+	tag   = nla_data(tb[QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_TAG]);
+	tlen  = nla_len(tb[QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_TAG]);
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_AAD]) {
+		aad  = nla_data(tb[QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_AAD]);
+		alen = nla_len(tb[QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_AAD]);
+	}
+	if (tb[QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_PAYLOAD]) {
+		payload = nla_data(tb[QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_PAYLOAD]);
+		plen    = nla_len(tb[QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_PAYLOAD]);
+	}
+	total_len = nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_TOTAL_LEN]);
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_RADIO_INDEX]) {
+		radio_idx = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_RADIO_INDEX]);
+		ar = ath12k_get_radio_by_id(wiphy, radio_idx);
+	} else {
+		struct ath12k_hw *ah = ath12k_hw_to_ah(wiphy_to_ieee80211_hw(wiphy));
+
+		ar = (ah && ah->num_radio == 1) ? ath12k_ah_to_ar(ah, 0) : NULL;
+	}
+	if (!ar) {
+		ath12k_err(NULL, "CRYPTO_TEST: radio not found, pass RADIO_INDEX\n");
+		return -EINVAL;
+	}
+
+	if (!ar->crypto_test_mode_enabled) {
+		ath12k_err(ar->ab, "CRYPTO_TEST: FIPS mode not enabled on this radio\n");
+		return -EOPNOTSUPP;
+	}
+
+	if (frag_idx == 0) {
+		/*
+		 * A new operation starts at fragment 0.
+		 * The cookie is allocated by the driver.
+		 */
+		if (ar->crypto_test_frag_active) {
+			ath12k_err(ar->ab,
+				   "CRYPTO_TEST: fragment sequence already active\n");
+			return -EBUSY;
+		}
+		/* driver allocates a fresh cookie for this operation */
+		cookie = ++ar->crypto_test_cookie;
+		ar->crypto_test_frag_active = true;
+		ar->crypto_test_next_frag_idx = 1;
+	} else {
+		/*
+		 * Later fragments do not provide COOKIE.
+		 * Reuse the cookie already stored in
+		 * ar->crypto_test_cookie.
+		 */
+		if (!ar->crypto_test_frag_active) {
+			ath12k_err(ar->ab,
+				   "CRYPTO_TEST: no active fragment sequence\n");
+			return -EINVAL;
+		}
+
+		if (frag_idx != ar->crypto_test_next_frag_idx) {
+			ath12k_err(ar->ab,
+				   "CRYPTO_TEST: unexpected frag_idx %u, expected %u\n",
+				   frag_idx, ar->crypto_test_next_frag_idx);
+			return -EINVAL;
+		}
+
+		cookie = ar->crypto_test_cookie;
+		ar->crypto_test_next_frag_idx++;
+	}
+
+	ret = ath12k_wmi_pdev_fips(ar, fips_cmd, mode,
+				   key, klen, nonce, nlen, tag, tlen,
+				   aad, alen, payload, plen, total_len,
+				   cookie, frag_idx, more_frags);
+	if (ret) {
+		/*
+		 * Abort the current fragment sequence after a WMI failure.
+		 */
+		ar->crypto_test_frag_active = false;
+		ar->crypto_test_next_frag_idx = 0;
+		ath12k_warn(ar->ab, "CRYPTO_TEST: WMI send failed: %d\n", ret);
+		return ret;
+	}
+	/*
+	 * The final fragment completes the current request sequence.
+	 */
+	if (!more_frags) {
+		ar->crypto_test_frag_active = false;
+		ar->crypto_test_next_frag_idx = 0;
+	}
+
+	skb = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, NLMSG_DEFAULT_SIZE);
+	if (!skb)
+		return -ENOMEM;
+
+	if (nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_COOKIE, cookie)) {
+		kfree_skb(skb);
+		return -EINVAL;
+	}
+
+	return cfg80211_vendor_cmd_reply(skb);
+}
+
+void ath12k_vendor_crypto_test_event(struct ath12k *ar,
+				     u32 cookie, u32 frag_idx, u32 more_frags,
+				     const u8 *output, u32 output_len)
+{
+	struct sk_buff *vendor_event;
+	int buf_len;
+
+	/* size: 3 u32 attrs + payload blob */
+	buf_len = nla_total_size(sizeof(u32))     /* COOKIE    */
+		+ nla_total_size(sizeof(u32))     /* FRAG_IDX  */
+		+ nla_total_size(0)               /* MORE_BIT flag */
+		+ nla_total_size(output_len);     /* PAYLOAD   */
+
+	vendor_event = cfg80211_vendor_event_alloc(ar->ah->hw->wiphy,
+						   NULL, buf_len,
+						   QCA_NL80211_VENDOR_SUBCMD_CRYPTO_TEST_EVENT_INDEX,
+						   GFP_ATOMIC);
+	if (!vendor_event) {
+		ath12k_warn(ar->ab,
+			    "CRYPTO_TEST event: failed to alloc vendor event skb\n");
+		return;
+	}
+
+	if (nla_put_u32(vendor_event,
+			QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_COOKIE, cookie)) {
+		ath12k_warn(ar->ab, "CRYPTO_TEST event: put COOKIE failed\n");
+		goto drop;
+	}
+	if (nla_put_u32(vendor_event,
+			QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_FRAG_IDX, frag_idx)) {
+		ath12k_warn(ar->ab, "CRYPTO_TEST event: put FRAG_IDX failed\n");
+		goto drop;
+	}
+	if (more_frags &&
+	    nla_put_flag(vendor_event,
+			 QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_MORE_BIT)) {
+		ath12k_warn(ar->ab, "CRYPTO_TEST event: put MORE_BIT failed\n");
+		goto drop;
+	}
+	if (output_len > 0 &&
+	    nla_put(vendor_event,
+		    QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_PAYLOAD, output_len, output)) {
+		ath12k_warn(ar->ab, "CRYPTO_TEST event: put PAYLOAD failed\n");
+		goto drop;
+	}
+
+	cfg80211_vendor_event(vendor_event, GFP_ATOMIC);
+	return;
+drop:
+	kfree_skb(vendor_event);
+}
+
 static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
@@ -20155,6 +20421,13 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 			 WIPHY_VENDOR_CMD_NEED_RUNNING,
 	},
 #endif /* CPTCFG_QCN_EXTN */
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_CRYPTO_TEST,
+		.doit = ath12k_vendor_crypto_test_handler,
+		.policy = ath12k_crypto_test_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_MAX,
+	},
 };
 
 /**
@@ -20655,6 +20928,10 @@ static const struct nl80211_vendor_cmd_info ath12k_vendor_events[] = {
 	[QCA_NL80211_VENDOR_SUBCMD_PASN_EVENT_INDEX] = {
 		.vendor_id = QCA_NL80211_VENDOR_ID,
 		.subcmd = QCA_NL80211_VENDOR_SUBCMD_PASN,
+	},
+	[QCA_NL80211_VENDOR_SUBCMD_CRYPTO_TEST_EVENT_INDEX] = {
+		.vendor_id = QCA_NL80211_VENDOR_ID,
+		.subcmd = QCA_NL80211_VENDOR_SUBCMD_CRYPTO_TEST,
 	},
 #ifdef CPTCFG_QCN_EXTN
 	[QCA_NL80211_VENDOR_SUBCMD_DRIVER_DISCONNECT_REASON_INDEX] = {

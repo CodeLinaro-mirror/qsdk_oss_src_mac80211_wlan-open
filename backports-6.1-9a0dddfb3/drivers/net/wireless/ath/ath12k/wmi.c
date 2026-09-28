@@ -753,8 +753,230 @@ err_pull:
 	return ret;
 }
 
+int ath12k_wmi_pdev_fips(struct ath12k *ar,
+			 u32 fips_cmd, u32 mode,
+			 const u8 *key,     u32 key_len,
+			 const u8 *nonce,   u32 nonce_len,
+			 const u8 *tag,     u32 tag_len,
+			 const u8 *aad,     u32 aad_len,
+			 const u8 *payload, u32 data_len, u32 total_len,
+			 u32 cookie, u32 frag_idx, u8 more_frags)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct wmi_pdev_fips_extend_cmd *cmd;
+	struct wmi_fips_extend_cmd_init_params *init;
+	struct sk_buff *skb;
+	struct wmi_tlv *tlv;
+	void *ptr;
+	int ret;
+	u32 tlv_arr_hdr;
+	u32 len;
+	u32 frag_data_len;
+	bool is_first = (frag_idx == 0);
+	bool is_last = !more_frags;
+
+	/* per-fragment data[] blob: aad (frag 0 only) + payload chunk
+	 * (+ tag on the last fragment, decrypt direction only)
+	 */
+	frag_data_len = (is_first ? aad_len : 0) + data_len +
+			(is_last && fips_cmd == 1 ? tag_len : 0);
+
+	/* ARRAY_STRUCT placeholder header is always emitted (even 0-length on
+	 * non-first fragments) to keep the command's TLV shape/order fixed --
+	 * matching the convention used elsewhere in this file for optional
+	 * TLV blocks. Firmware's TLV walker expects a stable positional
+	 * schema per WMI cmd id; omitting the header entirely shifts the
+	 * following ARRAY_BYTE payload TLV into its slot and firmware
+	 * rejects the buffer.
+	 */
+	len = sizeof(*cmd) + TLV_HDR_SIZE + frag_data_len + TLV_HDR_SIZE;
+	if (is_first)
+		len += sizeof(*init);
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_pdev_fips_extend_cmd *)skb->data;
+	cmd->tlv_header   = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_PDEV_FIPS_EXTEND_CMD,
+						   sizeof(*cmd));
+	cmd->pdev_id      = cpu_to_le32(ar->pdev->pdev_id);
+	cmd->fips_cookie  = cpu_to_le32(cookie);
+	cmd->frag_idx     = cpu_to_le32(frag_idx);
+	cmd->more_bit     = cpu_to_le32(more_frags ? 1 : 0);
+	cmd->data_len     = cpu_to_le32(frag_data_len);
+
+	ptr = skb->data + sizeof(*cmd);
+
+	tlv = ptr;
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT,
+					 is_first ? sizeof(*init) : 0);
+	ptr += TLV_HDR_SIZE;
+
+	if (is_first) {
+		init = ptr;
+		init->tlv_header =
+			ath12k_wmi_tlv_cmd_hdr(WMI_TAG_FIPS_EXTEND_CMD_INIT_PARAMS,
+					       sizeof(*init));
+		init->fips_cmd     = cpu_to_le32(fips_cmd);
+		init->key_cipher   = cpu_to_le32(mode);
+		init->key_len      = cpu_to_le32(key_len);
+		if (key_len)
+			memcpy(init->key, key, min_t(u32, key_len, sizeof(init->key)));
+		init->nonce_iv_len = cpu_to_le32(nonce_len);
+		if (nonce_len)
+			memcpy(init->nonce_iv, nonce,
+			       min_t(u32, nonce_len, sizeof(init->nonce_iv)));
+		init->tag_len      = cpu_to_le32(tag_len);
+		init->aad_len      = cpu_to_le32(aad_len);
+		/* payload_len: total plaintext/ciphertext length across all
+		 * fragments, not this fragment's byte count -- caller
+		 * supplies the true total via total_len (see
+		 * ath12k_vendor_crypto_test_handler()).
+		 */
+		init->payload_len  = cpu_to_le32(total_len);
+
+		ptr += sizeof(*init);
+	}
+
+	tlv_arr_hdr = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_BYTE, frag_data_len);
+	memcpy(ptr, &tlv_arr_hdr, TLV_HDR_SIZE);
+	ptr += TLV_HDR_SIZE;
+
+	if (is_first && aad_len) {
+		memcpy(ptr, aad, aad_len);
+		ptr += aad_len;
+	}
+	if (data_len) {
+		memcpy(ptr, payload, data_len);
+		ptr += data_len;
+	}
+	if (is_last && fips_cmd == 1 && tag_len) {
+		memcpy(ptr, tag, tag_len);
+		ptr += tag_len;
+	}
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "WMI FIPS extend cmd pdev_id %d cmd %d cipher %d cookie %u frag %u more %u aad_len %u dlen %u frag_dlen %u total_len %u\n",
+		   ar->pdev->pdev_id, fips_cmd, mode,
+		   cookie, frag_idx, more_frags, aad_len, data_len, frag_data_len,
+		   total_len);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_PDEV_FIPS_EXTEND_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to send WMI_PDEV_FIPS_EXTEND_CMDID: %d\n",
+			    ret);
+		dev_kfree_skb(skb);
+	}
+
+	return ret;
+}
+
+int ath12k_wmi_pdev_fips_mode_set(struct ath12k *ar, u32 enable)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct wmi_pdev_fips_mode_set_cmd *cmd;
+	struct sk_buff *skb;
+	int ret;
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_pdev_fips_mode_set_cmd *)skb->data;
+	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_PDEV_FIPS_MODE_SET_CMD,
+						 sizeof(*cmd));
+	cmd->pdev_id = cpu_to_le32(ar->pdev->pdev_id);
+	cmd->fips_mode_set = cpu_to_le32(enable ? ATH12K_WMI_FIPS_MODE_ENABLE :
+			ATH12K_WMI_FIPS_MODE_DISABLE);
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "WMI FIPS mode set pdev_id %d enable %u\n",
+		   ar->pdev->pdev_id, enable);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_PDEV_FIPS_MODE_SET_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to send WMI_PDEV_FIPS_MODE_SET_CMDID: %d\n",
+			    ret);
+		dev_kfree_skb(skb);
+	}
+
+	return ret;
+}
+
+void ath12k_wmi_pdev_fips_event(struct ath12k_base *ab, struct sk_buff *skb)
+{
+	const struct wmi_pdev_fips_extend_event *ev;
+	const void **tb;
+	struct ath12k *ar;
+	const u8 *output = NULL;
+	u32 output_len = 0;
+	int ret;
+
+	tb = ath12k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
+	if (IS_ERR(tb)) {
+		ret = PTR_ERR(tb);
+		ath12k_warn(ab, "FIPS event: failed to parse TLV: %d\n", ret);
+		return;
+	}
+
+	ev = tb[WMI_TAG_PDEV_FIPS_EXTEND_EVENT];
+	if (!ev) {
+		ath12k_warn(ab, "FIPS event: missing WMI_TAG_PDEV_FIPS_EXTEND_EVENT TLV\n");
+		goto out;
+	}
+
+	/* output payload carried as an ARRAY_BYTE TLV right after the header;
+	 * firmware pads the raw array to a 4-byte boundary, so size-read using
+	 * ev->data_len (the true unpadded length), not the raw TLV array length.
+	 */
+	if (tb[WMI_TAG_ARRAY_BYTE]) {
+		output     = (const u8 *)tb[WMI_TAG_ARRAY_BYTE];
+		output_len = le32_to_cpu(ev->data_len);
+	}
+
+	ath12k_dbg(ab, ATH12K_DBG_WMI,
+		   "WMI FIPS extend event pdev_id %u cookie %u frag %u more %u err %u len %u\n",
+		   le32_to_cpu(ev->pdev_id), le32_to_cpu(ev->fips_cookie),
+		   le32_to_cpu(ev->cmd_frag_idx), le32_to_cpu(ev->more_bit),
+		   le32_to_cpu(ev->error_status), output_len);
+
+	rcu_read_lock();
+	ar = ath12k_mac_get_ar_by_pdev_id(ab, le32_to_cpu(ev->pdev_id));
+	if (!ar) {
+		/* FIPS KAT runs on a dummy VAP that is never started as a
+		 * real vdev, so pdevs_active[] (populated only by
+		 * ath12k_mac_start()) is empty here. Fall back to the
+		 * always-populated pdevs[] array, set up independently at
+		 * ath12k_mac_setup() time.
+		 */
+		int i;
+
+		for (i = 0; i < ab->num_radios; i++) {
+			if (ab->pdevs[i].pdev_id == le32_to_cpu(ev->pdev_id)) {
+				ar = ab->pdevs[i].ar;
+				break;
+			}
+		}
+	}
+	if (!ar) {
+		ath12k_warn(ab, "FIPS event: unknown pdev_id %u\n",
+			    le32_to_cpu(ev->pdev_id));
+		rcu_read_unlock();
+		goto out;
+	}
+	ath12k_vendor_crypto_test_event(ar,
+					le32_to_cpu(ev->fips_cookie),
+					le32_to_cpu(ev->cmd_frag_idx),
+					!!le32_to_cpu(ev->more_bit),
+					output, output_len);
+	rcu_read_unlock();
+out:
+	kfree(tb);
+}
+
 int ath12k_wmi_cmd_send(struct ath12k_wmi_pdev *wmi, struct sk_buff *skb,
-			u32 cmd_id)
+		u32 cmd_id)
 {
 	struct ath12k_wmi_base *wmi_ab = wmi->wmi_ab;
 	struct ath12k_base *ab = wmi_ab->ab;
@@ -21286,6 +21508,9 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 		break;
 	case WMI_PEER_MAPC_SETUP_STATUS_EVENTID:
 		ath12k_wmi_mapc_peer_setup_status_event(ab, skb);
+		break;
+	case WMI_PDEV_FIPS_EXTEND_EVENTID:
+		ath12k_wmi_pdev_fips_event(ab, skb);
 		break;
 	default:
 #ifdef CPTCFG_QCN_EXTN

@@ -290,6 +290,10 @@ int ath12k_vendor_nfcal_power_event(struct ath12k *ar,
  */
 void ath12k_vendor_event_chain_mask_changed(struct ath12k *ar, int ifindex);
 
+void ath12k_vendor_crypto_test_event(struct ath12k *ar,
+				     u32 cookie, u32 frag_idx, u32 more_frags,
+				     const u8 *output, u32 output_len);
+
 struct ath12k_cotdma_e2e_entry {
 	u8   config_mode;
 	u16  qmid;

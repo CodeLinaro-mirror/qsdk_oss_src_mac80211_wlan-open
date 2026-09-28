@@ -621,6 +621,8 @@ enum wmi_tlv_cmd_id {
 	WMI_PDEV_MULTIPLE_VDEV_SET_PARAM_CMDID = 0x4048,
 	WMI_PDEV_MEC_AGING_TIMER_CONFIG_CMDID = 0x4049,
 	WMI_PDEV_SET_BIOS_INTERFACE_CMDID = 0x404A,
+	WMI_PDEV_FIPS_EXTEND_CMDID = 0x404B,
+	WMI_PDEV_FIPS_MODE_SET_CMDID = 0x404C,
 	WMI_PDEV_SET_TGTR2P_TABLE_CMDID = 0x404F,
 	WMI_PDEV_SET_RF_PATH_CMDID = 0x4050,
 	WMI_PDEV_WSI_STATS_INFO_CMDID = 0x4051,
@@ -1116,6 +1118,8 @@ enum wmi_tlv_event_id {
 	WMI_PDEV_MULTIPLE_VDEV_RESTART_RESP_EVENTID,
 	WMI_PDEV_GET_HALPHY_CAL_STATUS_EVENTID =
 					WMI_SERVICE_READY_EXT2_EVENTID + 4,
+	WMI_PDEV_FIPS_EXTEND_EVENTID =
+					WMI_PDEV_GET_HALPHY_CAL_STATUS_EVENTID + 3,
 	/* Event to get AOA phasedelta values from HALPHY for only default gain table */
 	WMI_PDEV_AOA_PHASEDELTA_EVENTID =
 		WMI_PDEV_GET_HALPHY_CAL_STATUS_EVENTID + 2,
@@ -2556,6 +2560,10 @@ enum wmi_tlv_tag {
 	WMI_TAG_PEER_CONFIG_PPEDS_ROUTING = 0x3EA,
 	WMI_TAG_TWT_CAPS_PARAMS = 0x3ED,
 	WMI_TAG_PDEV_AOA_PHASEDELTA_EVENT_FIXED_PARAM = 0x3F0,
+	WMI_TAG_PDEV_FIPS_EXTEND_CMD = 0x403,
+	WMI_TAG_FIPS_EXTEND_CMD_INIT_PARAMS = 0x404,
+	WMI_TAG_PDEV_FIPS_EXTEND_EVENT = 0x405,
+	WMI_TAG_PDEV_FIPS_MODE_SET_CMD = 0x406,
 	WMI_TAG_SAWF_SERVICE_CLASS_CFG_CMD_FIXED_PARAM = 0x40A,
 	WMI_TAG_SAWF_SERVICE_CLASS_DISABLE_CMD_FIXED_PARAM = 0x40B,
 	WMI_TAG_PDEV_PKTLOG_DECODE_INFO = 0x414,
@@ -11886,29 +11894,139 @@ struct wmi_wlan_profile {
 	u32 hist[WMI_WLAN_PROFILE_MAX_HIST];
 };
 
+#define ATH12K_WMI_MAX_IVNONCE_LEN_FIPS_EXTEND 16
+
+enum ath12k_wmi_fips_key_cipher {
+	ATH12K_WMI_FIPS_KEY_CIPHER_CCM = 0,
+	ATH12K_WMI_FIPS_KEY_CIPHER_GCM = 1,
+};
+
+/**
+ * struct wmi_fips_extend_cmd_init_params - cmd_params TLV for
+ *	WMI_PDEV_FIPS_EXTEND_CMDID (sent as WMI_TAG_ARRAY_STRUCT wrapping a
+ *	single WMI_TAG_FIPS_EXTEND_CMD_INIT_PARAMS struct), first fragment only.
+ *
+ * @tlv_header:    TLV tag WMI_TAG_FIPS_EXTEND_CMD_INIT_PARAMS + length.
+ * @fips_cmd:      0 = encrypt, 1 = decrypt.
+ * @key_cipher:    0 = AES-CCM, 1 = AES-GCM (enum ath12k_wmi_fips_key_cipher).
+ * @key_len:       Length of key in bytes (16 or 32).
+ * @key:           Key bytes.
+ * @nonce_iv_len:  Length of nonce/IV in bytes (CCM=13, GCM=12).
+ * @nonce_iv:      Nonce/IV bytes.
+ * @tag_len:       Length of auth-tag in bytes (8 or 16).
+ * @aad_len:       Length of AAD in bytes (carried in fragment 0's data[]).
+ * @payload_len:   Total plaintext/ciphertext length across all fragments.
+ */
+struct wmi_fips_extend_cmd_init_params {
+	__le32 tlv_header;
+	__le32 fips_cmd;
+	__le32 key_cipher;
+	__le32 key_len;
+	u8 key[WMI_MAX_KEY_LEN];
+	__le32 nonce_iv_len;
+	u8 nonce_iv[ATH12K_WMI_MAX_IVNONCE_LEN_FIPS_EXTEND];
+	__le32 tag_len;
+	__le32 aad_len;
+	__le32 payload_len;
+} __packed;
+
+/**
+ * struct wmi_pdev_fips_extend_cmd - WMI_PDEV_FIPS_EXTEND_CMDID fixed header,
+ *	one per fragment.
+ *
+ * @tlv_header:  TLV tag WMI_TAG_PDEV_FIPS_EXTEND_CMD + length.
+ * @pdev_id:     pdev to run the test on.
+ * @fips_cookie: Userspace test-vector ID echoed in the response event.
+ * @frag_idx:    Fragment index (0-based, sequential).
+ * @more_bit:    1 when more payload fragments follow, 0 on last fragment.
+ * @data_len:    Bytes in this fragment's trailing data[] blob: AAD (frag 0
+ *               only) + payload chunk (+ tag, decrypt direction, last
+ *               fragment only).
+ *
+ * Followed by, in order: an optional (frag 0 only) WMI_TAG_ARRAY_STRUCT TLV
+ * wrapping a single struct wmi_fips_extend_cmd_init_params, then a
+ * WMI_TAG_ARRAY_BYTE data[] TLV.
+ */
+struct wmi_pdev_fips_extend_cmd {
+	__le32 tlv_header;
+	__le32 pdev_id;
+	__le32 fips_cookie;
+	__le32 frag_idx;
+	__le32 more_bit;
+	__le32 data_len;
+} __packed;
+
+/**
+ * struct wmi_pdev_fips_mode_set_cmd - WMI_PDEV_FIPS_MODE_SET_CMDID payload.
+ *
+ * @tlv_header:     TLV tag WMI_TAG_PDEV_FIPS_MODE_SET_CMD + length.
+ * @pdev_id:        pdev to enable/disable FIPS test mode on.
+ * @fips_mode_set:  0 = disable, 1 = enable (see enum ath12k_wmi_fips_mode).
+ *
+ * This is a separate command from WMI_PDEV_FIPS_EXTEND_CMDID (encrypt/decrypt);
+ * firmware does not accept mode-set requests on that command.
+ */
+struct wmi_pdev_fips_mode_set_cmd {
+	__le32 tlv_header;
+	__le32 pdev_id;
+	__le32 fips_mode_set;
+} __packed;
+
+enum ath12k_wmi_fips_mode {
+	ATH12K_WMI_FIPS_MODE_DISABLE = 0,
+	ATH12K_WMI_FIPS_MODE_ENABLE = 1,
+};
+
+/**
+ * struct wmi_pdev_fips_extend_event - WMI_PDEV_FIPS_EXTEND_EVENTID payload.
+ *
+ * @tlv_header:     TLV tag WMI_TAG_PDEV_FIPS_EXTEND_EVENT + length.
+ * @pdev_id:        pdev that produced the result.
+ * @fips_cookie:    Echoed from the command.
+ * @cmd_frag_idx:   Fragment index of this response chunk, echoed from cmd.
+ * @more_bit:       1 when more response fragments follow.
+ * @error_status:   Firmware computation result; 0 = success. Non-zero can
+ *                  mean AEAD tag/MIC verification failure (decrypt), not
+ *                  necessarily a malformed command.
+ * @data_len:       Output bytes in this fragment (ciphertext/plaintext, plus
+ *                  tag on the final fragment). May be less than the TLV
+ *                  array's raw byte length, which firmware pads to a 4-byte
+ *                  boundary.
+ *
+ * Output payload follows as a separate WMI_TAG_ARRAY_BYTE u8 array.
+ */
+struct wmi_pdev_fips_extend_event {
+	__le32 pdev_id;
+	__le32 fips_cookie;
+	__le32 cmd_frag_idx;
+	__le32 more_bit;
+	__le32 error_status;
+	__le32 data_len;
+} __packed;
+
 int ath12k_wmi_send_wlan_profile_trigger_cmd(struct ath12k *ar, u32 enable);
 
 int ath12k_wmi_send_wlan_profile_enable_cmd(struct ath12k *ar,
-					    u32 profile_id, u32 enable);
+		u32 profile_id, u32 enable);
 
 int ath12k_wmi_cmd_send(struct ath12k_wmi_pdev *wmi, struct sk_buff *skb,
-			u32 cmd_id);
+		u32 cmd_id);
 struct sk_buff *ath12k_wmi_alloc_skb(struct ath12k_wmi_base *wmi_sc, u32 len);
 int ath12k_wmi_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
-			 struct sk_buff *frame, bool mlo_params_valid,
-			 bool link_agnostic, bool is_cfr);
+		struct sk_buff *frame, bool mlo_params_valid,
+		bool link_agnostic, bool is_cfr);
 int ath12k_wmi_offchan_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
-				 struct sk_buff *frame);
+		struct sk_buff *frame);
 int ath12k_wmi_p2p_go_bcn_ie(struct ath12k *ar, u32 vdev_id,
-			     const u8 *p2p_ie);
+		const u8 *p2p_ie);
 int ath12k_wmi_bcn_tmpl(struct ath12k_link_vif *arvif,
-			struct ieee80211_mutable_offsets *offs,
-			struct sk_buff *bcn,
-			struct ath12k_wmi_bcn_tmpl_ema_arg *ema_args);
+		struct ieee80211_mutable_offsets *offs,
+		struct sk_buff *bcn,
+		struct ath12k_wmi_bcn_tmpl_ema_arg *ema_args);
 int ath12k_wmi_send_peer_tx_pn_request_cmd(struct ath12k *ar,
-					   struct ath12k_wmi_peer_pn_arg *arg);
+		struct ath12k_wmi_peer_pn_arg *arg);
 int ath12k_wmi_send_cumac_config(struct ath12k *ar,
-				 u32 cumac_chip_id);
+		u32 cumac_chip_id);
 int ath12k_wmi_vdev_down(struct ath12k *ar, u8 vdev_id);
 int ath12k_wmi_vdev_up(struct ath12k *ar, struct ath12k_wmi_vdev_up_params *params);
 int ath12k_wmi_vdev_stop(struct ath12k *ar, u8 vdev_id);
@@ -12274,4 +12392,15 @@ int ath12k_wmi_multi_vdev_set_param(struct ath12k *ar,
 				    const struct ath12k_mbssid_info *mbssid_info,
 				    u32 param_id, u32 param_value);
 int ath12k_wmi_tx_mon_pkt_cap_set_config(struct ath12k *ar, u32 bitmap);
+int ath12k_wmi_pdev_fips(struct ath12k *ar,
+			 u32 fips_cmd, u32 mode,
+			 const u8 *key,     u32 key_len,
+			 const u8 *nonce,   u32 nonce_len,
+			 const u8 *tag,     u32 tag_len,
+			 const u8 *aad,     u32 aad_len,
+			 const u8 *payload, u32 data_len, u32 total_len,
+			 u32 cookie, u32 frag_idx, u8 more_frags);
+int ath12k_wmi_pdev_fips_mode_set(struct ath12k *ar, u32 enable);
+
+void ath12k_wmi_pdev_fips_event(struct ath12k_base *ab, struct sk_buff *skb);
 #endif
