@@ -11831,7 +11831,9 @@ static int wmi_process_mgmt_tx_comp(struct ath12k *ar, u32 desc_id,
 	struct ath12k_vif *ahvif;
 #endif
 	struct ath12k_mgmt_frame_stats *mgmt_stats;
+	struct ieee80211_mgmt *mgmt;
 	u16 frm_stype;
+	bool is_csa;
 	int num_mgmt;
 
 	spin_lock_bh(&ar->data_lock);
@@ -11871,6 +11873,7 @@ static int wmi_process_mgmt_tx_comp(struct ath12k *ar, u32 desc_id,
 
 	if (ieee80211_is_mgmt(hdr->frame_control)) {
 		frm_stype = FIELD_GET(IEEE80211_FCTL_STYPE, hdr->frame_control);
+		is_csa = ath12k_is_csa_action_frame(hdr, msdu->len);
 		vif = skb_cb->vif;
 		if (frm_stype >= ARRAY_SIZE(mgmt_frame_name)) {
 			ath12k_warn(ar->ab,
@@ -11884,6 +11887,14 @@ static int wmi_process_mgmt_tx_comp(struct ath12k *ar, u32 desc_id,
 					 "Tx completion for %s frame to STA %pM from %pM tx_status %u\n",
 					 mgmt_frame_name[frm_stype], hdr->addr1,
 					 hdr->addr2, status);
+		else if (is_csa) {
+			mgmt = (struct ieee80211_mgmt *)hdr;
+			ath12k_dbg_level(ar->ab, ATH12K_DBG_MLME, ATH12K_DBG_L0,
+					 "Tx completion for CSA action frame from %pM category %u action %u tx_status %u\n",
+					 hdr->addr2, mgmt->u.action.category,
+					 mgmt->u.action.u.chan_switch.action_code,
+					 status);
+		}
 
 		if (!vif) {
 			ath12k_warn(ar->ab, "failed to find vif to update txcompl mgmt stats\n");

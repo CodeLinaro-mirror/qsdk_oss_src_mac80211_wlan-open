@@ -46,6 +46,23 @@ extern const char *mgmt_frame_name[];
 		ieee80211_is_deauth(fc)			||\
 		ieee80211_is_auth(fc))
 
+static inline bool
+ath12k_is_csa_action_frame(struct ieee80211_hdr *hdr, size_t len)
+{
+	struct ieee80211_mgmt *mgmt = (void *)hdr;
+
+	if (len < IEEE80211_MIN_ACTION_SIZE + 1 ||
+	    !ieee80211_is_action(hdr->frame_control))
+		return false;
+
+	return (mgmt->u.action.category == WLAN_CATEGORY_SPECTRUM_MGMT &&
+		mgmt->u.action.u.chan_switch.action_code ==
+		WLAN_ACTION_SPCT_CHL_SWITCH) ||
+	       (mgmt->u.action.category == WLAN_CATEGORY_PUBLIC &&
+		mgmt->u.action.u.ext_chan_switch.action_code ==
+		WLAN_PUB_ACTION_EXT_CHANSW_ANN);
+}
+
 /* There is no signed version of __le32, so for a temporary solution come
  * up with our own version. The idea is from fs/ntfs/endian.h.
  *
