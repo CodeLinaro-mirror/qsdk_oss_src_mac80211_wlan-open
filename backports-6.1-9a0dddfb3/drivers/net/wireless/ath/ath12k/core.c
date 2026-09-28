@@ -7538,7 +7538,7 @@ int ath12k_core_init(struct ath12k_base *ab)
 	if (!ath12k_upload_dump_before_bugon &&
 	    (ab->hw_rev == ATH12K_HW_QCN9625_HW10 ||
 	     ab->hw_rev == ATH12K_HW_QCN9625_HW20))
-		ath12k_upload_dump_before_bugon = true;
+		ath12k_upload_dump_before_bugon = false;
 
 	ret = ath12k_core_panic_notifier_register(ab);
 	if (ret)
