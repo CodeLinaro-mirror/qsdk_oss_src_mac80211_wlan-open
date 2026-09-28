@@ -1524,6 +1524,10 @@ static void ath12k_wifi8_mac_op_tx(struct ieee80211_hw *hw,
 #ifdef CPTCFG_QCN_EXTN
 	u32 info_flags = info->flags;
 #endif /* CPTCFG_QCN_EXTN */
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	struct ath12k_vif *src_ahvif = NULL;
+	u32 control_flags = info->control.flags;
+#endif
 	struct ieee80211_tx_info info_tx;
 	struct ath12k_dp_vif *dp_vif = &ahvif->dp_vif;
 	bool is_mcast = false, is_eth = false, is_data = false;
@@ -1559,7 +1563,19 @@ static void ath12k_wifi8_mac_op_tx(struct ieee80211_hw *hw,
 	skb_cb = ATH12K_SKB_CB(skb);
 	memset(skb_cb, 0, sizeof(*skb_cb));
 
-	/* Check monitor mode.*/
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	if (control->src_vif)
+		src_ahvif = ath12k_vif_to_ahvif(control->src_vif);
+
+	if (src_ahvif && src_ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR &&
+	    (control_flags & IEEE80211_TX_CTRL_MON_RAW_TX)) {
+		skb_cb->flags |= ATH12K_SKB_MONRAW_TX;
+		ath12k_wifi8_mgmt_handler(hw, control, &info_tx, skb);
+		return;
+	}
+#endif
+
+	/* Check monitor mode */
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR) {
 		ath12k_mac_ieee80211_free_txskb(hw, skb, NULL, sta, dp_vif,
 						DP_TX_ENQ_DROP_VIF_TYPE_MON,
