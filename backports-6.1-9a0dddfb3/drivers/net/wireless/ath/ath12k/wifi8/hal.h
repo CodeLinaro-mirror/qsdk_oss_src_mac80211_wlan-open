@@ -2157,6 +2157,80 @@ enum hal_tx_latency_resolution {
 #define HAL_TX_STREAM_STATS_CONFIG_CTRL			0xF10224
 
 #define HAL_TX_STREAM_STATS_BAND_CFG_BASE		0xF10228
+#define HAL_TX_STREAM_STATS_CFG_BASE			0xF10230
+#define HAL_TX_STREAM_STATS_CFG_DWORD1		(HAL_TX_STREAM_STATS_CFG_BASE + 0x4)
+#define HAL_TX_STREAM_STATS_CFG_DWORD2		(HAL_TX_STREAM_STATS_CFG_BASE + 0x8)
+
+/* TX_STREAM_STATS_CFG_0 Reg2..Reg5 — latency histogram config
+ * All offsets are from HAL_TX_STREAM_STATS_CFG_BASE (stream 0).
+ *
+ * Reg2 (+0x8):
+ *   [17:16] Timestamp select (mode): 4 modes — see HAL_TX_LAT_TS_MODE_*
+ *
+ * Reg3 (+0xC):
+ *   [15:0]  Histogram bin 0 boundary
+ *   [31:16] Histogram bin 1 boundary
+ *
+ * Reg4 (+0x10):
+ *   [15:0]  Histogram bin 2 boundary
+ *   [31:16] Histogram bin 3 boundary
+ *
+ * Reg5 (+0x14):
+ *   [15:0]  Histogram bin 4 boundary
+ *
+ */
+#define HAL_TX_STREAM_STATS_CFG_DWORD3		(HAL_TX_STREAM_STATS_CFG_BASE + 0xC)
+#define HAL_TX_STREAM_STATS_CFG_DWORD4		(HAL_TX_STREAM_STATS_CFG_BASE + 0x10)
+#define HAL_TX_STREAM_STATS_CFG_DWORD5		(HAL_TX_STREAM_STATS_CFG_BASE + 0x14)
+
+#define HAL_TX_STREAM_STATS_CFG2_MCS_SEL		GENMASK(15, 14)
+#define HAL_TX_LAT_CFG2_TS_MODE			GENMASK(17, 16)
+#define HAL_TX_LAT_CFG3_BIN0			GENMASK(15, 0)
+#define HAL_TX_LAT_CFG3_BIN1			GENMASK(31, 16)
+#define HAL_TX_LAT_CFG4_BIN2			GENMASK(15, 0)
+#define HAL_TX_LAT_CFG4_BIN3			GENMASK(31, 16)
+#define HAL_TX_LAT_CFG5_BIN4			GENMASK(15, 0)
+
+#define HAL_TX_LAT_HISTOGRAM_NUM_BINS		5
+
+/* Static latency histogram bin boundaries (in 128µs):
+ *   bin[0] < 512, 512 <= bin[1] < 1024, 1024 <= bin[2] < 2048,
+ *   2048 <= bin[3] < 4096, 4096 <= bin[4] < 8192, bin[5] >= 8192
+ */
+#define HAL_TX_LATENCY_BIN0		4
+#define HAL_TX_LATENCY_BIN1		8
+#define HAL_TX_LATENCY_BIN2		16
+#define HAL_TX_LATENCY_BIN3		32
+#define HAL_TX_LATENCY_BIN4		64
+
+/* TX_STREAM_RATE_MCS_BIN_CFG banks 0-4
+ * Each bank has 10 registers (stride 0x4), covering 5 UM groups × 2 regs each.
+ * Even regs (0,2,4,6,8): MCS 0-9  packed as 10 × 3-bit bin values [29:0]
+ * Odd  regs (1,3,5,7,9): MCS 10-19 packed as 10 × 3-bit bin values [29:0]
+ */
+#define HAL_TASC_MCS_BIN_CFG0_BASE			0xF104D0
+#define HAL_TASC_MCS_BIN_CFG1_BASE			0xF104F8
+#define HAL_TASC_MCS_BIN_CFG2_BASE			0xF10520
+#define HAL_TASC_MCS_BIN_CFG3_BASE			0xF10548
+#define HAL_TASC_MCS_BIN_CFG_STRIDE			0x4
+#define HAL_TASC_MCS_BIN_CFG_COUNT			10
+#define HAL_TASC_MCS_BIN_CFG_UM_GROUPS			5
+#define HAL_TASC_MCS_BIN_CFG_SEL_MAX			3
+
+/* Static MCS bin values for TX stream rate stats:
+ *   MCS 0-2  -> bin 0,  MCS 3-5  -> bin 1,  MCS 6-7  -> bin 2
+ *   MCS 8-9  -> bin 3,  MCS 10-11 -> bin 4, MCS 12-13 -> bin 5
+ *   MCS 14-15 -> bin 6, MCS 16-19 -> bin 7
+ * Each register packs 10 MCS slots × 3 bits = 30 bits [29:0].
+ */
+#define HAL_TASC_MCS_BIN_VAL_MCS0_9			0x1B489200
+#define HAL_TASC_MCS_BIN_VAL_MCS10_19			0x3FFF6B64
+
+void ath12k_wifi8_hal_tasc_tx_stream_stats_cfg_mcs_sel(struct ath12k_base *ab,
+						       u8 cfg_sel);
+u32 ath12k_wifi8_hal_tasc_mcs_bin_cfg_base(u8 cfg);
+void ath12k_wifi8_hal_tasc_tx_mcs_bin_cfg(struct ath12k_base *ab);
+
 #define HAL_TX_STREAM_STATS_BAND_CFG(n)	\
 	(HAL_TX_STREAM_STATS_BAND_CFG_BASE + 0x4 * (n))
 #define HAL_TX_STREAM_STATS_BAND_CFG_FIELD_WIDTH	10
@@ -2200,6 +2274,9 @@ enum hal_tx_latency_resolution {
 	(HAL_RX_STREAM_LATENCY_STATS_WINDOW_CFG_BASE + 0x4 * (n))
 #define HAL_RX_STREAM_LATENCY_STATS_WINDOW_FIELD_WIDTH	12
 
+void ath12k_wifi8_hal_tasc_tx_latency_ts_mode_cfg(struct ath12k_base *ab,
+						  u8 mode);
+void ath12k_wifi8_hal_tasc_tx_latency_bin_cfg(struct ath12k_base *ab);
 void ath12k_wifi8_hal_ce_dst_setup(struct ath12k_base *ab,
 				   struct hal_srng *srng, int ring_num);
 void ath12k_wifi8_hal_srng_dst_hw_init(struct ath12k_base *ab,

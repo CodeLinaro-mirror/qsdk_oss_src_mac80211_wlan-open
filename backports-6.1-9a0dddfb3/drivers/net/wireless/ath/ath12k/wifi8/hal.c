@@ -1903,6 +1903,108 @@ void ath12k_wifi8_hal_tasc_rx_stream_id_valid_cfg(struct ath12k_base *ab,
 	ath12k_hif_write32(ab, HAL_RX_STREAM_ID_VALID_CFG(n), val);
 }
 
+void ath12k_wifi8_hal_tasc_tx_stream_stats_cfg_mcs_sel(struct ath12k_base *ab,
+						       u8 cfg_sel)
+{
+	u32 val;
+
+	val = ath12k_hif_read32(ab, HAL_TX_STREAM_STATS_CFG_DWORD1);
+	val &= ~HAL_TX_STREAM_STATS_CFG2_MCS_SEL;
+	val |= FIELD_PREP(HAL_TX_STREAM_STATS_CFG2_MCS_SEL, cfg_sel);
+
+	ath12k_hif_write32(ab, HAL_TX_STREAM_STATS_CFG_DWORD1, val);
+}
+
+u32 ath12k_wifi8_hal_tasc_mcs_bin_cfg_base(u8 cfg)
+{
+	switch (cfg) {
+	case 1:  return HAL_TASC_MCS_BIN_CFG1_BASE;
+	case 2:  return HAL_TASC_MCS_BIN_CFG2_BASE;
+	case 3:  return HAL_TASC_MCS_BIN_CFG3_BASE;
+	default: return HAL_TASC_MCS_BIN_CFG0_BASE;
+	}
+}
+
+/*
+ * For each of the 5 UM(Unequal_modulation) groups:
+ *   even reg (2*um):     mcs0_9   — packed 3-bit bin values for MCS 0-9
+ *   odd  reg (2*um + 1): mcs10_19 — packed 3-bit bin values for MCS 10-19
+ *
+ * cfg_sel is 0-indexed (0..3); the bank is cfg_sel+1 (1..4).
+ */
+void ath12k_wifi8_hal_tasc_tx_mcs_bin_cfg(struct ath12k_base *ab)
+{
+	u32 cfg_base, addr;
+	int um;
+
+	ath12k_wifi8_hal_tasc_tx_stream_stats_cfg_mcs_sel(ab, 0);
+
+	cfg_base = ath12k_wifi8_hal_tasc_mcs_bin_cfg_base(0);
+
+	for (um = 0; um < HAL_TASC_MCS_BIN_CFG_UM_GROUPS; um++) {
+		addr = cfg_base + ((2 * um) * HAL_TASC_MCS_BIN_CFG_STRIDE);
+		ath12k_hif_write32(ab, addr, HAL_TASC_MCS_BIN_VAL_MCS0_9);
+
+		addr  = cfg_base + ((2 * um + 1) * HAL_TASC_MCS_BIN_CFG_STRIDE);
+		ath12k_hif_write32(ab, addr,  HAL_TASC_MCS_BIN_VAL_MCS10_19);
+	}
+}
+
+/*
+ * Select the timestamp source used by HW to compute transmit latency.
+ *
+ * Writes HAL_TX_LAT_CFG2_TS_MODE (Reg2[17:16]) in TX_STREAM_STATS_CFG_0.
+ * The HW uses this mode to determine Tend and Tstart for latency measurement:
+ *   0 = wifi_scheduling_latency + nw latency
+ *   1 = wifi_scheduling_latency
+ *   2 = End To End Latency
+ *   3 = ppdu_duration + wifi_scheduling_latency
+ */
+void ath12k_wifi8_hal_tasc_tx_latency_ts_mode_cfg(struct ath12k_base *ab,
+						  u8 mode)
+{
+	u32 val;
+
+	val = ath12k_hif_read32(ab, HAL_TX_STREAM_STATS_CFG_DWORD2);
+	val &= ~HAL_TX_LAT_CFG2_TS_MODE;
+	val |= FIELD_PREP(HAL_TX_LAT_CFG2_TS_MODE, mode);
+
+	ath12k_hif_write32(ab, HAL_TX_STREAM_STATS_CFG_DWORD2, val);
+}
+
+/*
+ * Configure the 5 transmit latency histogram bin boundaries.
+ *
+ * bins[0..4] define the thresholds for 6 HW bins:
+ *   bin[0]: latency < bins[0]
+ *   bin[1]: bins[0] <= latency < bins[1]
+ *   bin[2]: bins[1] <= latency < bins[2]
+ *   bin[3]: bins[2] <= latency < bins[3]
+ *   bin[4]: bins[3] <= latency < bins[4]
+ *   bin[5]: latency > bins[4]
+ *
+ */
+void ath12k_wifi8_hal_tasc_tx_latency_bin_cfg(struct ath12k_base *ab)
+{
+	u32 reg3, reg4, reg5;
+
+	reg3 = FIELD_PREP(HAL_TX_LAT_CFG3_BIN0, HAL_TX_LATENCY_BIN0) |
+	       FIELD_PREP(HAL_TX_LAT_CFG3_BIN1, HAL_TX_LATENCY_BIN1);
+
+	reg4 = FIELD_PREP(HAL_TX_LAT_CFG4_BIN2, HAL_TX_LATENCY_BIN2) |
+	       FIELD_PREP(HAL_TX_LAT_CFG4_BIN3, HAL_TX_LATENCY_BIN3);
+
+	reg5 = ath12k_hif_read32(ab, HAL_TX_STREAM_STATS_CFG_DWORD5);
+	reg5 &= ~HAL_TX_LAT_CFG5_BIN4;
+	reg5 |= FIELD_PREP(HAL_TX_LAT_CFG5_BIN4, HAL_TX_LATENCY_BIN4);
+
+	ath12k_hif_write32(ab, HAL_TX_STREAM_STATS_CFG_DWORD3, reg3);
+
+	ath12k_hif_write32(ab, HAL_TX_STREAM_STATS_CFG_DWORD4, reg4);
+
+	ath12k_hif_write32(ab, HAL_TX_STREAM_STATS_CFG_DWORD5, reg5);
+}
+
 void ath12k_wifi8_hal_tasc_rx_stream_clear_stats(struct ath12k_base *ab, u8 stream_id)
 {
 	u32 val = 0;
