@@ -3695,10 +3695,21 @@ int ath12k_wmi_vdev_set_param_cmd(struct ath12k *ar, u32 vdev_id,
 	int ret;
 
 	if (!ath12k_wmi_vdev_is_created(ar, vdev_id)) {
-		ath12k_warn(ar->ab,
-			    "vdev %d set param %d value %d sent before vdev create, allocated_vdev_map 0x%llx, created_vdev_map 0x%llx\n",
-			    vdev_id, param_id, param_value, ar->allocated_vdev_map,
-			    ar->created_vdev_map);
+		if (!test_bit(ATH12K_FLAG_WMI_INIT_DONE, &ar->ab->dev_flags) ||
+		    test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags) ||
+		    (!ar->ab->ag->wsi_remap_in_progress && ar->ab->is_bypassed)) {
+			ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+				   "vdev %d set param %d value %d skipped, dev_flags 0x%lx is_bypassed %d wsi_remap_in_progress %d\n",
+				   vdev_id, param_id, param_value, ar->ab->dev_flags,
+				   ar->ab->is_bypassed,
+				   ar->ab->ag->wsi_remap_in_progress);
+			return -ESHUTDOWN;
+		}
+
+		ath12k_err(ar->ab,
+			   "vdev %d set param %d value %d sent before vdev create, created_vdev_map 0x%llx, allocated_vdev_map 0x%llx\n",
+			   vdev_id, param_id, param_value, ar->created_vdev_map,
+			   ar->allocated_vdev_map);
 		WARN_ON(1);
 		return -ENOENT;
 	}
