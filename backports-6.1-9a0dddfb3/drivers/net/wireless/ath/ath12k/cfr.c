@@ -289,14 +289,12 @@ void ath12k_cfr_release_lut_entry(struct ath12k_cfr_look_up_table *lut)
 static void
 ath12k_cfr_fill_peer_addr(struct ath12k_csi_cfr_header *header,
 			  const struct hal_rx_mon_ppdu_info *ppdu_info,
-			  u8 num_mu_users, const u8 *fallback_peer_addr)
+			  u8 num_mu_users)
 {
 	u8 i;
 
-	if (!num_mu_users) {
-		memcpy(header->meta_enh.peer_addr, fallback_peer_addr, ETH_ALEN);
+	if (!num_mu_users)
 		return;
-	}
 
 	for (i = 0; i < num_mu_users; i++) {
 		const u8 *peer_addr = ppdu_info->userstats[i].peer_mac;
@@ -1073,7 +1071,6 @@ static int ath12k_cfr_process_rx_tlv_ppdu(struct ath12k *ar,
 	struct ath12k_cfr_peer_tx_param params = {0};
 	struct ath12k_csi_cfr_header *header;
 	struct ath12k_link_vif *arvif = NULL;
-	struct ath12k_dp_link_peer *link_peer;
 	const struct hal_rx_ppdu_cfr_info *cfr_info = &ppdu_info->cfr_info;
 	dma_addr_t buf_addr;
 	u32 end_magic = ATH12K_CFR_END_MAGIC;
@@ -1101,11 +1098,6 @@ static int ath12k_cfr_process_rx_tlv_ppdu(struct ath12k *ar,
 		return -EINVAL;
 
 	rcu_read_lock();
-	link_peer = ath12k_dp_link_peer_find_by_peerid_index(ab->dp, NULL,
-							     ppdu_info->peer_id);
-	if (link_peer && (link_peer->peer_id != ppdu_info->peer_id ||
-			  link_peer->pdev_idx != ar->pdev_idx))
-		link_peer = NULL;
 
 	if (cfr->rcc_param.vdev_id != 0xff)
 		arvif = ath12k_mac_get_arvif_by_vdev_id(ab, cfr->rcc_param.vdev_id);
@@ -1114,9 +1106,6 @@ static int ath12k_cfr_process_rx_tlv_ppdu(struct ath12k *ar,
 
 	if (arvif && arvif->ar != ar)
 		arvif = NULL;
-
-	if (!arvif && link_peer)
-		arvif = ath12k_mac_get_arvif(ar, link_peer->vdev_id);
 
 	if (!arvif) {
 		rcu_read_unlock();
@@ -1128,11 +1117,6 @@ static int ath12k_cfr_process_rx_tlv_ppdu(struct ath12k *ar,
 		center_freq2 = arvif->chanctx.def.center_freq2;
 		puncture_bitmap = arvif->chanctx.def.punctured;
 	}
-
-	if (link_peer)
-		ether_addr_copy(params.peer_mac_addr, link_peer->addr);
-	else
-		ether_addr_copy(params.peer_mac_addr, ppdu_info->addr2);
 
 	cfr_phymode = ath12k_cfr_chan_to_phymode(arvif);
 
@@ -1192,8 +1176,7 @@ static int ath12k_cfr_process_rx_tlv_ppdu(struct ath12k *ar,
 	num_mu_users = min_t(u8, num_mu_users, ATH12K_CFR_MAX_MU_USERS);
 	header->cfr_metadata_len = ATH12K_CFR_META_LEN(num_mu_users);
 	header->meta_enh.num_mu_users = num_mu_users;
-	ath12k_cfr_fill_peer_addr(header, ppdu_info, num_mu_users,
-				  params.peer_mac_addr);
+	ath12k_cfr_fill_peer_addr(header, ppdu_info, num_mu_users);
 	lut->header_len = ATH12K_CFR_HEADER_LEN(num_mu_users);
 	header->meta_enh.puncture_bitmap = puncture_bitmap;
 	header->meta_enh.beamformed = ppdu_info->beamformed;
@@ -1441,6 +1424,12 @@ int ath12k_process_cfr_capture_event(struct ath12k_base *ab,
 	header->vendorid = VENDOR_QCA;
 
 	ab->hw_params->hw_ops->fill_cfr_hdr_info(ar, header, params);
+
+	memcpy(header->meta_enh.peer_addr, params->peer_mac_addr, ETH_ALEN);
+	/* num mu users and beamformed to be 0 for periodic CFR */
+	header->meta_enh.num_mu_users = 0;
+	header->meta_enh.beamformed = 0;
+
 	lut->header_len = ATH12K_CFR_HEADER_LEN(0);
 	header->meta_enh.puncture_bitmap = arvif->chanctx.def.punctured;
 
