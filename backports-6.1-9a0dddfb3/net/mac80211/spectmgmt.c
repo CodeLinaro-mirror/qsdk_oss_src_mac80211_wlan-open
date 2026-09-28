@@ -215,6 +215,12 @@ validate_chandef_by_6ghz_he_eht_oper(struct ieee80211_sub_if_data *sdata,
 		eht._oper_info.control = he._6ghz_oper.control;
 		eht._oper_info.ccfs0 = he._6ghz_oper.ccfs0;
 		eht._oper_info.ccfs1 = he._6ghz_oper.ccfs1;
+		if (chandef->punctured) {
+			eht._oper.params |=
+				IEEE80211_EHT_OPER_DISABLED_SUBCHANNEL_BITMAP_PRESENT;
+			eht._oper_info.optional[0] = chandef->punctured & 0x00ff;
+			eht._oper_info.optional[1] = chandef->punctured >> 8;
+		}
 		eht_oper = &eht._oper;
 	}
 
