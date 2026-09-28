@@ -874,6 +874,8 @@ struct ath12k_cfr {
 	struct dentry *cfr_unassoc;
 	struct dentry *rcc_debug_counters;
 	struct dentry *clr_dbg_counters;
+	struct dentry *rcc_config_details;
+	struct dentry *rcc_dump_lut;
 	u8 cfr_enabled_peer_cnt;
 	struct ath12k_cfr_look_up_table *lut;
 	u32 lut_num;
