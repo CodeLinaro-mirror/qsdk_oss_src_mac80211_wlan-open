@@ -11476,7 +11476,9 @@ static void ath12k_scan_vdev_clean_work(struct wiphy *wiphy, struct wiphy_work *
 
 work_complete:
 	spin_lock_bh(&ar->data_lock);
-	if (!ar->scan.is_roc && ar->scan.scan_id != ATH12K_ROC_SCAN_ID) {
+	if (!ar->scan.is_roc &&
+	    ar->scan.scan_id != ATH12K_ROC_SCAN_ID &&
+	    ar->scan.state != ATH12K_SCAN_IDLE) {
 		struct cfg80211_scan_info info = {
 			.aborted = ((ar->scan.state ==
 				    ATH12K_SCAN_ABORTING) ||
