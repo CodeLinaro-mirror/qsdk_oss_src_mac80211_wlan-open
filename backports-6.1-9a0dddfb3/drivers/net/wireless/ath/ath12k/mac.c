@@ -24743,6 +24743,14 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 		arg.max_power = chandef->chan->max_power;
 		arg.max_reg_power = chandef->chan->max_reg_power;
 		arg.max_antenna_gain = chandef->chan->max_antenna_gain;
+#ifdef CPTCFG_QCN_EXTN
+		if (!cfg80211_chandef_flags_allowed(hw->wiphy,
+						    chandef,
+						    IEEE80211_CHAN_CAN_MONITOR,
+						    0))
+			ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+				   "scan radio start on non-country chnl\n");
+#endif
 		if (!is_bridge_vdev &&
 		    test_bit(WMI_TLV_SERVICE_SW_PROG_DFS_SUPPORT, ar->ab->wmi_ab.svc_map) &&
 		    cfg80211_chandef_device_present(chandef)) {

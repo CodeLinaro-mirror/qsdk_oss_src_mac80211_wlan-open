@@ -521,6 +521,7 @@ bool cfg80211_wdev_on_sub_chan(struct wireless_dev *wdev,
 			       struct ieee80211_channel *chan,
 			       bool primary_only);
 bool _cfg80211_chandef_usable(struct wiphy *wiphy,
+			      struct wireless_dev *wdev,
 			      const struct cfg80211_chan_def *chandef,
 			      u32 prohibited_flags,
 			      u32 permitting_flags);

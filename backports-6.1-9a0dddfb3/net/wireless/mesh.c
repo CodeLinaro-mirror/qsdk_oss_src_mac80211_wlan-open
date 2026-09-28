@@ -213,7 +213,7 @@ int __cfg80211_join_mesh(struct cfg80211_registered_device *rdev,
 #ifdef CPTCFG_QCN_EXTN
 	if (cfg80211_bootup_cac_is_5g_dfs_chan_extn(&rdev->wiphy,
 						    &setup->chandef)) {
-		if (!_cfg80211_chandef_usable(&rdev->wiphy, &setup->chandef,
+		if (!_cfg80211_chandef_usable(&rdev->wiphy, NULL, &setup->chandef,
 					      IEEE80211_CHAN_DISABLED, 0) ||
 		    !cfg80211_chandef_dfs_nol_clear(&rdev->wiphy,
 						    &setup->chandef))

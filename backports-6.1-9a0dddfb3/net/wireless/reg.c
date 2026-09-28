@@ -2593,7 +2593,7 @@ static void handle_channel_custom(struct wiphy *wiphy,
 				  u32 min_bw,
 				  enum nl80211_regulatory_power_modes mode)
 {
-	u32 bw_flags = 0;
+	u32 bw_flags = 0, monitor_flag = 0;
 	const struct ieee80211_reg_rule *reg_rule = NULL;
 	const struct ieee80211_power_rule *power_rule = NULL;
 	u32 bw, center_freq_khz;
@@ -2604,7 +2604,14 @@ static void handle_channel_custom(struct wiphy *wiphy,
 		if (!IS_ERR(reg_rule))
 			break;
 	}
-
+#ifdef CPTCFG_QCN_EXTN
+	if (IS_ERR_OR_NULL(reg_rule) &&
+	    (wiphy->regulatory_flags & REGULATORY_WIPHY_SELF_MANAGED)) {
+		reg_rule = freq_reg_info_regd(center_freq_khz, regd, bw,
+					      NL80211_REG_NO_POWER_MODE);
+		monitor_flag = IEEE80211_CHAN_CAN_MONITOR;
+	}
+#endif /* ifdef CPTCFG_QCN_EXTN */
 	if (IS_ERR_OR_NULL(reg_rule)) {
 		pr_debug("Disabling freq %d.%03d MHz as custom regd has no rule that fits it\n",
 			 chan->center_freq, chan->freq_offset);
@@ -2626,7 +2633,7 @@ static void handle_channel_custom(struct wiphy *wiphy,
 	chan->beacon_found = false;
 
 	if (wiphy->regulatory_flags & REGULATORY_WIPHY_SELF_MANAGED)
-		chan->flags = chan->orig_flags | bw_flags |
+		chan->flags = chan->orig_flags | bw_flags | monitor_flag |
 			      map_regdom_flags(reg_rule->flags);
 	else
 		chan->flags |= map_regdom_flags(reg_rule->flags) | bw_flags;
@@ -2697,16 +2704,24 @@ find_valid_6ghz_power_mode_chan(const struct wiphy *wiphy, unsigned int chan_idx
 	};
 	struct ieee80211_channel *chan_6g = NULL;
 	int i;
-
+	u32 flags = IEEE80211_CHAN_DISABLED;
+#ifdef CPTCFG_QCN_EXTN
+	flags |= IEEE80211_CHAN_CAN_MONITOR;
+#endif
 	/* Check for the 6GHz channel in the order of power modes */
 	for (i = 0; i < ARRAY_SIZE(p_mode_order); i++) {
 		chan_6g = validate_chan_for_power_mode(wiphy, chan_idx,
 						       p_mode_order[i],
-						       IEEE80211_CHAN_DISABLED);
+						       flags);
 		if (chan_6g)
 			break;
 	}
-
+#ifdef CPTCFG_QCN_EXTN
+	if (!chan_6g)
+		chan_6g = validate_chan_for_power_mode(wiphy, chan_idx,
+						       0,
+						       IEEE80211_CHAN_DISABLED);
+#endif
 	return chan_6g;
 }
 

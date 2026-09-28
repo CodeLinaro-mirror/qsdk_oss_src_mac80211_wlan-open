@@ -12086,6 +12086,24 @@ int cfg80211_validate_freq_width_for_pwr_mode(struct wiphy *wiphy,
 					      u32 prohibited_flags);
 
 /**
+ * cfg80211_chandef_flags_allowed - check channel flags are allowed or not
+ * across all subchannels
+ *
+ * @wiphy: the wiphy
+ * @chandef: Channel definition
+ * @prohibited_flags: Prohibited flags for the channel that must not be set
+ * @permitting_flags: Channel flags that override @prohibited_flags. The
+ *                    channel is treated as permitted even when it also carries
+ *                    a prohibited flag.
+ *
+ * Return: true if the channel flags are allowed, else return false.
+ */
+bool cfg80211_chandef_flags_allowed(struct wiphy *wiphy,
+				    const struct cfg80211_chan_def *chandef,
+				    u32 prohibited_flags,
+				    u32 permitting_flags);
+
+/**
  * cfg80211_update_link_reconfig_remove_update - Inform userspace about
  *	the removal status of link which is scheduled for removal
  * @dev: the device on which the operation is requested

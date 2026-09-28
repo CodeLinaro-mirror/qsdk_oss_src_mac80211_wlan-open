@@ -4406,7 +4406,7 @@ static int _nl80211_parse_chandef(struct cfg80211_registered_device *rdev,
 		return err;
 	}
 
-	if (!_cfg80211_chandef_usable(&rdev->wiphy, chandef,
+	if (!_cfg80211_chandef_usable(&rdev->wiphy, wdev, chandef,
 				      IEEE80211_CHAN_DISABLED,
 				      monitor ? IEEE80211_CHAN_CAN_MONITOR : 0)) {
 		NL_SET_ERR_MSG(extack, "(extension) channel is disabled");
@@ -5296,6 +5296,8 @@ static int nl80211_send_iface(struct sk_buff *msg, u32 portid, u32 seq, int flag
 
 		nla_nest_end(msg, links);
 	} else {
+		bool show_pwr_level = true;
+
 		if (rdev->ops->get_channel) {
 			struct cfg80211_chan_def chandef = {};
 			int ret;
@@ -5303,6 +5305,13 @@ static int nl80211_send_iface(struct sk_buff *msg, u32 portid, u32 seq, int flag
 			ret = rdev_get_channel(rdev, wdev, 0, &chandef);
 			if (ret == 0 && nl80211_send_chandef(msg, &chandef))
 				goto nla_put_failure;
+
+			if (chandef.chan &&
+			    !cfg80211_chandef_usable(wdev->wiphy, &chandef,
+						     IEEE80211_CHAN_CAN_MONITOR)) {
+				show_pwr_mode = false;
+				show_pwr_level = false;
+			}
 
 			if (chandef.chan &&
 			    chandef.chan->band == NL80211_BAND_6GHZ &&
@@ -5313,7 +5322,7 @@ static int nl80211_send_iface(struct sk_buff *msg, u32 portid, u32 seq, int flag
 					goto nla_put_failure;
 			}
 		}
-		if (rdev->ops->get_tx_power) {
+		if (rdev->ops->get_tx_power && show_pwr_level) {
 			int dbm, ret;
 			ret = rdev_get_tx_power(rdev, wdev, -1, 0, &dbm);
 			if (ret == 0 &&
@@ -8336,7 +8345,7 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 #ifdef CPTCFG_QCN_EXTN
 	if (cfg80211_bootup_cac_is_5g_dfs_chan_extn(&rdev->wiphy,
 						    &params->chandef)) {
-		if (!_cfg80211_chandef_usable(&rdev->wiphy, &params->chandef,
+		if (!_cfg80211_chandef_usable(&rdev->wiphy, NULL, &params->chandef,
 					      IEEE80211_CHAN_DISABLED, 0) ||
 		    !cfg80211_chandef_dfs_nol_clear(&rdev->wiphy,
 						    &params->chandef)) {
@@ -8613,7 +8622,7 @@ static int nl80211_update_ap(struct sk_buff *skb, struct genl_info *info)
 #ifdef CPTCFG_QCN_EXTN
 	if (cfg80211_bootup_cac_is_5g_dfs_chan_extn(&rdev->wiphy,
 						    &wdev->links[link_id].ap.chandef)) {
-		if (!_cfg80211_chandef_usable(&rdev->wiphy,
+		if (!_cfg80211_chandef_usable(&rdev->wiphy, NULL,
 					      &wdev->links[link_id].ap.chandef,
 					      IEEE80211_CHAN_DISABLED, 0) ||
 		    !cfg80211_chandef_dfs_nol_clear(&rdev->wiphy,

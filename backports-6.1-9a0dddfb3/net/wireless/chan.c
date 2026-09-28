@@ -1881,7 +1881,38 @@ static bool cfg80211_edmg_usable(struct wiphy *wiphy, u8 edmg_channels,
 	return true;
 }
 
+bool cfg80211_chandef_flags_allowed(struct wiphy *wiphy,
+				    const struct cfg80211_chan_def *chandef,
+				    u32 prohibited_flags,
+				    u32 permitting_flags)
+{
+	u8 power_mode = NL80211_REG_NUM_POWER_MODES;
+
+	if (chandef->chan->band == NL80211_BAND_6GHZ)
+		power_mode = cfg80211_get_6ghz_power_mode_from_chan(
+								wiphy,
+								chandef->chan);
+	for_each_subchan(chandef, freq, cf) {
+		struct ieee80211_channel *c;
+
+		if (power_mode != NL80211_REG_NUM_POWER_MODES)
+			c = ieee80211_get_6g_channel_khz(wiphy, freq, power_mode);
+		else
+			c = ieee80211_get_channel_khz(wiphy, freq);
+
+		if (!c)
+			return false;
+		if (c->flags & permitting_flags)
+			continue;
+		if (c->flags & prohibited_flags)
+			return false;
+	}
+	return true;
+}
+EXPORT_SYMBOL(cfg80211_chandef_flags_allowed);
+
 bool _cfg80211_chandef_usable(struct wiphy *wiphy,
+			      struct wireless_dev *wdev,
 			      const struct cfg80211_chan_def *chandef,
 			      u32 prohibited_flags,
 			      u32 permitting_flags)
@@ -1893,9 +1924,7 @@ bool _cfg80211_chandef_usable(struct wiphy *wiphy,
 	bool ext_nss_cap, support_80_80 = false, support_320 = false;
 	const struct ieee80211_sband_iftype_data *iftd;
 	struct ieee80211_supported_band *sband;
-	struct ieee80211_channel *c;
 	int i;
-	u8 power_mode = NL80211_REG_NUM_POWER_MODES;
 
 	if (WARN_ON(!cfg80211_chandef_valid(chandef)))
 		return false;
@@ -2049,25 +2078,17 @@ bool _cfg80211_chandef_usable(struct wiphy *wiphy,
 	if (width < 20)
 		prohibited_flags |= IEEE80211_CHAN_NO_OFDM;
 
-	if (chandef->chan->band == NL80211_BAND_6GHZ)
-		power_mode = cfg80211_get_6ghz_power_mode_from_chan(wiphy,
-								    chandef->chan);
+#ifdef CPTCFG_QCN_EXTN
+	if (wdev && wdev_is_scan_radio(wdev))
+		if (!cfg80211_chandef_flags_allowed(wiphy, chandef,
+						    IEEE80211_CHAN_CAN_MONITOR,
+						    0))
+			prohibited_flags = IEEE80211_CHAN_DISABLED;
+#endif
 
-	for_each_subchan(chandef, freq, cf) {
-		if (power_mode != NL80211_REG_NUM_POWER_MODES)
-			c = ieee80211_get_6g_channel_khz(wiphy, freq, power_mode);
-		else
-			c = ieee80211_get_channel_khz(wiphy, freq);
-
-		if (!c)
-			return false;
-		if (c->flags & permitting_flags)
-			continue;
-		if (c->flags & prohibited_flags)
-			return false;
-	}
-
-	return true;
+	return cfg80211_chandef_flags_allowed(wiphy, chandef,
+					      prohibited_flags,
+					      permitting_flags);
 }
 
 int cfg80211_validate_freq_width_for_pwr_mode(struct wiphy *wiphy,
@@ -2168,7 +2189,7 @@ bool cfg80211_chandef_usable(struct wiphy *wiphy,
 			     const struct cfg80211_chan_def *chandef,
 			     u32 prohibited_flags)
 {
-	return _cfg80211_chandef_usable(wiphy, chandef, prohibited_flags, 0);
+	return _cfg80211_chandef_usable(wiphy, NULL, chandef, prohibited_flags, 0);
 }
 EXPORT_SYMBOL(cfg80211_chandef_usable);
 
@@ -2300,7 +2321,7 @@ static bool _cfg80211_reg_can_beacon(struct wiphy *wiphy,
 				      prohibited_flags,
 				      permitting_flags);
 
-	if (!_cfg80211_chandef_usable(wiphy, chandef,
+	if (!_cfg80211_chandef_usable(wiphy, NULL, chandef,
 				      IEEE80211_CHAN_DISABLED, 0))
 		return false;
 
@@ -2318,11 +2339,11 @@ static bool _cfg80211_reg_can_beacon(struct wiphy *wiphy,
 		check_radar = false;
 
 	if (check_radar &&
-	    !_cfg80211_chandef_usable(wiphy, chandef,
+	    !_cfg80211_chandef_usable(wiphy, NULL, chandef,
 				      IEEE80211_CHAN_RADAR, 0))
 		return false;
 
-	res = _cfg80211_chandef_usable(wiphy, chandef,
+	res = _cfg80211_chandef_usable(wiphy, NULL, chandef,
 				       prohibited_flags,
 				       permitting_flags);
 

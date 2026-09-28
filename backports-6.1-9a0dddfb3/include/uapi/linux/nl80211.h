@@ -5285,6 +5285,13 @@ enum nl80211_regulatory_power_modes {
 };
 
 /**
+ * For non-country channels the power mode is irrelevant.
+ * However, for better readability define the following
+ * macro (NO_POWER_MODE) and use it for non-country channels.
+ */
+#define NL80211_REG_NO_POWER_MODE	(NL80211_REG_NUM_POWER_MODES)
+
+/**
  * enum nl80211_reg_client_types - 6 GHz client types
  * @NL80211_REG_REGULAR_CLIENT: Default client
  * @NL80211_REG_SUBORDINATE_CLIENT: Subordinate Client
