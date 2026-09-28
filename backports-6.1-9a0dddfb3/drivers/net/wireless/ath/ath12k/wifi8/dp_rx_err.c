@@ -24,6 +24,9 @@
 #include "../debugfs.h"
 #include "../dp.h"
 #include "dp.h"
+#ifdef CPTCFG_QCN_EXTN
+#include "../qcn_extns/ath12k_cmn_extn.h"
+#endif /* CPTCFG_QCN_EXTN */
 
 #define ATH12K_DP_RX_FRAGMENT_TIMEOUT_MS (2 * HZ)
 
@@ -1091,6 +1094,26 @@ void ath12k_wifi8_convert_n_deliver_nw_frame(struct ath12k_pdev_dp *dp_pdev,
 	*rx_status = *status;
 
 	ath12k_dp_rx_update_eapol_stats(dp_pdev->dp, msdu);
+
+#ifdef CPTCFG_QCN_EXTN
+	if (static_branch_unlikely(&extap_enabled)) {
+		struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(peer->vif);
+
+		if (ahvif && ath12k_vif_has_extap(ahvif)) {
+			if (ath12k_extap_rx(ahvif, msdu) > 0) {
+				struct ath12k_link_vif *arvif;
+				u8 link_id = rx_mpdu_info->src_link_id;
+
+				arvif = rcu_dereference(ahvif->link[link_id]);
+				if (arvif)
+					arvif->link_stats.rx_dropped++;
+
+				dev_kfree_skb_any(msdu);
+				return;
+			}
+		}
+	}
+#endif
 
 	ieee80211_rx_napi(ath12k_dp_pdev_to_hw(dp_pdev), pubsta, msdu, napi);
 }

@@ -1538,8 +1538,17 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
 	if (static_branch_unlikely(&extap_enabled)) {
 		struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(peer->vif);
 
-		if (ahvif && ath12k_vif_has_extap(ahvif))
-			ath12k_extap_rx(ahvif, msdu);
+		if (ahvif && ath12k_vif_has_extap(ahvif)) {
+			if (ath12k_extap_rx(ahvif, msdu) > 0) {
+				struct ath12k_link_vif *arvif =
+					rcu_dereference(ahvif->link[hw_link_id]);
+				if (arvif)
+					arvif->link_stats.rx_dropped++;
+				dev_kfree_skb_any(msdu);
+				rcu_read_unlock();
+				return;
+			}
+		}
 	}
 #endif
 
