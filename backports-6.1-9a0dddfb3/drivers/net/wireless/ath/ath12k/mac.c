@@ -26625,7 +26625,7 @@ static void ath12k_mac_restart_bridge_vdevs(struct ieee80211_hw *hw,
 
 	curr_link_id = link_conf->link_id;
 	arvif = ahvif->link[curr_link_id];
-	if (!arvif) {
+	if (!arvif || !arvif->is_created) {
 		ath12k_err(NULL,
 			   "restart bridge: vdev not found for link_id=%u MLD:%pM\n",
 			   curr_link_id, vif->addr);
@@ -26806,7 +26806,7 @@ static int ath12k_mac_create_and_start_bridge(struct ieee80211_hw *hw,
 
 		curr_link_id = link_conf->link_id;
 		arvif = ahvif->link[curr_link_id];
-		if (!arvif) {
+		if (!arvif || !arvif->is_created) {
 			ath12k_err(NULL, "Bridge cannot be created, vdev not created with link_id=%u\n",
 				   curr_link_id);
 			goto exit;
