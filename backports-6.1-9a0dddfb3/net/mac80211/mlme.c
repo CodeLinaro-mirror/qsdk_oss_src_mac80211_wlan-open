@@ -8487,7 +8487,7 @@ static void ieee80211_rx_mgmt_beacon(struct ieee80211_link_data *link,
 		sdata_info(sdata, "SSID mismatch for AP %pM, disconnect\n",
 			   sdata->vif.cfg.ap_addr);
 		__ieee80211_disconnect(sdata);
-		return;
+		goto free;
 	}
 
 	ncrc = elems->crc;
