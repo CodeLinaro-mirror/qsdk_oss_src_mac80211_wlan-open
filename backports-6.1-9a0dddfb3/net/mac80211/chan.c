@@ -1975,6 +1975,8 @@ static int ieee80211_vif_use_reserved_switch(struct ieee80211_local *local)
 			goto err;
 		}
 
+		bool ctx_has_links = false;
+
 		list_for_each_entry(link, &ctx->reserved_links,
 				    reserved_chanctx_list) {
 			struct ieee80211_sub_if_data *sdata = link->sdata;
@@ -1984,6 +1986,7 @@ static int ieee80211_vif_use_reserved_switch(struct ieee80211_local *local)
 			if (!ieee80211_link_has_in_place_reservation(link))
 				continue;
 
+			ctx_has_links = true;
 			rcu_assign_pointer(link_conf->chanctx_conf,
 					   &ctx->conf);
 
@@ -2007,10 +2010,13 @@ static int ieee80211_vif_use_reserved_switch(struct ieee80211_local *local)
 			ieee80211_recalc_txpower(link, false, link->link_id);
 		}
 
-		ieee80211_recalc_chanctx_chantype(local, ctx);
-		ieee80211_recalc_smps_chanctx(local, ctx);
-		ieee80211_recalc_radar_chanctx(local, ctx);
-		ieee80211_recalc_chanctx_min_def(local, ctx, NULL, false);
+		if (ctx_has_links ||
+		    ieee80211_chanctx_num_assigned(local, ctx) > 0) {
+			ieee80211_recalc_chanctx_chantype(local, ctx);
+			ieee80211_recalc_smps_chanctx(local, ctx);
+			ieee80211_recalc_radar_chanctx(local, ctx);
+			ieee80211_recalc_chanctx_min_def(local, ctx, NULL, false);
+		}
 
 		list_for_each_entry_safe(link, link_tmp, &ctx->reserved_links,
 					 reserved_chanctx_list) {
