@@ -24389,6 +24389,13 @@ ath12k_mac_change_chanctx_cnt_iter(void *data, u8 *mac,
 			continue;
 
 		if (!ath12k_mac_is_bridge_vdev(arvif)) {
+			/* mac80211 may call change_chanctx() after
+			 * unassign_vif_chanctx() and before change_vif_links().
+			 * Skip links whose cached channel context is cleared.
+			 */
+			if (!arvif->chanctx.def.chan)
+				continue;
+
 			link_conf = wiphy_dereference(ahvif->ah->hw->wiphy,
 						      vif->link_conf[link_id]);
 
@@ -24446,6 +24453,13 @@ ath12k_mac_change_chanctx_fill_iter(void *data, u8 *mac,
 			continue;
 
 		if (!ath12k_mac_is_bridge_vdev(arvif)) {
+			/* mac80211 may call change_chanctx() after
+			 * unassign_vif_chanctx() and before change_vif_links().
+			 * Skip links whose cached channel context is cleared.
+			 */
+			if (!arvif->chanctx.def.chan)
+				continue;
+
 			link_conf = wiphy_dereference(ahvif->ah->hw->wiphy,
 						      vif->link_conf[arvif->link_id]);
 
