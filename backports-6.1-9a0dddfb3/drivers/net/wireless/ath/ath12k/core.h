@@ -949,7 +949,6 @@ struct ath12k_link_vif {
 	u8 bssid[ETH_ALEN];
 	u8 addr[ETH_ALEN];
 	struct cfg80211_bitrate_mask bitrate_mask;
-	struct delayed_work connection_loss_work;
 	int num_legacy_stations;
 	int rtscts_prot_mode;
 	int txpower;
@@ -963,7 +962,6 @@ struct ath12k_link_vif {
 	u8 link_id;
 	struct ath12k_vif *ahvif;
 	struct ath12k_rekey_data rekey_data;
-	unsigned long beacon_flags;
 
 	struct ath12k_rssi_deauth_config rssi_deauth_cfg;
 
@@ -1330,6 +1328,8 @@ struct ath12k_vif {
 	bool overide_primary_umac;
 	struct work_struct disable_sg_netdev_work;
 	bool disable_sg;
+	unsigned long beacon_flags;
+	struct delayed_work connection_loss_work;
 #ifdef CPTCFG_ATH12K_DEBUGFS
 	struct dentry *debugfs_primary_link;
 	struct dentry *debugfs_wmm_stats_vdev;

@@ -3394,14 +3394,14 @@ static void ath12k_control_beaconing(struct ath12k_link_vif *arvif,
 static void ath12k_mac_handle_beacon_iter(void *data, u8 *mac,
 					  struct ieee80211_vif *vif)
 {
-	struct sk_buff *skb = data;
-	struct ieee80211_mgmt *mgmt = (void *)skb->data;
+	struct ath12k_beacon_rx_data *beacon = data;
+	struct ieee80211_mgmt *mgmt = (void *)beacon->skb->data;
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
+	struct ath12k_link_vif *arvif;
+	unsigned long links_map = ahvif->links_map;
+	u8 link_id;
 
 	if (vif->type != NL80211_IFTYPE_STATION)
-		return;
-
-	if (!ether_addr_equal(mgmt->bssid, vif->bss_conf.bssid))
 		return;
 
 	/* cancel_delayed_work() will trigger WARNING in kernel when it tries to
@@ -3410,49 +3410,74 @@ static void ath12k_mac_handle_beacon_iter(void *data, u8 *mac,
 	 * ATH12K_FLAG_BEACON_RECEIVED. When the worker executes, return from
 	 * the worker without doing anything.
 	 */
-	set_bit(ATH12K_FLAG_BEACON_RECEIVED, &ahvif->deflink.beacon_flags);
+	for_each_set_bit(link_id, &links_map, IEEE80211_MLD_MAX_NUM_LINKS) {
+		arvif = rcu_dereference(ahvif->link[link_id]);
+		if (!arvif || !arvif->is_up || arvif->ar != beacon->ar ||
+		    !ether_addr_equal(mgmt->bssid, arvif->bssid))
+			continue;
+
+		set_bit(ATH12K_FLAG_BEACON_RECEIVED, &ahvif->beacon_flags);
+		break;
+	}
 }
 
 void ath12k_mac_handle_beacon(struct ath12k *ar, struct sk_buff *skb)
 {
+	struct ath12k_beacon_rx_data beacon = {
+		.ar = ar,
+		.skb = skb,
+	};
+
 	ieee80211_iterate_active_interfaces_atomic(ath12k_ar_to_hw(ar),
 						   IEEE80211_IFACE_ITER_NORMAL,
 						   ath12k_mac_handle_beacon_iter,
-						   skb);
+						   &beacon);
 }
 
 static void ath12k_mac_handle_beacon_miss_iter(void *data, u8 *mac,
 					       struct ieee80211_vif *vif)
 {
-	u32 *vdev_id = data;
+	struct ath12k_beacon_miss_data *beacon_miss = data;
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
-	struct ath12k *ar = ahvif->deflink.ar;
-	struct ieee80211_hw *hw = ath12k_ar_to_hw(ar);
+	struct ath12k_link_vif *arvif;
+	unsigned long links_map = ahvif->links_map;
+	struct ieee80211_hw *hw = ath12k_ar_to_hw(beacon_miss->ar);
+	u8 link_id;
 
-	if (ahvif->deflink.vdev_id != *vdev_id)
+	for_each_set_bit(link_id, &links_map, IEEE80211_MLD_MAX_NUM_LINKS) {
+		arvif = rcu_dereference(ahvif->link[link_id]);
+		if (!arvif || arvif->ar != beacon_miss->ar ||
+		    arvif->vdev_id != beacon_miss->vdev_id)
+			continue;
+
+		if (!arvif->is_up)
+			return;
+
+		ieee80211_beacon_loss(vif);
+
+		/* Firmware doesn't report beacon loss events repeatedly. If AP probe
+		 * (done by mac80211) succeeds but beacons do not resume then it
+		 * doesn't make sense to continue operation. Queue connection loss
+		 * work which is suppressed when beacon is received.
+		 */
+		clear_bit(ATH12K_FLAG_BEACON_RECEIVED, &ahvif->beacon_flags);
+		ieee80211_queue_delayed_work(hw, &ahvif->connection_loss_work,
+					     ATH12K_CONNECTION_LOSS_HZ);
 		return;
-
-	if (!ahvif->deflink.is_up)
-		return;
-
-	ieee80211_beacon_loss(vif);
-
-	/* Firmware doesn't report beacon loss events repeatedly. If AP probe
-	 * (done by mac80211) succeeds but beacons do not resume then it
-	 * doesn't make sense to continue operation. Queue connection loss work
-	 * which can be cancelled when beacon is received.
-	 */
-	clear_bit(ATH12K_FLAG_BEACON_RECEIVED, &ahvif->deflink.beacon_flags);
-	ieee80211_queue_delayed_work(hw, &ahvif->deflink.connection_loss_work,
-				     ATH12K_CONNECTION_LOSS_HZ);
+	}
 }
 
 void ath12k_mac_handle_beacon_miss(struct ath12k *ar, u32 vdev_id)
 {
+	struct ath12k_beacon_miss_data beacon_miss = {
+		.ar = ar,
+		.vdev_id = vdev_id,
+	};
+
 	ieee80211_iterate_active_interfaces_atomic(ath12k_ar_to_hw(ar),
 						   IEEE80211_IFACE_ITER_NORMAL,
 						   ath12k_mac_handle_beacon_miss_iter,
-						   &vdev_id);
+						   &beacon_miss);
 }
 
 /* Handle a single VIF event; split out for clarity and reuse */
@@ -3562,17 +3587,26 @@ void ath12k_mac_peer_event_callback(struct ath12k_event_queue *queue,
 
 static void ath12k_mac_vif_sta_connection_loss_work(struct work_struct *work)
 {
-	struct ath12k_link_vif *arvif = container_of(work, struct ath12k_link_vif,
-						     connection_loss_work.work);
-	struct ieee80211_vif *vif = arvif->ahvif->vif;
+	struct ath12k_vif *ahvif = container_of(work, struct ath12k_vif,
+						connection_loss_work.work);
+	struct ath12k_link_vif *arvif;
+	unsigned long links_map;
+	u8 link_id;
 
-	if (!arvif->is_up)
+	rcu_read_lock();
+	links_map = ahvif->links_map;
+	for_each_set_bit(link_id, &links_map, IEEE80211_MLD_MAX_NUM_LINKS) {
+		arvif = rcu_dereference(ahvif->link[link_id]);
+		if (!arvif || !arvif->is_up)
+			continue;
+		rcu_read_unlock();
+		if (test_and_clear_bit(ATH12K_FLAG_BEACON_RECEIVED,
+				       &ahvif->beacon_flags))
+			return;
+		ieee80211_connection_loss(ahvif->vif);
 		return;
-
-	if (test_and_clear_bit(ATH12K_FLAG_BEACON_RECEIVED, &arvif->beacon_flags))
-		return;
-
-	ieee80211_connection_loss(vif);
+	}
+	rcu_read_unlock();
 }
 
 static void ath12k_mac_get_hw_link_map(struct ieee80211_vif *vif,
@@ -6746,8 +6780,9 @@ void ath12k_bss_disassoc(struct ath12k *ar,
 
 	memset(&arvif->rekey_data, 0, sizeof(arvif->rekey_data));
 
-	if (arvif == &ahvif->deflink)
-		cancel_delayed_work_sync(&ahvif->deflink.connection_loss_work);
+	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
+	    ahvif->links_map == BIT(arvif->link_id))
+		cancel_delayed_work_sync(&ahvif->connection_loss_work);
 }
 
 u32 ath12k_mac_get_rate_hw_value(int bitrate)
@@ -6948,8 +6983,6 @@ static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 
 	INIT_LIST_HEAD(&arvif->list);
 	arvif->key_cipher = INVALID_CIPHER;
-	INIT_DELAYED_WORK(&ahvif->deflink.connection_loss_work,
-			  ath12k_mac_vif_sta_connection_loss_work);
 	if (!is_bridge_vdev) {
 		wiphy_work_init(&arvif->update_obss_color_notify_work,
 				ath12k_update_obss_color_notify_work);
@@ -7225,8 +7258,9 @@ static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 	if (!dp)
 		return;
 
-	if (arvif == &ahvif->deflink)
-		cancel_delayed_work_sync(&ahvif->deflink.connection_loss_work);
+	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
+	    ahvif->links_map == BIT(arvif->link_id))
+		cancel_delayed_work_sync(&ahvif->connection_loss_work);
 
 	if (!ath12k_mac_is_bridge_vdev(arvif)) {
 		wiphy_work_cancel(ah->hw->wiphy,
@@ -22720,6 +22754,9 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 	}
 
 	if (test_bit(ATH12K_FLAG_RECOVERY, &ar->ab->ag->flags)) {
+		if (ahvif->vdev_type == WMI_VDEV_TYPE_STA)
+			cancel_delayed_work_sync(&ahvif->connection_loss_work);
+
 		ahvif->mode0_recover_bridge_vdevs =
 			(ahvif->links_map & ATH12K_BRIDGE_LINKS_MASK) ?
 			true : false;
@@ -22767,6 +22804,10 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 			    ATH12K_INVALID_VDEV_ID, ar->radio_idx, vif->type);
 		break;
 	}
+
+	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA)
+		INIT_DELAYED_WORK(&ahvif->connection_loss_work,
+				  ath12k_mac_vif_sta_connection_loss_work);
 
 	if (ath12k_frame_mode != ATH12K_HW_TXRX_ETHERNET ||
 	    (vif->type != NL80211_IFTYPE_STATION &&
@@ -23315,6 +23356,8 @@ free_vlan_iface:
 	kfree(ahvif->vlan_iface);
 	ahvif->vlan_iface = NULL;
 free_tstats:
+	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA)
+		cancel_delayed_work_sync(&ahvif->connection_loss_work);
 	free_percpu(ahvif->tstats);
 	ahvif->tstats = NULL;
 

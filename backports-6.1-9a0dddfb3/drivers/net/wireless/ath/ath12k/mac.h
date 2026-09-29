@@ -259,6 +259,17 @@ struct ath12k_mac_pri_link_migr_peer_node {
 	struct ieee80211_sta *sta;
 };
 
+struct ath12k_beacon_miss_data {
+	struct ath12k *ar;
+	u32 vdev_id;
+};
+
+struct ath12k_beacon_rx_data {
+	struct ath12k *ar;
+	struct sk_buff *skb;
+};
+
+
 void ath12k_mac_11d_scan_start(struct ath12k *ar, u32 vdev_id);
 void ath12k_mac_11d_scan_stop(struct ath12k *ar);
 void ath12k_mac_11d_scan_stop_all(struct ath12k_base *ab);
