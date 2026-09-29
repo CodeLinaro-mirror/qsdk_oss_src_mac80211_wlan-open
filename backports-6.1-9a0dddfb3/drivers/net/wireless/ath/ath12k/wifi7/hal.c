@@ -11,6 +11,9 @@
 #include "../debug.h"
 #include "../hif.h"
 #include "../pcic.h"
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#include "../qcn_extns/ipa/dp_ipa.h"
+#endif
 
 const struct ath12k_hw_version_map ath12k_wifi7_hw_ver_map[] = {
 	{
@@ -653,6 +656,7 @@ void ath12k_wifi7_hal_cc_config(struct ath12k_base *ab)
 	u32 reo_base = HAL_SEQ_WCSS_UMAC_REO_REG;
 	u32 wbm_base = HAL_SEQ_WCSS_UMAC_WBM_REG;
 	u32 val = 0;
+	u32 wbm2sw_cc_enable;
 	struct ath12k_hal *hal = &ab->hal;
 
 	if (ath12k_ftm_mode)
@@ -695,8 +699,15 @@ void ath12k_wifi7_hal_cc_config(struct ath12k_base *ab)
 
 	/* Enable Cookie conversion for WBM2SW Rings */
 	val = ath12k_hif_read32(ab, wbm_base + HAL_WBM_SW_COOKIE_CONVERT_CFG);
+	wbm2sw_cc_enable = ab->hal.hal_params->wbm2sw_cc_enable;
+
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	if (ath12k_dp_ipa_is_two_tx_pipes_enabled_extn(ab))
+		wbm2sw_cc_enable &= ~HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW2_EN;
+#endif
+
 	val |= u32_encode_bits(1, HAL_WBM_SW_COOKIE_CONV_CFG_GLOBAL_EN) |
-	       ab->hal.hal_params->wbm2sw_cc_enable;
+	       wbm2sw_cc_enable;
 
 	ath12k_hif_write32(ab, wbm_base + HAL_WBM_SW_COOKIE_CONVERT_CFG, val);
 }
