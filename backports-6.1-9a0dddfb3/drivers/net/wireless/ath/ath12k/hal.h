@@ -1415,6 +1415,7 @@ struct ath12k_hw_regs {
 	u32 hal_reo1_aging_thres_ix1;
 	u32 hal_reo1_aging_thres_ix2;
 	u32 hal_reo1_aging_thres_ix3;
+	u32 hal_reo1_aging_thres_ix4;
 
 	u32 hal_reo2_sw0_ring_base;
 
