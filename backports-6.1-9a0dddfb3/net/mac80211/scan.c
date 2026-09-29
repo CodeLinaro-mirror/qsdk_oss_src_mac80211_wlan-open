@@ -345,10 +345,11 @@ ieee80211_bss_info_update(struct ieee80211_local *local,
 		 */
 		if (ieee80211_vif_is_mld(&scan_sdata->vif)) {
 			if (rx_status->link_valid) {
-				s8 link_id = rx_status->link_id;
+				struct ieee80211_vif *vif = &scan_sdata->vif;
+				u8 link_id = rx_status->link_id;
 
-				link_conf =
-					rcu_dereference(scan_sdata->vif.link_conf[link_id]);
+				if (link_id < ARRAY_SIZE(vif->link_conf))
+					link_conf = rcu_dereference(vif->link_conf[link_id]);
 			}
 		} else {
 			link_conf = &scan_sdata->vif.bss_conf;
@@ -1208,14 +1209,16 @@ static int __ieee80211_start_scan(struct ieee80211_sub_if_data *sdata,
 	}
 
 	if (rc) {
-		atomic_sub(sizeof(*local->hw_scan_req) +
-			   req->n_channels *
-			   sizeof(req->channels[0]) +
-			   local->hw_scan_ies_bufsize,
-			   &local->memory_stats.malloc_size);
+		if (hw_scan) {
+			atomic_sub(sizeof(*local->hw_scan_req) +
+				   req->n_channels *
+				   sizeof(req->channels[0]) +
+				   local->hw_scan_ies_bufsize,
+				   &local->memory_stats.malloc_size);
 
-		kfree(local->hw_scan_req);
-		local->hw_scan_req = NULL;
+			kfree(local->hw_scan_req);
+			local->hw_scan_req = NULL;
+		}
 		local->scanning = 0;
 
 		ieee80211_recalc_idle(local);
