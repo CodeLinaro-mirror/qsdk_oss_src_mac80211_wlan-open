@@ -5856,8 +5856,22 @@ static void ath12k_mac_peer_assoc_h_mlo_smd(struct ath12k *ar,
 	/* Self link fields */
 	ml->enabled = true;
 	ml->assoc_link = arsta->is_assoc_link;
-	ml->primary_umac = (!self_is_target &&
-			    arsta->link_id == primary_link_id);
+	ml->primary_umac = (self_is_target) ?
+			   (arsta->link_id == target_ahsta->primary_link_id) :
+			   (arsta->link_id == current_ahsta->primary_link_id);
+
+	if (!self_is_target) {
+		if (current_ahsta->ml_peer_id == ATH12K_MLO_PEER_ID_INVALID)
+			ml->peer_id_valid = false;
+		else
+			ml->peer_id_valid = true;
+	} else {
+		if (target_ahsta->ml_peer_id == ATH12K_MLO_PEER_ID_INVALID)
+			ml->peer_id_valid = false;
+		else
+			ml->peer_id_valid = true;
+	}
+
 	ml->logical_link_idx_valid = true;
 	ml->logical_link_idx = arsta->link_idx;
 	ml->ieee_link_id = arsta->link_id;
@@ -5868,7 +5882,9 @@ static void ath12k_mac_peer_assoc_h_mlo_smd(struct ath12k *ar,
 	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
 			 "smd mlo peer_assoc: ml->assoc_link: %d ml->primary_umac: %d self link_id=%u self_is_target=%d primary_link_id=%u mld_addr=%pM\n",
 			 ml->assoc_link, ml->primary_umac,
-			 arsta->link_id, self_is_target, primary_link_id,
+			 arsta->link_id, self_is_target,
+			 self_is_target ? target_ahsta->primary_link_id :
+					current_ahsta->primary_link_id,
 			 self_is_target ? ath12k_ahsta_to_sta(target_ahsta)->addr
 			 : ath12k_ahsta_to_sta(current_ahsta)->addr);
 
@@ -5925,7 +5941,10 @@ static void ath12k_mac_peer_assoc_h_mlo_smd(struct ath12k *ar,
 		ml->partner_info[i].hw_link_id          = arvif_p->ar->pdev->hw_link_id;
 		ml->partner_info[i].assoc_link          = arsta_p->is_assoc_link;
 		ml->partner_info[i].bridge_peer         = arsta_p->is_bridge_peer;
-		ml->partner_info[i].primary_umac        = false;
+		if (arsta_p->link_id == target_ahsta->primary_link_id)
+			ml->partner_info[i].primary_umac = true;
+		else
+			ml->partner_info[i].primary_umac = false;
 		ml->partner_info[i].logical_link_idx_valid = true;
 		ml->partner_info[i].logical_link_idx    = arsta_p->link_idx;
 		ml->partner_info[i].ieee_link_id        = link_id;
@@ -5963,7 +5982,10 @@ static void ath12k_mac_peer_assoc_h_mlo_smd(struct ath12k *ar,
 				arvif_p->ar->pdev->hw_link_id;
 			ml->partner_info[i].assoc_link          = arsta_p->is_assoc_link;
 			ml->partner_info[i].bridge_peer         = arsta_p->is_bridge_peer;
-			ml->partner_info[i].primary_umac        = true;
+			if (arsta_p->link_id == current_ahsta->primary_link_id)
+				ml->partner_info[i].primary_umac = true;
+			else
+				ml->partner_info[i].primary_umac = false;
 			ml->partner_info[i].logical_link_idx_valid = true;
 			ml->partner_info[i].logical_link_idx    = arsta_p->link_idx;
 			ml->partner_info[i].ieee_link_id        = primary_link_id;
@@ -6547,10 +6569,6 @@ void ath12k_bss_assoc(struct ath12k *ar,
 	ht_cap = link_sta->ht_cap;
 	bandwidth = ath12k_mac_ieee80211_sta_bw_to_wmi(ar, link_sta);
 
-	arsta->is_assoc_link = (arsta->link_id == ahsta->assoc_link_id);
-	ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
-		   "bss_assoc: arsta %p is_assoc_link %d\n",
-		   arsta, arsta->is_assoc_link);
 	ath12k_peer_assoc_prepare(ar, arvif, arsta, peer_arg, false, link_sta);
 
 	if (arsta->is_bridge_peer)
