@@ -935,12 +935,11 @@ static int ath12k_wifi8_dp_h_link_desc(struct ath12k_dp *dp,
 	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
 	u32 msdu_cookies[HAL_NUM_RX_MSDUS_PER_LINK_DESC];
 	int num_buffs_reaped = 0;
-	struct dp_link_desc_bank *link_desc_banks;
 	enum hal_wifi8_rx_buf_return_buf_manager rbm;
 	struct hal_rx_msdu_link *link_desc_va;
 	int i;
 	u8 hw_link_id;
-	u32 desc_bank, num_msdus;
+	u32 num_msdus;
 	struct ath12k_pdev_dp *dp_pdev;
 	dma_addr_t paddr;
 	bool is_frag, drop = false;
@@ -956,12 +955,7 @@ static int ath12k_wifi8_dp_h_link_desc(struct ath12k_dp *dp,
 
 	ath12k_wifi8_hal_rx_reo_ent_paddr_get(&spd_desc_l->buf_addr,
 					      &paddr, &cookie);
-
-	desc_bank = u32_get_bits(cookie, DP_LINK_DESC_BANK_MASK);
-
-	link_desc_banks = dp->link_desc_banks;
-	link_desc_va = link_desc_banks[desc_bank].vaddr +
-		       (paddr - link_desc_banks[desc_bank].paddr);
+	link_desc_va = ath12k_core_paddr_to_link_desc(dp->ab, cookie, paddr);
 	ath12k_wifi8_hal_rx_msdu_link_info_get(link_desc_va, &num_msdus,
 					       msdu_cookies, &rbm);
 

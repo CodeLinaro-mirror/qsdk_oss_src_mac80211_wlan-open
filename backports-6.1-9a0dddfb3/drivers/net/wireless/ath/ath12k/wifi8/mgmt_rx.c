@@ -1152,28 +1152,22 @@ static void ath12k_wifi8_mgmt_rx_process(struct ath12k_base *ab,
 static int
 ath12k_wifi8_mgmt_rx_parse_desc_err(struct ath12k_mgmt *mgmt,
 				    struct hal_reo_dest_ring *desc,
-				    struct hal_rx_reo_dest_rel_info *err_info)
+				    struct hal_rx_reo_dest_rel_info *err_info,
+				    bool *is_link_desc)
 {
 	struct ath12k_base *ab = mgmt->ab;
-	struct hal_rx_mpdu_desc *mpdu_info = &desc->rx_mpdu_info;
 	struct hal_rx_mpdu_ext_desc_info *mpdu_ext_info = &desc->rx_mpdu_ext_info;
 	u32 rxdma_push_reason, rxdma_err_code, reo_push_reason, reo_err_code;
 	struct hal_rx_msdu_desc *rx_msdu_info = &desc->rx_msdu_info;
 	enum hal_reo_dest_ring_buffer_type type;
 	enum hal_reo_dest_rel_src_module rel_src;
-	bool is_frag;
 
-	is_frag = !!(le32_to_cpu(mpdu_info->info0) &
-		     HAL_RX_MPDU_DESC_INFO_INFO0_FRAGMENT_FLAG);
-	if (is_frag) {
-		mgmt->srng_stats.frag_pkts++;
-		return 0;
-	}
+	err_info->cookie = le32_get_bits(desc->buf_addr_info.info1,
+					 BUFFER_ADDR_INFO1_SW_COOKIE);
 
 	type = le32_get_bits(mpdu_ext_info->info0,
 			     HAL_RX_MPDU_EXT_DESC_INFO_INFO0_REO_DEST_BUFFER_TYPE);
-	if (type != HAL_REO_DEST_RING_BUFFER_TYPE_MSDU)
-		return -EINVAL;
+	*is_link_desc = (type == HAL_REO_DEST_RING_BUFFER_TYPE_LINK_DESC);
 
 	rxdma_push_reason =
 		le32_get_bits(mpdu_ext_info->info0,
@@ -1198,10 +1192,6 @@ ath12k_wifi8_mgmt_rx_parse_desc_err(struct ath12k_mgmt *mgmt,
 		return -EINVAL;
 	}
 
-	err_info->cookie = le32_get_bits(desc->buf_addr_info.info1,
-					 BUFFER_ADDR_INFO1_SW_COOKIE);
-	err_info->rx_desc = ath12k_mgmt_get_rx_desc_from_cookie(mgmt, err_info->cookie);
-
 	err_info->first_msdu = le32_get_bits(rx_msdu_info->info0,
 		HAL_RX_MSDU_DESC_INFO_INFO0_FIRST_MSDU_IN_MPDU_FLAG);
 	err_info->last_msdu = le32_get_bits(rx_msdu_info->info0,
@@ -1220,7 +1210,82 @@ ath12k_wifi8_mgmt_rx_parse_desc_err(struct ath12k_mgmt *mgmt,
 	}
 	err_info->err_rel_src = rel_src;
 
+	if (*is_link_desc)
+		return 0;
+
+	err_info->rx_desc = ath12k_mgmt_get_rx_desc_from_cookie(mgmt, err_info->cookie);
+
 	return 0;
+}
+
+static void
+ath12k_wifi8_mgmt_rx_err_h_link_desc(struct ath12k_mgmt *mgmt,
+				     struct hal_reo_dest_ring *desc,
+				     struct hal_rx_reo_dest_rel_info *err_info)
+{
+	struct ath12k_mgmt_wifi8 *mgmt_wifi8 = ath12k_get_mgmt_wifi8(mgmt);
+	struct ath12k_buffer_addr *buf_addr = &desc->buf_addr_info;
+	struct hal_rx_mpdu_desc *mpdu_info = &desc->rx_mpdu_info;
+	u32 msdu_cookies[HAL_NUM_RX_MSDUS_PER_LINK_DESC];
+	enum hal_wifi8_rx_buf_return_buf_manager _rbm;
+	struct ath12k_rx_desc_info *desc_info;
+	struct hal_rx_msdu_link *link_desc;
+	struct list_head rx_desc_used_list;
+	struct ath12k_skb_rxcb *rxcb;
+	struct sk_buff *mmpdu;
+	dma_addr_t paddr;
+	u32 num_msdus;
+	bool is_frag;
+	int i;
+
+	is_frag = !!(le32_to_cpu(mpdu_info->info0) &
+		     HAL_RX_MPDU_DESC_INFO_INFO0_FRAGMENT_FLAG);
+	if (is_frag) {
+		mgmt->srng_stats.frag_pkts++;
+	} else {
+		mgmt->srng_stats.unexpected_link_desc++;
+		WARN_ONCE(1, "Unexpected mgmt err link desc for cookie 0x%x",
+			  err_info->cookie);
+		goto replenish_link_desc;
+	}
+
+	paddr = ((u64)(le32_get_bits(buf_addr->info1,
+				     BUFFER_ADDR_INFO1_ADDR)) << 32) |
+		le32_get_bits(buf_addr->info0, BUFFER_ADDR_INFO0_ADDR);
+	link_desc = ath12k_core_paddr_to_link_desc(mgmt->ab, err_info->cookie, paddr);
+
+	ath12k_wifi8_hal_rx_msdu_link_info_get(link_desc, &num_msdus,
+					       msdu_cookies, &_rbm);
+	if (num_msdus > 1)
+		ath12k_warn(mgmt->ab, "More MSDUs (%u) in mgmt link desc", num_msdus);
+
+	INIT_LIST_HEAD(&rx_desc_used_list);
+
+	for (i = 0; i < num_msdus; i++) {
+		desc_info = ath12k_mgmt_get_rx_desc_from_cookie(mgmt, msdu_cookies[i]);
+		if (!desc_info) {
+			ath12k_warn(mgmt->ab, "Invalid mgmt frag link desc cookie 0x%x",
+				    msdu_cookies[i]);
+			continue;
+		}
+
+		mmpdu = desc_info->skb;
+		desc_info->skb = NULL;
+		list_add_tail(&desc_info->list, &rx_desc_used_list);
+
+		rxcb = ATH12K_SKB_RXCB(mmpdu);
+		ath12k_core_dma_unmap_single(mgmt->dev, rxcb->paddr,
+					     mmpdu->len + skb_tailroom(mmpdu),
+					     DMA_FROM_DEVICE);
+		dev_kfree_skb_any(mmpdu);
+	}
+	ath12k_wifi8_mgmt_rx_replenish_buffs(mgmt, &mgmt_wifi8->wbm_refill_ring,
+					     &rx_desc_used_list, false);
+
+replenish_link_desc:
+	ath12k_core_rx_link_desc_return(mgmt->ab, buf_addr,
+					HAL_WBM_REL_BM_ACT_PUT_IN_IDLE);
+
 }
 
 static int
@@ -1242,6 +1307,7 @@ ath12k_wifi8_mgmt_rx_reap_err_packets(struct ath12k_base *ab,
 #ifndef CONFIG_IO_COHERENCY
 	int valid_entries;
 #endif
+	bool is_link_desc;
 	int ret;
 
 	INIT_LIST_HEAD(&rx_desc_used_list);
@@ -1268,10 +1334,19 @@ ath12k_wifi8_mgmt_rx_reap_err_packets(struct ath12k_base *ab,
 
 		mgmt->srng_stats.err_ring_pkts++;
 
-		ret = ath12k_wifi8_mgmt_rx_parse_desc_err(mgmt, desc, &err_info);
+		hw_link_id = le32_get_bits(mpdu_ext_info->info0,
+					   HAL_RX_MPDU_EXT_DESC_INFO_INFO0_SRC_LINK_ID);
+
+		ret = ath12k_wifi8_mgmt_rx_parse_desc_err(mgmt, desc, &err_info,
+							  &is_link_desc);
 		if (ret < 0) {
 			ath12k_warn(ab, "Failed to parse mgmt reo_err_desc: %d", ret);
 			WARN_ON_ONCE(1);
+			continue;
+		}
+
+		if (is_link_desc) {
+			ath12k_wifi8_mgmt_rx_err_h_link_desc(mgmt, desc, &err_info);
 			continue;
 		}
 
@@ -1313,9 +1388,6 @@ ath12k_wifi8_mgmt_rx_reap_err_packets(struct ath12k_base *ab,
 			dev_kfree_skb_any(mmpdu);
 			continue;
 		}
-
-		hw_link_id = le32_get_bits(mpdu_ext_info->info0,
-					   HAL_RX_MPDU_EXT_DESC_INFO_INFO0_SRC_LINK_ID);
 
 		rxcb->is_first_msdu = err_info.first_msdu;
 		rxcb->is_last_msdu = err_info.last_msdu;

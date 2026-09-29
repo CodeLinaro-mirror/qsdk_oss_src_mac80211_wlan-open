@@ -8585,6 +8585,9 @@ static ssize_t ath12k_debugfs_dump_device_mgmt_srng_stats(struct file *file,
 	len += scnprintf(buf + len, size - len, "Fragment packets: %u\n",
 			 device_stats->frag_pkts);
 
+	len += scnprintf(buf + len, size - len, "Unexpected link descriptors: %u\n",
+			 device_stats->unexpected_link_desc);
+
 	len += scnprintf(buf + len, size - len, "BAR error packets: %u\n",
 			 device_stats->bar_pkts[ATH12K_MGMT_SRNG_PKT_TYPE_RX_ERR]);
 
