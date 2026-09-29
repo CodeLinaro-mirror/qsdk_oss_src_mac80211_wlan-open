@@ -880,6 +880,13 @@ static void ieee80211_free_chanctx(struct ieee80211_local *local,
 	hrtimer_cancel(&ctx->dfs_cac_timer);
 	wiphy_work_cancel(local->hw.wiphy, &ctx->dfs_cac_timer_work);
 
+	/*
+	 * Radar work keeps the channel pointer from the chanctx and may still be
+	 * queued when the last link using this context is released. Flush it while
+	 * the context is still on chanctx_list so MLO DFS can resolve the context.
+	 */
+	wiphy_work_flush(local->hw.wiphy, &local->radar_detected_work);
+
 	list_del_rcu(&ctx->list);
 	ieee80211_punct_obj_list_free(local, ctx);
 	ieee80211_del_chanctx(local, ctx, skip_idle_recalc);
@@ -1323,6 +1330,8 @@ int ieee80211_link_unreserve_chanctx(struct ieee80211_link_data *link)
 			hrtimer_cancel(&ctx->dfs_cac_timer);
 			wiphy_work_cancel(sdata->local->hw.wiphy,
 					  &ctx->dfs_cac_timer_work);
+			wiphy_work_flush(sdata->local->hw.wiphy,
+					 &sdata->local->radar_detected_work);
 			list_del_rcu(&ctx->list);
 			kfree_rcu(ctx, rcu_head);
 		} else {
@@ -2087,6 +2096,7 @@ static int ieee80211_vif_use_reserved_switch(struct ieee80211_local *local)
 
 		hrtimer_cancel(&ctx->dfs_cac_timer);
 		wiphy_work_cancel(local->hw.wiphy, &ctx->dfs_cac_timer_work);
+		wiphy_work_flush(local->hw.wiphy, &local->radar_detected_work);
 		list_del_rcu(&ctx->list);
 		kfree_rcu(ctx, rcu_head);
 	}
