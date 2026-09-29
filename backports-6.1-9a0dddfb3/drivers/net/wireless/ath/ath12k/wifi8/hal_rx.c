@@ -1588,7 +1588,8 @@ void ath12k_wifi8_hal_reo_shared_qaddr_cache_clear(struct ath12k_base *ab)
 
 	lockdep_assert_held(&ab->base_lock);
 
-	if (!ab->hw_params->reoq_lut_support)
+	if (!ab->hw_params->reoq_lut_support ||
+	    !test_bit(ATH12K_FLAG_QMI_FW_READY_COMPLETE, &ab->dev_flags))
 		return;
 
 	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
