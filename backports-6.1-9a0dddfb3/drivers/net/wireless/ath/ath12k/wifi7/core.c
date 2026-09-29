@@ -56,14 +56,6 @@ static int ath12k_wifi7_wsi_bypass_remove(struct ath12k_base *ab)
 	ath12k_qmi_firmware_stop(ab);
 	ath12k_qmi_free_resource(ab);
 
-	ath12k_hif_mgmt_irq_disable(ab);
-	ath12k_hif_irq_disable(ab);
-	ath12k_hif_ce_irq_disable(ab);
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	if (ab->dp->ppe.ppe_ops &&
-	    ab->dp->ppe.ppe_ops->ath12k_ppeds_interrupt_stop)
-		ab->dp->ppe.ppe_ops->ath12k_ppeds_interrupt_stop(ab);
-#endif
 	/* Clean up driver state for the bypassed chip */
 	ath12k_core_cleanup(ab);
 
