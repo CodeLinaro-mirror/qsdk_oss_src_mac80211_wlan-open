@@ -36,6 +36,16 @@ ath12k_wifi8_get_ext_mon_peer_filter_mode(struct ath12k_dp_tx_ext_mon *tx_ext_mo
 	return filter_mode;
 }
 
+static u32 ath12k_wifi8_dp_mon_tx_normalize_spc_bitmap(struct ath12k_base *ab)
+{
+	u32 bitmap = DP_TX_MON_SPC_BITMAP(ab);
+
+	if (!bitmap || bitmap & ~ATH12K_WIFI8_EXT_MON_PKT_CAP_SUPPORTED_PROTOS)
+		bitmap = ATH12K_WIFI8_EXT_MON_PKT_CAP_FW_PROTOS;
+
+	return bitmap;
+}
+
 /**
  * ath12k_wifi8_get_ext_mon_peer_filter_mode_locked() - classify the active TX ext-mon
  * peer-filter mode from the current configuration
@@ -113,11 +123,14 @@ u8 ath12k_wifi8_get_ext_mon_peer_filter_mode_locked(struct ath12k_pdev_dp *dp_pd
  *     frame-type filter (fp) is checked and its result returned.
  *
  *   - ATH12K_DP_TX_EXT_MON_SPC_PEER_FILTER (monitor_flags==PKT_CAP):
- *     special packet capture mode. The (fp_enabled, fpmo_enabled) bits are
- *     ignored; filter_mode is forced to SPC_PEER_FILTER. Peer scoping is
- *     via peer_list: a matching peer passes (return 0); a
- *     non-matching peer is passed to the frame-type filter (fp). HW
- *     peer-filter programming is enabled for this mode.
+ *     special packet capture mode. The (fp_enabled, fpmo_enabled) bits
+ *     select which filters apply rather than which mode is active;
+ *     filter_mode is forced to SPC_PEER_FILTER regardless of their value.
+ *     SPC packets bypass this function before reaching this point. For
+ *     ordinary packets, a matching peer is gated by the target-peer
+ *     frame-type filter (fpmo); every other peer has already been selected
+ *     by the HW all-peer filter. HW peer-filter programming is enabled for
+ *     this mode.
  *
  * Return: 0 if the MPDU passes filtering for the active mode, -EINVAL
  *	if it is rejected (or if fraglist/skb fragment counts disagree).
@@ -161,13 +174,20 @@ int ath12k_wifi8_dp_ext_mon_filter(struct ath12k_pdev_dp *dp_pdev, struct sk_buf
 		/* Perform subtype filtering */
 		return ath12k_dp_ext_mon_filter_subtype(wh, &tx_ext_mon_config->fp);
 	case ATH12K_DP_TX_EXT_MON_SW_PEER_FILTER:
-	case ATH12K_DP_TX_EXT_MON_SPC_PEER_FILTER:
 		/* Perform s/w peer check to filter targeted peer frames */
 		ret = ath12k_dp_ext_mon_filter_peer(wh, &tx_ext_mon_config->peer_list);
 		if (!ret)
 			return 0;
 		/* Perform Type filtering */
 		return ath12k_dp_ext_mon_filter_type(wh, &tx_ext_mon_config->fp);
+	case ATH12K_DP_TX_EXT_MON_SPC_PEER_FILTER:
+		/* SPC packets bypass software filtering before this function. */
+		ret = ath12k_dp_ext_mon_filter_peer(wh, &tx_ext_mon_config->peer_list);
+		if (!ret)
+			return ath12k_dp_ext_mon_filter_type(wh,
+						     &tx_ext_mon_config->fpmo);
+
+		return 0;
 	default:
 		break;
 	}
@@ -359,44 +379,65 @@ static void
 ath12k_wifi8_dp_mon_tx_setup_spl_pkt_cap_filter(struct ath12k_pdev_dp *dp_pdev,
 						struct htt_tx_ring_tlv_filter *f)
 {
+	struct ath12k_base *ab = dp_pdev->dp->ab;
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
 	struct ath12k_dp_tx_ext_mon *tx_ext_mon =
 		&dp_mon_pdev->dp_pdev_tx_mon->tx_ext_mon;
 	struct ath12k_dp_tx_ext_mon_config *cfg;
-	struct ath12k_ext_mon_pkt_config ext_mon_filter;
+	struct ath12k_ext_mon_pkt_config ext_mon_filter = {};
 	u8 mgmt_len, ctrl_len, data_len;
+	bool ext_mon_filter_configured, mgmt_en;
 
 	ath12k_dp_mon_tx_setup_mon_mode_filter(dp_pdev->dp, f);
 	f->mac_addr_filter_en = true;
 	f->special_pkt_filter_en = true;
 	f->mpdu_stat_type_filter_en = false;
-	f->pkt_subtype_mgmt = 0;
-	f->pkt_subtype_ctrl = 0;
-	f->pkt_subtype_data = 0;
-	f->stat_subtype_mgmt = 0;
-	f->stat_subtype_ctrl = 0;
-	f->stat_subtype_data = 0;
+
+	/* Without an ext-mon filter, mgmt capture is enabled by spc_bitmap
+	 * bit 32 and captures every subtype.  When an ext-mon filter is
+	 * present, its mgmt subtype filter takes precedence.  Ctrl and data
+	 * subtypes are enabled only through the fp filter (-f c=0x1FFFF,
+	 * -f c=0x2FFFF, or -f c=0xFFFFF) since the SPC classifier handles
+	 * data protos independently via the WMI bitmap.
+	 */
+	ext_mon_filter_configured = false;
+	mgmt_en = false;
 
 	spin_lock(&tx_ext_mon->tx_ext_mon_lock);
 	cfg = tx_ext_mon->tx_ext_mon_config;
-	if (!cfg || (!cfg->fp_enabled && !cfg->fpmo_enabled)) {
-		spin_unlock(&tx_ext_mon->tx_ext_mon_lock);
-		return;
+	if (cfg && cfg->fp_enabled) {
+		ext_mon_filter_configured = true;
+		ext_mon_filter = cfg->fp;
+		mgmt_en = !!ext_mon_filter.filter[ATH12K_EXT_MON_FRAME_MGMT];
+
+		mgmt_len = ext_mon_filter.len[ATH12K_EXT_MON_FRAME_MGMT];
+		f->tx_mon_mgmt_pkt_dma_len =
+			ath12k_dp_mon_tx_get_ext_mon_filter_len(mgmt_len);
+		ctrl_len = ext_mon_filter.len[ATH12K_EXT_MON_FRAME_CTRL];
+		f->tx_mon_ctrl_pkt_dma_len =
+			ath12k_dp_mon_tx_get_ext_mon_filter_len(ctrl_len);
+		data_len = ext_mon_filter.len[ATH12K_EXT_MON_FRAME_DATA];
+		f->tx_mon_data_pkt_dma_len =
+			ath12k_dp_mon_tx_get_ext_mon_filter_len(data_len);
+	}
+	spin_unlock(&tx_ext_mon->tx_ext_mon_lock);
+
+	if (!ext_mon_filter_configured)
+		mgmt_en = !!(ath12k_wifi8_dp_mon_tx_normalize_spc_bitmap(ab) &
+			     ATH12K_WIFI8_SPC_BITMAP_MGMT);
+
+	if (mgmt_en) {
+		f->pkt_subtype_mgmt =
+			ext_mon_filter_configured ?
+			ext_mon_filter.filter[ATH12K_EXT_MON_FRAME_MGMT] :
+			HTT_TX_MON_PKT_ALL_SUBTYPES;
+		f->stat_subtype_mgmt = f->pkt_subtype_mgmt;
 	}
 
-	/* fp and fpmo use identical capture lengths. */
-	ext_mon_filter = cfg->fp;
-
-	mgmt_len = ext_mon_filter.len[ATH12K_EXT_MON_FRAME_MGMT];
-	f->tx_mon_mgmt_pkt_dma_len =
-		ath12k_dp_mon_tx_get_ext_mon_filter_len(mgmt_len);
-	ctrl_len = ext_mon_filter.len[ATH12K_EXT_MON_FRAME_CTRL];
-	f->tx_mon_ctrl_pkt_dma_len =
-		ath12k_dp_mon_tx_get_ext_mon_filter_len(ctrl_len);
-	data_len = ext_mon_filter.len[ATH12K_EXT_MON_FRAME_DATA];
-	f->tx_mon_data_pkt_dma_len =
-		ath12k_dp_mon_tx_get_ext_mon_filter_len(data_len);
-	spin_unlock(&tx_ext_mon->tx_ext_mon_lock);
+	f->pkt_subtype_ctrl = ext_mon_filter.filter[ATH12K_EXT_MON_FRAME_CTRL];
+	f->stat_subtype_ctrl = ext_mon_filter.filter[ATH12K_EXT_MON_FRAME_CTRL];
+	f->pkt_subtype_data = ext_mon_filter.filter[ATH12K_EXT_MON_FRAME_DATA];
+	f->stat_subtype_data = ext_mon_filter.filter[ATH12K_EXT_MON_FRAME_DATA];
 }
 
 /* wifi8 mode-aware TX monitor filter config. Mirrors the wifi7 version:
@@ -444,7 +485,7 @@ int ath12k_wifi8_dp_mon_tx_config_filter(struct ath12k_pdev_dp *dp_pdev,
 			break;
 		case DP_MON_TX_FILTER_SPL_PKT_CAP:
 			ath12k_wifi8_dp_mon_tx_setup_spl_pkt_cap_filter(dp_pdev,
-									src_tlv_filter);
+								src_tlv_filter);
 			break;
 		default:
 			ath12k_err(NULL, "Tx monitor mode invalid - skipping tx mon mode config\n");
@@ -559,9 +600,8 @@ ath12k_wifi8_dp_ext_mon_remove_wmi_tx_peers(struct ath12k_pdev_dp *dp_pdev,
 u32
 ath12k_wifi8_dp_mon_tx_handle_spc_bitmap(struct ath12k_base *ab)
 {
-	u32 bitmap = DP_TX_MON_SPC_BITMAP(ab);
+	u32 bitmap = ath12k_wifi8_dp_mon_tx_normalize_spc_bitmap(ab) &
+		~ATH12K_WIFI8_SPC_BITMAP_MGMT;
 
-	if (!bitmap || bitmap > ATH12K_WIFI8_EXT_MON_PKT_CAP_SUPPORTED_PROTOS)
-		bitmap = ATH12K_WIFI8_EXT_MON_PKT_CAP_SUPPORTED_PROTOS;
-	return bitmap;
+	return bitmap ? bitmap : ATH12K_WIFI8_EXT_MON_PKT_CAP_FW_PROTOS;
 }

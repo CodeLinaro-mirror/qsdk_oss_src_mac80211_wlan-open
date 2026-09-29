@@ -6,8 +6,13 @@
 #ifndef ATH12K_WIFI8_DP_TX_MON_H
 #define ATH12K_WIFI8_DP_TX_MON_H
 
-/* Wi-Fi 8 supports ARP, EAPOL, DHCP, DNS, and ICMP (bits 0 through 4). */
-#define ATH12K_WIFI8_EXT_MON_PKT_CAP_SUPPORTED_PROTOS       0x1F
+/* Wi-Fi 8 FW classifier supports ARP/EAPOL/DHCP/DNS/ICMP (bits 0-4).
+ * Bit 5 (MGMT) is host-only: the host programs HTT type/subtype filters
+ * directly; FW never sees this bit via WMI.
+ */
+#define ATH12K_WIFI8_EXT_MON_PKT_CAP_FW_PROTOS		     0x1F
+#define ATH12K_WIFI8_EXT_MON_PKT_CAP_SUPPORTED_PROTOS       0x3F
+#define ATH12K_WIFI8_SPC_BITMAP_MGMT			     0x20
 
 u8 ath12k_wifi8_get_ext_mon_peer_filter_mode_locked(struct ath12k_pdev_dp *dp_pdev);
 int ath12k_wifi8_dp_ext_mon_filter(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *mpdu);

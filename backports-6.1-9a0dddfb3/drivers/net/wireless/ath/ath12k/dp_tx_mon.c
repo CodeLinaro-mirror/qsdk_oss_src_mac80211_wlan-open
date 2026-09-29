@@ -3432,10 +3432,18 @@ int ath12k_dp_ext_mon_tx_filter_frame(struct ath12k_pdev_dp *dp_pdev,
 
 static int
 ath12k_dp_ext_mon_tx_frame_is_filtered(struct ath12k_pdev_dp *dp_pdev,
+					struct hal_tx_mon_ppdu_info *ppdu_info,
 					 struct sk_buff *mpdu, u32 mpdu_count)
 {
 	struct ath12k_pdev_tx_mon *tx_mon;
 	int ret;
+
+	/* SPC has precedence over peer and frame-type filtering. Firmware
+	 * reports one MPDU per special-packet PPDU, so the SPC state in
+	 * ppdu_info applies to the MPDU being delivered here.
+	 */
+	if (ppdu_info->spc_pkt_valid)
+		return 0;
 
 	tx_mon = dp_pdev->dp_mon_pdev->dp_pdev_tx_mon;
 	spin_lock(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
@@ -3525,8 +3533,10 @@ ath12k_dp_mon_tx_deliver_single_ppdu(struct ath12k_pdev_dp *dp_pdev,
 	contains_host_frames = ppdu_context->contains_host_frames;
 
 	while ((mpdu = skb_dequeue(mpdu_q))) {
-		if (ath12k_dp_ext_mon_tx_frame_is_filtered(dp_pdev, mpdu,
-							   ++mpdu_count)) {
+		mpdu_count++;
+
+		if (ath12k_dp_ext_mon_tx_frame_is_filtered(dp_pdev, ppdu_info,
+						   mpdu, mpdu_count)) {
 			ATH12K_TX_MON_STAT_INC(dp_pdev, frames_drop_in_sw);
 			dev_kfree_skb_any(mpdu);
 			continue;
