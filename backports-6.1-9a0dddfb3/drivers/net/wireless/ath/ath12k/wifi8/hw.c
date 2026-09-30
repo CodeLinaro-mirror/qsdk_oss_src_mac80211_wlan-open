@@ -631,7 +631,11 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.ftm_responder = true,
 		.credit_flow = false,
 		.is_plink_preferable = true,
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+		.support_umac_reset = false,
+#else
 		.support_umac_reset = true,
+#endif
 		.umac_irq_line_reset = false,
 		.umac_reset_ipc = 0,
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
