@@ -14613,12 +14613,28 @@ static int nl80211_process_links(struct cfg80211_registered_device *rdev,
 					  assoc_link_id, link_id);
 		if (IS_ERR(links[link_id].bss)) {
 			err = PTR_ERR(links[link_id].bss);
+			if (err == -ENOENT && assoc_link_id >= 0) {
+				NL_SET_ERR_MSG_ATTR(info->extack, link,
+						    "Retry BSS lookup for MLO link without SSID");
+				links[link_id].bss =
+					nl80211_assoc_bss(rdev, NULL, 0, attrs,
+							  assoc_link_id, link_id);
+				if (!IS_ERR(links[link_id].bss)) {
+					NL_SET_ERR_MSG_ATTR(info->extack, link,
+							    "BSS found for MLO link without SSID");
+					err = 0;
+					goto bss_found;
+				}
+
+				err = PTR_ERR(links[link_id].bss);
+			}
 			links[link_id].bss = NULL;
 			NL_SET_ERR_MSG_ATTR(info->extack, link,
 					    "Error fetching BSS for link");
 			return err;
 		}
 
+bss_found:
 		if (attrs[NL80211_ATTR_IE]) {
 			links[link_id].elems = nla_data(attrs[NL80211_ATTR_IE]);
 			links[link_id].elems_len =
