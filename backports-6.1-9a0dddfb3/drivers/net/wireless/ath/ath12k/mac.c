@@ -11147,6 +11147,13 @@ static int ath12k_mac_set_mbssid_info(struct ieee80211_bss_conf *bss_conf,
 			    mbssid_info->tx_vdev_id, bss_conf->bssid,
 			    (int)bss_conf->ssid_len, bss_conf->ssid);
 		list_for_each_entry(arvif_itr, &ar->arvifs, list) {
+
+			if (arvif_itr->ahvif->vdev_type != WMI_VDEV_TYPE_AP ||
+			    (ATH12K_SCAN_LINKS_MASK & BIT(arvif_itr->link_id)) ||
+			    arvif_itr->ahvif->vap_submode ||
+			    ath12k_mac_is_bridge_vdev(arvif_itr))
+				continue;
+
 			bss_conf_itr = ath12k_mac_get_link_bss_conf(arvif_itr);
 
 			if (!bss_conf_itr) {
