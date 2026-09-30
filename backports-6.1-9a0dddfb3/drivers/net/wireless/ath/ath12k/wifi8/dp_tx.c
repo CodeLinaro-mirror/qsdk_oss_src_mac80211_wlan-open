@@ -617,11 +617,6 @@ void ath12k_wifi8_dp_get_ring_id(struct ath12k_dp *dp, u8 *ring_id,
 
 	ring_selector = dp->hw_params->hw_ops->get_ring_selector(skb);
 	*ring_id = ring_selector % dp->hw_params->max_tx_ring;
-
-#ifdef CPTCFG_EXT_IPA_OFFLOAD
-	if (unlikely(*ring_id == ATH12K_IPA_TCL_RING))
-		*ring_id = ATH12K_IPA_TCL_SW_RING;
-#endif
 }
 
 static void
