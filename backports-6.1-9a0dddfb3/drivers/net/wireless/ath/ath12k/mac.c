@@ -730,7 +730,11 @@ int ath12k_mac_op_set_mtu(struct ieee80211_hw *hw, struct ieee80211_vif *vif, in
 	if (!wdev)
 		return -ENODEV;
 
-	guard(wiphy)(ahvif->ah->hw->wiphy);
+	lockdep_assert_wiphy(hw->wiphy);
+
+	if (!ahvif->ah)
+		return -EINVAL;
+
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR || !wdev->netdev)
 		return 0;
 
