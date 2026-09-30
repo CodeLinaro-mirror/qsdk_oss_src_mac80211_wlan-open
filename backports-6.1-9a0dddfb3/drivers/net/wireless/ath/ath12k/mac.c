@@ -1875,6 +1875,10 @@ void ath12k_mac_dp_peer_cleanup_all(struct ath12k *ar)
 	 */
 	list_for_each_entry_safe_reverse(arvif, tmp_vif, &ar->arvifs, list) {
 		if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
+			ath12k_dp_arch_self_peer_drv_cleanup(dp, ar->ah,
+							     arvif->bssid,
+							     ar->hw_link_id,
+							     arvif->ahvif->vif);
 			ath12k_dp_arch_peer_delete(dp, ar->ah, arvif->bssid,
 						   NULL, ar->hw_link_id,
 						   arvif->ahvif->vif);

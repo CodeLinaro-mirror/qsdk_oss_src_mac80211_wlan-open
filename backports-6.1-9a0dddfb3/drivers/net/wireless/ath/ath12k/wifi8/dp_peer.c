@@ -2448,6 +2448,31 @@ void ath12k_dp_peer_cleanup_indication(struct ath12k_dp *dp,
 			 "peer-cleanup-ind: EXIT peer_id=%u\n", peer_id);
 }
 
+void ath12k_dp_self_peer_cleanup(struct ath12k_dp *dp,
+				 struct ath12k_hw *ah,
+				 u8 *addr,
+				 u8 hw_link_id,
+				 struct ieee80211_vif *vif)
+{
+	struct ath12k_dp_hw *dp_hw = &ah->dp_hw;
+	struct ath12k_dp_peer *dp_peer;
+	u16 peer_id;
+
+	spin_lock_bh(&dp_hw->peer_hash_lock);
+
+	dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, addr, vif);
+	if (!dp_peer) {
+		spin_unlock_bh(&dp_hw->peer_hash_lock);
+		return;
+	}
+
+	peer_id = dp_peer->peer_id;
+
+	spin_unlock_bh(&dp_hw->peer_hash_lock);
+
+	ath12k_dp_peer_cleanup_indication(dp, peer_id, hw_link_id);
+}
+
 void ath12k_wifi8_dp_link_peer_assoc(struct ath12k_dp_hw *dp_hw,
 				     struct ath12k_dp *dp,
 				     u8 *addr, u32 hw_link_id,
