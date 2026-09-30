@@ -385,6 +385,7 @@ struct ieee80211_vif_chanctx_switch {
  *	This is used to indicate to the driver of the CAC completion for a
  *	channel marked with NOL history.
  * @BSS_CHANGED_NPCA: NPCA (Non-Primary Channel Access) parameters changed.
+ * @BSS_CHANGED_BEACON_RATE: Beacon TX rate changed.
  */
 enum ieee80211_bss_change {
 	BSS_CHANGED_ASSOC		= 1<<0,
@@ -431,6 +432,7 @@ enum ieee80211_bss_change {
 	BSS_CHANGED_AP_DPS_ASSIST	= BIT_ULL(42),
 	BSS_CHANGED_STA_NOL_CAC_DONE	= BIT_ULL(43),
 	BSS_CHANGED_NPCA		= BIT_ULL(44),
+	BSS_CHANGED_BEACON_RATE		= BIT_ULL(45),
 	/* when adding here, make sure to change ieee80211_reconfig */
 };
 

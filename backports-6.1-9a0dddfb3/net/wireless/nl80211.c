@@ -8568,6 +8568,24 @@ static int nl80211_update_ap(struct sk_buff *skb, struct genl_info *info)
 			    nla_data(info->attrs[NL80211_ATTR_SSID]);
 	}
 
+	if (info->attrs[NL80211_ATTR_TX_RATES]) {
+		err = nl80211_parse_tx_bitrate_mask(info, info->attrs,
+						    NL80211_ATTR_TX_RATES,
+						    &params->beacon_rate,
+						    dev, false, link_id,
+						    &wdev->links[link_id].ap.chandef);
+		if (err)
+			goto out;
+
+		err = validate_beacon_tx_rate(rdev,
+					      wdev->links[link_id].ap.chandef.chan->band,
+					      &params->beacon_rate);
+		if (err)
+			goto out;
+		params->beacon_rate_set = true;
+		haveinfo = true;
+	}
+
 	err = nl80211_parse_beacon(rdev, info->attrs, &params->beacon,
 				   info->extack);
 	if (err && !haveinfo)
