@@ -5394,6 +5394,18 @@ void ieee80211_csa_batch_work(struct wiphy *wiphy, struct wiphy_work *work)
 		if (!ieee80211_sdata_running(sdata))
 			continue;
 
+		if (link->csa.changed && sdata->vif.type == NL80211_IFTYPE_AP) {
+			struct beacon_data *beacon;
+
+			rcu_read_lock();
+			beacon = rcu_dereference(link->u.ap.beacon);
+			ieee80211_send_ap_csa_action(sdata, link->conf->addr,
+						     &link->csa.chanreq.oper,
+						     beacon ? beacon->tail : NULL,
+						     beacon ? beacon->tail_len : 0);
+			rcu_read_unlock();
+		}
+
 		if (link->csa_block_tx)
 			ieee80211_vif_block_queues_csa(sdata);
 

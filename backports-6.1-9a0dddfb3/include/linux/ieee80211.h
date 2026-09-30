@@ -4143,6 +4143,11 @@ enum ieee80211_s1g_actioncode {
 #define PMK_MAX_LEN			64
 #define SAE_PASSWORD_MAX_LEN		128
 
+#define IEEE80211_CSA_CHANNEL_SWITCH_IE_LEN \
+	(sizeof(struct element) + sizeof(struct ieee80211_channel_sw_ie))
+#define IEEE80211_CSA_SECONDARY_OFFSET_IE_LEN \
+	(sizeof(struct element) + sizeof(struct ieee80211_sec_chan_offs_ie))
+
 /* Public action codes (IEEE Std 802.11-2016, 9.6.8.1, Table 9-307) */
 enum ieee80211_pub_actioncode {
 	WLAN_PUB_ACTION_20_40_BSS_COEX = 0,

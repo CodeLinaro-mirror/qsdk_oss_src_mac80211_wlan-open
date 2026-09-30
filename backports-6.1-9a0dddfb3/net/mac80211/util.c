@@ -4832,6 +4832,276 @@ again:
 	WARN_ON_ONCE(!cfg80211_chandef_valid(c));
 }
 
+static const u8 *
+ieee80211_csa_find_ie(u8 eid, u8 ext_eid, const u8 *ies, size_t ies_len,
+		      size_t *ie_len)
+{
+	const struct element *elem;
+	const u8 *ie;
+	bool wrapper_only;
+
+	if (!ies)
+		return NULL;
+
+	wrapper_only = eid == WLAN_EID_WIDE_BW_CHANNEL_SWITCH ||
+		      eid == WLAN_EID_TX_POWER_ENVELOPE ||
+		      eid == WLAN_EID_COUNTRY ||
+		      (eid == WLAN_EID_EXTENSION &&
+		       ext_eid == WLAN_EID_EXT_BANDWIDTH_INDICATION);
+
+	if (!wrapper_only) {
+		if (eid == WLAN_EID_EXTENSION)
+			elem = cfg80211_find_ext_elem(ext_eid, ies, ies_len);
+		else
+			elem = cfg80211_find_elem(eid, ies, ies_len);
+
+		if (elem) {
+			*ie_len = sizeof(*elem) + elem->datalen;
+			return (const u8 *)elem;
+		}
+	}
+
+	elem = cfg80211_find_elem(WLAN_EID_CHANNEL_SWITCH_WRAPPER,
+				  ies, ies_len);
+	if (!elem)
+		return NULL;
+
+	if (eid == WLAN_EID_EXTENSION)
+		ie = (const u8 *)cfg80211_find_ext_elem(ext_eid, elem->data,
+							elem->datalen);
+	else
+		ie = (const u8 *)cfg80211_find_elem(eid, elem->data,
+						    elem->datalen);
+	if (!ie)
+		return NULL;
+
+	*ie_len = 2 + ie[1];
+	return ie;
+}
+
+static size_t
+ieee80211_csa_action_ies_len(const u8 *csa_beacon_ies,
+			     size_t csa_beacon_ies_len,
+			     bool public)
+{
+	const u8 *ie;
+	size_t len = 0, ie_len;
+
+	if (public) {
+		ie = ieee80211_csa_find_ie(WLAN_EID_COUNTRY,
+					   0,
+					   csa_beacon_ies, csa_beacon_ies_len,
+					   &ie_len);
+		if (ie)
+			len += ie_len;
+	}
+
+	ie = ieee80211_csa_find_ie(WLAN_EID_WIDE_BW_CHANNEL_SWITCH,
+				   0,
+				   csa_beacon_ies, csa_beacon_ies_len,
+				   &ie_len);
+	if (ie)
+		len += ie_len;
+
+	ie = ieee80211_csa_find_ie(WLAN_EID_TX_POWER_ENVELOPE,
+				   0,
+				   csa_beacon_ies, csa_beacon_ies_len,
+				   &ie_len);
+	if (ie)
+		len += ie_len;
+
+	ie = ieee80211_csa_find_ie(WLAN_EID_EXTENSION,
+				   WLAN_EID_EXT_MAX_CHANNEL_SWITCH_TIME,
+				   csa_beacon_ies, csa_beacon_ies_len,
+				   &ie_len);
+	if (ie)
+		len += ie_len;
+
+	ie = ieee80211_csa_find_ie(WLAN_EID_EXTENSION,
+				   WLAN_EID_EXT_BANDWIDTH_INDICATION,
+				   csa_beacon_ies, csa_beacon_ies_len,
+				   &ie_len);
+	if (ie)
+		len += ie_len;
+
+	return len;
+}
+
+static u8 *ieee80211_csa_copy_action_ies(u8 *pos,
+					 const u8 *csa_beacon_ies,
+					 size_t csa_beacon_ies_len,
+					 bool public)
+{
+	const u8 *ie;
+	size_t ie_len;
+
+	if (public) {
+		ie = ieee80211_csa_find_ie(WLAN_EID_COUNTRY,
+					   0,
+					   csa_beacon_ies, csa_beacon_ies_len,
+					   &ie_len);
+		if (ie) {
+			memcpy(pos, ie, ie_len);
+			pos += ie_len;
+		}
+	}
+
+	ie = ieee80211_csa_find_ie(WLAN_EID_WIDE_BW_CHANNEL_SWITCH, 0,
+				   csa_beacon_ies, csa_beacon_ies_len, &ie_len);
+	if (ie) {
+		memcpy(pos, ie, ie_len);
+		pos += ie_len;
+	}
+
+	ie = ieee80211_csa_find_ie(WLAN_EID_TX_POWER_ENVELOPE, 0,
+				   csa_beacon_ies, csa_beacon_ies_len, &ie_len);
+	if (ie) {
+		memcpy(pos, ie, ie_len);
+		pos += ie_len;
+	}
+
+	ie = ieee80211_csa_find_ie(WLAN_EID_EXTENSION,
+				   WLAN_EID_EXT_MAX_CHANNEL_SWITCH_TIME,
+				   csa_beacon_ies, csa_beacon_ies_len, &ie_len);
+	if (ie) {
+		memcpy(pos, ie, ie_len);
+		pos += ie_len;
+	}
+
+	ie = ieee80211_csa_find_ie(WLAN_EID_EXTENSION,
+				   WLAN_EID_EXT_BANDWIDTH_INDICATION,
+				   csa_beacon_ies, csa_beacon_ies_len, &ie_len);
+	if (ie)
+		memcpy(pos, ie, ie_len);
+
+	return pos;
+}
+
+static u8 *
+ieee80211_ie_build_sec_chan_offset(u8 *pos,
+				   const struct cfg80211_chan_def *chandef)
+{
+	*pos++ = WLAN_EID_SECONDARY_CHANNEL_OFFSET;
+	*pos++ = 1;
+
+	if (chandef->center_freq1 > chandef->chan->center_freq)
+		*pos = IEEE80211_HT_PARAM_CHA_SEC_ABOVE;
+	else if (chandef->center_freq1 < chandef->chan->center_freq)
+		*pos = IEEE80211_HT_PARAM_CHA_SEC_BELOW;
+	else
+		*pos = IEEE80211_HT_PARAM_CHA_SEC_NONE;
+
+	return pos + 1;
+}
+
+static struct sk_buff *
+ieee80211_build_csa_action(struct ieee80211_sub_if_data *sdata,
+			   const u8 *link_addr,
+			   const struct cfg80211_chan_def *chandef,
+			   const u8 *csa_beacon_ies,
+			   size_t csa_beacon_ies_len,
+			   bool public)
+{
+	struct ieee80211_local *local = sdata->local;
+	struct sk_buff *skb;
+	struct ieee80211_mgmt *mgmt;
+	const u8 *ie;
+	size_t ie_len, optional_len;
+	u8 *pos;
+	int hdr_len = offsetofend(struct ieee80211_mgmt,
+				  u.action.u.chan_switch);
+
+	optional_len = ieee80211_csa_action_ies_len(csa_beacon_ies,
+						    csa_beacon_ies_len, public);
+
+	skb = dev_alloc_skb(local->tx_headroom + hdr_len +
+			    (public ? sizeof(struct ieee80211_ext_chansw_ie) :
+				      IEEE80211_CSA_CHANNEL_SWITCH_IE_LEN) +
+			    (public ? 0 :
+				      IEEE80211_CSA_SECONDARY_OFFSET_IE_LEN) +
+			    optional_len);
+	if (!skb)
+		return NULL;
+
+	skb_reserve(skb, local->tx_headroom);
+	mgmt = skb_put_zero(skb, hdr_len);
+	mgmt->frame_control = cpu_to_le16(IEEE80211_FTYPE_MGMT |
+					  IEEE80211_STYPE_ACTION);
+	eth_broadcast_addr(mgmt->da);
+	memcpy(mgmt->sa, link_addr, ETH_ALEN);
+	memcpy(mgmt->bssid, link_addr, ETH_ALEN);
+	mgmt->u.action.category = public ? WLAN_CATEGORY_PUBLIC :
+		WLAN_CATEGORY_SPECTRUM_MGMT;
+	mgmt->u.action.u.chan_switch.action_code = public ?
+		WLAN_PUB_ACTION_EXT_CHANSW_ANN :
+		WLAN_ACTION_SPCT_CHL_SWITCH;
+	pos = skb_put(skb, public ? sizeof(struct ieee80211_ext_chansw_ie) :
+		      IEEE80211_CSA_CHANNEL_SWITCH_IE_LEN);
+
+	if (public) {
+		ie = ieee80211_csa_find_ie(WLAN_EID_EXT_CHANSWITCH_ANN,
+					   0,
+					   csa_beacon_ies, csa_beacon_ies_len,
+					   &ie_len);
+		if (!ie || ie_len < sizeof(struct element) +
+			sizeof(struct ieee80211_ext_chansw_ie))
+			goto free_skb;
+
+		memcpy(pos, ie + sizeof(struct element),
+		       sizeof(struct ieee80211_ext_chansw_ie));
+	} else {
+		ie = ieee80211_csa_find_ie(WLAN_EID_CHANNEL_SWITCH,
+					   0,
+					   csa_beacon_ies, csa_beacon_ies_len,
+					   &ie_len);
+		if (!ie || ie_len < IEEE80211_CSA_CHANNEL_SWITCH_IE_LEN)
+			goto free_skb;
+
+		memcpy(pos, ie, IEEE80211_CSA_CHANNEL_SWITCH_IE_LEN);
+		pos += IEEE80211_CSA_CHANNEL_SWITCH_IE_LEN;
+		pos = skb_put(skb, IEEE80211_CSA_SECONDARY_OFFSET_IE_LEN);
+		pos = ieee80211_ie_build_sec_chan_offset(pos,
+							 chandef);
+	}
+
+	if (optional_len) {
+		pos = skb_put(skb, optional_len);
+		ieee80211_csa_copy_action_ies(pos, csa_beacon_ies,
+					      csa_beacon_ies_len, public);
+	}
+	return skb;
+
+free_skb:
+	kfree_skb(skb);
+	return NULL;
+}
+
+int ieee80211_send_ap_csa_action(struct ieee80211_sub_if_data *sdata,
+				 const u8 *link_addr,
+				 const struct cfg80211_chan_def *chandef,
+				 const u8 *csa_beacon_ies,
+				 size_t csa_beacon_ies_len)
+{
+	struct sk_buff *skb;
+
+	if (sdata->vif.type != NL80211_IFTYPE_AP)
+		return -EOPNOTSUPP;
+
+	skb = ieee80211_build_csa_action(sdata, link_addr, chandef,
+					 csa_beacon_ies, csa_beacon_ies_len, false);
+	if (!skb)
+		return -ENOMEM;
+	ieee80211_tx_skb(sdata, skb);
+
+	skb = ieee80211_build_csa_action(sdata, link_addr, chandef,
+					 csa_beacon_ies, csa_beacon_ies_len, true);
+	if (!skb)
+		return -ENOMEM;
+	ieee80211_tx_skb(sdata, skb);
+
+	return 0;
+}
+
 int ieee80211_send_action_csa(struct ieee80211_sub_if_data *sdata,
 			      struct cfg80211_csa_settings *csa_settings)
 {
