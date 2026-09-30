@@ -835,7 +835,6 @@ struct ath12k_mon_ring_desc_info {
  * @ppdu_desc_pool: Pool of PPDU descriptors for RX monitor frame processing
  * @ppdu_desc_used_list: List of currently used RX PPDU descriptors
  * @ppdu_desc_free_list: List of available RX PPDU descriptors for allocation
- * @ppdu_desc_proc_list: List of RX PPDU descriptors pending processing
  * @ppdu_desc_lock: Spinlock protecting RX PPDU descriptor list operations
  * @mon_desc_used_list: List of monitor descriptors currently in use
  * @mon_stats: RX monitor statistics counters for performance tracking
@@ -887,7 +886,6 @@ struct ath12k_pdev_mon_dp {
 	struct ath12k_dp_mon_ppdu_desc **ppdu_desc_pool;
 	struct list_head ppdu_desc_used_list;
 	struct list_head ppdu_desc_free_list;
-	struct list_head ppdu_desc_proc_list;
 
 	/* lock for ath12k_dp_mon_ppdu_desc */
 	spinlock_t ppdu_desc_lock;

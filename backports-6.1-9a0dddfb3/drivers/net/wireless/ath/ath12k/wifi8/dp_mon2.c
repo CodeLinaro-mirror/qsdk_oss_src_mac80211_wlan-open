@@ -1653,15 +1653,17 @@ ath12k_wifi8_dp_mon_rx_process_ppdu(struct work_struct *work)
 	int desc_cnt;
 	u8 filter_category = 0, ppdu_desc_prcd = 0;
 	bool is_addr_equal;
+	struct list_head local_list;
+
+	INIT_LIST_HEAD(&local_list);
 
 	spin_lock_bh(&dp_mon_pdev->ppdu_desc_lock);
-	list_splice_init(&dp_mon_pdev->ppdu_desc_used_list,
-			 &dp_mon_pdev->ppdu_desc_proc_list);
+	list_splice_init(&dp_mon_pdev->ppdu_desc_used_list, &local_list);
 	mon_stats->ppdu_desc_proc += mon_stats->ppdu_desc_used;
 	mon_stats->ppdu_desc_used = 0;
 	spin_unlock_bh(&dp_mon_pdev->ppdu_desc_lock);
 
-	list_for_each_entry(ppdu_desc, &dp_mon_pdev->ppdu_desc_proc_list, list) {
+	list_for_each_entry(ppdu_desc, &local_list, list) {
 		for (desc_cnt = 0; desc_cnt < ppdu_desc->status_desc_cnt; desc_cnt++) {
 			status_desc = &ppdu_desc->status_desc[desc_cnt];
 			if (!status_desc->mon_buf)
@@ -1748,8 +1750,7 @@ next_ppdu:
 	}
 
 	spin_lock_bh(&dp_mon_pdev->ppdu_desc_lock);
-	list_splice_tail_init(&dp_mon_pdev->ppdu_desc_proc_list,
-			      &dp_mon_pdev->ppdu_desc_free_list);
+	list_splice_tail_init(&local_list, &dp_mon_pdev->ppdu_desc_free_list);
 	mon_stats->ppdu_desc_free += ppdu_desc_prcd;
 	mon_stats->ppdu_desc_proc -= ppdu_desc_prcd;
 	spin_unlock_bh(&dp_mon_pdev->ppdu_desc_lock);
@@ -1962,7 +1963,6 @@ int ath12k_wifi8_dp_mon_rx_dual_ring_setup_ppdu_desc(struct ath12k_pdev_dp *dp_p
 
 	INIT_LIST_HEAD(&dp_mon_pdev->ppdu_desc_free_list);
 	INIT_LIST_HEAD(&dp_mon_pdev->ppdu_desc_used_list);
-	INIT_LIST_HEAD(&dp_mon_pdev->ppdu_desc_proc_list);
 
 	spin_lock_bh(&dp_mon_pdev->ppdu_desc_lock);
 	for (i = 0; i < dp_mon->mon_num_ppdu_desc; i++) {
@@ -2026,7 +2026,6 @@ static void ath12k_wifi8_dp_mon_rx_drain_wq(struct ath12k_pdev_dp *dp_pdev)
 
 	spin_lock_bh(&dp_mon_pdev->ppdu_desc_lock);
 	list_splice_init(&dp_mon_pdev->ppdu_desc_used_list, &local_list);
-	list_splice_init(&dp_mon_pdev->ppdu_desc_proc_list, &local_list);
 	spin_unlock_bh(&dp_mon_pdev->ppdu_desc_lock);
 
 	list_for_each_entry(ppdu_desc, &local_list, list) {
