@@ -17,6 +17,8 @@ void ath12k_wifi7_dp_peer_reo_cmd_flush(struct ath12k_dp *dp, u16 peer_id);
 void ath12k_wifi7_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 *addr,
 				 struct ieee80211_sta *sta, u8 hw_link_id,
 				 struct ieee80211_vif *vif);
+void ath12k_wifi7_dp_peer_pre_rcu_remove(struct ieee80211_hw *hw,
+					 struct ath12k_sta *ahsta);
 void ath12k_wifi7_dp_peer_unregister(struct ath12k_hw *ah, struct ath12k_dp *dp,
 				     struct ath12k_dp_peer *dp_peer);
 int ath12k_wifi7_dp_peer_assoc(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
