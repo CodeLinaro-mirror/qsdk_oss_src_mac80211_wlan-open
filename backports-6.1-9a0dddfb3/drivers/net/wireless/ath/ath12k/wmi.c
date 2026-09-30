@@ -11892,17 +11892,12 @@ static int wmi_process_mgmt_tx_comp(struct ath12k *ar, u32 desc_id,
 		else
 			mgmt_stats->tx_compl_fail[frm_stype]++;
 
-		if (!status) {
-			mgmt_stats->tx_cmpl_succ_pkts++;
-			mgmt_stats->tx_cmpl_succ_bytes += msdu->len;
-		} else if (status == 3) {
-			mgmt_stats->tx_cmpl_retry_pkts++;
-			mgmt_stats->tx_cmpl_retry_bytes += msdu->len;
-		} else {
-			mgmt_stats->tx_cmpl_err_pkts++;
-			mgmt_stats->tx_cmpl_err_bytes += msdu->len;
-		}
+		ath12k_mgmt_tx_status_stats(mgmt_stats, msdu, status);
 	}
+
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_update_scan_radio_data_tx_stats_extn(ar, msdu, status);
+#endif /* CPTCFG_QCN_EXTN */
 
 skip_mgmt_stats:
 	spin_unlock_bh(&ar->data_lock);

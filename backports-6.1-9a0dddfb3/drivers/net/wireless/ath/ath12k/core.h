@@ -8,6 +8,7 @@
 #define ATH12K_CORE_H
 
 #include <linux/types.h>
+#include <linux/skbuff.h>
 #include <linux/interrupt.h>
 #include <linux/irq.h>
 #include <linux/bitfield.h>
@@ -659,6 +660,26 @@ struct ath12k_mgmt_frame_stats {
 	u32 rx_assoc_bad_wpaie;
 	u32 rx_assoc_cap_mismatch;
 };
+
+static inline void
+ath12k_mgmt_tx_status_stats(struct ath12k_mgmt_frame_stats *mgmt_stats,
+			    struct sk_buff *msdu,
+			    u32 status)
+{
+	if (!mgmt_stats || !msdu)
+		return;
+
+	if (!status) {
+		mgmt_stats->tx_cmpl_succ_pkts++;
+		mgmt_stats->tx_cmpl_succ_bytes += msdu->len;
+	} else if (status == 3) {
+		mgmt_stats->tx_cmpl_retry_pkts++;
+		mgmt_stats->tx_cmpl_retry_bytes += msdu->len;
+	} else {
+		mgmt_stats->tx_cmpl_err_pkts++;
+		mgmt_stats->tx_cmpl_err_bytes += msdu->len;
+	}
+}
 
 struct ath12k_tx_conf {
 	bool changed;
