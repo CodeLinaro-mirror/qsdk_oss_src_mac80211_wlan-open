@@ -11054,6 +11054,12 @@ static int ath12k_mac_set_mbssid_info(struct ieee80211_bss_conf *bss_conf,
 		list_for_each_entry(arvif_itr, &ar->arvifs, list) {
 			bss_conf_itr = ath12k_mac_get_link_bss_conf(arvif_itr);
 
+			if (arvif_itr->ahvif->vdev_type != WMI_VDEV_TYPE_AP ||
+			    (ATH12K_SCAN_LINKS_MASK & BIT(arvif_itr->link_id)) ||
+			    arvif_itr->ahvif->vap_submode ||
+			    ath12k_mac_is_bridge_vdev(arvif_itr))
+				continue;
+
 			if (!bss_conf_itr) {
 				ath12k_warn(ab, "bss link conf dosent exist vif %pM link %u\n",
 					    arvif_itr->addr, arvif_itr->link_id);
