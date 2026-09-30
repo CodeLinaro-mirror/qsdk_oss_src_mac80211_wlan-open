@@ -70,6 +70,7 @@ struct ath12k_hal_wifi8 {
 	const struct ath12k_hal_reset_rings *reset_rings;
 	struct ath12k_cumac_hw_reset_timestamps ssr_ts;
 	struct ath12k_cumac_hw_reset_errors reset_errors;
+	u32 sam_enabled;
 };
 
 static inline struct ath12k_hal_wifi8 *ath12k_get_hal_wifi8(struct ath12k_hal *hal)
@@ -1285,6 +1286,7 @@ enum rdi_based_source_ring_selection {
 
 #define HAL_UMAC_UMRCM_SOFTRESET			0xF1E008
 #define HAL_UMAC_UMRCM_SOFTRESET_VALUE			0x18F0
+#define HAL_UMAC_UMRCM_SOFTRESET_VALUE_SAM_DISABLED	0x8F0
 #define HAL_UMAC_UMRCM_SOFTRESET_DELAY			5
 
 #define HAL_UMAC_TQM_ENABLE_DELAY			10
