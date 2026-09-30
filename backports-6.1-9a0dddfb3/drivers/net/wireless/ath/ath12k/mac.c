@@ -6017,6 +6017,7 @@ void ath12k_mac_peer_assoc_prepare_smd(struct ath12k *ar,
 					  struct ath12k_link_sta *arsta,
 					  struct ath12k_wmi_peer_assoc_arg *arg,
 					  bool reassoc,
+					  bool in_st_transition,
 					  struct ieee80211_link_sta *link_sta,
 					  const struct ath12k_smd_peer_assoc_ctx *ctx)
 {
@@ -6044,7 +6045,10 @@ void ath12k_mac_peer_assoc_prepare_smd(struct ath12k *ar,
 	ath12k_peer_assoc_h_smps(arsta, arg, link_sta);
 
 	/* SMD-specific MLO partner info (cross-STA, add partners only) */
-	ath12k_mac_peer_assoc_h_mlo_smd(ar, arsta, ctx, arg);
+	if (in_st_transition && ctx)
+		ath12k_mac_peer_assoc_h_mlo_smd(ar, arsta, ctx, arg);
+	else
+		ath12k_peer_assoc_h_mlo(arsta, arg);
 
 	ath12k_peer_assoc_h_ttlm(arsta, arg);
 	/* FW updates TQM for mgmt TID

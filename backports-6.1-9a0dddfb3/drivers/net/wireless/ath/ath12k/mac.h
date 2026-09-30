@@ -1010,6 +1010,7 @@ void ath12k_mac_peer_assoc_prepare_smd(struct ath12k *ar,
 				       struct ath12k_link_sta *arsta,
 				       struct ath12k_wmi_peer_assoc_arg *arg,
 				       bool reassoc,
+				       bool in_st_transition,
 				       struct ieee80211_link_sta *link_sta,
 				       const struct ath12k_smd_peer_assoc_ctx *ctx);
 
