@@ -1068,6 +1068,21 @@ struct ath12k_link_vif {
 	 * decrement mlo_peer_count by the correct count.  Cleared after use.
 	 */
 	u32 num_ml_peers_del_all;
+	/* TIM info cached from the last SWBA event for deferred processing */
+	u32 swba_tim_bitmap[4];
+	u32 swba_tim_len;
+	u32 swba_tim_mcast;
+	u32 swba_tim_num_ps_pending;
+	u8  swba_dtim_count;
+	u8  swba_dtim_period;
+	/* Set by the WNM TIM Broadcast AP-enable vendor command.
+	 * SWBA events are subscribed only when this is true.
+	 */
+	bool swba_enabled;
+	/* Work item that sends WNM TIM broadcast action frames */
+	struct wiphy_work swba_work;
+	bool swba_tim_bcast_high_rate; /* any STA needs high-rate (24 Mbps) frame */
+	bool swba_tim_bcast_low_rate;  /* any STA needs low-rate (default) frame */
 	/* Number of deauth/disassoc mgmt frames submitted to firmware for
 	 * this vdev that have not yet completed tx (ack/fail).  Checked
 	 * before ath12k_wmi_peer_delete_all() so it does not race ahead of
@@ -1672,6 +1687,13 @@ struct ath12k_sta {
 	 * the start of the next connect cycle.
 	 */
 	bool pre_rcu_remove_done;
+
+	/* WNM TIM Broadcast agreement (IEEE 802.11-2024 §11.21.10) */
+	bool tim_bcast_enabled;
+	u8 tim_bcast_interval;
+	u8 tim_bcast_offset;
+	u8 tim_bcast_high_rate;
+	u8 tim_bcast_low_rate;
 };
 
 #define ATH12K_INVALID_RSSI_FULL -1

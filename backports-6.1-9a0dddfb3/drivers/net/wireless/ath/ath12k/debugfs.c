@@ -20,6 +20,7 @@
 #include "debugfs_htt_stats.h"
 #include "qmi.h"
 #include "wmi.h"
+#include "mac.h"
 #include "dp_peer.h"
 #include "peer.h"
 #include "coredump.h"

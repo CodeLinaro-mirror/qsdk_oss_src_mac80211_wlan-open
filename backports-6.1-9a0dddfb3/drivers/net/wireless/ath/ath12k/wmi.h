@@ -3089,6 +3089,20 @@ enum wmi_beacon_gen_mode {
 	WMI_BEACON_BURST_MODE = 1
 };
 
+/**
+ * enum wmi_beacon_ctrl_op - bcn_ctrl_op values for WMI_BCN_OFFLOAD_CTRL_CMDID
+ * @WMI_BEACON_CTRL_TX_DISABLE:        Disable beacon TX
+ * @WMI_BEACON_CTRL_TX_ENABLE:         Enable beacon TX
+ * @WMI_BEACON_CTRL_SWBA_EVENT_DISABLE: Disable SWBA event delivery from FW
+ * @WMI_BEACON_CTRL_SWBA_EVENT_ENABLE:  Enable SWBA event delivery from FW
+ */
+enum wmi_beacon_ctrl_op {
+	WMI_BEACON_CTRL_TX_DISABLE         = 0,
+	WMI_BEACON_CTRL_TX_ENABLE          = 1,
+	WMI_BEACON_CTRL_SWBA_EVENT_DISABLE = 2,
+	WMI_BEACON_CTRL_SWBA_EVENT_ENABLE  = 3,
+};
+
 enum wmi_direct_buffer_module {
 	WMI_DIRECT_BUF_SPECTRAL = 0,
 	WMI_DIRECT_BUF_CFR = 1,
@@ -4931,6 +4945,37 @@ struct wmi_bcn_offload_ctrl_cmd {
 	__le32 tlv_header;
 	__le32 vdev_id;
 	__le32 bcn_ctrl_op;
+} __packed;
+
+/**
+ * struct wmi_tim_info - TIM information TLV within WMI_HOST_SWBA_EVENTID
+ *
+ * Carries the current TIM bitmap for one vdev, delivered by firmware
+ * on each SWBA (Software Beacon Alert) event.
+ */
+struct wmi_tim_info {
+	__le32 tim_len;
+	__le32 tim_mcast;
+	__le32 tim_bitmap[4];
+	__le32 tim_changed;
+	__le32 tim_num_ps_pending;
+	__le32 vdev_id_valid;
+	__le32 vdev_id;
+} __packed;
+
+/**
+ * struct wmi_host_swba_event - WMI_HOST_SWBA_EVENTID payload
+ *
+ * Firmware sends this event before each beacon TBTT for AP vdevs that have
+ * opted in via WMI_BCN_OFFLOAD_CTRL_CMDID with
+ * bcn_ctrl_op = WMI_BEACON_CTRL_SWBA_EVENT_ENABLE.
+ *
+ * Followed in the TLV stream by one struct wmi_tim_info per set bit in
+ * vdev_map.
+ */
+struct wmi_host_swba_event {
+	__le32 vdev_map;
+	__le32 num_vdevs;
 } __packed;
 
 enum scan_dwelltime_adaptive_mode {

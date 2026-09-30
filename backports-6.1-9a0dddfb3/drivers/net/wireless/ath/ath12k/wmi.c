@@ -12972,6 +12972,132 @@ static void ath12k_vdev_start_resp_event(struct ath12k_base *ab, struct sk_buff 
 			      "vdev start resp for vdev id %d", vdev_start_resp.vdev_id);
 }
 
+struct ath12k_swba_parse_arg {
+	const struct wmi_host_swba_event *ev;
+	const struct wmi_tim_info       *tim_info;
+	u32                              num_tim;
+};
+
+static int ath12k_wmi_swba_tim_parse(struct ath12k_base *ab, u16 tag, u16 len,
+				     const void *ptr, void *data)
+{
+	struct ath12k_swba_parse_arg *arg = data;
+
+	if (tag == WMI_TAG_TIM_INFO) {
+		if (!arg->tim_info)
+			arg->tim_info = ptr;
+		arg->num_tim++;
+	}
+	return 0;
+}
+
+static int ath12k_wmi_swba_parse(struct ath12k_base *ab, u16 tag, u16 len,
+				 const void *ptr, void *data)
+{
+	struct ath12k_swba_parse_arg *arg = data;
+	int ret;
+
+	switch (tag) {
+	case WMI_TAG_HOST_SWBA_EVENT:
+		arg->ev = ptr;
+		break;
+	case WMI_TAG_ARRAY_STRUCT:
+		/* Contains one wmi_tim_info per vdev */
+		ret = ath12k_wmi_tlv_iter(ab, ptr, len,
+					  ath12k_wmi_swba_tim_parse, arg);
+		if (ret)
+			return ret;
+		break;
+	default:
+		break;
+	}
+	return 0;
+}
+
+static void ath12k_wmi_swba_event(struct ath12k_base *ab, struct sk_buff *skb)
+{
+	struct ath12k_swba_parse_arg arg = {};
+	const struct wmi_tim_info *tim_info;
+	struct ath12k *ar;
+	struct ath12k_link_vif *arvif;
+	u32 vdev_map;
+	int vdev_id;
+	int ret;
+
+	ret = ath12k_wmi_tlv_iter(ab, skb->data, skb->len,
+				  ath12k_wmi_swba_parse, &arg);
+	if (ret) {
+		ath12k_warn(ab, "failed to parse SWBA event TLVs: %d\n", ret);
+		return;
+	}
+
+	if (!arg.ev) {
+		ath12k_warn(ab, "SWBA event missing HOST_SWBA_EVENT TLV\n");
+		return;
+	}
+
+	vdev_map = le32_to_cpu(arg.ev->vdev_map);
+	tim_info  = arg.tim_info;
+
+	ath12k_dbg(ab, ATH12K_DBG_WMI, "SWBA event vdev_map=0x%x num_vdevs=%u\n",
+		    vdev_map, le32_to_cpu(arg.ev->num_vdevs));
+
+	for (vdev_id = 0; tim_info; vdev_id++) {
+		u32 num_vdevs = le32_to_cpu(arg.ev->num_vdevs);
+
+		/* Use num_vdevs for sequential iteration when set,
+		 * otherwise fall back to vdev_map bitmask iteration */
+		if (num_vdevs) {
+			if (vdev_id >= num_vdevs)
+				break;
+		} else {
+			if (!vdev_map)
+				break;
+			if (!(vdev_map & BIT(vdev_id)))
+				continue;
+			vdev_map &= ~BIT(vdev_id);
+		}
+
+		/* Use vdev_id from tim_info when vdev_id_valid is set */
+		if (le32_to_cpu(tim_info->vdev_id_valid))
+			vdev_id = le32_to_cpu(tim_info->vdev_id);
+
+		ath12k_dbg(ab, ATH12K_DBG_WMI, "SWBA tim_info: vdev_id=%u len=%u mcast=%u changed=%u ps_pending=%u bitmap=[%08x %08x %08x %08x]\n",
+			    le32_to_cpu(tim_info->vdev_id),
+			    le32_to_cpu(tim_info->tim_len),
+			    le32_to_cpu(tim_info->tim_mcast),
+			    le32_to_cpu(tim_info->tim_changed),
+			    le32_to_cpu(tim_info->tim_num_ps_pending),
+			    le32_to_cpu(tim_info->tim_bitmap[0]),
+			    le32_to_cpu(tim_info->tim_bitmap[1]),
+			    le32_to_cpu(tim_info->tim_bitmap[2]),
+			    le32_to_cpu(tim_info->tim_bitmap[3]));
+
+		rcu_read_lock();
+		ar = ath12k_mac_get_ar_by_vdev_id(ab, vdev_id);
+		if (!ar) {
+			ath12k_info(ab, "SWBA: no ar for vdev_id %d\n", vdev_id);
+			rcu_read_unlock();
+			tim_info++;
+			continue;
+		}
+
+		arvif = ath12k_mac_get_arvif(ar, vdev_id);
+		if (!arvif || arvif->ahvif->vdev_type != WMI_VDEV_TYPE_AP) {
+			ath12k_info(ab, "SWBA: skipping vdev_id %d (not AP or no arvif)\n",
+				    vdev_id);
+			rcu_read_unlock();
+			tim_info++;
+			continue;
+		}
+
+		ath12k_mac_handle_swba(arvif, tim_info);
+		rcu_read_unlock();
+
+		tim_info++;
+	}
+}
+
 static void ath12k_bcn_tx_status_event(struct ath12k_base *ab, struct sk_buff *skb)
 {
 	struct ath12k *ar;
@@ -21035,6 +21161,9 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 	case WMI_OFFLOAD_BCN_TX_STATUS_EVENTID:
 		ath12k_bcn_tx_status_event(ab, skb);
 		break;
+	case WMI_HOST_SWBA_EVENTID:
+		ath12k_wmi_swba_event(ab, skb);
+		break;
 	case WMI_VDEV_STOPPED_EVENTID:
 		ath12k_vdev_stopped_event(ab, skb);
 		break;
@@ -21295,6 +21424,9 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 
 		ath12k_dbg_level(ab, ATH12K_DBG_WMI, ATH12K_DBG_L1,
 				 "Unknown eventid: 0x%x\n", id);
+		/* Temporary: log beacon/mgmt-group events at info level for debug */
+		if ((id & 0xf000) == 0x7000)
+			ath12k_info(ab, "WMI mgmt-group event 0x%x (SWBA=0x7002)\n", id);
 		break;
 	}
 

@@ -3081,6 +3081,309 @@ free_bcn_skb:
 	return ret;
 }
 
+/**
+ * ath12k_mac_build_tim_bcast_action - Build a WNM TIM broadcast action frame
+ * @arvif:  link VIF (AP) sending the frame
+ * @sta:    destination STA (unicast) or NULL for broadcast
+ *
+ * Builds an 802.11 Action frame with:
+ *   Category : Unprotected WNM (0x0b)
+ *   Action   : TIM (0x00)
+ *   Body     : TIM IE populated from the last SWBA-cached bitmap
+ *
+ * Modelled after ieee80211_timbcast_alloc/update in the reference driver.
+ * Returns an skb on success, NULL on allocation failure.
+ */
+static struct sk_buff *
+ath12k_mac_build_tim_bcast_action(struct ath12k_link_vif *arvif,
+				  struct ieee80211_sta *sta)
+{
+	struct ath12k *ar = arvif->ar;
+	struct ieee80211_hw *hw = ar->ah->hw;
+	struct ieee80211_vif *vif = arvif->ahvif->vif;
+	struct ieee80211_bss_conf *bss_conf;
+	struct ieee80211_mgmt *mgmt;
+	struct ieee80211_tim_ie *tie;
+	struct sk_buff *skb;
+	u8 *pos;
+	u8 tim_len;   /* length of the TIM IE value field (4 + bitmap bytes) */
+	u8 bitmap_len;
+
+	bss_conf = ath12k_mac_get_link_bss_conf(arvif);
+
+	/*
+	 * TIM bitmap from the last SWBA event.  swba_tim_len is the number of
+	 * bitmap bytes reported by firmware; clamp to the 4-word (16-byte) max
+	 * we cache.
+	 */
+	bitmap_len = min_t(u8, arvif->swba_tim_len, 16);
+	tim_len = 4 + bitmap_len;   /* dtim_count + dtim_period + bitmap_ctrl + bitmap */
+
+	skb = dev_alloc_skb(hw->extra_tx_headroom +
+			    IEEE80211_MIN_ACTION_SIZE +
+			    3 +          /* category + action code + dialog token */
+			    2 + tim_len); /* EID + len + TIM IE body */
+	if (!skb)
+		return NULL;
+
+	skb_reserve(skb, hw->extra_tx_headroom);
+
+	/* Zero the fixed 802.11 management header (up to but not including
+	 * the action body — IEEE80211_MIN_ACTION_SIZE stops before category).
+	 */
+	mgmt = skb_put_zero(skb, IEEE80211_MIN_ACTION_SIZE);
+	mgmt->frame_control = cpu_to_le16(IEEE80211_FTYPE_MGMT |
+					  IEEE80211_STYPE_ACTION);
+	/* Broadcast destination (TIM broadcast frame per 802.11-2020 §11.21.10) */
+	if (sta)
+		memcpy(mgmt->da, sta->addr, ETH_ALEN);
+	else
+		eth_broadcast_addr(mgmt->da);
+	memcpy(mgmt->sa, vif->addr, ETH_ALEN);
+	if (bss_conf)
+		memcpy(mgmt->bssid, bss_conf->bssid, ETH_ALEN);
+	else
+		memcpy(mgmt->bssid, vif->addr, ETH_ALEN);
+
+	/* Action frame body: category + action code + dialog token */
+	pos = skb_put(skb, 3);
+	*pos++ = WLAN_CATEGORY_WNM_UNPROTECTED;
+	*pos++ = WLAN_UNPROTECTED_WNM_ACTION_TIM;
+	*pos++ = 0;   /* dialog token — 0 for broadcast */
+
+
+	/* TIM IE */
+	pos = skb_put(skb, 2 + tim_len);
+	*pos++ = WLAN_EID_TIM;
+	*pos++ = tim_len;
+	tie = (struct ieee80211_tim_ie *)pos;
+	tie->dtim_count  = arvif->swba_dtim_count;
+	tie->dtim_period = bss_conf ? bss_conf->dtim_period
+				    : arvif->swba_dtim_period;
+	tie->bitmap_ctrl = arvif->swba_tim_mcast ? 1 : 0;
+	memcpy(tie->virtual_map,
+	       arvif->swba_tim_bitmap,
+	       bitmap_len);
+
+	return skb;
+}
+
+/**
+ * ath12k_mac_tim_bcast_iter - Per-STA iterator for WNM TIM broadcast
+ * @ar:    radio
+ * @arsta: link STA being visited
+ * @data:  pointer to the arvif
+ *
+ * Called under ar->arsta_lock (BH-disabled).  Checks whether this STA has
+ * an active TIM-broadcast agreement and whether the current DTIM count
+ * matches its requested interval/offset.  If so, sets a flag in the arvif
+ * so the work handler knows to send the action frame.
+ *
+ * Returns 0 to continue iteration.
+ */
+static int ath12k_mac_tim_bcast_iter(struct ath12k *ar,
+				     struct ath12k_link_sta *arsta,
+				     void *data)
+{
+	struct ath12k_link_vif *arvif = data;
+	struct ath12k_sta *ahsta = arsta->ahsta;
+
+	if (!ahsta)
+		return 0;
+
+	if (!ahsta->tim_bcast_enabled || !ahsta->tim_bcast_interval)
+		return 0;
+
+	if ((arvif->swba_tim_num_ps_pending % ahsta->tim_bcast_interval) !=
+	    ahsta->tim_bcast_offset)
+		return 0;
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		    "TIM Broadcast: sending action frame for peer %pM vdev %d interval=%u offset=%u\n",
+		    ahsta->addr, arvif->vdev_id,
+		    ahsta->tim_bcast_interval, ahsta->tim_bcast_offset);
+
+	/* Track which rate frames are needed.  Actual TX happens in the
+	 * work handler (process context) since arsta_lock is a spinlock.
+	 */
+	if (ahsta->tim_bcast_high_rate)
+		arvif->swba_tim_bcast_high_rate = true;
+	if (ahsta->tim_bcast_low_rate)
+		arvif->swba_tim_bcast_low_rate = true;
+	return 0;
+}
+
+/**
+ * ath12k_mac_swba_tx_tim_bcast - Build and queue one WNM TIM broadcast frame
+ * @arvif:    link VIF sending the frame
+ * @vif:      mac80211 VIF
+ * @high_rate: if true, request 24 Mbps OFDM TX rate; otherwise use default
+ *
+ * Mirrors the reference driver's ieee80211_wnm_timbcast_send() which sends
+ * separate high-rate (24 Mbps) and low-rate (default) copies of the frame.
+ * The rate is communicated to the firmware via ath12k_skb_rhash_insert()
+ * which is read by ath12k_get_skb_rate() inside ath12k_wmi_mgmt_send().
+ */
+static void ath12k_mac_swba_tx_tim_bcast(struct ath12k_link_vif *arvif,
+					 struct ieee80211_vif *vif,
+					 bool high_rate)
+{
+	struct ath12k *ar = arvif->ar;
+	struct ath12k_skb_cb *skb_cb;
+	struct ieee80211_tx_info *info;
+	struct sk_buff *skb;
+	int ret;
+
+	skb = ath12k_mac_build_tim_bcast_action(arvif, NULL);
+	if (!skb) {
+		ath12k_err(ar->ab,
+			   "SWBA: failed to alloc TIM bcast action (%s-rate)\n",
+			   high_rate ? "high" : "low");
+		return;
+	}
+
+	info   = IEEE80211_SKB_CB(skb);
+	skb_cb = ATH12K_SKB_CB(skb);
+	memset(skb_cb, 0, sizeof(*skb_cb));
+	skb_cb->vif     = vif;
+	skb_cb->u.ar    = ar;
+	skb_cb->link_id = arvif->link_id;
+	info->control.vif = vif;
+
+	if (high_rate) {
+		/*
+		 * Request 24 Mbps OFDM — index 8 in the sband bitrates array
+		 * (4 CCK + 4 OFDM rates before 24 Mbps: 6/9/12/18 Mbps).
+		 * ath12k_get_skb_rate() reads this via the rhash table and
+		 * encodes it into wmi_mgmt_send_params.tx_param_dword0/1.
+		 */
+		struct ieee80211_tx_rate rate = {
+			.idx   = ATH12K_MAC_FIRST_OFDM_RATE_IDX + 4, /* 24 Mbps */
+			.flags = 0,
+			.count = 1,
+		};
+		if (ath12k_skb_rhash_insert(ar, skb, rate))
+			ath12k_warn(ar->ab,
+				    "SWBA: rhash insert failed for high-rate TIM bcast\n");
+	}
+
+	ret = ath12k_mac_mgmt_tx(ar, skb, false);
+	if (ret) {
+		ath12k_err(ar->ab,
+			   "SWBA: failed to TX TIM bcast action (%s-rate): %d\n",
+			   high_rate ? "high" : "low", ret);
+		dev_kfree_skb_any(skb);
+	}
+}
+
+/**
+ * ath12k_mac_swba_work - Deferred SWBA handler (wiphy_work context)
+ *
+ * Sends WNM TIM broadcast action frames for all STAs that have an active
+ * TIM-broadcast agreement and whose interval/offset matches the current
+ * DTIM count cached from the last SWBA event.
+ *
+ * Mirrors ieee80211_wnm_timbcast_send() in the reference driver:
+ * sends a high-rate frame (24 Mbps) and/or a low-rate frame (default)
+ * depending on what was negotiated per-STA.
+ */
+static void ath12k_mac_swba_work(struct wiphy *wiphy, struct wiphy_work *work)
+{
+	struct ath12k_link_vif *arvif = container_of(work, struct ath12k_link_vif,
+						     swba_work);
+	struct ath12k *ar = arvif->ar;
+	struct ieee80211_vif *vif = arvif->ahvif ? arvif->ahvif->vif : NULL;
+
+	lockdep_assert_wiphy(wiphy);
+
+	if (!ar || !vif)
+		return;
+
+	/* Collect rate requirements from all matching STAs */
+	arvif->swba_tim_bcast_high_rate = false;
+	arvif->swba_tim_bcast_low_rate  = false;
+	spin_lock_bh(&ar->arsta_lock);
+	ath12k_arsta_itr_on_ar_by_vdev_id(ar, arvif->vdev_id,
+					   ath12k_mac_tim_bcast_iter,
+					   arvif);
+	spin_unlock_bh(&ar->arsta_lock);
+
+	if (!arvif->swba_tim_bcast_high_rate && !arvif->swba_tim_bcast_low_rate)
+		return;
+
+	/* Send high-rate frame (24 Mbps OFDM) if any STA requested it */
+	if (arvif->swba_tim_bcast_high_rate)
+		ath12k_mac_swba_tx_tim_bcast(arvif, vif, true);
+
+	/* Send low-rate frame (firmware default rate) if any STA requested it */
+	if (arvif->swba_tim_bcast_low_rate)
+		ath12k_mac_swba_tx_tim_bcast(arvif, vif, false);
+}
+
+
+/**
+ * ath12k_mac_wnm_tim_bcast_ap_enable - Enable or disable WNM TIM Broadcast
+ *                                       SWBA event subscription for a vdev
+ * @arvif:  AP link VIF
+ * @enable: true to subscribe to SWBA events, false to unsubscribe
+ *
+ * Called from the QCA_NL80211_VENDOR_SUBCMD_WNM_TIM_BCAST vendor command
+ * handler (AP-level path, no peer MAC) when hostapd starts the AP with
+ * wnm_tim_bcast=1.  Sets arvif->swba_enabled so that the vdev-up path
+ * also subscribes on subsequent restarts.
+ */
+int ath12k_mac_wnm_tim_bcast_ap_enable(struct ath12k_link_vif *arvif,
+					bool enable)
+{
+	struct ath12k *ar = arvif->ar;
+	enum wmi_beacon_ctrl_op op;
+	int ret;
+
+	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	arvif->swba_enabled = enable;
+
+	if (!arvif->is_up)
+		return 0;
+
+	op = enable ? WMI_BEACON_CTRL_SWBA_EVENT_ENABLE
+		    : WMI_BEACON_CTRL_SWBA_EVENT_DISABLE;
+
+	ret = ath12k_wmi_send_bcn_offload_control_cmd(ar, arvif->vdev_id, op);
+	if (ret)
+		ath12k_warn(ar->ab,
+			    "WNM TIM Broadcast: failed to %s SWBA for vdev %d: %d\n",
+			    enable ? "enable" : "disable", arvif->vdev_id, ret);
+	else
+		ath12k_info(ar->ab,
+			    "WNM TIM Broadcast: SWBA %s for AP vdev %d\n",
+			    enable ? "enabled" : "disabled", arvif->vdev_id);
+	return ret;
+}
+EXPORT_SYMBOL(ath12k_mac_wnm_tim_bcast_ap_enable);
+
+void ath12k_mac_handle_swba(struct ath12k_link_vif *arvif,
+			    const struct wmi_tim_info *tim_info)
+{
+	struct ath12k *ar = arvif->ar;
+
+	/*
+	 * SWBA fires in softirq/tasklet context.  All work that requires
+	 * memory allocation or sleeping must be deferred.  Cache the TIM
+	 * fields from the firmware event and schedule swba_work.
+	 */
+	memcpy(arvif->swba_tim_bitmap, tim_info->tim_bitmap,
+	       sizeof(arvif->swba_tim_bitmap));
+	arvif->swba_tim_len          = le32_to_cpu(tim_info->tim_len);
+	arvif->swba_tim_mcast        = le32_to_cpu(tim_info->tim_mcast);
+	arvif->swba_tim_num_ps_pending = le32_to_cpu(tim_info->tim_num_ps_pending);
+	arvif->swba_dtim_count       = 0;   /* firmware does not report this */
+	arvif->swba_dtim_period      = 0;   /* filled from bss_conf in work */
+
+	wiphy_work_queue(ath12k_ar_to_hw(ar)->wiphy, &arvif->swba_work);
+}
+EXPORT_SYMBOL(ath12k_mac_handle_swba);
+
 static void ath12k_update_bcn_tx_status_work(struct wiphy *wiphy,
 					     struct wiphy_work *work)
 {
@@ -3368,6 +3671,22 @@ static void ath12k_control_beaconing(struct ath12k_link_vif *arvif,
 		ath12k_mac_bridge_vdevs_up(arvif);
 		ath12k_query_tpc_ie_eirp_if_ready(arvif);
 
+		if (arvif->swba_enabled) {
+			ath12k_info(ar->ab,
+				    "[radio_idx : %u] vdev %d up, enabling SWBA events\n",
+				    ar->radio_idx, arvif->vdev_id);
+			ret = ath12k_wmi_send_bcn_offload_control_cmd(ar,
+					arvif->vdev_id,
+					WMI_BEACON_CTRL_SWBA_EVENT_ENABLE);
+			if (ret)
+				ath12k_warn(ar->ab,
+					    "[radio_idx : %u] failed to enable SWBA events for vdev %d: %d\n",
+					    ar->radio_idx, arvif->vdev_id, ret);
+			else
+				ath12k_info(ar->ab,
+					    "[radio_idx : %u] SWBA events enabled for AP vdev %d\n",
+					    ar->radio_idx, arvif->vdev_id);
+		}
 		/* TX vdev is now up: bring up any non-TX vdevs that were
 		 * deferred waiting for this vdev (startup or post-CSA).
 		 */
@@ -7012,6 +7331,8 @@ static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 				ath12k_update_obss_color_notify_work);
 		wiphy_work_init(&arvif->update_bcn_template_work,
 				ath12k_update_bcn_template_work);
+		wiphy_work_init(&arvif->swba_work,
+				ath12k_mac_swba_work);
 		wiphy_work_init(&arvif->uhr_cu_notify_work,
 				ath12k_uhr_cu_notify_work);
 	}
@@ -7291,6 +7612,8 @@ static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 				  &arvif->update_obss_color_notify_work);
 		wiphy_work_cancel(ah->hw->wiphy,
 				  &arvif->update_bcn_template_work);
+		wiphy_work_cancel(ah->hw->wiphy,
+				  &arvif->swba_work);
 		wiphy_work_cancel(ah->hw->wiphy,
 				  &arvif->uhr_cu_notify_work);
 	}
