@@ -5141,7 +5141,7 @@ ath12k_wifi8_dp_tx_restore_flow_limit(struct ath12k_dp_hw_group_wifi8 *dp_hw_grp
 	struct ath12k_base *ab = dp->ab;
 	enum hal_tqm_service_category svc;
 	LIST_HEAD(restore_list);
-	u16 hard_drop_threshold = ATH12K_DP_TX_DEFAULT_HARD_DROP_THRESHOLD;
+	u16 hard_drop_threshold = ATH12K_DP_TX_DEFAULT_HARD_DROP_THRESHOLD(ab);
 	int ret;
 
 	/* Collect all flows that have not been seen (dropped) for the past

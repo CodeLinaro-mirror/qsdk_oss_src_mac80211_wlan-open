@@ -73,16 +73,16 @@ int ath12k_wifi8_hal_tx_msdu_queue_cleanup(struct ath12k_dp_hw_group *dp_hw_grp,
 		u32_encode_bits(0, HAL_TX_MSDU_FLOW_GEN_MED_DROP_NOTIFICATION) |
 		u32_encode_bits(0, HAL_TX_MSDU_FLOW_GEN_HARD_DROP_NOTIFICATION) |
 		u32_encode_bits(0, HAL_TX_MSDU_FLOW_ADD_FRAME_COUNT_SINCE_DROP) |
-		u32_encode_bits(ATH12K_DP_TX_DEFAULT_HARD_DROP_THRESHOLD,
+		u32_encode_bits(ATH12K_DP_TX_DEFAULT_HARD_DROP_THRESHOLD(ab),
 				HAL_TX_MSDU_FLOW_SLOW_DROP_THRESHOLD);
 	msduq->info9 = cpu_to_le32(info);
 
 	info = le32_to_cpu(msduq->info10);
 	info &= ~(HAL_TX_MSDU_FLOW_MED_DROP_THRESHOLD |
 		  HAL_TX_MSDU_FLOW_HARD_DROP_THRESHOLD);
-	info |= u32_encode_bits(ATH12K_DP_TX_DEFAULT_HARD_DROP_THRESHOLD,
+	info |= u32_encode_bits(ATH12K_DP_TX_DEFAULT_HARD_DROP_THRESHOLD(ab),
 				HAL_TX_MSDU_FLOW_MED_DROP_THRESHOLD) |
-		 u32_encode_bits(ATH12K_DP_TX_DEFAULT_HARD_DROP_THRESHOLD,
+		 u32_encode_bits(ATH12K_DP_TX_DEFAULT_HARD_DROP_THRESHOLD(ab),
 				 HAL_TX_MSDU_FLOW_HARD_DROP_THRESHOLD);
 	msduq->info10 = cpu_to_le32(info);
 
@@ -283,11 +283,11 @@ int ath12k_wifi8_hal_tx_msdu_queue_setup(struct ath12k_dp_hw_group *dp_hw_grp,
 					HAL_TX_MSDU_FLOW_TQM_STATUS_FOR_CHIP2) |
 		       le32_encode_bits(((ti->bitmap & ATH12K_CHIP3_BITMAP_MASK) ? 1 : 0),
 					HAL_TX_MSDU_FLOW_TQM_STATUS_FOR_CHIP3) |
-		       le32_encode_bits(ATH12K_DP_TX_DEFAULT_HARD_DROP_THRESHOLD,
+		       le32_encode_bits(ATH12K_DP_TX_DEFAULT_HARD_DROP_THRESHOLD(ab),
 					HAL_TX_MSDU_FLOW_SLOW_DROP_THRESHOLD);
-	msduq->info10 = le32_encode_bits(ATH12K_DP_TX_DEFAULT_HARD_DROP_THRESHOLD,
+	msduq->info10 = le32_encode_bits(ATH12K_DP_TX_DEFAULT_HARD_DROP_THRESHOLD(ab),
 					 HAL_TX_MSDU_FLOW_MED_DROP_THRESHOLD) |
-			le32_encode_bits(ATH12K_DP_TX_DEFAULT_HARD_DROP_THRESHOLD,
+			le32_encode_bits(ATH12K_DP_TX_DEFAULT_HARD_DROP_THRESHOLD(ab),
 					 HAL_TX_MSDU_FLOW_HARD_DROP_THRESHOLD);
 	msduq->info17 = le32_encode_bits(ti->stats_id,
 					 HAL_TX_MSDU_FLOW_TQM_STATS_ID);
