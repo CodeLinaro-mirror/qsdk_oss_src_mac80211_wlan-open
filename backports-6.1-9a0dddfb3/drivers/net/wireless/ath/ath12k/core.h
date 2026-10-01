@@ -2161,6 +2161,12 @@ struct ath12k {
 	int num_peers;
 	int num_ml_peers;
 	int num_mapc_peers;
+	/* Per-radio count of live MLO link peers. Incremented at peer create,
+	 * decremented at peer delete (WMI response, stale cleanup, or SSR/bypass reset).
+	 * Splitphy chips have two radios; each ar tracks its own count independently.
+	 * The bypass wait sums this across all radios of all active chips.
+	 */
+	u32 mlo_peer_count;
 	int max_num_peers;
 	u32 num_started_vdevs;
 	u32 num_created_vdevs;
@@ -2751,7 +2757,6 @@ struct ath12k_hw_group {
 	 * and peer_delete_all) when firmware confirms peer deletion.
 	 * Protected by ahsta_lock for the WMI workqueue dec path.
 	 */
-	u32 mlo_peer_count;
 	struct completion peer_cleanup_complete;
 	u64 wsi_peer_clean_timeout;
 	struct completion power_up;
