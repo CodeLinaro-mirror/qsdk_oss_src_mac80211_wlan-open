@@ -1941,7 +1941,7 @@ void ath12k_wifi8_ucast_handler(struct ath12k_dp_vif *dp_vif, u8 link_id,
 
 	/* Get ring ID  */
 	if (likely(skb_ctrl->flags & DP_SKB_FAST_TX))
-		ring_id = smp_processor_id();
+		ring_id = smp_processor_id() % ATH12K_HW_MAX_QUEUES;
 	else
 		ath12k_wifi8_dp_get_ring_id(central_dp, &ring_id, skb);
 

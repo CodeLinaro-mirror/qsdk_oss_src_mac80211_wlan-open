@@ -1768,7 +1768,7 @@ void ath12k_wifi7_ucast_handler(struct ath12k_dp_vif *dp_vif,
 
 	/* Get ring ID  */
 	if (likely(skb_ctrl->flags & DP_SKB_FAST_TX))
-		ring_id = smp_processor_id();
+		ring_id = smp_processor_id() % ATH12K_HW_MAX_QUEUES;
 	else
 		ath12k_wifi7_dp_get_ring_id(dp_pdev->dp, &ring_id, skb);
 
