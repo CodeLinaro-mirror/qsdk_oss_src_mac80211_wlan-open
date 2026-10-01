@@ -53,6 +53,106 @@ static bool ath12k_11az_mac_phy_sec_supported(struct ath12k_base *ab)
 			 ab->wmi_ab.svc_map);
 }
 
+static u16 ath12k_pasn_peer_id_alloc(struct ath12k_dp_hw *dp_hw)
+{
+	u16 peer_id;
+	int i;
+
+	spin_lock_bh(&dp_hw->peer_hash_lock);
+
+	peer_id = dp_hw->last_peer_id;
+	for (i = 0; i < ATH12K_MAX_PEER_ID; i++) {
+		peer_id = (peer_id + 1) % ATH12K_MAX_PEER_ID;
+
+		if (!peer_id)
+			continue;
+
+		if (test_bit(peer_id, dp_hw->free_peer_id_map))
+			continue;
+
+		set_bit(peer_id, dp_hw->free_peer_id_map);
+		break;
+	}
+
+	dp_hw->last_peer_id = peer_id;
+	if (i >= ATH12K_MAX_PEER_ID)
+		peer_id = ATH12K_MLO_PEER_ID_INVALID;
+
+	spin_unlock_bh(&dp_hw->peer_hash_lock);
+	ath12k_dbg_level(NULL, ATH12K_DBG_RTT, ATH12K_DBG_L1,
+			 "Allocated peer_id:%u\n", peer_id);
+
+	return peer_id;
+}
+
+static u16 ath12k_pasn_sta_id_alloc(struct ath12k_dp_hw *dp_hw)
+{
+	u16 sta_id;
+	int i;
+
+	spin_lock_bh(&dp_hw->peer_hash_lock);
+	sta_id = dp_hw->last_sta_id;
+	for (i = 0; i < ATH12K_MAX_STA_ID; i++) {
+		sta_id = (sta_id + 1) % ATH12K_MAX_STA_ID;
+
+		if (test_bit(sta_id, dp_hw->free_sta_id_map))
+			continue;
+
+		set_bit(sta_id, dp_hw->free_sta_id_map);
+		break;
+	}
+
+	dp_hw->last_sta_id = sta_id;
+	if (i >= ATH12K_MAX_STA_ID)
+		sta_id = ATH12K_STA_ID_INVALID;
+
+	spin_unlock_bh(&dp_hw->peer_hash_lock);
+	ath12k_dbg_level(NULL, ATH12K_DBG_RTT, ATH12K_DBG_L1,
+			 "Allocated sta_id:%d", sta_id);
+
+	return sta_id;
+}
+
+/**
+ * ath12k_pasn_global_id_required() - Does this chip need global peer/sta ids?
+ * @ar: radio the PASN peer belongs to.
+ *
+ * WiFi8 (CUMAC) firmware expects the host to supply the global peer_id and
+ * sta_id in WMI_PEER_CREATE. Older chips allocate them in firmware, so the
+ * invalid markers are sent instead.
+ */
+static bool ath12k_pasn_global_id_required(struct ath12k *ar)
+{
+	return ar->ah->ag->cumac_enabled;
+}
+
+/**
+ * ath12k_pasn_peer_id_free() - Release peer_id/sta_id bitmap allocations.
+ * @dp_hw: per-hw DP context owning the id bitmaps.
+ * @peer_id: peer id to release, or ATH12K_MLO_PEER_ID_INVALID.
+ * @sta_id: sta id to release, or ATH12K_STA_ID_INVALID.
+ */
+static void ath12k_pasn_peer_sta_id_free(struct ath12k_dp_hw *dp_hw, u16 peer_id,
+					 u16 sta_id)
+{
+	if (peer_id == ATH12K_MLO_PEER_ID_INVALID &&
+	    sta_id == ATH12K_STA_ID_INVALID)
+		return;
+
+	spin_lock_bh(&dp_hw->peer_hash_lock);
+
+	if (peer_id != ATH12K_MLO_PEER_ID_INVALID)
+		clear_bit(peer_id, dp_hw->free_peer_id_map);
+
+	if (sta_id != ATH12K_STA_ID_INVALID)
+		clear_bit(sta_id, dp_hw->free_sta_id_map);
+
+	spin_unlock_bh(&dp_hw->peer_hash_lock);
+
+	ath12k_dbg_level(NULL, ATH12K_DBG_RTT, ATH12K_DBG_L1,
+			 "Freed PASN peer_id:%u sta_id:%u\n", peer_id, sta_id);
+}
+
 void ath12k_mac_set_ranging_ext_features(struct wiphy *wiphy, struct ath12k *ar)
 {
 	if (ath12k_11az_mac_sec_supported(ar->ab)) {
@@ -333,6 +433,8 @@ int ath12k_pasn_peer_create_or_update(struct ath12k_link_vif *arvif,
 			spin_unlock_bh(&arvif->rtt_ctx.pasn_peer_lock);
 			return -ENOMEM;
 		}
+		peer->peer_id = ATH12K_MLO_PEER_ID_INVALID;
+		peer->sta_id = ATH12K_STA_ID_INVALID;
 		ether_addr_copy(peer->peer_addr, peer_addr);
 		list_add_tail(&peer->list, &arvif->rtt_ctx.pasn_peer_list);
 	}
@@ -359,14 +461,21 @@ int ath12k_pasn_peer_create_or_update(struct ath12k_link_vif *arvif,
  * Returns 0 on success or a negative errno on failure.
  */
 int ath12k_pasn_fw_peer_create(struct ath12k_link_vif *arvif,
-			       const u8 *peer_addr)
+			       struct ath12k_rtt_pasn_peer *peer)
 {
 	struct ath12k_wmi_peer_create_arg peer_param = {};
 	struct ath12k *ar = arvif->ar;
+	struct ath12k_hw *ah = ar->ah;
+	struct ath12k_dp_hw *dp_hw = &ah->dp_hw;
+	const u8 *peer_addr;
 	int ret;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
+	if (!peer)
+		return -EINVAL;
+
+	peer_addr = peer->peer_addr;
 	ath12k_dbg(ar->ab, ATH12K_DBG_RTT,
 		   "RTT PASN fw_peer_create: peer=%pM vdev=%u\n",
 		   peer_addr, arvif->vdev_id);
@@ -381,8 +490,18 @@ int ath12k_pasn_fw_peer_create(struct ath12k_link_vif *arvif,
 	peer_param.vdev_id = arvif->vdev_id;
 	peer_param.peer_addr = (u8 *)peer_addr;
 	peer_param.peer_type = WMI_PEER_TYPE_PASN;
-	peer_param.peer_id = ATH12K_MLO_PEER_ID_INVALID;
-	peer_param.sta_id = ATH12K_STA_ID_INVALID;
+	if (ath12k_pasn_global_id_required(ar)) {
+		peer_param.peer_id = ath12k_pasn_peer_id_alloc(dp_hw);
+		peer_param.sta_id = ath12k_pasn_sta_id_alloc(dp_hw);
+	} else {
+		peer_param.peer_id = ATH12K_MLO_PEER_ID_INVALID;
+		peer_param.sta_id = ATH12K_STA_ID_INVALID;
+	}
+
+	spin_lock_bh(&arvif->rtt_ctx.pasn_peer_lock);
+	peer->peer_id = peer_param.peer_id;
+	peer->sta_id = peer_param.sta_id;
+	spin_unlock_bh(&arvif->rtt_ctx.pasn_peer_lock);
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_RTT,
 		   "RTT PASN fw_peer_create: sending WMI peer create %pM vdev=%u type=PASN\n",
@@ -395,7 +514,7 @@ int ath12k_pasn_fw_peer_create(struct ath12k_link_vif *arvif,
 	ether_addr_copy(ar->peer_map_event.pending_peer_addr, peer_addr);
 	ar->peer_map_event.pending_peer_vdev_id = arvif->vdev_id;
 	ar->peer_map_event.received = false;
-	ar->peer_map_event.peer_id = ATH12K_MLO_PEER_ID_INVALID;
+	ar->peer_map_event.peer_id = peer_param.peer_id;
 
 	ret = ath12k_wmi_send_peer_create_cmd(ar, &peer_param);
 	if (ret) {
@@ -447,6 +566,10 @@ int ath12k_pasn_fw_peer_delete(struct ath12k_link_vif *arvif,
 			       const u8 *peer_addr, bool skip_peer_del)
 {
 	struct ath12k *ar = arvif->ar;
+	struct ath12k_dp_hw *dp_hw = &ar->ah->dp_hw;
+	struct ath12k_rtt_pasn_peer *peer;
+	u16 peer_id = ATH12K_MLO_PEER_ID_INVALID;
+	u16 sta_id = ATH12K_STA_ID_INVALID;
 	int ret = 0;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
@@ -501,6 +624,18 @@ int ath12k_pasn_fw_peer_delete(struct ath12k_link_vif *arvif,
 			   "RTT PASN fw_peer_delete: WMI delete sent %pM vdev=%u\n",
 			   peer_addr, arvif->vdev_id);
 	}
+
+	spin_lock_bh(&arvif->rtt_ctx.pasn_peer_lock);
+	peer = ath12k_pasn_peer_find(arvif, peer_addr);
+	if (peer) {
+		peer_id = peer->peer_id;
+		sta_id = peer->sta_id;
+		peer->peer_id = ATH12K_MLO_PEER_ID_INVALID;
+		peer->sta_id = ATH12K_STA_ID_INVALID;
+	}
+	spin_unlock_bh(&arvif->rtt_ctx.pasn_peer_lock);
+
+	ath12k_pasn_peer_sta_id_free(dp_hw, peer_id, sta_id);
 
 	ath12k_pasn_peer_update_flags(arvif, peer_addr,
 				      0, ATH12K_PASN_F_FW_CREATED);
@@ -573,7 +708,7 @@ void ath12k_pasn_fw_peer_create_work(struct wiphy *wiphy,
 			ath12k_dbg(arvif->ar->ab, ATH12K_DBG_RTT,
 				   "RTT PASN work: creating FW peer %pM vdev=%u\n",
 				   peer->peer_addr, arvif->vdev_id);
-			ret = ath12k_pasn_fw_peer_create(arvif, peer->peer_addr);
+			ret = ath12k_pasn_fw_peer_create(arvif, peer);
 			if (ret) {
 				ath12k_warn(arvif->ar->ab,
 					    "RTT PASN work: failed FW peer create %pM: %d\n",
@@ -660,15 +795,24 @@ static void ath12k_rtt_pasn_peer_delete_all(struct ath12k_link_vif *arvif)
 {
 	struct ath12k *ar = arvif->ar;
 	struct ath12k_rtt_pasn_peer *peer;
+	struct ath12k_dp_hw *dp_hw = &ar->ah->dp_hw;
 	bool pasn_fw_peer_found = false;
 	int ret;
 
 	spin_lock_bh(&arvif->rtt_ctx.pasn_peer_lock);
 	list_for_each_entry(peer, &arvif->rtt_ctx.pasn_peer_list, list) {
-		if (peer->flags & ATH12K_PASN_F_FW_CREATED) {
-			pasn_fw_peer_found = true;
-			break;
+		if (peer->peer_id != ATH12K_MLO_PEER_ID_INVALID ||
+		    peer->sta_id != ATH12K_STA_ID_INVALID) {
+			u16 peer_id = peer->peer_id;
+			u16 sta_id = peer->sta_id;
+
+			peer->peer_id = ATH12K_MLO_PEER_ID_INVALID;
+			peer->sta_id = ATH12K_STA_ID_INVALID;
+			ath12k_pasn_peer_sta_id_free(dp_hw, peer_id, sta_id);
 		}
+
+		if (peer->flags & ATH12K_PASN_F_FW_CREATED)
+			pasn_fw_peer_found = true;
 	}
 	spin_unlock_bh(&arvif->rtt_ctx.pasn_peer_lock);
 

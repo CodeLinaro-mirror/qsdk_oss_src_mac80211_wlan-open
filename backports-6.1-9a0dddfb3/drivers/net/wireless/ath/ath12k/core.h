@@ -902,6 +902,13 @@ struct ath12k_rtt_pasn_peer {
 	bool ltf_keyseed_required;
 	u8 security_mode;
 	u8 flags;
+	/* Global peer_id/sta_id handed to firmware at peer create time on
+	 * WiFi8 (CUMAC) chips. Cached here so the bitmap allocations can be
+	 * released on peer delete. ATH12K_MLO_PEER_ID_INVALID /
+	 * ATH12K_STA_ID_INVALID when nothing is allocated.
+	 */
+	u16 peer_id;
+	u16 sta_id;
 };
 
 /**

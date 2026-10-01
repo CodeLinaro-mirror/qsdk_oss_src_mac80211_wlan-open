@@ -58,7 +58,7 @@ void ath12k_rtt_deinit_link_vif(struct ath12k_link_vif *arvif);
 void ath12k_pasn_fw_peer_create_work(struct wiphy *wiphy,
 				     struct wiphy_work *work);
 int ath12k_pasn_fw_peer_create(struct ath12k_link_vif *arvif,
-			       const u8 *peer_addr);
+			       struct ath12k_rtt_pasn_peer *peer);
 int ath12k_pasn_fw_peer_delete(struct ath12k_link_vif *arvif,
 			       const u8 *peer_addr, bool skip_peer_del);
 struct ath12k_rtt_pasn_peer *
