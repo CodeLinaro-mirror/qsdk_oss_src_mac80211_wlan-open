@@ -339,6 +339,8 @@ static void ath12k_wifi8_dp_umac_deinit(struct ath12k_dp *dp)
 		return;
 	}
 
+	ath12k_status_bufs_init(dp);
+
 	ath12k_wifi8_dp_tx_congestion_control_deinit(dp);
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
@@ -794,6 +796,8 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 		goto fail_congestion_control;
 	}
 #endif /* CPTCFG_QCN_EXTN */
+
+	ath12k_status_bufs_init(dp);
 
 	dp_wifi8->init_done = true;
 	ath12k_info(ab, "CUMAC init successful");

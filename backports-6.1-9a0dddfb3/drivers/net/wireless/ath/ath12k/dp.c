@@ -2976,6 +2976,29 @@ free:
 	return ret;
 }
 
+void ath12k_status_bufs_init(struct ath12k_dp *dp)
+{
+	int i;
+
+	for (i = 0; i < DP_TOTAL_REO_DST_RINGS; i++) {
+		dp->rx_status_buf[i] = kzalloc(RX_STATUS_BUFFER_SIZE, GFP_KERNEL);
+		if (!dp->rx_status_buf[i])
+			WARN_ON(1);
+	}
+}
+EXPORT_SYMBOL(ath12k_status_bufs_init);
+
+void ath12k_status_bufs_deinit(struct ath12k_dp *dp)
+{
+	int i;
+
+	for (i = 0; i < DP_TOTAL_REO_DST_RINGS; i++) {
+		kfree(dp->rx_status_buf[i]);
+		dp->rx_status_buf[i] = NULL;
+	}
+}
+EXPORT_SYMBOL(ath12k_status_bufs_deinit);
+
 void ath12k_dp_cmn_hw_group_unassign(struct ath12k_dp *dp,
 				     struct ath12k_hw_group *ag)
 {
@@ -2983,13 +3006,6 @@ void ath12k_dp_cmn_hw_group_unassign(struct ath12k_dp *dp,
 	int i;
 
 	lockdep_assert_held(&ag->mutex);
-
-	for (i = 0; i < DP_TOTAL_REO_DST_RINGS; i++) {
-		if (!dp_hw_grp->rx_status_buf[i])
-			continue;
-		kfree(dp_hw_grp->rx_status_buf[i]);
-		dp_hw_grp->rx_status_buf[i] = NULL;
-	}
 
 	for (i = 0; i < ATH12K_HW_MAX_QUEUES; i++) {
 		if (!dp_hw_grp->tx_status_buf[i])
@@ -3044,31 +3060,9 @@ void ath12k_dp_cmn_hw_group_assign(struct ath12k_dp *dp,
 		dp_hw_grp->tx_status_buf[i] = kzalloc(TX_STATUS_BUFFER_SIZE, GFP_KERNEL);
 	}
 
-	for (i = 0; i < DP_TOTAL_REO_DST_RINGS; i++) {
-		if (dp_hw_grp->rx_status_buf[i])
-			continue;
-
-		/* Each arch rx process handler can use this buffer by typecasting its own
-		 * entry struct (aligned to 32 bytes).
-		 */
-		dp_hw_grp->rx_status_buf[i] = kzalloc(RX_STATUS_BUFFER_SIZE, GFP_KERNEL);
-		if (!dp_hw_grp->rx_status_buf[i]) {
-			ath12k_err(ab, "Failed to allocate rx_status_buf[%d]", i);
-			BUG_ON(1);
-		}
-	}
-
 	ret = ath12k_dp_tx_spt_alloc_and_init(ab);
-	if (ret) {
+	if (ret)
 		ath12k_warn(ab, "failed to alloc and init TX SPT pages %d\n", ret);
-		for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
-			if (!dp_hw_grp->rx_status_buf[i])
-				continue;
-
-			kfree(dp_hw_grp->rx_status_buf[i]);
-			dp_hw_grp->rx_status_buf[i] = NULL;
-		}
-	}
 
 #ifdef CPTCFG_QCN_EXTN
 	ath12k_dp_tx_hw_group_extn_init(dp_hw_grp);
