@@ -738,8 +738,6 @@ static void ath12k_mac_smd_roam_config(struct ieee80211_hw *hw,
 		if (cmd_type == SMD_ROAM_CONFIG_CMD_DYNAMIC_CONTEXT) {
 			if (target_ahsta)
 				continue;
-			if (!(info->tap_links_mask & BIT(link_id)))
-				continue;
 		}
 
 		memset(&arg, 0, sizeof(arg));
