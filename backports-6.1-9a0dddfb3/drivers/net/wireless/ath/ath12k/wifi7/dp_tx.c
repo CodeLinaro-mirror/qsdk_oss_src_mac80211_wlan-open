@@ -1632,6 +1632,14 @@ void ath12k_wifi7_mcbc_handler(struct ath12k_dp_vif *dp_vif,
 				goto next;
 		}
 
+#ifdef CPTCFG_QCN_EXTN
+		if (ath12k_dp_feature_enabled(dp_vif, DP_FEATURE_EXTAP)) {
+			skb_new = skb_unshare(skb_new, GFP_ATOMIC);
+			if (!skb_new)
+				goto next;
+		}
+#endif
+
 		len = skb_new->len;
 
 		msdu_info.group_slot = -1;
