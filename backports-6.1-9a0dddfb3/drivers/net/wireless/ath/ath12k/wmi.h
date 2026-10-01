@@ -4334,6 +4334,7 @@ struct ath12k_wmi_uhr_omp_link_params {
 	u8 dso_subband;
 	u8 dso_padding_delay;
 	u8 dso_switch_back_delay;
+	bool dso_update;
 };
 
 #define MGMT_TX_DL_FRM_LEN		     64
