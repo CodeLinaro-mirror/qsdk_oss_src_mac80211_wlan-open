@@ -1141,6 +1141,12 @@ void ath12k_wifi8_hal_reo_qdesc_setup(struct hal_rx_reo_queue *qdesc,
 				      u16 stats_id)
 {
 	struct hal_rx_reo_queue_ext *ext_desc;
+	u8 timer_ac;
+
+	if (ath12k_wifi8_hal_is_reo_nonqos_mgmt_tid(tid))
+		timer_ac = HAL_REO_Q_TIMER_MGMT_AC;
+	else
+		timer_ac = ath12k_tid_to_ac(tid);
 
 	ath12k_wifi8_hal_reo_set_desc_hdr(&qdesc->desc_hdr, HAL_DESC_REO_OWNED,
 					  HAL_DESC_REO_QUEUE_DESC,
@@ -1152,8 +1158,7 @@ void ath12k_wifi8_hal_reo_qdesc_setup(struct hal_rx_reo_queue *qdesc,
 	     le32_encode_bits(1, HAL_RX_REO_QUEUE_INFO0_VLD) |
 	     le32_encode_bits(1,
 			      HAL_RX_REO_QUEUE_INFO0_ASSOCIATED_LINK_DESCRIPTOR_COUNTER) |
-	     le32_encode_bits(ath12k_tid_to_ac(tid),
-			      HAL_RX_REO_QUEUE_INFO0_LINK_LIST_TIMER_IDX);
+	     le32_encode_bits(timer_ac, HAL_RX_REO_QUEUE_INFO0_LINK_LIST_TIMER_IDX);
 
 	if (ba_window_size < 1)
 		ba_window_size = 1;
@@ -1323,6 +1328,10 @@ void ath12k_wifi8_hal_reo_hw_setup(struct ath12k_base *ab)
 			   VI_reorder_timeout);
 	ath12k_hif_write32(ab, reo_base + HAL_REO1_AGING_THRESH_IX_3(hal),
 			   HAL_DEFAULT_VO_REO_TIMEOUT_USEC);
+
+	/* Timeout value for mgmt TIDs */
+	ath12k_hif_write32(ab, reo_base + HAL_REO1_AGING_THRESH_IX_4(hal),
+			   HAL_DEFAULT_MGMT_REO_TIMEOUT_USEC);
 
 	/* RDI values 0-6 are programmed in IX_0 register */
 	ath12k_wifi8_reo_dest_ring_ctrl_setup(ab, 0, 6,

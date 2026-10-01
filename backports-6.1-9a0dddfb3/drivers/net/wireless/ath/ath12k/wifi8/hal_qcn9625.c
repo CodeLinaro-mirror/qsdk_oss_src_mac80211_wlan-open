@@ -529,6 +529,7 @@ const struct ath12k_hw_regs qcn9625_regs = {
 	.hal_reo1_aging_thres_ix1 = 0x191c,
 	.hal_reo1_aging_thres_ix2 = 0x1920,
 	.hal_reo1_aging_thres_ix3 = 0x1924,
+	.hal_reo1_aging_thres_ix4 = 0x1ca4,
 
 	/* REO Exception ring address */
 	.hal_reo2_sw0_ring_base = 0xd70,
