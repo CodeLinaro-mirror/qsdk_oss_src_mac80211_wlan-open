@@ -246,3 +246,4 @@ int ath12k_wait_for_peer_create_done(struct ath12k *ar, u32 vdev_id,
 void ath12k_bcast_probe_rl_init(struct ath12k *ar);
 void ath12k_bcast_probe_rl_flush(struct ath12k *ar);
 #endif /* _PEER_H_ */
+u32 ath12k_mlo_peer_count_total(struct ath12k_hw_group *ag);

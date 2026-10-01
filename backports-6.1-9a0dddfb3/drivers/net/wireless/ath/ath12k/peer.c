@@ -614,11 +614,14 @@ void ath12k_peer_cleanup(struct ath12k *ar, u32 vdev_id)
 		if (ctx.num_ml_peers) {
 			struct ath12k_hw_group *ag = ab->ag;
 
-			ag->mlo_peer_count -= ctx.num_ml_peers;
+			if (WARN_ON(ar->mlo_peer_count < ctx.num_ml_peers))
+				ar->mlo_peer_count = 0;
+			else
+				ar->mlo_peer_count -= ctx.num_ml_peers;
 			ath12k_dbg(ab, ATH12K_DBG_PEER | ATH12K_DBG_WSI_BYPASS,
 				   "stale MLO peer cleanup ar[%u] num_ml_peers=%u mlo_peer_count=%u\n",
-				   ar->radio_idx, ar->num_ml_peers, ag->mlo_peer_count);
-			if (!ag->mlo_peer_count)
+				   ar->radio_idx, ar->num_ml_peers, ar->mlo_peer_count);
+			if (!ath12k_mlo_peer_count_total(ag))
 				complete(&ag->peer_cleanup_complete);
 		}
 		arvif = ath12k_mac_get_arvif(ar, vdev_id);
@@ -682,6 +685,11 @@ static int ath12k_peer_delete_send(struct ath12k *ar, u32 vdev_id, const u8 *add
 		if (ahsta && link_id_mask)
 			ahsta->peer_delete_cmd_sent_bitmap &= ~link_id_mask;
 
+		if (ar->mlo_peer_count)
+			ar->mlo_peer_count--;
+		ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS,
+			   "WMI peer send failed, update mlo_peer_count: %d",
+			   ar->mlo_peer_count);
 		/* Remove the peer entry from the peer_del tracker when sending the WMI
 		 * peer delete command fails.
 		 */
@@ -977,12 +985,12 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 			/* mlo_peer_count tracks all MLO peers (AP + STA) since
 			 * every MLO peer gets an individual peer-delete response.
 			 */
-			ar->ab->ag->mlo_peer_count++;
+			ar->mlo_peer_count++;
 			ath12k_dbg(ar->ab, ATH12K_DBG_PEER | ATH12K_DBG_WSI_BYPASS,
-				   "MLO peer created %pM ar[%u] arvif_num_ml_peers=%u mlo_peer_count=%u\n",
+				   "MLO peer created %pM ar[%u] vdev_type=%u arvif_num_ml_peers=%u mlo_peer_count=%u\n",
 				   arg->peer_addr, ar->radio_idx,
-				   arvif->num_ml_peers,
-				   ar->ab->ag->mlo_peer_count);
+				   arvif->ahvif->vdev_type,
+				   arvif->num_ml_peers, ar->mlo_peer_count);
 		}
 	}
 
@@ -2434,3 +2442,35 @@ void ath12k_vif_iterate_peer(struct ath12k_link_vif *arvif,
 					  ath12k_vif_peer_iter_cb, &ctx);
 	spin_unlock_bh(&ar->arsta_lock);
 }
+
+/**
+ * ath12k_mlo_peer_count_total - sum ar->mlo_peer_count across all active radios
+ *
+ * Iterates every non-bypassed chip in the group and every radio within it
+ * (handles splitphy chips with num_radios > 1 transparently).
+ * Returns the group-wide total of live MLO link peers.
+ */
+u32 ath12k_mlo_peer_count_total(struct ath12k_hw_group *ag)
+{
+	u32 total = 0;
+	int i, j;
+
+	for (i = 0; i < ag->num_devices; i++) {
+		struct ath12k_base *ab = ag->ab[i];
+
+		if (!ab || ab->is_bypassed)
+			continue;
+		for (j = 0; j < ab->num_radios; j++) {
+			struct ath12k *ar = ab->pdevs[j].ar;
+
+			if (!ar)
+				continue;
+			ath12k_dbg(ab, ATH12K_DBG_PEER | ATH12K_DBG_WSI_BYPASS,
+				   "mlo_peer_count_total: ar[%u] mlo_peer_count=%u\n",
+				   ar->radio_idx, ar->mlo_peer_count);
+			total += ar->mlo_peer_count;
+		}
+	}
+	return total;
+}
+EXPORT_SYMBOL(ath12k_mlo_peer_count_total);
