@@ -2971,6 +2971,12 @@ enum wmi_tlv_service {
 	WMI_TLV_SERVICE_UHR_CO_AP_CTDMA_TXOP_RETURN_SUPPORT = 513,
 	WMI_TLV_SERVICE_UHR_MAX_CTDMA_AP_PEERS_SUPPORT = 521,
 
+	/* Use Rx Linear Gain correction offset when this service bit is set */
+	WMI_SERVICE_RSSI_LINEARITY_AND_THERM_CORRECTIONS = 527,
+
+	/* Perform RSSI Accuracy computation when this service bit is set */
+	WMI_SERVICE_RSSI_DBADD_EWMA_MAXNF                = 528,
+
 	WMI_MAX_EXT2_SERVICE,
 };
 
