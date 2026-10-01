@@ -973,6 +973,7 @@ ath12k_wifi7_dp_process_reo_rx_packets(struct ath12k_dp *dp,
 	u8 active_tid_mask = 0;
 	struct ath12k_tid_rx_stats *tid_rx_stats_ring = NULL;
 	bool is_delay_enabled = false;
+	int decap_type;
 
 	rcu_read_lock();
 
@@ -1169,19 +1170,22 @@ ath12k_wifi7_dp_process_reo_rx_packets(struct ath12k_dp *dp,
 								tid, ring_id);
 		}
 
-		if (likely(peer->rx_decap_type ==
+		decap_type = rx_mpdu_info->fragment_flag ?
+					DP_RX_DECAP_TYPE_RAW : peer->rx_decap_type;
+
+		if (likely(decap_type ==
 			   DP_RX_DECAP_TYPE_ETHERNET2_DIX)) {
 			ath12k_wifi7_deliver_ethernet_frame(dp_pdev, spd_desc_l,
 							    peer, &rx_status,
 							    napi, stats,
 							    &prev_tlv_info);
-		} else if (peer->rx_decap_type ==
+		} else if (decap_type ==
 			   DP_RX_DECAP_TYPE_NATIVE_WIFI) {
 			ath12k_wifi7_deliver_nwifi_frame(dp_pdev, spd_desc_l,
 							 peer, &rx_status,
 							 napi, stats,
 							 &prev_tlv_info);
-		} else if (peer->rx_decap_type == DP_RX_DECAP_TYPE_RAW) {
+		} else if (decap_type == DP_RX_DECAP_TYPE_RAW) {
 			ath12k_wifi7_deliver_raw_frame(dp_pdev, spd_desc_l,
 						       peer, &rx_status,
 						       napi, stats,
@@ -1681,7 +1685,9 @@ ath12k_wifi7_dp_rx_h_defrag_reo_reinject(struct ath12k_dp *dp,
 		reo_dest_ring->rx_mpdu_info.peer_meta_data;
 
 	if (ab->hw_params->reoq_lut_support) {
-		reo_ent_ring->queue_addr_lo = reo_dest_ring->rx_mpdu_info.peer_meta_data;
+		reo_ent_ring->queue_addr_lo =
+			le32_get_bits(reo_dest_ring->rx_mpdu_info.peer_meta_data,
+				      RX_MPDU_DESC_META_DATA_V1_PEER_ID);
 		queue_addr_hi = 0;
 	} else {
 		reo_ent_ring->queue_addr_lo = cpu_to_le32(lower_32_bits(rx_tid->paddr));
@@ -1693,8 +1699,12 @@ ath12k_wifi7_dp_rx_h_defrag_reo_reinject(struct ath12k_dp *dp,
 			      le32_encode_bits(dst_ind,
 					       HAL_REO_ENTR_RING_INFO0_DEST_IND);
 
-	reo_ent_ring->info1 = le32_encode_bits(rx_tid->cur_sn,
-					       HAL_REO_ENTR_RING_INFO1_MPDU_SEQ_NUM);
+	reo_ent_ring->info1 = le32_encode_bits(HAL_RXDMA_PUSH_REASON_ROUTING_INSTRUCTION,
+					       HAL_REO_ENTR_RING_INFO1_RXDMA_PUSH_REASON) |
+			le32_encode_bits(0,
+					 HAL_REO_ENTR_RING_INFO1_RXDMA_ERROR_CODE) |
+			le32_encode_bits(rx_tid->cur_sn,
+					 HAL_REO_ENTR_RING_INFO1_MPDU_SEQ_NUM);
 	dest_ring_info0 = le32_get_bits(reo_dest_ring->info0,
 					HAL_REO_DEST_RING_INFO0_SRC_LINK_ID);
 	reo_ent_ring->info2 =
