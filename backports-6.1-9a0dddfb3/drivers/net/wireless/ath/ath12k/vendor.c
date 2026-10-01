@@ -19141,6 +19141,7 @@ static int ath12k_vendor_pasn_peer_action(struct ath12k_link_vif *arvif,
 			    tb[QCA_WLAN_VENDOR_ATTR_PASN_PEERS], rem) {
 		bool ltf;
 		const u8 *peer_addr;
+		struct ath12k_rtt_pasn_peer *pasn_peer;
 		int ret;
 
 		ret = ath12k_vendor_parse_pasn_peer(peer_attr, peer);
@@ -19206,7 +19207,17 @@ static int ath12k_vendor_pasn_peer_action(struct ath12k_link_vif *arvif,
 				return ret;
 			}
 
-			ret = ath12k_pasn_fw_peer_create(arvif, peer_addr);
+			spin_lock_bh(&arvif->rtt_ctx.pasn_peer_lock);
+			pasn_peer = ath12k_pasn_peer_find(arvif, peer_addr);
+			spin_unlock_bh(&arvif->rtt_ctx.pasn_peer_lock);
+			if (!pasn_peer) {
+				ath12k_dbg(arvif->ar->ab, ATH12K_DBG_RTT,
+					   "RTT PASN create missing SW peer %pM\n",
+					   peer_addr);
+				return -ENOENT;
+			}
+
+			ret = ath12k_pasn_fw_peer_create(arvif, pasn_peer);
 			if (ret) {
 				ath12k_dbg(arvif->ar->ab, ATH12K_DBG_RTT,
 					   "RTT PASN create FW peer failed %pM ret %d\n",
