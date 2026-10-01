@@ -2985,6 +2985,12 @@ void ath12k_status_bufs_init(struct ath12k_dp *dp)
 		if (!dp->rx_status_buf[i])
 			WARN_ON(1);
 	}
+
+	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++) {
+		dp->tx_status_buf[i] = kzalloc(TX_STATUS_BUFFER_SIZE, GFP_KERNEL);
+		if (!dp->tx_status_buf[i])
+			WARN_ON(1);
+	}
 }
 EXPORT_SYMBOL(ath12k_status_bufs_init);
 
@@ -2996,6 +3002,11 @@ void ath12k_status_bufs_deinit(struct ath12k_dp *dp)
 		kfree(dp->rx_status_buf[i]);
 		dp->rx_status_buf[i] = NULL;
 	}
+
+	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++) {
+		kfree(dp->tx_status_buf[i]);
+		dp->tx_status_buf[i] = NULL;
+	}
 }
 EXPORT_SYMBOL(ath12k_status_bufs_deinit);
 
@@ -3003,16 +3014,8 @@ void ath12k_dp_cmn_hw_group_unassign(struct ath12k_dp *dp,
 				     struct ath12k_hw_group *ag)
 {
 	struct ath12k_dp_hw_group *dp_hw_grp = ag->dp_hw_grp;
-	int i;
 
 	lockdep_assert_held(&ag->mutex);
-
-	for (i = 0; i < ATH12K_HW_MAX_QUEUES; i++) {
-		if (!dp_hw_grp->tx_status_buf[i])
-			continue;
-		kfree(dp_hw_grp->tx_status_buf[i]);
-		dp_hw_grp->tx_status_buf[i] = NULL;
-	}
 
 	if (dp_hw_grp->fst) {
 		ath12k_dp_rx_fst_detach(dp->ab, dp_hw_grp->fst);
@@ -3041,7 +3044,7 @@ void ath12k_dp_cmn_hw_group_assign(struct ath12k_dp *dp,
 {
 	struct ath12k_base *ab = dp->ab;
 	struct ath12k_dp_hw_group *dp_hw_grp = ag->dp_hw_grp;
-	int i, ret;
+	int ret;
 
 	dp->dp_hw_grp = dp_hw_grp;
 	dp->device_id = ab->device_id;
@@ -3049,16 +3052,6 @@ void ath12k_dp_cmn_hw_group_assign(struct ath12k_dp *dp,
 
 	if (!dp_hw_grp->fst)
 		dp_hw_grp->fst = ath12k_dp_rx_fst_attach(ab);
-
-	for (i = 0; i < ATH12K_HW_MAX_QUEUES; i++) {
-		if (dp_hw_grp->tx_status_buf[i])
-			continue;
-
-		/* Each arch tx completion handler can use this buffer by typecasting its own
-		 * entry struct (aligned to 32 or 64 bytes).
-		 */
-		dp_hw_grp->tx_status_buf[i] = kzalloc(TX_STATUS_BUFFER_SIZE, GFP_KERNEL);
-	}
 
 	ret = ath12k_dp_tx_spt_alloc_and_init(ab);
 	if (ret)
