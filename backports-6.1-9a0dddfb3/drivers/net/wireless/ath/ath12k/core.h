@@ -2317,6 +2317,10 @@ struct ath12k {
 	struct completion mvr_complete;
 	bool twt_enabled;
 	struct wmi_rssi_dbm_conv_offsets rssi_offsets;
+	/* Cached from WMI_SERVICE_RSSI_LINEARITY_AND_THERM_CORRECTIONS service bit.
+	 * When true, use Rx Linear Gain correction otherwise use legacy corrections.
+	 */
+	bool use_linear_gain_corr;
 	/* HTT PHY stats NF values (type 37), populated by ath12k_telemetry_get_phy_nf().
 	 * bdf_nf_chains[]: static/characterized NF per chain. The firmware reports 1
 	 * as a sentinel for unused/inactive chains. This is unambiguous because valid

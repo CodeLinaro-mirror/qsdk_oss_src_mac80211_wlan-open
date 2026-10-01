@@ -1942,7 +1942,7 @@ static void
 ath12k_dp_mon_compute_rssi_accuracy(struct ath12k_dp_link_peer_rx_signal_stats *stats,
 				    struct hal_rx_mon_ppdu_info *ppdu_info,
 				    struct wmi_rssi_dbm_conv_offsets *rssi_offsets,
-				    u8 frame_type)
+				    u8 frame_type, bool use_linear_gain_corr)
 {
 	s16 per_chain_full_band[HAL_RX_MAX_NSS];
 	u16 active_chain_scaled[HAL_RX_MAX_NSS];
@@ -1951,7 +1951,7 @@ ath12k_dp_mon_compute_rssi_accuracy(struct ath12k_dp_link_peer_rx_signal_stats *
 	s16 max_nf = S16_MIN;
 	int chain, seg, n_subbands, n_active_chains = 0;
 	u32 rx_chainmask = rssi_offsets->curr_rx_chainmask;
-	s8 lin_corr;
+	s8 err_corr;
 	const s8 *rssi_sb = NULL;
 	int n_active_segs = 0;
 	s8 rssi_db_per_seg = 0;
@@ -1993,7 +1993,8 @@ ath12k_dp_mon_compute_rssi_accuracy(struct ath12k_dp_link_peer_rx_signal_stats *
 			continue;
 		}
 
-		lin_corr = ppdu_info->rssi_db_lin_corr_per_gain_per_chain[chain];
+		if (use_linear_gain_corr)
+			err_corr = ppdu_info->rssi_db_lin_corr_per_gain_per_chain[chain];
 
 		/*
 		 * FW/HAL PHY use ATH12K_RSSI_DB_PER_SUBBAND_INVALID as
@@ -2011,8 +2012,25 @@ ath12k_dp_mon_compute_rssi_accuracy(struct ath12k_dp_link_peer_rx_signal_stats *
 			/* 128 (0x80 as u8) == inactive subband marker */
 			if ((u8)rssi_db_per_seg == ATH12K_RSSI_DB_PER_SUBBAND_INVALID)
 				continue;
+
+			if (!use_linear_gain_corr) {
+				/*
+				 * Legacy corrections: rssi_region_offset +
+				 * rssi_temp_offset + xlna_bypass_offset
+				 * (based on xlna_bypass_threshold).
+				 * BW_offset is already handled by db_add().
+				 * avg_nf_dbm is not needed as Max_NF is used.
+				 */
+				err_corr = (s8)ppdu_info->rssi_region_offset +
+					   (s8)rssi_offsets->rssi_temp_offset;
+				if ((u8)rssi_db_per_seg >=
+				    (u8)rssi_offsets->xlna_bypass_threshold)
+					err_corr +=
+						(s8)rssi_offsets->xlna_bypass_offset;
+			}
+
 			/* u8 addition matches FW's RSSI_SCALE_UP(raw_val + gcomp) */
-			rssi_db_per_seg_with_corr = (u8)rssi_db_per_seg + (u8)lin_corr;
+			rssi_db_per_seg_with_corr = (u8)rssi_db_per_seg + (u8)err_corr;
 			scaled[n_active_segs++] = (u16)rssi_db_per_seg_with_corr *
 							ATH12K_RSSI_SCALE_FACTOR;
 		}
@@ -2284,14 +2302,21 @@ ath12k_dp_mon_link_peer_signal_stats(struct ath12k_pdev_dp *dp_pdev,
 
 	/*
 	 * Perform the RSSI Accuracy Computation only when
-	 * rssi_full_band_accuracy_en is enabled for the radio.
+	 * rssi_full_band_accuracy_en is enabled for the radio
+	 * as governed by the WMI_SERVICE_RSSI_DBADD_EWMA_MAXNF service bit.
+	 *
+	 * When WMI_SERVICE_RSSI_LINEARITY_AND_THERM_CORRECTIONS is set,
+	 * use the Rx Linear Gain correction offset (lin_corr from FW).
+	 * Otherwise, use legacy error corrections: rssi_region_offset +
+	 * rssi_temp_offset + xlna_bypass_offset (based on xlna_bypass_threshold).
 	 */
 	if (!ath12k_hal_get_rssi_full_band_accuracy_en(&dp_pdev->ar->ab->hal)) {
 		ath12k_dp_calc_rx_peer_rssi(dp_pdev, peer);
 	} else {
 		ath12k_dp_mon_compute_rssi_accuracy(stats, ppdu_info,
 						    &dp_pdev->ar->rssi_offsets,
-						    frame_type);
+						    frame_type,
+						    dp_pdev->ar->use_linear_gain_corr);
 
 		/*
 		 * Override stats->rssi / rssi_avg / rssi_dp / rssi_dp_avg
