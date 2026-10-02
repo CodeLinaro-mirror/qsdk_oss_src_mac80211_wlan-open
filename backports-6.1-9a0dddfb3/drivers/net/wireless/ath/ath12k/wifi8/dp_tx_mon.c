@@ -213,22 +213,6 @@ ath12k_wifi8_htt_tx_mon_cfg_fill_extended_wmask(struct htt_tx_mon_ring_selection
 		le32_encode_bits(htt_tlv_filter->stat_subtype_data,
 				 HTT_TX_MON_TYPE_EN_STATUS_SUBTYPE_MASK);
 
-	/* Default to capturing all subtypes only when NEITHER tier is
-	 * configured for ANY type. A pkt_subtype_*-only check would also
-	 * fire for a pure status-tier request (-F, stat_subtype_* set,
-	 * pkt_subtype_* legitimately clear), forcing full-payload capture
-	 * for every subtype and silently overriding the status-only filter
-	 * - pkt tier takes priority over status tier on the wire.
-	 */
-	if (!htt_tlv_filter->pkt_subtype_mgmt && !htt_tlv_filter->pkt_subtype_ctrl &&
-	    !htt_tlv_filter->pkt_subtype_data &&
-	    !htt_tlv_filter->stat_subtype_mgmt && !htt_tlv_filter->stat_subtype_ctrl &&
-	    !htt_tlv_filter->stat_subtype_data) {
-		cmd->type_en_mgmt |= cpu_to_le32(HTT_TX_MON_PKT_ALL_SUBTYPES);
-		cmd->type_en_ctrl |= cpu_to_le32(HTT_TX_MON_PKT_ALL_SUBTYPES);
-		cmd->type_en_data |= cpu_to_le32(HTT_TX_MON_PKT_ALL_SUBTYPES);
-	}
-
 	/* wifi8-only info0 control bit (BIT 28). Safe here: this op is
 	 * only installed on the wifi8 arch-ops, where the HTT skb is sized to
 	 * the full struct. pkt_buf_cnt_en (BIT 31) is encoded unconditionally
@@ -239,6 +223,17 @@ ath12k_wifi8_htt_tx_mon_cfg_fill_extended_wmask(struct htt_tx_mon_ring_selection
 			HTT_TX_MON_RING_CFG_CMD_INFO0_PEER_PPDU_DROP);
 }
 EXPORT_SYMBOL(ath12k_wifi8_htt_tx_mon_cfg_fill_extended_wmask);
+
+static inline void
+ath12k_wifi8_dp_mon_tx_enable_all_subtypes(struct htt_tx_ring_tlv_filter *f)
+{
+	f->pkt_subtype_mgmt = HTT_TX_MON_PKT_ALL_SUBTYPES;
+	f->stat_subtype_mgmt = HTT_TX_MON_PKT_ALL_SUBTYPES;
+	f->pkt_subtype_ctrl = HTT_TX_MON_PKT_ALL_SUBTYPES;
+	f->stat_subtype_ctrl = HTT_TX_MON_PKT_ALL_SUBTYPES;
+	f->pkt_subtype_data = HTT_TX_MON_PKT_ALL_SUBTYPES;
+	f->stat_subtype_data = HTT_TX_MON_PKT_ALL_SUBTYPES;
+}
 
 /* Populate the EXT_MON filter slot from the persistent tx_ext_mon_config.
  * Mirrors ath12k_wifi7_dp_mon_tx_setup_ext_mon_filter, but translates the
@@ -260,13 +255,19 @@ ath12k_wifi8_dp_mon_tx_setup_ext_mon_filter(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_dp_tx_ext_mon *tx_ext_mon =
 		&dp_mon_pdev->dp_pdev_tx_mon->tx_ext_mon;
 	struct ath12k_dp_tx_ext_mon_config *cfg;
+	struct ath12k_ext_mon_pkt_config *ext_mon_filter;
 	u8 mgmt_len, ctrl_len, data_len;
+	u32 mgmt_pkt_subtype, data_pkt_subtype, ctrl_pkt_subtype;
+	u32 mgmt_stat_subtype, data_stat_subtype, ctrl_stat_subtype;
+	bool sw_peer_filtering;
 
 	/* TLV subscription — same defaults as full monitor mode */
 	f->tx_mon_downstream_tlv_flags = HTT_TX_MON_FILTER_DW_STRM_TLV_DEFAULT_MODE;
 	f->tx_mon_upstream_tlv_flags0 = HTT_TX_MON_FILTER_UP_STRM_TLV_FLAG0;
 	f->tx_mon_upstream_tlv_flags1 = HTT_TX_MON_FILTER_UP_STRM_TLV_FLAG1;
 	f->tx_mon_upstream_tlv_flags2 = HTT_TX_MON_FILTER_UP_STRM_TLV_FLAG2;
+	f->tx_mon_upstream_tlv_flags3 = HTT_TX_FILTER_TLV_FLAGS3_UHR_PREAMBLE_ALL;
+	f->tx_mon_downstream_tlv_flags1 = HTT_TX_FILTER_TLV_DS_FLAGS1_ALL;
 
 	spin_lock(&tx_ext_mon->tx_ext_mon_lock);
 	cfg = tx_ext_mon->tx_ext_mon_config;
@@ -275,20 +276,43 @@ ath12k_wifi8_dp_mon_tx_setup_ext_mon_filter(struct ath12k_pdev_dp *dp_pdev,
 		return;
 	}
 
-	/* pkt tier -> [15:0]; status tier -> [31:16] */
-	f->pkt_subtype_mgmt = cfg->fp.filter[ATH12K_EXT_MON_FRAME_MGMT];
-	f->pkt_subtype_ctrl = cfg->fp.filter[ATH12K_EXT_MON_FRAME_CTRL];
-	f->pkt_subtype_data = cfg->fp.filter[ATH12K_EXT_MON_FRAME_DATA];
-	f->stat_subtype_mgmt = cfg->fp.status_filter[ATH12K_EXT_MON_FRAME_MGMT];
-	f->stat_subtype_ctrl = cfg->fp.status_filter[ATH12K_EXT_MON_FRAME_CTRL];
-	f->stat_subtype_data = cfg->fp.status_filter[ATH12K_EXT_MON_FRAME_DATA];
+	sw_peer_filtering = (cfg->fp_enabled && cfg->fpmo_enabled);
+	ext_mon_filter = cfg->fp_enabled ? &cfg->fp : &cfg->fpmo;
+	mgmt_pkt_subtype = ext_mon_filter->filter[ATH12K_EXT_MON_FRAME_MGMT];
+	ctrl_pkt_subtype = ext_mon_filter->filter[ATH12K_EXT_MON_FRAME_CTRL];
+	data_pkt_subtype = ext_mon_filter->filter[ATH12K_EXT_MON_FRAME_DATA];
+	mgmt_stat_subtype = ext_mon_filter->status_filter[ATH12K_EXT_MON_FRAME_MGMT];
+	ctrl_stat_subtype = ext_mon_filter->status_filter[ATH12K_EXT_MON_FRAME_CTRL];
+	data_stat_subtype = ext_mon_filter->status_filter[ATH12K_EXT_MON_FRAME_DATA];
 
-	/* coarse type enables: set if any subtype requested in either tier */
-	if (f->pkt_subtype_mgmt || f->stat_subtype_mgmt)
+	if (sw_peer_filtering) {
+		/* Enable full tx monitor */
+		ath12k_dp_mon_tx_setup_mon_mode_filter(dp_pdev->dp, f);
+		ath12k_wifi8_dp_mon_tx_enable_all_subtypes(f);
+	} else if (cfg->fp_enabled) {
+		/* pkt tier -> [15:0]; status tier -> [31:16] */
+		f->pkt_subtype_mgmt = mgmt_pkt_subtype;
+		f->pkt_subtype_ctrl = ctrl_pkt_subtype;
+		f->pkt_subtype_data = data_pkt_subtype;
+		f->stat_subtype_mgmt = mgmt_stat_subtype;
+		f->stat_subtype_ctrl = ctrl_stat_subtype;
+		f->stat_subtype_data = data_stat_subtype;
+	} else if (cfg->fpmo_enabled) {
+		/* Peer scoping is enforced by hw via the HW peer-filter table,
+		 * mac_addr_filter_en enforces it; leave subtype/status field unset
+		 */
+		f->mac_addr_filter_en = 1;
+	}
+
+
+	/* coarse type enables: set if any subtype requested in either tier
+	 * Required in case -f c/-F c is provided.
+	 */
+	if (mgmt_pkt_subtype || mgmt_stat_subtype)
 		f->tx_mon_mgmt_filter = 0x1;
-	if (f->pkt_subtype_ctrl || f->stat_subtype_ctrl)
+	if (ctrl_pkt_subtype || ctrl_stat_subtype)
 		f->tx_mon_ctrl_filter = 0x1;
-	if (f->pkt_subtype_data || f->stat_subtype_data)
+	if (data_pkt_subtype || data_stat_subtype)
 		f->tx_mon_data_filter = 0x1;
 
 	/* Only the pkt tier carries payload. A status-tier-only request
@@ -296,19 +320,16 @@ ath12k_wifi8_dp_mon_tx_setup_ext_mon_filter(struct ath12k_pdev_dp *dp_pdev,
 	 * DMA length programmed - that would contradict the status tier's
 	 * "MPDU status TLVs only, no payload" design intent.
 	 */
-	mgmt_len = cfg->fp.len[ATH12K_EXT_MON_FRAME_MGMT];
-	ctrl_len = cfg->fp.len[ATH12K_EXT_MON_FRAME_CTRL];
-	data_len = cfg->fp.len[ATH12K_EXT_MON_FRAME_DATA];
+	mgmt_len = ext_mon_filter->len[ATH12K_EXT_MON_FRAME_MGMT];
+	ctrl_len = ext_mon_filter->len[ATH12K_EXT_MON_FRAME_CTRL];
+	data_len = ext_mon_filter->len[ATH12K_EXT_MON_FRAME_DATA];
 
-	if (f->pkt_subtype_mgmt)
-		f->tx_mon_mgmt_pkt_dma_len =
-			ath12k_dp_mon_tx_get_ext_mon_filter_len(mgmt_len);
-	if (f->pkt_subtype_ctrl)
-		f->tx_mon_ctrl_pkt_dma_len =
-			ath12k_dp_mon_tx_get_ext_mon_filter_len(ctrl_len);
-	if (f->pkt_subtype_data)
-		f->tx_mon_data_pkt_dma_len =
-			ath12k_dp_mon_tx_get_ext_mon_filter_len(data_len);
+	f->tx_mon_mgmt_pkt_dma_len =
+		ath12k_dp_mon_tx_get_ext_mon_filter_len(mgmt_len);
+	f->tx_mon_ctrl_pkt_dma_len =
+		ath12k_dp_mon_tx_get_ext_mon_filter_len(ctrl_len);
+	f->tx_mon_data_pkt_dma_len =
+		ath12k_dp_mon_tx_get_ext_mon_filter_len(data_len);
 
 	switch (cfg->level) {
 	case ATH12K_EXT_MON_FILTER_LEVEL_MPDU:
@@ -363,6 +384,7 @@ int ath12k_wifi8_dp_mon_tx_config_filter(struct ath12k_pdev_dp *dp_pdev,
 		case DP_MON_TX_FULL_MONITOR:
 		case DP_MON_TX_FILTER_PKTLOG_HYBRID:
 			ath12k_dp_mon_tx_setup_mon_mode_filter(dp, src_tlv_filter);
+			ath12k_wifi8_dp_mon_tx_enable_all_subtypes(src_tlv_filter);
 			break;
 		case DP_MON_TX_FILTER_EXT_MON_MODE:
 			ath12k_wifi8_dp_mon_tx_setup_ext_mon_filter(dp_pdev,
