@@ -171,7 +171,7 @@ struct ath12k_dp_hw_group {
 	struct ath12k_tx_desc_info **txbaddr;
 	struct list_head tx_desc_free_list[ATH12K_HW_MAX_QUEUES];
 	struct list_head tx_spl_desc_free_list[ATH12K_HW_MAX_QUEUES];
-	u32 __percpu *tx_desc_used_cnt;
+	u32 tx_desc_used_cnt[ATH12K_HW_MAX_QUEUES];
 	/* protects the free and used desc lists */
 	spinlock_t tx_desc_lock[ATH12K_HW_MAX_QUEUES];
 	bool tx_desc_initialized;
