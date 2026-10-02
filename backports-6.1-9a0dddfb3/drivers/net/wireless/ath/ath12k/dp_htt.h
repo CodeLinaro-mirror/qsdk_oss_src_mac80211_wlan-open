@@ -1335,6 +1335,7 @@ struct htt_rx_ring_tlv_filter {
  *                   b'26    - tx_mon_global_en (TM)
  *                   b'27    - mac_addr_filter_en (MF)
  *                   b'28    - peer_ppdu_drop_en (PD)         [wifi8]
+ *                   b'29    - mpdu_stat_type_filter_en       [wifi8]
  *                   b'30    - special_pkt_filter_en (SP)     [wifi8]
  *                   b'31    - pkt_buf_cnt_en (PB)            [wifi8]
  * dword1  (info1) - b'0:15  - ring_buffer_size (bytes; HW_TO_SW / SW_TO_HW only)
@@ -1486,6 +1487,7 @@ struct htt_rx_ring_tlv_filter {
 
 /* info0 [31:28] - new control bits over the WiFi7 baseline */
 #define HTT_TX_MON_RING_CFG_CMD_INFO0_PEER_PPDU_DROP		BIT(28)
+#define HTT_TX_MON_RING_CFG_CMD_INFO0_MPDU_STAT_TYPE_FILTER_EN	BIT(29)
 #define HTT_TX_MON_RING_CFG_CMD_INFO0_SPECIAL_PKT_FILTER_EN	BIT(30)
 #define HTT_TX_MON_RING_CFG_CMD_INFO0_PKT_BUF_CNT_EN		BIT(31)
 
@@ -1671,6 +1673,7 @@ struct htt_tx_ring_tlv_filter {
 	bool mac_addr_filter_en;
 	bool peer_ppdu_drop;
 	bool special_pkt_filter_en;
+	bool mpdu_stat_type_filter_en;
 	bool pkt_buf_cnt_en;
 	u16 pkt_subtype_mgmt;
 	u16 stat_subtype_mgmt;

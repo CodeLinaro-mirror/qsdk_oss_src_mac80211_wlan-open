@@ -5131,6 +5131,9 @@ void ath12k_dp_mon_tx_display_filters(struct ath12k_dp *dp,
 			   src_tlv_filter->mac_addr_filter_en);
 		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "peer_ppdu_drop: %d",
 			   src_tlv_filter->peer_ppdu_drop);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX,
+			   "mpdu_stat_type_filter_en: %d",
+			   src_tlv_filter->mpdu_stat_type_filter_en);
 		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "pkt_buf_cnt_en: %d",
 			   src_tlv_filter->pkt_buf_cnt_en);
 		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "pkt_subtype_mgmt: 0x%X",
@@ -5297,7 +5300,8 @@ void ath12k_dp_mon_tx_prepare_filter(struct ath12k_dp *dp,
 					src_tlv_filter->stat_subtype_data;
 		dst_tlv_filter->peer_ppdu_drop |=
 					src_tlv_filter->peer_ppdu_drop;
-
+		dst_tlv_filter->mpdu_stat_type_filter_en |=
+					src_tlv_filter->mpdu_stat_type_filter_en;
 		dst_tlv_filter->tx_mon_mgmt_pkt_dma_len |=
 					src_tlv_filter->tx_mon_mgmt_pkt_dma_len;
 		dst_tlv_filter->tx_mon_data_pkt_dma_len |=
