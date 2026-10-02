@@ -19891,8 +19891,10 @@ int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
 	bool is_mlme = ATH12K_MGMT_MLME_FRAME(hdr->frame_control);
+	bool is_csa = ath12k_is_csa_action_frame(hdr, skb->len);
 	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
 	struct ath12k_mgmt_frame_stats *stats;
+	struct ieee80211_mgmt *mgmt;
 	enum hal_encrypt_type enctype;
 	bool is_cfr = false;
 	bool skip = false;
@@ -20058,6 +20060,12 @@ int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arvif,
 			ath12k_dbg_level(ab, ATH12K_DBG_MLME, ATH12K_DBG_L0,
 					 "Transmit %s to STA %pM from %pM over WMI\n",
 					 mgmt_frame_name[frm_stype], sta_addr, own_addr);
+	} else if (is_csa) {
+		mgmt = (struct ieee80211_mgmt *)hdr;
+		ath12k_dbg_level(ab, ATH12K_DBG_MLME, ATH12K_DBG_L0,
+				 "Transmit CSA action frame from %pM over WMI category %u action %u\n",
+				 own_addr, mgmt->u.action.category,
+				 mgmt->u.action.u.chan_switch.action_code);
 	}
 	return 0;
 
