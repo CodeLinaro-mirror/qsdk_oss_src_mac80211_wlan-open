@@ -4454,15 +4454,9 @@ ieee80211_rx_h_action(struct ieee80211_rx_data *rx)
 			if (sdata->vif.type != NL80211_IFTYPE_STATION)
 				break;
 
-			/* The UHR Link Reconfig response must have at least:
-			 * category + action + dialog + status + type = 6 bytes
-			 */
-			/* The reconfiguration response action frame must
-			 * least one 'Status Duple' entry (3 octets)
-			 */
 			if (len <
 			    offsetofend(typeof(*mgmt),
-					u.action.u.uhr_link_reconf_resp) + 3)
+					u.action.u.uhr_link_reconf_resp.status_code))
 				goto invalid;
 
 			goto queue;
