@@ -729,7 +729,7 @@ static void ieee80211_process_smd_prep_resp(struct ieee80211_sub_if_data *sdata,
 	if (mgmt->u.action.u.uhr_link_reconf_resp.status_code) {
 		u16 sc = le16_to_cpu(mgmt->u.action.u.uhr_link_reconf_resp.status_code);
 
-		sdata_err(sdata, "smd: prep response status code invalid %u\n", sc);
+		sdata_info(sdata, "smd: prep response rejected, status=%u\n", sc);
 		return;
 	}
 

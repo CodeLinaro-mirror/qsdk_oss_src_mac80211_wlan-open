@@ -391,6 +391,14 @@ int ieee80211_smd_build_link_id_remap(struct ieee80211_sub_if_data *sdata,
 	return ieee80211_smd_upgrade_link_slots(sdata, target);
 }
 
+static u8 ieee80211_smd_alloc_dialog_token(struct ieee80211_sub_if_data *sdata)
+{
+	sdata->u.mgd.smd_dialog_token_alloc++;
+	if (!sdata->u.mgd.smd_dialog_token_alloc)
+		sdata->u.mgd.smd_dialog_token_alloc = 1;
+	return sdata->u.mgd.smd_dialog_token_alloc;
+}
+
 int ieee80211_smd_add_prep_target(struct ieee80211_sub_if_data *sdata,
 				  const u8 *target_addr,
 				  struct ieee80211_mgd_assoc_data *assoc_data)
@@ -418,11 +426,8 @@ int ieee80211_smd_add_prep_target(struct ieee80211_sub_if_data *sdata,
 	wiphy_delayed_work_init(&sdata->u.mgd.prep_targets[slot].exec_timeout_work,
 				ieee80211_smd_exec_timeout_work);
 
-	sdata->u.mgd.smd_dialog_token_alloc++;
-	if (!sdata->u.mgd.smd_dialog_token_alloc)
-		sdata->u.mgd.smd_dialog_token_alloc = 1;
 	sdata->u.mgd.prep_targets[slot].dialog_token =
-		sdata->u.mgd.smd_dialog_token_alloc;
+		ieee80211_smd_alloc_dialog_token(sdata);
 
 	sdata->u.mgd.num_prepared_targets++;
 
@@ -441,6 +446,17 @@ int ieee80211_smd_add_prep_target(struct ieee80211_sub_if_data *sdata,
 	sdata->u.mgd.prep_targets[slot].link_id_remap = false;
 
 	return slot;
+}
+
+u8 ieee80211_smd_resend_prep_target(struct ieee80211_sub_if_data *sdata,
+				    struct ieee80211_smd_prep_target *target)
+{
+	target->dialog_token = ieee80211_smd_alloc_dialog_token(sdata);
+
+	sdata_dbg(sdata, "smd: prep target resent %pM token=%u\n",
+		  target->target_mld_addr, target->dialog_token);
+
+	return target->dialog_token;
 }
 
 /* Remove SMD preparation target */
