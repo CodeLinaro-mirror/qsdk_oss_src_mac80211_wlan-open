@@ -118,7 +118,9 @@ ieee80211_add_uhr_link_reconf_elem(struct sk_buff *skb,
 	/* Variable Common Info Calculation */
 	var_common_size = 0;
 
-	/* 1. Capabilities (if adding links) */
+	var_common_size += 2;
+	var_common_size += 2;
+
 	if (add_links_data) {
 		const struct wiphy_iftype_ext_capab *ift_ext_capa =
 			cfg80211_get_iftype_ext_capa(local->hw.wiphy, iftype);
@@ -129,17 +131,11 @@ ieee80211_add_uhr_link_reconf_elem(struct sk_buff *skb,
 				cpu_to_le16(ift_ext_capa->mld_capa_and_ops);
 		}
 
-		/* MLD capabilities and operation */
-		var_common_size += 2;
-
 		/* EML capabilities */
 		if (eml_capa & cpu_to_le16((IEEE80211_EML_CAP_EMLSR_SUPP |
 					    IEEE80211_EML_CAP_EMLMR_SUPPORT)))
 			var_common_size += 2;
 	}
-
-	if (ext_mld_capa_ops)
-		var_common_size += 2;
 
 	/* 2. Target AP MLD MAC (Bit 4) - Always present for ST Prep */
 	var_common_size += ETH_ALEN;
@@ -163,18 +159,15 @@ ieee80211_add_uhr_link_reconf_elem(struct sk_buff *skb,
 				cpu_to_le16(IEEE80211_MLC_RECONF_PRES_EML_CAPA);
 			skb_put_data(skb, &eml_capa, sizeof(eml_capa));
 		}
-
-		ml_elem->control |=
-			cpu_to_le16(IEEE80211_MLC_RECONF_PRES_MLD_CAPA_OP);
-
-		skb_put_data(skb, &mld_capa_ops, sizeof(mld_capa_ops));
 	}
 
-	if (ext_mld_capa_ops) {
-		ml_elem->control |=
-			cpu_to_le16(IEEE80211_MLC_RECONF_PRES_EXT_MLD_CAPA_OP);
-		skb_put_data(skb, &ext_mld_capa_ops, sizeof(ext_mld_capa_ops));
-	}
+	ml_elem->control |=
+		cpu_to_le16(IEEE80211_MLC_RECONF_PRES_MLD_CAPA_OP);
+	skb_put_data(skb, &mld_capa_ops, sizeof(mld_capa_ops));
+
+	ml_elem->control |=
+		cpu_to_le16(IEEE80211_MLC_RECONF_PRES_EXT_MLD_CAPA_OP);
+	skb_put_data(skb, &ext_mld_capa_ops, sizeof(ext_mld_capa_ops));
 
 	/* B. Bit 4: Target AP MLD MAC Address (Must be AFTER capabilities) */
 	skb_put_data(skb, target_addr, ETH_ALEN);
@@ -214,6 +207,12 @@ ieee80211_add_uhr_link_reconf_elem(struct sk_buff *skb,
 				u16_encode_bits(
 				IEEE80211_MLE_STA_RECONF_CONTROL_OPERATION_TYPE_ADD_LINK,
 				IEEE80211_MLE_STA_RECONF_CONTROL_OPERATION_TYPE);
+			/* IEEE P802.11bn/D2.0 37.16.6.2: NSTR Indication Bitmap
+			 * Present=1 iff the non-AP MLD has >=1 NSTR link pair
+			 * (else 0). mac80211 does not currently track per-pair
+			 * STR/NSTR status for multi-link operation, so this is
+			 * always left at 0 (absent) here.
+			 */
 		}
 
 		skb_put_u8(skb, IEEE80211_MLE_SUBELEM_PER_STA_PROFILE);
@@ -274,6 +273,52 @@ ieee80211_add_uhr_link_reconf_elem(struct sk_buff *skb,
 	return skb_tail_pointer(skb);
 }
 EXPORT_SYMBOL_IF_MAC80211_KUNIT(ieee80211_add_uhr_link_reconf_elem);
+
+VISIBLE_IF_MAC80211_KUNIT u8 *
+ieee80211_add_uhr_link_reconf_delete_st_prep_elems(struct sk_buff *skb,
+				struct ieee80211_sub_if_data *sdata,
+				struct cfg80211_smd_prepare_req *req_params)
+{
+	size_t i;
+
+	for (i = 0; i < req_params->num_delete_targets; i++) {
+		const u8 *target_mld_addr =
+			req_params->delete_targets + i * ETH_ALEN;
+		struct ieee80211_multi_link_elem *ml_elem;
+		struct ieee80211_mle_basic_common_info *common;
+		u8 *ml_elem_len;
+		u16 ctrl;
+
+		skb_put_u8(skb, WLAN_EID_EXTENSION);
+		ml_elem_len = skb_put(skb, 1);
+		skb_put_u8(skb, WLAN_EID_EXT_EHT_MULTI_LINK);
+		ml_elem = skb_put(skb, sizeof(*ml_elem));
+
+		ml_elem->control =
+			cpu_to_le16(IEEE80211_ML_CONTROL_TYPE_RECONF |
+				    IEEE80211_MLC_RECONF_PRES_MLD_MAC_ADDR |
+				    IEEE80211_MLC_RECONF_PRES_TARGET_AP_MLD_MAC_ADDR);
+
+		common = skb_put(skb, sizeof(*common));
+		common->len = sizeof(*common) + ETH_ALEN;
+		memcpy(common->mld_mac_addr, sdata->vif.addr, ETH_ALEN);
+
+		skb_put_data(skb, target_mld_addr, ETH_ALEN);
+
+		skb_put_u8(skb, IEEE80211_MLE_SUBELEM_PER_STA_PROFILE);
+		skb_put_u8(skb, sizeof(ctrl));
+
+		ctrl = IEEE80211_MLE_STA_RECONF_CONTROL_LINK_ID |
+	u16_encode_bits(IEEE80211_MLE_STA_RECONF_CONTROL_OPERATION_TYPE_DEL_ST_PREP,
+			IEEE80211_MLE_STA_RECONF_CONTROL_OPERATION_TYPE);
+		put_unaligned_le16(ctrl, skb_put(skb, sizeof(ctrl)));
+
+		ieee80211_fragment_element(skb, ml_elem_len, WLAN_EID_FRAGMENT);
+	}
+
+	return skb_tail_pointer(skb);
+}
+EXPORT_SYMBOL_IF_MAC80211_KUNIT(ieee80211_add_uhr_link_reconf_delete_st_prep_elems);
 
 VISIBLE_IF_MAC80211_KUNIT u8 *
 ieee80211_add_uhr_link_reconf_smd_bss_trans_elem(struct sk_buff *skb,
@@ -388,6 +433,9 @@ ieee80211_uhr_link_reconf_frame_calc_len(struct ieee80211_sub_if_data *sdata,
 	/* Common info fixed part */
 	size += sizeof(struct ieee80211_mle_basic_common_info);
 
+	size += 2;
+	size += 2;
+
 	/* Variable common info fields, aligned with ieee80211_build_ml_reconf_req() */
 	if (add_links_data) {
 		const struct wiphy_iftype_ext_capab *ift_ext_capa =
@@ -398,17 +446,11 @@ ieee80211_uhr_link_reconf_frame_calc_len(struct ieee80211_sub_if_data *sdata,
 		if (ift_ext_capa)
 			eml_capa = cpu_to_le16(ift_ext_capa->eml_capabilities);
 
-		/* MLD capabilities and operation */
-		size += 2;
-
 		/* EML capabilities */
 		if (eml_capa & cpu_to_le16((IEEE80211_EML_CAP_EMLSR_SUPP |
 					    IEEE80211_EML_CAP_EMLMR_SUPPORT)))
 			size += 2;
 	}
-
-	if (req_params->ml_reconf.ext_mld_capa_ops)
-		size += 2;
 
 	/* Target AP MLD MAC (Bit 4) - Always present for ST Prep */
 	size += ETH_ALEN;
@@ -461,6 +503,9 @@ ieee80211_uhr_link_reconf_frame_calc_len(struct ieee80211_sub_if_data *sdata,
 		if (req_params->snonce && req_params->snonce_len)
 			size += 3 + req_params->snonce_len;
 	}
+
+	size += req_params->num_delete_targets * 23;
+
 	/*
 	 * Slack for ieee80211_fragment_element() overhead etc.
 	 */
@@ -562,6 +607,10 @@ ieee80211_build_uhr_link_reconf_req(struct ieee80211_sub_if_data *sdata,
 					   IEEE80211_UHR_LINK_RECONF_TYPE_ST_EXEC);
 
 	ieee80211_add_uhr_link_reconf_smd_bss_trans_elem(skb, sdata, req_params);
+
+	if (assoc_data && req_params->num_delete_targets)
+		ieee80211_add_uhr_link_reconf_delete_st_prep_elems(skb, sdata,
+								   req_params);
 
 	if (assoc_data)
 		ieee80211_add_uhr_link_reconf_dh_nonce_elems(skb, req_params);
@@ -667,7 +716,6 @@ static void ieee80211_process_smd_prep_resp(struct ieee80211_sub_if_data *sdata,
 	int i, target_slot = -1;
 	int tap_link_id;
 	u16 status_code = WLAN_STATUS_SUCCESS;
-	unsigned int link_id;
 	bool success = false;
 	u16 transitioning_links;
 
@@ -720,38 +768,14 @@ static void ieee80211_process_smd_prep_resp(struct ieee80211_sub_if_data *sdata,
 		return;
 	}
 
-	if (len < mgmt->u.action.u.uhr_link_reconf_resp.count * 3) {
-		sdata_info(sdata,
-			   "smd: unexpected len=%zu, count=%u\n",
-			   len, mgmt->u.action.u.uhr_link_reconf_resp.count);
-		goto out_fail;
-	}
-
-	target->prepared_links_mask = 0;
-	for (i = 0; i < mgmt->u.action.u.uhr_link_reconf_resp.count; i++) {
-		u16 status = get_unaligned_le16(pos + 1);
-
-		if (i == 0)
-			status_code = status;
-
-		link_id = *pos;
-
-		if (status == WLAN_STATUS_SUCCESS) {
-			target->prepared_links_mask |= BIT(link_id);
-			success = true;
-		} else {
-			sdata_info(sdata, "smd: link %d rejected status=%d %pM\n",
-				   link_id, status, target->target_mld_addr);
-		}
-		pos += 3;
-		len -= 3;
-	}
-
-	if (!success) {
-		sdata_err(sdata, "smd: all links rejected\n");
-		goto out_fail;
-	}
-
+	/*
+	 * IEEE P802.11bn/D2.0 removes the Count and Reconfiguration Status
+	 * List fields from this frame (Table 9-658bd) — per-link
+	 * accept/reject status is now carried exclusively in the Basic
+	 * Multi-Link element's per-STA-profile Status Code fields, parsed
+	 * below by ieee80211_smd_parse_ml_persta(), which populates
+	 * target->prepared_links_mask itself.
+	 */
 	ie_start = pos;
 	ie_len = (u8 *)mgmt + orig_len - pos;
 
@@ -766,6 +790,8 @@ static void ieee80211_process_smd_prep_resp(struct ieee80211_sub_if_data *sdata,
 		sdata_err(sdata, "smd: failed to parse response IEs\n");
 		goto out_fail;
 	}
+
+	target->prepared_links_mask = 0;
 	if (elems->ml_basic && elems->ml_basic_len >= 3) {
 		int ret;
 
@@ -775,6 +801,16 @@ static void ieee80211_process_smd_prep_resp(struct ieee80211_sub_if_data *sdata,
 						    target);
 		if (ret < 0)
 			sdata_err(sdata, "smd: ml element parse failed\n");
+	}
+
+	if (target->prepared_links_mask) {
+		success = true;
+		status_code = WLAN_STATUS_SUCCESS;
+	}
+
+	if (!success) {
+		sdata_err(sdata, "smd: all links rejected\n");
+		goto out_free_elems;
 	}
 
 	for (tap_link_id = 0; tap_link_id < IEEE80211_MLD_MAX_NUM_LINKS; tap_link_id++) {
@@ -977,7 +1013,6 @@ static void ieee80211_process_smd_exec_resp(struct ieee80211_sub_if_data *sdata,
 	struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
 	struct ieee80211_smd_prep_target *target = NULL;
 	struct cfg80211_uhr_reconfig_done done = {0};
-	u16 status_code = WLAN_STATUS_SUCCESS;
 	u16 accepted_links = 0;
 	bool found_smd_trans_params = false;
 	const struct element *elem;
@@ -1040,35 +1075,16 @@ static void ieee80211_process_smd_exec_resp(struct ieee80211_sub_if_data *sdata,
 		return;
 	}
 
-	for (i = 0; i < mgmt->u.action.u.uhr_link_reconf_resp.count && len >= 3; i++) {
-		u8 link_id = *pos;
-		u16 status = get_unaligned_le16(pos + 1);
-
-		if (i == 0)
-			status_code = status;
-
-		if (status != WLAN_STATUS_SUCCESS) {
-			sdata_info(sdata, "smd: exec link %u rejected with status %u\n",
-				   link_id, status);
-			status_code = status;
-		} else {
-			accepted_links |= BIT(link_id);
-		}
-
-		pos += 3;
-		len -= 3;
-	}
-
-	if (status_code != WLAN_STATUS_SUCCESS) {
-		sdata_info(sdata, "smd: exec rejected with status %u\n",
-			   status_code);
-		ieee80211_smd_prep_reset_target(sdata, target, status_code, 1, false);
-		return;
-	}
-
-	ieee80211_vif_cfg_change_notify(sdata, BSS_CHANGED_MLD_VALID_LINKS);
-
-	if (accepted_links && len >= 1 && pos[0] != WLAN_EID_EXTENSION) {
+	/*
+	 * IEEE P802.11bn/D2.0 removes the Count and Reconfiguration Status
+	 * List fields from this frame (Table 9-658bd) — per-link
+	 * accept/reject status is now carried exclusively in the Basic
+	 * Multi-Link element's per-STA-profile Status Code fields, found
+	 * during the trailing-IE walk below and parsed via
+	 * ieee80211_smd_parse_ml_persta(), which populates
+	 * target->prepared_links_mask.
+	 */
+	if (len >= 1 && pos[0] != WLAN_EID_EXTENSION) {
 		group_key_data_len = *pos++;
 		len--;
 
@@ -1086,24 +1102,59 @@ static void ieee80211_process_smd_exec_resp(struct ieee80211_sub_if_data *sdata,
 		pos += group_key_data_len;
 		len -= group_key_data_len;
 	}
+
 	ie_start = pos;
 	ie_len = len;
 
 	for_each_element(elem, ie_start, ie_len) {
-		const u8 *data = elem->data;
-		int data_len = elem->datalen;
+		const u8 *data;
+		int data_len;
 
 		if (elem->id == WLAN_EID_FRAGMENT)
 			continue;
 
-		if (elem->id == WLAN_EID_EXTENSION && data_len >= 1) {
-			u8 ext_id = data[0];
+		if (elem->id != WLAN_EID_EXTENSION || elem->datalen < 1)
+			continue;
+
+		data = elem->data + 1;
+		data_len = elem->datalen - 1;
+
+		if (elem->data[0] == WLAN_EID_EXT_EHT_MULTI_LINK) {
+			int ret;
+			u8 *ml_buf;
+			ssize_t ml_len;
+
+			ml_buf = kmalloc(ie_len, GFP_ATOMIC);
+			if (!ml_buf)
+				continue;
+
+			ml_len = cfg80211_defragment_element(elem, ie_start,
+							     ie_len, ml_buf,
+							     ie_len,
+							     WLAN_EID_FRAGMENT);
+			if (ml_len < 0) {
+				sdata_err(sdata, "smd: exec ml element defrag failed\n");
+				kfree(ml_buf);
+				continue;
+			}
+
+			target->prepared_links_mask = 0;
+			ret = ieee80211_smd_parse_ml_persta(sdata, ml_buf, ml_len,
+							    target);
+			if (ret < 0)
+				sdata_err(sdata, "smd: exec ml element parse failed\n");
+			accepted_links = target->prepared_links_mask;
+			kfree(ml_buf);
+			continue;
+		}
+
+		{
+			u8 ext_id = elem->data[0];
 
 			switch (ext_id) {
 			case WLAN_EID_EXT_BSS_SMD_TRANS_PARAMS:
 				if (!ieee80211_smd_parse_exec_trans_params(
-						sdata, data + 1,
-						data_len - 1,
+						sdata, data, data_len,
 						&dl_drain_time_tu)) {
 					found_smd_trans_params = true;
 				} else {
@@ -1120,6 +1171,16 @@ static void ieee80211_process_smd_exec_resp(struct ieee80211_sub_if_data *sdata,
 			}
 		}
 	}
+
+	if (target->exec_path && !accepted_links) {
+		sdata_info(sdata, "smd: exec all links rejected\n");
+		ieee80211_smd_prep_reset_target(sdata, target,
+						WLAN_STATUS_UNSPECIFIED_FAILURE, 1,
+						false);
+		return;
+	}
+
+	ieee80211_vif_cfg_change_notify(sdata, BSS_CHANGED_MLD_VALID_LINKS);
 
 	if (!found_smd_trans_params)
 		sdata_info(sdata, "smd: exec no trans_params, default dl_drain\n");

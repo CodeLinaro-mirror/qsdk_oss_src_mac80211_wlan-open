@@ -1603,7 +1603,6 @@ struct ieee80211_mgmt {
 					u8 dialog_token;
 					u8 type;
 					__le16 status_code;
-					u8 count;
 					u8 variable[];
 				} __packed uhr_link_reconf_resp;
 			} u;
@@ -5666,6 +5665,7 @@ enum ieee80211_mle_subelems {
 #define IEEE80211_MLE_STA_CONTROL_NSTR_LINK_PAIR_PRESENT	0x0200
 #define IEEE80211_MLE_STA_CONTROL_NSTR_BITMAP_SIZE		0x0400
 #define IEEE80211_MLE_STA_CONTROL_BSS_PARAM_CHANGE_CNT_PRESENT	0x0800
+#define IEEE80211_MLE_STA_CONTROL_ENH_CRIT_UPD_PRESENT		0x1000
 
 struct ieee80211_mle_per_sta_profile {
 	__le16 control;
@@ -5710,6 +5710,8 @@ static inline bool ieee80211_mle_basic_sta_prof_size_ok(const u8 *data,
 	}
 	if (control & IEEE80211_MLE_STA_CONTROL_BSS_PARAM_CHANGE_CNT_PRESENT)
 		info_len += 1;
+	if (control & IEEE80211_MLE_STA_CONTROL_ENH_CRIT_UPD_PRESENT)
+		info_len += 1;
 
 	return prof->sta_info_len >= info_len &&
 	       fixed + prof->sta_info_len - 1 <= len;
@@ -5751,6 +5753,35 @@ ieee80211_mle_basic_sta_prof_bss_param_ch_cnt(const struct ieee80211_mle_per_sta
 	return *pos;
 }
 
+static inline size_t
+ieee80211_mle_basic_sta_prof_info_len(const struct ieee80211_mle_per_sta_profile *prof)
+{
+	u16 control = le16_to_cpu(prof->control);
+	size_t len = 0;
+
+	if (control & IEEE80211_MLE_STA_CONTROL_STA_MAC_ADDR_PRESENT)
+		len += 6;
+	if (control & IEEE80211_MLE_STA_CONTROL_BEACON_INT_PRESENT)
+		len += 2;
+	if (control & IEEE80211_MLE_STA_CONTROL_TSF_OFFS_PRESENT)
+		len += 8;
+	if (control & IEEE80211_MLE_STA_CONTROL_DTIM_INFO_PRESENT)
+		len += 2;
+	if (control & IEEE80211_MLE_STA_CONTROL_COMPLETE_PROFILE &&
+	    control & IEEE80211_MLE_STA_CONTROL_NSTR_LINK_PAIR_PRESENT) {
+		if (control & IEEE80211_MLE_STA_CONTROL_NSTR_BITMAP_SIZE)
+			len += 2;
+		else
+			len += 1;
+	}
+	if (control & IEEE80211_MLE_STA_CONTROL_BSS_PARAM_CHANGE_CNT_PRESENT)
+		len += 1;
+	if (control & IEEE80211_MLE_STA_CONTROL_ENH_CRIT_UPD_PRESENT)
+		len += 1;
+
+	return len;
+}
+
 #define IEEE80211_MLE_STA_RECONF_CONTROL_LINK_ID			0x000f
 #define IEEE80211_MLE_STA_RECONF_CONTROL_COMPLETE_PROFILE		0x0010
 #define IEEE80211_MLE_STA_RECONF_CONTROL_STA_MAC_ADDR_PRESENT		0x0020
@@ -5761,7 +5792,10 @@ ieee80211_mle_basic_sta_prof_bss_param_ch_cnt(const struct ieee80211_mle_per_sta
 #define IEEE80211_MLE_STA_RECONF_CONTROL_OPERATION_TYPE_ADD_LINK        2
 #define IEEE80211_MLE_STA_RECONF_CONTROL_OPERATION_TYPE_DEL_LINK        3
 #define IEEE80211_MLE_STA_RECONF_CONTROL_OPERATION_TYPE_NSTR_STATUS     4
+#define IEEE80211_MLE_STA_RECONF_CONTROL_OPERATION_TYPE_DEL_ST_PREP     6
 #define IEEE80211_MLE_STA_RECONF_CONTROL_OPERATION_PARAMS_PRESENT       0x0800
+#define IEEE80211_MLE_STA_RECONF_CONTROL_NSTR_BITMAP_SIZE               0x1000
+#define IEEE80211_MLE_STA_RECONF_CONTROL_NSTR_INDICATION_PRESENT        0x2000
 
 /**
  * ieee80211_mle_reconf_sta_prof_size_ok - validate reconfiguration multi-link
