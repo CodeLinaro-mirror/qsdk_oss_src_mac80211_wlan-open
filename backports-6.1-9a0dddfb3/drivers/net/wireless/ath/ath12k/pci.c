@@ -534,13 +534,31 @@ static void ath12k_pci_update_qrtr_node_id(struct ath12k_base *ab)
 static void ath12k_pci_update_unified_fw_board_id(struct ath12k_base *ab)
 {
 	struct ath12k_pci *ab_pci = ath12k_pci_priv(ab);
-	u32 reg;
+	u32 reg, board_id = ab_pci->unified_fw_board_id;
+	unsigned int mode_override = 0;
+
+	switch (pci_domain_nr(ab_pci->pdev->bus)) {
+	case 0:
+		mode_override = ath12k_unified_bdf_pci0;
+		break;
+	case 1:
+		mode_override = ath12k_unified_bdf_pci1;
+		break;
+	case 2:
+		mode_override = ath12k_unified_bdf_pci2;
+		break;
+	case 3:
+		mode_override = ath12k_unified_bdf_pci3;
+		break;
+	}
+
+	board_id |= mode_override;
 
 	reg = PCIE_PCIE_LOCAL_REG_PCIE_LOCAL_RSV1(&ab->hal) & WINDOW_RANGE_MASK;
-	ath12k_pci_write32(ab, reg, ab_pci->unified_fw_board_id);
+	ath12k_pci_write32(ab, reg, board_id);
 
 	ath12k_dbg(ab, ATH12K_DBG_PCI, "pci reg 0x%x unified_fw_board_id 0x%x read val 0x%x\n",
-		   reg, ab_pci->unified_fw_board_id, ath12k_pci_read32(ab, reg));
+		   reg, board_id, ath12k_pci_read32(ab, reg));
 }
 
 static void ath12k_pci_aspm_restore(struct ath12k_pci *ab_pci)

@@ -187,6 +187,10 @@ extern bool ath12k_carrier_vow_optimization;
 extern unsigned int ath12k_reorder_VI_timeout;
 extern bool ath12k_mcast_link_bmap_enable;
 extern unsigned int ath12k_max_clients;
+extern unsigned int ath12k_unified_bdf_pci0;
+extern unsigned int ath12k_unified_bdf_pci1;
+extern unsigned int ath12k_unified_bdf_pci2;
+extern unsigned int ath12k_unified_bdf_pci3;
 
 /*
  * enum ath12k_mem_profile - active memory profile
