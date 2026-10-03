@@ -7653,12 +7653,11 @@ int ath12k_core_init(struct ath12k_base *ab)
 	bool is_ready;
 	int ret;
 
-	/* Enable dump upload for Trestles (QCN9625). Set once; subsequent
-	 * radios in the same group inherit the value via the global flag.
-	 */
 	if (!ath12k_upload_dump_before_bugon &&
 	    (ab->hw_rev == ATH12K_HW_QCN9625_HW10 ||
-	     ab->hw_rev == ATH12K_HW_QCN9625_HW20))
+	     ab->hw_rev == ATH12K_HW_QCN9625_HW20 ||
+	     ab->hw_rev == ATH12K_HW_QCN9589_HW10 ||
+	     ab->hw_rev == ATH12K_HW_QCN9589_HW20))
 		ath12k_upload_dump_before_bugon = false;
 
 	ret = ath12k_core_panic_notifier_register(ab);

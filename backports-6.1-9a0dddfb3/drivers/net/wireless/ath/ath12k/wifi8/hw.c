@@ -939,6 +939,149 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.peer_del_all_support = true,
 		.tqm2sw_fw_war = false,
 	},
+	{
+		.name = "qcn9589 hw2.0",
+		.hw_rev = ATH12K_HW_QCN9589_HW20,
+		.fw = {
+			.dir = "QCN9589/hw2.0",
+			.board_size = ATH12K_WIFI8_BOARD_SIZE,
+			.cal_offset = 128 * 1024,
+			.m3_loader = ath12k_m3_fw_loader_driver,
+			.unified_fw_image = true,
+		},
+		.max_radios = 2,
+		.single_pdev_only = false,
+		.qmi_service_ins_id = ATH12K_QMI_WLFW_SERVICE_INS_ID_V01_QCN9625,
+		.internal_sleep_clock = false,
+
+		.hw_ops = &qcn9625_ops,
+		.ring_mask = &ath12k_wifi8_hw_ring_mask_qcn9625,
+
+		.host_ce_config = ath12k_wifi8_host_ce_config_qcn9625,
+		.ce_count = 16,
+		.target_ce_config = ath12k_wifi8_target_ce_config_wlan_qcn9625,
+		.target_ce_count = 13,
+		.svc_to_ce_map =
+			ath12k_wifi8_target_service_to_ce_map_wlan_qcn9625,
+		.svc_to_ce_map_len = 21,
+		.rxdma1_enable = true,
+		.num_rxdma_per_pdev = 1,
+		.num_rxdma_dst_ring = 0,
+		.rx_mac_buf_ring = false,
+		.vdev_start_delay = false,
+
+		.interface_modes = BIT(NL80211_IFTYPE_STATION) |
+					BIT(NL80211_IFTYPE_AP) |
+					BIT(NL80211_IFTYPE_MESH_POINT) |
+					BIT(NL80211_IFTYPE_AP_VLAN),
+		.supports_monitor = true,
+		.max_clients_supported = 512,
+		.max_clients_dbs = 256,
+		.max_clients_dbs_sbs = 170,
+		.supports_tx_monitor = true,
+		.idle_ps = false,
+		.cold_boot_calib = ATH12K_COLD_BOOT_CALIB,
+		.download_calib = true,
+		.supports_suspend = false,
+		.reoq_lut_support = true,
+		.supports_shadow_regs = false,
+
+		.num_tcl_banks = 128,
+		.max_tx_ring = MIN(NR_CPUS, 5),
+
+		.mhi_config = &ath12k_wifi8_mhi_config_qcn9625,
+
+		.wmi_init = ath12k_wifi8_wmi_init_qcn9625,
+
+		.hal_ops = &hal_qcn9625_ops,
+		.cp_arch_ops = &ath12k_wifi8_cp_ops,
+
+		.qmi_cnss_feature_bitmap = BIT(CNSS_QDSS_CFG_MISS_V01) |
+					   BIT(CNSS_AUX_UC_SUPPORT_V01),
+
+		.rfkill_pin = 0,
+		.rfkill_cfg = 0,
+		.rfkill_on_level = 0,
+
+		.rddm_size = 0x680000,
+
+		.def_num_link = 0,
+		.max_mlo_peer = 256,
+
+		.otp_board_id_register = QCN9625_QFPROM_RAW_FEATURE_CONFIG_ROW4_LSB,
+
+		.supports_sta_ps = false,
+
+		.acpi_guid = NULL,
+		.supports_dynamic_smps_6ghz = true,
+
+		.iova_mask = 0,
+
+#ifdef PLATFORM_SDX
+		.supports_aspm = false,
+#else
+		.supports_aspm = true,
+#endif
+
+		.current_cc_support = false,
+
+		.ce_ie_addr = NULL,
+		.ce_remap = NULL,
+		.handle_beacon_miss = true,
+		.en_qdsslog = true,
+		.support_fse = true,
+		.cumac_support = true,
+		.cumac_chip_priority = 2,
+		.tqm_status_war = false,
+		.support_umcmn_interrupts = UMCMN_INTERRUPT_ENABLE,
+#ifdef PLATFORM_SDX
+		.alloc_cacheable_memory = false,
+#else
+		.alloc_cacheable_memory = true,
+#endif
+		.spectral = {
+			.fft_sz = 7,
+			.fft_bin_sz = 1,
+			.fft_pad_sz = 0,
+			.summary_pad_sz = 16,
+			.fft_hdr_len = 24,
+			.max_fft_bins = 1024,
+			.fft_size_min = ATH12K_SPECTRAL_FFT_SIZE_MIN,
+			.fft_size_max = {
+				[ATH12K_SPECTRAL_BW_20MHZ]  = 9,
+				[ATH12K_SPECTRAL_BW_40MHZ]  = 10,
+				[ATH12K_SPECTRAL_BW_80MHZ]  = 11,
+				[ATH12K_SPECTRAL_BW_160MHZ] = 11,
+				[ATH12K_SPECTRAL_BW_320MHZ] = 11,
+			},
+			.fragment_160mhz = true,
+			.supports_320mhz = true,
+		},
+		.supports_ap_ps = true,
+		.support_ce_manual_poll = true,
+		.ftm_responder = true,
+		.credit_flow = false,
+		.is_plink_preferable = true,
+		.support_umac_reset = true,
+		.umac_irq_line_reset = false,
+		.umac_reset_ipc = 0,
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+		.ds_support = true,
+		.ds_txrx_hw_auto_idx = true,
+		.ds_hw_buff_mgmt = true,
+#endif
+		.cfr_support = true,
+		.cfr_dma_hdr_size = sizeof(struct ath12k_cfir_wifi8_common_hdr),
+		.cfr_num_stream_bufs = 128,
+		.cfr_stream_buf_size = ATH12K_CFR_HEADER_LEN(HAL_MAX_UL_MU_USERS) +
+					(CFR_HDR_MAX_LEN_WORDS_QCN9625 * 4) +
+					CFR_DATA_MAX_LEN_QCN9625,
+		.mlo_3_link_tx_support = true,
+		.board_magic = "QCA-ATH12K-BOARD",
+		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
+		.peer_del_all_support = true,
+		.tqm2sw_fw_war = false,
+	},
 };
 
 static bool ath12k_wifi8_mac_is_mgmt_action_link_agnostic(struct ath12k_base *ab,

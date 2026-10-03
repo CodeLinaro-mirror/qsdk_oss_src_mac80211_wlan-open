@@ -285,7 +285,8 @@ u8 ath12k_dp_get_chipid_bitmap(struct ath12k_dp_hw_group *dp_hw_grp,
 		 * requires the cumac chip id to be set explicitly too.
 		 */
 		if (partner_dp == ath12k_get_central_dp(partner_dp) &&
-		    partner_dp->ab->hw_rev != ATH12K_HW_QCN9625_HW20)
+		    partner_dp->ab->hw_rev != ATH12K_HW_QCN9625_HW20 &&
+		    partner_dp->ab->hw_rev != ATH12K_HW_QCN9589_HW20)
 			continue;
 
 		bitmap |= BIT(partner_dp->device_id);

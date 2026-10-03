@@ -451,6 +451,7 @@ enum ath12k_hw_rev {
 	ATH12K_HW_QCN9625_HW10,
 	ATH12K_HW_QCN9625_HW20,
 	ATH12K_HW_QCN9589_HW10,
+	ATH12K_HW_QCN9589_HW20,
 
 	/* Always keep extension-specific entries last. */
 #ifdef CPTCFG_QCN_EXTN

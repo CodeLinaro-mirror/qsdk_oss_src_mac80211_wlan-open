@@ -102,8 +102,23 @@ static int ath12k_wifi8_pci_probe(struct pci_dev *pdev,
 			ab->msi.config = &ath12k_wifi8_msi_config[0];
 		}
 		ab->static_window_map = true;
-		ab->hw_rev = ATH12K_HW_QCN9589_HW10;
+		/* window_reg_addr must be initialized before reading HW version */
 		ab_pci->window_reg_addr = PCIE_WINDOW_REG_ADDRESS;
+		ath12k_wifi8_pci_read_hw_version(ab, &soc_hw_version_major,
+						 &soc_hw_version_minor);
+		switch (soc_hw_version_major) {
+		case ATH12K_PCI_T8_SOC_HW_VERSION_2:
+			ab->hw_rev = ATH12K_HW_QCN9589_HW20;
+			break;
+		case ATH12K_PCI_T8_SOC_HW_VERSION_1:
+			ab->hw_rev = ATH12K_HW_QCN9589_HW10;
+			break;
+		default:
+			dev_err(&pdev->dev,
+				"Unknown hardware version found for QCN9589: 0x%x\n",
+				soc_hw_version_major);
+			return -EOPNOTSUPP;
+		}
 		break;
 
 	default:

@@ -1608,6 +1608,7 @@ int ath12k_wifi8_hal_init_qcn9625(struct ath12k_hal *hal, u8 hw_version)
 				ath12k_wifi8_hal_rx_msdu_end_wmask_get_qcn9625_v1();
 		break;
 	case ATH12K_HW_QCN9625_HW20:
+	case ATH12K_HW_QCN9589_HW20:
 		hal->regs = &qcn9625_regs;
 		hal->hal_params = &ath12k_wifi8_hw_hal_params_qcn9625;
 		hal->hal_ops = &hal_qcn9625_ops;
