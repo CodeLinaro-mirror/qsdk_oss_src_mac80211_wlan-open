@@ -1125,6 +1125,15 @@ static int ath12k_sam_idle_check(struct ath12k_base *ab)
 static int ath12k_enable_sam(struct ath12k_base *ab, u32 enable)
 {
 	int ret;
+	struct ath12k_hal_wifi8 *hal_wifi8 = ath12k_get_hal_wifi8(&ab->hal);
+
+	if (!enable)
+		hal_wifi8->sam_enabled =
+			ath12k_hif_read32_masked(ab, HAL_SEQ_WCSS_UMAC_SAM_REG +
+						 HAL_SAM_R0_CONFIG, HAL_SAM_ENABLE);
+
+	if (!hal_wifi8->sam_enabled)
+		return 0;
 
 	ath12k_hif_rmw32(ab, HAL_SEQ_WCSS_UMAC_SAM_REG + HAL_SAM_R0_CONFIG,
 			 HAL_SAM_ENABLE, enable);
@@ -1739,9 +1748,13 @@ static int ath12k_umac_apply_soft_reset(struct ath12k_base *ab, u32 arg)
 {
 	u32 soft_reset_val;
 	int ret;
+	struct ath12k_hal_wifi8 *hal_wifi8 = ath12k_get_hal_wifi8(&ab->hal);
 
 	soft_reset_val = ath12k_hif_read32(ab, HAL_UMAC_UMRCM_SOFTRESET);
-	soft_reset_val |= HAL_UMAC_UMRCM_SOFTRESET_VALUE;
+	if (hal_wifi8->sam_enabled)
+		soft_reset_val |= HAL_UMAC_UMRCM_SOFTRESET_VALUE;
+	else
+		soft_reset_val |= HAL_UMAC_UMRCM_SOFTRESET_VALUE_SAM_DISABLED;
 	ath12k_hif_write32(ab, HAL_UMAC_UMRCM_SOFTRESET, soft_reset_val);
 
 	ret = ath12k_pause_tqm(ab, 0);
