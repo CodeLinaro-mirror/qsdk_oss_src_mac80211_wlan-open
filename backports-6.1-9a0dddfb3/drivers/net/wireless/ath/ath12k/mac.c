@@ -33734,6 +33734,17 @@ int ath12k_mac_dynamic_wsi_remap(struct ath12k_base *ab)
 
 		ath12k_mac_wsi_remap_peer_cleanup(partner_ab, skip_legacy);
 	}
+
+	/* Keep bridge vdev removal serialized with mac80211 operations that
+	 * access the vif link state under wiphy_lock().
+	 */
+	if (ab->wsi_remap_state == ATH12K_WSI_BYPASS_REMOVE_DEVICE &&
+	    active_num_devices == ATH12K_MIN_NUM_DEVICES_NLINK) {
+		ieee80211_iterate_interfaces(ah->hw, IEEE80211_IFACE_ITER_NORMAL,
+					     ath12k_mac_remove_bridge_vdevs_iter,
+					     ah);
+	}
+
 	wiphy_unlock(wiphy);
 
 	/* Wait for all MLO peer delete responses from firmware before
@@ -33771,15 +33782,6 @@ int ath12k_mac_dynamic_wsi_remap(struct ath12k_base *ab)
 			}
 			ath12k_core_radio_cleanup(ar);
 		}
-	}
-
-	/* Remove Bridge vdevs during wsi remove if exist
-	 */
-	if (ab->wsi_remap_state == ATH12K_WSI_BYPASS_REMOVE_DEVICE &&
-	    active_num_devices == ATH12K_MIN_NUM_DEVICES_NLINK) {
-		ieee80211_iterate_interfaces(ah->hw, IEEE80211_IFACE_ITER_NORMAL,
-					     ath12k_mac_remove_bridge_vdevs_iter,
-					     ah);
 	}
 
 	ret = ath12k_core_dynamic_wsi_remap(ab);
