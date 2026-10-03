@@ -1089,8 +1089,9 @@ static int ath12k_halt_tcl(struct ath12k_base *ab, u32 is_halt)
 
 		ret = ath12k_tcl_idle_check(ab);
 		if (ret) {
+			/* Ignore TCL idle check fail */
 			ath12k_err(ab, "TCL idle check failed");
-			return -EINVAL;
+			return 0;
 		}
 	} else {
 		ath12k_hif_rmw32(ab, HAL_SEQ_WCSS_UMAC_TCL_REG +
