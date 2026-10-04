@@ -690,6 +690,24 @@ static const struct qmi_elem_info qmi_wlanfw_host_cap_req_msg_v01_ei[] = {
 					   cma_support),
 	},
 	{
+		.data_type	= QMI_OPT_FLAG,
+		.elem_len	= 1,
+		.elem_size	= sizeof(u8),
+		.array_type	= NO_ARRAY,
+		.tlv_type	= 0x37,
+		.offset		= offsetof(struct qmi_wlanfw_host_cap_req_msg_v01,
+					   mem_profile_mode_valid),
+	},
+	{
+		.data_type	= QMI_UNSIGNED_1_BYTE,
+		.elem_len	= 1,
+		.elem_size	= sizeof(u8),
+		.array_type	= NO_ARRAY,
+		.tlv_type	= 0x37,
+		.offset		= offsetof(struct qmi_wlanfw_host_cap_req_msg_v01,
+					   mem_profile_mode),
+	},
+	{
 		.data_type	= QMI_EOTI,
 		.array_type	= NO_ARRAY,
 		.tlv_type	= QMI_COMMON_TLV_TYPE,
@@ -3894,6 +3912,8 @@ int ath12k_qmi_host_cap_send(struct ath12k_base *ab)
 	req.mem_cfg_mode_valid = 1;
 	req.bdf_support_valid = 1;
 	req.bdf_support = 1;
+	req.mem_profile_mode_valid = 1;
+	req.mem_profile_mode = ath12k_active_mem_profile;
 
 	if (ab->hw_params->fw.m3_loader == ath12k_m3_fw_loader_driver) {
 		req.m3_support_valid = 1;
