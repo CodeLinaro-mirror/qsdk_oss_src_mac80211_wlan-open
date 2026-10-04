@@ -824,8 +824,10 @@ static int ath12k_pull_svc_ready_ext(struct ath12k_wmi_pdev *wmi_handle,
 		arg->ppet.ppet16_ppet8_ru3_ru0[i] =
 			le32_to_cpu(ev->ppet.ppet16_ppet8_ru3_ru0[i]);
 
-	ath12k_dbg(ab, ATH12K_DBG_WMI, "wmi svc rdy ext hdl_version %u\n",
-		   le32_get_bits(ev->fw_build_vers_ext, WMI_HDL_VERSION));
+	ath12k_dbg(ab, ATH12K_DBG_WMI, "FW Build Version (Ext.) = %u HDL Version: MajorVersion.MinorVersion = %u.%02u\n",
+		   le32_get_bits(ev->fw_build_vers_ext, WMI_HDL_VERSION),
+		   le32_get_bits(ev->fw_build_vers_ext, WMI_HDL_MAJOR_VERSION),
+		   le32_get_bits(ev->fw_build_vers_ext, WMI_HDL_MINOR_VERSION));
 
 	return 0;
 }
