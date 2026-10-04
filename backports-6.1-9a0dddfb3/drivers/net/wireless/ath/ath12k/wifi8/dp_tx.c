@@ -908,6 +908,10 @@ static int ath12k_wifi8_mcbc_setup_encryption(struct ath12k_dp_vif *dp_vif,
 		else if (ahvif->vif && ahvif->vif->type == NL80211_IFTYPE_AP)
 			msdu_info->group_slot = 0;
 	}
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	else if (QCA_WLAN_VENDOR_VAP_IS_MESH_MODE(ahvif->vap_submode))
+		msdu_info->group_slot = 0;
+#endif /* CPTCFG_QCN_EXTN_MESH_SUPPORT */
 
 	return 0;
 }
