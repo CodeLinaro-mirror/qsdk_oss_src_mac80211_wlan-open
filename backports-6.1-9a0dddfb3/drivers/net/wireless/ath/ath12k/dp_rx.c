@@ -31,6 +31,9 @@
 #endif
 #include "vendor.h"
 #include "qca-vendor.h"
+#ifdef CPTCFG_QCN_EXTN
+#include "qcn_extns/ath12k_cmn_extn.h"
+#endif
 
 void ath12k_dp_rx_tid_free_desc(struct ath12k_base *ab,
 				struct ath12k_dp_rx_tid *rx_tid)
@@ -1531,6 +1534,24 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
 
 	/* TODO: trace rx packet */
 
+#ifdef CPTCFG_QCN_EXTN
+	if (static_branch_unlikely(&extap_enabled)) {
+		struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(peer->vif);
+
+		if (ahvif && ath12k_vif_has_extap(ahvif)) {
+			if (ath12k_extap_rx(ahvif, msdu) > 0) {
+				struct ath12k_link_vif *arvif =
+					rcu_dereference(ahvif->link[hw_link_id]);
+				if (arvif)
+					arvif->link_stats.rx_dropped++;
+				dev_kfree_skb_any(msdu);
+				rcu_read_unlock();
+				return;
+			}
+		}
+	}
+#endif
+
 	ieee80211_rx_napi(ath12k_dp_pdev_to_hw(dp_pdev), pubsta, msdu, napi);
 	rcu_read_unlock();
 }
@@ -2259,7 +2280,8 @@ void ath12k_dp_rx_skb_free(struct sk_buff *skb, struct ath12k_dp *dp, int ring,
 		}
 	}
 
-	IPA_SET_RX_BUF_SMMU_UNMAP(dp->ab, skb, true);
+	if (drop_reason != DP_RX_ERR_DROP_REPLENISH)
+		IPA_SET_RX_BUF_SMMU_UNMAP(dp->ab, skb, true);
 	dev_kfree_skb_any(skb);
 }
 EXPORT_SYMBOL(ath12k_dp_rx_skb_free);

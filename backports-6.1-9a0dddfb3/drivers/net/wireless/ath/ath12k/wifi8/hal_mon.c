@@ -2563,13 +2563,12 @@ ath12k_wifi8_hal_mon_rx_mpdu_start_info_get(const void *tlv_data, u32 userid,
 	struct hal_rx_mpdu_start *mpdu_start =
 		(struct hal_rx_mpdu_start *)tlv_data;
 	u16 peer_id, addr_16;
-	u32 info[6], addr_32;
+	u32 info[5], addr_32;
 	u8 user_id = ppdu_info->user_id;
 
 	info[2] = __le32_to_cpu(mpdu_start->info2);
 	info[3] = le16_to_cpu(mpdu_start->info3);
 	info[4] = __le32_to_cpu(mpdu_start->info4);
-	info[5] = __le32_to_cpu(mpdu_start->info5);
 
 	ppdu_info->grp_id = u32_get_bits(info[3],
 					 HAL_RX_MPDU_START_INFO3_SW_GRP_ID);
@@ -2589,15 +2588,10 @@ ath12k_wifi8_hal_mon_rx_mpdu_start_info_get(const void *tlv_data, u32 userid,
 		u32_get_bits(info[2],
 			     HAL_RX_MPDU_START_INFO2_FC_VALID);
 
-	ppdu_info->mpdu_info[user_id].raw_mpdu =
-		u32_get_bits(info[4], HAL_RX_MPDU_START_INFO4_RAW_MPDU);
-	ppdu_info->mpdu_info[user_id].decap_type =
-		u32_get_bits(info[4], HAL_RX_MPDU_START_INFO4_DECAP_TYPE);
-
-	ppdu_info->mpdu_len += u32_get_bits(info[5],
-					    HAL_RX_MPDU_START_INFO5_MPDU_LEN);
+	ppdu_info->mpdu_len += u32_get_bits(info[4],
+					    HAL_RX_MPDU_START_INFO4_MPDU_LEN);
 	ppdu_info->nrp_info.mcast_bcast =
-		u32_get_bits(info[5], HAL_RX_MPDU_START_INFO5_MCAST_BCAST);
+		u32_get_bits(info[4], HAL_RX_MPDU_START_INFO4_MCAST_BCAST);
 	ppdu_info->nrp_info.frame_control =
 		le16_to_cpu(mpdu_start->mpdu_frame_control_field);
 	addr_16 = le16_to_cpu(mpdu_start->mac_addr_ad2_15_0);
@@ -2634,13 +2628,12 @@ ath12k_wifi8_hal_mon_rx_mpdu_start_info_get_compact(
 	struct hal_rx_mon_mpdu_start_compact *mpdu_start =
 		(struct hal_rx_mon_mpdu_start_compact *)tlv_data;
 	u16 peer_id, addr_16;
-	u32 info[6], addr_32;
+	u32 info[5], addr_32;
 	u8 user_id = ppdu_info->user_id;
 
 	info[2] = __le32_to_cpu(mpdu_start->info2);
 	info[3] = le16_to_cpu(mpdu_start->info3);
 	info[4] = __le32_to_cpu(mpdu_start->info4);
-	info[5] = __le32_to_cpu(mpdu_start->info5);
 
 	ppdu_info->grp_id = u32_get_bits(info[3],
 					 HAL_RX_MPDU_START_INFO3_SW_GRP_ID_CMPCT);
@@ -2659,15 +2652,10 @@ ath12k_wifi8_hal_mon_rx_mpdu_start_info_get_compact(
 	ppdu_info->nrp_info.fc_valid =
 		u32_get_bits(info[2],
 			     HAL_RX_MPDU_START_INFO2_FC_VALID_CMPCT);
-	ppdu_info->mpdu_info[user_id].raw_mpdu =
-		u32_get_bits(info[4], HAL_RX_MPDU_START_INFO4_RAW_MPDU_CMPCT);
-	ppdu_info->mpdu_info[user_id].decap_type =
-		u32_get_bits(info[4], HAL_RX_MPDU_START_INFO4_DECAP_TYPE_CMPCT);
-
-	ppdu_info->mpdu_len += u32_get_bits(info[5],
-					    HAL_RX_MPDU_START_INFO5_MPDU_LEN_CMPCT);
+	ppdu_info->mpdu_len += u32_get_bits(info[4],
+					    HAL_RX_MPDU_START_INFO4_MPDU_LEN_CMPCT);
 	ppdu_info->nrp_info.mcast_bcast =
-		u32_get_bits(info[5], HAL_RX_MPDU_START_INFO5_MCAST_BCAST_CMPCT);
+		u32_get_bits(info[4], HAL_RX_MPDU_START_INFO4_MCAST_BCAST_CMPCT);
 	ppdu_info->nrp_info.frame_control =
 		le16_to_cpu(mpdu_start->mpdu_frame_control_field);
 

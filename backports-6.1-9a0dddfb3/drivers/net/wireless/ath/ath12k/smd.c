@@ -164,14 +164,10 @@ static int ath12k_smd_bss_assoc(struct ath12k *ar,
 	he_6ghz_cap = link_sta->he_6ghz_capa;
 	bandwidth   = ath12k_mac_ieee80211_sta_bw_to_wmi(ar, link_sta);
 
-	if (ctx)
-		ath12k_mac_peer_assoc_prepare_smd(ar, arvif, arsta, peer_arg,
-					      false, link_sta, ctx);
-#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
-	else
-		ath12k_peer_assoc_prepare(ar, arvif, arsta, peer_arg,
-					  false, link_sta);
-#endif /* CPTCFG_QCN_EXTN_MESH_SUPPORT */
+	ath12k_mac_peer_assoc_prepare_smd(ar, arvif, arsta, peer_arg,
+					  false,  /* reassoc */
+					  false, /* in st transition */
+					  link_sta, ctx);
 
 	ret = ath12k_mac_vif_recalc_sta_he_txbf(ar, arvif, &he_cap, &hemode);
 	if (ret) {
@@ -375,8 +371,9 @@ static int ath12k_smd_current_bss_assoc(const struct ath12k_smd_peer_assoc_ctx *
 	he_cap = link_sta->he_cap;
 
 	ath12k_mac_peer_assoc_prepare_smd(ar, arvif, arsta, peer_arg,
-				      true,  /* reassoc */
-				      link_sta, ctx);
+					  true,  /* reassoc */
+					  true, /* in st transition */
+					  link_sta, ctx);
 
 	ret = ath12k_mac_vif_recalc_sta_he_txbf(ar, arvif, &he_cap, &hemode);
 	if (ret) {
@@ -451,14 +448,11 @@ static int ath12k_uhr_prepare_links(struct ath12k_vif *ahvif,
 		return 0;
 
 	target_ahsta = ath12k_sta_to_ahsta(target_sta);
-
-	target_ahsta->primary_link_id = info->primary_link_id;
+	current_ahsta = current_sta ? ath12k_sta_to_ahsta(current_sta) : NULL;
 
 	if (current_sta) {
 		struct ath12k_link_vif *primary_arvif;
 		u8 bss_assoc_link_id;
-
-		current_ahsta = ath12k_sta_to_ahsta(current_sta);
 
 		/* For SLO-to-MLO upgrades the primary SAP slot is a new vdev
 		 * not yet started (ar == NULL). Use the active assoc-link vdev.
@@ -483,43 +477,7 @@ static int ath12k_uhr_prepare_links(struct ath12k_vif *ahvif,
 		ctx.exec_path       = info->exec_path;
 	}
 
-	{
-		u8 new_assoc_link_id = info->primary_link_id; /* fallback */
-		unsigned long tl = info->transitioning_links;
-		unsigned long alinks;
-		u8 lid;
-
-		if (current_ahsta &&
-		    test_bit(current_ahsta->assoc_link_id, &tl))
-			new_assoc_link_id = current_ahsta->assoc_link_id;
-
-		target_ahsta->assoc_link_id = new_assoc_link_id;
-
-		alinks = target_ahsta->links_map;
-		for_each_set_bit(lid, &alinks, IEEE80211_MLD_MAX_NUM_LINKS) {
-			struct ath12k_link_sta *arsta_tmp =
-				wiphy_dereference(hw->wiphy,
-						  target_ahsta->link[lid]);
-			if (arsta_tmp)
-				arsta_tmp->is_assoc_link =
-					(lid == new_assoc_link_id);
-		}
-
-		if (current_ahsta) {
-			alinks = current_ahsta->links_map;
-			for_each_set_bit(lid, &alinks,
-					 IEEE80211_MLD_MAX_NUM_LINKS) {
-				struct ath12k_link_sta *arsta_cur =
-					wiphy_dereference(hw->wiphy,
-							  current_ahsta->link[lid]);
-				if (arsta_cur)
-					arsta_cur->is_assoc_link =
-						(lid == new_assoc_link_id);
-			}
-		}
-	}
-
-	if (target_sta) {
+	if (target_sta && current_sta) {
 		ret = ath12k_uhr_smd_transfer_ext_ctx(ahvif, current_sta,
 						      target_sta, info);
 		if (ret) {
@@ -565,6 +523,9 @@ static int ath12k_uhr_prepare_links(struct ath12k_vif *ahvif,
 
 	for_each_set_bit(link_id, &links, IEEE80211_MLD_MAX_NUM_LINKS) {
 		struct ieee80211_uhr_link_transfer_info *link_info;
+
+		ctx.current_ahsta   = current_ahsta;
+		ctx.target_ahsta    = target_ahsta;
 
 		if (link_id == info->primary_link_id)
 			continue; /* Skip primary - preserved with Current AP */
@@ -684,7 +645,6 @@ static int ath12k_uhr_execute_transition(struct ath12k_vif *ahvif,
 		ahvif->ah->ag->dp_hw_grp->smd_exec_in_progress = true;
 
 	if (current_sta && target_sta) {
-		target_ahsta->assoc_link_id = current_ahsta->assoc_link_id;
 		ath12k_dbg(NULL, ATH12K_DBG_SMD,
 			   "smd: execute_transition sap=%pM tap=%pM assoc_link=%u\n",
 			   current_sta->addr, target_sta->addr,
@@ -1194,7 +1154,7 @@ ath12k_smd_remap_sta_links(struct ieee80211_hw *hw,
 		   old_lmap, info->primary_link_id);
 
 	for (tap_lid = 0; tap_lid < IEEE80211_MLD_MAX_NUM_LINKS; tap_lid++) {
-		if (info->tap_to_sap_link[tap_lid] == (int)info->primary_link_id) {
+		if (info->tap_to_sap_link[tap_lid] == ((int)ahsta->primary_link_id)) {
 			primary_tap_lid = tap_lid;
 			break;
 		}
@@ -1221,8 +1181,9 @@ ath12k_smd_remap_sta_links(struct ieee80211_hw *hw,
 			saved[sap_lid]->link_id = tap_lid;
 
 		ath12k_dbg(ab, ATH12K_DBG_MAC,
-			   "smd: sta link[%d] <- link[%d] (%s)\n",
-			   tap_lid, sap_lid, saved[sap_lid] ? "set" : "NULL");
+			   "smd: sta link[%d] <- link[%d] (%s) primary link id: %d\n",
+			   tap_lid, sap_lid, saved[sap_lid] ? "set" : "NULL",
+			   primary_tap_lid);
 
 		if (primary_tap_lid < 0)
 			continue;
@@ -1232,13 +1193,17 @@ ath12k_smd_remap_sta_links(struct ieee80211_hw *hw,
 			arsta->is_assoc_link = (tap_lid == primary_tap_lid);
 	}
 
-	if (primary_tap_lid >= 0)
+	if (primary_tap_lid >= 0) {
 		ahsta->assoc_link_id = (u8)primary_tap_lid;
+		ath12k_sta_update_primary_link(hw->wiphy, ahsta,
+					       (u8)primary_tap_lid);
+	}
 
 	ahsta->links_map = new_lmap;
 	ath12k_dbg(ab, ATH12K_DBG_MAC,
-		   "smd: sta links_map 0x%x -> 0x%x assoc_link=%u\n",
-		   old_lmap, new_lmap, ahsta->assoc_link_id);
+		   "smd: sta links_map old 0x%x -> new 0x%x assoc_link=%u primary_link=%u\n",
+		   old_lmap, new_lmap, ahsta->assoc_link_id,
+		   ahsta->primary_link_id);
 }
 
 int ath12k_smd_remap_links_op(struct ath12k_vif *ahvif,
@@ -1258,11 +1223,11 @@ int ath12k_smd_remap_links_op(struct ath12k_vif *ahvif,
 	for (tap_lid = 0; tap_lid < IEEE80211_MLD_MAX_NUM_LINKS; tap_lid++) {
 		saved_arvif[tap_lid] = wiphy_dereference(hw->wiphy, ahvif->link[tap_lid]);
 		if (ahsta_target) {
-			struct ath12k_link_sta *lk =
+			struct ath12k_link_sta *arsta =
 				wiphy_dereference(hw->wiphy,
 						  ahsta_target->link[tap_lid]);
 
-			saved_arsta[tap_lid] = lk;
+			saved_arsta[tap_lid] = arsta;
 		}
 	}
 
@@ -1272,7 +1237,8 @@ int ath12k_smd_remap_links_op(struct ath12k_vif *ahvif,
 		primary_arvif = wiphy_dereference(hw->wiphy,
 						  ahvif->link[info->primary_link_id]);
 		ath12k_smd_remap_sta_links(hw, ahsta_target, info, saved_arsta,
-					   primary_arvif ? primary_arvif->ar->ab : NULL);
+					   (primary_arvif && primary_arvif->ar) ?
+					   primary_arvif->ar->ab : NULL);
 	}
 
 	return 0;

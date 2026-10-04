@@ -14613,12 +14613,28 @@ static int nl80211_process_links(struct cfg80211_registered_device *rdev,
 					  assoc_link_id, link_id);
 		if (IS_ERR(links[link_id].bss)) {
 			err = PTR_ERR(links[link_id].bss);
+			if (err == -ENOENT && assoc_link_id >= 0) {
+				NL_SET_ERR_MSG_ATTR(info->extack, link,
+						    "Retry BSS lookup for MLO link without SSID");
+				links[link_id].bss =
+					nl80211_assoc_bss(rdev, NULL, 0, attrs,
+							  assoc_link_id, link_id);
+				if (!IS_ERR(links[link_id].bss)) {
+					NL_SET_ERR_MSG_ATTR(info->extack, link,
+							    "BSS found for MLO link without SSID");
+					err = 0;
+					goto bss_found;
+				}
+
+				err = PTR_ERR(links[link_id].bss);
+			}
 			links[link_id].bss = NULL;
 			NL_SET_ERR_MSG_ATTR(info->extack, link,
 					    "Error fetching BSS for link");
 			return err;
 		}
 
+bss_found:
 		if (attrs[NL80211_ATTR_IE]) {
 			links[link_id].elems = nla_data(attrs[NL80211_ATTR_IE]);
 			links[link_id].elems_len =
@@ -22024,21 +22040,21 @@ static int nl80211_set_smd_ctx(struct sk_buff *skb, struct genl_info *info)
 	return rdev_set_smd_ctx(rdev, wdev, addr, &st_info);
 }
 
-static bool
+static struct cfg80211_smd_get_ctx_pending *
 __cfg80211_smd_ctx_pending_exists(struct wireless_dev *wdev, const u8 *addr)
 {
 	struct cfg80211_smd_get_ctx_pending *pending = NULL, *tmp;
 
-	spin_lock_bh(&wdev->smd_get_ctx_lock);
+	lockdep_assert_held(&wdev->smd_get_ctx_lock);
+
 	list_for_each_entry(tmp, &wdev->smd_get_ctx_pending_list, list) {
 		if (ether_addr_equal(tmp->sta_addr, addr)) {
 			pending = tmp;
 			break;
 		}
 	}
-	spin_unlock_bh(&wdev->smd_get_ctx_lock);
 
-	return !!pending;
+	return pending;
 }
 
 static int nl80211_get_smd_ctx(struct sk_buff *skb, struct genl_info *info)
@@ -22076,8 +22092,13 @@ static int nl80211_get_smd_ctx(struct sk_buff *skb, struct genl_info *info)
 	    (!tb[NL80211_SMD_CTX_ATTR_DL] && !tb[NL80211_SMD_CTX_ATTR_UL]))
 		return -EINVAL;
 
-	if (__cfg80211_smd_ctx_pending_exists(wdev, addr))
+	spin_lock_bh(&wdev->smd_get_ctx_lock);
+	if (__cfg80211_smd_ctx_pending_exists(wdev, addr)) {
+		spin_unlock_bh(&wdev->smd_get_ctx_lock);
 		return -EBUSY;
+	}
+	/* safe to unlock, concurrent commands are protected by wiphy mutex */
+	spin_unlock_bh(&wdev->smd_get_ctx_lock);
 
 	st_info.ctx = &ctx;
 	st_info.type = nla_get_u8(tb[NL80211_SMD_CTX_ATTR_TYPE]);
@@ -22116,15 +22137,33 @@ static int nl80211_get_smd_ctx(struct sk_buff *skb, struct genl_info *info)
 		return -ENOMEM;
 	memcpy(pending->sta_addr, addr, ETH_ALEN);
 
+	spin_lock_bh(&wdev->smd_get_ctx_lock);
+	list_add_tail(&pending->list, &wdev->smd_get_ctx_pending_list);
+	spin_unlock_bh(&wdev->smd_get_ctx_lock);
+
 	ret = rdev_get_smd_ctx(rdev, wdev, addr, &st_info);
 	if (ret && ret != -EINPROGRESS) {
+		/* revert upon failure */
+		spin_lock_bh(&wdev->smd_get_ctx_lock);
+		pending = __cfg80211_smd_ctx_pending_exists(wdev, addr);
+		if (pending)
+			list_del(&pending->list);
+		spin_unlock_bh(&wdev->smd_get_ctx_lock);
+
 		return ret;
 	}
 
+	/* cache hit: driver replied synchronously, encode and return now */
 	if (ret == 0) {
-		/* cache hit: driver replied synchronously, encode and return now */
 		struct sk_buff *msg;
 		void *hdr;
+
+		/* remove the entry since driver replied synchronously */
+		spin_lock_bh(&wdev->smd_get_ctx_lock);
+		pending = __cfg80211_smd_ctx_pending_exists(wdev, addr);
+		if (pending)
+			list_del(&pending->list);
+		spin_unlock_bh(&wdev->smd_get_ctx_lock);
 
 		msg = nlmsg_new(100 + nl80211_smd_ctx_nl_size(&st_info), GFP_ATOMIC);
 		if (!msg) {
@@ -22146,16 +22185,10 @@ static int nl80211_get_smd_ctx(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	/*
-	 * -EINPROGRESS: HW collection started. Store a pending entry so that
-	 * cfg80211_get_smd_ctx_done() can find and reply to this request when
-	 * the BH completion fires.  The ctx skel is no longer needed here —
-	 * the driver owns it until completion.
+	 * -EINPROGRESS: HW collection started. Pending entry is already stored
+	 * so that cfg80211_get_smd_ctx_done() can find and reply to this request
+	 * when the BH completion fires.
 	 */
-
-
-	spin_lock_bh(&wdev->smd_get_ctx_lock);
-	list_add_tail(&pending->list, &wdev->smd_get_ctx_pending_list);
-	spin_unlock_bh(&wdev->smd_get_ctx_lock);
 
 	/* release ownership */
 	tmp = no_free_ptr(pending);

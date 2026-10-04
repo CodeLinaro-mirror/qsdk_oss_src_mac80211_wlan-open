@@ -1158,7 +1158,7 @@ int ath12k_peer_mlo_link_peers_delete(struct ath12k_vif *ahvif,
 
 			spin_lock_bh(&ar->ah->dp_hw.peer_hash_lock);
 			dp_peer = ath12k_dp_peer_find_by_addr(&ar->ah->dp_hw,
-							      arsta->addr, ahvif->vif);
+							      link_addr[link_id], ahvif->vif);
 			spin_unlock_bh(&ar->ah->dp_hw.peer_hash_lock);
 
 			if (dp_peer) {

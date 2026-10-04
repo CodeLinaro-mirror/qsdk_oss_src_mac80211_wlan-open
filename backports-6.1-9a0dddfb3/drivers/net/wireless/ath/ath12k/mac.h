@@ -259,6 +259,17 @@ struct ath12k_mac_pri_link_migr_peer_node {
 	struct ieee80211_sta *sta;
 };
 
+struct ath12k_beacon_miss_data {
+	struct ath12k *ar;
+	u32 vdev_id;
+};
+
+struct ath12k_beacon_rx_data {
+	struct ath12k *ar;
+	struct sk_buff *skb;
+};
+
+
 void ath12k_mac_11d_scan_start(struct ath12k *ar, u32 vdev_id);
 void ath12k_mac_11d_scan_stop(struct ath12k *ar);
 void ath12k_mac_11d_scan_stop_all(struct ath12k_base *ab);
@@ -896,6 +907,16 @@ void ath12k_mac_add_bridge_vdevs_iter(void *data, u8 *mac,
 int ath12k_mac_op_get_afc_eirp_pwr(struct ieee80211_hw *hw, u32 freq,
 				   u32 *eirp_pwr);
 /**
+ * ath12k_mac_get_afc_eirp_power - Get AFC EIRP power for a given frequency and
+ * bandwidth
+ * @ar: ath12k radio context
+ * @freq: primary frequency in MHz
+ * @center_freq: channel center frequency in MHz
+ * @bw: channel bandwidth in MHz
+ */
+s8 ath12k_mac_get_afc_eirp_power(struct ath12k *ar, u32 freq,
+				 u16 center_freq, u16 bw);
+/**
  * ath12k_mac_op_get_6ghz_dev_deployment_type - Get the 6 GHz device deployment
  * type.
  * @hw: Input hardware
@@ -989,12 +1010,14 @@ void ath12k_mac_peer_assoc_prepare_smd(struct ath12k *ar,
 				       struct ath12k_link_sta *arsta,
 				       struct ath12k_wmi_peer_assoc_arg *arg,
 				       bool reassoc,
+				       bool in_st_transition,
 				       struct ieee80211_link_sta *link_sta,
 				       const struct ath12k_smd_peer_assoc_ctx *ctx);
 
 enum wmi_phy_mode ath12k_mac_get_phymode(struct ath12k *ar,
 					 enum nl80211_band band,
 					 enum nl80211_chan_width width);
+void ath12k_mac_reset_mbssid_info(struct ath12k_link_vif *arvif);
 /* Context passed through the arsta iterator in ath12k_mac_op_get_netstats */
 struct ath12k_netstats_iter_ctx {
 	struct rtnl_link_stats64 *stats;
@@ -1006,4 +1029,16 @@ bool ath12k_mac_mgmt_need_smd_sta_session_ctx(struct sk_buff *skb);
 
 struct ieee80211_chanctx_conf*
 ath12k_mac_get_ctx_for_bridge_recovery(struct ath12k *ar);
+
+/**
+ * ath12k_get_chan_start_freq - get the center frequency of the lowest
+ * 20 MHz subchannel within a channel.
+ * @pri_freq: primary channel center frequency in MHz
+ * @cen_freq: channel center frequency in MHz
+ * @bw: channel bandwidth in MHz
+ */
+static inline u32 ath12k_get_chan_start_freq(u32 pri_freq, u32 cen_freq, u16 bw)
+{
+	return (bw == 20) ? pri_freq : cen_freq - bw / 2 + 10;
+}
 #endif

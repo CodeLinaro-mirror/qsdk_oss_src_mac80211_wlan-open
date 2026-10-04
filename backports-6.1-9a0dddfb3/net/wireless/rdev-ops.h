@@ -199,6 +199,20 @@ static inline void rdev_bootup_cac_handle_ap(struct cfg80211_registered_device *
 
 	rdev->ops->bootup_cac_handle_ap(&rdev->wiphy, dev, settings);
 }
+
+static inline int
+rdev_get_scan_radio_best_6ghz_power_mode(struct cfg80211_registered_device *rdev,
+					 struct net_device *dev,
+					 u32 freq,
+					 u32 center_freq,
+					 u16 bw)
+{
+	if (!rdev->ops->get_best_scan_radio_power_mode)
+		return -EOPNOTSUPP;
+	return rdev->ops->get_best_scan_radio_power_mode(&rdev->wiphy,
+							 dev, freq,
+							 center_freq, bw);
+}
 #endif /* CPTCFG_QCN_EXTN */
 
 static inline int rdev_update_ap(struct cfg80211_registered_device *rdev,

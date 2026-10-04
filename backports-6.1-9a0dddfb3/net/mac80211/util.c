@@ -491,6 +491,9 @@ void ieee80211_wake_queue_by_reason(struct ieee80211_hw *hw, int queue,
 	unsigned long flags;
 	spinlock_t *pcpu_queue_stop_reason_lock;
 
+	if (WARN_ON(queue < 0 || queue >= hw->queues))
+		return;
+
 	pcpu_queue_stop_reason_lock = this_cpu_ptr(local->queue_stop_reason_lock);
 	spin_lock_irqsave(pcpu_queue_stop_reason_lock, flags);
 	__ieee80211_wake_queue(hw, queue, reason, refcounted);
@@ -513,7 +516,7 @@ static void __ieee80211_stop_queue(struct ieee80211_hw *hw, int queue,
 	unsigned long *queue_stop_reasons;
 	int *q_stop_reasons;
 
-	if (WARN_ON(queue >= hw->queues))
+	if (WARN_ON(queue < 0 || queue >= hw->queues))
 		return;
 
 	queue_stop_reasons = this_cpu_ptr(local->queue_stop_reasons[queue]);
@@ -566,6 +569,11 @@ void ieee80211_add_pending_skb(struct ieee80211_local *local,
 		return;
 	}
 
+	if (WARN_ON(queue < 0 || queue >= hw->queues)) {
+		ieee80211_free_txskb(&local->hw, skb);
+		return;
+	}
+
 	pcpu_queue_stop_reason_lock = this_cpu_ptr(local->queue_stop_reason_lock);
 	pcpu_pending = this_cpu_ptr(local->pending[queue]);
 	spin_lock_irqsave(pcpu_queue_stop_reason_lock, flags);
@@ -603,6 +611,11 @@ void ieee80211_add_pending_skbs(struct ieee80211_local *local,
 		}
 
 		queue = info->hw_queue;
+		if (WARN_ON(queue < 0 || queue >= hw->queues)) {
+			ieee80211_free_txskb(&local->hw, skb);
+			continue;
+		}
+
 		pcpu_pending = this_cpu_ptr(local->pending[queue]);
 
 		__ieee80211_stop_queue(hw, queue,
@@ -676,7 +689,7 @@ void ieee80211_stop_queues_by_reason(struct ieee80211_hw *hw,
 	queue_info.reason = reason;
 	queue_info.refcounted = refcounted;
 
-	for_each_set_bit(i, &queues, hw->queues) {
+	for_each_set_bit(i, &queues, min_t(int, hw->queues, BITS_PER_LONG)) {
 		queue_info.queue = i;
 		on_each_cpu((void (*)(void *))ieee80211_stop_queues_one_by_one, &queue_info, 1);
 	}
@@ -742,7 +755,7 @@ void ieee80211_wake_queues_by_reason(struct ieee80211_hw *hw,
 	queue_info.reason = reason;
 	queue_info.refcounted = refcounted;
 
-	for_each_set_bit(i, &queues, hw->queues) {
+	for_each_set_bit(i, &queues, min_t(int, hw->queues, BITS_PER_LONG)) {
 		queue_info.queue = i;
 		on_each_cpu((void (*)(void *))ieee80211_wake_queues_one_by_one, &queue_info, 1);
 	}
@@ -774,11 +787,15 @@ ieee80211_get_vif_queues(struct ieee80211_local *local,
 			queues |= BIT(sdata->vif.cab_queue);
 	} else {
 		/* all queues */
-		queues = BIT(local->hw.queues) - 1;
+		if (WARN_ON(local->hw.queues >= BITS_PER_LONG))
+			queues = ~0U;
+		else
+			queues = BIT(local->hw.queues) - 1;
 	}
 
 	return queues;
 }
+
 
 void __ieee80211_flush_queues(struct ieee80211_local *local,
 			      struct ieee80211_sub_if_data *sdata,
@@ -2587,8 +2604,13 @@ size_t ieee80211_ie_split_vendor(const u8 *ies, size_t ielen, size_t offset)
 {
 	size_t pos = offset;
 
-	while (pos < ielen && ies[pos] != WLAN_EID_VENDOR_SPECIFIC)
-		pos += 2 + ies[pos + 1];
+	while (pos + 1 < ielen && ies[pos] != WLAN_EID_VENDOR_SPECIFIC) {
+		size_t elen = ies[pos + 1];
+
+		if (pos + 2 + elen > ielen)
+			break;
+		pos += 2 + elen;
+	}
 
 	return pos;
 }
@@ -4035,6 +4057,9 @@ void ieee80211_dfs_cac_cancel(struct ieee80211_local *local,
 			if (!sdata->wdev.links[link_id].cac_started)
 				continue;
 
+			if (!link->conf)
+				continue;
+
 			chandef = link->conf->chanreq.oper;
 			if (def && def->chan &&
 			    def->chan != chandef.chan) {
@@ -4805,6 +4830,276 @@ again:
 		goto again;
 
 	WARN_ON_ONCE(!cfg80211_chandef_valid(c));
+}
+
+static const u8 *
+ieee80211_csa_find_ie(u8 eid, u8 ext_eid, const u8 *ies, size_t ies_len,
+		      size_t *ie_len)
+{
+	const struct element *elem;
+	const u8 *ie;
+	bool wrapper_only;
+
+	if (!ies)
+		return NULL;
+
+	wrapper_only = eid == WLAN_EID_WIDE_BW_CHANNEL_SWITCH ||
+		      eid == WLAN_EID_TX_POWER_ENVELOPE ||
+		      eid == WLAN_EID_COUNTRY ||
+		      (eid == WLAN_EID_EXTENSION &&
+		       ext_eid == WLAN_EID_EXT_BANDWIDTH_INDICATION);
+
+	if (!wrapper_only) {
+		if (eid == WLAN_EID_EXTENSION)
+			elem = cfg80211_find_ext_elem(ext_eid, ies, ies_len);
+		else
+			elem = cfg80211_find_elem(eid, ies, ies_len);
+
+		if (elem) {
+			*ie_len = sizeof(*elem) + elem->datalen;
+			return (const u8 *)elem;
+		}
+	}
+
+	elem = cfg80211_find_elem(WLAN_EID_CHANNEL_SWITCH_WRAPPER,
+				  ies, ies_len);
+	if (!elem)
+		return NULL;
+
+	if (eid == WLAN_EID_EXTENSION)
+		ie = (const u8 *)cfg80211_find_ext_elem(ext_eid, elem->data,
+							elem->datalen);
+	else
+		ie = (const u8 *)cfg80211_find_elem(eid, elem->data,
+						    elem->datalen);
+	if (!ie)
+		return NULL;
+
+	*ie_len = 2 + ie[1];
+	return ie;
+}
+
+static size_t
+ieee80211_csa_action_ies_len(const u8 *csa_beacon_ies,
+			     size_t csa_beacon_ies_len,
+			     bool public)
+{
+	const u8 *ie;
+	size_t len = 0, ie_len;
+
+	if (public) {
+		ie = ieee80211_csa_find_ie(WLAN_EID_COUNTRY,
+					   0,
+					   csa_beacon_ies, csa_beacon_ies_len,
+					   &ie_len);
+		if (ie)
+			len += ie_len;
+	}
+
+	ie = ieee80211_csa_find_ie(WLAN_EID_WIDE_BW_CHANNEL_SWITCH,
+				   0,
+				   csa_beacon_ies, csa_beacon_ies_len,
+				   &ie_len);
+	if (ie)
+		len += ie_len;
+
+	ie = ieee80211_csa_find_ie(WLAN_EID_TX_POWER_ENVELOPE,
+				   0,
+				   csa_beacon_ies, csa_beacon_ies_len,
+				   &ie_len);
+	if (ie)
+		len += ie_len;
+
+	ie = ieee80211_csa_find_ie(WLAN_EID_EXTENSION,
+				   WLAN_EID_EXT_MAX_CHANNEL_SWITCH_TIME,
+				   csa_beacon_ies, csa_beacon_ies_len,
+				   &ie_len);
+	if (ie)
+		len += ie_len;
+
+	ie = ieee80211_csa_find_ie(WLAN_EID_EXTENSION,
+				   WLAN_EID_EXT_BANDWIDTH_INDICATION,
+				   csa_beacon_ies, csa_beacon_ies_len,
+				   &ie_len);
+	if (ie)
+		len += ie_len;
+
+	return len;
+}
+
+static u8 *ieee80211_csa_copy_action_ies(u8 *pos,
+					 const u8 *csa_beacon_ies,
+					 size_t csa_beacon_ies_len,
+					 bool public)
+{
+	const u8 *ie;
+	size_t ie_len;
+
+	if (public) {
+		ie = ieee80211_csa_find_ie(WLAN_EID_COUNTRY,
+					   0,
+					   csa_beacon_ies, csa_beacon_ies_len,
+					   &ie_len);
+		if (ie) {
+			memcpy(pos, ie, ie_len);
+			pos += ie_len;
+		}
+	}
+
+	ie = ieee80211_csa_find_ie(WLAN_EID_WIDE_BW_CHANNEL_SWITCH, 0,
+				   csa_beacon_ies, csa_beacon_ies_len, &ie_len);
+	if (ie) {
+		memcpy(pos, ie, ie_len);
+		pos += ie_len;
+	}
+
+	ie = ieee80211_csa_find_ie(WLAN_EID_TX_POWER_ENVELOPE, 0,
+				   csa_beacon_ies, csa_beacon_ies_len, &ie_len);
+	if (ie) {
+		memcpy(pos, ie, ie_len);
+		pos += ie_len;
+	}
+
+	ie = ieee80211_csa_find_ie(WLAN_EID_EXTENSION,
+				   WLAN_EID_EXT_MAX_CHANNEL_SWITCH_TIME,
+				   csa_beacon_ies, csa_beacon_ies_len, &ie_len);
+	if (ie) {
+		memcpy(pos, ie, ie_len);
+		pos += ie_len;
+	}
+
+	ie = ieee80211_csa_find_ie(WLAN_EID_EXTENSION,
+				   WLAN_EID_EXT_BANDWIDTH_INDICATION,
+				   csa_beacon_ies, csa_beacon_ies_len, &ie_len);
+	if (ie)
+		memcpy(pos, ie, ie_len);
+
+	return pos;
+}
+
+static u8 *
+ieee80211_ie_build_sec_chan_offset(u8 *pos,
+				   const struct cfg80211_chan_def *chandef)
+{
+	*pos++ = WLAN_EID_SECONDARY_CHANNEL_OFFSET;
+	*pos++ = 1;
+
+	if (chandef->center_freq1 > chandef->chan->center_freq)
+		*pos = IEEE80211_HT_PARAM_CHA_SEC_ABOVE;
+	else if (chandef->center_freq1 < chandef->chan->center_freq)
+		*pos = IEEE80211_HT_PARAM_CHA_SEC_BELOW;
+	else
+		*pos = IEEE80211_HT_PARAM_CHA_SEC_NONE;
+
+	return pos + 1;
+}
+
+static struct sk_buff *
+ieee80211_build_csa_action(struct ieee80211_sub_if_data *sdata,
+			   const u8 *link_addr,
+			   const struct cfg80211_chan_def *chandef,
+			   const u8 *csa_beacon_ies,
+			   size_t csa_beacon_ies_len,
+			   bool public)
+{
+	struct ieee80211_local *local = sdata->local;
+	struct sk_buff *skb;
+	struct ieee80211_mgmt *mgmt;
+	const u8 *ie;
+	size_t ie_len, optional_len;
+	u8 *pos;
+	int hdr_len = offsetofend(struct ieee80211_mgmt,
+				  u.action.u.chan_switch);
+
+	optional_len = ieee80211_csa_action_ies_len(csa_beacon_ies,
+						    csa_beacon_ies_len, public);
+
+	skb = dev_alloc_skb(local->tx_headroom + hdr_len +
+			    (public ? sizeof(struct ieee80211_ext_chansw_ie) :
+				      IEEE80211_CSA_CHANNEL_SWITCH_IE_LEN) +
+			    (public ? 0 :
+				      IEEE80211_CSA_SECONDARY_OFFSET_IE_LEN) +
+			    optional_len);
+	if (!skb)
+		return NULL;
+
+	skb_reserve(skb, local->tx_headroom);
+	mgmt = skb_put_zero(skb, hdr_len);
+	mgmt->frame_control = cpu_to_le16(IEEE80211_FTYPE_MGMT |
+					  IEEE80211_STYPE_ACTION);
+	eth_broadcast_addr(mgmt->da);
+	memcpy(mgmt->sa, link_addr, ETH_ALEN);
+	memcpy(mgmt->bssid, link_addr, ETH_ALEN);
+	mgmt->u.action.category = public ? WLAN_CATEGORY_PUBLIC :
+		WLAN_CATEGORY_SPECTRUM_MGMT;
+	mgmt->u.action.u.chan_switch.action_code = public ?
+		WLAN_PUB_ACTION_EXT_CHANSW_ANN :
+		WLAN_ACTION_SPCT_CHL_SWITCH;
+	pos = skb_put(skb, public ? sizeof(struct ieee80211_ext_chansw_ie) :
+		      IEEE80211_CSA_CHANNEL_SWITCH_IE_LEN);
+
+	if (public) {
+		ie = ieee80211_csa_find_ie(WLAN_EID_EXT_CHANSWITCH_ANN,
+					   0,
+					   csa_beacon_ies, csa_beacon_ies_len,
+					   &ie_len);
+		if (!ie || ie_len < sizeof(struct element) +
+			sizeof(struct ieee80211_ext_chansw_ie))
+			goto free_skb;
+
+		memcpy(pos, ie + sizeof(struct element),
+		       sizeof(struct ieee80211_ext_chansw_ie));
+	} else {
+		ie = ieee80211_csa_find_ie(WLAN_EID_CHANNEL_SWITCH,
+					   0,
+					   csa_beacon_ies, csa_beacon_ies_len,
+					   &ie_len);
+		if (!ie || ie_len < IEEE80211_CSA_CHANNEL_SWITCH_IE_LEN)
+			goto free_skb;
+
+		memcpy(pos, ie, IEEE80211_CSA_CHANNEL_SWITCH_IE_LEN);
+		pos += IEEE80211_CSA_CHANNEL_SWITCH_IE_LEN;
+		pos = skb_put(skb, IEEE80211_CSA_SECONDARY_OFFSET_IE_LEN);
+		pos = ieee80211_ie_build_sec_chan_offset(pos,
+							 chandef);
+	}
+
+	if (optional_len) {
+		pos = skb_put(skb, optional_len);
+		ieee80211_csa_copy_action_ies(pos, csa_beacon_ies,
+					      csa_beacon_ies_len, public);
+	}
+	return skb;
+
+free_skb:
+	kfree_skb(skb);
+	return NULL;
+}
+
+int ieee80211_send_ap_csa_action(struct ieee80211_sub_if_data *sdata,
+				 const u8 *link_addr,
+				 const struct cfg80211_chan_def *chandef,
+				 const u8 *csa_beacon_ies,
+				 size_t csa_beacon_ies_len)
+{
+	struct sk_buff *skb;
+
+	if (sdata->vif.type != NL80211_IFTYPE_AP)
+		return -EOPNOTSUPP;
+
+	skb = ieee80211_build_csa_action(sdata, link_addr, chandef,
+					 csa_beacon_ies, csa_beacon_ies_len, false);
+	if (!skb)
+		return -ENOMEM;
+	ieee80211_tx_skb(sdata, skb);
+
+	skb = ieee80211_build_csa_action(sdata, link_addr, chandef,
+					 csa_beacon_ies, csa_beacon_ies_len, true);
+	if (!skb)
+		return -ENOMEM;
+	ieee80211_tx_skb(sdata, skb);
+
+	return 0;
 }
 
 int ieee80211_send_action_csa(struct ieee80211_sub_if_data *sdata,

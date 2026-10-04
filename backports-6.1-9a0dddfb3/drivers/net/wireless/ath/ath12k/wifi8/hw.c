@@ -33,6 +33,7 @@
 #include "dp_tx_queue.h"
 #include "../dp_mon.h"
 #ifdef CPTCFG_QCN_EXTN
+#include "../qcn_extns/ath12k_cmn_extn.h"
 #include "qcn_extns/wifi8_dp_extn.h"
 #include "../qcn_extns/ipa/dp_ipa_pub.h"
 #include "../qcn_extns/vendor_extn.h"
@@ -199,14 +200,11 @@ void ath12k_hw_qcn9625_fill_cfr_hdr_info(struct ath12k *ar,
 	header->meta_enh.phy_mode = params->phy_mode;
 	header->meta_enh.center_freq1 = params->band_center_freq1;
 	header->meta_enh.center_freq2 = params->band_center_freq2;
-	header->meta_enh.num_mu_users = 0;
 	header->meta_enh.rx_start_ts = params->rx_start_ts;
 	header->meta_enh.cfo_measurement = params->cfo_measurement;
 	header->meta_enh.mcs_rate = params->mcs_rate;
 	header->meta_enh.gi_type = params->gi_type;
-	header->meta_enh.beamformed = 0;
 
-	memcpy(header->meta_enh.peer_addr, params->peer_mac_addr, ETH_ALEN);
 	memcpy(header->meta_enh.chain_rssi, params->chain_rssi,
 	       sizeof(params->chain_rssi));
 	memcpy(header->meta_enh.chain_phase, params->chain_phase,
@@ -633,7 +631,11 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.ftm_responder = true,
 		.credit_flow = false,
 		.is_plink_preferable = true,
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+		.support_umac_reset = false,
+#else
 		.support_umac_reset = true,
+#endif
 		.umac_irq_line_reset = false,
 		.umac_reset_ipc = 0,
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
@@ -1560,6 +1562,10 @@ static void ath12k_wifi8_mac_op_tx(struct ieee80211_hw *hw,
 #ifdef CPTCFG_QCN_EXTN
 	u32 info_flags = info->flags;
 #endif /* CPTCFG_QCN_EXTN */
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	struct ath12k_vif *src_ahvif = NULL;
+	u32 control_flags = info->control.flags;
+#endif
 	struct ieee80211_tx_info info_tx;
 	struct ath12k_dp_vif *dp_vif = &ahvif->dp_vif;
 	bool is_mcast = false, is_eth = false, is_data = false;
@@ -1595,7 +1601,19 @@ static void ath12k_wifi8_mac_op_tx(struct ieee80211_hw *hw,
 	skb_cb = ATH12K_SKB_CB(skb);
 	memset(skb_cb, 0, sizeof(*skb_cb));
 
-	/* Check monitor mode.*/
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	if (control->src_vif)
+		src_ahvif = ath12k_vif_to_ahvif(control->src_vif);
+
+	if (src_ahvif && src_ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR &&
+	    (control_flags & IEEE80211_TX_CTRL_MON_RAW_TX)) {
+		skb_cb->flags |= ATH12K_SKB_MONRAW_TX;
+		ath12k_wifi8_mgmt_handler(hw, control, &info_tx, skb);
+		return;
+	}
+#endif
+
+	/* Check monitor mode */
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR) {
 		ath12k_mac_ieee80211_free_txskb(hw, skb, NULL, sta, dp_vif,
 						DP_TX_ENQ_DROP_VIF_TYPE_MON,

@@ -954,6 +954,11 @@ static int ieee80211_change_mtu(struct net_device *dev, int mtu)
 
 	dev->mtu = mtu;
 
+	guard(wiphy)(local->hw.wiphy);
+
+	if (!(sdata->flags & IEEE80211_SDATA_IN_DRIVER))
+		return 0;
+
 	return drv_change_interface_mtu(local, sdata, mtu);
 }
 

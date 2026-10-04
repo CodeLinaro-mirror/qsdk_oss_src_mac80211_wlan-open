@@ -407,8 +407,9 @@ static int ath12k_vendor_cmd_skip_check(struct wiphy *wiphy, struct wireless_dev
 		ar = ath12k_get_ar_from_wdev(wdev, link_id);
 	}
 
-	if (ar && ar->ab->is_bypassed &&
-	    wifi_params.value != QCA_WLAN_VENDOR_RADIO_PARAM_WSI_BYPASS) {
+	if (ar && ((ar->ab->is_bypassed &&
+	    wifi_params.value != QCA_WLAN_VENDOR_RADIO_PARAM_WSI_BYPASS) ||
+	    atomic_read(&ar->ab->wsi_remap_in_progress))) {
 		ath12k_info(ar->ab, "vendor cmd (%d) rejected: device is in bypassed state\n",
 			    wifi_params.value);
 		return 1;
@@ -1432,7 +1433,7 @@ ath12k_cfr_rcc_parse_update_common_params(struct ath12k *ar, struct nlattr **tb)
 	return 0;
 }
 
-static int ath12k_cfr_handle_rcc(struct ath12k *ar, struct nlattr **tb)
+static int ath12k_cfr_handle_rcc(struct ath12k *ar, int vdev_id, struct nlattr **tb)
 {
 	enum qca_wlan_vendor_cfr_capture_type capture_type;
 	int ret = 0;
@@ -1505,6 +1506,7 @@ static int ath12k_cfr_handle_rcc(struct ath12k *ar, struct nlattr **tb)
 	/* We reached here means, the command is to commit the current configuration
 	 * to firmware.
 	 */
+	ar->cfr.rcc_param.vdev_id = vdev_id;
 	ret = ath12k_peer_cfr_rcc_commit(ar);
 	if (ret)
 		ath12k_err(ar->ab, "Failed commit the RCC config");
@@ -1631,7 +1633,7 @@ static int ath12k_vendor_peer_cfr_handler(struct wiphy *wiphy,
 	}
 
 	if (version == 2)
-		return ath12k_cfr_handle_rcc(ar, tb);
+		return ath12k_cfr_handle_rcc(ar, arvif->vdev_id, tb);
 
 	return -EOPNOTSUPP;
 }

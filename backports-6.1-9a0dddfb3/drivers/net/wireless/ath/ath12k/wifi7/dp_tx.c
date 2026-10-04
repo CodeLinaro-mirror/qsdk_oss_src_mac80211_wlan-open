@@ -22,6 +22,7 @@
 #include "../telemetry_agent_if.h"
 #include "dp_peer.h"
 #ifdef CPTCFG_QCN_EXTN
+#include "../qcn_extns/ath12k_cmn_extn.h"
 #include "../qcn_extns/ini.h"
 #endif /* CPTCFG_QCN_EXTN */
 
@@ -968,6 +969,16 @@ ath12k_wifi7_dp_tx_process_features(struct ath12k_dp_vif *dp_vif,
 	enum ath12k_dp_feature_result ret = DP_TX_FEATURE_SUCCESS;
 
 	ath12k_wifi7_dp_dma_align_handler(dp_pdev->dp, skb);
+
+#ifdef CPTCFG_QCN_EXTN
+	if (ath12k_dp_feature_enabled(dp_vif, DP_FEATURE_EXTAP)) {
+		struct ath12k_vif *ahvif = container_of(dp_vif,
+						       struct ath12k_vif, dp_vif);
+
+		ath12k_extap_tx(ahvif, skb);
+	}
+#endif
+
 	/* Process SW encrpt feature */
 	if (DP_SKB_FEATURE_ENABLED(skb_ctrl->features, DP_FEATURE_SW_ENCRPT)) {
 		ret = ath12k_wifi7_dp_mac_encrpt_handler(msdu_info);

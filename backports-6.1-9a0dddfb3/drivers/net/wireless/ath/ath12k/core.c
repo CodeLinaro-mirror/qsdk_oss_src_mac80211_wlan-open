@@ -1369,6 +1369,9 @@ static void ath12k_core_stop(struct ath12k_base *ab)
 		ath12k_hif_stop(ab);
 	ath12k_wmi_detach(ab);
 	ath12k_mgmt_device_deinit(ab->mgmt);
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	ath12k_dp_ipa_uc_ol_deinit(ab);
+#endif
 	ath12k_dp_cmn_device_deinit(ab->dp);
 
 	/* De-Init of components as needed */
@@ -3069,6 +3072,7 @@ static int ath12k_core_wsi_remap_radio_start(struct ath12k_base *ab)
 exit:
 	/* Reset the WSI flags */
 	ag->wsi_remap_in_progress = false;
+	atomic_set(&ab->wsi_remap_in_progress, 0);
 	ab->wsi_remap_state = 0;
 
 	return ret;
@@ -3695,6 +3699,7 @@ static void ath12k_core_pre_reconfigure_recovery(struct ath12k_base *ab)
 			arvif->is_created = false;
 			arvif->is_up = false;
 			arvif->spectral_enabled = false;
+			ath12k_mac_reset_mbssid_info(arvif);
 			ath12k_dbg(ab, ATH12K_DBG_MAC,
 				   "init flags reset for MAC %pM vdev %d\n",
 				   arvif->addr, arvif->vdev_id);
@@ -7654,7 +7659,7 @@ int ath12k_core_init(struct ath12k_base *ab)
 	if (!ath12k_upload_dump_before_bugon &&
 	    (ab->hw_rev == ATH12K_HW_QCN9625_HW10 ||
 	     ab->hw_rev == ATH12K_HW_QCN9625_HW20))
-		ath12k_upload_dump_before_bugon = true;
+		ath12k_upload_dump_before_bugon = false;
 
 	ret = ath12k_core_panic_notifier_register(ab);
 	if (ret)

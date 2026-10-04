@@ -13337,7 +13337,7 @@ static void ath12k_mgmt_rx_event(struct ath12k_base *ab, struct sk_buff *skb)
 	struct ath12k *ar;
 	struct ieee80211_rx_status *status = IEEE80211_SKB_RXCB(skb);
 	struct ieee80211_sta *pubsta = NULL;
-	struct ath12k_link_sta *arsta;
+	struct ath12k_link_sta *arsta = NULL;
 	bool is_4addr_null_pkt = false;
 	struct ieee80211_hdr *hdr;
 	u16 fc;
@@ -13353,6 +13353,7 @@ static void ath12k_mgmt_rx_event(struct ath12k_base *ab, struct sk_buff *skb)
 	u32 vdev_id;
 	u8 link_id;
 	struct ath12k_link_vif *arvif_iter;
+	bool locked = false;
 
 	rx_ev.num_link_removal_info = 0;
 	if (ath12k_pull_mgmt_rx_params_tlv(ab, skb, &rx_ev) != 0) {
@@ -13442,12 +13443,26 @@ static void ath12k_mgmt_rx_event(struct ath12k_base *ab, struct sk_buff *skb)
 	    skb->len >= offsetof(struct ieee80211_mgmt, u.assoc_req.variable))
 		ath12k_update_assoc_fail_stats(ar, hdr, skb);
 
-	spin_lock_bh(&ar->arsta_lock);
-	arsta = ath12k_link_sta_find_by_addr(ar, hdr->addr1);
-	if (!arsta)
+	/* Optimise the arsta hash lookup based on addr1 (DA) and addr3 (BSSID).
+	 * Broadcast addresses are never inserted into the arsta hash table
+	 * (mac80211 rejects them via is_valid_ether_addr() at sta_info_insert()),
+	 * so any lookup against a broadcast address is guaranteed to return NULL.
+	 */
+	if (!is_broadcast_ether_addr(hdr->addr1)) {
+		spin_lock_bh(&ar->arsta_lock);
+		arsta = ath12k_link_sta_find_by_addr(ar, hdr->addr1);
+		if (!arsta)
+			arsta = ath12k_link_sta_find_by_addr(ar, hdr->addr3);
+		locked = true;
+	} else if (!is_broadcast_ether_addr(hdr->addr3)) {
+		spin_lock_bh(&ar->arsta_lock);
 		arsta = ath12k_link_sta_find_by_addr(ar, hdr->addr3);
+		locked = true;
+	}
+
 	if (!arsta || !arsta->arvif->ahvif) {
-		spin_unlock_bh(&ar->arsta_lock);
+		if (locked)
+			spin_unlock_bh(&ar->arsta_lock);
 		/* 802.11 Probe Request address fields (ToDS=0, FromDS=0):
 		 * addr1 = DA (Destination Address) - ff:ff:ff:ff:ff:ff for broadcast
 		 * addr2 = SA/TA (Source/Transmitter - STA MAC address)
@@ -13623,7 +13638,7 @@ skip_mgmt_stats:
 		spin_lock_bh(&ar->arsta_lock);
 		arsta = ath12k_link_sta_find_by_addr(ar, hdr->addr2);
 		if (arsta) {
-			sta = ath12k_ahsta_to_sta(arsta->ahsta);
+			sta = arsta->ahsta ? ath12k_ahsta_to_sta(arsta->ahsta) : NULL;
 
 			enc_assoc = sta && sta->epp_peer &&
 				    (ieee80211_is_assoc_req(hdr->frame_control) ||
@@ -18929,12 +18944,15 @@ ath12k_wmi_rssi_dbm_conv_subtlv_parser(struct ath12k_base *ab,
 
 		/* Using minimum pri20 Noise Floor across active chains instead
 		 * of all sub-bands*/
-		for (i = 0; i < num_rx_ant; i++) {
-			if (param_info->curr_rx_chainmask & (0x01 << i))
-				avg_nf += param_info->nf_dbm_per_chain_per_subband[i][0];
+		for (i = 0; i < MAX_NUM_ANTENNA; i++) {
+			if (!(param_info->curr_rx_chainmask & BIT(i)))
+				continue;
+			avg_nf += param_info->nf_dbm_per_chain_per_subband[i][0];
 		}
-		if (avg_nf)
-			avg_nf = avg_nf / num_rx_ant;
+
+		if (num_rx_ant)
+			avg_nf /= num_rx_ant;
+
 		rssi_offsets->avg_nf_dbm = (s8)avg_nf;
 
 		/*
@@ -18959,23 +18977,24 @@ ath12k_wmi_rssi_dbm_conv_subtlv_parser(struct ath12k_base *ab,
 			break;
 		}
 
-		for (i = 0; i < num_rx_ant; i++) {
-			if (param_info->curr_rx_chainmask & (0x01 << i)) {
-				nf_sb = param_info->nf_dbm_per_chain_per_subband[i];
-				max_nf = S8_MIN;
+		for (i = 0; i < MAX_NUM_ANTENNA; i++) {
+			if (!(param_info->curr_rx_chainmask & BIT(i)))
+				continue;
 
-				for (j = 0; j < n_subbands; j++) {
-					nf = nf_sb[j];
+			nf_sb = param_info->nf_dbm_per_chain_per_subband[i];
+			max_nf = S8_MIN;
 
-					if (nf == 1)
-						continue;
-					if (nf > max_nf)
-						max_nf = nf;
-				}
-				if (max_nf == S8_MIN)
-					max_nf = nf_sb[0];
-				rssi_offsets->nf_dbm_per_chain[i] = max_nf;
+			for (j = 0; j < n_subbands; j++) {
+				nf = nf_sb[j];
+
+				if (nf == 1)
+					continue;
+				if (nf > max_nf)
+					max_nf = nf;
 			}
+			if (max_nf == S8_MIN)
+				max_nf = nf_sb[0];
+			rssi_offsets->nf_dbm_per_chain[i] = max_nf;
 		}
 		rssi_offsets->xlna_bypass_offset = param_info->xlna_bypass_offset;
 		rssi_offsets->xlna_bypass_threshold = param_info->xlna_bypass_threshold;

@@ -3509,6 +3509,27 @@ void ieee80211_awgn_detected_work(struct work_struct *work);
 int ieee80211_send_action_csa(struct ieee80211_sub_if_data *sdata,
 			      struct cfg80211_csa_settings *csa_settings);
 
+/**
+ * ieee80211_send_ap_csa_action - send AP CSA action frames
+ * @sdata: interface data for the AP
+ * @link_addr: MAC address of the link transmitting the frames
+ * @chandef: channel definition
+ * @csa_beacon_ies: CSA beacon IE data
+ * @csa_beacon_ies_len: length of @csa_beacon_ies
+ *
+ * Build and transmit Spectrum Management and Public Extended CSA action
+ * frames using the CSA information from the beacon IE data. The action
+ * frames are transmitted in the order in which they are prepared, before
+ * the CSA beacon templates are submitted to the driver.
+ *
+ * Return: 0 on success, a negative error code otherwise.
+ */
+int ieee80211_send_ap_csa_action(struct ieee80211_sub_if_data *sdata,
+				 const u8 *link_addr,
+				 const struct cfg80211_chan_def *chandef,
+				 const u8 *csa_beacon_ies,
+				 size_t csa_beacon_ies_len);
+
 void ieee80211_recalc_dtim(struct ieee80211_local *local,
 			   struct ieee80211_sub_if_data *sdata);
 int ieee80211_check_combinations(struct ieee80211_sub_if_data *sdata,

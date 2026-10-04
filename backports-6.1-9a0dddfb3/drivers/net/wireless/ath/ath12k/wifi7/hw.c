@@ -133,14 +133,11 @@ void ath12k_hw_qcn9274_fill_cfr_hdr_info(struct ath12k *ar,
 	header->meta_enh.phy_mode = params->phy_mode;
 	header->meta_enh.center_freq1 = params->band_center_freq1;
 	header->meta_enh.center_freq2 = params->band_center_freq2;
-	header->meta_enh.num_mu_users = 0;
 	header->meta_enh.rx_start_ts = params->rx_start_ts;
 	header->meta_enh.cfo_measurement = params->cfo_measurement;
 	header->meta_enh.mcs_rate = params->mcs_rate;
 	header->meta_enh.gi_type = params->gi_type;
-	header->meta_enh.beamformed = 0;
 
-	memcpy(header->meta_enh.peer_addr, params->peer_mac_addr, ETH_ALEN);
 	memcpy(header->meta_enh.chain_rssi, params->chain_rssi,
 	       sizeof(params->chain_rssi));
 	memcpy(header->meta_enh.chain_phase, params->chain_phase,
@@ -169,14 +166,11 @@ void ath12k_hw_wcn7850_fill_cfr_hdr_info(struct ath12k *ar,
 	header->meta_enh.phy_mode = params->phy_mode;
 	header->meta_enh.center_freq1 = params->band_center_freq1;
 	header->meta_enh.center_freq2 = params->band_center_freq2;
-	header->meta_enh.num_mu_users = 0;
 	header->meta_enh.rx_start_ts = params->rx_start_ts;
 	header->meta_enh.cfo_measurement = params->cfo_measurement;
 	header->meta_enh.mcs_rate = params->mcs_rate;
 	header->meta_enh.gi_type = params->gi_type;
-	header->meta_enh.beamformed = 0;
 
-	memcpy(header->meta_enh.peer_addr, params->peer_mac_addr, ETH_ALEN);
 	memcpy(header->meta_enh.chain_rssi, params->chain_rssi,
 	       sizeof(params->chain_rssi));
 	memcpy(header->meta_enh.chain_phase, params->chain_phase,

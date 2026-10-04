@@ -278,9 +278,18 @@ static void athmem_find_duplicate(const char *struct_name,
 	if (visited_node) {
 		duplicate_node = kzalloc(sizeof(*duplicate_node), GFP_ATOMIC);
 		if (duplicate_node) {
-			duplicate_node->struct_name = obj->struct_name;
+			duplicate_node->struct_name = kstrdup(obj->struct_name,
+							      GFP_ATOMIC);
+			duplicate_node->module_name = obj->module_name ?
+				kstrdup(obj->module_name, GFP_ATOMIC) : NULL;
+			if (!duplicate_node->struct_name ||
+			    !duplicate_node->module_name) {
+				kfree(duplicate_node->struct_name);
+				kfree(duplicate_node->module_name);
+				kfree(duplicate_node);
+				return;
+			}
 			duplicate_node->start_addr = (void *)(uintptr_t)obj->pointer;
-			duplicate_node->module_name = obj->module_name;
 			duplicate_node->size = obj->size;
 
 			INIT_LIST_HEAD(&duplicate_node->dump_list);
@@ -291,9 +300,17 @@ static void athmem_find_duplicate(const char *struct_name,
 	} else {
 		visited_node = kzalloc(sizeof(*visited_node), GFP_ATOMIC);
 		if (visited_node) {
-			visited_node->struct_name = obj->struct_name;
+			visited_node->struct_name = kstrdup(obj->struct_name, GFP_ATOMIC);
+			visited_node->module_name = obj->module_name ?
+				kstrdup(obj->module_name, GFP_ATOMIC) : NULL;
+			if (!visited_node->struct_name ||
+			    !visited_node->module_name) {
+				kfree(visited_node->struct_name);
+				kfree(visited_node->module_name);
+				kfree(visited_node);
+				return;
+			}
 			visited_node->start_addr = (void *)(uintptr_t)obj->pointer;
-			visited_node->module_name = obj->module_name;
 			visited_node->size = obj->size;
 
 			INIT_LIST_HEAD(&visited_node->dump_list);
@@ -316,9 +333,13 @@ static void athmem_free_minidump_list(void)
 		list_for_each_entry_safe(duplicate_node, tmp_dup_node,
 					 &visited_node->dup_list, dup_list) {
 			list_del(&duplicate_node->dup_list);
+			kfree(duplicate_node->struct_name);
+			kfree(duplicate_node->module_name);
 			kfree(duplicate_node);
 		}
 		list_del(&visited_node->dump_list);
+		kfree(visited_node->struct_name);
+		kfree(visited_node->module_name);
 		kfree(visited_node);
 	}
 }

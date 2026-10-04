@@ -289,14 +289,12 @@ void ath12k_cfr_release_lut_entry(struct ath12k_cfr_look_up_table *lut)
 static void
 ath12k_cfr_fill_peer_addr(struct ath12k_csi_cfr_header *header,
 			  const struct hal_rx_mon_ppdu_info *ppdu_info,
-			  u8 num_mu_users, const u8 *fallback_peer_addr)
+			  u8 num_mu_users)
 {
 	u8 i;
 
-	if (!num_mu_users) {
-		memcpy(header->meta_enh.peer_addr, fallback_peer_addr, ETH_ALEN);
+	if (!num_mu_users)
 		return;
-	}
 
 	for (i = 0; i < num_mu_users; i++) {
 		const u8 *peer_addr = ppdu_info->userstats[i].peer_mac;
@@ -1073,7 +1071,6 @@ static int ath12k_cfr_process_rx_tlv_ppdu(struct ath12k *ar,
 	struct ath12k_cfr_peer_tx_param params = {0};
 	struct ath12k_csi_cfr_header *header;
 	struct ath12k_link_vif *arvif = NULL;
-	struct ath12k_dp_link_peer *link_peer;
 	const struct hal_rx_ppdu_cfr_info *cfr_info = &ppdu_info->cfr_info;
 	dma_addr_t buf_addr;
 	u32 end_magic = ATH12K_CFR_END_MAGIC;
@@ -1101,11 +1098,6 @@ static int ath12k_cfr_process_rx_tlv_ppdu(struct ath12k *ar,
 		return -EINVAL;
 
 	rcu_read_lock();
-	link_peer = ath12k_dp_link_peer_find_by_peerid_index(ab->dp, NULL,
-							     ppdu_info->peer_id);
-	if (link_peer && (link_peer->peer_id != ppdu_info->peer_id ||
-			  link_peer->pdev_idx != ar->pdev_idx))
-		link_peer = NULL;
 
 	if (cfr->rcc_param.vdev_id != 0xff)
 		arvif = ath12k_mac_get_arvif_by_vdev_id(ab, cfr->rcc_param.vdev_id);
@@ -1114,9 +1106,6 @@ static int ath12k_cfr_process_rx_tlv_ppdu(struct ath12k *ar,
 
 	if (arvif && arvif->ar != ar)
 		arvif = NULL;
-
-	if (!arvif && link_peer)
-		arvif = ath12k_mac_get_arvif(ar, link_peer->vdev_id);
 
 	if (!arvif) {
 		rcu_read_unlock();
@@ -1128,11 +1117,6 @@ static int ath12k_cfr_process_rx_tlv_ppdu(struct ath12k *ar,
 		center_freq2 = arvif->chanctx.def.center_freq2;
 		puncture_bitmap = arvif->chanctx.def.punctured;
 	}
-
-	if (link_peer)
-		ether_addr_copy(params.peer_mac_addr, link_peer->addr);
-	else
-		ether_addr_copy(params.peer_mac_addr, ppdu_info->addr2);
 
 	cfr_phymode = ath12k_cfr_chan_to_phymode(arvif);
 
@@ -1192,8 +1176,7 @@ static int ath12k_cfr_process_rx_tlv_ppdu(struct ath12k *ar,
 	num_mu_users = min_t(u8, num_mu_users, ATH12K_CFR_MAX_MU_USERS);
 	header->cfr_metadata_len = ATH12K_CFR_META_LEN(num_mu_users);
 	header->meta_enh.num_mu_users = num_mu_users;
-	ath12k_cfr_fill_peer_addr(header, ppdu_info, num_mu_users,
-				  params.peer_mac_addr);
+	ath12k_cfr_fill_peer_addr(header, ppdu_info, num_mu_users);
 	lut->header_len = ATH12K_CFR_HEADER_LEN(num_mu_users);
 	header->meta_enh.puncture_bitmap = puncture_bitmap;
 	header->meta_enh.beamformed = ppdu_info->beamformed;
@@ -1441,6 +1424,12 @@ int ath12k_process_cfr_capture_event(struct ath12k_base *ab,
 	header->vendorid = VENDOR_QCA;
 
 	ab->hw_params->hw_ops->fill_cfr_hdr_info(ar, header, params);
+
+	memcpy(header->meta_enh.peer_addr, params->peer_mac_addr, ETH_ALEN);
+	/* num mu users and beamformed to be 0 for periodic CFR */
+	header->meta_enh.num_mu_users = 0;
+	header->meta_enh.beamformed = 0;
+
 	lut->header_len = ATH12K_CFR_HEADER_LEN(0);
 	header->meta_enh.puncture_bitmap = arvif->chanctx.def.punctured;
 
@@ -1893,6 +1882,184 @@ static const struct file_operations fops_rcc_debug_counters = {
 	.llseek = default_llseek,
 };
 
+static ssize_t ath12k_read_file_rcc_config_details(struct file *file,
+						   char __user *user_buf,
+						   size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	struct ath12k_cfr *cfr = &ar->cfr;
+	struct ta_ra_cfr_cfg *cfg;
+	char *buf;
+	const size_t buf_size = 16384;
+	ssize_t ret;
+	int len = 0;
+	int grp_id;
+
+	buf = kzalloc(buf_size, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	spin_lock_bh(&cfr->lock);
+
+	if (!cfr->rcc_enabled) {
+		len += scnprintf(buf + len, buf_size - len,
+				 "All RCC modes are disabled\n");
+		goto out_unlock;
+	}
+
+	len += scnprintf(buf + len, buf_size - len, "CAPTURE MODE:\n");
+	len += scnprintf(buf + len, buf_size - len,
+			 "m_directed_ftm is : %s\n",
+			 cfr->rcc_param.m_directed_ftm ? "enabled" : "disabled");
+	len += scnprintf(buf + len, buf_size - len,
+			 "m_all_ftm_ack is : %s\n",
+			 cfr->rcc_param.m_all_ftm_ack ? "enabled" : "disabled");
+	len += scnprintf(buf + len, buf_size - len,
+			 "m_ndpa_ndp_directed is: %s\n",
+			 cfr->rcc_param.m_ndpa_ndp_directed ? "enabled" : "disabled");
+	len += scnprintf(buf + len, buf_size - len,
+			 "m_ndpa_ndp_all is : %s\n",
+			 cfr->rcc_param.m_ndpa_ndp_all ? "enabled" : "disabled");
+	len += scnprintf(buf + len, buf_size - len,
+			 "m_ta_ra_filter is : %s\n",
+			 cfr->rcc_param.m_ta_ra_filter ? "enabled" : "disabled");
+	len += scnprintf(buf + len, buf_size - len,
+			 "m_all_packet is : %s\n",
+			 cfr->rcc_param.m_all_packet ? "enabled" : "disabled");
+	len += scnprintf(buf + len, buf_size - len,
+			 "capture duration : %u usec\n",
+			 cfr->rcc_param.capture_duration);
+	len += scnprintf(buf + len, buf_size - len,
+			 "capture interval : %u usec\n",
+			 cfr->rcc_param.capture_interval);
+	len += scnprintf(buf + len, buf_size - len,
+			 "capture count : %u\n", cfr->rcc_param.capture_count);
+	len += scnprintf(buf + len, buf_size - len,
+			 "capture interval mode sel : %u\n",
+			 cfr->rcc_param.capture_intval_mode_sel);
+	len += scnprintf(buf + len, buf_size - len,
+			 "UL MU User mask lower : %u\n",
+			 cfr->rcc_param.ul_mu_user_mask_lower);
+	len += scnprintf(buf + len, buf_size - len,
+			 "UL MU User mask upper : %u\n",
+			 cfr->rcc_param.ul_mu_user_mask_upper);
+	len += scnprintf(buf + len, buf_size - len,
+			 "Freeze TLV delay count is : %s\n",
+			 cfr->rcc_param.freeze_tlv_delay_cnt_en ?
+			 "enabled" : "disabled");
+	len += scnprintf(buf + len, buf_size - len,
+			 "Freeze TLV delay count threshold : %u\n",
+			 cfr->rcc_param.freeze_tlv_delay_cnt_thr);
+	len += scnprintf(buf + len, buf_size - len,
+			 "Enabled CFG id bitmap : 0x%x\n",
+			 cfr->rcc_param.filter_group_bitmap);
+	len += scnprintf(buf + len, buf_size - len,
+			 "Modified cfg id bitmap : 0x%lx\n",
+			 cfr->rcc_param.modified_in_curr_session);
+
+	len += scnprintf(buf + len, buf_size - len,
+			 "TARA_CONFIG details:\n");
+	for (grp_id = 0; grp_id < MAX_TA_RA_ENTRIES; grp_id++) {
+		cfg = &cfr->global[grp_id];
+		len += scnprintf(buf + len, buf_size - len,
+				 "Config ID: %d\n", grp_id);
+		len += scnprintf(buf + len, buf_size - len,
+				 "Bandwidth :0x%x\nNSS : 0x%x\n",
+				 cfg->bw, cfg->nss);
+		len += scnprintf(buf + len, buf_size - len,
+				 "valid_ta: %d\nvalid_ta_mask: %d\n"
+				 "valid_ra: %d\nvalid_ra_mask: %d\n"
+				 "valid_bw_mask: %d\nvalid_nss_mask: %d\n"
+				 "valid_mgmt_subtype: %d\n"
+				 "valid_ctrl_subtype: %d\n"
+				 "valid_data_subtype: %d\n",
+				 cfg->valid_ta, cfg->valid_ta_mask, cfg->valid_ra,
+				 cfg->valid_ra_mask, cfg->valid_bw_mask,
+				 cfg->valid_nss_mask, cfg->valid_mgmt_subtype,
+				 cfg->valid_ctrl_subtype, cfg->valid_data_subtype);
+		len += scnprintf(buf + len, buf_size - len,
+				 "Mgmt subtype : 0x%x\nCTRL subtype : 0x%x\n"
+				 "Data subtype : 0x%x\nTX Addr: %pM\n"
+				 "TX Addr Mask: %pM\nRX Addr: %pM\n"
+				 "RX Addr Mask: %pM\n",
+				 cfg->mgmt_subtype_filter, cfg->ctrl_subtype_filter,
+				 cfg->data_subtype_filter, cfg->ta_addr,
+				 cfg->ta_addr_mask, cfg->ra_addr, cfg->ra_addr_mask);
+	}
+
+out_unlock:
+	spin_unlock_bh(&cfr->lock);
+	ret = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	kfree(buf);
+
+	return ret;
+}
+
+static const struct file_operations fops_rcc_config_details = {
+	.read = ath12k_read_file_rcc_config_details,
+	.open = ath12k_debugfs_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+static ssize_t ath12k_read_file_rcc_dump_lut(struct file *file,
+					     char __user *user_buf,
+					     size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	struct ath12k_cfr *cfr = &ar->cfr;
+	struct ath12k_cfr_look_up_table *lut;
+	char *buf;
+	const size_t buf_size = 65536;
+	ssize_t ret;
+	int len = 0;
+	u32 i;
+
+	buf = kzalloc(buf_size, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	spin_lock_bh(&cfr->lut_lock);
+	len += scnprintf(buf + len, buf_size - len, "LUT table:\n");
+	if (!cfr->lut) {
+		len += scnprintf(buf + len, buf_size - len, "LUT is not allocated\n");
+		goto out_unlock;
+	}
+
+	for (i = 0; i < cfr->lut_num; i++) {
+		lut = &cfr->lut[i];
+		if (!lut->dbr_recv && !lut->tx_recv && !lut->data)
+			continue;
+
+		len += scnprintf(buf + len, buf_size - len,
+				 "[%u] dbr_recv=%u tx_recv=%u dbr_ppdu_id=0x%04x ",
+				 i, lut->dbr_recv, lut->tx_recv, lut->dbr_ppdu_id);
+		len += scnprintf(buf + len, buf_size - len,
+				 "tx_ppdu_id=0x%04x dbr_addr=%pad tx_addr1=0x%08x ",
+				 lut->tx_ppdu_id, &lut->dbr_address, lut->tx_address1);
+		len += scnprintf(buf + len, buf_size - len,
+				 "tx_addr2=0x%08x txrx_tstamp=%llu dbr_tstamp=%llu ",
+				 lut->tx_address2, lut->txrx_tstamp, lut->dbr_tstamp);
+		len += scnprintf(buf + len, buf_size - len,
+				 "header_len=%u payload_len=%u data_len=%u\n",
+				 lut->header_length, lut->payload_length, lut->data_len);
+	}
+
+out_unlock:
+	spin_unlock_bh(&cfr->lut_lock);
+	ret = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	kfree(buf);
+
+	return ret;
+}
+
+static const struct file_operations fops_rcc_dump_lut = {
+	.read = ath12k_read_file_rcc_dump_lut,
+	.open = ath12k_debugfs_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 static const struct file_operations fops_clr_dbg_counters = {
 	.write = ath12k_write_file_clr_dbg_counters,
 	.open = ath12k_debugfs_open,
@@ -1910,6 +2077,10 @@ static inline void ath12k_cfr_debug_unregister(struct ath12k *ar)
 	ar->cfr.rcc_debug_counters = NULL;
 	debugfs_remove(ar->cfr.clr_dbg_counters);
 	ar->cfr.clr_dbg_counters = NULL;
+	debugfs_remove(ar->cfr.rcc_config_details);
+	ar->cfr.rcc_config_details = NULL;
+	debugfs_remove(ar->cfr.rcc_dump_lut);
+	ar->cfr.rcc_dump_lut = NULL;
 
 	if (ar->cfr.rfs_cfr_capture) {
 		relay_close(ar->cfr.rfs_cfr_capture);
@@ -1975,6 +2146,30 @@ static inline int ath12k_cfr_debug_register(struct ath12k *ar)
 	if (!ar->cfr.clr_dbg_counters) {
 		ath12k_warn(ar->ab,
 			    "failed to create RCC counter clear file in pdev %d\n",
+			    ar->pdev_idx);
+		ret = -EINVAL;
+		goto debug_unregister;
+	}
+
+	ar->cfr.rcc_config_details =
+		ath12k_debugfs_create_file("rcc_config_details", 0400,
+					   ar->debug.debugfs_pdev, ar->ab, ar,
+					   &fops_rcc_config_details);
+	if (!ar->cfr.rcc_config_details) {
+		ath12k_warn(ar->ab,
+			    "failed to create RCC config details file in pdev %d\n",
+			    ar->pdev_idx);
+		ret = -EINVAL;
+		goto debug_unregister;
+	}
+
+	ar->cfr.rcc_dump_lut =
+		ath12k_debugfs_create_file("rcc_dump_lut", 0400,
+					   ar->debug.debugfs_pdev, ar->ab, ar,
+					   &fops_rcc_dump_lut);
+	if (!ar->cfr.rcc_dump_lut) {
+		ath12k_warn(ar->ab,
+			    "failed to create RCC LUT dump file in pdev %d\n",
 			    ar->pdev_idx);
 		ret = -EINVAL;
 		goto debug_unregister;
