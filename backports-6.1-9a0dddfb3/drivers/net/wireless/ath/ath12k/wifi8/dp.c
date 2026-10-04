@@ -755,8 +755,7 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 	}
 
 	/* HW2.0 only */
-	if (ab->hw_rev == ATH12K_HW_QCN9625_HW20 ||
-	    (ab->hw_rev == ATH12K_HW_QCN9589_HW20))
+	if (ath12k_hw_rev_is_qcn9625_family_hw20(ab->hw_rev))
 		ath12k_wifi8_hal_umcmn_ts_cfg(ab, HAL_TX_TS_RESOLUTION_US_1,
 					      HAL_TX_LATENCY_RESOLUTION_US_128);
 

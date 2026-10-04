@@ -460,6 +460,30 @@ enum ath12k_hw_rev {
 #endif
 };
 
+static inline bool ath12k_hw_rev_is_qcn9625_family(enum ath12k_hw_rev hw_rev)
+{
+	switch (hw_rev) {
+	case ATH12K_HW_QCN9625_HW10:
+	case ATH12K_HW_QCN9625_HW20:
+	case ATH12K_HW_QCN9589_HW10:
+	case ATH12K_HW_QCN9589_HW20:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static inline bool ath12k_hw_rev_is_qcn9625_family_hw20(enum ath12k_hw_rev hw_rev)
+{
+	switch (hw_rev) {
+	case ATH12K_HW_QCN9625_HW20:
+	case ATH12K_HW_QCN9589_HW20:
+		return true;
+	default:
+		return false;
+	}
+}
+
 #define ATH12K_DIAG_HW_ID_OFFSET	16
 
 enum ath12k_firmware_mode {

@@ -573,10 +573,7 @@ void ath12k_thermal_event_throt_level(struct ath12k *ar, int curr_level)
 		if (ar->ab->hw_params->hw_rev == ATH12K_HW_IPQ5424_HW10) {
 			ar->thermal.throttle_state =
 				tt_level_configs[ATH12K_XFRM_IPQ5424_THERMAL_LEVEL][curr_level].dcoffpercent;
-		} else if ((ar->ab->hw_params->hw_rev == ATH12K_HW_QCN9625_HW10) ||
-			   (ar->ab->hw_params->hw_rev == ATH12K_HW_QCN9625_HW20) ||
-			   (ar->ab->hw_params->hw_rev == ATH12K_HW_QCN9589_HW10) ||
-			   (ar->ab->hw_params->hw_rev == ATH12K_HW_QCN9589_HW20)) {
+		} else if (ath12k_hw_rev_is_qcn9625_family(ar->ab->hw_params->hw_rev)) {
 			tt_config = tt_level_configs[ATH12K_XFRM_QCN9625_THERMAL_LEVEL];
 			ar->thermal.throttle_state = tt_config[curr_level].dcoffpercent;
 		} else {
@@ -624,10 +621,7 @@ int ath12k_thermal_set_throttling(struct ath12k *ar, u32 throttle_state)
 		if (ar->ab->hw_params->hw_rev == ATH12K_HW_IPQ5424_HW10) {
 			tt_level_configs[ATH12K_XFRM_IPQ5424_THERMAL_LEVEL][0].dcoffpercent =
 				throttle_state;
-		} else if ((ar->ab->hw_params->hw_rev == ATH12K_HW_QCN9625_HW10) ||
-			   (ar->ab->hw_params->hw_rev == ATH12K_HW_QCN9625_HW20) ||
-			   (ar->ab->hw_params->hw_rev == ATH12K_HW_QCN9589_HW10) ||
-			   (ar->ab->hw_params->hw_rev == ATH12K_HW_QCN9589_HW20)) {
+		} else if (ath12k_hw_rev_is_qcn9625_family(ar->ab->hw_params->hw_rev)) {
 			tt_config = tt_level_configs[ATH12K_XFRM_QCN9625_THERMAL_LEVEL];
 			tt_config[0].dcoffpercent = throttle_state;
 		} else {
