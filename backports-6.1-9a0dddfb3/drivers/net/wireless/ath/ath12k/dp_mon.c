@@ -2282,36 +2282,25 @@ ath12k_dp_mon_link_peer_signal_stats(struct ath12k_pdev_dp *dp_pdev,
 		}
 	}
 
-	ath12k_dp_calc_rx_peer_rssi(dp_pdev, peer);
-
 	/*
-	 * Perform the following RSSI Accuracy Computation when
+	 * Perform the RSSI Accuracy Computation only when
 	 * rssi_full_band_accuracy_en is enabled for the radio.
 	 */
-	if (ath12k_hal_get_rssi_full_band_accuracy_en(&dp_pdev->ar->ab->hal)) {
+	if (!ath12k_hal_get_rssi_full_band_accuracy_en(&dp_pdev->ar->ab->hal)) {
+		ath12k_dp_calc_rx_peer_rssi(dp_pdev, peer);
+	} else {
 		ath12k_dp_mon_compute_rssi_accuracy(stats, ppdu_info,
 						    &dp_pdev->ar->rssi_offsets,
 						    frame_type);
+
 		/*
 		 * Override stats->rssi / rssi_avg / rssi_dp / rssi_dp_avg
 		 * with the accurate full-band dBm values computed above.
-		 * Guard: rssi_dbm_comb_chain_full_band < 0 ensures this only
-		 * activates when the full-band computation produced a valid
-		 * negative dBm value.
 		 */
-		if (stats->rssi_dbm_comb_chain_full_band < 0) {
-			stats->rssi =
-				(s8)stats->rssi_dbm_comb_chain_full_band;
-			stats->rssi_avg =
-				(s8)stats->rssi_dbm_comb_chain_full_band_avg;
-
-			if (stats->rssi_dbm_comb_chain_full_band_data < 0) {
-				stats->rssi_dp =
-					(s8)stats->rssi_dbm_comb_chain_full_band_data;
-				stats->rssi_dp_avg =
-					(s8)stats->rssi_dbm_comb_chain_full_band_avg_data;
-			}
-		}
+		stats->rssi        = (s8)stats->rssi_dbm_comb_chain_full_band;
+		stats->rssi_avg    = (s8)stats->rssi_dbm_comb_chain_full_band_avg;
+		stats->rssi_dp     = (s8)stats->rssi_dbm_comb_chain_full_band_data;
+		stats->rssi_dp_avg = (s8)stats->rssi_dbm_comb_chain_full_band_avg_data;
 	}
 
 	if (IS_VALID_RSSI(stats->rssi)) {
