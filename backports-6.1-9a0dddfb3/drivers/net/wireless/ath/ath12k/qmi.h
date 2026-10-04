@@ -243,7 +243,7 @@ struct ath12k_qmi_m3_dump_upload_req_data {
         u64 size;
 };
 
-#define QMI_WLANFW_HOST_CAP_REQ_MSG_V01_MAX_LEN		359
+#define QMI_WLANFW_HOST_CAP_REQ_MSG_V01_MAX_LEN		363
 
 struct qmi_wlanfw_m3_dump_upload_done_req_msg_v01 {
 	u32 pdev_id;
@@ -398,6 +398,8 @@ struct qmi_wlanfw_host_cap_req_msg_v01 {
 	u8 cma_support;
 	u8 ftm_mode_valid;
 	u8 ftm_mode;
+	u8 mem_profile_mode_valid;
+	u8 mem_profile_mode;
 };
 
 struct qmi_wlanfw_host_cap_resp_msg_v01 {
