@@ -3533,7 +3533,9 @@ struct wmi_service_ready_event {
 #define WMI_AVAIL_SERVICE_BITS_IN_SIZE32 32
 #define WMI_SERVICE_BITS_IN_SIZE32 4
 
-#define WMI_HDL_VERSION	GENMASK(9, 0)
+#define WMI_HDL_VERSION		GENMASK(9, 0)
+#define WMI_HDL_MAJOR_VERSION	GENMASK(5, 0)
+#define WMI_HDL_MINOR_VERSION	GENMASK(9, 6)
 
 struct wmi_service_ready_ext_event {
 	__le32 default_conc_scan_config_bits;
