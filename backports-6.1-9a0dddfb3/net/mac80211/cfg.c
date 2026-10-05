@@ -2466,7 +2466,7 @@ static int ieee80211_stop_ap(struct wiphy *wiphy, struct net_device *dev,
 
 	ieee80211_remove_link_keys(link, &keys);
 	if (!list_empty(&keys)) {
-		synchronize_net();
+		ieee80211_sync_rcu_or_expedited(local);
 		ieee80211_free_key_list(local, &keys);
 	}
 
