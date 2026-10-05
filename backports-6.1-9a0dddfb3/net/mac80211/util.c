@@ -4945,12 +4945,14 @@ int ieee80211_send_ap_csa_action(struct ieee80211_sub_if_data *sdata,
 					 csa_beacon_ies, csa_beacon_ies_len, false);
 	if (!skb)
 		return -ENOMEM;
+	IEEE80211_SKB_CB(skb)->control.flags |= IEEE80211_TX_CTRL_CSA_ACTION;
 	ieee80211_tx_skb(sdata, skb);
 
 	skb = ieee80211_build_csa_action(sdata, link_addr, chandef,
 					 csa_beacon_ies, csa_beacon_ies_len, true);
 	if (!skb)
 		return -ENOMEM;
+	IEEE80211_SKB_CB(skb)->control.flags |= IEEE80211_TX_CTRL_CSA_ACTION;
 	ieee80211_tx_skb(sdata, skb);
 
 	return 0;

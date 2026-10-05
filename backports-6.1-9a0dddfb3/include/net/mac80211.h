@@ -1153,6 +1153,8 @@ enum mac80211_tx_info_flags {
  * @IEEE80211_TX_CTRL_DONT_USE_RATE_MASK: Don't use rate mask for this frame
  *	which is transmitted due to scanning or offchannel TX, not in normal
  *	operation on the interface.
+ * @IEEE80211_TX_CTRL_CSA_ACTION: This frame is a CSA action frame and may be
+ *	transmitted while queues are stopped for CSA.
  * @IEEE80211_TX_CTRL_MLO_LINK: If not @IEEE80211_LINK_UNSPECIFIED, this
  *	frame should be transmitted on the specific link. This really is
  *	only relevant for frames that do not have data present, and is
@@ -1175,6 +1177,7 @@ enum mac80211_tx_control_flags {
 	IEEE80211_TX_CTRL_MCAST_MLO_FIRST_TX	= BIT(9),
 	IEEE80211_TX_CTRL_DONT_USE_RATE_MASK	= BIT(10),
 	IEEE80211_TX_CTRL_MGMT_RATE_EXIST	= BIT(11),
+	IEEE80211_TX_CTRL_CSA_ACTION		= BIT(13),
 	IEEE80211_TX_CTRL_MLO_LINK		= 0xf0000000,
 };
 
