@@ -818,7 +818,8 @@ int ath12k_wait_for_peer_create_done(struct ath12k *ar, u32 vdev_id,
 		if (ret)
 			ath12k_err(ar->ab, "failed wait for peer create map event also, addr : %pM\n",
 				   addr);
-		WARN_ON(1);
+		if (!test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags))
+			WARN_ON(1);
 		return -ETIMEDOUT;
 	}
 
