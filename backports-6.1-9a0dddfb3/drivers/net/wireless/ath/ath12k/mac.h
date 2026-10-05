@@ -1042,3 +1042,7 @@ static inline u32 ath12k_get_chan_start_freq(u32 pri_freq, u32 cen_freq, u16 bw)
 	return (bw == 20) ? pri_freq : cen_freq - bw / 2 + 10;
 }
 #endif
+
+void ath12k_mac_handle_swba(struct ath12k_link_vif *arvif,
+			    const struct wmi_tim_info *tim_info);
+int ath12k_mac_wnm_tim_bcast_ap_enable(struct ath12k_link_vif *arvif, bool enable);
