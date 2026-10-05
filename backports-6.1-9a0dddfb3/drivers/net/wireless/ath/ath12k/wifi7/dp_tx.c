@@ -2041,8 +2041,6 @@ static void ath12k_wifi7_dp_tx_free_txbuf(struct ath12k_dp *dp,
 {
 	struct ath12k_pdev_dp *dp_pdev;
 
-	ath12k_dp_tx_buffer_unmap(dp->dev, sw_metadata->paddr,
-				  sw_metadata->len, DMA_TO_DEVICE);
 	rcu_read_lock();
 
 	dp_pdev = ath12k_dp_hw_grp_to_dp_pdev(dp->dp_hw_grp, sw_metadata->hw_link_id);
@@ -2140,9 +2138,6 @@ ath12k_wifi7_dp_tx_htt_tx_complete_buf(struct ath12k_dp *dp,
 	enum ath12k_dp_eapol_key_type subtype;
 	u32 hw_enq_tstamp = 0;
 	u32 hw_delay = 0;
-
-	ath12k_dp_tx_buffer_unmap(dp->dev, sw_metadata->paddr, sw_metadata->len,
-				  DMA_TO_DEVICE);
 
 	rcu_read_lock();
 	dp_pdev = ath12k_dp_hw_grp_to_dp_pdev(dp->dp_hw_grp, sw_metadata->hw_link_id);
@@ -2487,13 +2482,31 @@ ath12k_wifi7_dp_tx_process_htt_tx_complete(struct ath12k_dp *dp,
 		return;
 	}
 
-	switch (htt_status) {
-	case HAL_WBM_REL_HTT_TX_COMP_STATUS_OK:
-		ts->acked = (htt_status == HAL_WBM_REL_HTT_TX_COMP_STATUS_OK);
+	ath12k_dp_tx_buffer_unmap(dp->dev, sw_metadata->paddr,
+				  sw_metadata->len, DMA_TO_DEVICE);
+
+	if (htt_status == HAL_WBM_REL_HTT_TX_COMP_STATUS_OK) {
+		ts->acked = true;
 		ts->ack_rssi = le32_get_bits(status_desc->info2,
 					    HTT_TX_WBM_COMP_INFO2_ACK_RSSI);
-
 		ts->status = HAL_WBM_TQM_REL_REASON_FRAME_ACKED;
+	} else if (htt_status == HAL_WBM_REL_HTT_TX_COMP_STATUS_DROP) {
+		ts->status = HAL_WBM_TQM_REL_REASON_CMD_REMOVE_MPDU;
+	} else if (htt_status == HAL_WBM_REL_HTT_TX_COMP_STATUS_TTL) {
+		ts->status = HAL_WBM_TQM_REL_REASON_CMD_REMOVE_TX;
+	}
+
+	/* Peer stats (incl. mmesh stats, which reads skb->data for the meta
+	 * header) must run before msdu is handed to mac80211 / freed below.
+	 */
+	ath12k_wifi7_dp_tx_htt_update_peer_stats(dp, dp_pdev, peer, ts,
+						 msdu_len, htt_status,
+						 link_id, ring_id,
+						 tx_desc_flags,
+						 sw_metadata->skb);
+
+	switch (htt_status) {
+	case HAL_WBM_REL_HTT_TX_COMP_STATUS_OK:
 		ath12k_wifi7_dp_tx_htt_tx_complete_buf(dp, msdu, tx_ring, ts,
 						       sw_metadata, ts->peer_id,
 						       link_id, peer, ring_id);
@@ -2502,17 +2515,6 @@ ath12k_wifi7_dp_tx_process_htt_tx_complete(struct ath12k_dp *dp,
 	case HAL_WBM_REL_HTT_TX_COMP_STATUS_TTL:
 	case HAL_WBM_REL_HTT_TX_COMP_STATUS_REINJ:
 	case HAL_WBM_REL_HTT_TX_COMP_STATUS_INSPECT:
-		switch (htt_status) {
-		case HAL_WBM_REL_HTT_TX_COMP_STATUS_DROP:
-			ts->status = HAL_WBM_TQM_REL_REASON_CMD_REMOVE_MPDU;
-			break;
-		case HAL_WBM_REL_HTT_TX_COMP_STATUS_TTL:
-			ts->status = HAL_WBM_TQM_REL_REASON_CMD_REMOVE_TX;
-			fallthrough;
-		default:
-			break;
-		}
-		fallthrough;
 	case HAL_WBM_REL_HTT_TX_COMP_STATUS_VDEVID_MISMATCH:
 		ath12k_wifi7_dp_tx_free_txbuf(dp, msdu, tx_ring, sw_metadata);
 		break;
@@ -2520,19 +2522,14 @@ ath12k_wifi7_dp_tx_process_htt_tx_complete(struct ath12k_dp *dp,
 		/* This event is to be handled only when the driver decides to
 		 * use WDS offload functionality.
 		 */
-		ATH12K_DMA_UNMAP_WITH_FREE_SKB(dp->ab, msdu);
+		dev_kfree_skb_any(msdu);
 		break;
 	default:
 		ath12k_warn(dp->ab, "Unknown htt tx status %d\n", htt_status);
-		ATH12K_DMA_UNMAP_WITH_FREE_SKB(dp->ab, msdu);
+		dev_kfree_skb_any(msdu);
 		break;
 	}
 
-	ath12k_wifi7_dp_tx_htt_update_peer_stats(dp, dp_pdev, peer, ts,
-						 msdu_len, htt_status,
-						 link_id, ring_id,
-						 tx_desc_flags,
-						 sw_metadata->skb);
 	rcu_read_unlock();
 }
 
