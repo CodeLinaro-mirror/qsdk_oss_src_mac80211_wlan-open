@@ -13938,6 +13938,7 @@ ath12k_vendor_validate_cs_time_chandef(struct wiphy *wiphy,
 				       struct cfg80211_chan_def *chandef)
 {
 	struct ieee80211_channel *channel;
+	u16 punctured = chandef->punctured;
 
 	if (!freq)
 		return -EINVAL;
@@ -14002,6 +14003,10 @@ ath12k_vendor_validate_cs_time_chandef(struct wiphy *wiphy,
 
 	chandef->center_freq1 = center_freq1;
 	chandef->center_freq2 = center_freq2;
+	chandef->punctured = punctured;
+	if (!valid_puncturing_bitmap(chandef))
+		return -EINVAL;
+
 	return 0;
 }
 
@@ -14029,7 +14034,7 @@ static int ath12k_vendor_get_channel_switch_time(struct wiphy *wiphy,
 	u32 freq = 0, center_freq1 = 0, center_freq2 = 0;
 	u32 bandwidth_attr = NL80211_CHAN_WIDTH_20_NOHT;
 	u32 channel_switch_time = 0;
-	struct cfg80211_chan_def chandef;
+	struct cfg80211_chan_def chandef = {};
 	int ret;
 
 	if (!wdev || !wdev->netdev)
@@ -14078,6 +14083,10 @@ static int ath12k_vendor_get_channel_switch_time(struct wiphy *wiphy,
 		center_freq2 =
 		   nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_CENTER_FREQ2]);
 
+	if (tb[QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_PUNCT_BMAP])
+		chandef.punctured = (u16)nla_get_u32(
+		      tb[QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_PUNCT_BMAP]);
+
 	ret = ath12k_vendor_validate_cs_time_chandef(hw->wiphy, freq,
 						     bandwidth_attr,
 						     center_freq1,
@@ -14116,8 +14125,9 @@ static int ath12k_vendor_get_channel_switch_time(struct wiphy *wiphy,
 		return -EINVAL;
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
-		   "vendor get channel switch time: freq=%u bw=%u cf1=%u cf2=%u\n",
-		   freq, bandwidth_attr, center_freq1, center_freq2);
+		   "vendor get channel switch time: freq=%u bw=%u cf1=%u cf2=%u pp:0x%x\n",
+		   freq, bandwidth_attr, center_freq1, center_freq2,
+		   chandef.punctured);
 
 	active_vifs = ath12k_get_num_beaconing_vifs(ar);
 	tgt_restart_time = ATH12K_CSA_FW_RESTART_TIME_DELAY;
