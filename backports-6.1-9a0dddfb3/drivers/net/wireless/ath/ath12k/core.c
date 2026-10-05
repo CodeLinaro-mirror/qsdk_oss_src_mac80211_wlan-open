@@ -3542,6 +3542,10 @@ void ath12k_core_halt(struct ath12k *ar)
 	cancel_work_sync(&ar->regd_update_work);
 	cancel_work_sync(&ar->reg_set_previous_country);
 	cancel_work_sync(&ar->change_6g_txpow_sta_mode_work);
+#ifdef CPTCFG_QCN_EXTN
+	wiphy_work_cancel(ath12k_ar_to_hw(ar)->wiphy,
+			  &ar->ar_extn.change_scan_vap_pwr_mode_work);
+#endif
 	cancel_work_sync(&ab->rfkill_work);
 	cancel_work_sync(&ab->update_11d_work);
 	wiphy_work_cancel(ath12k_ar_to_hw(ar)->wiphy, &ar->agile_cac_abort_wq);
