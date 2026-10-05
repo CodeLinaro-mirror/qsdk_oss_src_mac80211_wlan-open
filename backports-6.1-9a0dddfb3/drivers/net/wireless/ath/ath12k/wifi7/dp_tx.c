@@ -1153,7 +1153,7 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 	ti.ring_id = ring_selector % dp->hw_params->max_tx_ring;
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 	if (((ti.ring_id == IPA_TCL_ALT_RING) &&
-	     ath12k_dp_ipa_is_two_tx_pipes_enabled_extn()) ||
+	     ath12k_dp_ipa_is_two_tx_pipes_enabled_extn(ab)) ||
 	    (ti.ring_id == IPA_TCL_RING))
 		ti.ring_id = IPA_TCL_SW_RING;
 #endif
