@@ -892,7 +892,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.cumac_support = true,
 		.cumac_chip_priority = 1,
 		.tqm_status_war = false,
-		.support_umcmn_interrupts = UMCMN_INTERRUPT_ENABLE,
+		.support_umcmn_interrupts = UMCMN_INTERRUPT_POLL,
 #ifdef PLATFORM_SDX
 		.alloc_cacheable_memory = false,
 #else
