@@ -10888,7 +10888,6 @@ ath12k_vendor_set_rtt_initiator_role(struct wireless_dev *wdev,
 	u8 link_id;
 	int ret;
 
-	return 0;
 	if (!wdev || !params)
 		return -EINVAL;
 
@@ -10925,14 +10924,15 @@ ath12k_vendor_set_rtt_initiator_role(struct wireless_dev *wdev,
 		return -EINVAL;
 
 	ar = arvif->ar;
-	ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
-		WMI_VDEV_PARAM_ENABLE_DISABLE_RTT_INITIATOR_ROLE,
-		role);
-	if (ret) {
-		ath12k_warn(ar->ab,
-			    "failed to set RTT initiator role %u on vdev %i: %d\n",
-			    role, arvif->vdev_id, ret);
-		return ret;
+	if (arvif->is_created) {
+		ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
+			WMI_VDEV_PARAM_ENABLE_DISABLE_RTT_INITIATOR_ROLE,
+			role);
+		if (ret) {
+			ath12k_warn(ar->ab, "failed to set RTT initiator role %u on vdev %i: %d\n",
+				    role, arvif->vdev_id, ret);
+			return ret;
+		}
 	}
 
 	arvif->rtt_ctx.rtt_initiator_role = role;

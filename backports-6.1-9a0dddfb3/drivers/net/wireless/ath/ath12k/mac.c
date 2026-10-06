@@ -28219,8 +28219,8 @@ ath12k_mac_reconfig_complete(struct ieee80211_hw *hw,
 
 		/* Re-apply RTT responder role after FW recovery */
 		ath12k_rtt_reconfig_responder_role(ar);
-		/* Re-apply RTT initiator role after FW recovery
-		ath12k_rtt_reconfig_initiator_role(ar); */
+		/* Re-apply RTT initiator role after FW recovery */
+		ath12k_rtt_reconfig_initiator_role(ar);
 
 #ifdef CPTCFG_QCN_EXTN
 		/* Re-config extn parameters after recovery */
