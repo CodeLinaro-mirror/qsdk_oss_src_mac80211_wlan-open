@@ -3341,9 +3341,9 @@ static inline void
 ieee80211_chanreq_downgrade(struct ieee80211_chan_req *chanreq,
 			    struct ieee80211_conn_settings *conn)
 {
-	ieee80211_chandef_downgrade(&chanreq->oper, conn);
 	if (WARN_ON(!conn))
 		return;
+	ieee80211_chandef_downgrade(&chanreq->oper, conn);
 	if (conn->mode < IEEE80211_CONN_MODE_EHT)
 		chanreq->ap.chan = NULL;
 }
