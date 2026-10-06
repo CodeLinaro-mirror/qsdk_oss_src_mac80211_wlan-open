@@ -722,6 +722,7 @@ void ath12k_dp_rx_reo_cmd_list_cleanup(struct ath12k_base *ab)
 	struct ath12k_dp_rx_reo_cache_flush_elem *cmd_cache, *tmp_cache;
 	struct ath12k_dp_rx_tid *rx_tid;
 	struct dp_reo_update_rx_queue_elem *cmd_queue, *tmp_queue;
+	LIST_HEAD(cmd_list);
 
 	spin_lock_bh(&dp->reo_cmd_update_rx_queue_lock);
 	list_for_each_entry_safe(cmd_queue, tmp_queue, &dp->reo_cmd_update_rx_queue_list,
@@ -739,13 +740,22 @@ void ath12k_dp_rx_reo_cmd_list_cleanup(struct ath12k_base *ab)
 	}
 	spin_unlock_bh(&dp->reo_cmd_update_rx_queue_lock);
 
+	/* Drop reo_cmd_lock before invoking cmd->handler(): handlers such as
+	 * ath12k_wifi7_dp_rx_tid_del_func() take reo_cmd_lock themselves on
+	 * the DRAIN status path, so calling them with the lock already held
+	 * self-deadlocks.
+	 */
 	spin_lock_bh(&dp->reo_cmd_lock);
-	list_for_each_entry_safe(cmd, tmp, &dp->reo_cmd_list, list) {
+	list_splice_tail_init(&dp->reo_cmd_list, &cmd_list);
+	spin_unlock_bh(&dp->reo_cmd_lock);
+
+	list_for_each_entry_safe(cmd, tmp, &cmd_list, list) {
 		list_del(&cmd->list);
 		cmd->handler(dp, &cmd->data, HAL_REO_CMD_DRAIN);
 		kfree(cmd);
 	}
 
+	spin_lock_bh(&dp->reo_cmd_lock);
 	list_for_each_entry_safe(cmd_cache, tmp_cache,
 				 &dp->reo_cmd_cache_flush_list, list) {
 		list_del(&cmd_cache->list);
