@@ -11378,7 +11378,10 @@ static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 			ahvif->dp_vif.dp_features |= DP_FEATURE_MESH;
 			ahvif->vap_submode = vap_submode;
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
-			vif->mhdr_len =  MMESH_TX_META_HDR;
+			if (vap_submode == IEEE80211_EXTN_VAP_SUBMODE_ETH_OFFLOAD_MESH)
+				vif->mhdr_len = MESH_TX_META_HDR_ETH_OFFLOAD;
+			else
+				vif->mhdr_len = MMESH_TX_META_HDR;
 #endif
 		}
 

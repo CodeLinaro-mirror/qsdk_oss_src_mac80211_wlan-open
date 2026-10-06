@@ -5574,8 +5574,8 @@ netdev_tx_t __ieee80211_subif_start_xmit_8023(struct sk_buff *skb,
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 	struct wireless_dev *wdev;
 	struct ieee80211_vif *vif;
-	struct meta_hdr_s *mhdr;
 	u8 mac_addr[ETH_ALEN];
+	struct meta_hdr_extn *mhdr_extn;
 #endif
 	struct ethhdr *ehdr = (struct ethhdr *)skb->data;
 	struct ieee80211_key *key = NULL;
@@ -5623,11 +5623,9 @@ netdev_tx_t __ieee80211_subif_start_xmit_8023(struct sk_buff *skb,
 			if (!ieee80211_rada_lookup_ra(vif, skb, mac_addr))
 				goto out;
 		} else {
-			mhdr = (struct meta_hdr_s *)(skb->data - MMESH_TX_META_HDR);
-			if (!mhdr->mac_addr_valid)
-				goto out;
-
-			memcpy(mac_addr, mhdr->mac_addr, ETH_ALEN);
+			mhdr_extn = (struct meta_hdr_extn *)
+					(skb->data - sizeof(struct meta_hdr_extn));
+			memcpy(mac_addr, mhdr_extn->mac_addr, ETH_ALEN);
 		}
 		sta = sta_info_get_bss(sdata, mac_addr);
 		ra_lookup = false;
