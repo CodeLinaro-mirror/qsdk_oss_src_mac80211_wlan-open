@@ -3085,7 +3085,7 @@ static inline void ieee80211_tx_drop_stats(struct ieee80211_sub_if_data *sdata,
 {
 	struct pcpu_txrx_stats *txrx_stats = this_cpu_ptr(sdata->txrx_stats);
 
-	if (txrx_stats) {
+	if (txrx_stats && tid < IEEE80211_NUM_TIDS) {
 		u64_stats_update_begin(&txrx_stats->syncp);
 		txrx_stats->tid_stats[tid].tx_drop_stats[reason]++;
 		u64_stats_update_end(&txrx_stats->syncp);
