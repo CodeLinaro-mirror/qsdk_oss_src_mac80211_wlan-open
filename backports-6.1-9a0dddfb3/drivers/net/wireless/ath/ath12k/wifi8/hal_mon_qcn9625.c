@@ -68,4 +68,10 @@ void ath12k_wifi8_hal_qcn9625_hw20_mon_ops_init(struct ath12k_hal *hal)
 		ath12k_wifi8_hal_mon_rx_mpdu_start_info_parse;
 
 	hal->hal_mon_ops = &hal_qcn9625_hw20_mon_ops;
+
+	/*
+	 * Gain corrections are encoded in phyrx_rssi_legacy TLV
+	 */
+	hal->rssi_gain_corr_in_rssi_legacy = true;
+	hal->rssi_full_band_accuracy_en = true;
 }
