@@ -410,6 +410,13 @@ static int ath12k_vendor_cmd_skip_check(struct wiphy *wiphy, struct wireless_dev
 		return 1;
 	}
 
+	if (ar && !ath12k_cmd_accepted(ar->ab->ag)) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+			   "vendor cmd (%d) rejected: bypass/SSR in progress\n",
+			   wifi_params.value);
+		return 1;
+	}
+
 	return 0;
 }
 

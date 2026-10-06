@@ -27828,6 +27828,7 @@ ath12k_mac_reconfig_complete(struct ieee80211_hw *hw,
 
 	ath12k_reconfig_qos_profiles(ab);
 	clear_bit(ATH12K_GROUP_FLAG_RECOVERY, &ar->ab->ag->flags);
+	atomic_set(&ar->ab->ag->accept_cmd, 1);
 
 	/* Send WMI_FW_HANG_CMD to FW after target has started. This is to
 	 * update the target's SSR recovery mode after it has recovered.
@@ -33631,6 +33632,7 @@ int ath12k_mac_dynamic_wsi_remap(struct ath12k_base *ab)
 	ag->wsi_remap_in_progress = true;
 	active_num_devices = ag->num_devices - ag->num_bypassed;
 	atomic_set(&ab->wsi_remap_in_progress, 1);
+	atomic_set(&ag->accept_cmd, 0);
 	ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS,
 		   "active num_devices before proceeding bypass %d\n",
 		   active_num_devices);
@@ -33708,11 +33710,22 @@ int ath12k_mac_dynamic_wsi_remap(struct ath12k_base *ab)
 
 	ret = ath12k_core_dynamic_wsi_remap(ab);
 
+	if (ret)
+		goto fail;
+
+	/* Reset accept_cmd only for ATH12K_WSI_BYPASS_REMOVE_DEVICE here.
+	 * For ATH12K_WSI_BYPASS_ADD_DEVICE, it will be reset in QMI FW ready.
+	 */
+	if (ab->wsi_remap_state == ATH12K_WSI_BYPASS_REMOVE_DEVICE)
+		atomic_set(&ag->accept_cmd, 1);
+
 	return ret;
 
 fail:
 	if (ag->wsi_remap_in_progress)
 		ag->wsi_remap_in_progress = false;
+
+	atomic_set(&ag->accept_cmd, 1);
 	return ret;
 }
 

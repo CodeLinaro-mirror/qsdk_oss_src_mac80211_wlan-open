@@ -2967,6 +2967,7 @@ static int ath12k_core_wsi_remap_radio_start(struct ath12k_base *ab)
 exit:
 	/* Reset the WSI flags */
 	ag->wsi_remap_in_progress = false;
+	atomic_set(&ag->accept_cmd, 1);
 	atomic_set(&ab->wsi_remap_in_progress, 0);
 	ab->wsi_remap_state = 0;
 
@@ -3114,6 +3115,8 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 			}
 
 		}
+
+		atomic_set(&ab->ag->accept_cmd, 1);
 
 		if (!ath12k_ftm_mode) {
 			ret = ath12k_mgmt_htt_setup(ag);
@@ -6327,6 +6330,7 @@ static struct ath12k_hw_group *ath12k_core_hw_group_alloc(struct ath12k_base *ab
 	init_completion(&ag->peer_cleanup_complete);
 	ag->mlo_peer_count = 0;
 	spin_lock_init(&ag->ahsta_lock);
+	atomic_set(&ag->accept_cmd, 1);
 	ag->mlo_capable = false;
 	ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
 	ag->wsi_load_info = NULL;
