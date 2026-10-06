@@ -413,6 +413,9 @@ ath12k_mac_get_sp_client_power_for_connecting_ap(
 					struct ieee80211_chanctx_conf *ctx,
 					s8 *max_eirp_arr,
 					u8 num_pwr_levels);
+static int ath12k_mac_config_beacon_tx_rate(struct wiphy *wiphy,
+					    struct ath12k_link_vif *arvif,
+					    struct ieee80211_bss_conf *bss_conf);
 const char *ath12k_mac_phymode_str(enum wmi_phy_mode mode)
 {
 	switch (mode) {
@@ -10797,6 +10800,15 @@ skip_tpc_update:
 			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
 					 "Beacon interval: %d set for VDEV: %d\n",
 					 arvif->beacon_interval, arvif->vdev_id);
+	}
+
+	if (changed & BSS_CHANGED_BEACON_RATE) {
+		ret = ath12k_mac_config_beacon_tx_rate(ath12k_ar_to_hw(ar)->wiphy,
+						       arvif, info);
+		if (ret)
+			ath12k_warn(ar->ab,
+				    "failed to set beacon tx rate for vdev %d: %d\n",
+				    arvif->vdev_id, ret);
 	}
 
 	/* send ttlm config before vdev up, so that first beacon itself can
