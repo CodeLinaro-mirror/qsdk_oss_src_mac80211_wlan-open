@@ -19,7 +19,7 @@ ieee80211_uhr_cap_ie_to_sta_uhr_cap(struct ieee80211_sub_if_data *sdata,
 
 	memset(sta_uhr_cap, 0, sizeof(*sta_uhr_cap));
 
-	if (!ieee80211_get_uhr_iftype_cap_vif(sband, &sdata->vif))
+	if (!uhr_cap || !ieee80211_get_uhr_iftype_cap_vif(sband, &sdata->vif))
 		return;
 
 	sta_uhr_cap->has_uhr = true;
