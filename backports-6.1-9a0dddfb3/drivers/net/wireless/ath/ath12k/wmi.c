@@ -11772,6 +11772,7 @@ static int wmi_process_mgmt_tx_comp(struct ath12k *ar, u32 desc_id,
 	if (skb_cb->flags & ATH12K_SKB_DEAUTH_DISASSOC_TRACKED) {
 		ath12k_peer_deauth_disassoc_tx_dec(ar, hdr->addr1);
 		skb_cb->flags &= ~ATH12K_SKB_DEAUTH_DISASSOC_TRACKED;
+		ath12k_arvif_deauth_disassoc_tx_dec(ar, skb_cb);
 	}
 
 	if (ieee80211_is_mgmt(hdr->frame_control)) {
@@ -11783,6 +11784,7 @@ static int wmi_process_mgmt_tx_comp(struct ath12k *ar, u32 desc_id,
 				    frm_stype);
 			goto skip_mgmt_stats;
 		}
+
 		if (ATH12K_MGMT_MLME_FRAME(hdr->frame_control))
 			ath12k_dbg_level(ar->ab, ATH12K_DBG_MLME, ATH12K_DBG_L0,
 					 "Tx completion for %s frame to STA %pM status %u\n",
@@ -11918,6 +11920,7 @@ static void wmi_process_offchan_tx_comp(struct ath12k *ar, u32 desc_id,
 	if (skb_cb->flags & ATH12K_SKB_DEAUTH_DISASSOC_TRACKED) {
 		ath12k_peer_deauth_disassoc_tx_dec(ar, hdr->addr1);
 		skb_cb->flags &= ~ATH12K_SKB_DEAUTH_DISASSOC_TRACKED;
+		ath12k_arvif_deauth_disassoc_tx_dec(ar, skb_cb);
 	}
 
 	spin_unlock_bh(&ar->data_lock);
