@@ -3644,6 +3644,8 @@ int ath12k_dp_tx_htt_rx_filter_setup(struct ath12k_base *ab, u32 ring_id,
 			HTT_RX_RING_SEL_CFG_CMD_INFO4_RXMON_ENABLE_HDR_PER_PPDU);
 	cmd->info4 |= le32_encode_bits(tlv_filter->fp_fpmo_data_mpdu_filter_in_en,
 			HTT_RX_RING_SEL_CFG_CMD_INFO4_FP_FPMO_DATA_MPDU_FILTER_IN_EN);
+	cmd->info4 |= le32_encode_bits(tlv_filter->peer_type_filter_en,
+			HTT_RX_RING_SEL_CFG_CMD_INFO4_RXMON_PEER_TYPE_FILTER_EN);
 
 	cmd->fp_data_mpdu_tlv_filter0 =
 		cpu_to_le32(tlv_filter->fp_data_mpdu_tlv_filter0);
