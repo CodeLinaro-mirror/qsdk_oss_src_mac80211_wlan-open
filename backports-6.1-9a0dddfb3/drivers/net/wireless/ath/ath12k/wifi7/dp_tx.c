@@ -1753,6 +1753,9 @@ void ath12k_wifi7_ucast_handler(struct ath12k_dp_vif *dp_vif,
 	u32 len = skb->len;
 	u8 tid = skb->priority & IEEE80211_QOS_CTL_TID_MASK;
 	enum ath12k_dp_tx_enq_error drop_reason = DP_TX_ENQ_DROP_MISC;
+	struct ath12k_sta *ahsta = (dp_peer && dp_peer->sta) ?
+				    ath12k_sta_to_ahsta(dp_peer->sta) : NULL;
+	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
 
 	ab = dp_link_vif->ab;
 	if (!ab)
@@ -1783,6 +1786,15 @@ void ath12k_wifi7_ucast_handler(struct ath12k_dp_vif *dp_vif,
 	/* Update receive statistics */
 	ath12k_dp_tx_stats_update_pre_enqueue(dp_pdev, dp_vif,
 					      skb, ring_id, len);
+
+	/* TFS: gated on ahvif->wnm_tfs to avoid the filter-call overhead
+	 * on every unicast frame when TFS was never negotiated for this
+	 * vif.
+	 */
+	if (unlikely(ahvif->wnm_tfs) &&
+	    !ath12k_tfs_filter(ahsta, skb,
+			       skb_cb->flags & ATH12K_SKB_HW_80211_ENCAP))
+		goto fail;
 
 	/* Setup MSDU info */
 	ath12k_wifi7_ucast_setup_msdu_info(dp_link_vif, &msdu_info, skb,
