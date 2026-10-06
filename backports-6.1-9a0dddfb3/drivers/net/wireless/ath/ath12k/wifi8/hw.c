@@ -38,7 +38,7 @@
 #include "../qcn_extns/vendor_extn.h"
 #endif /* CPTCFG_QCN_EXTN */
 #include "../cfr.h"
-
+#include "ptp.h"
 /*
  * The roaming RX ring uses the slot immediately after the regular REO
  * destination rings (`ATH12K_DP_RX_ROAMING_RING1`). On 4-CPU targets,
@@ -306,6 +306,8 @@ static const struct ath12k_hw_ops qcn9625_ops = {
 	.dp_peer_migration = ath12k_dp_peer_migration_qcn9625,
 	.is_mgmt_reoq_tid = ath12k_wifi8_hal_is_reo_nonqos_mgmt_tid,
 	.update_tqm_status_ring_tp = ath12k_wifi8_update_tqm_status_ring_tp,
+	.timesync_init = ath12k_timesync_init,
+	.timesync_deinit = ath12k_timesync_deinit,
 };
 
 /* Interrupt Grouping is as follows
