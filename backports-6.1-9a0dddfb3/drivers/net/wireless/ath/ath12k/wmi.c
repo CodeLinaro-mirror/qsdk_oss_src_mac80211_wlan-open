@@ -8373,6 +8373,70 @@ err:
 	return ret;
 }
 
+int ath12k_wmi_send_led_blink_table_cmd(struct ath12k *ar,
+					struct ath12k_wmi_led_blink_arg *arg)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct wmi_pdev_led_blink_table_cmd *cmd;
+	struct wmi_led_blink_rate_params *rate;
+	struct sk_buff *skb;
+	struct wmi_tlv *tlv;
+	void *ptr;
+	int i, ret, len;
+
+	if (!arg || !arg->rates || !arg->num_rates ||
+	    arg->num_rates > ATH12K_WMI_MAX_LED_BLINK_RATES)
+		return -EINVAL;
+
+	len = sizeof(*cmd) + TLV_HDR_SIZE + (arg->num_rates * sizeof(*rate));
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	/* fixed param */
+	cmd = (struct wmi_pdev_led_blink_table_cmd *)skb->data;
+	cmd->tlv_header =
+		ath12k_wmi_tlv_cmd_hdr(WMI_TAG_ENABLE_LED_BLINK_DOWNLOAD_RATE_TABLE,
+				       sizeof(*cmd));
+	cmd->pdev_id = cpu_to_le32(arg->pdev_id);
+	cmd->blink_enable_flag = cpu_to_le32(arg->blink_enable_flag);
+	cmd->bw_per_index = cpu_to_le32(arg->bw_per_index);
+
+	/* array-of-struct TLV header, then the rate table entries */
+	ptr = skb->data + sizeof(*cmd);
+	len = arg->num_rates * sizeof(*rate);
+
+	tlv = ptr;
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, len);
+	ptr += TLV_HDR_SIZE;
+
+	rate = ptr;
+	for (i = 0; i < arg->num_rates; i++) {
+		rate->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_LED_BLINK_RATE_TABLE,
+							  sizeof(*rate));
+		rate->on_time = cpu_to_le32(arg->rates[i].on_time);
+		rate->off_time = cpu_to_le32(arg->rates[i].off_time);
+		rate++;
+	}
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "WMI led blink table cmd pdev_id %d enable %d bw_per_index %d num_rates %d\n",
+		   arg->pdev_id, arg->blink_enable_flag, arg->bw_per_index,
+		   arg->num_rates);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb,
+				  WMI_PDEV_ENABLE_LED_BLINK_DOWNLOAD_TABLE_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to send led blink table cmd\n");
+		goto err;
+	}
+
+	return 0;
+err:
+	dev_kfree_skb(skb);
+	return ret;
+}
+
 int ath12k_wmi_wait_for_service_ready(struct ath12k_base *ab)
 {
 	unsigned long time_left;

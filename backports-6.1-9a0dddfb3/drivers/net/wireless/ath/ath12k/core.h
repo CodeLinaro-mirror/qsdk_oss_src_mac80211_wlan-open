@@ -101,6 +101,8 @@ struct ath12k_bcast_probe_rl_entry {
 /* Timeout value for the Peer cleanup during WSI bypass */
 #define ATH12K_MAC_PEER_CLEANUP_TIMEOUT_MSECS 60000
 
+#define ATH12K_LED_BW_PER_IDX 64
+
 #define ATH12K_INVALID_HW_MAC_ID	0xFF
 #define ATH12K_CONNECTION_LOSS_HZ	(3 * HZ)
 #define ATH12K_SMEM_HOST                1
