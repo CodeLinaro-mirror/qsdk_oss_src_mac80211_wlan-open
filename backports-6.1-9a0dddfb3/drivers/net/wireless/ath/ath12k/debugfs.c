@@ -53,6 +53,11 @@ int ath12k_debugfs_open(struct inode *inode, struct file *file)
 {
 	struct ath12k_debugfs_ctx *ctx = inode->i_private;
 
+	if (!ath12k_cmd_accepted(ctx->ab->ag)) {
+		ath12k_info(ctx->ab, "debugfs cmd rejected: bypass/SSR in progress\n");
+		return -EBUSY;
+	}
+
 	if (ctx->ab->is_bypassed) {
 		ath12k_info(ctx->ab, "Device is in Bypass state, skipping cmd\n");
 		return -EPERM;
@@ -245,6 +250,7 @@ ath12k_debug_write_wsi_bypass_device(struct file *file,
 		ath12k_err(ab, "WSI bypass has failed with error %d\n", ret);
 		ab->ag->wsi_remap_in_progress = false;
 		atomic_set(&ab->wsi_remap_in_progress, 0);
+		atomic_set(&ab->ag->accept_cmd, 1);
 		ab->wsi_remap_state = ATH12K_WSI_BYPASS_DEFAULT;
 		ab->is_bypassed = false;
 		goto exit;
@@ -8019,6 +8025,7 @@ static ssize_t ath12k_write_simulate_fw_crash(struct file *file,
 
 	if (!strcmp(buf, "assert")) {
 		ath12k_info(ab, "simulating firmware assert crash\n");
+		atomic_set(&ag->accept_cmd, 0);
 		ret = ath12k_wmi_force_fw_hang_cmd(ar,
 						   ATH12K_WMI_FW_HANG_ASSERT_TYPE,
 						   ATH12K_WMI_FW_HANG_DELAY, false);
@@ -8043,6 +8050,7 @@ static ssize_t ath12k_write_simulate_fw_crash(struct file *file,
 		}
 
 		ath12k_info(cumac_ab, "simulating CUMAC Q6 BCR assert crash\n");
+		atomic_set(&ag->accept_cmd, 0);
 		ret = ath12k_wmi_force_fw_hang_cmd(cumac_ar,
 						   ATH12K_WMI_Q6_BCR_ASSERT_TYPE,
 						   ATH12K_WMI_FW_HANG_DELAY, false);
@@ -8052,6 +8060,7 @@ static ssize_t ath12k_write_simulate_fw_crash(struct file *file,
 
 	if (ret) {
 		ath12k_warn(ab, "failed to simulate firmware crash: %d\n", ret);
+		atomic_set(&ag->accept_cmd, 1);
 		return ret;
 	}
 
@@ -8112,22 +8121,27 @@ static ssize_t ath12k_debug_read_fw_recovery(struct file *file,
 	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
 }
 
-static ssize_t ath12k_debug_read_recovery_in_progress(struct file *file,
-						       char __user *user_buf,
-						       size_t count, loff_t *ppos)
+static ssize_t ath12k_debug_read_accept_cmd(struct file *file,
+					    char __user *user_buf,
+					    size_t count, loff_t *ppos)
 {
 	struct ath12k_base *ab = file->private_data;
 	char buf[8];
 	size_t len;
 
+	/* Returns 1 when commands are blocked (bypass or SSR in progress),
+	 * 0 when the group is idle and commands are accepted.
+	 * Semantics match the old recovery_in_progress file so existing
+	 * user-space scripts need only update the path.
+	 */
 	len = scnprintf(buf, sizeof(buf), "%u\n",
-			ath12k_hw_group_recovery_in_progress(ab->ag));
+			ath12k_cmd_accepted(ab->ag));
 
 	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
 }
 
-static const struct file_operations fops_recovery_in_progress = {
-	.read = ath12k_debug_read_recovery_in_progress,
+static const struct file_operations fops_accept_cmd = {
+	.read = ath12k_debug_read_accept_cmd,
 	.open = simple_open,
 };
 
@@ -9096,8 +9110,8 @@ void ath12k_debugfs_pdev_create(struct ath12k_base *ab) {
 	ath12k_debugfs_create_file("set_fw_recovery", 0600, ab->debugfs_soc,
 				   ab, ab,
 				   &fops_fw_recovery);
-	debugfs_create_file("recovery_in_progress", 0400, ab->debugfs_soc,
-			    ab, &fops_recovery_in_progress);
+	debugfs_create_file("accept_cmd", 0400, ab->debugfs_soc,
+			    ab, &fops_accept_cmd);
 
 #ifdef CPTCFG_ATH12K_POWER_OPTIMIZATION
 	ath12k_debugfs_create_file("dbs_power_reduction", 0600, ab->debugfs_soc,
