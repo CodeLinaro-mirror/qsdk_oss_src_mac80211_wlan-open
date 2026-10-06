@@ -20576,6 +20576,14 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV |
 			 WIPHY_VENDOR_CMD_NEED_RUNNING,
 	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd    = QCA_NL80211_VENDOR_SUBCMD_WNM,
+		.doit           = ath12k_vendor_wnm_extn,
+		.policy         = ath12k_vendor_wnm_policy,
+		.maxattr        = QCA_WLAN_VENDOR_ATTR_WNM_MAX,
+		.flags          = WIPHY_VENDOR_CMD_NEED_NETDEV,
+	},
 #endif /* CPTCFG_QCN_EXTN */
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,

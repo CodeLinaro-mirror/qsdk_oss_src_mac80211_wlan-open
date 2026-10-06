@@ -16734,9 +16734,18 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 			memcpy(rx_ba_save, ahsta->rx_ba_params, sizeof(rx_ba_save));
 			memcpy(tx_ba_save, ahsta->tx_ba_params, sizeof(tx_ba_save));
 
+			/* ahsta may already have live TFS state (recovery/reconfig
+			 * replay); tear it down before the memset wipes it. No-op
+			 * if TFS was never initialized (tfs_rules_list.next is
+			 * NULL until then).
+			 */
+			if (ahsta->tfs_rules_list.next)
+				ath12k_tfs_peer_deinit(ahsta);
+
 			memset(ahsta, 0, sizeof(*ahsta));
 			spin_lock_init(&ahsta->ba_lock);
 			wiphy_work_init(&ahsta->set_4addr_wk, ath12k_sta_set_4addr_wk);
+			ath12k_tfs_peer_init(ahsta);
 
 			memcpy(ahsta->rx_ba_params, rx_ba_save, sizeof(rx_ba_save));
 			memcpy(ahsta->tx_ba_params, tx_ba_save, sizeof(tx_ba_save));
@@ -17085,6 +17094,8 @@ ml_station_remove:
 		spin_lock_bh(&ag->ahsta_lock);
 		ath12k_sta_hlist_delete(ag, ahsta);
 		spin_unlock_bh(&ag->ahsta_lock);
+
+		ath12k_tfs_peer_deinit(ahsta);
 	}
 
 	ret = 0;
@@ -35423,3 +35434,459 @@ bool ath12k_mac_mgmt_need_smd_sta_session_ctx(struct sk_buff *skb)
 	return true;
 }
 EXPORT_SYMBOL(ath12k_mac_mgmt_need_smd_sta_session_ctx);
+
+/* TFS (Traffic Filtering Service) — IEEE 802.11v §11.21.12 */
+static void ath12k_tfs_action_work_fn(struct work_struct *work);
+
+void ath12k_tfs_peer_init(struct ath12k_sta *ahsta)
+{
+	spin_lock_init(&ahsta->tfs_lock);
+	INIT_LIST_HEAD(&ahsta->tfs_rules_list);
+	spin_lock_init(&ahsta->tfs_action_lock);
+	INIT_WORK(&ahsta->tfs_action_work, ath12k_tfs_action_work_fn);
+	ahsta->tfs_notify_count = 0;
+	ahsta->tfs_delete_count = 0;
+}
+
+static void ath12k_tfs_free_rule(struct ath12k_tfs_rule *rule)
+{
+	struct ath12k_tclas *tclas, *tmp;
+
+	list_for_each_entry_safe(tclas, tmp, &rule->tclas_list, list) {
+		list_del(&tclas->list);
+		if (tclas->type == ATH12K_TFS_TCLAS_TYPE3) {
+			kfree(tclas->t3.filter_value);
+			kfree(tclas->t3.filter_mask);
+		}
+		kfree(tclas);
+	}
+	kfree(rule);
+}
+
+void ath12k_tfs_delete_rules(struct ath12k_sta *ahsta)
+{
+	struct ath12k_tfs_rule *rule, *tmp;
+	LIST_HEAD(dead);
+
+	spin_lock_bh(&ahsta->tfs_lock);
+	list_for_each_entry_safe(rule, tmp, &ahsta->tfs_rules_list, list) {
+		list_del_rcu(&rule->list);
+		list_add(&rule->list, &dead);
+	}
+	spin_unlock_bh(&ahsta->tfs_lock);
+
+	synchronize_rcu();
+
+	list_for_each_entry_safe(rule, tmp, &dead, list)
+		ath12k_tfs_free_rule(rule);
+}
+
+void ath12k_tfs_peer_deinit(struct ath12k_sta *ahsta)
+{
+	cancel_work_sync(&ahsta->tfs_action_work);
+	ath12k_tfs_delete_rules(ahsta);
+}
+
+/* Deletes all rules whose tfs_id appears in ids[]. */
+static void ath12k_tfs_delete_by_ids(struct ath12k_sta *ahsta,
+				     const u8 *ids, u8 count)
+{
+	struct ath12k_tfs_rule *rule, *tmp;
+	LIST_HEAD(dead);
+	u8 i;
+
+	spin_lock_bh(&ahsta->tfs_lock);
+	list_for_each_entry_safe(rule, tmp, &ahsta->tfs_rules_list, list) {
+		for (i = 0; i < count; i++) {
+			if (rule->tfs_id == ids[i]) {
+				list_del_rcu(&rule->list);
+				list_add(&rule->list, &dead);
+				break;
+			}
+		}
+	}
+	spin_unlock_bh(&ahsta->tfs_lock);
+
+	if (!list_empty(&dead)) {
+		synchronize_rcu();
+		list_for_each_entry_safe(rule, tmp, &dead, list)
+			ath12k_tfs_free_rule(rule);
+	}
+}
+
+/* Sends a TFS Notify frame while the default link STA is in power save. */
+static void ath12k_tfs_send_notify(struct ath12k_sta *ahsta,
+				   const u8 *ids, u8 count)
+{
+	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(ahsta);
+	struct ath12k_link_sta *arsta = &ahsta->deflink;
+	struct ieee80211_vif *vif;
+	struct ath12k_link_vif *arvif = arsta->arvif;
+	struct ath12k *ar;
+	struct ieee80211_hw *hw;
+	struct sk_buff *skb;
+	struct ieee80211_hdr_3addr *hdr_3addr;
+	size_t hdr_3addr_len = sizeof(struct ieee80211_hdr_3addr);
+	u8 *pos;
+
+	if (!ahsta->ahvif || !arvif || !arvif->ar)
+		return;
+	vif = ahsta->ahvif->vif;
+	ar = arvif->ar;
+	hw = ath12k_ar_to_hw(ar);
+
+	spin_lock_bh(&ar->data_lock);
+	if (!arsta->peer_current_ps_valid ||
+	    arsta->peer_ps_state != WMI_PEER_PS_STATE_ON) {
+		spin_unlock_bh(&ar->data_lock);
+		return;
+	}
+	spin_unlock_bh(&ar->data_lock);
+
+	/* 24-byte 802.11 hdr + [category][action][count][ids...] */
+	skb = dev_alloc_skb(hdr_3addr_len + ATH12K_TFS_NOTIFY_ACTION_HDR_LEN +
+			    count + hw->extra_tx_headroom);
+	if (!skb)
+		return;
+
+	skb_reserve(skb, hw->extra_tx_headroom);
+	pos = skb_put_zero(skb, hdr_3addr_len + ATH12K_TFS_NOTIFY_ACTION_HDR_LEN +
+				 count);
+
+	hdr_3addr = (struct ieee80211_hdr_3addr *)pos;
+	hdr_3addr->frame_control = cpu_to_le16(IEEE80211_FTYPE_MGMT |
+					       IEEE80211_STYPE_ACTION);
+	memcpy(hdr_3addr->addr1, sta->addr, ETH_ALEN); /* DA: STA */
+	memcpy(hdr_3addr->addr2, vif->addr, ETH_ALEN); /* SA: AP  */
+	memcpy(hdr_3addr->addr3, vif->addr, ETH_ALEN); /* BSSID   */
+	pos += hdr_3addr_len;
+
+	*pos++ = WLAN_CATEGORY_WNM;            /* WNM (10) */
+	*pos++ = ATH12K_WNM_ACTION_TFS_NOTIFY; /* TFS Notify (15) */
+	*pos++ = count;
+	memcpy(pos, ids, count);
+
+	/* ath12k_mac_mgmt_tx() needs vif/link_id via ATH12K_SKB_CB. */
+	memset(IEEE80211_SKB_CB(skb), 0, sizeof(struct ieee80211_tx_info));
+	ATH12K_SKB_CB(skb)->vif     = vif;
+	ATH12K_SKB_CB(skb)->link_id = arsta->link_id;
+
+	if (ath12k_mac_mgmt_tx(ar, skb, false))
+		dev_kfree_skb(skb);
+}
+
+/* Deferred worker for TFS_NOTIFY/TFS_DELETE actions. */
+static void ath12k_tfs_action_work_fn(struct work_struct *work)
+{
+	struct ath12k_sta *ahsta =
+		container_of(work, struct ath12k_sta, tfs_action_work);
+	u8 notify_ids[ATH12K_TFS_MAX_PARSE_RESULTS];
+	u8 delete_ids[ATH12K_TFS_MAX_PARSE_RESULTS];
+	u8 notify_count, delete_count;
+
+	/* Snapshot and drain both action arrays atomically */
+	spin_lock_bh(&ahsta->tfs_action_lock);
+	notify_count = min_t(u8, ahsta->tfs_notify_count,
+			     ATH12K_TFS_MAX_PARSE_RESULTS);
+	memcpy(notify_ids, ahsta->tfs_notify_ids, notify_count);
+	ahsta->tfs_notify_count = 0;
+	delete_count = min_t(u8, ahsta->tfs_delete_count,
+			     ATH12K_TFS_MAX_PARSE_RESULTS);
+	memcpy(delete_ids, ahsta->tfs_delete_ids, delete_count);
+	ahsta->tfs_delete_count = 0;
+	spin_unlock_bh(&ahsta->tfs_action_lock);
+
+	/* Process deletes first so the next notify reflects current rule state */
+	ath12k_tfs_delete_by_ids(ahsta, delete_ids, delete_count);
+
+	if (notify_count > 0)
+		ath12k_tfs_send_notify(ahsta, notify_ids, notify_count);
+}
+
+static bool ath12k_tfs_parse_tclas(struct ath12k_tfs_rule *rule,
+				   const u8 *tclas_data, const u8 *tclas_end)
+{
+	struct ath12k_tclas *tclas;
+	const u8 *classifier_params;
+	size_t ports_len, wire_len;
+	u8 tclas_len, classifier_type, version, flen;
+
+	if (tclas_data + ATH12K_TFS_TCLAS_HDR_LEN > tclas_end)
+		return false;
+
+	tclas_len       = tclas_data[1];
+	classifier_type = tclas_data[ATH12K_TFS_TCLAS_TYPE_OFF];
+
+	if (tclas_data + ATH12K_TFS_IE_HDR_LEN + tclas_len > tclas_end)
+		return false;
+
+	tclas = kzalloc(sizeof(*tclas), GFP_KERNEL);
+	if (!tclas)
+		return false;
+
+	INIT_LIST_HEAD(&tclas->list);
+	tclas->type = classifier_type;
+
+	switch (classifier_type) {
+	case ATH12K_TFS_TCLAS_TYPE1:
+	case ATH12K_TFS_TCLAS_TYPE4:
+		version = tclas_data[ATH12K_TFS_TCLAS_PARAMS_OFF];
+
+		if (version == ATH12K_TFS_IP_VERSION4) {
+			if (tclas_len < ATH12K_TFS_TCLAS_LEN_OVERHEAD + sizeof(tclas->v4))
+				goto bad;
+			memcpy(&tclas->v4, tclas_data + ATH12K_TFS_TCLAS_PARAMS_OFF,
+			       sizeof(tclas->v4));
+		} else if (version == ATH12K_TFS_IP_VERSION6) {
+			/* Type4 adds dscp+next_header between dst_port and
+			 * flow_label; Type1 omits them (2 bytes shorter on
+			 * the wire).
+			 */
+			classifier_params = tclas_data + ATH12K_TFS_TCLAS_PARAMS_OFF;
+			ports_len = offsetof(struct ath12k_tclas_type4_v6,
+					     type4_dscp);
+			wire_len = (classifier_type == ATH12K_TFS_TCLAS_TYPE4) ?
+				sizeof(tclas->v6) :
+				sizeof(tclas->v6) - ATH12K_TFS_TYPE4_V6_EXTRA_LEN;
+
+			if (tclas_len < ATH12K_TFS_TCLAS_LEN_OVERHEAD + wire_len)
+				goto bad;
+
+			memcpy(&tclas->v6, classifier_params, ports_len);
+			if (classifier_type == ATH12K_TFS_TCLAS_TYPE4) {
+				tclas->v6.type4_dscp = classifier_params[ports_len];
+				tclas->v6.type4_next_header =
+					classifier_params[ports_len + 1];
+				memcpy(tclas->v6.flow_label,
+				       classifier_params + ports_len + 2,
+				       ATH12K_TFS_FLOW_LABEL_LEN);
+			} else {
+				tclas->v6.type4_dscp = 0;
+				tclas->v6.type4_next_header = 0;
+				memcpy(tclas->v6.flow_label,
+				       classifier_params + ports_len,
+				       ATH12K_TFS_FLOW_LABEL_LEN);
+			}
+		} else {
+			goto bad;
+		}
+		break;
+	case ATH12K_TFS_TCLAS_TYPE3:
+		flen = (tclas_len - ATH12K_TFS_TYPE3_LEN_OVERHEAD) / 2;
+
+		if (tclas_len < ATH12K_TFS_TYPE3_LEN_OVERHEAD ||
+		    flen > ATH12K_TFS_MAX_FILTER_LEN)
+			goto bad;
+
+		tclas->t3.filter_offset =
+			(tclas_data[ATH12K_TFS_TYPE3_FOFF_MSB_POS] << 8) |
+			 tclas_data[ATH12K_TFS_TYPE3_FOFF_LSB_POS];
+		tclas->t3.filter_len   = flen;
+		tclas->t3.filter_value = kmemdup(tclas_data + ATH12K_TFS_TYPE3_DATA_POS,
+						 flen, GFP_KERNEL);
+		tclas->t3.filter_mask  = kmemdup(tclas_data +
+						 ATH12K_TFS_TYPE3_DATA_POS + flen,
+						 flen, GFP_KERNEL);
+		if (!tclas->t3.filter_value || !tclas->t3.filter_mask) {
+			kfree(tclas->t3.filter_value);
+			kfree(tclas->t3.filter_mask);
+			goto bad;
+		}
+		break;
+	default:
+		/* Unknown type — skip, do not install */
+		kfree(tclas);
+		return true;
+	}
+
+	list_add_tail(&tclas->list, &rule->tclas_list);
+	return true;
+
+bad:
+	kfree(tclas);
+	return false;
+}
+
+int ath12k_tfs_parse_req_ies(struct ath12k_sta *ahsta,
+			     const u8 *ie_data, u16 ie_len,
+			     struct ath12k_tfs_parse_result *results,
+			     u8 *n_results, u8 max_results)
+{
+	const u8 *elem_pos = ie_data;
+	const u8 *elem_end = ie_data + ie_len;
+	const u8 *subelem_pos, *subelem_end;
+	const u8 *tclas_pos, *tclas_end;
+	LIST_HEAD(new_rules);
+	struct ath12k_tfs_rule *rule, *tmp_rule;
+	u8 result_count = 0;
+	u8 elem_id, elem_len, tfs_id;
+	u8 subelem_id, subelem_len;
+	u8 tclas_eid, tclas_len;
+	size_t remaining;
+	bool is_rule_valid, is_request_valid = true;
+	bool subelem_seen, tclas_seen;
+
+	while (elem_pos < elem_end) {
+		if (elem_end - elem_pos < ATH12K_TFS_IE_HDR_LEN) {
+			is_request_valid = false;
+			break;
+		}
+
+		elem_id = elem_pos[0];
+		elem_len = elem_pos[1];
+		if (elem_len > elem_end - elem_pos - ATH12K_TFS_IE_HDR_LEN) {
+			is_request_valid = false;
+			break;
+		}
+
+		if (elem_id != ATH12K_TFS_EID_TFS_REQ) {
+			elem_pos += ATH12K_TFS_IE_HDR_LEN + elem_len;
+			continue;
+		}
+
+		if (elem_len < ATH12K_TFS_REQ_BODY_MIN) {
+			is_request_valid = false;
+			break;
+		}
+
+		tfs_id = elem_pos[ATH12K_TFS_REQ_ID_OFF];
+
+		/* Beyond max_results; silently not acknowledged in the response. */
+		if (result_count >= max_results) {
+			elem_pos += ATH12K_TFS_IE_HDR_LEN + elem_len;
+			continue;
+		}
+
+		rule = kzalloc(sizeof(*rule), GFP_KERNEL);
+		if (!rule) {
+			/* OOM — report remaining rules as RESOURCE_UNAVAILABLE */
+			if (result_count < max_results) {
+				results[result_count].tfs_id = tfs_id;
+				results[result_count].tfs_status =
+					ATH12K_TFS_STATUS_RESOURCE_UNAVAILABLE;
+				result_count++;
+			}
+			elem_pos += ATH12K_TFS_IE_HDR_LEN + elem_len;
+			continue;
+		}
+
+		INIT_LIST_HEAD(&rule->list);
+		INIT_LIST_HEAD(&rule->tclas_list);
+		rule->tfs_id        = tfs_id;
+		rule->tfs_action    = elem_pos[ATH12K_TFS_REQ_ACTION_OFF];
+		rule->tclas_process = ATH12K_TCLAS_PROCESS_AND;
+
+		subelem_pos = elem_pos + ATH12K_TFS_REQ_SUBELEM_OFF;
+		subelem_end = elem_pos + ATH12K_TFS_IE_HDR_LEN + elem_len;
+		is_rule_valid = true;
+		subelem_seen = false;
+
+		/* Each TFS subelement wraps its own TCLAS/TCLAS-Processing. */
+		while (subelem_pos < subelem_end && is_rule_valid) {
+			remaining = subelem_end - subelem_pos;
+			if (remaining < ATH12K_TFS_IE_HDR_LEN) {
+				is_rule_valid = false;
+				break;
+			}
+
+			subelem_id  = subelem_pos[0];
+			subelem_len = subelem_pos[1];
+			if (subelem_len > remaining - ATH12K_TFS_IE_HDR_LEN) {
+				is_rule_valid = false;
+				break;
+			}
+
+			subelem_pos += ATH12K_TFS_IE_HDR_LEN;
+			if (subelem_id != ATH12K_TFS_SUBELEMID_REQ) {
+				subelem_pos += subelem_len;
+				continue;
+			}
+
+			subelem_seen = true;
+			tclas_pos = subelem_pos;
+			tclas_end = tclas_pos + subelem_len;
+			tclas_seen = false;
+
+			while (tclas_pos < tclas_end && is_rule_valid) {
+				remaining = tclas_end - tclas_pos;
+				if (remaining < ATH12K_TFS_IE_HDR_LEN) {
+					is_rule_valid = false;
+					break;
+				}
+
+				tclas_eid = tclas_pos[0];
+				tclas_len = tclas_pos[1];
+				if (tclas_len > remaining - ATH12K_TFS_IE_HDR_LEN) {
+					is_rule_valid = false;
+					break;
+				}
+
+				if (tclas_eid == WLAN_EID_TCLAS) {
+					tclas_seen = true;
+					if (!ath12k_tfs_parse_tclas(rule, tclas_pos,
+								    tclas_end)) {
+						is_rule_valid = false;
+						break;
+					}
+					tclas_pos += ATH12K_TFS_IE_HDR_LEN + tclas_len;
+				} else if (tclas_eid == WLAN_EID_TCLAS_PROCESSING) {
+					if (tclas_len != 1 ||
+					    tclas_pos[ATH12K_TFS_TCLAS_PROC_VAL_OFF] >
+					    ATH12K_TCLAS_PROCESS_OR) {
+						is_rule_valid = false;
+						break;
+					}
+					rule->tclas_process =
+						tclas_pos[ATH12K_TFS_TCLAS_PROC_VAL_OFF];
+				}
+
+				tclas_pos += ATH12K_TFS_IE_HDR_LEN + tclas_len;
+			}
+
+			if (is_rule_valid && !tclas_seen)
+				is_rule_valid = false;
+
+			subelem_pos += subelem_len;
+		}
+
+		if (is_rule_valid && !subelem_seen)
+			is_rule_valid = false;
+
+		if (!is_rule_valid) {
+			ath12k_tfs_free_rule(rule);
+			results[result_count].tfs_id = tfs_id;
+			results[result_count].tfs_status =
+				ATH12K_TFS_STATUS_INVALID_CLASSIFIER;
+		} else {
+			list_add_tail_rcu(&rule->list, &new_rules);
+			results[result_count].tfs_id = tfs_id;
+			results[result_count].tfs_status = ATH12K_TFS_STATUS_ACCEPT;
+		}
+		result_count++;
+		elem_pos += ATH12K_TFS_IE_HDR_LEN + elem_len;
+	}
+
+	if (!is_request_valid) {
+		list_for_each_entry_safe(rule, tmp_rule, &new_rules, list) {
+			list_del(&rule->list);
+			ath12k_tfs_free_rule(rule);
+		}
+		*n_results = 0;
+		return -EINVAL;
+	}
+
+	*n_results = result_count;
+
+	/* Replace existing rules atomically */
+	ath12k_tfs_delete_rules(ahsta);
+
+	spin_lock_bh(&ahsta->tfs_lock);
+	while (!list_empty(&new_rules)) {
+		rule = list_first_entry(&new_rules, struct ath12k_tfs_rule, list);
+		list_del(&rule->list);
+		list_add_tail_rcu(&rule->list, &ahsta->tfs_rules_list);
+	}
+	spin_unlock_bh(&ahsta->tfs_lock);
+
+	return 0;
+}
