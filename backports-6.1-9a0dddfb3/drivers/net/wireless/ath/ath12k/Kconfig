@@ -170,6 +170,20 @@ config ATH12K_UCAST_ENABLE_AST_OVERRIDE
 
 	  Say Y to enable. If unsure, say N.
 
+config ATH12K_PRPL
+	bool "Enable PRPL build support"
+	depends on ATH12K
+	default n
+	help
+	  Enable PRPL-specific build configuration for ath12k. When
+	  enabled, certain features incompatible with PRPL mesh
+	  networking will be excluded from the build.
+
+	  This option is automatically enabled when building with
+	  CONFIG_USE_PRPLMESH_WHM=y.
+
+	  Say Y only if building for PRPL. If unsure, say N.
+
 config ATHDEBUG_UIO_LOGGING
 	bool "ath12k UIO logging support"
 	depends on ATH12K
