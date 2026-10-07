@@ -2911,14 +2911,16 @@ static void ath12k_mac_dp_peer_cleanup_cb(struct ath12k_pdev_dp *dp_pdev,
 	if (ath12k_dp_link_peer_get_sta(link_peer) && link_peer->dp_peer &&
 	    ath12k_dp_arch_mlo_peer_tid_teardown_ready(dp, link_peer->dp_peer,
 						       link_peer)) {
+		spin_lock_bh(&link_peer->dp_peer->rx_tid_lock);
 		for (i = 0; i < num_tids; i++) {
-			rx_tid = &link_peer->dp_peer->rx_tid[i];
+			rx_tid = link_peer->dp_peer->rx_tid[i];
+			if (!rx_tid)
+				continue;
 
-			spin_lock_bh(&rx_tid->tid_lock);
 			ath12k_dp_arch_rx_peer_tid_delete(dp, ar, link_peer, i);
 			ath12k_dp_rx_frags_cleanup(rx_tid, true);
-			spin_unlock_bh(&rx_tid->tid_lock);
 		}
+		spin_unlock_bh(&link_peer->dp_peer->rx_tid_lock);
 	}
 
 	/* cleanup dp peer */
@@ -3019,9 +3021,14 @@ void ath12k_dp_peer_cleanup_all(struct ath12k *ar)
 		    ath12k_dp_arch_mlo_peer_tid_teardown_ready(dp, link_peer->dp_peer,
 							       link_peer)) {
 			for (i = 0; i < num_tids; i++) {
-				rx_tid = &link_peer->dp_peer->rx_tid[i];
-
+				spin_lock_bh(&link_peer->dp_peer->rx_tid_lock);
+				rx_tid = link_peer->dp_peer->rx_tid[i];
+				link_peer->dp_peer->rx_tid[i] = NULL;
+				spin_unlock_bh(&link_peer->dp_peer->rx_tid_lock);
+				if (!rx_tid)
+					continue;
 				del_timer_sync(&rx_tid->frag_timer);
+				kfree(rx_tid);
 			}
 		}
 		link_peer->dp_peer = NULL;
@@ -3038,6 +3045,8 @@ void ath12k_dp_peer_cleanup_all(struct ath12k *ar)
 			clear_bit(dp_peer->sta_id, dp_hw->free_sta_id_map);
 
 		if (!dp_peer->peer_links_map) {
+			kfree(dp_peer->rx_tid);
+			dp_peer->rx_tid = NULL;
 			kfree(dp_peer->qos);
 			kfree(dp_peer);
 		}
