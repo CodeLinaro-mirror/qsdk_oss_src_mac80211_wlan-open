@@ -4523,6 +4523,9 @@ struct ath12k_htt_rx_pdev_ul_mumimo_trig_bn_stats_tlv {
 	 * in response to basic trigger. Typically a data response is expected.
 	 */
 	__le32 bn_ul_mumimo_basic_trigger_rx_qos_null_only;
+
+    /* Number of times UL MUMIMO TB PPDUs received with 2xLDPC */
+	__le32 bn_ul_mumimo_rx_2x_ldpc;
 } __packed;
 
 #define ATH12K_HTT_MAX_NUM_CHAN_ACC_LAT_INTR	9
@@ -4951,6 +4954,7 @@ struct ath12k_htt_rx_pdev_be_ul_trig_stats_tlv {
 	__le32 be_ulofdma_implicit_trig_qos_null;
 	__le32 bn_ulofdma_implicit_trig_tried;
 	__le32 bn_ulofdma_implicit_trig_qos_null;
+	__le32 bn_ul_ofdma_rx_2x_ldpc;
 } __packed;
 
 struct htt_umac_ssr_stats_tlv {
