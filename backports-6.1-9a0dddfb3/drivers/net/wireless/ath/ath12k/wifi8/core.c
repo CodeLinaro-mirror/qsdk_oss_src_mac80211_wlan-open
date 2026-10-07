@@ -114,7 +114,8 @@ static void ath12k_wifi8_cu_mem_free(struct ath12k *ar, struct ath12k_link_vif *
 static int ath12k_wifi8_wsi_bypass_remove(struct ath12k_base *ab)
 {
 	struct ath12k_hw_group *ag = ab->ag;
-	int ret;
+	struct ath12k *ar;
+	int ret, i;
 
 	if (!ab->is_cumac_chip) {
 		ret = ath12k_core_wsi_mlo_teardown_umac_reset(ab);
@@ -124,10 +125,30 @@ static int ath12k_wifi8_wsi_bypass_remove(struct ath12k_base *ab)
 		}
 	}
 
+	/* Mark user intent before suspending so the re-suspend hook in
+	 * ath12k_mac_mlo_ready() can restore this state after any future
+	 * MLO setup triggered by a non-CUMAC chip re-add.
+	 */
+	if (ab->is_cumac_chip) {
+		for (i = 0; i < ab->num_radios; i++) {
+			ar = ab->pdevs[i].ar;
+			if (ar)
+				ar->pdev_user_suspend = true;
+		}
+	}
+
 	/* Suspend all pdevs on the chip being bypassed */
 	ret = ath12k_core_wsi_remap_pdev_suspend(ab);
 	if (ret) {
 		ath12k_err(ab, "WSI Bypass: pdev suspend failed: %d\n", ret);
+		/* Roll back pdev_user_suspend on failure */
+		if (ab->is_cumac_chip) {
+			for (i = 0; i < ab->num_radios; i++) {
+				ar = ab->pdevs[i].ar;
+				if (ar)
+					ar->pdev_user_suspend = false;
+			}
+		}
 		return ret;
 	}
 
@@ -221,6 +242,11 @@ static int ath12k_wifi8_wsi_bypass_add(struct ath12k_base *ab)
 			ar = ab->pdevs[i].ar;
 			if (!ar)
 				continue;
+			/* User is explicitly resuming CUMAC — clear the user-suspend
+			 * flag so the re-suspend hook in ath12k_mac_mlo_ready() does
+			 * not put it back to sleep after the next MLO setup.
+			 */
+			ar->pdev_user_suspend = false;
 			ah = ar->ah;
 			mutex_lock(&ah->hw_mutex);
 			ret = ath12k_mac_start(ar);
