@@ -560,6 +560,10 @@ static int ieee80211_vif_update_links(struct ieee80211_sub_if_data *sdata,
 		for_each_set_bit(link_id, &repurposed_links,
 				 IEEE80211_MLD_MAX_NUM_LINKS)
 			ieee80211_set_repurpose_link(&sdata->vif, link_id);
+		for_each_set_bit(link_id, &add, IEEE80211_MLD_MAX_NUM_LINKS) {
+			ieee80211_link_debugfs_remove(&links[link_id]->data);
+			ieee80211_link_stop(&links[link_id]->data);
+		}
 		/* and free (only) the newly allocated links */
 		memset(to_free, 0, sizeof(links));
 		goto free;
