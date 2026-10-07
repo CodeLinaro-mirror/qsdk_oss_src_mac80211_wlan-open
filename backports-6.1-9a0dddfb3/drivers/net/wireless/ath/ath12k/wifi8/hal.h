@@ -53,6 +53,8 @@ extern const struct ath12k_hw_hal_params ath12k_wifi8_hw_hal_params_qcn9625;
 #define HAL_MGMT_BCAST_TID 18
 #define HAL_MGMT_SENSING_TID 19
 
+#define HAL_REO_Q_TIMER_MGMT_AC 4
+
 /*
  * PPE_VP_CONFIG_TABLE DETAILS
  */
@@ -752,6 +754,7 @@ enum rdi_based_source_ring_selection {
 #define HAL_REO1_AGING_THRESH_IX_1(hal)	((hal)->regs->hal_reo1_aging_thres_ix1)
 #define HAL_REO1_AGING_THRESH_IX_2(hal)	((hal)->regs->hal_reo1_aging_thres_ix2)
 #define HAL_REO1_AGING_THRESH_IX_3(hal)	((hal)->regs->hal_reo1_aging_thres_ix3)
+#define HAL_REO1_AGING_THRESH_IX_4(hal)	((hal)->regs->hal_reo1_aging_thres_ix4)
 
 #define HAL_REO1_RING_MISC_OFFSET \
 		(HAL_REO1_RING_MISC(hal) - HAL_REO1_RING_BASE_LSB(hal))
@@ -1106,6 +1109,7 @@ enum rdi_based_source_ring_selection {
 #define MAX_VI_REORDER_TIMEOUT_MS 600
 #define HAL_DEFAULT_BE_BK_VI_REO_TIMEOUT_USEC	(100 * 1000)
 #define HAL_DEFAULT_VO_REO_TIMEOUT_USEC		(40 * 1000)
+#define HAL_DEFAULT_MGMT_REO_TIMEOUT_USEC	(1 * 1000)
 
 #define HAL_SRNG_TLV_HDR_TAG		GENMASK(9, 0)
 #define HAL_SRNG_TLV_HDR_LEN		GENMASK(25, 10)
