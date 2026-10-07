@@ -369,6 +369,17 @@ static int validate_uhr_capa(const struct nlattr *attr,
 	return ieee80211_uhr_capa_size_ok(data, len, false);
 }
 
+static int validate_uhr_operation(const struct nlattr *attr,
+				  struct netlink_ext_ack *extack)
+{
+	const u8 *data = nla_data(attr);
+	unsigned int len = nla_len(attr);
+
+	if (!ieee80211_uhr_oper_size_ok(data, len, false))
+		return -EINVAL;
+	return 0;
+}
+
 /* policy for the attributes */
 static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR];
 
@@ -788,6 +799,16 @@ nl80211_smd_ctx_ba_policy[NL80211_SMD_CTX_BA_ATTR_MAX + 1] = {
 	[NL80211_SMD_CTX_BA_ATTR_EXT_BUFF_SIZE] = { .type = NLA_U16 },
 };
 
+static const struct nla_policy
+nl80211_s1g_short_beacon[NL80211_S1G_SHORT_BEACON_ATTR_MAX + 1] = {
+	[NL80211_S1G_SHORT_BEACON_ATTR_HEAD] =
+		NLA_POLICY_VALIDATE_FN(NLA_BINARY, validate_beacon_head,
+				IEEE80211_MAX_DATA_LEN),
+	[NL80211_S1G_SHORT_BEACON_ATTR_TAIL] =
+		NLA_POLICY_VALIDATE_FN(NLA_BINARY, validate_ie_attr,
+				IEEE80211_MAX_DATA_LEN),
+};
+
 #if LINUX_VERSION_IS_GEQ(6,7,0)
 static const struct netlink_range_validation nl80211_punct_bitmap_range = {
 	.min = 0,
@@ -1193,6 +1214,7 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 				       NL80211_MAX_SUPP_SELECTORS),
 	[NL80211_ATTR_MLO_RECONF_REM_LINKS] = { .type = NLA_U16 },
 	[NL80211_ATTR_EPCS] = { .type = NLA_FLAG },
+	[NL80211_ATTR_EXT_MLD_CAPA_AND_OPS] = { .type = NLA_U16 },
 	[NL80211_ATTR_WIPHY_RADIO_INDEX] = { .type = NLA_U8 },
 	[NL80211_ATTR_STA_MGMT_RTS_CTS_CONFIG] =
 				NLA_POLICY_MAX(NLA_U8, NL80211_MGMT_RTS_CTS_DISABLE),
@@ -1218,7 +1240,6 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 		NLA_POLICY_NESTED(nl80211_advertised_ttlm_policy),
 	[NL80211_ATTR_QOS_MGMT] = NLA_POLICY_NESTED(nl80211_qm_policy),
 	[NL80211_ATTR_SKIP_CAC] = { .type = NLA_FLAG },
-	[NL80211_ATTR_ASSOC_MLD_EXT_CAPA_OPS] = { .type = NLA_U16 },
 	[NL80211_ATTR_CONTROL_MIC_PAD] = { .type = NLA_U8 },
 	[NL80211_ATTR_USE_CFP] = { .type = NLA_U32 },
 	[NL80211_ATTR_CFP] = { .type = NLA_FLAG },
@@ -1273,6 +1294,13 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_SMD_STA_LINK_MACS]    = { .type = NLA_NESTED },
 	[NL80211_ATTR_SMD_CTX] = { .type = NLA_NESTED },
 	[NL80211_ATTR_SMD_DELETE_TARGET_MLD_ADDRS] = { .type = NLA_NESTED },
+	[NL80211_ATTR_S1G_LONG_BEACON_PERIOD] = NLA_POLICY_MIN(NLA_U8, 2),
+	[NL80211_ATTR_S1G_SHORT_BEACON] =
+		NLA_POLICY_NESTED(nl80211_s1g_short_beacon),
+	[NL80211_ATTR_BSS_PARAM] = { .type = NLA_FLAG },
+	[NL80211_ATTR_S1G_PRIMARY_2MHZ] = { .type = NLA_FLAG },
+	[NL80211_ATTR_UHR_OPERATION] =
+		NLA_POLICY_VALIDATE_FN(NLA_BINARY, validate_uhr_operation),
 };
 
 /* policy for the key attributes */
@@ -14978,9 +15006,9 @@ static int nl80211_associate(struct sk_buff *skb, struct genl_info *info)
 			goto free;
 		}
 
-		if (info->attrs[NL80211_ATTR_ASSOC_MLD_EXT_CAPA_OPS])
+		if (info->attrs[NL80211_ATTR_EXT_MLD_CAPA_AND_OPS])
 			req.ext_mld_capa_ops =
-				nla_get_u16(info->attrs[NL80211_ATTR_ASSOC_MLD_EXT_CAPA_OPS]);
+			nla_get_u16(info->attrs[NL80211_ATTR_EXT_MLD_CAPA_AND_OPS]);
 	} else {
 		if (req.link_id >= 0)
 			return -EINVAL;
@@ -14991,7 +15019,7 @@ static int nl80211_associate(struct sk_buff *skb, struct genl_info *info)
 			return PTR_ERR(req.bss);
 		ap_addr = req.bss->bssid;
 
-		if (info->attrs[NL80211_ATTR_ASSOC_MLD_EXT_CAPA_OPS])
+		if (info->attrs[NL80211_ATTR_EXT_MLD_CAPA_AND_OPS])
 			return -EINVAL;
 	}
 
@@ -20488,8 +20516,8 @@ static int __nl80211_assoc_ml_reconf(struct cfg80211_registered_device *rdev,
 			goto out;
 		}
 
-		if (info->attrs[NL80211_ATTR_ASSOC_MLD_EXT_CAPA_OPS]) {
-			attr = info->attrs[NL80211_ATTR_ASSOC_MLD_EXT_CAPA_OPS];
+		if (info->attrs[NL80211_ATTR_EXT_MLD_CAPA_AND_OPS]) {
+			attr = info->attrs[NL80211_ATTR_EXT_MLD_CAPA_AND_OPS];
 			req->ext_mld_capa_ops = nla_get_u16(attr);
 		}
 
@@ -23749,7 +23777,7 @@ static struct genl_family nl80211_fam __ro_after_init = {
 	.n_small_ops = ARRAY_SIZE(nl80211_small_ops),
 #endif
 #if LINUX_VERSION_IS_GEQ(6,1,0)
-	.resv_start_op = NL80211_CMD_REMOVE_LINK_STA + 23,
+	.resv_start_op = NL80211_CMD_REMOVE_LINK_STA + 33,
 #endif
 	.mcgrps = nl80211_mcgrps,
 	.n_mcgrps = ARRAY_SIZE(nl80211_mcgrps),
