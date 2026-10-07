@@ -487,11 +487,20 @@ int ath12k_tm_cmd(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 
 	cmd_type = nla_get_u32(tb[ATH_TM_ATTR_CMD]);
 
-	if (vif == NULL && (cmd_type == ATH_TM_CMD_WMI_FTM ||
-	    cmd_type == ATH_TM_CMD_TESTMODE_START ||
-	    cmd_type == ATH_TM_CMD_WMI)) {
-		if (ah->num_radio)
-			ar = ah->radio;
+	if (vif == NULL) {
+		switch (cmd_type) {
+		case ATH_TM_CMD_GET_VERSION:
+		case ATH_TM_CMD_WMI_FTM:
+		case ATH_TM_CMD_TESTMODE_START:
+		case ATH_TM_CMD_WMI:
+			if (ah->num_radio)
+				ar = ah->radio;
+			break;
+		default:
+			ath12k_err(NULL,
+				   "cmd %d not supported", cmd_type);
+			return -EOPNOTSUPP;
+		}
 	} else {
 		ar = ath12k_get_ar_by_vif(hw, vif, link_id);
 	}
