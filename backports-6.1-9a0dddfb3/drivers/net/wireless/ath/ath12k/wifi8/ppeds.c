@@ -1692,7 +1692,6 @@ ath12k_wifi8_dp_ppeds_get_vp_profile_from_idx(struct ath12k_base *ab,
 	 */
 	if (ppe_vp_idx < 0 ||
 			ppe_vp_idx >= PPE_VP_WIFI8_ENTRIES_MAX) {
-		ath12k_err(central_ab, "Invalid vp_idx:%d\n", ppe_vp_idx);
 		return NULL;
 	}
 
