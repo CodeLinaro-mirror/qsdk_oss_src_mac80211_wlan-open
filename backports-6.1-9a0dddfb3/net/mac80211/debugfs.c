@@ -829,7 +829,8 @@ static ssize_t queues_read(struct file *file, char __user *user_buf,
 	unsigned long flags;
 	char buf[IEEE80211_MAX_QUEUES * 20];
 	unsigned long *queue_stop_reasons;
-	int q, res = 0;
+	int q;
+	size_t res = 0;
 	int cpu;
 
 	/* Read queues from each CPU for each access category
@@ -838,15 +839,22 @@ static ssize_t queues_read(struct file *file, char __user *user_buf,
 		spin_lock_irqsave(per_cpu_ptr(local->queue_stop_reason_lock, cpu),
 				flags);
 		for (q = 0; q < local->hw.queues; q++) {
+			if (res >= sizeof(buf) - 1)
+				break;
+
 			queue_stop_reasons =
 				per_cpu_ptr(local->queue_stop_reasons[q], cpu);
-			res += snprintf(buf + res, sizeof(buf) + res, "%02d: %#.8lx/%d\n",
+			res += scnprintf(buf + res, sizeof(buf) - res,
+					 "%02d: %#.8lx/%d\n",
 					q,
 					*queue_stop_reasons,
 					skb_queue_len(per_cpu_ptr(local->pending[q], cpu)));
 		}
 		spin_unlock_irqrestore(per_cpu_ptr(local->queue_stop_reason_lock, cpu),
 				flags);
+
+		if (res >= sizeof(buf) - 1)
+			break;
 	}
 
 	return simple_read_from_buffer(user_buf, count, ppos, buf, res);
