@@ -290,13 +290,14 @@ ath12k_wifi8_dp_mon_tx_setup_ext_mon_filter(struct ath12k_pdev_dp *dp_pdev,
 		ath12k_dp_mon_tx_setup_mon_mode_filter(dp_pdev->dp, f);
 		ath12k_wifi8_dp_mon_tx_enable_all_subtypes(f);
 	} else if (cfg->fp_enabled) {
-		/* pkt tier -> [15:0]; status tier -> [31:16] */
+		if (data_pkt_subtype)
+			data_pkt_subtype = HTT_TX_MON_PKT_ALL_SUBTYPES;
 		f->pkt_subtype_mgmt = mgmt_pkt_subtype;
 		f->pkt_subtype_ctrl = ctrl_pkt_subtype;
 		f->pkt_subtype_data = data_pkt_subtype;
-		f->stat_subtype_mgmt = mgmt_stat_subtype;
-		f->stat_subtype_ctrl = ctrl_stat_subtype;
-		f->stat_subtype_data = data_stat_subtype;
+		f->stat_subtype_mgmt = mgmt_stat_subtype | mgmt_pkt_subtype;
+		f->stat_subtype_ctrl = ctrl_stat_subtype | ctrl_pkt_subtype;
+		f->stat_subtype_data = data_stat_subtype | data_pkt_subtype;
 	} else if (cfg->fpmo_enabled) {
 		/* Peer scoping is enforced by hw via the HW peer-filter table,
 		 * mac_addr_filter_en enforces it; leave subtype/status field unset
@@ -305,9 +306,7 @@ ath12k_wifi8_dp_mon_tx_setup_ext_mon_filter(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 
-	/* coarse type enables: set if any subtype requested in either tier
-	 * Required in case -f c/-F c is provided.
-	 */
+	/* coarse type enables: set if any subtype requested in either tier */
 	if (mgmt_pkt_subtype || mgmt_stat_subtype)
 		f->tx_mon_mgmt_filter = 0x1;
 	if (ctrl_pkt_subtype || ctrl_stat_subtype)
