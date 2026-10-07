@@ -352,6 +352,7 @@ static int remove_buf_file_handler(struct dentry *dentry)
 	return 0;
 }
 
+#if LINUX_VERSION_IS_LESS(6, 17, 0)
 static int ath12k_spectral_subbuf_start(struct rchan_buf *buf, void *subbuf,
 					void *prev_subbuf, size_t prev_padding)
 {
@@ -376,6 +377,31 @@ static int ath12k_spectral_subbuf_start(struct rchan_buf *buf, void *subbuf,
 
 	return 1;
 }
+#else
+static int ath12k_spectral_subbuf_start(struct rchan_buf *buf, void *subbuf,
+					void *prev_subbuf)
+{
+	struct ath12k_spectral *sp = buf->chan->private_data;
+
+	(void)subbuf;
+	(void)prev_subbuf;
+
+	if (relay_buf_full(buf)) {
+		/*
+		 * Finite scans must retain every record until userspace consumes
+		 * it.  Infinite scans intentionally use the relay as a circular
+		 * buffer and may overwrite the oldest record when it is full.
+		 */
+		if (sp->mode != SPECTRAL_SCAN_MODE_INVALID &&
+		    sp->params[sp->mode].scan_count > 0)
+			return 0;
+
+		atomic64_inc(&sp->relay_overwrite_events);
+	}
+
+	return 1;
+}
+#endif
 
 static bool
 ath12k_spectral_relay_write_record(struct rchan *chan, const void *data,
