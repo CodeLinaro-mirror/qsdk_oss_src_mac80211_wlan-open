@@ -26,6 +26,9 @@ void ath12k_debugfs_link_sta_op_add(struct ieee80211_hw *hw,
 				    struct ieee80211_vif *vif,
 				    struct ieee80211_link_sta *link_sta,
 				    struct dentry *dir);
+void ath12k_debugfs_htt_peer_stats_update(struct ath12k *ar,
+					  enum ath12k_dbg_htt_ext_stats_type old_type,
+					  enum ath12k_dbg_htt_ext_stats_type new_type);
 void ath12k_debugfs_sta_update_success(struct ath12k_dp_link_peer *peer,
 				       struct ath12k_per_peer_tx_stats *peer_stats);
 void ath12k_debugfs_sta_update_failure(struct ath12k_dp_link_peer *peer,
@@ -38,6 +41,13 @@ void ath12k_debugfs_sta_update_misc(struct ath12k_dp_link_peer *peer,
 #else /* CPTCFG_ATH12K_DEBUGFS */
 
 #define ath12k_debugfs_sta_op_add NULL
+
+static inline void
+ath12k_debugfs_htt_peer_stats_update(struct ath12k *ar,
+				     enum ath12k_dbg_htt_ext_stats_type old_type,
+				     enum ath12k_dbg_htt_ext_stats_type new_type)
+{
+}
 
 static inline void
 ath12k_debugfs_sta_update_success(struct ath12k_dp_link_peer *peer,
