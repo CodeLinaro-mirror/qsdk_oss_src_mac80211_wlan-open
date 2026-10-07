@@ -1805,6 +1805,7 @@ ath12k_wifi8_dp_process_reo_rx_packets(struct ath12k_dp *dp,
 	u8 tid = 0;
 	u8 active_tid_mask = 0;
 	bool is_delay_enabled = false;
+	int decap_type;
 
 	rcu_read_lock();
 
@@ -1977,7 +1978,10 @@ ath12k_wifi8_dp_process_reo_rx_packets(struct ath12k_dp *dp,
 			prefetch(&vaddr[128]);
 		}
 
-		switch (peer->rx_decap_type) {
+		decap_type = rx_mpdu_info->fragment_flag ?
+				DP_RX_DECAP_TYPE_RAW : peer->rx_decap_type;
+
+		switch (decap_type) {
 		case DP_RX_DECAP_TYPE_ETHERNET2_DIX:
 			if (unlikely(ath12k_dp_stats_enabled(dp_pdev))) {
 				if (ath12k_proto_stats_enabled(dp_pdev))

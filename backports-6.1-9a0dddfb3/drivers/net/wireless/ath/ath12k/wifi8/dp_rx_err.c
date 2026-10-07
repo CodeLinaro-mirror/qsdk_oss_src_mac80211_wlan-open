@@ -496,7 +496,7 @@ ath12k_wifi8_dp_rx_h_defrag_reo_reinject(struct ath12k_dp *dp,
 	struct hal_srng *srng;
 	dma_addr_t link_paddr, buf_paddr;
 	u32 desc_bank, msdu_info, msdu_ext_info, mpdu_info;
-	u32 cookie, hal_rx_desc_sz, dest_ring_info0, queue_addr_hi;
+	u32 cookie, hal_rx_desc_sz, queue_addr_hi;
 	int ret, len_diff;
 	struct ath12k_rx_desc_info *desc_info;
 	struct ath12k_buffer_addr *info;
@@ -602,7 +602,8 @@ ath12k_wifi8_dp_rx_h_defrag_reo_reinject(struct ath12k_dp *dp,
 
 	if (ab->hw_params->reoq_lut_support) {
 		reo_ent_ring->rx_reo_queue_desc_addr_31_0 =
-			spd_desc->rx_mpdu_info.peer_meta_data;
+			ath12k_wifi8_dp_rx_get_peer_id(ab, dp->peer_metadata_ver,
+						       spd_desc->rx_mpdu_info.peer_meta_data);
 		queue_addr_hi = 0;
 	} else {
 		reo_ent_ring->rx_reo_queue_desc_addr_31_0 =
@@ -619,10 +620,15 @@ ath12k_wifi8_dp_rx_h_defrag_reo_reinject(struct ath12k_dp *dp,
 	reo_ent_ring->info1 =
 		le32_encode_bits(rx_tid->cur_sn,
 				 HAL_REO_ENTRANCE_RING_INFO1_MPDU_SEQUENCE_NUMBER);
-	dest_ring_info0 = spd_desc_l->rx_mpdu_info.src_link_id;
-	reo_ent_ring->rx_reo_mpdu_info.info1 =
-		cpu_to_le32(u32_get_bits(dest_ring_info0,
-					 HAL_RX_REO_MPDU_DESC_INFO_INFO1_SRC_LINK_ID));
+	mpdu_info =
+		u32_encode_bits(spd_desc_l->rx_mpdu_info.src_link_id,
+				HAL_RX_REO_MPDU_DESC_INFO_INFO1_SRC_LINK_ID) |
+		u32_encode_bits(HAL_RXDMA_PUSH_REASON_ROUTING_INSTRUCTION,
+				HAL_RX_REO_MPDU_DESC_INFO_INFO1_RXDMA_PUSH_RSN) |
+		u32_encode_bits(0,
+				HAL_RX_REO_MPDU_DESC_INFO_INFO1_RXDMA_ERR_CODE);
+
+	reo_ent_ring->rx_reo_mpdu_info.info1 = cpu_to_le32(mpdu_info);
 
 	ath12k_hal_srng_access_end(ab, srng);
 	spin_unlock_bh(&srng->lock);
@@ -960,7 +966,7 @@ static int ath12k_wifi8_dp_h_link_desc(struct ath12k_dp *dp,
 					       msdu_cookies, &rbm);
 
 	if (rbm != dp->idle_link_rbm &&
-	    rbm != dp->hal->hal_params->rx_buf_rbm) {
+	    rbm != dp->hal->hal_params->rx_buf_rbm && rbm) {
 		act = HAL_WBM_REL_BM_ACT_REL_MSDU;
 		dp->device_stats.invalid_rbm++;
 		ath12k_warn(ab, "invalid return buffer manager %d\n", rbm);
