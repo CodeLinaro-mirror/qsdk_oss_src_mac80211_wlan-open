@@ -1488,7 +1488,7 @@ static int _sta_info_move_state(struct sta_info *sta,
 			 * on how the hardware offload works.
 			 */
 			if (local->ops->set_key) {
-				synchronize_net();
+				ieee80211_sync_rcu_or_expedited(local);
 				if (local->ops->flush_sta)
 					drv_flush_sta(local, sta->sdata, sta);
 			}
@@ -1670,11 +1670,7 @@ int __must_check __sta_info_destroy(struct sta_info *sta)
 	if (err)
 		return err;
 
-	if (ieee80211_hw_check(&sta->local->hw,
-			       STA_DESTROY_SYNC_RCU_EXPEDITED))
-		synchronize_rcu_expedited();
-	else
-		synchronize_net();
+	ieee80211_sync_rcu_or_expedited(sta->local);
 
 	__sta_info_destroy_part2(sta, true);
 
