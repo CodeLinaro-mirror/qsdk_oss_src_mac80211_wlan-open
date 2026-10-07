@@ -96,11 +96,6 @@ int ath12k_wifi8_dp_tqm_cmd_send(struct ath12k_base *ab,
 	ab = dp->ab;
 	dp_wifi8 = ath12k_get_dp_wifi8(dp);
 
-	if ((test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags) &&
-	     !test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags)) ||
-	    test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags))
-		return 0;
-
 	if (callback_fn) {
 		dp_cmd = kzalloc(sizeof(*dp_cmd), GFP_ATOMIC);
 		if (!dp_cmd)
@@ -114,6 +109,11 @@ int ath12k_wifi8_dp_tqm_cmd_send(struct ath12k_base *ab,
 		list_add_tail(&dp_cmd->list, &dp->tqm_cmd_list);
 		spin_unlock_bh(&dp->tqm_cmd_lock);
 	}
+
+	if ((test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags) &&
+	     !test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags)) ||
+	    test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags))
+		return 0;
 
 	cmd_ring = &ab->hal.srng_list[dp_wifi8->tqm_cmd_ring.ring_id];
 	cmd_num = ath12k_wifi8_hal_tqm_cmd_send(ab, cmd_ring, type, cmd);
@@ -257,10 +257,13 @@ void ath12k_dp_peer_cleanup_tqm_sync(struct ath12k_dp *dp, void *ctx,
 	struct ath12k_base *ab = dp->ab;
 	struct ath12k_dp_peer *dp_peer = NULL, *t;
 	struct ath12k_pdev_dp *dp_pdev;
-	struct ath12k_dp_hw *dp_hw;
+	struct ath12k_dp_hw *dp_hw = NULL;
 	u8 pdev_id;
 	u8 hw_link_id = data->hw_link_id;
 	u16 peer_id = data->peer_id;
+	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k_hw *ah;
+	int i;
 
 	/* NULL tqm_status means the TQM status ring was not drained before
 	 * cleanup (e.g. wifi down races a pending TQM_SYNC_CMD).  Treat it
@@ -279,33 +282,56 @@ void ath12k_dp_peer_cleanup_tqm_sync(struct ath12k_dp *dp, void *ctx,
 	pdev_id = ath12k_hw_mac_id_to_pdev_id(dp->hw_params,
 					      dp_hw_grp->hw_links[hw_link_id].pdev_idx);
 	rcu_read_lock();
+
 	dp_pdev = ath12k_dp_to_dp_pdev(dp, pdev_id);
-	if (!dp_pdev) {
-		rcu_read_unlock();
-		ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
-				 "tqm-cleanup-sync: dp_pdev NULL, EXIT\n");
-		return;
-	}
+	if (dp_pdev) {
+		dp_hw = dp_pdev->dp_hw;
+		if (!dp_hw) {
+			rcu_read_unlock();
+			ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+					"tqm-cleanup-sync: dp_hw NULL, EXIT\n");
+			return;
+		}
+		spin_lock_bh(&dp_hw->peer_hash_lock);
 
-	dp_hw = dp_pdev->dp_hw;
-	if (!dp_hw) {
-		rcu_read_unlock();
-		ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
-				 "tqm-cleanup-sync: dp_hw NULL, EXIT\n");
-		return;
-	}
+		list_for_each_entry(t, &dp_hw->tqm_cleanup_list, tqm_cleanup_node) {
+			if (t->peer_id == peer_id) {
+				dp_peer = t;
+				break;
+			}
+		}
+	} else {
+		/* During SSR dp_pdev is already freed by the time this
+		 * callback fires from umac_deinit flow. Hence lookup the peer by looping
+		 * over all ath12k_hw instances in the hardware group and fetch dp_hw
+		 * directly from ah->dp_hw.
+		 */
+		for (i = 0; i < ag->num_hw; i++) {
+			ah = ath12k_ag_to_ah(ag, i);
+			if (!ah)
+				continue;
 
-	spin_lock_bh(&dp_hw->peer_hash_lock);
+			dp_hw = &ah->dp_hw;
+			spin_lock_bh(&dp_hw->peer_hash_lock);
 
-	list_for_each_entry(t, &dp_hw->tqm_cleanup_list, tqm_cleanup_node) {
-		if (t->peer_id == peer_id) {
-			dp_peer = t;
-			break;
+			list_for_each_entry(t, &dp_hw->tqm_cleanup_list,
+					    tqm_cleanup_node) {
+				if (t->peer_id == peer_id) {
+					dp_peer = t;
+					break;
+				}
+			}
+			if (dp_peer)
+				break;
+
+			spin_unlock_bh(&dp_hw->peer_hash_lock);
+			dp_hw = NULL;
 		}
 	}
 
 	if (!dp_peer) {
-		spin_unlock_bh(&dp_hw->peer_hash_lock);
+		if (dp_hw)
+			spin_unlock_bh(&dp_hw->peer_hash_lock);
 		rcu_read_unlock();
 		return;
 	}
