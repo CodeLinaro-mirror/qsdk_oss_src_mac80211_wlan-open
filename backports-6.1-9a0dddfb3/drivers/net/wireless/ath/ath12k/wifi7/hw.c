@@ -1473,8 +1473,22 @@ static u8 ath12k_wifi7_mac_get_tx_link(struct ieee80211_sta *sta,
 		return link;
 
 	/*Check on the link on which the frame came from hostapd*/
-	arsta = rcu_dereference(ahsta->link[link]);
-	ab = arsta->arvif->ar->ab;
+
+	if (link != ATH12K_INVALID_LINK_ID) {
+		arsta = rcu_dereference(ahsta->link[link]);
+		ab = arsta->arvif->ar->ab;
+	} else if (ieee80211_is_action(hdr->frame_control)) {
+		/* link_id is invalid, find first valid link */
+		links = ahsta->links_map;
+		for_each_set_bit(link_id, &links, ATH12K_NUM_MAX_LINKS) {
+			arsta = rcu_dereference(ahsta->link[link_id]);
+			if (!arsta || !arsta->arvif || !arsta->arvif->ar)
+				continue;
+			ab = arsta->arvif->ar->ab;
+			link = link_id;
+			break;
+		}
+	}
 
 	if (ab && test_bit(ATH12K_GROUP_FLAG_HW_CRYPTO_DISABLED, &ab->ag->flags) &&
 	    ieee80211_has_protected(hdr->frame_control))
@@ -1512,7 +1526,10 @@ static u8 ath12k_wifi7_mac_get_tx_link(struct ieee80211_sta *sta,
 		goto skip_link_agnostic_tx;
 
 	ATH12K_SKB_CB(skb)->flags |= ATH12K_SKB_MGMT_LINK_AGNOSTIC;
-	link = ahsta->primary_link_id;
+
+	/*Use primay link only if it's not a bridge Peer*/
+	if (!(ATH12K_BRIDGE_LINKS_MASK & BIT(ahsta->primary_link_id)))
+		link = ahsta->primary_link_id;
 
 skip_link_agnostic_tx:
 	/* Perform address conversion for ML STA Tx */
