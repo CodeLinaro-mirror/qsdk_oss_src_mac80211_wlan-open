@@ -3178,6 +3178,12 @@ enum ieee80211_csa_source {
 	IEEE80211_CSA_SOURCE_UNPROT_ACTION,
 };
 
+/*
+ * MCST can include non-CAC overhead in addition to DFS CAC time, e.g.
+ * beacon interval padding, target/host restart latency and TU rounding.
+ */
+#define CROSS_LINK_CSA_MAX_NON_CAC_OVERHEAD_MS 5000
+
 /**
  * ieee80211_cross_link_csa_window_ms - validate cross-link CSA window duration
  * @local: local hardware context used for regulatory lookups
@@ -3211,7 +3217,7 @@ ieee80211_cross_link_csa_window_ms(struct ieee80211_local *local,
 	if (!dfs_cac_ms)
 		return 0;
 
-	margin_ms = dfs_cac_ms / 100;
+	margin_ms = CROSS_LINK_CSA_MAX_NON_CAC_OVERHEAD_MS;
 	max_valid_ms = dfs_cac_ms + margin_ms;
 	if (window_ms > max_valid_ms)
 		return 0;
