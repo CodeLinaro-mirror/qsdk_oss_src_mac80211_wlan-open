@@ -1887,6 +1887,8 @@ static bool ieee80211_tx_frags(struct ieee80211_local *local,
 	skb_queue_walk_safe(skbs, skb, tmp) {
 		struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 		int q = info->hw_queue;
+		bool csa_action = info->control.flags &
+			IEEE80211_TX_CTRL_CSA_ACTION;
 
 #ifdef CPTCFG_MAC80211_VERBOSE_DEBUG
 		if (WARN_ON_ONCE(q >= local->hw.queues)) {
@@ -1912,8 +1914,10 @@ static bool ieee80211_tx_frags(struct ieee80211_local *local,
 		 * in this SW queue
 		 */
 		spin_lock_irqsave(pcpu_queue_stop_reason_lock, flags);
-		if (*queue_stop_reasons ||
-		    (!txpending && !skb_queue_empty(pcpu_pending))) {
+		if ((!csa_action && (*queue_stop_reasons ||
+			     (!txpending && !skb_queue_empty(pcpu_pending)))) ||
+		    (csa_action && (*queue_stop_reasons &
+				    ~BIT(IEEE80211_QUEUE_STOP_REASON_CSA)))) {
 			if (unlikely(info->flags &
 				     IEEE80211_TX_INTFL_OFFCHAN_TX_OK)) {
 				if (*queue_stop_reasons &
