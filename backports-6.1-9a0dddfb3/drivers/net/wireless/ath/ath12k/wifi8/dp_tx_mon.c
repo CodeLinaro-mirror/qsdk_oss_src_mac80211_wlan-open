@@ -213,7 +213,8 @@ ath12k_wifi8_htt_tx_mon_cfg_fill_extended_wmask(struct htt_tx_mon_ring_selection
 		le32_encode_bits(htt_tlv_filter->stat_subtype_data,
 				 HTT_TX_MON_TYPE_EN_STATUS_SUBTYPE_MASK);
 
-	/* wifi8-only info0 control bit (BIT 28). Safe here: this op is
+
+	/* wifi8-only info0 control bits (BITs 28-29). Safe here: this op is
 	 * only installed on the wifi8 arch-ops, where the HTT skb is sized to
 	 * the full struct. pkt_buf_cnt_en (BIT 31) is encoded unconditionally
 	 * in the common filter_setup and must not be re-encoded here.
@@ -221,6 +222,9 @@ ath12k_wifi8_htt_tx_mon_cfg_fill_extended_wmask(struct htt_tx_mon_ring_selection
 	if (htt_tlv_filter->peer_ppdu_drop)
 		cmd->info0 |= le32_encode_bits(1,
 			HTT_TX_MON_RING_CFG_CMD_INFO0_PEER_PPDU_DROP);
+
+	cmd->info0 |= le32_encode_bits(!!htt_tlv_filter->mpdu_stat_type_filter_en,
+		HTT_TX_MON_RING_CFG_CMD_INFO0_MPDU_STAT_TYPE_FILTER_EN);
 }
 EXPORT_SYMBOL(ath12k_wifi8_htt_tx_mon_cfg_fill_extended_wmask);
 
@@ -284,6 +288,7 @@ ath12k_wifi8_dp_mon_tx_setup_ext_mon_filter(struct ath12k_pdev_dp *dp_pdev,
 	mgmt_stat_subtype = ext_mon_filter->status_filter[ATH12K_EXT_MON_FRAME_MGMT];
 	ctrl_stat_subtype = ext_mon_filter->status_filter[ATH12K_EXT_MON_FRAME_CTRL];
 	data_stat_subtype = ext_mon_filter->status_filter[ATH12K_EXT_MON_FRAME_DATA];
+	f->mpdu_stat_type_filter_en = false;
 
 	if (sw_peer_filtering) {
 		/* Enable full tx monitor */
@@ -383,6 +388,7 @@ int ath12k_wifi8_dp_mon_tx_config_filter(struct ath12k_pdev_dp *dp_pdev,
 		case DP_MON_TX_FULL_MONITOR:
 		case DP_MON_TX_FILTER_PKTLOG_HYBRID:
 			ath12k_dp_mon_tx_setup_mon_mode_filter(dp, src_tlv_filter);
+			src_tlv_filter->mpdu_stat_type_filter_en = false;
 			ath12k_wifi8_dp_mon_tx_enable_all_subtypes(src_tlv_filter);
 			break;
 		case DP_MON_TX_FILTER_EXT_MON_MODE:
