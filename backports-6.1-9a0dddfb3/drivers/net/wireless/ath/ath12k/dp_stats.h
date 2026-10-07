@@ -273,6 +273,7 @@ enum ath12k_mu_packet_type {
 #define MAX_TRANSMIT_TYPES      9
 #define MAX_PUNCTURED_MODE	5
 #define RSSI_CHAIN_LEN		8
+#define TX_PWR_CHAIN_LEN	8
 
 /* Only following preamble types are supported for SU and MU PPDU stats */
 enum ath12k_rx_ppdu_proto {
@@ -579,7 +580,8 @@ struct ath12k_htt_tx_ppdu_stats {
 	struct pkt_type su_bn_ppdu_cnt;
 	struct pkt_type mu_bn_ppdu_cnt[TXRX_TYPE_MU_MAX];
 	u16 tx_ratecode;
-	u8 tx_pwr;
+	u8 tx_pwr_chain_en;
+	u8 tx_pwr[TX_PWR_CHAIN_LEN];
 	u64 tx_dur_ac[WME_NUM_AC];
 };
 
