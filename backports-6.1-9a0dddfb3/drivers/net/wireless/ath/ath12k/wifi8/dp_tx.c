@@ -1250,6 +1250,13 @@ void ath12k_wifi8_dp_tx_hal_tcl_desc_update(struct hal_tcl_data_cmd *hal_tcl_des
 		le32_encode_bits(0, HAL_TCL_DATA_CMD_INFO2_RX_TIMESTAMP) |
 		le32_encode_bits(0, HAL_TCL_DATA_CMD_INFO2_RX_TIMESTAMP_VALID);
 
+	if (unlikely(skb->ip_summed == CHECKSUM_PARTIAL)) {
+		hal_tcl_desc->info2 |=
+		le32_encode_bits(1, HAL_TCL_DATA_CMD_INFO2_IPV4_CHECKSUM_EN) |
+		le32_encode_bits(1, HAL_TCL_DATA_CMD_INFO2_UDP_OVER_IPV4_CHECKSUM_EN) |
+		le32_encode_bits(1, HAL_TCL_DATA_CMD_INFO2_L4_CHECKSUM_EN);
+	}
+
 	hal_tcl_desc->info3 = cpu_to_le32(msdu_info->flags1) |
 		le32_encode_bits(msdu_info->tx_notify_frame,
 				 HAL_TCL_DATA_CMD_INFO3_TX_NOTIFY_FRAME) |

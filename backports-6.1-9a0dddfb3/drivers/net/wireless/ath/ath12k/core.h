@@ -1387,7 +1387,7 @@ struct ath12k_vif {
 	u8 map_id;
 	struct ath12k_wmm_stats wmm_stats;
 	bool overide_primary_umac;
-	struct work_struct disable_sg_netdev_work;
+	struct work_struct update_netdev_features_work;
 	bool disable_sg;
 	unsigned long beacon_flags;
 	struct delayed_work connection_loss_work;

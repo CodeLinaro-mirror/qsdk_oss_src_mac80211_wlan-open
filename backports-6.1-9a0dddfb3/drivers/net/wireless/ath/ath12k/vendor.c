@@ -15331,7 +15331,7 @@ static int ath12k_vendor_set_wifi_params_me(struct wiphy *wiphy,
 	if (ahvif->dp_vif.tx_encap_type == ATH12K_HW_TXRX_ETHERNET &&
 	    params->value == QCA_WLAN_VENDOR_VDEV_PARAM_ME) {
 		ahvif->disable_sg = disable_sg;
-		schedule_work(&ahvif->disable_sg_netdev_work);
+		schedule_work(&ahvif->update_netdev_features_work);
 	}
 
 	return 0;

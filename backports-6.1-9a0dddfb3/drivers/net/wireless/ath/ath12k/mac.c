@@ -23154,12 +23154,13 @@ static int ath12k_mac_ahvif_id_allocate(struct ath12k_vif *ahvif)
 	return 0;
 }
 
-static void ath12k_mac_disable_sg_netdev_work(struct work_struct *work)
+static void ath12k_mac_update_netdev_features_work(struct work_struct *work)
 {
 	struct ath12k_vif *ahvif = container_of(work, struct ath12k_vif,
-						disable_sg_netdev_work);
+						update_netdev_features_work);
 	struct wireless_dev *wdev;
 	struct net_device *netdev;
+	struct ieee80211_hw *hw;
 
 	if (!ahvif || !ahvif->vif)
 		return;
@@ -23171,7 +23172,7 @@ static void ath12k_mac_disable_sg_netdev_work(struct work_struct *work)
 	netdev = wdev->netdev;
 
 	if (!rtnl_trylock()) {
-		schedule_work(&ahvif->disable_sg_netdev_work);
+		schedule_work(&ahvif->update_netdev_features_work);
 		return;
 	}
 	/* Disable SG by default for interface */
@@ -23184,6 +23185,14 @@ static void ath12k_mac_disable_sg_netdev_work(struct work_struct *work)
 		/* Enable SG capability */
 		netdev->hw_features |= NETIF_F_SG;
 	}
+
+	/* Reset HW checksum offload capability by default*/
+	hw = ahvif->ah->hw;
+	if (hw && hw->netdev_features & NETIF_F_HW_CSUM) {
+		netdev->features &= ~NETIF_F_HW_CSUM;
+		netdev->wanted_features &= ~NETIF_F_HW_CSUM;
+	}
+
 	netdev_update_features(netdev);
 	rtnl_unlock();
 }
@@ -23263,8 +23272,8 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 	arvif = &ahvif->deflink;
 
 	ath12k_event_queue_init(&ahvif->event_queue, hw->wiphy, ahvif);
-	INIT_WORK(&ahvif->disable_sg_netdev_work,
-		  ath12k_mac_disable_sg_netdev_work);
+	INIT_WORK(&ahvif->update_netdev_features_work,
+		  ath12k_mac_update_netdev_features_work);
 	ahvif->disable_sg = false;
 
 	/* Restore the VP information if VP is allocated
@@ -23487,10 +23496,10 @@ ppe_vp_config:
 	 * will not know if this interface is an ML vif at this point.
 	 */
 exit:
-	schedule_work(&ahvif->disable_sg_netdev_work);
 #ifdef CPTCFG_QCN_EXTN
 	ath12k_mac_op_add_interface_extn(hw, vif);
 #endif
+	schedule_work(&ahvif->update_netdev_features_work);
 	return 0;
 }
 EXPORT_SYMBOL(ath12k_mac_op_add_interface);
@@ -23743,7 +23752,7 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 	/* Cleanup event queue */
 	ath12k_event_queue_deinit(&ahvif->event_queue);
 
-	cancel_work_sync(&ahvif->disable_sg_netdev_work);
+	cancel_work_sync(&ahvif->update_netdev_features_work);
 
 	if (vif->type == NL80211_IFTYPE_AP_VLAN) {
 		if (!ahvif->vlan_iface) {
@@ -31761,8 +31770,11 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 
 	wiphy->interface_modes = ath12k_mac_get_ifmodes(ah);
 
-	/* Enable SG offload */
+	/* Enable SG and CSUM offload */
 	hw->netdev_features |= NETIF_F_SG;
+
+	if (ab->hw_params->hw_csum_enable)
+		hw->netdev_features |= NETIF_F_HW_CSUM;
 
 	ieee80211_hw_set(hw, SIGNAL_DBM);
 	ieee80211_hw_set(hw, SUPPORTS_PS);

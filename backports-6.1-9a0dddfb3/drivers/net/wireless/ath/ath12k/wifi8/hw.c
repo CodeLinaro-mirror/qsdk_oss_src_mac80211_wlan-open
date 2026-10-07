@@ -656,6 +656,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
 		.peer_del_all_support = true,
 		.tqm2sw_fw_war = true,
+		.hw_csum_enable = true,
 	},
 	{
 		/* fw_tqm2sw WAR: enabled only on Trestles V1 (HW1.0).
@@ -798,6 +799,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
 		.peer_del_all_support = true,
 		.tqm2sw_fw_war = true,
+		.hw_csum_enable = true,
 	},
 	{
 		.name = "qcn9625 hw2.0",
@@ -940,6 +942,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
 		.peer_del_all_support = true,
 		.tqm2sw_fw_war = false,
+		.hw_csum_enable = true,
 	},
 };
 
