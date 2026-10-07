@@ -863,7 +863,7 @@ static void ieee80211_key_destroy(struct ieee80211_key *key,
 	 * Synchronize so the TX path and rcu key iterators
 	 * can no longer be using this key before we free/remove it.
 	 */
-	synchronize_net();
+	ieee80211_sync_rcu_or_expedited(key->local);
 
 	__ieee80211_key_destroy(key, delay_tailroom);
 }
