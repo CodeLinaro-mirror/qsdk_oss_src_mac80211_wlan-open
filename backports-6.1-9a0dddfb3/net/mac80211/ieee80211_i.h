@@ -2151,6 +2151,7 @@ struct ieee80211_local {
 
 	struct mac80211_memory_stats memory_stats;
 	struct work_struct awgn_detected_work;
+	spinlock_t awgn_lock; /* protects awgn_info_list */
 
 	bool enable_tx_latency_stats;
 
