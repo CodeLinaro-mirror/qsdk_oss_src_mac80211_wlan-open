@@ -786,7 +786,7 @@ int ath12k_wifi8_peer_rx_tid_reo_update_for_smd(struct ath12k_base *ab,
 	}
 
 	if (!rx_tid_ctx->ba_win_sz && ba_win_sz)
-		ath12k_info(ab,
+		ath12k_dbg_level(ab, ATH12K_DBG_SMD, ATH12K_DBG_L3,
 			    "SMD RX BA update fallback peer %pM tid %u ba_win_sz %u\n",
 			    peer_addr, rx_tid_ctx->tid, ba_win_sz);
 
