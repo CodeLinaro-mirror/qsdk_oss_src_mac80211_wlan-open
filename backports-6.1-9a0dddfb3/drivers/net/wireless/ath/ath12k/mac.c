@@ -20844,7 +20844,6 @@ void ath12k_mac_stop(struct ath12k *ar)
 {
 	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
 	struct ath12k_hw *ah = ar->ah;
-	struct ath12k_hw_group *ag = ath12k_ah_to_ag(ah);
 	struct htt_ppdu_stats_info *ppdu_stats, *tmp;
 	int ret;
 	enum dp_mon_stats_mode mode = ATH12k_DP_MON_BASIC_STATS;
@@ -20895,10 +20894,7 @@ void ath12k_mac_stop(struct ath12k *ar)
 
 	ath12k_debugfs_nrp_cleanup_all(ar);
 
-	if ((ath12k_erp_get_sm_state() == ATH12K_ERP_ENTER_COMPLETE ||
-	    (ag->wsi_remap_in_progress && ar->ab->is_cumac_chip) ||
-	    ar->pdev_user_suspend) &&
-	    !ar->allocated_vdev_map && !ar->pdev_suspend) {
+	if (!ar->allocated_vdev_map && !ar->pdev_suspend) {
 		ret = ath12k_mac_pdev_suspend(ar);
 		if (ret)
 			ath12k_warn(ar->ab, "pdev suspend command is failed %d\n", ret);
