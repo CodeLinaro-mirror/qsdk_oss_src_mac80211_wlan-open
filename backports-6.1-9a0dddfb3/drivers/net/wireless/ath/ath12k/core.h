@@ -72,6 +72,12 @@
 /* Pending management packets threshold for dropping probe responses */
 #define ATH12K_PRB_RSP_DROP_THRESHOLD ((ATH12K_TX_MGMT_TARGET_MAX_SUPPORT_WMI * 3) / 4)
 
+/* GAS/ANQP AP-level rate-limiter defaults */
+/* max GAS req per window */
+#define ATH12K_GAS_RL_LIMIT_DEFAULT		10
+/* window size in ms */
+#define ATH12K_GAS_RL_WINDOW_MS_DEFAULT		1000
+
 /* Broadcast probe request per-STA rate-limiting */
 /* suppress window in ms */
 #define ATH12K_BCAST_PROBE_RL_WINDOW_MS		200
@@ -2454,6 +2460,21 @@ struct ath12k {
 	struct work_struct mvr_ch_switch_notify_work;
 	u32 mvr_ch_switch_notify_vdev_bm;
 	struct ath12k_peer_map_pending_event peer_map_event;
+	/* GAS/ANQP link-level global rate limiter.
+	 * Caps total GAS Initial/Comeback Requests across all STAs
+	 * to gas_rl_limit per gas_rl_window_ms milliseconds.
+	 * Protected by ar->data_lock.
+	 */
+	/* Max requests per window (1-100). */
+	u32 gas_rl_limit;
+	/* Window size in ms (100-10000). */
+	u32 gas_rl_window_ms;
+	/* Requests forwarded in current window. */
+	u32 gas_rl_count;
+	/* Jiffies at start of current window. */
+	unsigned long gas_rl_epoch;
+	/* Runtime enable/disable toggle. */
+	bool gas_rl_enabled;
 	ath12k_peer_create_conf_status peer_create_status;
 	/* Broadcast probe request per-STA rate-limit table.
 	 * Suppresses duplicate broadcast probe requests from the same STA

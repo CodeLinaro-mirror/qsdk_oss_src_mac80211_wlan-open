@@ -7371,6 +7371,107 @@ void ath12k_hw_debugfs_register(struct ath12k_hw *ah)
 				   &fops_reset_dp_tx_mon_stats);
 }
 
+static ssize_t ath12k_read_gas_rl_stats(struct file *file,
+					 char __user *ubuf,
+					 size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	struct ath12k_pdev_telemetry_stats *stats = &ar->dp.stats.telemetry_stats;
+	int len = 0, ret;
+	const int size = 512;
+
+	char *buf __free(kfree) = kzalloc(size, GFP_KERNEL);
+
+	if (!buf)
+		return -ENOMEM;
+
+	spin_lock_bh(&ar->data_lock);
+	len += scnprintf(buf + len, size - len,
+			 "GAS/ANQP Link Rate-Limit Stats:\n");
+	len += scnprintf(buf + len, size - len,
+			 "  enabled              = %u\n",
+			 ar->gas_rl_enabled);
+	len += scnprintf(buf + len, size - len,
+			 "  gas_rl_limit         = %u\n",
+			 ar->gas_rl_limit);
+	len += scnprintf(buf + len, size - len,
+			 "  gas_rl_window_ms     = %u\n",
+			 ar->gas_rl_window_ms);
+	len += scnprintf(buf + len, size - len,
+			 "  rx_gas_req_total     = %u\n",
+			 stats->rx_gas_req_total);
+	len += scnprintf(buf + len, size - len,
+			 "  rx_gas_req_drop      = %u\n",
+			 stats->rx_gas_req_drop);
+	len += scnprintf(buf + len, size - len,
+			 "  gas_rl_count_current = %u\n",
+			 ar->gas_rl_count);
+	spin_unlock_bh(&ar->data_lock);
+
+	len += scnprintf(buf + len, size - len,
+			 "Commands:\n"
+			 "  echo enable/disable        > gas_rl_stats\n"
+			 "  echo reset                 > gas_rl_stats\n"
+			 "  echo limit=<1-100>         > gas_rl_stats\n"
+			 "  echo window_ms=<100-10000> > gas_rl_stats\n");
+
+	ret = simple_read_from_buffer(ubuf, count, ppos, buf, len);
+	return ret;
+}
+
+static ssize_t ath12k_write_gas_rl_stats(struct file *file,
+					 const char __user *ubuf,
+					 size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	char buf[32] = {0};
+	u32 val;
+	ssize_t ret = count;
+	bool handled = false;
+
+	if (count > sizeof(buf) - 1)
+		return -EINVAL;
+
+	if (copy_from_user(buf, ubuf, count))
+		return -EFAULT;
+
+	spin_lock_bh(&ar->data_lock);
+
+	if (strncmp(buf, "enable", 6) == 0) {
+		ar->gas_rl_enabled = true;
+		handled = true;
+	} else if (strncmp(buf, "disable", 7) == 0) {
+		ar->gas_rl_enabled = false;
+		handled = true;
+	} else if (strncmp(buf, "reset", 5) == 0) {
+		ar->dp.stats.telemetry_stats.rx_gas_req_total = 0;
+		ar->dp.stats.telemetry_stats.rx_gas_req_drop  = 0;
+		ar->gas_rl_count = 0;
+		handled = true;
+	} else if (sscanf(buf, "limit=%u", &val) == 1 &&
+		   val >= 1 && val <= 100) {
+		ar->gas_rl_limit = val;
+		handled = true;
+	} else if (sscanf(buf, "window_ms=%u", &val) == 1 &&
+		   val >= 100 && val <= 10000) {
+		ar->gas_rl_window_ms = val;
+		handled = true;
+	}
+
+	spin_unlock_bh(&ar->data_lock);
+	if (!handled)
+		ret = -EINVAL;
+
+	return ret;
+}
+
+static const struct file_operations fops_gas_rl_stats = {
+	.read   = ath12k_read_gas_rl_stats,
+	.write  = ath12k_write_gas_rl_stats,
+	.open   = simple_open,
+	.owner  = THIS_MODULE,
+};
+
 static ssize_t ath12k_read_bcast_probe_rl_stats(struct file *file,
 						char __user *ubuf,
 						size_t count, loff_t *ppos)
@@ -7666,6 +7767,10 @@ void ath12k_debugfs_register(struct ath12k *ar)
 					   ab, ab,
 					   &fops_ppeds_stats);
 #endif
+
+	debugfs_create_file("gas_rl_stats", 0644,
+			    ar->debug.debugfs_pdev, ar,
+			    &fops_gas_rl_stats);
 }
 
 struct ath12k_srng_stats_priv {
