@@ -1653,6 +1653,10 @@ ath12k_wifi7_hal_mon_rx_set_decap_type_raw_mode(struct hal_rx_mon_ppdu_info *ppd
 			ppdu_info->mpdu_info[user_id].decap_type = DP_RX_DECAP_TYPE_RAW;
 		}
 	}
+
+	/* HW reports NATIVE_WIFI decap type for MD-filtered raw MPDUs; treat as RAW. */
+	if (ppdu_info->mpdu_info[user_id].decap_type == DP_RX_DECAP_TYPE_NATIVE_WIFI)
+		ppdu_info->mpdu_info[user_id].decap_type = DP_RX_DECAP_TYPE_RAW;
 }
 
 static __always_inline void
