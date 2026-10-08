@@ -250,6 +250,9 @@ void ath12k_dp_mon_rx_display_filters(struct ath12k_dp *dp,
 		ath12k_dbg(ab, ATH12K_DBG_DATA,
 			   "fpmo_data_mpdu_tlv_filter1: 0x%x",
 			   tlv_filter->fpmo_data_mpdu_tlv_filter1);
+		ath12k_dbg(ab, ATH12K_DBG_DATA,
+			   "peer_type_filter_en: %d",
+			   tlv_filter->peer_type_filter_en);
 	}
 }
 EXPORT_SYMBOL(ath12k_dp_mon_rx_display_filters);
@@ -469,6 +472,8 @@ void ath12k_dp_mon_rx_prepare_filter(struct ath12k_dp *dp,
 					src_tlv_filter->fp_data_mpdu_tlv_filter1;
 		dst_tlv_filter->fpmo_data_mpdu_tlv_filter1 |=
 					src_tlv_filter->fpmo_data_mpdu_tlv_filter1;
+		dst_tlv_filter->peer_type_filter_en |=
+					src_tlv_filter->peer_type_filter_en;
 
 		ath12k_dbg(ab, ATH12K_DBG_DATA, "Updated Rx filters for mode: %d", mode);
 		ath12k_dp_mon_rx_display_filters(dp, mode, rx_mon_filter);
