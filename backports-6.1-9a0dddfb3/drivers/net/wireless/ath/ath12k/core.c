@@ -216,6 +216,26 @@ static void ath12k_detect_mem_profile(void)
 
 }
 
+unsigned int ath12k_unified_bdf_pci0;
+module_param_named(unified_bdf_PCI0, ath12k_unified_bdf_pci0, uint, 0444);
+MODULE_PARM_DESC(unified_bdf_PCI0,
+		 "Preferred PHY mode override (bit15 = Split PHY) applied to unified_fw_board_id for PCI domain 0");
+
+unsigned int ath12k_unified_bdf_pci1;
+module_param_named(unified_bdf_PCI1, ath12k_unified_bdf_pci1, uint, 0444);
+MODULE_PARM_DESC(unified_bdf_PCI1,
+		 "Preferred PHY mode override (bit15 = Split PHY) applied to unified_fw_board_id for PCI domain 1");
+
+unsigned int ath12k_unified_bdf_pci2;
+module_param_named(unified_bdf_PCI2, ath12k_unified_bdf_pci2, uint, 0444);
+MODULE_PARM_DESC(unified_bdf_PCI2,
+		 "Preferred PHY mode override (bit15 = Split PHY) applied to unified_fw_board_id for PCI domain 2");
+
+unsigned int ath12k_unified_bdf_pci3;
+module_param_named(unified_bdf_PCI3, ath12k_unified_bdf_pci3, uint, 0444);
+MODULE_PARM_DESC(unified_bdf_PCI3,
+		 "Preferred PHY mode override (bit15 = Split PHY) applied to unified_fw_board_id for PCI domain 3");
+
 static unsigned int ath12k_en_fwlog = true;
 module_param_named(en_fwlog, ath12k_en_fwlog, uint, 0644);
 MODULE_PARM_DESC(en_fwlog, "fwlog: 0-disable, 1-enable");
