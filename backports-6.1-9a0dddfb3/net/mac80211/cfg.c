@@ -4261,10 +4261,20 @@ static int ieee80211_set_tx_power(struct wiphy *wiphy,
 		return ieee80211_set_wdev_txpower(wiphy, local, wdev, link_id,
 						  txp_type, user_power_level);
 
-	local->user_power_level = user_power_level;
+	if (radio_id >= wiphy->n_radio)
+		local->user_power_level = user_power_level;
+	else
+		wiphy->radio_cfg[radio_id].user_pwr_lvl = user_power_level;
+
 	if (!ieee80211_set_links_txpower(wiphy, local, radio_id,
-					 txp_type, &has_monitor))
-		return -ENOLINK;
+					 txp_type, &has_monitor)) {
+		/*
+		 * No active link is available for this radio (VAPs down)
+		 * Pending value stored above; ieee80211_assign_link_chanctx()
+		 * will apply it to the correct link when the VAP comes up.
+		 */
+		return 0;
+	}
 
 	if (has_monitor)
 		ieee80211_set_monitor_txpower(local, txp_type);

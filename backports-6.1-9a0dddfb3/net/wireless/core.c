@@ -1123,6 +1123,7 @@ int wiphy_register(struct wiphy *wiphy)
 #ifdef CPTCFG_QCN_EXTN
 			wiphy->radio_cfg[idx].bootup_cac_feature = false;
 #endif /* CPTCFG_QCN_EXTN */
+			wiphy->radio_cfg[idx].user_pwr_lvl = INT_MIN;
 			bgr->wiphy = wiphy;
 			bgr->radio_idx = idx;
 			bgr->link_id = -1;
