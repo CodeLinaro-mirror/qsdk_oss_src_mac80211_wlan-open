@@ -6,6 +6,9 @@
 #ifndef __TELEMETRY_AGENT_WIFI_DRIVER_IF_H__
 #define __TELEMETRY_AGENT_WIFI_DRIVER_IF_H__
 
+struct telemetry_agent_ops;
+extern struct telemetry_agent_ops *g_agent_ops;
+
 #define TELEMETRY_MAX_MCS (24 + 1)
 
 #define NUM_TID 8
@@ -15,6 +18,67 @@
 #define MUMIMO_USERS 8
 #define SAWF_NUM_QUEUES (NUM_TID * 2)
 #define RSSI_MIN_VALID -100
+#define PEER_FLAGS_BTM_CAP_BIT 0 /* Peer BTM capability. */
+
+/*
+ * A PPDU can report up to 37 MU users, matching both
+ * HTT_PPDU_STATS_MAX_USERS and HAL_MAX_UL_MU_USERS in ath12k.
+ */
+#define ATH12K_PPDU_STATS_MAX_USERS_EXT 37
+
+enum {
+	ATH12K_PPDU_STATS_MAX_CHAINS = 8,
+	ATH12K_PPDU_STATS_MAX_SUBBANDS = 16,
+};
+
+/* Encode MCS in bits 7:0, NSS in bits 11:8 and bandwidth in bits 15:12. */
+#define ASSEMBLE_STATS_CODE(mcs, nss, bw) \
+	(((mcs) & 0xFF) | (((nss) & 0xF) << 8) | (((bw) & 0xF) << 12))
+
+/* Values mirror the HTT PPDU type values carried by TX statistics. */
+#define TA_HTT_PPDU_TYPE_SU             0
+#define TA_HTT_PPDU_TYPE_MU_MIMO        1
+#define TA_HTT_PPDU_TYPE_MU_OFDMA       2
+#define TA_HTT_PPDU_TYPE_MU_MIMO_OFDMA  3
+
+#define TA_IS_SU(t)       ((t) == TA_HTT_PPDU_TYPE_SU)
+#define TA_IS_OFDMA(t) ({ \
+	typeof(t) __t = (t); \
+	__t == TA_HTT_PPDU_TYPE_MU_OFDMA || \
+	__t == TA_HTT_PPDU_TYPE_MU_MIMO_OFDMA; \
+})
+#define TA_IS_MU_MIMO(t)  ((t) == TA_HTT_PPDU_TYPE_MU_MIMO)
+
+/* Values mirror the HAL RX reception types carried by RX statistics. */
+#define TA_RX_RECEPTION_SU                0
+#define TA_RX_RECEPTION_DL_MU_MIMO        1
+#define TA_RX_RECEPTION_DL_MU_OFDMA       2
+#define TA_RX_RECEPTION_DL_MU_OFDMA_MIMO  3
+#define TA_RX_RECEPTION_UL_MU_MIMO        4
+#define TA_RX_RECEPTION_UL_MU_OFDMA       5
+#define TA_RX_RECEPTION_UL_MU_OFDMA_MIMO  6
+
+#define TA_RX_IS_SU(t)    ((t) == TA_RX_RECEPTION_SU)
+#define TA_RX_IS_OFDMA(t) ({ \
+	typeof(t) __t = (t); \
+	__t == TA_RX_RECEPTION_DL_MU_OFDMA || \
+	__t == TA_RX_RECEPTION_UL_MU_OFDMA || \
+	__t == TA_RX_RECEPTION_DL_MU_OFDMA_MIMO || \
+	__t == TA_RX_RECEPTION_UL_MU_OFDMA_MIMO; \
+})
+#define TA_RX_IS_MIMO(t) ({ \
+	typeof(t) __t = (t); \
+	__t == TA_RX_RECEPTION_DL_MU_MIMO || \
+	__t == TA_RX_RECEPTION_UL_MU_MIMO; \
+})
+
+/*
+ * Values mirror enum ath12k_event_type in ath12k_notif.h. Plain integer
+ * constants avoid redefining that driver-private enum in this shared header.
+ */
+#define ATH12K_EVENT_TX_PPDU_STATS_VAL 4
+#define ATH12K_EVENT_RX_PPDU_STATS_VAL 5
+#define ATH12K_EVENT_SOJOURN_STATS_VAL 6
 
 #define SET_PEER_FLAG(_val, _attr) \
 	((_val) |= (1 << (PEER_FLAGS_##_attr##_BIT)))
@@ -42,8 +106,15 @@ struct agent_peer_obj {
 	u8 psoc_id;
 	u8 pdev_id;
 	u8 peer_mac_addr[6];
+	u8 peer_mld_mac_addr[6];
 	u16 peer_id;
 	u8 hw_link_id;
+	struct wiphy *wiphy;
+	u64  peer_cookie;
+	bool is_primary_link;
+	bool ext_rate_link_enabled;
+	u8   ieee_link_id;
+	u8   primary_link_id;
 };
 
 enum agent_notification_event {
@@ -63,9 +134,6 @@ enum agent_t2lm_direction {
 	T2LM_BIDI_DIRECTION = 3,
 	T2LM_MAX_VALID_DIRECTION = T2LM_BIDI_DIRECTION,
 };
-
-/* Bit definitions for peer_flags */
-#define PEER_FLAGS_BTM_CAP_BIT 0        /* Peer BTM capability */
 
 struct t2lm_of_tids {
 	enum agent_t2lm_direction direction; /* 0-DL, 1-UL, 2-BiDi */
@@ -459,6 +527,172 @@ struct telemetry_agent_ops {
 					      bool set_clear);
 	int (*agent_set_hysteresis)(u8 type, u32 value);
 	int (*agent_get_hysteresis)(u8 type, u64 *hyst_value);
+
+	/* Pull rate-link statistics for a peer. */
+	void (*agent_ext_rate_link_stats_pull_by_mac)(const u8 *mac,
+						      struct wiphy *wiphy,
+						      u8 link_id);
+
+	/* Flush rate-link statistics for a radio. */
+	void (*agent_ext_rate_link_stats_flush_radio)(u8 soc_id, u8 pdev_id,
+						      struct wiphy *wiphy);
+};
+
+/* Parsed notifier payloads. */
+
+/**
+ * struct ath12k_tx_ppdu_user_stats - Per-user TX PPDU statistics
+ * @peer_id: Driver peer identifier.
+ * @peer_cookie: Peer generation that produced this sample.
+ * @ppdu_type: Value from enum HTT_PPDU_STATS_PPDU_TYPE.
+ * @bw: Value from enum ath12k_supported_bw.
+ * @ratecode: Packed MCS, NSS and bandwidth.
+ * @ratekbps: Data rate in kbps.
+ * @succ_bytes: Number of successfully transmitted bytes.
+ * @succ_mpdu: Number of successfully transmitted MPDUs.
+ * @succ_msdu: Number of successfully transmitted MSDUs.
+ * @mpdu_tried: Number of attempted MPDUs.
+ * @ack_rssi: Plain ACK RSSI for this TX PPDU.
+ * @ppdu_snr: Plain ACK SNR for this TX PPDU.
+ * @tid: Traffic identifier.
+ * @is_mcast: Whether the PPDU carries multicast traffic.
+ * @punc_mode: Value from enum dp_punctured_modes.
+ * @long_retries: Number of long retries.
+ *
+ * Enum-backed fields are stored as u8 to keep the notifier ABI layout fixed.
+ */
+struct ath12k_tx_ppdu_user_stats {
+	u16 peer_id;
+	u64 peer_cookie;
+	u8  ppdu_type;
+	u8  bw;
+	u32 ratecode;
+	u32 ratekbps;
+	u32 succ_bytes;
+	u16 succ_mpdu;
+	u16 succ_msdu;
+	u16 mpdu_tried;
+	s16 ack_rssi;
+	s16 ppdu_snr;
+	u8  tid;
+	u8  is_mcast;
+	u8  punc_mode;
+	u8  long_retries;
+};
+
+/**
+ * struct ath12k_ppdu_tx_stats_info - TX PPDU notifier payload
+ * @device_id: Telemetry device identifier.
+ * @pdev_id: Physical device identifier.
+ * @num_users: Number of valid entries in @users.
+ * @ppdu_id: Identifier shared by all users in this TX PPDU.
+ * @users: Per-user TX statistics.
+ */
+struct ath12k_ppdu_tx_stats_info {
+	u8  device_id;
+	u8  pdev_id;
+	u8  num_users;
+	u32 ppdu_id;
+	struct ath12k_tx_ppdu_user_stats users[ATH12K_PPDU_STATS_MAX_USERS_EXT];
+};
+
+/**
+ * struct ath12k_rx_ppdu_user_stats - Per-user RX PPDU statistics
+ * @peer_id: Driver peer identifier.
+ * @peer_cookie: Peer generation that produced this sample.
+ * @reception_type: Value from enum hal_rx_reception_type.
+ * @bw: Value from enum hal_rx_bw.
+ * @ratecode: Packed MCS, NSS and bandwidth.
+ * @ratekbps: Data rate in kbps.
+ * @num_bytes: Number of received bytes.
+ * @num_msdus: Number of received MSDUs.
+ * @num_mpdus: Number of received MPDUs with a valid FCS.
+ * @mpdu_fcs_err: Number of received MPDUs with an FCS error.
+ * @mpdu_retries: Number of retried MPDUs.
+ * @sgi: Guard interval code.
+ * @ppdu_rssi: Peer RSSI for this RX PPDU.
+ * @ppdu_snr: SNR for this RX PPDU.
+ * @punc_mode: Value from enum dp_punctured_modes.
+ * @snr_chain: Per-chain, per-subband SNR values.
+ *
+ * Enum-backed fields are stored as u8 to keep the notifier ABI layout fixed.
+ */
+struct ath12k_rx_ppdu_user_stats {
+	u16 peer_id;
+	u64 peer_cookie;
+	u8  reception_type;
+	u8  bw;
+	u32 ratecode;
+	u32 ratekbps;
+	u32 num_bytes;
+	u32 num_msdus;
+	u16 num_mpdus;
+	u16 mpdu_fcs_err;
+	u16 mpdu_retries;
+	u8  sgi;
+	s8  ppdu_rssi;
+	s8  ppdu_snr;
+	u8  punc_mode;
+	s8  snr_chain[ATH12K_PPDU_STATS_MAX_CHAINS]
+		[ATH12K_PPDU_STATS_MAX_SUBBANDS];
+};
+
+/**
+ * struct ath12k_ppdu_rx_stats_info - RX PPDU notifier payload
+ * @device_id: Telemetry device identifier.
+ * @pdev_id: Physical device identifier.
+ * @num_users: Number of valid entries in @users.
+ * @ppdu_id: Identifier shared by all users in this RX PPDU.
+ * @users: Per-user RX statistics.
+ */
+struct ath12k_ppdu_rx_stats_info {
+	u8  device_id;
+	u8  pdev_id;
+	u8  num_users;
+	u32 ppdu_id;
+	struct ath12k_rx_ppdu_user_stats users[ATH12K_PPDU_STATS_MAX_USERS_EXT];
+};
+
+/**
+ * struct ath12k_ppdu_stats_event - PPDU notifier event payload
+ * @skb: Driver-owned buffer containing the notifier payload. It is valid only
+ *       during the callback; listeners must not retain or free it. A listener
+ *       that needs asynchronous access must clone or copy the payload.
+ */
+struct ath12k_ppdu_stats_event {
+	struct sk_buff *skb;
+};
+
+/* Eight QoS TIDs plus one non-QoS bucket, across REO rings 0 through 5. */
+enum ath12k_sojourn_dim {
+	ATH12K_SOJOURN_TID_MAX  = 9,
+	ATH12K_SOJOURN_RING_MAX = 6,
+};
+
+/**
+ * struct ath12k_ppdu_sojourn_stats_info - Per-MSDU sojourn statistics
+ * @device_id: Telemetry device identifier.
+ * @pdev_id: Physical device identifier.
+ * @peer_mac: Peer MAC address.
+ * @peer_id: Driver peer identifier.
+ * @peer_cookie: Peer generation that produced this sample.
+ * @tid: Traffic identifier or the non-QoS bucket.
+ * @ring: REO destination ring identifier.
+ * @primary_link_id: Primary link identifier for the peer.
+ * @delta_us: Sojourn time of the current MSDU in microseconds.
+ * @ewma_us: Exponentially weighted moving average in microseconds.
+ */
+struct ath12k_ppdu_sojourn_stats_info {
+	u8  device_id;
+	u8  pdev_id;
+	u8  peer_mac[6];
+	u16 peer_id;
+	u64 peer_cookie;
+	u8  tid;
+	u8  ring;
+	u8  primary_link_id;
+	u32 delta_us;
+	u32 ewma_us;
 };
 
 void wlan_cfg80211_t2lm_app_reply_generic_response(void *gen_data,

@@ -18,11 +18,17 @@
  * to filter out the PPDU if not intended to process PPDU for invalid peer.
  * @ATH12K_EVENT_PPDU_TX_COMPLETE: TX PPDU completion
  * @ATH12K_EVENT_FSE_UPDATE: Flow/Search/Steering Engine update event
+ * @ATH12K_EVENT_TX_PPDU_STATS: Parsed TX PPDU statistics
+ * @ATH12K_EVENT_RX_PPDU_STATS: Parsed RX PPDU statistics
+ * @ATH12K_EVENT_SOJOURN_STATS: Sojourn statistics
  */
 enum ath12k_event_type {
 	ATH12K_EVENT_PPDU_RX_COMPLETE = 1,
 	ATH12K_EVENT_PPDU_TX_COMPLETE,
 	ATH12K_EVENT_FSE_UPDATE,
+	ATH12K_EVENT_TX_PPDU_STATS,
+	ATH12K_EVENT_RX_PPDU_STATS,
+	ATH12K_EVENT_SOJOURN_STATS,
 };
 
 struct htt_ppdu_stats_info;
@@ -84,9 +90,10 @@ struct ath12k_ppdu_notify_item {
  * Embedded in struct ath12k_pdev_dp.  Uses the per-wiphy workqueue
  */
 struct ath12k_ppdu_notify_ctx {
-	spinlock_t               lock;	      /* tx notifier lock */
+	spinlock_t               lock;	      /* protects both notifier queues */
 	struct list_head         queue;       /* ingress: producer appends here */
 	u32                      queue_depth; /* ingress + in-flight combined depth */
+	struct sk_buff_head      stats_queue; /* parsed stats payloads */
 	struct wiphy_work        work;
 };
 
@@ -135,6 +142,10 @@ void ath12k_ppdu_notify_ctx_init(struct ath12k_ppdu_notify_ctx *ctx);
 void ath12k_ppdu_notify_ctx_deinit(struct wiphy *wiphy,
 				   struct ath12k_ppdu_notify_ctx *ctx);
 int ath12k_ppdu_notifier_call_chain(unsigned long val, void *v);
+
+/* Parsed statistics notifier chain. */
+extern struct atomic_notifier_head ath12k_ppdu_stats_notifier_chain;
+int  ath12k_ppdu_stats_notifier_call_chain(unsigned long val, void *v);
 
 /* FSE_UPDATE notifier APIs */
 int ath12k_fse_update_notif_call_chain(void *v);
