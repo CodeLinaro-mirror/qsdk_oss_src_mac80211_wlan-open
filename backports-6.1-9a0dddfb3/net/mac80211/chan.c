@@ -2165,6 +2165,15 @@ static int ieee80211_set_monitor_chanctx(struct ieee80211_local *local,
 	if (ret)
 		return -EINVAL;
 
+	if (ctx->driver_present ||
+	    ctx->replace_state == IEEE80211_CHANCTX_REPLACES_OTHER) {
+		sdata_info(tmp_sdata,
+			   "Skipping monitor chanctx add: freq=%d driver_present=%d replace_state=%d\n",
+			   chan->center_freq, ctx->driver_present,
+			   ctx->replace_state);
+		return 0;
+	}
+
 	return ieee80211_add_chanctx(local, ctx);
 }
 
