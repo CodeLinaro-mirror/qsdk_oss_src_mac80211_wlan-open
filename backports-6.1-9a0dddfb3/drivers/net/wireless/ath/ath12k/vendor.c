@@ -45,6 +45,7 @@
 #ifndef CPTCFG_QCN_EXTN
 static struct ath12k_vif *ath12k_get_ahvif_from_wdev(struct wireless_dev *wdev);
 static struct ath12k *ath12k_get_ar_from_wdev(struct wireless_dev *wdev, u8 link_id);
+static struct ath12k *ath12k_get_radio_by_id(struct wiphy *wiphy, u8 radio_id);
 #endif /* !CPTCFG_QCN_EXTN */
 
 static const struct nla_policy
@@ -2733,6 +2734,7 @@ ath12k_wlan_telemetry_feat_policy[QCA_VENDOR_ATTR_WLAN_FEAT_MAX + 1] = {
 	[QCA_VENDOR_ATTR_WLAN_FEAT_MON_STATS] = {.type = NLA_FLAG},
 	[QCA_VENDOR_ATTR_WLAN_FEAT_TX_MON_STATS] = {.type = NLA_FLAG},
 	[QCA_VENDOR_ATTR_WLAN_FEAT_MAC80211] = {.type = NLA_FLAG},
+	[QCA_VENDOR_ATTR_WLAN_FEAT_EXT_RATE_LINK] = {.type = NLA_FLAG},
 };
 
 int ath12k_extract_feat_inputs(struct nlattr *tb_attr,
@@ -2743,7 +2745,8 @@ int ath12k_extract_feat_inputs(struct nlattr *tb_attr,
 
 	memset(&cmd->feat, 0, sizeof(struct ath12k_stats_feat));
 
-	ret = nla_parse_nested(feat_attr, QCA_VENDOR_ATTR_WLAN_FEAT_MAX, tb_attr,
+	ret = nla_parse_nested(feat_attr,
+			       QCA_VENDOR_ATTR_WLAN_FEAT_MAX, tb_attr,
 			       ath12k_wlan_telemetry_feat_policy, NULL);
 
 	if (ret) {
@@ -2788,6 +2791,9 @@ int ath12k_extract_feat_inputs(struct nlattr *tb_attr,
 
 	if (feat_attr[QCA_VENDOR_ATTR_WLAN_FEAT_MAC80211])
 		cmd->feat.feat_mac80211 = true;
+
+	if (feat_attr[QCA_VENDOR_ATTR_WLAN_FEAT_EXT_RATE_LINK])
+		cmd->feat.feat_ext_rate_link = true;
 
 	return ret;
 }
@@ -9445,6 +9451,7 @@ static int ath12k_stats_vif_setup(struct ath12k_telemetry_command *cmd)
 	struct ath12k *ar;
 	bool is_hw_stats;
 	struct sk_buff *vendor_event;
+	u8 soc_id, pdev_id;
 	int len, ret;
 
 	if (!cmd->wdev) {
@@ -9475,6 +9482,22 @@ static int ath12k_stats_vif_setup(struct ath12k_telemetry_command *cmd)
 	}
 
 	is_hw_stats = ath12k_dp_hw_peer_stats_enabled(ar ? &ar->dp : NULL);
+
+	if (cmd->feat.feat_ext_rate_link) {
+		if (!ar || !ar->ab)
+			return -EINVAL;
+
+		soc_id  = (u8)ath12k_get_ab_device_id(ar->ab);
+		pdev_id = (u8)ath12k_get_pdev_id(&ar->ab->pdevs[ar->pdev_idx]);
+
+		if (g_agent_ops &&
+		    g_agent_ops->agent_ext_rate_link_stats_flush_radio)
+			g_agent_ops->agent_ext_rate_link_stats_flush_radio(soc_id,
+								   pdev_id, cmd->wiphy);
+
+		return 0;
+	}
+
 	len = ath12k_get_dp_vendor_event_len(cmd, is_hw_stats);
 	ath12k_dbg(NULL, ATH12K_DBG_TELEMETRY, "Vendor Event Length = %d", len);
 
@@ -11135,6 +11158,32 @@ static void ath12k_vendor_wifi_extract_generic_command_params(struct nlattr **tb
 		   params->ifindex, params->link_id, params->radio_idx);
 }
 
+static int ath12k_vendor_ext_rate_link_flush(struct wiphy *wiphy, u8 radio_idx)
+{
+	struct ath12k *ar;
+	u8 soc_id, pdev_id;
+
+	ar = ath12k_get_radio_by_id(wiphy, radio_idx);
+	if (!ar || !ar->ab) {
+		ath12k_err(NULL, "ext_rate_link_flush: invalid radio_idx=%u\n",
+			   radio_idx);
+		return -EINVAL;
+	}
+
+	soc_id = (u8)ath12k_get_ab_device_id(ar->ab);
+	pdev_id = (u8)ath12k_get_pdev_id(&ar->ab->pdevs[ar->pdev_idx]);
+
+	if (g_agent_ops && g_agent_ops->agent_ext_rate_link_stats_flush_radio)
+		g_agent_ops->agent_ext_rate_link_stats_flush_radio
+			(soc_id, pdev_id, ar->ah->hw->wiphy);
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_TELEMETRY,
+		   "ext_rate_link_flush: soc=%u pdev=%u radio_idx=%u\n",
+		   soc_id, pdev_id, radio_idx);
+
+	return 0;
+}
+
 static int
 ath12k_vendor_iface_mode_config(struct wireless_dev *wdev,
 				struct ath12k_wifi_generic_params *wifi_params)
@@ -11228,6 +11277,10 @@ static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 
 		switch (wifi_params.command) {
 		case QCA_NL80211_VENDOR_SUBCMD_WIFI_PARAMS:
+			if (wifi_params.value ==
+			    QCA_NL80211_VENDOR_PARAM_EXT_RATE_LINK_FLUSH)
+				return ath12k_vendor_ext_rate_link_flush
+					(wiphy, wifi_params.radio_idx);
 			if (!wifi_params.data) {
 				ath12k_err(NULL,
 					   "Invalid param command received\n");
@@ -11264,6 +11317,10 @@ static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 				return ret;
 			}
 			break;
+		case QCA_NL80211_VENDOR_PARAM_EXT_RATE_LINK_FLUSH: {
+			return ath12k_vendor_ext_rate_link_flush
+				(wiphy, wifi_params.radio_idx);
+		}
 		default:
 #ifdef CPTCFG_QCN_EXTN
 			ret = ath12k_vendor_wifi_config_handler_extn(wiphy, wdev,
@@ -11452,6 +11509,10 @@ static int ath12k_vendor_wiphy_config_handler(struct wiphy *wiphy,
 
 		switch (wifi_params.command) {
 		case QCA_NL80211_VENDOR_SUBCMD_WIFI_PARAMS:
+			if (wifi_params.value ==
+			    QCA_NL80211_VENDOR_PARAM_EXT_RATE_LINK_FLUSH)
+				return ath12k_vendor_ext_rate_link_flush
+					(wiphy, wifi_params.radio_idx);
 			if (!wifi_params.data) {
 				ath12k_err(NULL,
 					   "Invalid param command received\n");
@@ -11467,6 +11528,10 @@ static int ath12k_vendor_wiphy_config_handler(struct wiphy *wiphy,
 			}
 #endif /* CPTCFG_QCN_EXTN */
 			break;
+		case QCA_NL80211_VENDOR_PARAM_EXT_RATE_LINK_FLUSH: {
+			return ath12k_vendor_ext_rate_link_flush
+				(wiphy, wifi_params.radio_idx);
+		}
 
 #ifdef CPTCFG_QCN_EXTN
 		case QCA_NL80211_VENDOR_RADIO_CONFIG_HWADDR:
@@ -11536,6 +11601,11 @@ static int ath12k_vendor_get_wifi_config_handler(struct wiphy *wiphy,
 	struct sk_buff *skb;
 	struct ieee80211_vif *vif;
 	struct ath12k_vif *ahvif;
+	struct ieee80211_hw *hw;
+	struct ath12k_hw *ah;
+	struct ath12k *radio;
+	int radio_idx;
+	u8 soc_id, pdev_id;
 	int ret;
 	u64 value = 0;
 
@@ -11587,6 +11657,36 @@ static int ath12k_vendor_get_wifi_config_handler(struct wiphy *wiphy,
 			}
 #endif /* CPTCFG_QCN_EXTN */
 			break;
+		case QCA_NL80211_VENDOR_PARAM_EXT_RATE_LINK_FLUSH: {
+			hw = wiphy_to_ieee80211_hw(wiphy);
+			ah = hw->priv;
+			if (!ah)
+				return -EINVAL;
+
+			for (radio_idx = 0; radio_idx < ah->num_radio; radio_idx++) {
+				if (wifi_params.radio_idx != INVALID_RADIO_INDEX &&
+				    wifi_params.radio_idx != (u8)radio_idx)
+					continue;
+
+				radio = &ah->radio[radio_idx];
+				if (!radio->ab)
+					continue;
+
+				soc_id  = (u8)ath12k_get_ab_device_id(radio->ab);
+				pdev_id = (u8)ath12k_get_pdev_id
+						(&radio->ab->pdevs[radio->pdev_idx]);
+
+				if (g_agent_ops &&
+				    g_agent_ops->agent_ext_rate_link_stats_flush_radio) {
+					g_agent_ops->agent_ext_rate_link_stats_flush_radio
+						(soc_id, pdev_id, radio->ah->hw->wiphy);
+					ath12k_dbg(radio->ab, ATH12K_DBG_TELEMETRY,
+						   "ext_rate_link_flush: soc=%u pdev=%u\n",
+						   soc_id, pdev_id);
+				}
+			}
+			break;
+		}
 		default:
 			ath12k_dbg(NULL, ATH12K_DBG_CFG, "Un-supported generic command\n");
 			return -EOPNOTSUPP;
@@ -20702,6 +20802,10 @@ static const struct nl80211_vendor_cmd_info ath12k_vendor_events[] = {
 		.subcmd = QCA_NL80211_VENDOR_SUBCMD_DRIVER_DISCONNECT_REASON,
 	},
 #endif /* CPTCFG_QCN_EXTN */
+	[QCA_NL80211_VENDOR_SUBCMD_PEER_STATS_CACHE_FLUSH_INDEX] = {
+		.vendor_id = QCA_NL80211_VENDOR_ID,
+		.subcmd    = QCA_NL80211_VENDOR_SUBCMD_PEER_STATS_CACHE_FLUSH,
+	},
 };
 
 int ath12k_vendor_register(struct ath12k_hw *ah)

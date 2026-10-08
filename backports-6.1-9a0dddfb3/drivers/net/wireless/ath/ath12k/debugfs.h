@@ -131,6 +131,12 @@ ath12k_dp_latency_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
 }
 
 static inline bool
+ath12k_dp_rate_link_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
+{
+	return dp_pdev->dp_stats_mask & DP_ENABLE_RATE_LINK_STATS;
+}
+
+static inline bool
 ath12k_dp_qos_msduq_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
 {
 	return (dp_pdev->dp_stats_mask & DP_ENABLE_QOS_MSDUQ_STATS);
@@ -361,6 +367,11 @@ ath12k_htt_tx_ppdu_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
 }
 
 static inline bool ath12k_extd_rx_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
+{
+	return false;
+}
+
+static inline bool ath12k_dp_rate_link_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
 {
 	return false;
 }
