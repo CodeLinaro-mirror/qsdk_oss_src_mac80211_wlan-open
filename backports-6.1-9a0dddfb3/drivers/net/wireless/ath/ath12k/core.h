@@ -3134,6 +3134,9 @@ struct ath12k_base {
 
 	struct notifier_block panic_nb;
 
+	/* Global counter for monotonically increasing link-peer session cookies. */
+	atomic64_t link_peer_session_counter;
+
 	struct {
 		struct notifier_block nb;
 #define __NB_FLAGS_REGISTERED 1

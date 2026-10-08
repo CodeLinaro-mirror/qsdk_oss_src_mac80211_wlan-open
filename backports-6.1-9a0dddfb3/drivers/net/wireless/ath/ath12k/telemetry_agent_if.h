@@ -109,4 +109,11 @@ int ath12k_telemetry_update_rssi_rate_breach(u8 soc_id, u8 pdev_id, u16 peer_id,
 void ath12k_rssi_rate_notify_breach(u8 *peer_mac, u8 breach_type,
 				    u32 threshold_value, u32 detected_value,
 				    bool set_clear);
+
+/* Pull extended rate/link statistics for a peer. */
+void ath12k_ta_ext_rate_link_stats_pull_by_mac(struct ath12k_base *ab,
+					       const u8 *mac,
+					       struct wiphy *wiphy,
+					       u8 link_id);
+
 #endif /* ATH12K_TELEMETRY_AGENT_IF_H */
