@@ -2982,11 +2982,10 @@ void ath12k_core_wsi_remap_mlo_reconfig(struct ath12k_hw_group *ag)
 }
 EXPORT_SYMBOL(ath12k_core_wsi_remap_mlo_reconfig);
 
-int ath12k_wsi_bypass_precheck(struct ath12k_base *ab, unsigned int value)
+int ath12k_wsi_bypass_precheck(struct ath12k_base *ab, unsigned int value,
+			       struct ath12k *ar)
 {
 	struct ath12k_hw_group *ag = ab->ag;
-	struct ath12k *ar;
-	int i;
 
 	if (!test_bit(WMI_TLV_SERVICE_DYNAMIC_WSI_REMAP_SUPPORT, ab->wmi_ab.svc_map)) {
 		ath12k_err(ab, "Firmware doesn't support dynamic WSI remap\n");
@@ -3010,36 +3009,26 @@ int ath12k_wsi_bypass_precheck(struct ath12k_base *ab, unsigned int value)
 		return -EINVAL;
 	}
 
-	if (!ab->is_cumac_chip &&
-	    ((!ab->is_bypassed && value == ATH12K_WSI_BYPASS_ADD_DEVICE) ||
-	    (ab->is_bypassed && value == ATH12K_WSI_BYPASS_REMOVE_DEVICE))) {
-		ath12k_err(ab, "Invalid operation\n");
+	if (!ar) {
+		ath12k_err(ab, "Invalid Radio\n");
 		return -EINVAL;
 	}
 
-	for (i = 0; i < ab->num_radios; i++) {
-		ar = ab->pdevs[i].ar;
-		if (!ar) {
-			ath12k_err(ab, "Invalid Radio\n");
-			return -EINVAL;
-		}
+	if (ar->pdev_suspend &&
+	    value == ATH12K_WSI_BYPASS_REMOVE_DEVICE) {
+		ath12k_err(ab, "Invalid operation: radio is already suspended\n");
+		return -EINVAL;
+	}
 
-		if (ab->is_cumac_chip && ar->pdev_suspend &&
-		    value == ATH12K_WSI_BYPASS_REMOVE_DEVICE) {
-			ath12k_err(ab, "Invalid operation: CUMAC already suspended\n");
-			return -EINVAL;
-		}
+	if (!ar->pdev_suspend &&
+	    value == ATH12K_WSI_BYPASS_ADD_DEVICE) {
+		ath12k_err(ab, "Invalid operation: radio is not suspended\n");
+		return -EINVAL;
+	}
 
-		if (ab->is_cumac_chip && !ar->pdev_suspend &&
-		    value == ATH12K_WSI_BYPASS_ADD_DEVICE) {
-			ath12k_err(ab, "Invalid operation: CUMAC not suspended\n");
-			return -EINVAL;
-		}
-
-		if (ar->num_created_vdevs > 0) {
-			ath12k_err(ab, "Vaps are active, cannot do bypass\n");
-			return -EBUSY;
-		}
+	if (ar->num_created_vdevs > 0) {
+		ath12k_err(ab, "Vaps are active, cannot do bypass\n");
+		return -EBUSY;
 	}
 
 	return 0;
@@ -3261,14 +3250,20 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 		mutex_unlock(&ag->mutex);
 		for (i = 0; i < ag->num_devices; i++) {
 			partner_ab = ag->ab[i];
+			/* TODO: Static bypass does not have radio specific bypass
+			 * need to implement new condition to accept radio specific
+			 * bitmask
+			 */
 			if (partner_ab->is_static_bypassed) {
-				ret = ath12k_wsi_bypass_precheck(partner_ab, 1);
+				ret = ath12k_wsi_bypass_precheck(partner_ab, 1,
+								 partner_ab->pdevs[0].ar);
 				if (ret) {
 					ath12k_err(ab, "WSI Bypass precheck failed");
 					goto out;
 				}
 				partner_ab->wsi_remap_state = 1;
-				ath12k_mac_dynamic_wsi_remap(partner_ab);
+				ath12k_mac_dynamic_wsi_remap(partner_ab,
+							     partner_ab->pdevs[0].ar);
 			}
 		}
 		goto out;
@@ -7046,26 +7041,55 @@ void ath12k_core_pci_link_speed(struct ath12k_base *ab, u16 link_speed,
 }
 EXPORT_SYMBOL(ath12k_core_pci_link_speed);
 
-int ath12k_core_wsi_remap_pdev_suspend(struct ath12k_base *ab)
+/*
+ * ath12k_wsi_is_full_bypass_required() - decide full bypass vs pdev suspend.
+ *
+ * Returns true when bypassing @bypass_ar leaves no active radios on @ab,
+ * except for CUMAC where pdev suspend/resume is sufficient.
+ * Returns false when another radio can remain active and only @bypass_ar needs
+ * pdev suspend/resume.
+ */
+bool ath12k_wsi_is_full_bypass_required(struct ath12k_base *ab,
+					struct ath12k *bypass_ar)
 {
-	int i, ret = 0;
-	struct ath12k *ar;
+	int i;
+
+	if (ab->num_radios <= 1)
+		return !ab->is_cumac_chip;
 
 	for (i = 0; i < ab->num_radios; i++) {
-		ar = ab->pdevs[i].ar;
-		if (!ar) {
-			ath12k_err(ab, "Invalid Radio\n");
-			return -EINVAL;
-		}
-		ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS, "WSI Bypass: PDEV suspend");
-		if (ab->is_cumac_chip)
-			ath12k_mac_stop(ar);
-		else
-			ret = ath12k_mac_pdev_suspend(ar);
-		if (ret) {
-			ath12k_err(ab, "PDEV suspend failed for wsi remap: %d\n", ret);
-			goto fail;
-		}
+		if (!ab->pdevs[i].ar)
+			continue;
+
+		if (ab->pdevs[i].ar->pdev_suspend)
+			return true;
+	}
+
+	return false;
+}
+EXPORT_SYMBOL(ath12k_wsi_is_full_bypass_required);
+
+int ath12k_core_wsi_remap_pdev_suspend(struct ath12k *ar)
+{
+	int ret = 0;
+	bool is_full_bypass_required;
+
+	if (!ar)
+		return -EINVAL;
+
+	is_full_bypass_required =
+		ath12k_wsi_is_full_bypass_required(ar->ab, ar);
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WSI_BYPASS, "WSI Bypass: PDEV suspend");
+
+	if (!is_full_bypass_required)
+		ath12k_mac_stop(ar);
+	else
+		ret = ath12k_mac_pdev_suspend(ar);
+
+	if (ret) {
+		ath12k_err(ar->ab, "PDEV suspend failed for wsi remap: %d\n", ret);
+		goto fail;
 	}
 
 fail:
@@ -7112,7 +7136,7 @@ int ath12k_core_wsi_mlo_teardown_umac_reset(struct ath12k_base *ab)
 }
 EXPORT_SYMBOL(ath12k_core_wsi_mlo_teardown_umac_reset);
 
-int ath12k_core_dynamic_wsi_remap(struct ath12k_base *ab)
+int ath12k_core_dynamic_wsi_remap(struct ath12k_base *ab, struct ath12k *ar)
 {
 	int ret = 0;
 
@@ -7127,12 +7151,12 @@ int ath12k_core_dynamic_wsi_remap(struct ath12k_base *ab)
 
 	if (ab->wsi_remap_state == ATH12K_WSI_BYPASS_REMOVE_DEVICE) {
 		if (ab->hw_params->cp_arch_ops->wsi_bypass_remove)
-			ret = ab->hw_params->cp_arch_ops->wsi_bypass_remove(ab);
+			ret = ab->hw_params->cp_arch_ops->wsi_bypass_remove(ab, ar);
 		if (ret)
 			goto fail;
 	} else if (ab->wsi_remap_state == ATH12K_WSI_BYPASS_ADD_DEVICE) {
 		if (ab->hw_params->cp_arch_ops->wsi_bypass_add)
-			ret = ab->hw_params->cp_arch_ops->wsi_bypass_add(ab);
+			ret = ab->hw_params->cp_arch_ops->wsi_bypass_add(ab, ar);
 		if (ret)
 			goto fail;
 	}
