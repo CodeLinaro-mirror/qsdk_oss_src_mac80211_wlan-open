@@ -15801,7 +15801,8 @@ static int ath12k_mac_handle_link_sta_state(struct ieee80211_hw *hw,
 	lockdep_assert_wiphy(hw->wiphy);
 
 	if (unlikely(test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)) &&
-	    ar->ab->ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE2)
+	    ar->ab->ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE2 &&
+	    ar->ab->ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE3)
 		return -ESHUTDOWN;
 
 	ath12k_dbg_level(ar->ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,

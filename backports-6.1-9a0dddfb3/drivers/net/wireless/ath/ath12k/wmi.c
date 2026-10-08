@@ -1565,7 +1565,8 @@ int ath12k_wmi_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 		 * frames should be sent with invalid value.
 		 */
 		if (ath12k_hw_group_recovery_in_progress(ar->ab->ag) &&
-		    ar->ab->ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2) {
+		    (ar->ab->ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2 ||
+		     ar->ab->ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE3)) {
 			ml_params->hw_link_id = ar->pdev->hw_link_id;
 		} else if (hw_link_id_needed) {
 			ml_params->hw_link_id = link_agnostic ? WMI_MLO_MGMT_TID :
