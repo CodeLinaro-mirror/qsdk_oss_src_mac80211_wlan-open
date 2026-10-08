@@ -28769,6 +28769,11 @@ int ath12k_mac_op_remain_on_channel(struct ieee80211_hw *hw,
 		vdev_started_now = true;
 	}
 
+	if (duration <= 0)
+		scan_time_msec = hw->wiphy->max_remain_on_channel_duration * 2;
+	else
+		scan_time_msec = duration;
+
 	spin_lock_bh(&ar->data_lock);
 
 	switch (ar->scan.state) {
@@ -28779,7 +28784,7 @@ int ath12k_mac_op_remain_on_channel(struct ieee80211_hw *hw,
 		ar->scan.state = ATH12K_SCAN_STARTING;
 		cancel_delayed_work(&ar->scan.roc_done);
 		ieee80211_queue_delayed_work(hw, &ar->scan.roc_done,
-					     msecs_to_jiffies(duration +
+					     msecs_to_jiffies(scan_time_msec +
 					     ATH12K_SCAN_ROC_CLEANUP_TIMEOUT_MS));
 		ar->scan.is_roc = true;
 		ar->scan.arvif = arvif;
@@ -28800,8 +28805,6 @@ int ath12k_mac_op_remain_on_channel(struct ieee80211_hw *hw,
 		ath12k_warn(ab, "roc scan state %d, not idle\n", ar->scan.state);
 		return ret;
 	}
-
-	scan_time_msec = hw->wiphy->max_remain_on_channel_duration * 2;
 
 	struct ath12k_wmi_scan_req_arg *arg __free(kfree) =
 					kzalloc(sizeof(*arg), GFP_KERNEL);
@@ -28890,7 +28893,7 @@ int ath12k_mac_op_remain_on_channel(struct ieee80211_hw *hw,
 	arg->scan_f_offchan_mgmt_tx = 1;
 	arg->scan_f_offchan_data_tx = 1;
 
-	arg->burst_duration = duration;
+	arg->burst_duration = scan_time_msec;
 
 	ret = ath12k_start_scan(ar, arg);
 	if (ret) {
