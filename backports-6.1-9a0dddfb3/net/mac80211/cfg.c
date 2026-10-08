@@ -1168,6 +1168,12 @@ int ieee80211_set_monitor_channel(struct wiphy *wiphy,
 		if (!ieee80211_chanctx_compatible(ctx, &chanreq, &tmp))
 			continue;
 
+		if (sdata->vif.type == NL80211_IFTYPE_MONITOR &&
+		    !ieee80211_link_get_chanctx(&sdata->deflink)) {
+			pr_err("monitor has no chan ctx for rsvd channel\n");
+			goto done;
+		}
+
 		/* Guard against duplicate reservation (e.g. two AP links on
 		 * the same chanctx each triggering set_monitor_channel).
 		 * A second list_add would corrupt reserved_chanctx_list and
@@ -1204,9 +1210,13 @@ int ieee80211_set_monitor_channel(struct wiphy *wiphy,
 					 IEEE80211_CHANCTX_SHARED);
 	if (ret)
 		return ret;
+
+	ctx = ieee80211_link_get_chanctx(&sdata->deflink);
 	sdata_dbg(sdata,
-		  "MON-CSA set_monitor_channel: direct use_channel succeeded (freq=%d)\n",
-		  chandef->chan ? chandef->chan->center_freq : 0);
+		  "MON-CSA monitor channel request=%d completed with current_ctx=%d\n",
+		  chandef->chan ? chandef->chan->center_freq : 0,
+		  ctx && ctx->conf.def.chan ?
+		  ctx->conf.def.chan->center_freq : 0);
 done:
 	local->monitor_chanreq = chanreq;
 	return 0;
