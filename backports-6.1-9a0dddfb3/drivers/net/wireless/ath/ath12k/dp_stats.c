@@ -12,6 +12,7 @@
 #include "sdwf.h"
 #include "telemetry.h"
 #include "telemetry_agent_if.h"
+#include "ath12k_notif.h"
 
 /*
  * ath12k_dp_hist_sw_enq_dbucket: Software enqueue delay bucket in us
@@ -1475,7 +1476,8 @@ ath12k_dp_tx_compute_hw_delay_stats(struct ath12k_pdev_dp *dp_pdev,
 EXPORT_SYMBOL(ath12k_dp_tx_compute_hw_delay_stats);
 
 static void
-ath12k_dp_tx_compute_sojourn_stats(struct ath12k_dp_peer *peer,
+ath12k_dp_tx_compute_sojourn_stats(struct ath12k_pdev_dp *dp_pdev,
+				   struct ath12k_dp_peer *peer,
 				   u32 hw_enqueue_tstamp,
 				   struct hal_tx_status *ts,
 				   u8 ring)
@@ -1483,6 +1485,9 @@ ath12k_dp_tx_compute_sojourn_stats(struct ath12k_dp_peer *peer,
 	u8 tid;
 	u32 delta_us;
 	struct ath12k_dp_peer_tid_sojourn_stats *sojourn_stats;
+	struct ath12k_ppdu_stats_event ev;
+	struct ath12k_ppdu_sojourn_stats_info soj = {0};
+	struct sk_buff *skb;
 
 	if (!peer->mld_stats.sojourn_stats)
 		return;
@@ -1498,6 +1503,28 @@ ath12k_dp_tx_compute_sojourn_stats(struct ath12k_dp_peer *peer,
 	sojourn_stats->sum_sojourn_msdu += delta_us;
 	sojourn_stats->num_msdus++;
 	ewma_avg_sojourn_add(&sojourn_stats->avg_sojourn_msdu, delta_us);
+
+	/* Notify listeners of per-MSDU sojourn statistics. */
+	soj.device_id       = ath12k_get_ab_device_id(dp_pdev->dp->ab);
+	soj.pdev_id         = ath12k_get_pdev_id(dp_pdev->ar->pdev);
+	memcpy(soj.peer_mac, peer->addr, ETH_ALEN);
+	soj.peer_id         = peer->peer_id;
+	soj.peer_cookie     = peer->peer_cookie;
+	soj.tid             = tid;
+	soj.ring            = ring;
+	soj.primary_link_id = peer->primary_link_id;
+	soj.delta_us        = delta_us;
+	soj.ewma_us         = (u32)ewma_avg_sojourn_read
+					(&sojourn_stats->avg_sojourn_msdu);
+
+	skb = alloc_skb(sizeof(soj), GFP_ATOMIC);
+	if (skb) {
+		memcpy(skb_put(skb, sizeof(soj)), &soj, sizeof(soj));
+		ev.skb = skb;
+		ath12k_ppdu_stats_notifier_call_chain
+			(ATH12K_EVENT_SOJOURN_STATS, &ev);
+		kfree_skb(skb);
+	}
 }
 
 void
@@ -1521,6 +1548,7 @@ ath12k_dp_tx_update_peer_latency_stats(struct ath12k_pdev_dp *dp_pdev,
 					    fwhw_transmit_delay);
 
 	/* Sojourn stats */
-	ath12k_dp_tx_compute_sojourn_stats(peer, hw_enqueue_tstamp, ts, ring);
+	ath12k_dp_tx_compute_sojourn_stats
+		(dp_pdev, peer, hw_enqueue_tstamp, ts, ring);
 }
 EXPORT_SYMBOL(ath12k_dp_tx_update_peer_latency_stats);

@@ -4066,6 +4066,11 @@ ath12k_wifi7_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 		HAL_RX_MON_UPDATE_PRI20_RSSI_PER_CHAIN(1, ppdu_info, rssi_info_tlv);
 		HAL_RX_MON_UPDATE_PRI20_RSSI_PER_CHAIN(2, ppdu_info, rssi_info_tlv);
 		HAL_RX_MON_UPDATE_PRI20_RSSI_PER_CHAIN(3, ppdu_info, rssi_info_tlv);
+
+		HAL_RX_MON_UPDATE_SUBBAND_RSSI_PER_CHAIN(0, ppdu_info, rssi_info_tlv);
+		HAL_RX_MON_UPDATE_SUBBAND_RSSI_PER_CHAIN(1, ppdu_info, rssi_info_tlv);
+		HAL_RX_MON_UPDATE_SUBBAND_RSSI_PER_CHAIN(2, ppdu_info, rssi_info_tlv);
+		HAL_RX_MON_UPDATE_SUBBAND_RSSI_PER_CHAIN(3, ppdu_info, rssi_info_tlv);
 		break;
 	}
 	case HAL_PHYRX_COMMON_USER_INFO: {

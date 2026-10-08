@@ -225,11 +225,12 @@ enum ath12k_dp_debug_stats_mask {
 	DP_ENABLE_VOW_STATS      = 0x00000040,
 	DP_ENABLE_LATENCY_STATS  = 0x00000080,
 	DP_ENABLE_TX_PPDU_STATS  = 0x00000100,
-	DP_ENABLE_RX_PPDU_STATS  = 0x00000200,
+	DP_ENABLE_RX_PPDU_STATS   = 0x00000200,
 	DP_ENABLE_QOS_MSDUQ_STATS = 0x00000400,
 	DP_ENABLE_SCS_STATS       = 0x00000800,
 	DP_ENABLE_FETCH_REO_STATS = 0x00001000,
 	DP_ENABLE_AGGR_CNTRL     = 0x00002000,
+	DP_ENABLE_RATE_LINK_STATS = 0x00004000,
 	DP_ENABLE_QOS_STATS      = 0x80000000,
 };
 
@@ -1212,6 +1213,7 @@ struct ath12k_stats_feat {
 	bool feat_mon_stats;
 	bool feat_tx_mon_stats;
 	bool feat_mac80211;
+	bool feat_ext_rate_link;
 };
 
 struct ath12k_telemetry_command {

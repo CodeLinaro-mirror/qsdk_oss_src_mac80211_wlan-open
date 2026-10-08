@@ -1532,6 +1532,117 @@ void ath12k_dp_mon_rx_update_peer_su_stats(struct ath12k_pdev_dp *pdev_dp,
 }
 EXPORT_SYMBOL(ath12k_dp_mon_rx_update_peer_su_stats);
 
+/**
+ * ath12k_dp_fill_rx_ppdu_stats - Build an RX PPDU notifier payload
+ * @pdev_dp: per-pdev DP structure
+ * @ppdu_info: HAL-parsed RX PPDU information
+ * @evt: output payload
+ *
+ * Caller must hold dp_lock.
+ */
+void ath12k_dp_fill_rx_ppdu_stats(struct ath12k_pdev_dp *pdev_dp,
+				  struct hal_rx_mon_ppdu_info *ppdu_info,
+				  struct ath12k_ppdu_rx_stats_info *evt)
+{
+	struct ath12k_rx_ppdu_user_stats *rx_user;
+	struct hal_rx_user_status *user_stats;
+	struct ath12k_dp_link_peer *peer;
+	struct rate_info current_rate;
+	u32 num_users, i, chain, num_msdus;
+	u16 peer_id;
+	u8 rx_mcs, rx_nss, nss_index;
+	bool is_su;
+
+	if (!ppdu_info || !evt)
+		return;
+
+	evt->ppdu_id = ppdu_info->ppdu_id;
+	is_su = (ppdu_info->reception_type == HAL_RX_RECEPTION_TYPE_SU);
+	num_users = is_su ? 1 : min_t(u32, ppdu_info->num_users,
+				       (u32)ATH12K_PPDU_STATS_MAX_USERS_EXT);
+
+	for (i = 0; i < num_users &&
+	     evt->num_users < ATH12K_PPDU_STATS_MAX_USERS_EXT;
+	     i++) {
+		user_stats = is_su ? NULL : &ppdu_info->userstats[i];
+		peer_id = is_su ? ppdu_info->peer_id : user_stats->sw_peer_id;
+		rx_mcs = is_su ? ppdu_info->mcs : user_stats->mcs;
+		rx_nss = is_su ? ppdu_info->nss : user_stats->nss;
+		current_rate = (struct rate_info){};
+
+		peer = ath12k_dp_link_peer_find_by_peerid_index
+			(pdev_dp->dp, pdev_dp, peer_id);
+		if (!peer) {
+			ath12k_dbg(pdev_dp->dp->ab, ATH12K_DBG_TELEMETRY,
+				   "telemetry rx peer lookup failed ppdu id %u peer %u\n",
+				   ppdu_info->ppdu_id, peer_id);
+			continue;
+		}
+
+		if (!ath12k_dp_link_peer_get_sta(peer)) {
+			ath12k_dbg(pdev_dp->dp->ab, ATH12K_DBG_TELEMETRY,
+				   "telemetry rx sta lookup failed ppdu id %u peer %u\n",
+				   ppdu_info->ppdu_id, peer_id);
+			continue;
+		}
+
+		rx_user = &evt->users[evt->num_users++];
+		rx_user->peer_id        = peer_id;
+		rx_user->peer_cookie    = peer->dp_peer ? peer->dp_peer->peer_cookie : 0;
+		rx_user->reception_type = (u8)ppdu_info->reception_type;
+		rx_user->bw             = ppdu_info->bw;
+
+		/* Calculate the rate from this user's current PPDU parameters.
+		 * Do not use peer->rxrate here: for MU PPDUs it is overwritten
+		 * while processing each user and would give earlier users the
+		 * last user's bitrate.
+		 */
+		ath12k_dp_rx_fill_rate_info(&current_rate, ppdu_info,
+					    is_su ? NULL : user_stats, is_su);
+		rx_user->ratekbps       = cfg80211_calculate_bitrate(&current_rate) * 100;
+		nss_index = rx_nss ? rx_nss - 1 : 0;
+		rx_user->ratecode =
+			ASSEMBLE_STATS_CODE(rx_mcs, nss_index, ppdu_info->bw);
+
+		/* Use the monitor's per-MPDU retry count.  The 802.11 retry
+		 * bit describes the received frame header and must not be
+		 * expanded to every MPDU in an AMPDU.
+		 */
+		if (is_su) {
+			rx_user->num_bytes = ppdu_info->mpdu_len;
+			rx_user->num_mpdus = ppdu_info->num_mpdu_fcs_ok;
+			rx_user->mpdu_fcs_err = ppdu_info->num_mpdu_fcs_err;
+			num_msdus = ppdu_info->tcp_msdu_count +
+				ppdu_info->tcp_ack_msdu_count +
+				ppdu_info->udp_msdu_count +
+				ppdu_info->other_msdu_count;
+			rx_user->mpdu_retries =
+				min_t(u32, ppdu_info->mpdu_retry_cnt, rx_user->num_mpdus);
+		} else {
+			rx_user->num_bytes = user_stats->mpdu_ok_byte_count;
+			rx_user->num_mpdus = user_stats->mpdu_cnt_fcs_ok;
+			rx_user->mpdu_fcs_err = user_stats->mpdu_cnt_fcs_err;
+			num_msdus = user_stats->tcp_msdu_count +
+				user_stats->tcp_ack_msdu_count +
+				user_stats->udp_msdu_count +
+				user_stats->other_msdu_count;
+			rx_user->mpdu_retries =
+				min_t(u32, user_stats->mpdu_retry, rx_user->num_mpdus);
+		}
+		rx_user->num_msdus = num_msdus;
+		rx_user->sgi          = ppdu_info->sgi;
+		rx_user->punc_mode    = (u8)ppdu_info->punc_bw;
+
+		rx_user->ppdu_snr  = (s8)ppdu_info->rssi_db_comb_chain_pri20;
+		rx_user->ppdu_rssi = peer->signal_stats.rssi;
+		for (chain = 0; chain < ARRAY_SIZE(rx_user->snr_chain); chain++)
+			memcpy(rx_user->snr_chain[chain],
+			       ppdu_info->rssi_db_per_chain_per_subband[chain],
+			       sizeof(rx_user->snr_chain[chain]));
+	}
+}
+EXPORT_SYMBOL(ath12k_dp_fill_rx_ppdu_stats);
+
 void ath12k_dp_mon_rx_process_ulofdma_stats(struct hal_rx_mon_ppdu_info *ppdu_info)
 {
 	struct hal_rx_user_status *rx_user_status;
@@ -2229,7 +2340,8 @@ ath12k_dp_mon_link_peer_signal_stats(struct ath12k_pdev_dp *dp_pdev,
 	stats->snr_avg = ewma_avg_snr_read(&stats->avg_snr);
 	stats->channel_bw = ppdu_info->bw;
 	for (i = 0; i < HAL_RX_MAX_NSS; i++)
-		stats->rssi_db_per_chain_pri20[i] = ppdu_info->rssi_db_per_chain_pri20[i];
+		stats->rssi_db_per_chain_pri20[i] =
+			ppdu_info->rssi_db_per_chain_pri20[i];
 
 	/*
 	 * Classify frame type to perform per-frame-type RSSI computations.
@@ -2875,7 +2987,8 @@ void ath12k_dp_mon_rx_stats_enable(struct ath12k_pdev_dp *dp_pdev,
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
 	if (ath12k_extd_rx_stats_enabled(dp_pdev) ||
-	    ath12k_dp_rx_ppdu_stats_enabled(dp_pdev))
+	    ath12k_dp_rx_ppdu_stats_enabled(dp_pdev) ||
+	    ath12k_dp_rate_link_stats_enabled(dp_pdev))
 		mode = ATH12k_DP_MON_EXTD_STATS;
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ar->ab->dev_flags))
