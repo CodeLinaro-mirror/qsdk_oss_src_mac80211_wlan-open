@@ -799,6 +799,9 @@ static void ath12k_rtt_pasn_peer_delete_all(struct ath12k_link_vif *arvif)
 	bool pasn_fw_peer_found = false;
 	int ret;
 
+	if (!arvif->rtt_ctx.rtt_responder_role && !arvif->rtt_ctx.rtt_initiator_role)
+		return;
+
 	spin_lock_bh(&arvif->rtt_ctx.pasn_peer_lock);
 	list_for_each_entry(peer, &arvif->rtt_ctx.pasn_peer_list, list) {
 		if (peer->peer_id != ATH12K_MLO_PEER_ID_INVALID ||
