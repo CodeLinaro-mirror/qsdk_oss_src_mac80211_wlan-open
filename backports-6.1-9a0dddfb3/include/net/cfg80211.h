@@ -7187,6 +7187,8 @@ struct cfg80211_bg_radar {
  *	-1 (default) = RTS/CTS disabled
  * @bgcac_cac_ms: test-only per-radio background CAC timeout override in ms;
  *	0 means use regulatory default behavior
+ * @bootup_cac_feature: Bootup CAC feature support;
+ *	0 (default) = Bootup CAC feature disabled
  */
 struct wiphy_radio_cfg {
 	u32 rts_threshold;
@@ -7195,6 +7197,7 @@ struct wiphy_radio_cfg {
 #endif
 #ifdef CPTCFG_QCN_EXTN
 	u8 muedca_mode;
+	bool bootup_cac_feature;
 #endif /* CPTCFG_QCN_EXTN */
 	struct cfg80211_bg_radar bg_radar;
 };

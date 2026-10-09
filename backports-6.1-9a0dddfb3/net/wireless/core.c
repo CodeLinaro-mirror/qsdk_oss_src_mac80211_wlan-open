@@ -1120,6 +1120,9 @@ int wiphy_register(struct wiphy *wiphy)
 				&wiphy->radio_cfg[idx].bg_radar;
 
 			wiphy->radio_cfg[idx].rts_threshold = (u32)-1;
+#ifdef CPTCFG_QCN_EXTN
+			wiphy->radio_cfg[idx].bootup_cac_feature = false;
+#endif /* CPTCFG_QCN_EXTN */
 			bgr->wiphy = wiphy;
 			bgr->radio_idx = idx;
 			bgr->link_id = -1;

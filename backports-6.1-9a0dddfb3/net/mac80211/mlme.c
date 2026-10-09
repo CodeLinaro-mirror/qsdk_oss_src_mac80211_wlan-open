@@ -4297,7 +4297,8 @@ void ieee80211_dfs_cac_timer_work(struct wiphy *wiphy, struct wiphy_work *work)
 		}
 		if (!link->conf->deferred_up) {
 #ifdef CPTCFG_QCN_EXTN
-			if (!cfg80211_support_bootup_cac(local->hw.wiphy))
+			if (!cfg80211_support_bootup_cac(local->hw.wiphy,
+							 ctx->conf.radio_idx))
 #endif /* CPTCFG_QCN_EXTN */
 				ieee80211_link_release_channel(link);
 		} else {
@@ -4311,7 +4312,7 @@ send_event:
 
 #ifdef CPTCFG_QCN_EXTN
 	if (!link->conf->deferred_up &&
-	    cfg80211_support_bootup_cac(local->hw.wiphy))
+	    cfg80211_support_bootup_cac(local->hw.wiphy, ctx->conf.radio_idx))
 		ieee80211_bootup_cac_mesh_vdev_up_extn(ctx);
 #endif /* CPTCFG_QCN_EXTN */
 }

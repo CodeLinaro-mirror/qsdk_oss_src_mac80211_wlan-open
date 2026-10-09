@@ -1484,9 +1484,15 @@ static void cfg80211_clear_cac_started(struct cfg80211_registered_device *rdev,
 				continue;
 
 #ifdef CPTCFG_QCN_EXTN
-			if (tmp_wdev->iftype == NL80211_IFTYPE_MESH_POINT &&
-			    cfg80211_support_bootup_cac(&rdev->wiphy))
-				continue;
+			if (tmp_wdev->iftype == NL80211_IFTYPE_MESH_POINT) {
+				int r_idx = cfg80211_get_hw_idx_by_chan(&rdev->wiphy,
+							chandef->chan);
+
+				if (r_idx >= 0 && r_idx < rdev->wiphy.n_radio &&
+				    cfg80211_support_bootup_cac(&rdev->wiphy,
+								r_idx))
+					continue;
+			}
 #endif
 
 			tmp_wdev->links[tmp_link_id].cac_started = false;
