@@ -972,6 +972,12 @@ ath12k_cfr_set_capture_count(struct ath12k *ar, u16 val);
 int
 ath12k_cfr_set_enable_bitmap(struct ath12k *ar, u32 val);
 
+int
+ath12k_cfr_config_filter_in_as_fp(struct ath12k *ar, bool enable);
+
+int
+ath12k_cfr_config_interval_mode_sel(struct ath12k *ar, bool enable);
+
 void
 ath12k_cfr_set_ul_mu_mask(struct ath12k *ar, u64 val);
 
