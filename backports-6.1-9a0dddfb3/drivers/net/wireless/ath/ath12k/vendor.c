@@ -1291,6 +1291,12 @@ ath12k_cfr_rcc_group_handler(struct ath12k *ar, struct nlattr **tb)
 	if (!tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_ENABLE_GROUP_BITMAP])
 		return -EINVAL;
 
+	/* initialize rcc with default parameters first and then override user provided
+	 * parameter's values alone to ensure we do not override un-intended parameters
+	 * with value 0.
+	 */
+	ath12k_peer_cfr_default_ta_ra_config(&rcc, false, MAX_RESET_CFG_ENTRY);
+
 	enable_bitmap = nla_get_u32
 		(tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_ENABLE_GROUP_BITMAP]);
 
