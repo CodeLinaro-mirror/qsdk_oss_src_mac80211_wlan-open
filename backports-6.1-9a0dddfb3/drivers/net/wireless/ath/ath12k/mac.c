@@ -25209,10 +25209,11 @@ ath12k_mac_update_vif_chan_mvr(struct ath12k *ar,
 
 	ath12k_mac_update_rx_channel(ar, NULL, vifs, n_vifs);
 
-	size = ath12k_core_get_total_num_vdevs(ab);
+	size = ab->num_max_vdev_supp / ab->num_radios;
 	vdev_ids = kcalloc(size, sizeof(*vdev_ids), GFP_KERNEL);
 	if (!vdev_ids) {
-		ath12k_err(ar->ab, "Insufficient memory to update channel\n");
+		ath12k_err(ar->ab, "Insufficient memory to update channel num_max_vdev_supported = %u num_radios = %u\n",
+			   ab->num_max_vdev_supp, ab->num_radios);
 		return;
 	}
 
@@ -25701,18 +25702,17 @@ ath12k_mac_process_update_vif_chan(struct ath12k *ar,
 				   int n_vifs)
 {
 	struct ath12k_base *ab = ar->ab;
-	struct ath12k_hw_group *ag = ab->ag;
+	u32 total_supp_vdevs;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
-	if (ag && ag->num_devices >= ATH12K_MIN_NUM_DEVICES_NLINK) {
-		if (WARN_ON(n_vifs > TARGET_NUM_VDEVS + TARGET_NUM_BRIDGE_VDEVS))
-			/* should not happen */
-			return;
-	} else {
-		if (WARN_ON(n_vifs > ath12k_core_get_total_num_vdevs(ab)))
-			/* should not happen */
-			return;
+	total_supp_vdevs = ab->num_max_vdev_supp / ab->num_radios;
+	if (n_vifs > total_supp_vdevs) {
+		/* should not happen */
+		ath12k_err(ab, " channel update failure n_vifs = %d, num_max_vdev_supported = %u, num_radios = %u",
+			   n_vifs, ab->num_max_vdev_supp, ab->num_radios);
+		WARN_ON(1);
+		return;
 	}
 
 	if (ath12k_mac_validate_vif_chanctx_switch(vifs, n_vifs)) {
@@ -30689,8 +30689,6 @@ static int ath12k_mac_setup_register(struct ath12k *ar,
 	const struct tt_level_config *tt_config;
 	int level;
 	int ret;
-	u8 total_vdevs;
-	struct ath12k_base *ab = ar->ab;
 
 	init_waitqueue_head(&ar->txmgmt_empty_waitq);
 	idr_init(&ar->txmgmt_idr);
@@ -30827,13 +30825,7 @@ static int ath12k_mac_setup_register(struct ath12k *ar,
 	ath12k_mac_setup_ht_vht_cap(ar, cap, ht_cap);
 	ath12k_mac_setup_sband_iftype_data(ar, cap);
 
-	ar->max_num_stations = ath12k_core_get_max_station_per_radio(ar->ab);
-	ar->max_num_peers = ath12k_core_get_supp_max_peers_per_radio(ar->ab);
 	ar->rssi_offsets.rssi_offset = ATH12K_DEFAULT_NOISE_FLOOR;
-
-	total_vdevs = ath12k_core_get_total_num_vdevs(ar->ab);
-	if (total_vdevs == ATH12K_MAX_NUM_VDEVS_NLINK)
-		ar->max_num_stations -= TARGET_NUM_BRIDGE_SELF_PEER;
 
 	return 0;
 }
@@ -31951,6 +31943,9 @@ static struct ath12k_hw *ath12k_mac_hw_allocate(struct ath12k_hw_group *ag,
 
 		ath12k_dp_cmn_update_hw_links(ab->dp, ag, ar);
 
+		ath12k_core_calc_max_peers_per_radio(ar);
+		ath12k_core_calc_max_station_per_radio(ar);
+
 		ret = ath12k_mac_setup(ar);
 		if (ret) {
 			ath12k_mac_hw_destroy(ah);
@@ -32013,14 +32008,12 @@ void ath12k_mac_destroy(struct ath12k_hw_group *ag)
 
 static void ath12k_mac_set_device_defaults(struct ath12k_base *ab)
 {
-	u8 total_vdevs;
-
 	/* Initialize channel counters frequency value in hertz */
 	ab->cc_freq_hz = 320000;
 	spin_lock_bh(&ab->base_lock);
-	total_vdevs = ath12k_core_get_total_num_vdevs(ab);
-	ab->free_vdev_map = (1LL << (ab->num_radios * total_vdevs)) - 1;
-	ab->num_max_vdev_supported = (ab->num_radios * total_vdevs);
+	if (!ab->num_max_vdev_supp)
+		ath12k_core_calc_max_vdevs_per_soc(ab);
+	ab->free_vdev_map = (1LL << ab->num_max_vdev_supp) - 1;
 	spin_unlock_bh(&ab->base_lock);
 }
 

@@ -3174,7 +3174,7 @@ struct ath12k_base {
 	enum ath12k_wsi_bypass_action wsi_remap_state;
 	atomic_t wsi_remap_in_progress;
 	bool is_static_bypassed;
-	u32 num_max_vdev_supported;
+	u32 num_max_vdev_supp;
 #ifdef CPTCFG_ATHDEBUG
 	struct athdbg_qmi dbg_qmi;
 #endif
@@ -3188,6 +3188,7 @@ struct ath12k_base {
 
 	bool map_event_required;
 	bool skip_cumac_hw_reset;
+	u32 fw_max_vdevs;
 
 	struct ath12k_mem_profile_based_param mem_params;
 
@@ -3371,9 +3372,6 @@ ath12k_get_skb_tx_info(struct ath12k *ar, struct sk_buff *skb);
 const struct firmware *ath12k_core_firmware_request(struct ath12k_base *ab,
 						    const char *filename);
 void ath12k_core_issue_bug_on(struct ath12k_base *ab);
-u32 ath12k_core_get_max_station_per_radio(struct ath12k_base *ab);
-u32 ath12k_core_get_def_max_peers_per_radio(struct ath12k_base *ab);
-u32 ath12k_core_get_supp_max_peers_per_radio(struct ath12k_base *ab);
 u32 ath12k_core_get_max_num_tids(struct ath12k_base *ab);
 
 void ath12k_core_hw_group_set_mlo_capable(struct ath12k_hw_group *ag);
@@ -3389,7 +3387,11 @@ void ath12k_dp_umac_reset_deinit(struct ath12k_base *ab);
 void ath12k_umac_reset_completion(struct ath12k_base *ab);
 struct reserved_mem *ath12k_core_get_reserved_mem_by_name(struct ath12k_base *ab,
 						  const char* name);
-u8 ath12k_core_get_total_num_vdevs(struct ath12k_base *ab);
+u8 ath12k_core_get_drv_supp_vdevs_per_radio(struct ath12k_base *ab);
+void ath12k_core_calc_max_vdevs_per_soc(struct ath12k_base *ab);
+u32 ath12k_core_get_drv_supp_peers_per_radio(struct ath12k_base *ab);
+void ath12k_core_calc_max_peers_per_radio(struct ath12k *ar);
+void ath12k_core_calc_max_station_per_radio(struct ath12k *ar);
 bool ath12k_core_is_vdev_limit_reached(struct ath12k *ar, bool is_bridge_vdev);
 bool ath12k_core_complete_teardown_required(struct ath12k_hw *ah);
 void ath12k_core_cleanup_power_down_q6(struct ath12k_hw_group *ag, bool standby_mode);
