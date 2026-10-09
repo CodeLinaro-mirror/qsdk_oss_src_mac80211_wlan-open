@@ -156,10 +156,11 @@ validate_chandef_by_6ghz_he_eht_oper(struct ieee80211_sub_if_data *sdata,
 		struct ieee80211_he_operation _oper;
 		struct ieee80211_he_6ghz_oper _6ghz_oper;
 	} __packed he;
-	struct {
-		struct ieee80211_eht_operation _oper;
-		struct ieee80211_eht_operation_info _oper_info;
-	} __packed eht;
+	u8 eht_buf[IEEE80211_EHT_OPERATION_FIXED_LEN +
+		   IEEE80211_EHT_OPERATION_INFO_FIXED_LEN +
+		   DISABLED_SUBCHANNEL_BITMAP_BYTES_SIZE] = {};
+	struct ieee80211_eht_operation *eht;
+	struct ieee80211_eht_operation_info *eht_info;
 	const struct ieee80211_eht_operation *eht_oper;
 
 	if (conn->mode < IEEE80211_CONN_MODE_HE) {
@@ -211,11 +212,20 @@ validate_chandef_by_6ghz_he_eht_oper(struct ieee80211_sub_if_data *sdata,
 	if (conn->mode < IEEE80211_CONN_MODE_EHT) {
 		eht_oper = NULL;
 	} else {
-		eht._oper.params = IEEE80211_EHT_OPER_INFO_PRESENT;
-		eht._oper_info.control = he._6ghz_oper.control;
-		eht._oper_info.ccfs0 = he._6ghz_oper.ccfs0;
-		eht._oper_info.ccfs1 = he._6ghz_oper.ccfs1;
-		eht_oper = &eht._oper;
+		eht = (void *)eht_buf;
+		eht_info = (void *)eht->optional;
+
+		eht->params = IEEE80211_EHT_OPER_INFO_PRESENT;
+		eht_info->control = he._6ghz_oper.control;
+		eht_info->ccfs0 = he._6ghz_oper.ccfs0;
+		eht_info->ccfs1 = he._6ghz_oper.ccfs1;
+		if (chandef->punctured) {
+			eht->params |=
+				IEEE80211_EHT_OPER_DISABLED_SUBCHANNEL_BITMAP_PRESENT;
+			eht_info->optional[0] = chandef->punctured & 0x00ff;
+			eht_info->optional[1] = chandef->punctured >> 8;
+		}
+		eht_oper = eht;
 	}
 
 	he._6ghz_oper.control &= IEEE80211_HE_6GHZ_OPER_CTRL_CHANWIDTH;
