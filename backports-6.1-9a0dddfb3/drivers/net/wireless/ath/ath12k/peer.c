@@ -1078,6 +1078,21 @@ exit:
 	return ret;
 }
 
+static bool ath12k_check_linkpeer_drv_cleanup(struct ieee80211_sta *sta,
+					      struct ath12k_sta *ahsta,
+					      struct ath12k *ar)
+{
+	if (ar->ab->ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE3 &&
+	    ath12k_hw_group_recovery_in_progress(ar->ab->ag))
+		return true;
+
+	if (sta->mlo && ahsta->recov.asserted_peer_pending &&
+	    ar->ab == ar->ab->ag->assert_ab)
+		return true;
+
+	return false;
+}
+
 int ath12k_peer_mlo_link_peers_delete(struct ath12k_vif *ahvif,
 				      struct ath12k_sta *ahsta)
 {
@@ -1160,25 +1175,23 @@ int ath12k_peer_mlo_link_peers_delete(struct ath12k_vif *ahvif,
 		 * hw_link_id (ar->pdev->hw_link_id) so the per-pdev HTT unmap targets
 		 * the correct pdev, rather than a single stored value.
 		 */
-		if (sta->mlo &&
-		    ahsta->recov.asserted_peer_pending &&
-		    ar->ab == ar->ab->ag->assert_ab) {
+		if (ath12k_check_linkpeer_drv_cleanup(sta, ahsta, ar)) {
 			struct ath12k_dp_peer *dp_peer;
+			u16 peer_id = ATH12K_MLO_PEER_ID_INVALID;
 
 			spin_lock_bh(&ar->ah->dp_hw.peer_hash_lock);
 			dp_peer = ath12k_dp_peer_find_by_addr(&ar->ah->dp_hw,
-							      link_addr[link_id], ahvif->vif);
+							      sta->addr, ahvif->vif);
+			if (dp_peer)
+				peer_id = dp_peer->peer_id;
+
 			spin_unlock_bh(&ar->ah->dp_hw.peer_hash_lock);
 
-			if (dp_peer) {
-				ath12k_info(ar->ab,
-					    "mode3: htt_unmap_manual: dp_peer found peer_id=%u hw_link=%u link_id=%u\n",
-					    dp_peer->peer_id,
-					    ar->pdev->hw_link_id, link_id);
-				ath12k_dp_arch_peer_drv_cleanup_indication(
-					ath12k_ab_to_dp(ar->ab), dp_peer->peer_id,
-					ar->pdev->hw_link_id);
-			}
+			ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
+				   "htt_unmap_manual: Calling drv_cleanup peer_id=%u hw_link=%u link_id=%u\n",
+				   peer_id, ar->pdev->hw_link_id, link_id);
+			ath12k_dp_arch_peer_drv_cleanup(ath12k_ab_to_dp(ar->ab), peer_id,
+							ar->pdev->hw_link_id);
 		}
 
 		ar->num_peers--;
