@@ -81,18 +81,6 @@ void ath12k_wifi7_convert_n_deliver_nw_frame(struct ath12k_pdev_dp *dp_pdev,
 		return;
 	}
 
-	ath12k_wifi7_dp_rx_h_undecap_eth(dp_pdev, msdu, peer->sec_type,
-					 status,
-					 tlv_info->mesh_ctrl_present,
-					 (struct hal_rx_desc *)rx_tlv_hdr,
-					 rx_msdu_info->da_is_mcbc,
-					 rx_mpdu_info->tid);
-
-	ath12k_dp_rx_update_eapol_stats(dp_pdev->dp, msdu);
-
-	rx_status = IEEE80211_SKB_RXCB(msdu);
-	*rx_status = *status;
-
 #ifdef CPTCFG_QCN_EXTN
 	if (static_branch_unlikely(&extap_enabled)) {
 		struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(peer->vif);
@@ -112,6 +100,17 @@ void ath12k_wifi7_convert_n_deliver_nw_frame(struct ath12k_pdev_dp *dp_pdev,
 		}
 	}
 #endif
+	ath12k_wifi7_dp_rx_h_undecap_eth(dp_pdev, msdu, peer->sec_type,
+					 status,
+					 tlv_info->mesh_ctrl_present,
+					 (struct hal_rx_desc *)rx_tlv_hdr,
+					 rx_msdu_info->da_is_mcbc,
+					 rx_mpdu_info->tid);
+
+	ath12k_dp_rx_update_eapol_stats(dp_pdev->dp, msdu);
+
+	rx_status = IEEE80211_SKB_RXCB(msdu);
+	*rx_status = *status;
 
 	ieee80211_rx_napi(ath12k_dp_pdev_to_hw(dp_pdev), pubsta, msdu, napi);
 }
