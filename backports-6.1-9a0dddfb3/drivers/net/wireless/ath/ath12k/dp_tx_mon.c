@@ -3350,7 +3350,8 @@ ath12k_dp_mon_tx_deliver_frame(struct ath12k_pdev_dp *dp_pdev,
 					 contains_host_frames,
 					 is_response_frame, user_idx);
 
-	ath12k_dp_mon_tx_update_spl_pkt_cap_stats(dp_pdev, status_info);
+	ath12k_dp_mon_tx_update_spl_pkt_cap_stats(dp_pdev, ppdu_info,
+						  status_info);
 
 	/* If the extended-monitor consumer accepted the frame
 	 * (NOTIFY_OK/NOTIFY_STOP), free it instead of passing it up
@@ -4478,13 +4479,25 @@ static int ath12k_dp_mon_tx_filter_cfg(const struct ath12k_dp_arch_mon_ops *mon_
 
 void
 ath12k_dp_mon_tx_update_spl_pkt_cap_stats(struct ath12k_pdev_dp *dp_pdev,
-					     struct hal_tx_mon_status_info *status_info)
+					  struct hal_tx_mon_ppdu_info *ppdu_info,
+					  struct hal_tx_mon_status_info *status_info)
 {
 	static const char * const pkt_names[] = {
 		"unknown", "ARP", "EAPOL", "DHCP", "DNS", "ICMP", "MGMT"
 	};
 	struct ath12k_pdev_tx_mon *tx_mon = dp_pdev->dp_mon_pdev->dp_pdev_tx_mon;
-	u8 pkt_id = status_info->spc_pkt_id;
+	u8 pkt_id;
+
+	/* FW2SW supplies special-packet information on Wi-Fi 7. Wi-Fi 8
+	 * stages it from TX_MPDU_START and TX_MSDU_START. Populate status
+	 * from the staged data when FW2SW did not set the cookie.
+	 */
+	if (!status_info->dp_tx_pkt_cap_cookie && ppdu_info->spc_pkt_valid) {
+		status_info->spc_pkt_id = ppdu_info->spc_pkt_id;
+		status_info->dp_tx_pkt_cap_cookie = 1;
+	}
+
+	pkt_id = status_info->spc_pkt_id;
 
 	tx_mon->pdev_tx_mon_stats.spl_pkt_cap_stats[pkt_id] +=
 					status_info->dp_tx_pkt_cap_cookie;
@@ -5129,6 +5142,8 @@ void ath12k_dp_mon_tx_display_filters(struct ath12k_dp *dp,
 			   src_tlv_filter->data_log_typ);
 		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "mac_addr_filter_en: %d",
 			   src_tlv_filter->mac_addr_filter_en);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "special_pkt_filter_en: %d",
+			   src_tlv_filter->special_pkt_filter_en);
 		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "peer_ppdu_drop: %d",
 			   src_tlv_filter->peer_ppdu_drop);
 		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX,
@@ -5302,6 +5317,8 @@ void ath12k_dp_mon_tx_prepare_filter(struct ath12k_dp *dp,
 					src_tlv_filter->peer_ppdu_drop;
 		dst_tlv_filter->mpdu_stat_type_filter_en |=
 					src_tlv_filter->mpdu_stat_type_filter_en;
+		dst_tlv_filter->special_pkt_filter_en |=
+					src_tlv_filter->special_pkt_filter_en;
 		dst_tlv_filter->tx_mon_mgmt_pkt_dma_len |=
 					src_tlv_filter->tx_mon_mgmt_pkt_dma_len;
 		dst_tlv_filter->tx_mon_data_pkt_dma_len |=

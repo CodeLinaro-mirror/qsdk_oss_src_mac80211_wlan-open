@@ -366,6 +366,7 @@ int ath12k_dp_mon_tx_monitor_start_stop(struct ath12k *ar, bool state);
 void ath12k_dp_mon_tx_filter_free(struct ath12k_pdev_dp *dp_pdev);
 bool ath12k_dp_tx_mon_feature_eval(struct ath12k_dp *dp);
 void ath12k_dp_mon_tx_update_spl_pkt_cap_stats(struct ath12k_pdev_dp *dp_pdev,
+						struct hal_tx_mon_ppdu_info *ppdu_info,
 					    struct hal_tx_mon_status_info *status_info);
 void ath12k_dp_mon_spl_pkt_cap_config(struct ath12k_base *ab);
 int ath12k_dp_mon_tx_srng_alloc(struct ath12k_dp *dp);
