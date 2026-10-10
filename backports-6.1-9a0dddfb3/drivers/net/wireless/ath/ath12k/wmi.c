@@ -17318,36 +17318,39 @@ int wmi_print_ctrl_path_awgn_stats_tlv(struct ath12k_base *ab, u16 len,
 
 	awgn_stats_skb = (struct wmi_ctrl_path_awgn_stats *)ptr;
 
-	for (i = 0; i < ATH12K_GROUP_MAX_RADIO; i++) {
-		ar = ath12k_mac_get_ar_by_pdev_id(ab,
-						  ab->ag->dp_hw_grp->hw_links[i].pdev_idx);
-		if (!ar) {
-			ath12k_warn(ab, "Failed to get ar for wmi ctrl awgn stats\n");
-			return -EINVAL;
-		}
+	rcu_read_lock();
+	for (i = 0; i < ab->num_radios; i++) {
+		struct ath12k_pdev *pdev = rcu_dereference(ab->pdevs_active[i]);
 
-		if (ar->supports_6ghz)
+		if (pdev && pdev->ar && pdev->ar->supports_6ghz) {
+			ar = pdev->ar;
 			break;
+		}
 	}
 
-	if (!ar->supports_6ghz) {
+	if (!ar || !ar->supports_6ghz) {
+		rcu_read_unlock();
 		ath12k_warn(ab, "AWGN stats is not supported on a non 6 GHz radio\n");
 		return -EINVAL;
 	}
 
 	stats = kzalloc(sizeof(*stats), GFP_ATOMIC);
-	if (!stats)
+	if (!stats) {
+		rcu_read_unlock();
 		return -ENOMEM;
+	}
 
 	awgn_stats = kzalloc(sizeof(*awgn_stats), GFP_ATOMIC);
 
 	if (!awgn_stats) {
 		kfree(stats);
+		rcu_read_unlock();
 		return -ENOMEM;
 	}
 
 	memcpy(awgn_stats, awgn_stats_skb, sizeof(*awgn_stats));
 	stats->stats_ptr = awgn_stats;
+	stats->tagid = WMI_CTRL_PATH_AWGN_STATS;
 	list_add_tail(&stats->list, &stats_buff->list);
 
 	spin_lock_bh(&ar->debug.wmi_ctrl_path_stats_lock);
@@ -17355,7 +17358,7 @@ int wmi_print_ctrl_path_awgn_stats_tlv(struct ath12k_base *ab, u16 len,
 	spin_unlock_bh(&ar->debug.wmi_ctrl_path_stats_lock);
 	ar->debug.wmi_ctrl_path_stats_tagid = WMI_CTRL_PATH_AWGN_STATS;
 	stats_buff->ar = ar;
-
+	rcu_read_unlock();
 	return 0;
 }
 
