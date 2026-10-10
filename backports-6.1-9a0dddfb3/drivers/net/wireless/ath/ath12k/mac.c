@@ -24206,6 +24206,13 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 				    restart ? "restart" : "start", ret);
 	}
 
+#ifdef CPTCFG_QCN_EXTN
+	ret = ath12k_vendor_vdev_config_after_start_extn(arvif);
+	if (ret)
+		ath12k_warn(ab, "[radio_idx : %u] failed to restore vdev parameters for vdev %d: %d\n",
+			    ar->radio_idx, arvif->vdev_id, ret);
+#endif /* CPTCFG_QCN_EXTN */
+
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA)
 		ar->dp.stats.telemetry_stats.sta_vap_exist = 1;
 
@@ -24491,9 +24498,18 @@ static int ath12k_vdev_restart_sequence(struct ath12k_link_vif *arvif,
 	/* vdev is already restarted via mvr, need to setup
 	 * certain config alone after restart */
 	if (vdev_index == -1) {
-        	ret = ath12k_mac_vdev_config_after_start(arvif, &new_ctx->def);
-        	if (!ret)
-                	goto beacon_tmpl_setup;
+		ret = ath12k_mac_vdev_config_after_start(arvif, &new_ctx->def);
+		if (!ret) {
+#ifdef CPTCFG_QCN_EXTN
+			ret = ath12k_vendor_vdev_config_after_start_extn(arvif);
+			if (ret)
+				ath12k_warn(ar->ab,
+					    "failed to restore vdev parameters for vdev %d: %d\n",
+					    arvif->vdev_id, ret);
+			ret = 0;
+#endif /* CPTCFG_QCN_EXTN */
+			goto beacon_tmpl_setup;
+		}
 	} else if (vif_down_failed_map & BIT_ULL(vdev_index)) {
 		ret = ath12k_mac_vdev_restart(arvif, new_ctx, false);
 	} else {

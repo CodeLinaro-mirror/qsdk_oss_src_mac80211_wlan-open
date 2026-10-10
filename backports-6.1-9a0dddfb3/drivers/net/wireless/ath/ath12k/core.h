@@ -808,6 +808,12 @@ struct ath12k_vap_cfg {
 	u32 fixed_eht_mcs;
 	u32 ul_fixed_he_mcs;
 	u32 ul_fixed_eht_mcs;
+	u32 ldpc;
+	u32 tx_stbc;
+	u32 rx_stbc;
+	bool ldpc_configured;
+	bool tx_stbc_configured;
+	bool rx_stbc_configured;
 	u32 eht_ul_ldpc;
 	u32 eht_ul_ltf;
 	u32 eht_ltf;
