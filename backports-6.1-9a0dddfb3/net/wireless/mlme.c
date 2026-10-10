@@ -19,11 +19,6 @@
 #include "core.h"
 #include "nl80211.h"
 #include "rdev-ops.h"
-#ifdef CPTCFG_QCN_EXTN
-#include "cfg80211_dfs_extn.h"
-#endif /* CPTCFG_QCN_EXTN */
-
-
 #ifdef CPTCFG_QCA_LAB_TEST_FEATURES
 static unsigned int cfg80211_dfs_nol_time;
 module_param_named(dfs_nol_timeout, cfg80211_dfs_nol_time, uint, 0644);
@@ -1483,27 +1478,15 @@ static void cfg80211_clear_cac_started(struct cfg80211_registered_device *rdev,
 			if (tmp_chandef->chan != chandef->chan)
 				continue;
 
-#ifdef CPTCFG_QCN_EXTN
-			if (tmp_wdev->iftype == NL80211_IFTYPE_MESH_POINT) {
-				int r_idx = cfg80211_get_hw_idx_by_chan(&rdev->wiphy,
-							chandef->chan);
-
-				if (r_idx >= 0 && r_idx < rdev->wiphy.n_radio &&
-				    cfg80211_support_bootup_cac(&rdev->wiphy,
-								r_idx))
-					continue;
-			}
-#endif
-
 			tmp_wdev->links[tmp_link_id].cac_started = false;
 		}
 	}
 }
 
-void cfg80211_cac_event(struct net_device *netdev,
-			const struct cfg80211_chan_def *chandef,
-			enum nl80211_radar_event event, gfp_t gfp,
-			unsigned int link_id)
+static void __cfg80211_cac_event(struct net_device *netdev,
+				 const struct cfg80211_chan_def *chandef,
+				 enum nl80211_radar_event event, gfp_t gfp,
+				 unsigned int link_id, bool wiphy_event)
 {
 	struct wireless_dev *wdev = netdev->ieee80211_ptr;
 	struct wiphy *wiphy = wdev->wiphy;
@@ -1551,9 +1534,27 @@ void cfg80211_cac_event(struct net_device *netdev,
 		return;
 	}
 
-	nl80211_radar_notify(rdev, chandef, event, netdev, gfp);
+	nl80211_radar_notify(rdev, chandef, event,
+			     wiphy_event ? NULL : netdev, gfp);
+}
+
+void cfg80211_cac_event(struct net_device *netdev,
+			const struct cfg80211_chan_def *chandef,
+			enum nl80211_radar_event event, gfp_t gfp,
+			unsigned int link_id)
+{
+	__cfg80211_cac_event(netdev, chandef, event, gfp, link_id, false);
 }
 EXPORT_SYMBOL(cfg80211_cac_event);
+
+void cfg80211_cac_event_wiphy(struct net_device *netdev,
+			      const struct cfg80211_chan_def *chandef,
+			      enum nl80211_radar_event event, gfp_t gfp,
+			      unsigned int link_id)
+{
+	__cfg80211_cac_event(netdev, chandef, event, gfp, link_id, true);
+}
+EXPORT_SYMBOL(cfg80211_cac_event_wiphy);
 
 void cfg80211_punct_cac_finished(struct net_device *netdev,
 				 const struct cfg80211_chan_def *chandef,
