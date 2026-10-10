@@ -2593,8 +2593,8 @@ ath12k_cfr_set_capture_count(struct ath12k *ar, u16 val)
 {
 	struct cfr_rcc_param *rcc = &ar->cfr.rcc_param;
 
-	if (!test_bit(WMI_SERVICE_CFR_CAPTURE_COUNT_SUPPORT,
-		      ar->ab->wmi_ab.svc_map)) {
+	if (val && !test_bit(WMI_SERVICE_CFR_CAPTURE_COUNT_SUPPORT,
+			     ar->ab->wmi_ab.svc_map)) {
 		ath12k_err(ar->ab,
 			   "Capture count support not enabled");
 		return -EOPNOTSUPP;
@@ -2607,6 +2607,40 @@ ath12k_cfr_set_capture_count(struct ath12k *ar, u16 val)
 	}
 
 	rcc->capture_count = val;
+
+	return 0;
+}
+
+int
+ath12k_cfr_config_filter_in_as_fp(struct ath12k *ar, bool enable)
+{
+	struct cfr_rcc_param *rcc = &ar->cfr.rcc_param;
+
+	if (enable && !test_bit(WMI_SERVICE_CFR_TA_RA_AS_FP_SUPPORT,
+				ar->ab->wmi_ab.svc_map)) {
+		ath12k_err(ar->ab,
+			   "MO marking support not available to filter as FP");
+		return -EOPNOTSUPP;
+	}
+
+	rcc->en_ta_ra_filter_in_as_fp = enable;
+
+	return 0;
+}
+
+int
+ath12k_cfr_config_interval_mode_sel(struct ath12k *ar, bool enable)
+{
+	struct cfr_rcc_param *rcc = &ar->cfr.rcc_param;
+
+	if (enable && !test_bit(WMI_SERVICE_CFR_CAPTURE_COUNT_SUPPORT,
+				ar->ab->wmi_ab.svc_map)) {
+		ath12k_err(ar->ab,
+			   "Capture count support not enabled, remain intval_sel as 0");
+		return -EOPNOTSUPP;
+	}
+
+	rcc->capture_intval_mode_sel = enable;
 
 	return 0;
 }

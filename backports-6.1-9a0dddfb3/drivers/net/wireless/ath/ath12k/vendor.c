@@ -1364,8 +1364,8 @@ ath12k_cfr_rcc_group_handler(struct ath12k *ar, struct nlattr **tb)
 static int
 ath12k_cfr_rcc_parse_update_common_params(struct ath12k *ar, struct nlattr **tb)
 {
-	struct cfr_rcc_param *rcc = &ar->cfr.rcc_param;
 	int ret = 0;
+	bool enable = false;
 
 	/* Return 1 if none of the parameters changed. Extend this check when
 	 * new common parameters added.
@@ -1415,22 +1415,18 @@ ath12k_cfr_rcc_parse_update_common_params(struct ath12k *ar, struct nlattr **tb)
 			return ret;
 	}
 
-	if (tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_TARA_FILTER_AS_FP]) {
-		if (!test_bit(WMI_SERVICE_CFR_TA_RA_AS_FP_SUPPORT,
-			      ar->ab->wmi_ab.svc_map)) {
-			ath12k_err(ar->ab,
-				   "MO marking support not available to filter as FP");
-			return -EOPNOTSUPP;
-		}
-		rcc->en_ta_ra_filter_in_as_fp = 1;
-	} else {
-		rcc->en_ta_ra_filter_in_as_fp = 0;
-	}
+	if (tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_TARA_FILTER_AS_FP])
+		enable = true;
+	ret = ath12k_cfr_config_filter_in_as_fp(ar, enable);
+	if (ret)
+		return ret;
 
+	enable = false;
 	if (tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_CAPTURE_INTERVALMODE_SEL])
-		rcc->capture_intval_mode_sel = 1;
-	else
-		rcc->capture_intval_mode_sel = 0;
+		enable = true;
+	ret = ath12k_cfr_config_interval_mode_sel(ar, enable);
+	if (ret)
+		return ret;
 
 	if (tb[QCA_WLAN_VENDOR_ATTR_PEER_CFR_UL_MU_MASK]) {
 		u64 ul_mu_mask =
