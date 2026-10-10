@@ -182,9 +182,9 @@ struct ath12k_dbring *ath12k_cfr_get_dbring(struct ath12k *ar)
 	return NULL;
 }
 
-static void ath12k_peer_cfr_default_ta_ra_config(struct cfr_rcc_param *rcc_info,
-						 bool allvalid,
-						 unsigned long reset_cfg)
+void ath12k_peer_cfr_default_ta_ra_config(struct cfr_rcc_param *rcc_info,
+					  bool allvalid,
+					  unsigned long reset_cfg)
 {
 	struct ta_ra_cfr_cfg *curr_cfg;
 	int grp_id;

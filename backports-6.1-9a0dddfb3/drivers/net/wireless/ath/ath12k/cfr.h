@@ -989,6 +989,11 @@ int ath12k_peer_cfr_rcc_commit(struct ath12k *ar);
 void
 ath12k_cfr_reset_group_configs_for_bitmap(struct ath12k *ar, u32 bitmap);
 
+void
+ath12k_peer_cfr_default_ta_ra_config(struct cfr_rcc_param *rcc_info,
+				     bool allvalid,
+				     unsigned long reset_cfg);
+
 #else
 static inline int ath12k_cfr_init(struct ath12k_base *ab)
 {
