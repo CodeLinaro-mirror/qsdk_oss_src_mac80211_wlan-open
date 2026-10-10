@@ -425,6 +425,8 @@ struct ath12k_hw_ops {
 				   struct ath12k_mac_pri_link_migr_peer_node *peer_node);
 	bool (*is_mgmt_reoq_tid)(u8 tid);
 	void (*update_tqm_status_ring_tp)(struct ath12k_base *ab, bool enable);
+	int  (*timesync_init)(struct ath12k_base *ab);
+	void (*timesync_deinit)(struct ath12k_base *ab);
 };
 
 static inline

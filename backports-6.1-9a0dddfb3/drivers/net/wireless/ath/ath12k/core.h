@@ -2797,6 +2797,23 @@ enum ath12k_cumac_band {
 	ATH12K_CUMAC_BAND_6GHZ_HIGH,
 };
 
+
+enum ath12k_timesync_mode {
+	ROOT_MODE = 0,
+	REPEATER_MODE = 1,
+};
+
+struct ath12k_timesync_ctx {
+	struct ath12k_base *ab;
+	struct class *ts_mode_class;
+	struct device *ts_mode_dev;
+	enum ath12k_timesync_mode current_ts_mode;
+	enum ath12k_timesync_mode previous_ts_mode;
+	int timer_started;
+	u8 ath12k_ts_debug_enable;
+	u16 ath12k_ts_sampling_rate;
+};
+
 /* Holds info on the group of devices that are registered as a single
  * wiphy, protected with struct ath12k_hw_group::mutex.
  */
@@ -2873,6 +2890,8 @@ struct ath12k_hw_group {
 	 * Defaults to ATH12K_FW_RECOVERY_ENABLE_MODE2 for Wi-Fi 7.
 	 */
 	enum ath12k_fw_recovery_option user_selected_recovery_mode;
+	u8 timesync_started;
+	struct ath12k_timesync_ctx timesync_ctx;
 };
 
 /* Holds WSI info specific to each device, excluding WSI group info */
