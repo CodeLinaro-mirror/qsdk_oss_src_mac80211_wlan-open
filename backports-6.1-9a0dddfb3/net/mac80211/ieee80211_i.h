@@ -2166,6 +2166,15 @@ struct ieee80211_local {
 	bool wbrf_supported;
 };
 
+static inline void ieee80211_sync_rcu_or_expedited(struct ieee80211_local *local)
+{
+	if (local && ieee80211_hw_check(&local->hw,
+					STA_DESTROY_SYNC_RCU_EXPEDITED))
+		synchronize_rcu_expedited();
+	else
+		synchronize_net();
+}
+
 static inline struct ieee80211_link_data *
 ieee80211_get_rx_amsdu_link(struct ieee80211_sub_if_data *sdata,
 			    unsigned int link_id)
