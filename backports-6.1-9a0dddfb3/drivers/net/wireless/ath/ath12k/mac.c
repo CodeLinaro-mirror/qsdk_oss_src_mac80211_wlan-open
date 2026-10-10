@@ -43,6 +43,7 @@
 #include "vendor_services.h"
 #ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/ini.h"
+#include "qcn_extns/extap_extn.h"
 #endif
 #include "hal.h"
 #include "mgmt_rx.h"
