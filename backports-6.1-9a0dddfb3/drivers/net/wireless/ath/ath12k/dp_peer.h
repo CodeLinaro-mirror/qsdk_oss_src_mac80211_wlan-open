@@ -415,8 +415,6 @@ void ath12k_link_sta_hlist_delete(struct ath12k *ar, struct ath12k_link_sta *ars
 struct ath12k_dp_peer *ath12k_dp_vdev_peer_check(struct ath12k_dp_hw *dp_hw,
 						 u8 *addr, u8 hw_link_id);
 u8 ath12k_dp_validate_hw_link_id(u8 hw_link_id);
-void ath12k_dp_peer_pre_rcu_remove(struct ieee80211_hw *hw, struct ath12k_sta *ahsta);
-
 /*
  * Peer Walk API - Walks across DP peers and performs the desired action.
  */

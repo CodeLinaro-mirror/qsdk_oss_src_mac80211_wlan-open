@@ -3044,63 +3044,6 @@ void ath12k_dp_peer_cleanup_all(struct ath12k *ar)
 	}
 }
 
-void ath12k_dp_peer_pre_rcu_remove(struct ieee80211_hw *hw, struct ath12k_sta *ahsta)
-{
-	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
-	struct ath12k_dp_hw *dp_hw = &ah->dp_hw;
-	struct ath12k_dp_peer *dp_peer;
-	int i;
-
-	lockdep_assert_wiphy(hw->wiphy);
-
-	/*
-	 * ── DP layer: clear dp_peer_list[] and link_peers[] ──
-	 */
-	dp_peer = ath12k_sta_get_dp_peer_wiphy_locked(hw->wiphy, ahsta);
-	if (!dp_peer)
-		return;
-
-	if (dp_peer->is_mlo && dp_peer->peer_id < MAX_DP_PEER_LIST_SIZE) {
-		rcu_assign_pointer(dp_hw->dp_peer_list[dp_peer->peer_id], NULL);
-		ath12k_dbg_level(NULL, ATH12K_DBG_PEER, ATH12K_DBG_L1,
-				 "%s: sta=%pM cleared dp_peer_list[%u] mlo_peer_id\n",
-				 __func__, dp_peer->addr, dp_peer->peer_id);
-	}
-
-	for (i = 0; i < ATH12K_DP_PEER_MAX_MLO_LINKS; i++) {
-		struct ath12k_dp_link_peer *link_peer;
-		u16 peerid_index;
-
-		link_peer = wiphy_dereference(hw->wiphy, dp_peer->link_peers[i]);
-		if (!link_peer)
-			continue;
-
-		dp_peer->teardown_link_peers[i] = link_peer;
-		rcu_assign_pointer(dp_peer->link_peers[i], NULL);
-
-		if (link_peer->peer_id == ATH12K_MLO_PEER_ID_INVALID)
-			continue;
-
-		peerid_index = ath12k_dp_peer_get_peerid_index(link_peer->dp,
-							       link_peer->peer_id);
-
-		rcu_assign_pointer(dp_hw->dp_peer_list[peerid_index], NULL);
-
-		ath12k_dbg_level(NULL, ATH12K_DBG_PEER, ATH12K_DBG_L1,
-				 "%s: sta=%pM cleared dp_peer_list[%u] hw_link_id=%u peer_id=%u\n",
-				 __func__, link_peer->addr, peerid_index, i,
-				 link_peer->peer_id);
-	}
-
-	rcu_assign_pointer(ahsta->dp_peer, NULL);
-
-	dp_peer->pre_rcu_remove_done = true;
-
-	ath12k_dbg_level(NULL, ATH12K_DBG_PEER, ATH12K_DBG_L1,
-			 "%s: dp_peer=%pM done mlo=%d\n",
-			 __func__, dp_peer->addr, dp_peer->is_mlo);
-}
-
 void ath12k_dp_peer_cleanup_by_addr(struct ath12k *ar, int vdev_id,
 				    const u8 *addr, struct ieee80211_sta *sta)
 {

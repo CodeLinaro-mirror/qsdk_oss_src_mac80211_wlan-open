@@ -40,6 +40,7 @@
 #include "../cfr.h"
 #include "../dp_stats.h"
 #include "../dp_mon.h"
+#include "dp_peer.h"
 #ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/wifi7_dp_extn.h"
 #endif /* CPTCFG_QCN_EXTN */
@@ -2092,6 +2093,20 @@ static void ath12k_wifi7_mac_op_sta_set_4addr(struct ieee80211_hw *hw,
 	}
 }
 
+static void
+ath12k_wifi7_mac_op_sta_pre_rcu_remove(struct ieee80211_hw *hw,
+				       struct ieee80211_vif *vif,
+				       struct ieee80211_sta *sta)
+{
+	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
+
+	lockdep_assert_wiphy(hw->wiphy);
+
+	ath12k_mac_op_sta_pre_rcu_remove(hw, vif, sta);
+
+	ath12k_wifi7_dp_peer_pre_rcu_remove(hw, ahsta);
+}
+
 static const struct ieee80211_ops ath12k_ops_wifi7 = {
 	.tx				= ath12k_wifi7_mac_op_tx,
 	.wake_tx_queue			= ieee80211_handle_wake_tx_queue,
@@ -2113,7 +2128,7 @@ static const struct ieee80211_ops ath12k_ops_wifi7 = {
 	.cancel_hw_scan                 = ath12k_mac_op_cancel_hw_scan,
 	.set_key                        = ath12k_mac_op_set_key,
 	.set_rekey_data	                = ath12k_mac_op_set_rekey_data,
-	.sta_pre_rcu_remove             = ath12k_mac_op_sta_pre_rcu_remove,
+	.sta_pre_rcu_remove             = ath12k_wifi7_mac_op_sta_pre_rcu_remove,
 	.sta_state                      = ath12k_mac_op_sta_state,
 	.sta_set_txpwr			= ath12k_mac_op_sta_set_txpwr,
 	.link_sta_rc_update		= ath12k_mac_op_link_sta_rc_update,
