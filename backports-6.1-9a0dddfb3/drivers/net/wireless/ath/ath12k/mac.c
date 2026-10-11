@@ -21385,6 +21385,19 @@ int ath12k_mac_start(struct ath12k *ar)
 		wiphy_delayed_work_queue(ath12k_ar_to_hw(ar)->wiphy,
 					 &ar->pdev_stats_timer,
 					 msecs_to_jiffies(ar->pdev_stats_timer_interval));
+
+	if (ar->pdev_user_suspend) {
+		ath12k_info(ar->ab, "Chip was in suspend state (%d) before restart.\n",
+			    ar->pdev_user_suspend);
+		ath12k_info(ar->ab, "Suspend again for radio idx : %d\n", ar->radio_idx);
+		ret = ath12k_core_wsi_remap_pdev_suspend(ar);
+
+		if (ret)
+			ath12k_warn(ar->ab,
+				    "failed to re-suspend pdev %d after mlo ready: %d\n",
+				    ar->pdev_idx, ret);
+	}
+
 	return 0;
 err:
 
@@ -21410,7 +21423,7 @@ int ath12k_mac_op_start(struct ieee80211_hw *hw)
 	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
 	struct ath12k *ar;
 	struct ath12k_hw_group *ag = ath12k_ah_to_ag(ah);
-	int ret, i, j;
+	int ret, i;
 
 	if (ath12k_ftm_mode)
 		return -EPERM;
@@ -21467,32 +21480,8 @@ skip_state_check:
 			}
 
 			ar->ab->powerup_triggered = false;
-			ar->pdev_suspend = false;
-		}
-	}
-
-	/* Re-suspend any radio that was user-suspended before MLO ready.
-	 * This handles the case where a non-CUMAC chip is brought out of
-	 * bypass: the MLO-ready WMI above wakes CUMAC firmware, so we must
-	 * put it back into pdev suspend to honour the user's intent.
-	 */
-	for (i = 0; i < ag->num_hw; i++) {
-		ah = ag->ah[i];
-		if (!ah)
-			continue;
-
-		for_each_ar(ah, ar, j) {
-			ar = &ah->radio[j];
-			if (!ar || !ar->pdev_user_suspend ||
-			    (ar->pdev_user_suspend && ar->pdev_suspend))
-				continue;
-			ath12k_info(ar->ab, "Chip was in suspend state (%d) before restart. Suspend again!",
-				    ar->pdev_user_suspend);
-			ret = ath12k_core_wsi_remap_pdev_suspend(ar->ab);
-			if (ret)
-				ath12k_warn(ar->ab,
-					    "failed to re-suspend pdev %d after mlo ready: %d\n",
-					    ar->pdev_idx, ret);
+			if (!ar->pdev_user_suspend)
+				ar->pdev_suspend = false;
 		}
 	}
 
@@ -32378,6 +32367,7 @@ int ath12k_mac_mlo_teardown_with_umac_reset(struct ath12k_base *ab,
 			ar = &ah->radio[j];
 
 			if (ar->ab->is_bypassed ||
+			    (ar->pdev_suspend) ||
 			    (ar->ab == ab &&
 			     reason_code != WMI_MLO_TEARDOWN_REASON_DYNAMIC_WSI_REMAP)) {
 				/* No need to send teardown event for asserted
@@ -34473,17 +34463,17 @@ void ath12k_mac_wsi_remap_peer_cleanup(struct ath12k_base *ab,
 	}
 }
 
-int ath12k_mac_dynamic_wsi_remap(struct ath12k_base *ab)
+int ath12k_mac_dynamic_wsi_remap(struct ath12k_base *ab, struct ath12k *bypass_ar)
 {
 	struct ath12k_hw_group *ag = ab->ag;
 	struct ath12k *ar = ab->pdevs[0].ar;
 	struct ath12k_hw *ah = ar ? ar->ah : NULL;
 	struct ath12k_base *partner_ab;
-	struct ath12k_pdev *pdev;
 	struct wiphy *wiphy;
 	long time_left;
 	int idx, ret = 0;
 	bool skip_legacy;
+	bool is_full_bypass_required;
 	u8 active_num_devices;
 	u32 total_peers;
 
@@ -34509,18 +34499,21 @@ int ath12k_mac_dynamic_wsi_remap(struct ath12k_base *ab)
 	reinit_completion(&ag->peer_cleanup_complete);
 
 	wiphy_lock(wiphy);
-	for (idx = 0; idx < ag->num_devices; idx++) {
-		partner_ab = ag->ab[idx];
 
-		if (partner_ab->is_bypassed)
-			continue;
+	if (!test_bit(WMI_TLV_SERVICE_11BN, ab->wmi_ab.svc_map)) {
+		for (idx = 0; idx < ag->num_devices; idx++) {
+			partner_ab = ag->ab[idx];
 
-		if (ab == partner_ab)
-			skip_legacy = false;
-		else
-			skip_legacy = true;
+			if (partner_ab->is_bypassed)
+				continue;
 
-		ath12k_mac_wsi_remap_peer_cleanup(partner_ab, skip_legacy);
+			if (ab == partner_ab)
+				skip_legacy = false;
+			else
+				skip_legacy = true;
+
+			ath12k_mac_wsi_remap_peer_cleanup(partner_ab, skip_legacy);
+		}
 	}
 
 	/* Keep bridge vdev removal serialized with mac80211 operations that
@@ -34539,7 +34532,8 @@ int ath12k_mac_dynamic_wsi_remap(struct ath12k_base *ab)
 	 * proceeding with the UMAC reset.
 	 */
 	total_peers = ath12k_mlo_peer_count_total(ag);
-	if (total_peers) {
+	if (total_peers &&
+	    !test_bit(WMI_TLV_SERVICE_11BN, ab->wmi_ab.svc_map)) {
 		ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS,
 			   "Bypass: waiting for ML peer cleanup, mlo_peer_count=%u\n",
 			   total_peers);
@@ -34552,30 +34546,27 @@ int ath12k_mac_dynamic_wsi_remap(struct ath12k_base *ab)
 			ret = -ETIMEDOUT;
 			goto fail;
 		}
-	} else {
+	} else if (!test_bit(WMI_TLV_SERVICE_11BN, ab->wmi_ab.svc_map)) {
 		ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS,
 			   "Bypass: no MLO peers, skipping peer cleanup wait\n");
 	}
 
+	is_full_bypass_required =
+		ath12k_wsi_is_full_bypass_required(ab, bypass_ar);
+
 	/* Cleanup all the ar workqueues, make it to complete/default
 	 * before bypassing an device.
 	 */
-	if (ab->wsi_remap_state == ATH12K_WSI_BYPASS_REMOVE_DEVICE) {
-		for (idx = 0; idx < ab->num_radios; idx++) {
-			pdev = &ab->pdevs[idx];
-			ar = pdev->ar;
-
-			if (!ar)
-				continue;
-			if (ar->scan.state == ATH12K_SCAN_RUNNING) {
-				ath12k_scan_abort(ar);
-				ar->scan.arvif = NULL;
-			}
-			ath12k_core_radio_cleanup(ar);
+	if (ab->wsi_remap_state == ATH12K_WSI_BYPASS_REMOVE_DEVICE &&
+	    is_full_bypass_required) {
+		if (bypass_ar->scan.state == ATH12K_SCAN_RUNNING) {
+			ath12k_scan_abort(bypass_ar);
+			bypass_ar->scan.arvif = NULL;
 		}
+		ath12k_core_radio_cleanup(bypass_ar);
 	}
 
-	ret = ath12k_core_dynamic_wsi_remap(ab);
+	ret = ath12k_core_dynamic_wsi_remap(ab, bypass_ar);
 
 	/* Reset accept_cmd only for ATH12K_WSI_BYPASS_REMOVE_DEVICE here.
 	 * For ATH12K_WSI_BYPASS_ADD_DEVICE, it will be reset in QMI FW ready.
