@@ -13511,6 +13511,46 @@ static bool ath12k_mgmt_rx_is_pasn_peer(struct ath12k *ar,
 	return !!arvif;
 }
 
+static void
+ath12k_scan_translate_probe_resp_da(struct ath12k *ar, struct sk_buff *skb)
+{
+	struct ath12k_link_vif *arvif;
+	struct ieee80211_mgmt *mgmt;
+	u8 scan_addr[ETH_ALEN];
+	u8 parent_addr[ETH_ALEN];
+	bool translate = false;
+
+	if (!(ar->ah->hw->wiphy->flags &
+	      WIPHY_FLAG_SUPPORTS_PARALLEL_HW_SCAN) ||
+	    !skb || skb->len < sizeof(*mgmt))
+		return;
+
+	mgmt = (struct ieee80211_mgmt *)skb->data;
+	if (!ieee80211_is_probe_resp(mgmt->frame_control))
+		return;
+
+	spin_lock_bh(&ar->data_lock);
+	arvif = ar->scan.arvif;
+	if (arvif && ar->scan.state != ATH12K_SCAN_IDLE &&
+	    arvif->is_scan_vif && !arvif->is_mlprobe_scan_vif &&
+	    !is_broadcast_ether_addr(mgmt->da) &&
+	    !ether_addr_equal(mgmt->da, arvif->ahvif->vif->addr) &&
+	    ether_addr_equal(mgmt->da, arvif->addr)) {
+		ether_addr_copy(scan_addr, arvif->addr);
+		ether_addr_copy(parent_addr, arvif->ahvif->vif->addr);
+		translate = true;
+	}
+	spin_unlock_bh(&ar->data_lock);
+
+	if (!translate)
+		return;
+
+	ether_addr_copy(mgmt->da, parent_addr);
+	ath12k_dbg(ar->ab, ATH12K_DBG_SCAN,
+		   "scan: [radio:%d] translated Probe Resp src=%pM DA %pM -> %pM\n",
+		   ar->radio_idx, mgmt->sa, scan_addr, parent_addr);
+}
+
 static void ath12k_mgmt_rx_event(struct ath12k_base *ab, struct sk_buff *skb)
 {
 	struct ath12k_wmi_mgmt_rx_arg rx_ev = {0};
@@ -13912,6 +13952,7 @@ skip_mgmt_stats:
 		}
 	}
 
+	ath12k_scan_translate_probe_resp_da(ar, skb);
 	ieee80211_rx_ni(ath12k_ar_to_hw(ar), skb);
 
 exit:
