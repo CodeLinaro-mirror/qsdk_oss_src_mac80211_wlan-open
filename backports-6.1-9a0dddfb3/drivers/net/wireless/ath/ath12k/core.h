@@ -2751,6 +2751,11 @@ struct ath12k_hw_group {
 	struct ath12k_stats_work_context stats_work;
 	u8 num_bypassed;
 	bool wsi_remap_in_progress;
+	/* When 0, northbound commands (mac80211 ops, vendor cmds, debugfs) are
+	 * rejected because a bypass or SSR operation is in progress.
+	 * Set to 1 at group init and restored when the operation completes.
+	 */
+	atomic_t accept_cmd;
 	/* Counts real (non-bridge) MLO peers currently alive in firmware.
 	 * Incremented in ath12k_peer_create() for every MLO peer created.
 	 * Decremented in the WMI peer-delete-response handlers (individual
@@ -3552,6 +3557,19 @@ int ath12k_core_config_iocoherency(struct ath12k_base *ab, bool enable);
 static inline bool ath12k_hw_group_recovery_in_progress(const struct ath12k_hw_group *ag)
 {
 	return test_bit(ATH12K_GROUP_FLAG_RECOVERY, &ag->flags);
+}
+
+/**
+ * ath12k_cmd_accepted - check whether northbound commands are allowed
+ * @ag: hardware group
+ *
+ * Returns true when the group is idle (no bypass or SSR in progress) and
+ * northbound commands (mac80211 ops, vendor cmds, debugfs writes) may proceed.
+ * Returns false while a bypass or SSR operation is running.
+ */
+static inline bool ath12k_cmd_accepted(const struct ath12k_hw_group *ag)
+{
+	return atomic_read(&ag->accept_cmd);
 }
 
 /* Mode3 (client-retaining) recovery drives its own T2LM steering
