@@ -5975,6 +5975,8 @@ static void ath12k_core_reset(struct work_struct *work)
 							   reset_work);
 	struct ath12k_hw_group *ag = ab->ag;
 	struct ath12k_hw *ah;
+	struct ath12k *ar;
+	struct ath12k_link_vif *arvif;
 	int reset_count, fail_cont_count, i;
 	long time_left;
 
@@ -6001,6 +6003,31 @@ static void ath12k_core_reset(struct work_struct *work)
 	ab->recovery_start = false;
 
 	ath12k_update_recovery_mode(ag, ab);
+
+	/* SSR: reset per-radio MLO peer counts for the crashed chip immediately.
+	 * The firmware is dead so no WMI peer-delete responses will arrive.
+	 * If this brings the group total to zero, unblock any bypass wait.
+	 */
+	for (i = 0; i < ab->num_radios; i++) {
+		ar = ab->pdevs[i].ar;
+
+		if (!ar)
+			continue;
+		ath12k_info(ab,
+			    "SSR: resetting ar[%u] mlo_peer_count=%u for crashed chip\n",
+			    ar->radio_idx, ar->mlo_peer_count);
+		ar->mlo_peer_count = 0;
+
+		/* Also reset per-arvif num_ml_peers so the del-all snapshot
+		 * taken after recovery stays consistent with mlo_peer_count.
+		 */
+		spin_lock_bh(&ar->data_lock);
+		list_for_each_entry(arvif, &ar->arvifs, list)
+			arvif->num_ml_peers = 0;
+		spin_unlock_bh(&ar->data_lock);
+	}
+	if (!ath12k_mlo_peer_count_total(ag))
+		complete(&ag->peer_cleanup_complete);
 
 	if (ab->fw_recovery_support)
 		ath12k_info(ab, "Recovery is initiated with Mode%d\n",
@@ -6351,7 +6378,6 @@ static struct ath12k_hw_group *ath12k_core_hw_group_alloc(struct ath12k_base *ab
 #endif
 	init_completion(&ag->umac_reset_complete);
 	init_completion(&ag->peer_cleanup_complete);
-	ag->mlo_peer_count = 0;
 	spin_lock_init(&ag->ahsta_lock);
 	atomic_set(&ag->accept_cmd, 1);
 	ag->mlo_capable = false;

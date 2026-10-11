@@ -12761,11 +12761,13 @@ static void ath12k_peer_delete_resp_event(struct ath12k_base *ab, struct sk_buff
 	if (was_mlo) {
 		struct ath12k_hw_group *ag = ab->ag;
 
-		ag->mlo_peer_count--;
+		if (ar->mlo_peer_count)
+			ar->mlo_peer_count--;
 		ath12k_dbg(ab, ATH12K_DBG_PEER | ATH12K_DBG_WSI_BYPASS,
-			   "MLO peer del resp %pM mlo_peer_count=%u\n",
-			   peer_del_resp.peer_macaddr.addr, ag->mlo_peer_count);
-		if (!ag->mlo_peer_count)
+			   "MLO peer del resp %pM ar[%u] mlo_peer_count=%u\n",
+			   peer_del_resp.peer_macaddr.addr,
+			   ar->radio_idx, ar->mlo_peer_count);
+		if (!ath12k_mlo_peer_count_total(ag))
 			complete(&ag->peer_cleanup_complete);
 	}
 }
@@ -24735,12 +24737,15 @@ ath12k_wmi_delete_all_peer_resp_event(struct ath12k_base *ab, struct sk_buff *sk
 	if (arvif && arvif->num_ml_peers_del_all) {
 		struct ath12k_hw_group *ag = ab->ag;
 
-		ag->mlo_peer_count -= arvif->num_ml_peers_del_all;
+		if (WARN_ON(ar->mlo_peer_count < arvif->num_ml_peers_del_all))
+			ar->mlo_peer_count = 0;
+		else
+			ar->mlo_peer_count -= arvif->num_ml_peers_del_all;
 		ath12k_dbg(ab, ATH12K_DBG_PEER | ATH12K_DBG_WSI_BYPASS,
 			   "MLO peer del all resp vdev %u ar[%u] num_ml_peers_del_all=%u mlo_peer_count=%u\n",
 			   arg.vdev_id, ar->radio_idx,
-			   arvif->num_ml_peers_del_all, ag->mlo_peer_count);
-		if (!ag->mlo_peer_count)
+			   arvif->num_ml_peers_del_all, ar->mlo_peer_count);
+		if (!ath12k_mlo_peer_count_total(ag))
 			complete(&ag->peer_cleanup_complete);
 
 		arvif->num_ml_peers_del_all = 0;

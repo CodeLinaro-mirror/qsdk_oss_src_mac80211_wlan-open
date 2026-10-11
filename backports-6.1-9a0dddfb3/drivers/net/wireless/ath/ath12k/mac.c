@@ -1826,9 +1826,10 @@ static void ath12k_mac_dec_num_stations(struct ath12k_link_vif *arvif,
 		if (arvif->num_ml_peers > 0)
 			arvif->num_ml_peers--;
 		ath12k_dbg(ar->ab, ATH12K_DBG_PEER | ATH12K_DBG_WSI_BYPASS,
-			   "MLO sta removed %pM ar[%u] arvif_num_ml_peers=%u mlo_peer_count=%u\n",
+			   "MLO sta removed %pM ar[%u] arvif_num_ml_peers=%u mlo_peer_count=%u peer_del_all=%d\n",
 			   sta->addr, ar->radio_idx,
-			   arvif->num_ml_peers, ar->ab->ag->mlo_peer_count);
+			   arvif->num_ml_peers, ar->mlo_peer_count,
+			   arvif->peer_del_all_enable);
 	}
 
 	if (arsta && arsta->is_multistream) {
@@ -2340,9 +2341,10 @@ int ath12k_mac_vdev_stop(struct ath12k_link_vif *arvif)
 	    arvif->ahvif->vdev_type != WMI_VDEV_TYPE_STA) {
 		arvif->num_ml_peers_del_all = arvif->num_ml_peers;
 		ath12k_dbg(ar->ab, ATH12K_DBG_PEER | ATH12K_DBG_WSI_BYPASS,
-			   "peer del all vdev %u ar[%u] num_ml_peers=%u num_ml_peers_del_all=%u\n",
+			   "peer del all vdev %u ar[%u] num_ml_peers=%u num_ml_peers_del_all=%u mlo_peer_count=%u\n",
 			   arvif->vdev_id, ar->radio_idx,
-			   arvif->num_ml_peers, arvif->num_ml_peers_del_all);
+			   arvif->num_ml_peers, arvif->num_ml_peers_del_all,
+			   ar->mlo_peer_count);
 		ath12k_wait_pending_deauth_disassoc_tx_arvif(
 			arvif, ATH12K_PEER_DELETE_MGMT_TX_WAIT_MS);
 		ret = ath12k_wmi_peer_delete_all(arvif);
@@ -33672,6 +33674,7 @@ int ath12k_mac_dynamic_wsi_remap(struct ath12k_base *ab)
 	int idx, ret = 0;
 	bool skip_legacy;
 	u8 active_num_devices;
+	u32 total_peers;
 
 	if (!ah) {
 		ath12k_err(ab, "Failed to find hw, Dynamic remap failed\n");
@@ -33724,15 +33727,17 @@ int ath12k_mac_dynamic_wsi_remap(struct ath12k_base *ab)
 	/* Wait for all MLO peer delete responses from firmware before
 	 * proceeding with the UMAC reset.
 	 */
-	if (ag->mlo_peer_count) {
+	total_peers = ath12k_mlo_peer_count_total(ag);
+	if (total_peers) {
 		ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS,
 			   "Bypass: waiting for ML peer cleanup, mlo_peer_count=%u\n",
-			   ag->mlo_peer_count);
+			   total_peers);
 		time_left = wait_for_completion_timeout(&ag->peer_cleanup_complete,
 				msecs_to_jiffies(ag->wsi_peer_clean_timeout));
 		if (!time_left) {
-			ath12k_err(ab, "peer cleanup didn't get completed within %lld ms, pending peers %d\n",
-				   ag->wsi_peer_clean_timeout, ah->num_ml_peers);
+			ath12k_err(ab, "peer cleanup didn't get completed within %lld ms, pending peers %u\n",
+				   ag->wsi_peer_clean_timeout,
+				   ath12k_mlo_peer_count_total(ag));
 			ret = -ETIMEDOUT;
 			goto fail;
 		}
