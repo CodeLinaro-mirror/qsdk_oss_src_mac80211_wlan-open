@@ -658,11 +658,13 @@ struct ieee80211_bss_npca_params {
 /**
  * struct ieee80211_uhr_config - UHR critical-update interval configuration.
  *
- * @adv_notification_interval: advance notification interval value in TUs (0 = not set).
- * @update_in_tim_interval: update in TIM interval value in TUs (0 = not set).
+ * @adv_notification_interval: advance notification interval value in TBTT.
+ * @post_notification_interval: post notification interval value in TBTT.
+ * @update_in_tim_interval: update in TIM interval value in TBTT.
  */
 struct ieee80211_uhr_config {
 	u8 adv_notification_interval;
+	u8 post_notification_interval;
 	u8 update_in_tim_interval;
 };
 
