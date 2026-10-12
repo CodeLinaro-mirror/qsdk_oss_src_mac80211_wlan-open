@@ -90,7 +90,9 @@ struct ath12k_dp_ast_hash_keys {
 
 struct ath12k_dp_global_ast_stats {
 	u32 num_ast_entry_create_attempted;
+	u32 num_ast_entry_create_success;
 	u32 num_ast_entry_delete;
+	u32 num_ast_entry_delete_success;
 
 	/* failure stats */
 	u16 invalid_hw_ast_entry;
