@@ -383,10 +383,13 @@ ieee80211_bss_info_update(struct ieee80211_local *local,
 
 static bool ieee80211_scan_accept_presp(struct ieee80211_sub_if_data *sdata,
 					struct ieee80211_channel *channel,
-					u32 scan_flags, const u8 *da)
+					u32 scan_flags, const u8 *da,
+					const u8 (*scan_tx_addrs)[ETH_ALEN],
+					unsigned int n_scan_tx_addrs)
 {
 	struct ieee80211_link_data *link_sdata;
 	u8 link_id;
+	unsigned int i;
 
 	if (!sdata)
 		return false;
@@ -412,18 +415,34 @@ static bool ieee80211_scan_accept_presp(struct ieee80211_sub_if_data *sdata,
 			return true;
 	}
 
+	for (i = 0; scan_tx_addrs && i < n_scan_tx_addrs; i++) {
+		if (is_valid_ether_addr(scan_tx_addrs[i]) &&
+		    ether_addr_equal(da, scan_tx_addrs[i]))
+			return true;
+	}
+
 	return false;
 }
 
 static bool ieee80211_scan_req_accept_presp(const struct cfg80211_scan_request *req,
 					    struct ieee80211_sub_if_data *sdata,
 					    struct ieee80211_channel *channel,
-					    const u8 *da)
+					    const u8 *da,
+					    struct ieee80211_scan_request *hw_req)
 {
+	const u8 (*scan_tx_addrs)[ETH_ALEN] = NULL;
+	unsigned int n_scan_tx_addrs = 0;
+
 	if (!req)
 		return false;
 
-	return ieee80211_scan_accept_presp(sdata, channel, req->flags, da);
+	if (hw_req) {
+		scan_tx_addrs = hw_req->scan_tx_addrs;
+		n_scan_tx_addrs = hw_req->n_scan_tx_addrs;
+	}
+
+	return ieee80211_scan_accept_presp(sdata, channel, req->flags, da,
+					   scan_tx_addrs, n_scan_tx_addrs);
 }
 
 void ieee80211_scan_rx(struct ieee80211_local *local, struct sk_buff *skb)
@@ -472,6 +491,8 @@ void ieee80211_scan_rx(struct ieee80211_local *local, struct sk_buff *skb)
 		struct ieee80211_sub_if_data *sdata1, *sdata2;
 		struct cfg80211_scan_request *scan_req;
 		struct cfg80211_sched_scan_request *sched_scan_req;
+		const u8 (*scan_tx_addrs)[ETH_ALEN] = NULL;
+		unsigned int n_scan_tx_addrs = 0;
 		u32 scan_req_flags = 0, sched_scan_req_flags = 0;
 
 		sdata1 = rcu_dereference(local->scan_sdata);
@@ -484,8 +505,13 @@ void ieee80211_scan_rx(struct ieee80211_local *local, struct sk_buff *skb)
 		scan_req = rcu_dereference(local->scan_req);
 		sched_scan_req = rcu_dereference(local->sched_scan_req);
 
-		if (scan_req)
+		if (scan_req) {
 			scan_req_flags = scan_req->flags;
+			if (local->hw_scan_req) {
+				scan_tx_addrs = local->hw_scan_req->scan_tx_addrs;
+				n_scan_tx_addrs = local->hw_scan_req->n_scan_tx_addrs;
+			}
+		}
 
 		if (sched_scan_req)
 			sched_scan_req_flags = sched_scan_req->flags;
@@ -495,10 +521,11 @@ void ieee80211_scan_rx(struct ieee80211_local *local, struct sk_buff *skb)
 		 */
 		if (!ieee80211_scan_accept_presp(sdata1, channel,
 						 scan_req_flags,
-						 mgmt->da) &&
+						 mgmt->da, scan_tx_addrs,
+						 n_scan_tx_addrs) &&
 		    !ieee80211_scan_accept_presp(sdata2, channel,
 						 sched_scan_req_flags,
-						 mgmt->da)) {
+						 mgmt->da, NULL, 0)) {
 			u8 i;
 			bool accepted = false;
 
@@ -512,7 +539,8 @@ void ieee80211_scan_rx(struct ieee80211_local *local, struct sk_buff *skb)
 				if (ieee80211_scan_req_accept_presp(ctx->req,
 								    ctx->sdata,
 								    channel,
-								    mgmt->da)) {
+								    mgmt->da,
+								    ctx->hw_scan_req)) {
 					accepted = true;
 					break;
 				}
@@ -622,6 +650,8 @@ static bool ieee80211_prep_hw_scan(struct ieee80211_sub_if_data *sdata)
 	ether_addr_copy(local->hw_scan_req->req.mac_addr_mask,
 			req->mac_addr_mask);
 	ether_addr_copy(local->hw_scan_req->req.bssid, req->bssid);
+	memset(local->hw_scan_req->scan_tx_addrs, 0,
+	       local->hw_scan_req->n_scan_tx_addrs * ETH_ALEN);
 
 	return true;
 }
@@ -688,7 +718,8 @@ static void __ieee80211_scan_completed(struct ieee80211_hw *hw, bool aborted)
 		atomic_sub(sizeof(*local->hw_scan_req) +
 			   temp_req->n_channels *
 			   sizeof(temp_req->channels[0]) +
-			   local->hw_scan_ies_bufsize,
+			   local->hw_scan_ies_bufsize +
+			   local->hw_scan_req->n_scan_tx_addrs * ETH_ALEN,
 			   &local->memory_stats.malloc_size);
 	}
 
@@ -747,13 +778,17 @@ void ieee80211_scan_completed(struct ieee80211_hw *hw,
 						  parallel_ctx->cancelling;
 		cfg80211_scan_done(parallel_ctx->req, &parallel_ctx->scan_info);
 		if (parallel_ctx->hw_scan_req) {
-			atomic_sub(sizeof(*parallel_ctx->hw_scan_req) +
+			struct ieee80211_scan_request *freed_req =
+				parallel_ctx->hw_scan_req;
+
+			parallel_ctx->hw_scan_req = NULL;
+			atomic_sub(sizeof(*freed_req) +
 				   parallel_ctx->req->n_channels *
 				   sizeof(parallel_ctx->req->channels[0]) +
-				   parallel_ctx->hw_scan_ies_bufsize,
+				   parallel_ctx->hw_scan_ies_bufsize +
+				   freed_req->n_scan_tx_addrs * ETH_ALEN,
 				   &local->memory_stats.malloc_size);
-			kfree(parallel_ctx->hw_scan_req);
-			parallel_ctx->hw_scan_req = NULL;
+			kfree(freed_req);
 		}
 		ieee80211_scan_free_parallel_ctx(local, parallel_ctx);
 		return;
@@ -1065,6 +1100,8 @@ static int __ieee80211_start_scan(struct ieee80211_sub_if_data *sdata,
 
  again:
 	if (hw_scan) {
+		unsigned int n_scan_tx_addrs;
+		size_t scan_tx_addrs_len;
 		u8 *ies;
 
 		local->hw_scan_ies_bufsize = local->scan_ies_len + req->ie_len;
@@ -1088,11 +1125,15 @@ static int __ieee80211_start_scan(struct ieee80211_sub_if_data *sdata,
 		if (!req->n_channels)
 			return -EINVAL;
 
+		n_scan_tx_addrs = max_t(int, 1, local->hw.wiphy->n_radio);
+		scan_tx_addrs_len = n_scan_tx_addrs * ETH_ALEN;
+
 		local->hw_scan_req = kmalloc(struct_size(local->hw_scan_req,
 							 req.channels,
 							 req->n_channels) +
 							 sizeof(*req->chandef) +
-					     local->hw_scan_ies_bufsize,
+					     local->hw_scan_ies_bufsize +
+					     scan_tx_addrs_len,
 					     GFP_KERNEL);
 		if (!local->hw_scan_req)
 			return -ENOMEM;
@@ -1100,7 +1141,8 @@ static int __ieee80211_start_scan(struct ieee80211_sub_if_data *sdata,
 		atomic_add(sizeof(*local->hw_scan_req) +
 			   req->n_channels *
 			   sizeof(req->channels[0]) +
-			   local->hw_scan_ies_bufsize,
+			   local->hw_scan_ies_bufsize +
+			   scan_tx_addrs_len,
 			   &local->memory_stats.malloc_size);
 
 		local->hw_scan_req->req.chandef = req->chandef;
@@ -1134,6 +1176,9 @@ static int __ieee80211_start_scan(struct ieee80211_sub_if_data *sdata,
 		 */
 		local->hw_scan_req->req.parallel_scan_id =
 			req->parallel_scan_id;
+		local->hw_scan_req->n_scan_tx_addrs = n_scan_tx_addrs;
+		local->hw_scan_req->scan_tx_addrs =
+			(void *)(ies + local->hw_scan_ies_bufsize);
 
 		/*
 		 * After allocating local->hw_scan_req, we must
@@ -1210,14 +1255,18 @@ static int __ieee80211_start_scan(struct ieee80211_sub_if_data *sdata,
 
 	if (rc) {
 		if (hw_scan) {
-			atomic_sub(sizeof(*local->hw_scan_req) +
+			struct ieee80211_scan_request *freed_req =
+				local->hw_scan_req;
+
+			local->hw_scan_req = NULL;
+			atomic_sub(sizeof(*freed_req) +
 				   req->n_channels *
 				   sizeof(req->channels[0]) +
-				   local->hw_scan_ies_bufsize,
+				   local->hw_scan_ies_bufsize +
+				   freed_req->n_scan_tx_addrs * ETH_ALEN,
 				   &local->memory_stats.malloc_size);
 
-			kfree(local->hw_scan_req);
-			local->hw_scan_req = NULL;
+			kfree(freed_req);
 		}
 		local->scanning = 0;
 
@@ -1545,6 +1594,8 @@ int ieee80211_request_scan(struct ieee80211_sub_if_data *sdata,
 		struct ieee80211_scan_request *saved_hw_scan_req =
 						local->hw_scan_req;
 		int saved_hw_scan_band = local->hw_scan_band;
+		unsigned int n_scan_tx_addrs;
+		size_t scan_tx_addrs_len;
 		int i, n_bands = 0;
 		u8 bands_counted = 0;
 		u8 *ies;
@@ -1568,10 +1619,14 @@ int ieee80211_request_scan(struct ieee80211_sub_if_data *sdata,
 			__ieee80211_validate_scan_freqs(sdata, req);
 		}
 
+		n_scan_tx_addrs = max_t(int, 1, local->hw.wiphy->n_radio);
+		scan_tx_addrs_len = n_scan_tx_addrs * ETH_ALEN;
+
 		hw_scan_req = kmalloc(struct_size(hw_scan_req, req.channels,
 						  req->n_channels) +
 				      sizeof(*req->chandef) +
-				      parallel_ctx->hw_scan_ies_bufsize,
+				      parallel_ctx->hw_scan_ies_bufsize +
+				      scan_tx_addrs_len,
 				      GFP_KERNEL);
 		if (!hw_scan_req) {
 			ieee80211_scan_free_parallel_ctx(local, parallel_ctx);
@@ -1580,7 +1635,8 @@ int ieee80211_request_scan(struct ieee80211_sub_if_data *sdata,
 
 		atomic_add(sizeof(*hw_scan_req) +
 			   req->n_channels * sizeof(req->channels[0]) +
-			   parallel_ctx->hw_scan_ies_bufsize,
+			   parallel_ctx->hw_scan_ies_bufsize +
+			   scan_tx_addrs_len,
 			   &local->memory_stats.malloc_size);
 
 		hw_scan_req->req.chandef = req->chandef;
@@ -1600,6 +1656,9 @@ int ieee80211_request_scan(struct ieee80211_sub_if_data *sdata,
 		hw_scan_req->req.scan_6ghz_params = req->scan_6ghz_params;
 		hw_scan_req->req.scan_6ghz = req->scan_6ghz;
 		hw_scan_req->req.parallel_scan_id = req->parallel_scan_id;
+		hw_scan_req->n_scan_tx_addrs = n_scan_tx_addrs;
+		hw_scan_req->scan_tx_addrs =
+			(void *)(ies + parallel_ctx->hw_scan_ies_bufsize);
 
 		parallel_ctx->hw_scan_req = hw_scan_req;
 		parallel_ctx->hw_scan_band = 0;
@@ -1623,13 +1682,14 @@ int ieee80211_request_scan(struct ieee80211_sub_if_data *sdata,
 					   saved_scan_req);
 			local->hw_scan_req = saved_hw_scan_req;
 			local->hw_scan_band = saved_hw_scan_band;
+			parallel_ctx->hw_scan_req = NULL;
 			atomic_sub(sizeof(*hw_scan_req) +
 				   req->n_channels *
 				   sizeof(req->channels[0]) +
-				   parallel_ctx->hw_scan_ies_bufsize,
+				   parallel_ctx->hw_scan_ies_bufsize +
+				   hw_scan_req->n_scan_tx_addrs * ETH_ALEN,
 				   &local->memory_stats.malloc_size);
 			kfree(hw_scan_req);
-			parallel_ctx->hw_scan_req = NULL;
 			ieee80211_scan_free_parallel_ctx(local,
 							 parallel_ctx);
 			return -EINVAL;
@@ -1640,12 +1700,13 @@ int ieee80211_request_scan(struct ieee80211_sub_if_data *sdata,
 
 		ret = drv_hw_scan(local, sdata, hw_scan_req);
 		if (ret) {
+			parallel_ctx->hw_scan_req = NULL;
 			atomic_sub(sizeof(*hw_scan_req) +
 				   req->n_channels * sizeof(req->channels[0]) +
-				   parallel_ctx->hw_scan_ies_bufsize,
+				   parallel_ctx->hw_scan_ies_bufsize +
+				   hw_scan_req->n_scan_tx_addrs * ETH_ALEN,
 				   &local->memory_stats.malloc_size);
 			kfree(hw_scan_req);
-			parallel_ctx->hw_scan_req = NULL;
 			ieee80211_scan_free_parallel_ctx(local, parallel_ctx);
 		}
 

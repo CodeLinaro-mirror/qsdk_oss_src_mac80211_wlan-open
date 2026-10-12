@@ -12150,6 +12150,7 @@ static int ath12k_mac_initiate_hw_scan(struct ieee80211_hw *hw,
 	bool create = true;
 	u8 n_channels = to_index - from_index;
 	u32 scan_timeout;
+	unsigned int scan_tx_addr_idx;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
@@ -12341,6 +12342,17 @@ static int ath12k_mac_initiate_hw_scan(struct ieee80211_hw *hw,
 					 req->n_ssids ? req->ssids[0].ssid : NULL,
 					 req->n_ssids ? req->ssids[0].ssid_len : 0);
 #endif
+
+	scan_tx_addr_idx = hw->wiphy->n_radio ? ar->radio_idx : 0;
+	if (arvif->is_scan_vif && scan_tx_addr_idx < hw_req->n_scan_tx_addrs) {
+		ether_addr_copy(hw_req->scan_tx_addrs[scan_tx_addr_idx],
+				arvif->addr);
+		ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L3,
+				 "mac scan tx addr %pM scan_id %u radio_idx %d idx %u vdev_id %d\n",
+				 hw_req->scan_tx_addrs[scan_tx_addr_idx],
+				 req->parallel_scan_id, ar->radio_idx, scan_tx_addr_idx,
+				 arvif->vdev_id);
+	}
 
 	ret = ath12k_start_scan(ar, arg);
 	if (ret) {
