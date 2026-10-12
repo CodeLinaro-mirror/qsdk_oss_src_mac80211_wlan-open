@@ -111,8 +111,14 @@ int ath12k_wifi8_dp_tqm_cmd_send(struct ath12k_base *ab,
 
 	if ((test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags) &&
 	     !test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags)) ||
-	    test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags))
+	    test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags)) {
+		/* Free the lock here but donot free dp_cmd. Callback is expected to be
+		 * called during umac_deinit and dp_cmd is expected to be freed there.
+		 */
+		if (dp_cmd)
+			spin_unlock_bh(&dp->tqm_cmd_lock);
 		return 0;
+	}
 
 	cmd_ring = &ab->hal.srng_list[dp_wifi8->tqm_cmd_ring.ring_id];
 	cmd_num = ath12k_wifi8_hal_tqm_cmd_send(ab, cmd_ring, type, cmd);
