@@ -2088,6 +2088,7 @@ struct cfg80211_ttlm_params {
  * @residual_cac_ms: residual CAC time in milliseconds, derived from
  *	%NL80211_ATTR_MAX_CH_SWITCH_TIME for AP start
  * @skip_cac: if set, skip CAC on a DFS channel
+ * @beacon_rate_set: indicates @beacon_rate was explicitly provided
  */
 struct cfg80211_ap_settings {
 	struct cfg80211_chan_def chandef;
@@ -2135,6 +2136,7 @@ struct cfg80211_ap_settings {
 	struct cfg80211_smd_params smd_params;
 	u32 residual_cac_ms;
 	bool skip_cac;
+	bool beacon_rate_set;
 };
 
 

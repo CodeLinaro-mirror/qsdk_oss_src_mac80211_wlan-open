@@ -2289,6 +2289,15 @@ static int ieee80211_update_ap(struct wiphy *wiphy, struct net_device *dev,
 
 	ieee80211_set_critical_update(sdata, link->link_id,
 				      &params->beacon.cu_params, true);
+
+	if (params->beacon_rate_set &&
+	    ieee80211_hw_check(&sdata->local->hw, HAS_RATE_CONTROL) &&
+	    memcmp(&link_conf->beacon_tx_rate, &params->beacon_rate,
+		   sizeof(params->beacon_rate))) {
+		link_conf->beacon_tx_rate = params->beacon_rate;
+		changed |= BSS_CHANGED_BEACON_RATE;
+	}
+
 	ieee80211_link_info_change_notify(sdata, link, changed);
 	ieee80211_set_critical_update(sdata, link->link_id,
 				      &params->beacon.cu_params, false);
