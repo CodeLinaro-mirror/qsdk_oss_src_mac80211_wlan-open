@@ -1654,6 +1654,12 @@ int ath12k_wmi_offchan_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 	int ret, len;
 	void *ptr;
 	struct wmi_tlv *tlv;
+#ifdef CPTCFG_QCN_EXTN
+	bool tx_params_valid =
+		ATH12K_TX_PARAMS_VALID_EXTN(ATH12K_SKB_CB(frame));
+#else
+	bool tx_params_valid = false;
+#endif
 
 	buf_len = min(frame->len, WMI_MGMT_SEND_DOWNLD_LEN);
 	buf_len_padded = roundup(buf_len, sizeof(u32));
@@ -1676,7 +1682,7 @@ int ath12k_wmi_offchan_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 	cmd->paddr_hi = cpu_to_le32(upper_32_bits(ATH12K_SKB_CB(frame)->paddr));
 	cmd->frame_len = cpu_to_le32(frame->len);
 	cmd->buf_len = cpu_to_le32(buf_len);
-	cmd->tx_params_valid = 1;
+	cmd->tx_params_valid = tx_params_valid;
 	ptr += sizeof(*cmd);
 
 	frame_tlv = ptr;
