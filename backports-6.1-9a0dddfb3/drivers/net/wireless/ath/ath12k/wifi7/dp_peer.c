@@ -147,6 +147,9 @@ int ath12k_wifi7_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 	dp_peer->rx_decap_type = ahvif->dp_vif.rx_decap_type;
 
 #ifdef CPTCFG_QCN_EXTN
+	if (vif->type == NL80211_IFTYPE_STATION && ath12k_vif_has_extap(ahvif))
+		dp_peer->dp_peer_flags |= DP_PEER_FEATURE_EXTAP;
+
 	if (ahvif->vap_submode == IEEE80211_EXTN_VAP_SUBMODE_ETH_OFFLOAD_MESH) {
 		if (ahsta) {
 			wiphy_work_queue(ah->hw->wiphy, &ahsta->set_4addr_wk);
