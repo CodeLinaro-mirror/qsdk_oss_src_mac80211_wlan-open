@@ -10849,6 +10849,23 @@ void cfg80211_cac_event(struct net_device *netdev,
 			unsigned int link_id);
 
 /**
+ * cfg80211_cac_event_wiphy - notify CAC completion at wiphy scope
+ * @netdev: network device used for CAC state validation and cleanup
+ * @chandef: chandef for the current channel
+ * @event: type of event
+ * @gfp: context flags
+ * @link_id: valid link_id for MLO operation or 0 otherwise.
+ *
+ * This is equivalent to cfg80211_cac_event(), but omits IFINDEX/WDEV from
+ * the nl80211 notification so all userspace interfaces can process the
+ * event based on the channel frequency.
+ */
+void cfg80211_cac_event_wiphy(struct net_device *netdev,
+			      const struct cfg80211_chan_def *chandef,
+			      enum nl80211_radar_event event, gfp_t gfp,
+			      unsigned int link_id);
+
+/**
  * cfg80211_punct_cac_finished - punctured channel CAC finished event
  * @netdev: network device
  * @chandef: chandef for the current channel

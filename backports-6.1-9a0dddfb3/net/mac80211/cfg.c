@@ -4716,6 +4716,19 @@ static int ieee80211_start_radar_detection(struct wiphy *wiphy,
 		}
 	}
 
+	/*
+	 * CAC is tied to the channel context. Reuse an existing context only
+	 * when it covers the requested chandef; a narrower active context must
+	 * not be used to claim CAC for a wider chandef.
+	 */
+	if (!cfg80211_chandef_identical(&ctx->conf.def, chandef) &&
+	    cfg80211_chandef_compatible(&ctx->conf.def, chandef) !=
+	    &ctx->conf.def) {
+		sdata_info(sdata,
+			   "CAC chandef is incompatible with active chanctx\n");
+		return -EINVAL;
+	}
+
 	hrtimer_start(&ctx->dfs_cac_timer, ktime, HRTIMER_MODE_REL);
 
 	return 0;

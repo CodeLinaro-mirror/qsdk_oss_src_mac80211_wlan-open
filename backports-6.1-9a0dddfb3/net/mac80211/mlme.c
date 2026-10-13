@@ -4250,22 +4250,27 @@ void ieee80211_dfs_cac_timer_work(struct wiphy *wiphy, struct wiphy_work *work)
 			     dfs_cac_timer_work);
 	struct ieee80211_local *local = ctx->local;
 	struct ieee80211_link_data *link;
+	struct ieee80211_link_data *cac_link = NULL;
 	struct cfg80211_chan_def chandef;
 	struct ieee80211_sub_if_data *sdata;
-	bool link_found = false;
+	bool wiphy_event = false;
 
 	lockdep_assert_wiphy(local->hw.wiphy);
 
 	list_for_each_entry(link, &ctx->assigned_links, assigned_chanctx_list) {
-		if (link->sdata->wdev.links[link->link_id].cac_started) {
-			link_found = true;
-			break;
-		}
+		if (!link->sdata->wdev.links[link->link_id].cac_started)
+			continue;
+
+		if (cac_link)
+			wiphy_event = true;
+		else
+			cac_link = link;
 	}
 
-	if (!link_found)
+	if (!cac_link)
 		return;
 
+	link = cac_link;
 	sdata = link->sdata;
 	chandef = link->conf->chanreq.oper;
 
@@ -4284,9 +4289,14 @@ void ieee80211_dfs_cac_timer_work(struct wiphy *wiphy, struct wiphy_work *work)
 			ieee80211_dfs_cac_handle_deferred_up_links(link);
 		}
 send_event:
-		cfg80211_cac_event(sdata->dev, &chandef,
-				   NL80211_RADAR_CAC_FINISHED,
-				   GFP_KERNEL, link->link_id);
+		if (wiphy_event)
+			cfg80211_cac_event_wiphy(sdata->dev, &chandef,
+						 NL80211_RADAR_CAC_FINISHED,
+						 GFP_KERNEL, link->link_id);
+		else
+			cfg80211_cac_event(sdata->dev, &chandef,
+					   NL80211_RADAR_CAC_FINISHED,
+					   GFP_KERNEL, link->link_id);
 	}
 
 #ifdef CPTCFG_QCN_EXTN

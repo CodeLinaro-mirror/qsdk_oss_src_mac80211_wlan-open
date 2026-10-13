@@ -13328,6 +13328,30 @@ static int nl80211_start_radar_detection(struct sk_buff *skb,
 						&chandef, link_id,
 						requested_radio_idx);
 
+	/*
+	 * CAC is shared by beaconing VAPs that use the same channel context.
+	 * cfg80211_set_cac_started() propagates the state from the first VAP
+	 * that starts CAC to the other beaconing VAPs. Treat a subsequent
+	 * start request for the same chandef as a successful no-op instead of
+	 * returning -EBUSY to the second userspace controller.
+	 */
+	if (wdev->links[link_id].cac_started) {
+		bool same_cac = false;
+
+		if (chandef_link && chandef_link->chan &&
+		    cfg80211_chandef_identical(chandef_link, &chandef))
+			same_cac = true;
+
+		if (same_cac) {
+			pr_info("nl80211: CAC already active for %s on %d MHz; "
+				"sharing existing CAC\n",
+				dev->name, chandef.chan->center_freq);
+			memset(&wdev->links[link_id].csa_target_chandef, 0,
+			       sizeof(struct cfg80211_chan_def));
+			return 0;
+		}
+	}
+
 	if (cfg80211_beaconing_iface_active(wdev)) {
 		if (cfg80211_chandef_identical(&wdev->links[link_id].csa_target_chandef,
 					       &chandef)) {
