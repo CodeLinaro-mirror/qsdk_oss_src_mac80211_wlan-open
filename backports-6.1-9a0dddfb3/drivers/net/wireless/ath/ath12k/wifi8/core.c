@@ -264,6 +264,7 @@ static int ath12k_wifi8_wsi_bypass_add(struct ath12k_base *ab)
 		ag->wsi_remap_in_progress = false;
 		atomic_set(&ab->wsi_remap_in_progress, 0);
 		ab->wsi_remap_state = ATH12K_WSI_BYPASS_DEFAULT;
+		atomic_set(&ag->accept_cmd, 1);
 		ath12k_info(ab, "WSI re-add: CUMAC chip resumed\n");
 	} else {
 		ret = ath12k_core_wsi_mlo_teardown_umac_reset(ab);
