@@ -171,6 +171,17 @@ struct ath12k_wifi8_dp_congestion_control {
 	spinlock_t history_lock;
 	/* enable/disable history logging (default: false) */
 	bool history_enable;
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	/*
+	 * IPA TX buffer congestion check callback.
+	 * Called each tick; returns the number of excess in-flight IPA buffers
+	 * above the 80% threshold (0 when not congested).  The return value
+	 * is added to total_drop so the weighted-drop algorithm recovers
+	 * IPA buffers alongside normal TX descriptor congestion.
+	 * Registered by ath12k_ipa_cc_init(), cleared by ath12k_ipa_cc_deinit().
+	 */
+	u32 (*ipa_cc_check)(struct ath12k_base *ab);
+#endif
 };
 
 struct ath12k_dp_wifi8 {

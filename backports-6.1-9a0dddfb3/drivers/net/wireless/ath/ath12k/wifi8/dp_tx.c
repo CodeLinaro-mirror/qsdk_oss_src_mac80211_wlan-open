@@ -28,6 +28,10 @@
 #include "../qcn_extns/ath12k_cmn_extn.h"
 #endif /* CPTCFG_QCN_EXTN */
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+ssize_t ath12k_ipa_cc_dump_stats(struct ath12k_base *ab, char *buf, int size);
+#endif
+
 #define ATH12K_HW_MAX_ACTIVE_QUEUES	3
 
 struct ath12k_tx_sw_metadata {
@@ -5477,6 +5481,9 @@ void ath12k_wifi8_dp_tx_congestion_recovery_handler(struct timer_list *t)
 	enum hal_tqm_service_category svc;
 	struct ath12k_base *ab = dp->ab;
 	u32 used_cnt, ppeds_used_cnt;
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	u32 ipa_target_drop = 0;
+#endif
 	unsigned long cur_jiffies;
 	int ret;
 
@@ -5505,8 +5512,22 @@ void ath12k_wifi8_dp_tx_congestion_recovery_handler(struct timer_list *t)
 					     &info);
 	ppeds_used_cnt -= (info.wifi8.prim_active_cnt + info.wifi8.secd_active_cnt);
 #endif
+
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	/*
+	 * Update IPA buffer pressure BEFORE the gate so the same 100 ms tick
+	 * that detects congestion also runs the drop path.
+	 */
+	if (congstn->ipa_cc_check)
+		ipa_target_drop = congstn->ipa_cc_check(ab);
+#endif
+
 	if (used_cnt <= congstn->used_threshold &&
-	    ppeds_used_cnt <= congstn->ppeds_used_threshold)
+	    ppeds_used_cnt <= congstn->ppeds_used_threshold
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	    && !ipa_target_drop
+#endif
+	    )
 		goto skip_history;
 
 	if (!svc_data)
@@ -5559,6 +5580,15 @@ void ath12k_wifi8_dp_tx_congestion_recovery_handler(struct timer_list *t)
 		ppeds_target_drop = ppeds_used_cnt - congstn->ppeds_used_threshold;
 
 	total_drop = target_drop + ppeds_target_drop;
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	/*
+	 * Include IPA buffer excess in total_drop.
+	 * ipa_target_drop = (in_flight - threshold) set by ipa_cc_check above.
+	 * This tells the weighted-drop algorithm how many extra MSDUs to drop
+	 * so TQM returns enough IPA buffers to clear the pool pressure.
+	 */
+	total_drop += ipa_target_drop;
+#endif
 	if (total_drop < total_active_msdu) {
 		congstn->calculate_drop(congstn, svc_data,
 					total_drop,
@@ -5646,8 +5676,13 @@ skip_history_add:
 	congstn->last_drop_jiffies = cur_jiffies;
 
 skip_history:
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	if (used_cnt + ppeds_used_cnt  + ipa_target_drop > congstn->max_used)
+		congstn->max_used = used_cnt + ppeds_used_cnt + ipa_target_drop;
+#else
 	if (used_cnt + ppeds_used_cnt > congstn->max_used)
 		congstn->max_used = used_cnt + ppeds_used_cnt;
+#endif
 
 	congstn->tick_counter++;
 	if (congstn->tick_counter >= congstn->scaling_factor) {
@@ -6015,6 +6050,11 @@ ssize_t ath12k_wifi8_dp_tx_dump_congestion_ctrl_stats(struct ath12k_dp *dp,
 					 "SC%d: (empty)\n", svc);
 	}
 	spin_unlock_bh(&congstn->threshold_list_lock);
+
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	if (len < size - 128)
+		len += ath12k_ipa_cc_dump_stats(dp->ab, buf + len, size - len);
+#endif
 
 out:
 	return len;
