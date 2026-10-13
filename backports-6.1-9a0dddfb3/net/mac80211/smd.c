@@ -1177,6 +1177,7 @@ void ieee80211_smd_prep_reset_target(struct ieee80211_sub_if_data *sdata,
 {
 	struct ieee80211_local *local = sdata->local;
 	struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
+	int link_id;
 
 	lockdep_assert_wiphy(local->hw.wiphy);
 
@@ -1267,6 +1268,11 @@ void ieee80211_smd_prep_reset_target(struct ieee80211_sub_if_data *sdata,
 
 	kfree(target->elems);
 	target->elems = NULL;
+
+	for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS; link_id++) {
+		kfree(target->defrag_sta_prof[link_id]);
+		target->defrag_sta_prof[link_id] = NULL;
+	}
 
 	kfree(target->drv_info);
 	target->drv_info = NULL;
@@ -1402,18 +1408,6 @@ int ieee80211_smd_parse_trans_params(struct ieee80211_sub_if_data *sdata,
 	target->smd_bss_trans_flags = *pos++;
 	remaining--;
 
-	if (target->smd_bss_trans_flags & SMD_BSS_TRANS_FLAG_AID_PRESENT) {
-		if (remaining < 2) {
-			sdata_dbg(sdata, "smd: trans params truncated (AID)\n");
-			return -EINVAL;
-		}
-		target->target_aid = get_unaligned_le16(pos);
-		pos += 2;
-		remaining -= 2;
-	} else {
-		target->target_aid = 0;
-	}
-
 	if (target->smd_bss_trans_flags & SMD_BSS_TRANS_FLAG_DL_BA_INFO_PRESENT) {
 		int num_tids;
 
@@ -1475,9 +1469,8 @@ int ieee80211_smd_parse_trans_params(struct ieee80211_sub_if_data *sdata,
 		remaining -= num_scs;
 	}
 
-	sdata_dbg(sdata, "smd: trans params ok status=%u aid=%u flags=0x%x\n",
-		  status_code, target->target_aid,
-		  target->smd_bss_trans_flags);
+	sdata_dbg(sdata, "smd: trans params ok status=%u flags=0x%x\n",
+		  status_code, target->smd_bss_trans_flags);
 
 	return 0;
 }
@@ -1558,6 +1551,36 @@ int ieee80211_smd_parse_exec_trans_params(struct ieee80211_sub_if_data *sdata,
 	return 0;
 }
 
+static struct ieee80211_mle_per_sta_profile *
+ieee80211_smd_defrag_sta_prof(const struct element *sub, const u8 *data,
+			      size_t len, size_t *prof_len)
+{
+	struct ieee80211_mle_per_sta_profile *prof;
+	ssize_t defrag_len;
+
+	defrag_len = cfg80211_defragment_element(sub, data, len, NULL, 0,
+						 IEEE80211_MLE_SUBELEM_FRAGMENT);
+	if (defrag_len < 0)
+		return NULL;
+
+	prof = kmalloc(defrag_len, GFP_ATOMIC);
+	if (!prof)
+		return NULL;
+
+	defrag_len = cfg80211_defragment_element(sub, data, len, (u8 *)prof,
+						 defrag_len,
+						 IEEE80211_MLE_SUBELEM_FRAGMENT);
+	if (defrag_len < 0 ||
+	    !ieee80211_mle_basic_sta_prof_size_ok((const u8 *)prof, defrag_len)) {
+		kfree(prof);
+		return NULL;
+	}
+
+	*prof_len = defrag_len;
+
+	return prof;
+}
+
 int ieee80211_smd_parse_ml_persta(struct ieee80211_sub_if_data *sdata,
 				  const u8 *data, size_t len,
 				  struct ieee80211_smd_prep_target *target)
@@ -1596,10 +1619,11 @@ int ieee80211_smd_parse_ml_persta(struct ieee80211_sub_if_data *sdata,
 	}
 
 	for_each_mle_subelement(sub, data, len) {
-		const struct ieee80211_mle_per_sta_profile *prof;
+		struct ieee80211_mle_per_sta_profile *prof;
 		const u8 *sta_info;
 		u16 sta_control;
 		u8 link_id;
+		size_t prof_len;
 
 		if (sub->id != IEEE80211_MLE_SUBELEM_PER_STA_PROFILE)
 			continue;
@@ -1607,40 +1631,130 @@ int ieee80211_smd_parse_ml_persta(struct ieee80211_sub_if_data *sdata,
 		if (!ieee80211_mle_basic_sta_prof_size_ok(sub->data, sub->datalen))
 			continue;
 
-		prof = (const void *)sub->data;
+		prof = ieee80211_smd_defrag_sta_prof(sub, data, len, &prof_len);
+		if (!prof) {
+			sdata_dbg(sdata,
+				  "smd: failed to defragment STA profile\n");
+			continue;
+		}
+
 		sta_control = le16_to_cpu(prof->control);
 		link_id = u16_get_bits(sta_control, IEEE80211_MLE_STA_CONTROL_LINK_ID);
 
-		if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
-			continue;
-
-		if (!(target->prepared_links_mask & BIT(link_id))) {
-			sdata_dbg(sdata, "smd: link %u not in prepared mask, skipping\n",
-				  link_id);
+		if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS) {
+			kfree(prof);
 			continue;
 		}
 
 		if (!target->assoc_data || !target->assoc_data->link[link_id].bss) {
 			sdata_dbg(sdata, "smd: link %u has no BSS in assoc_data, skipping\n",
 				  link_id);
+			kfree(prof);
 			continue;
 		}
 
 		if (sta_control & IEEE80211_MLE_STA_CONTROL_STA_MAC_ADDR_PRESENT) {
+			/*
+			 * STA Info consists of the MAC address plus whatever
+			 * other fixed fields the STA Control presence bits
+			 * indicate are present (hostapd's SMD ST Prep Response
+			 * builder always sets Beacon Interval/TSF Offset/DTIM
+			 * Info present, and conditionally BSS Parameter
+			 * Change Count). The STA Profile body — Capability
+			 * Info, Status Code, and (for the SMD ST preparation
+			 * response, per IEEE P802.11bn/D2.0 37.16.6.4) the AID
+			 * assigned to the non-AP MLD — starts immediately
+			 * after these fixed fields, not right after the MAC
+			 * address. ieee80211_mle_basic_sta_prof_info_len()
+			 * returns that fixed-field width using the same
+			 * presence-bit walk mac80211 already uses elsewhere
+			 * (see ieee80211_mle_basic_sta_prof_bss_param_ch_cnt()
+			 * and the "STA Info Length" builder in mlme.c) — the
+			 * STA Info Length subfield in the wire format covers
+			 * only these fixed fields, never the trailing STA
+			 * Profile body, so the STA Profile body's actual
+			 * extent is instead bounded by the containing
+			 * sub-element's own (reassembled) length, which
+			 * already passed ieee80211_mle_basic_sta_prof_size_ok()'s
+			 * check that the whole thing fits.
+			 */
+			size_t sta_info_fixed_len =
+				ieee80211_mle_basic_sta_prof_info_len(prof);
+			size_t sta_prof_body_len;
+			const u8 *sta_prof_body;
+			size_t avail;
+			u16 status_code;
+
 			sta_info = prof->variable;
 
 			sdata_dbg(sdata, "smd: link[%u] ap_link_addr=%pM (sta_addr kept as %pM)\n",
 				  link_id, sta_info,
 				  target->assoc_data->link[link_id].addr);
+			sdata_dbg(sdata,
+				  "smd: link[%u] sta_control=0x%04x sta_info_len_field=%u prof_len=%zu sta_info_fixed_len=%zu\n",
+				  link_id, sta_control, prof->sta_info_len,
+				  prof_len, sta_info_fixed_len);
 
-			if (prof->sta_info_len >= 7) {
+			/*
+			 * prof_len = sizeof(prof->control) + sizeof(prof->sta_info_len)
+			 * + len(prof->variable). prof->variable holds the fixed
+			 * STA Info fields followed immediately by the STA
+			 * Profile body.
+			 */
+			if (prof_len < 3 ||
+			    (size_t)(prof_len - 3) < sta_info_fixed_len + 4) {
+				sdata_dbg(sdata,
+					  "smd: link %u STA profile too short for STA Info + Capability/Status (prof_len=%zu, need >= %zu)\n",
+					  link_id, prof_len,
+					  sta_info_fixed_len + 4 + 3);
+				kfree(prof);
+				link_count++;
+				continue;
+			}
+
+			avail = prof_len - 3;
+			sta_prof_body = prof->variable + sta_info_fixed_len;
+			sta_prof_body_len = avail - sta_info_fixed_len;
+
+			status_code = get_unaligned_le16(sta_prof_body + 2);
+
+			sdata_dbg(sdata,
+				  "smd: link[%u] sta_prof_body_len=%zu status_code=%u\n",
+				  link_id, sta_prof_body_len, status_code);
+
+			if (status_code == WLAN_STATUS_SUCCESS &&
+			    sta_prof_body_len >= 6) {
+				target->prepared_links_mask |= BIT(link_id);
+				target->target_aid =
+					get_unaligned_le16(sta_prof_body + 4);
+
+				sdata_dbg(sdata,
+					  "smd: link[%u] accepted aid=%u elems_len=%zu\n",
+					  link_id, target->target_aid,
+					  sta_prof_body_len - 6);
+
 				target->assoc_data->link[link_id].elems =
-					(u8 *)prof->variable + 6;
+					(u8 *)sta_prof_body + 6;
 				target->assoc_data->link[link_id].elems_len =
-					prof->sta_info_len - 7;
+					sta_prof_body_len - 6;
+
+				/*
+				 * elems above points inside prof — keep prof
+				 * alive for as long as assoc_data is (freed
+				 * together in ieee80211_smd_prep_reset_target()).
+				 */
+				kfree(target->defrag_sta_prof[link_id]);
+				target->defrag_sta_prof[link_id] = (u8 *)prof;
+				link_count++;
+				continue;
+			} else if (status_code != WLAN_STATUS_SUCCESS) {
+				sdata_info(sdata, "smd: link %u rejected status=%u %pM\n",
+					   link_id, status_code,
+					   target->target_mld_addr);
 			}
 		}
 
+		kfree(prof);
 		link_count++;
 	}
 

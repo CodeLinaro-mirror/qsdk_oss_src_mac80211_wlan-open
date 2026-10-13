@@ -4009,6 +4009,11 @@ struct cfg80211_smd_link_req {
  * @smd_params: SMD domain parameters (identifier, capabilities, timeout)
  * @ml_reconf: ML reconfiguration request specifying links to add/remove
  * @tx_link_id: MLO link ID on which to transmit the frame (-1 = any)
+ * @delete_targets: Target AP MLD addresses whose ST preparation is being
+ *	deleted (IEEE P802.11bn/D2.0 Reconfiguration Operation Type=6),
+ *	carried alongside (or instead of) an Add-Link request in the same
+ *	ST Preparation Request frame
+ * @num_delete_targets: Number of entries in @delete_targets
  */
 struct cfg80211_smd_prepare_req {
 	u8 type;
@@ -4029,6 +4034,8 @@ struct cfg80211_smd_prepare_req {
 	struct cfg80211_smd_params smd_params;
 	struct cfg80211_ml_reconf_req ml_reconf;
 	s8 tx_link_id;
+	const u8 *delete_targets;
+	size_t num_delete_targets;
 };
 
 /**

@@ -1270,8 +1270,8 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_SMD_PREFERRED_TARGET] = { .type = NLA_FLAG },
 	[NL80211_ATTR_SMD_LINK_TRANSITION_STATE] = { .type = NLA_U8 },
 	[NL80211_ATTR_SMD_STA_LINK_MACS]    = { .type = NLA_NESTED },
-	[NL80211_ATTR_SMD_STA_LINK_MAC]     = { .type = NLA_BINARY, .len = ETH_ALEN },
 	[NL80211_ATTR_SMD_CTX] = { .type = NLA_NESTED },
+	[NL80211_ATTR_SMD_DELETE_TARGET_MLD_ADDRS] = { .type = NLA_NESTED },
 };
 
 /* policy for the key attributes */
@@ -10018,7 +10018,6 @@ static int nl80211_smd_roam(struct sk_buff *skb, struct genl_info *info)
 	struct net_device *dev;
 	struct wireless_dev *wdev;
 	struct cfg80211_smd_roam_req req = {};
-	struct nlattr **tb;
 	struct nlattr *cur;
 	int rem;
 	int ifindex;
@@ -10062,12 +10061,6 @@ static int nl80211_smd_roam(struct sk_buff *skb, struct genl_info *info)
 		req.dl_drain_time =
 			nla_get_u32(info->attrs[NL80211_ATTR_SMD_DL_DRAIN_TIME]);
 
-	tb = kcalloc(NL80211_ATTR_MAX + 1, sizeof(*tb), GFP_KERNEL);
-	if (!tb) {
-		dev_put(dev);
-		return -ENOMEM;
-	}
-
 	/* Parse nested MAC list */
 	if (info->attrs[NL80211_ATTR_SMD_STA_LINK_MACS]) {
 		nla_for_each_nested(cur,
@@ -10078,24 +10071,12 @@ static int nl80211_smd_roam(struct sk_buff *skb, struct genl_info *info)
 				goto out;
 			}
 
-			memset(tb, 0, (NL80211_ATTR_MAX + 1) * sizeof(*tb));
-			err = nla_parse_nested(tb, NL80211_ATTR_MAX, cur,
-					       NULL, NULL);
-			if (err)
-				goto out;
-
-			if (!tb[NL80211_ATTR_SMD_STA_LINK_MAC]) {
+			if (nla_len(cur) != ETH_ALEN) {
 				err = -EINVAL;
 				goto out;
 			}
 
-			if (nla_len(tb[NL80211_ATTR_SMD_STA_LINK_MAC]) != ETH_ALEN) {
-				err = -EINVAL;
-				goto out;
-			}
-
-			memcpy(req.link_macs[req.num_links],
-			       nla_data(tb[NL80211_ATTR_SMD_STA_LINK_MAC]),
+			memcpy(req.link_macs[req.num_links], nla_data(cur),
 			       ETH_ALEN);
 
 			req.num_links++;
@@ -10110,7 +10091,6 @@ static int nl80211_smd_roam(struct sk_buff *skb, struct genl_info *info)
 	err = rdev->ops->smd_roam(&rdev->wiphy, dev, &req);
 
 out:
-	kfree(tb);
 	dev_put(dev);
 	return err;
 }
@@ -22682,6 +22662,39 @@ static int nl80211_parse_uhr_link_reconf_params(struct genl_info *info,
 	req->is_preferred_target =
 		!!info->attrs[NL80211_ATTR_SMD_PREFERRED_TARGET];
 
+	if (info->attrs[NL80211_ATTR_SMD_DELETE_TARGET_MLD_ADDRS]) {
+		struct nlattr *cur;
+		int rem;
+		size_t count = 0;
+		u8 *addrs;
+
+		nla_for_each_nested(cur,
+				    info->attrs[NL80211_ATTR_SMD_DELETE_TARGET_MLD_ADDRS],
+				    rem) {
+			if (nla_len(cur) != ETH_ALEN)
+				return -EINVAL;
+			count++;
+		}
+
+		if (count == 0)
+			return 0;
+
+		addrs = kmalloc_array(count, ETH_ALEN, GFP_KERNEL);
+		if (!addrs)
+			return -ENOMEM;
+
+		count = 0;
+		nla_for_each_nested(cur,
+				    info->attrs[NL80211_ATTR_SMD_DELETE_TARGET_MLD_ADDRS],
+				    rem) {
+			memcpy(addrs + count * ETH_ALEN, nla_data(cur), ETH_ALEN);
+			count++;
+		}
+
+		req->delete_targets = addrs;
+		req->num_delete_targets = count;
+	}
+
 	return 0;
 }
 
@@ -22696,6 +22709,7 @@ static void nl80211_uhr_link_reconf_req_free(struct wiphy *wiphy,
 	kfree(req->scs_list);
 	kfree(req->snonce);
 	kfree(req->dh_public_key);
+	kfree(req->delete_targets);
 
 	for (i = 0; i < IEEE80211_MLD_MAX_NUM_LINKS; i++) {
 		if (req->ml_reconf.u.add_links[i].bss) {
@@ -22783,6 +22797,7 @@ static int nl80211_uhr_link_reconf(struct sk_buff *skb, struct genl_info *info)
 	kfree(req->scs_list);
 	kfree(req->snonce);
 	kfree(req->dh_public_key);
+	kfree(req->delete_targets);
 	kfree(req);
 	return 0;
 
