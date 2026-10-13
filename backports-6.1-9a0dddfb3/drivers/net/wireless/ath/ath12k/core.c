@@ -1611,10 +1611,14 @@ void ath12k_core_pdev_deinit(struct ath12k_base *ab)
 	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 		return;
 
-	ath12k_dp_accel_cfg_deinit(ab);
-
-	ath12k_fse_deinit(ab);
-	ath12k_telemetry_deinit(ab);
+	/* Keep shared callback contexts registered while WSI bypass is
+	 * tearing down one device and the remaining devices are active.
+	 */
+	if (!ab->ag->wsi_remap_in_progress) {
+		ath12k_dp_accel_cfg_deinit(ab);
+		ath12k_fse_deinit(ab);
+		ath12k_telemetry_deinit(ab);
+	}
 	ath12k_thermal_unregister(ab);
 
 	/* Deinitialize spectral only if it was initialized based on memory profile */
