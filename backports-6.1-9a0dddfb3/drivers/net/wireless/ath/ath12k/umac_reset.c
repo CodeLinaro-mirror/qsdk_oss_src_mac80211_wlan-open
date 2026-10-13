@@ -732,7 +732,10 @@ int ath12k_umac_reset_initiate_recovery(struct ath12k_base *ab,
 
 		if (partner_ab->is_bypassed ||
 		    (test_bit(ATH12K_FLAG_RECOVERY, &partner_ab->dev_flags) &&
-		    !partner_ab->skip_cumac_hw_reset))
+		     !partner_ab->skip_cumac_hw_reset) ||
+		    test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &partner_ab->dev_flags) ||
+		    (partner_ab->wsi_remap_state == ATH12K_WSI_BYPASS_ADD_DEVICE &&
+		     ag->wsi_remap_in_progress))
 			continue;
 
 		/* Transition to INIT state */
@@ -1290,7 +1293,10 @@ void ath12k_dp_umac_reset_handle(struct ath12k_base *ab)
 
 		if (partner_ab->is_bypassed ||
 		    (test_bit(ATH12K_FLAG_RECOVERY, &partner_ab->dev_flags) &&
-		     !partner_ab->skip_cumac_hw_reset))
+		     !partner_ab->skip_cumac_hw_reset) ||
+		    test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &partner_ab->dev_flags) ||
+		    (partner_ab->wsi_remap_state == ATH12K_WSI_BYPASS_ADD_DEVICE &&
+		     ag->wsi_remap_in_progress))
 			continue;
 
 		if (umac_reset_handlers[rx_event])
