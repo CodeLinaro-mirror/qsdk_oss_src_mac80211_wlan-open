@@ -12517,6 +12517,40 @@ ath12k_mac_scan_probe_req_has_ml_ie(const struct cfg80211_scan_request *req)
 	return false;
 }
 
+static int
+ath12k_mac_scan_copy_band_ies(struct ieee80211_scan_request *hw_req,
+			      enum nl80211_band band,
+			      struct ath12k_wmi_scan_req_arg *arg)
+{
+	const struct ieee80211_scan_ies *ies = &hw_req->ies;
+	size_t band_ie_len = ies->len[band];
+	size_t common_ie_len = ies->common_ie_len;
+	size_t total_len = band_ie_len + common_ie_len;
+	u8 *ptr;
+
+	if ((!ies->ies[band] && band_ie_len) ||
+	    (!ies->common_ies && common_ie_len))
+		return -EINVAL;
+
+	if (!total_len)
+		return 0;
+
+	ptr = kmalloc(total_len, GFP_KERNEL);
+	if (!ptr)
+		return -ENOMEM;
+
+	if (band_ie_len)
+		memcpy(ptr, ies->ies[band], band_ie_len);
+
+	if (common_ie_len)
+		memcpy(ptr + band_ie_len, ies->common_ies, common_ie_len);
+
+	arg->extraie.ptr = ptr;
+	arg->extraie.len = total_len;
+
+	return 0;
+}
+
 static int ath12k_mac_initiate_hw_scan(struct ieee80211_hw *hw,
 				       struct ieee80211_vif *vif,
 				       struct ieee80211_scan_request *hw_req,
@@ -12531,6 +12565,7 @@ static int ath12k_mac_initiate_hw_scan(struct ieee80211_hw *hw,
 	u8 link_id;
 	int ret;
 	int i;
+	enum nl80211_band band;
 	bool create = true;
 	u8 n_channels = to_index - from_index;
 	u32 scan_timeout;
@@ -12657,14 +12692,10 @@ static int ath12k_mac_initiate_hw_scan(struct ieee80211_hw *hw,
 	arg->vdev_id = arvif->vdev_id;
 	arg->scan_id = ATH12K_SCAN_ID;
 
-	if (req->ie_len) {
-		arg->extraie.ptr = kmemdup(req->ie, req->ie_len, GFP_KERNEL);
-		if (!arg->extraie.ptr) {
-			ret = -ENOMEM;
-			goto exit;
-		}
-		arg->extraie.len = req->ie_len;
-	}
+	band = req->channels[from_index]->band;
+	ret = ath12k_mac_scan_copy_band_ies(hw_req, band, arg);
+	if (ret)
+		goto exit;
 
 	if (req->n_ssids) {
 		arg->num_ssids = req->n_ssids;
