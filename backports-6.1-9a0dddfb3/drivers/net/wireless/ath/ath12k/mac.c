@@ -6349,6 +6349,7 @@ void ath12k_mac_peer_assoc_prepare_smd(struct ath12k *ar,
 	ath12k_peer_assoc_h_vht(ar, arvif, arsta, arg, link_sta);
 	ath12k_peer_assoc_h_he(ar, arvif, arsta, arg, link_sta);
 #ifdef CPTCFG_QCN_EXTN
+	arg->qcn_node = link_sta->qcn_node || arsta->arsta_extn.qcn_node;
 	ath12k_peer_assoc_h_he_mcs_12_13_extn(ar, arg, link_sta);
 #endif /* CPTCFG_QCN_EXTN */
 	ath12k_peer_assoc_h_he_6ghz(ar, arvif, arsta, arg, link_sta);
@@ -6408,6 +6409,7 @@ void ath12k_peer_assoc_prepare(struct ath12k *ar,
 	ath12k_peer_assoc_h_vht(ar, arvif, arsta, arg, link_sta);
 	ath12k_peer_assoc_h_he(ar, arvif, arsta, arg, link_sta);
 #ifdef CPTCFG_QCN_EXTN
+	arg->qcn_node = link_sta->qcn_node || arsta->arsta_extn.qcn_node;
 	ath12k_peer_assoc_h_he_mcs_12_13_extn(ar, arg, link_sta);
 #endif /* CPTCFG_QCN_EXTN */
 	ath12k_peer_assoc_h_he_6ghz(ar, arvif, arsta, arg, link_sta);
