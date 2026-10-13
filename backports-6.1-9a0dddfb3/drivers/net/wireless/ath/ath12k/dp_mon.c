@@ -19,6 +19,9 @@
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 8, 0)
 #include <linux/skbuff_ref.h>
 #endif
+#ifdef CPTCFG_QCN_EXTN
+#include "qcn_extns/ath12k_cmn_extn.h"
+#endif
 
 static inline u32
 ath12k_dp_mon_rx_ul_ofdma_ru_size_to_width(enum ath12k_eht_ru_size ru_size)
@@ -504,6 +507,11 @@ void ath12k_dp_mon_rx_deliver_skb(struct ath12k_pdev_dp *dp_pdev,
 
 	rx_status = IEEE80211_SKB_RXCB(msdu);
 	*rx_status = *status;
+
+#ifdef CPTCFG_QCN_EXTN
+	if (ath12k_mcast_decrypt_mon_extn(dp_pdev->ar, msdu))
+		return;
+#endif
 
 	if (!napi)
 		ieee80211_rx_ni(ath12k_dp_pdev_to_hw(dp_pdev), msdu);
