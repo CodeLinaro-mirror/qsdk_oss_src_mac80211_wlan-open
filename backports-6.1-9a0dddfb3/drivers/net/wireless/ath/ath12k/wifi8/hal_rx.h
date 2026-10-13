@@ -304,9 +304,8 @@ ath12k_wifi8_hal_reo_update_rx_reo_queue_status(struct ath12k_base *ab,
 						struct hal_reo_status *status);
 void
 ath12k_wifi8_hal_rx_msdu_link_desc_set(struct ath12k_base *ab,
-				       struct hal_wbm_release_ring *desc,
-				       struct ath12k_buffer_addr *buf_addr_info,
-				       enum hal_wbm_rel_bm_act action);
+				       struct hal_wbm_release_ring_rx *desc,
+				       struct ath12k_buffer_addr *buf_addr_info);
 int ath12k_wifi8_hal_reo_rel_parse_err(struct ath12k_dp *dp, void *desc,
 				       struct hal_rx_reo_dest_rel_info *rel_info);
 void ath12k_wifi8_hal_rx_reo_ent_paddr_get(struct ath12k_buffer_addr *buff_addr,

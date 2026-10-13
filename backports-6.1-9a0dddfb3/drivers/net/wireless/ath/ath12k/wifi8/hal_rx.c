@@ -651,15 +651,13 @@ void ath12k_wifi8_hal_rx_msdu_list_get(void *desc,
 
 void
 ath12k_wifi8_hal_rx_msdu_link_desc_set(struct ath12k_base *ab,
-				       struct hal_wbm_release_ring *desc,
-				       struct ath12k_buffer_addr *buf_addr_info,
-				       enum hal_wbm_rel_bm_act action)
+				       struct hal_wbm_release_ring_rx *desc,
+				       struct ath12k_buffer_addr *buf_addr_info)
 {
 	desc->buf_addr_info = *buf_addr_info;
-	desc->info0 |= le16_encode_bits(HAL_WBM_REL_SRC_MODULE_SW,
+	desc->info0 |= le32_encode_bits(HAL_WBM_REL_SRC_MODULE_SW,
 					HAL_WBM_RELEASE_INFO0_REL_SRC_MODULE) |
-		    //le16_encode_bits(action, HAL_WBM_RELEASE_INFO0_BM_ACTION) |
-		    le16_encode_bits(HAL_WBM_REL_DESC_TYPE_MSDU_LINK,
+		    le32_encode_bits(HAL_WBM_REL_DESC_TYPE_MSDU_LINK,
 				     HAL_WBM_RELEASE_INFO0_DESC_TYPE);
 }
 
