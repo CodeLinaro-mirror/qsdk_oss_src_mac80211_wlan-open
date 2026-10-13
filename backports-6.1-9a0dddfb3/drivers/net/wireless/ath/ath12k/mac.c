@@ -21054,9 +21054,13 @@ u8 ath12k_mac_get_tx_link(struct ieee80211_sta *sta, struct ieee80211_vif *vif,
 	if (!ieee80211_is_mgmt(hdr->frame_control))
 		return link;
 
-	if (ahsta->deflink.arvif && ahsta->deflink.arvif->ar) {
-		ab = ahsta->deflink.arvif->ar->ab;
-	} else if (ieee80211_is_action(hdr->frame_control)) {
+	if (link != ATH12K_INVALID_LINK_ID) {
+		arsta = rcu_dereference(ahsta->link[link]);
+		if (arsta && arsta->arvif && arsta->arvif->ar)
+			ab = arsta->arvif->ar->ab;
+	}
+
+	if (!ab && ieee80211_is_action(hdr->frame_control)) {
 		/* deflink.arvif is stale (ar cleared); find first valid link */
 		links = ahsta->links_map;
 		for_each_set_bit(link_id, &links, ATH12K_NUM_MAX_LINKS) {
