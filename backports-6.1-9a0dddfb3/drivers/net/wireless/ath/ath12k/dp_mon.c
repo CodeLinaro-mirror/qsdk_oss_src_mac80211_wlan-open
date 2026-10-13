@@ -2706,6 +2706,20 @@ int ath12k_dp_mon_rx_ring_init(struct ath12k_dp *dp)
 }
 EXPORT_SYMBOL(ath12k_dp_mon_rx_ring_init);
 
+
+void ath12k_dp_mon_page_frag_cache_drain(struct page_frag_cache *pf_cache)
+{
+	struct page *page;
+
+	if (!pf_cache->va)
+		return;
+
+	page = virt_to_page(pf_cache->va);
+	__page_frag_cache_drain(page, pf_cache->pagecnt_bias);
+	memset(pf_cache, 0, sizeof(*pf_cache));
+}
+EXPORT_SYMBOL(ath12k_dp_mon_page_frag_cache_drain);
+
 static
 void ath12k_dp_mon_rx_buf_free(struct ath12k_dp *dp)
 {
@@ -2736,6 +2750,7 @@ void ath12k_dp_mon_rx_buf_free(struct ath12k_dp *dp)
 reset_mon_desc:
 		ath12k_dp_mon_desc_reset(&dp_mon->mon_desc_pool[i]);
 	}
+	ath12k_dp_mon_page_frag_cache_drain(&dp_mon->rx_mon_pf_cache);
 	spin_unlock_bh(&dp_mon->mon_desc_lock);
 }
 

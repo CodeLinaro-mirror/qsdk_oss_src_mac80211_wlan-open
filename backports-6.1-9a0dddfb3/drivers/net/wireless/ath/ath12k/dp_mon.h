@@ -1281,6 +1281,7 @@ ath12k_dp_ext_mon_subtype_check(struct ath12k_ext_mon_pkt_config *config,
 int
 ath12k_dp_ext_mon_set_rx_filter(struct ath12k_pdev_dp *dp_pdev,
 				const struct ath12k_ext_mon_filter_config *new_config);
+void ath12k_dp_mon_page_frag_cache_drain(struct page_frag_cache *pf_cache);
 
 static inline
 int ath12k_dp_mon_rx_alloc(struct ath12k_dp *dp)
