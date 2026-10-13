@@ -1360,6 +1360,50 @@ ssize_t ath12k_hal_dump_ring_stats(struct ath12k_base *ab, enum hal_ring_type ty
 }
 EXPORT_SYMBOL(ath12k_hal_dump_ring_stats);
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+ssize_t ath12k_hal_dump_ipa_ring_stats(struct ath12k_base *ab, enum hal_ring_type type,
+				       int ring_id, const char *ring_name,
+				       char *buf, int size)
+{
+	struct ath12k_hal *hal = &ab->hal;
+	struct hal_srng *srng;
+	u32 tp, hp, ring_usage;
+	int hw_hp = -1, hw_tp = -1;
+	int len = 0;
+
+	if (ring_id < 0 || ring_id >= HAL_SRNG_RING_ID_MAX)
+		return 0;
+
+	srng = &hal->srng_list[ring_id];
+	if (!srng->initialized)
+		return 0;
+
+	spin_lock_bh(&srng->lock);
+	if (srng && srng->initialized) {
+		ath12k_hal_get_sw_hptp(srng, &hp, &tp);
+		ring_usage = ath12k_hal_get_ring_usage(hal, srng, type, &hp, &tp);
+		len += scnprintf(buf + len, size - len,
+				 "%-20s %-20s %10d %10d %12u %12u\n",
+				 ring_name, "SW ", hp, tp, ring_usage,
+				 jiffies_to_msecs(jiffies - srng->timestamp));
+
+		ath12k_hal_get_hw_hptp(ab, type, srng, &hw_hp, &hw_tp);
+		ring_usage = 0;
+
+		if (hw_hp >= 0 && hw_tp >= 0)
+			ring_usage = ath12k_hal_get_ring_usage(hal, srng, type,
+							       &hw_hp, &hw_tp);
+		len += scnprintf(buf + len, size - len,
+				 "%-20s %-20s %10d %10d %12u %12u\n",
+				 ring_name, "HW ", hw_hp, hw_tp, ring_usage,
+				 jiffies_to_msecs(jiffies - srng->timestamp));
+	}
+	spin_unlock_bh(&srng->lock);
+	return len;
+}
+EXPORT_SYMBOL(ath12k_hal_dump_ipa_ring_stats);
+#endif /* CPTCFG_EXT_IPA_OFFLOAD */
+
 ssize_t ath12k_debugfs_hal_dump_srng_stats(struct ath12k_base *ab, char *buf, int size)
 {
 	struct ath12k_dp *dp = ab->dp;
