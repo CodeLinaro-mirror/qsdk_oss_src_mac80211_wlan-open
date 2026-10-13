@@ -107,29 +107,30 @@ int ath12k_wifi8_dp_tqm_cmd_send(struct ath12k_base *ab,
 		dp_cmd->cmd_num = 0;
 		spin_lock_bh(&dp->tqm_cmd_lock);
 		list_add_tail(&dp_cmd->list, &dp->tqm_cmd_list);
-		spin_unlock_bh(&dp->tqm_cmd_lock);
 	}
 
 	if ((test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags) &&
 	     !test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags)) ||
-	    test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags))
+	    test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags)) {
+		/* Free the lock here but donot free dp_cmd. Callback is expected to be
+		 * called during umac_deinit and dp_cmd is expected to be freed there.
+		 */
+		if (dp_cmd)
+			spin_unlock_bh(&dp->tqm_cmd_lock);
 		return 0;
+	}
 
 	cmd_ring = &ab->hal.srng_list[dp_wifi8->tqm_cmd_ring.ring_id];
 	cmd_num = ath12k_wifi8_hal_tqm_cmd_send(ab, cmd_ring, type, cmd);
 
-	//error, hence return error code
 	if (cmd_num < 0) {
 		ath12k_warn(ab, "Failed to send TQM command: %d", cmd_num);
-		if (dp_cmd) {
-			spin_lock_bh(&dp->tqm_cmd_lock);
-			list_del(&dp_cmd->list);
-			spin_unlock_bh(&dp->tqm_cmd_lock);
-			kfree(dp_cmd);
-		}
-		return cmd_num;
+		goto out;
 	}
 
+	/* No callback was requested so dp_cmd was never allocated and
+	 * tqm_cmd_lock was never taken; no spin_unlock needed here.
+	 */
 	if (!dp_cmd)
 		return 0;
 
@@ -138,21 +139,27 @@ int ath12k_wifi8_dp_tqm_cmd_send(struct ath12k_base *ab,
 	 */
 	if (cmd_num == 0) {
 		ath12k_warn(ab, "TQM command returned zero cmd_num");
-		spin_lock_bh(&dp->tqm_cmd_lock);
+		cmd_num = -EINVAL;
+		goto out;
+	}
+
+	/* Publish cmd_num while still holding tqm_cmd_lock so the status-ring
+	 * processor cannot observe a zero cmd_num for this entry between the
+	 * list_add_tail above and the store here.
+	 */
+	WRITE_ONCE(dp_cmd->cmd_num, cmd_num);
+	spin_unlock_bh(&dp->tqm_cmd_lock);
+
+	return 0;
+
+out:
+	/* tqm_cmd_lock is held only when dp_cmd was allocated */
+	if (dp_cmd) {
 		list_del(&dp_cmd->list);
 		spin_unlock_bh(&dp->tqm_cmd_lock);
 		kfree(dp_cmd);
-		return -EINVAL;
 	}
-
-	/* Publish the real cmd_num.  The status-ring processor uses
-	 * READ_ONCE() on cmd_num so it will not match this entry until
-	 * the store is visible, preventing a false-positive match on the
-	 * sentinel value 0.
-	 */
-	WRITE_ONCE(dp_cmd->cmd_num, cmd_num);
-
-	return 0;
+	return cmd_num;
 }
 
 //to be called from dp->hw_params->ring_mask->tqm_status

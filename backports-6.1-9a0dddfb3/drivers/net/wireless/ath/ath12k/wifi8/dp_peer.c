@@ -2171,13 +2171,14 @@ int ath12k_dp_tqm_sync_remove_queues(struct ath12k_base *ab,
 	ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
 			 "tqm-sync: sending TQM_SYNC_CMD with cb_func=%p cb_ctxt=%p\n",
 			 cmd.tqm_sync_params.cb_func, cmd.tqm_sync_params.cb_ctxt);
+
+	ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+			 "tqm-sync: TQM_SYNC_CMD sent successfully\n");
+
 	ret = ath12k_wifi8_dp_tqm_cmd_send(ab, HAL_TQM_SYNC_CMD_BO, &cmd, data,
 					   ath12k_dp_peer_cleanup_tqm_sync);
 	if (ret)
 		ath12k_err(ab, "tqm-sync: TQM_SYNC_CMD send failed ret=%d\n", ret);
-	else
-		ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
-				 "tqm-sync: TQM_SYNC_CMD sent successfully\n");
 
 	ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
 			 "tqm-sync: EXIT peer_id=%u ret=%d\n", data->peer_id, ret);
