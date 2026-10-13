@@ -16102,7 +16102,7 @@ static const struct file_operations fops_htt_stats_type = {
 	.llseek = default_llseek,
 };
 
-int ath12k_debugfs_htt_stats_req(struct ath12k *ar)
+int ath12k_debugfs_htt_stats_req(struct ath12k *ar, bool wiphy_locked)
 {
 	struct debug_htt_stats_req *stats_req = ar->debug.htt_stats.stats_req;
 	enum ath12k_dbg_htt_ext_stats_type type = stats_req->type;
@@ -16110,7 +16110,8 @@ int ath12k_debugfs_htt_stats_req(struct ath12k *ar)
 	int ret, pdev_id, i;
 	u64 cookie;
 
-	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+	if (wiphy_locked)
+		lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
 	pdev_id = ath12k_mac_get_target_pdev_id(ar);
 	stats_req->pdev_id = pdev_id;
@@ -16227,7 +16228,7 @@ static int ath12k_open_htt_stats(struct inode *inode,
 					!!stats_req->cfg_param[2] ||
 					!!stats_req->cfg_param[3];
 
-	ret = ath12k_debugfs_htt_stats_req(ar);
+	ret = ath12k_debugfs_htt_stats_req(ar, true);
 	if (ret < 0)
 		goto out;
 
