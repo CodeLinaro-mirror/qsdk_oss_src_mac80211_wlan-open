@@ -21641,6 +21641,19 @@ u8 ath12k_mac_get_cached_smart_mon_filter(struct ath12k_pdev_dp *pdev)
 	return pdev->ar->smart_mon_filter;
 }
 
+static bool ath12k_mac_should_skip_pdev_suspend(struct ath12k *ar)
+{
+	if (ar->allocated_vdev_map || ar->pdev_suspend)
+		return true;
+
+#ifdef CPTCFG_QCN_EXTN
+	if (ar->ab->hw_rev == ATH12K_HW_QCN9074_HW10 ||
+	    ar->ab->hw_rev == ATH12K_HW_QCN9160_HW10)
+		return true;
+#endif
+	return false;
+}
+
 void ath12k_mac_stop(struct ath12k *ar)
 {
 	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
@@ -21699,7 +21712,7 @@ void ath12k_mac_stop(struct ath12k *ar)
 
 	ath12k_debugfs_nrp_cleanup_all(ar);
 
-	if (!ar->allocated_vdev_map && !ar->pdev_suspend) {
+	if (!ath12k_mac_should_skip_pdev_suspend(ar)) {
 		ret = ath12k_mac_pdev_suspend(ar);
 		if (ret)
 			ath12k_warn(ar->ab, "pdev suspend command is failed %d\n", ret);
