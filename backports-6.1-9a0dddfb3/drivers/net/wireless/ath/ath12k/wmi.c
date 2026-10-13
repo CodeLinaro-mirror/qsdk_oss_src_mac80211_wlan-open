@@ -4410,6 +4410,9 @@ static void ath12k_wmi_copy_peer_flags(struct wmi_peer_assoc_complete_cmd *cmd,
 			cmd->peer_flags_ext |= cpu_to_le32(WMI_PEER_EXT_EHT);
 		if (arg->uhr_flag)
 			cmd->peer_flags_ext |= cpu_to_le32(WMI_PEER_EXT_UHR);
+		if (arg->qcn_node)
+			cmd->peer_flags_ext |=
+				cpu_to_le32(WMI_PEER_EXT_IS_QUALCOMM_NODE);
 	}
 
 	/* Suppress authorization for all AUTH modes that need 4-way handshake

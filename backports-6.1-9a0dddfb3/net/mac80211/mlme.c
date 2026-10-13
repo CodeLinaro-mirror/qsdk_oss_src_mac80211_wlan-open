@@ -6268,6 +6268,10 @@ static bool ieee80211_assoc_config_link(struct ieee80211_link_data *link,
 		rcu_read_unlock();
 	}
 
+#ifdef CPTCFG_QCN_EXTN
+	link_sta->pub->qcn_node = elems->elems_extn.qcn_node;
+#endif /* CPTCFG_QCN_EXTN */
+
 	if (elems->he_operation &&
 	    link->u.mgd.conn.mode >= IEEE80211_CONN_MODE_HE &&
 	    elems->he_cap) {

@@ -1701,6 +1701,7 @@ enum wmi_tlv_peer_flags_ext {
 	WMI_PEER_EXT_EHT = BIT(0),
 	WMI_PEER_EXT_320MHZ = BIT(1),
 	WMI_PEER_CFP = BIT(2),
+	WMI_PEER_EXT_IS_QUALCOMM_NODE = BIT(4),
 	WMI_PEER_EXT_UHR = BIT(7),
 	WMI_PEER_EXT_SMD_ASSOC = BIT(31),
 };
@@ -5986,6 +5987,7 @@ struct ath12k_wmi_peer_assoc_arg {
 	u32 peer_new_assoc;
 	u32 peer_associd;
 	u32 peer_flags;
+	bool qcn_node;
 	u32 peer_caps;
 	u32 peer_listen_intval;
 	u32 peer_ht_caps;
