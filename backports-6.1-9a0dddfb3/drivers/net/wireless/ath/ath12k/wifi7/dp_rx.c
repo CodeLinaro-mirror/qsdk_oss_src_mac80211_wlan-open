@@ -1569,7 +1569,8 @@ static int
 ath12k_wifi7_dp_rx_h_defrag_reo_reinject(struct ath12k_dp *dp,
 					 struct ath12k_pdev_dp *dp_pdev,
 					 struct ath12k_dp_rx_tid *rx_tid,
-					 struct sk_buff *defrag_skb)
+					 struct sk_buff *defrag_skb,
+					 struct list_head *used_list)
 {
 	struct ath12k_base *ab = dp->ab;
 	struct ath12k_hal *hal = dp->hal;
@@ -1630,12 +1631,10 @@ ath12k_wifi7_dp_rx_h_defrag_reo_reinject(struct ath12k_dp *dp,
 	if (!buf_paddr)
 		return -ENOMEM;
 
-	spin_lock_bh(&dp->rx_desc_lock);
-	desc_info = list_first_entry_or_null(&dp->rx_desc_free_list,
+	desc_info = list_first_entry_or_null(used_list,
 					     struct ath12k_rx_desc_info,
 					     list);
 	if (!desc_info) {
-		spin_unlock_bh(&dp->rx_desc_lock);
 		ath12k_warn(ab, "failed to find rx desc for reinject\n");
 		ret = -ENOMEM;
 		goto err_unmap_dma;
@@ -1647,8 +1646,7 @@ ath12k_wifi7_dp_rx_h_defrag_reo_reinject(struct ath12k_dp *dp,
 	desc_info->vaddr = defrag_skb->data;
 	desc_info->is_frag = 1;
 
-	list_del(&desc_info->list);
-	spin_unlock_bh(&dp->rx_desc_lock);
+	list_del_init(&desc_info->list);
 
 	info = (struct ath12k_buffer_addr *)&msdu0->buf_addr_info;
 	ath12k_hal_rx_buf_addr_info_set(info, buf_paddr,
@@ -1812,7 +1810,8 @@ ath12k_wifi7_dp_rx_h_defrag_validate_incr_pn(struct ath12k_pdev_dp *dp_pdev,
 static int ath12k_wifi7_dp_rx_frag_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 					  struct sk_buff *msdu,
 					  struct hal_reo_dest_ring *ring_desc,
-					  struct hal_rx_desc_data *rx_desc_data)
+					  struct hal_rx_desc_data *rx_desc_data,
+					  struct list_head *used_list)
 {
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ath12k_base *ab = dp->ab;
@@ -1942,7 +1941,8 @@ static int ath12k_wifi7_dp_rx_frag_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	if (!defrag_skb)
 		goto err_frags_cleanup;
 
-	if (ath12k_wifi7_dp_rx_h_defrag_reo_reinject(dp, dp_pdev, rx_tid, defrag_skb))
+	if (ath12k_wifi7_dp_rx_h_defrag_reo_reinject(dp, dp_pdev, rx_tid,
+						     defrag_skb, used_list))
 	{
 		IPA_SET_RX_BUF_SMMU_UNMAP(ab, defrag_skb, true);
 		goto err_frags_cleanup;
@@ -2067,7 +2067,8 @@ ath12k_wifi7_dp_process_rx_err_buf(struct ath12k_pdev_dp *dp_pdev,
 
 	skb_put(msdu, hal_rx_desc_sz + msdu_len);
 
-	if (ath12k_wifi7_dp_rx_frag_h_mpdu(dp_pdev, msdu, desc, &rx_desc_data)) {
+	if (ath12k_wifi7_dp_rx_frag_h_mpdu(dp_pdev, msdu, desc,
+					   &rx_desc_data, used_list)) {
 		dev_kfree_skb_any(msdu);
 		ath12k_wifi7_dp_rx_link_desc_return(dp, &desc->buf_addr_info,
 						    HAL_WBM_REL_BM_ACT_PUT_IN_IDLE);

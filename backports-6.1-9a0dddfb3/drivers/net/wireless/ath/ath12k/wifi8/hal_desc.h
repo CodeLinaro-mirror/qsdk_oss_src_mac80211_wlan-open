@@ -2125,13 +2125,12 @@ struct hal_tcl_regular_exit_ring {
 } __packed;
 
 #define HAL_WBM_RELEASE_INFO0_REL_SRC_MODULE		GENMASK(2, 0)
-#define HAL_WBM_RELEASE_INFO0_DESC_TYPE			GENMASK(8, 6)
+#define HAL_WBM_RELEASE_INFO0_DESC_TYPE			GENMASK(5, 3)
 
-struct hal_wbm_release_ring {
+struct hal_wbm_release_ring_rx {
 	struct ath12k_buffer_addr buf_addr_info;
-	__le16 info0;
-	__le16 rsvd0;
-	__le32 rsvd1[5];
+	__le32 info0;
+	__le32 rsvd1;
 } __packed;
 
 enum hal_tlv_tag_be {

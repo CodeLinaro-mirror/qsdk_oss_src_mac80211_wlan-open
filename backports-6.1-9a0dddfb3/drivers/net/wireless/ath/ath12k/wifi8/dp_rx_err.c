@@ -486,7 +486,8 @@ ath12k_wifi8_dp_rx_h_defrag_reo_reinject(struct ath12k_dp *dp,
 					 struct ath12k_pdev_dp *dp_pdev,
 					 struct ath12k_dp_rx_tid *rx_tid,
 					 struct sk_buff *defrag_skb,
-					 struct hal_rx_spd_data *spd_desc_l)
+					 struct hal_rx_spd_data *spd_desc_l,
+					 struct list_head *used_list)
 {
 	struct ath12k_base *ab = dp->ab;
 	struct ath12k_hal *hal = dp->hal;
@@ -549,12 +550,10 @@ ath12k_wifi8_dp_rx_h_defrag_reo_reinject(struct ath12k_dp *dp,
 	if (!buf_paddr)
 		return -ENOMEM;
 
-	spin_lock_bh(&dp->rx_desc_lock);
-	desc_info = list_first_entry_or_null(&dp->rx_desc_free_list,
+	desc_info = list_first_entry_or_null(used_list,
 					     struct ath12k_rx_desc_info,
 					     list);
 	if (!desc_info) {
-		spin_unlock_bh(&dp->rx_desc_lock);
 		ath12k_warn(ab, "failed to find rx desc for reinject\n");
 		ret = -ENOMEM;
 		goto err_unmap_dma;
@@ -566,8 +565,7 @@ ath12k_wifi8_dp_rx_h_defrag_reo_reinject(struct ath12k_dp *dp,
 	desc_info->vaddr = defrag_skb->data;
 	desc_info->is_frag = 1;
 
-	list_del(&desc_info->list);
-	spin_unlock_bh(&dp->rx_desc_lock);
+	list_del_init(&desc_info->list);
 
 	info = (struct ath12k_buffer_addr *)&msdu0->buf_addr_info;
 	ath12k_hal_rx_buf_addr_info_set(info, buf_paddr,
@@ -654,7 +652,7 @@ int ath12k_wifi8_dp_rx_link_desc_return(struct ath12k_dp *dp,
 					struct ath12k_buffer_addr *buf_addr_info,
 					enum hal_wbm_rel_bm_act action)
 {
-	struct hal_wbm_release_ring *desc;
+	struct hal_wbm_release_ring_rx *desc;
 	struct ath12k_base *ab;
 	struct hal_srng *srng;
 	int ret = 0;
@@ -674,7 +672,7 @@ int ath12k_wifi8_dp_rx_link_desc_return(struct ath12k_dp *dp,
 		goto exit;
 	}
 
-	ath12k_wifi8_hal_rx_msdu_link_desc_set(ab, desc, buf_addr_info, action);
+	ath12k_wifi8_hal_rx_msdu_link_desc_set(ab, desc, buf_addr_info);
 
 exit:
 	ath12k_hal_srng_access_end(ab, srng);
@@ -687,7 +685,8 @@ exit:
 static int ath12k_wifi8_dp_rx_frag_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 					  struct sk_buff *msdu,
 					  struct hal_rx_spd_data *spd_desc_l,
-					  struct hal_rx_desc_data *rx_desc_data)
+					  struct hal_rx_desc_data *rx_desc_data,
+					  struct list_head *used_list)
 {
 	struct ath12k_dp *dp = ath12k_get_central_dp(dp_pdev->dp);
 	struct ath12k_base *ab = dp->ab;
@@ -814,7 +813,9 @@ static int ath12k_wifi8_dp_rx_frag_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	if (!defrag_skb)
 		goto err_frags_cleanup;
 
-	if (ath12k_wifi8_dp_rx_h_defrag_reo_reinject(dp, dp_pdev, rx_tid, defrag_skb, spd_desc_l))
+	if (ath12k_wifi8_dp_rx_h_defrag_reo_reinject(dp, dp_pdev, rx_tid,
+						     defrag_skb, spd_desc_l,
+						     used_list))
 		goto err_frags_cleanup;
 
 	ath12k_dp_rx_frags_cleanup(rx_tid, false);
@@ -926,7 +927,8 @@ ath12k_wifi8_dp_process_rx_err_buf(struct ath12k_pdev_dp *dp_pdev,
 
 	skb_put(msdu, hal_rx_desc_sz + msdu_len);
 
-	if (ath12k_wifi8_dp_rx_frag_h_mpdu(dp_pdev, msdu, spd_desc_l, &rx_desc_data)) {
+	if (ath12k_wifi8_dp_rx_frag_h_mpdu(dp_pdev, msdu, spd_desc_l,
+					   &rx_desc_data, used_list)) {
 		dev_kfree_skb_any(msdu);
 		ath12k_wifi8_dp_rx_link_desc_return(dp, &spd_desc_l->buf_addr,
 						    HAL_WBM_REL_BM_ACT_PUT_IN_IDLE);
@@ -955,7 +957,6 @@ static int ath12k_wifi8_dp_h_link_desc(struct ath12k_dp *dp,
 	struct ath12k_pdev_dp *dp_pdev;
 	dma_addr_t paddr;
 	bool is_frag, drop = false;
-	enum hal_wbm_rel_bm_act act;
 	u32 cookie;
 
 	INIT_LIST_HEAD(&rx_desc_used_list);
@@ -973,13 +974,9 @@ static int ath12k_wifi8_dp_h_link_desc(struct ath12k_dp *dp,
 
 	if (rbm != dp->idle_link_rbm &&
 	    rbm != dp->hal->hal_params->rx_buf_rbm && rbm) {
-		act = HAL_WBM_REL_BM_ACT_REL_MSDU;
 		dp->device_stats.invalid_rbm++;
 		ath12k_warn(ab, "invalid return buffer manager %d\n", rbm);
-		ath12k_wifi8_dp_rx_link_desc_return(dp,
-						    &spd_desc_l->buf_addr,
-						    act);
-		goto exit;
+		drop = true;
 	}
 
 	is_frag = !!spd_desc_l->rx_mpdu_info.fragment_flag;
@@ -989,14 +986,13 @@ static int ath12k_wifi8_dp_h_link_desc(struct ath12k_dp *dp,
 	 * Dynamic fragmentation not supported in Multi-link client, so drop the
 	 * partner device buffers.
 	 */
-	if (!is_frag || num_msdus > 1) {
+	if (drop || !is_frag || num_msdus > 1) {
 		drop = true;
-		act = HAL_WBM_REL_BM_ACT_PUT_IN_IDLE;
 
 		/* Return the link desc back to wbm idle list */
 		ath12k_wifi8_dp_rx_link_desc_return(dp,
 						    &spd_desc_l->buf_addr,
-						    act);
+						    0);
 	}
 
 	rcu_read_lock();
