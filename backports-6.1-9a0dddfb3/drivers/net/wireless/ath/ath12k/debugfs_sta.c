@@ -648,6 +648,18 @@ static void ath12k_dbg_sta_reo_queue_stats_cb(struct ath12k_dp *dp, void *ctx,
 	ath12k_info(ab, "late_rcvd %u win_jump_2k %u hole_cnt %u\n",
 		    qs->late_rx_mpdu_cnt, qs->num_window_2k_jump_cnt,
 		    qs->reorder_hole_cnt);
+	ath12k_info(ab, "pn: pn_31_0 %u pn_47_32 %u pn_127_48_info %u\n",
+		    qs->pn_31_0, qs->pn_47_32, qs->pn_127_48_info);
+	ath12k_info(ab, "rx_bitmap[287:0]: %08x %08x %08x %08x %08x %08x %08x %08x %08x\n",
+		    qs->bitmap.rx_bitmap_31_0,
+		    qs->bitmap.rx_bitmap_63_32,
+		    qs->bitmap.rx_bitmap_95_64,
+		    qs->bitmap.rx_bitmap_127_96,
+		    qs->bitmap.rx_bitmap_159_128,
+		    qs->bitmap.rx_bitmap_191_160,
+		    qs->bitmap.rx_bitmap_223_192,
+		    qs->bitmap.rx_bitmap_255_224,
+		    qs->bitmap.rx_bitmap_287_256);
 }
 
 static ssize_t ath12k_dbg_sta_write_fetch_reo_ctx(struct file *file,
