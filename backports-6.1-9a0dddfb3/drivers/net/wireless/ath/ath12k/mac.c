@@ -20541,7 +20541,7 @@ int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arvif,
 					 mgmt_frame_name[frm_stype], sta_addr, own_addr);
 	} else if (is_csa) {
 		mgmt = (struct ieee80211_mgmt *)hdr;
-		ath12k_dbg_level(ab, ATH12K_DBG_MLME, ATH12K_DBG_L0,
+		ath12k_dbg_level(ab, ATH12K_DBG_MLME, ATH12K_DBG_L1,
 				 "Transmit CSA action frame from %pM over WMI category %u action %u\n",
 				 own_addr, mgmt->u.action.category,
 				 mgmt->u.action.u.chan_switch.action_code);
