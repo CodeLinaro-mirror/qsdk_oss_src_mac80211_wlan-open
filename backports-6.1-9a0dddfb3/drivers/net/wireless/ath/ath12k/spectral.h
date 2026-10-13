@@ -8,6 +8,7 @@
 #define ATH12K_SPECTRAL_H
 
 #include <linux/hrtimer.h>
+#include <linux/mutex.h>
 #include <linux/workqueue.h>
 
 #include "../spectral_common.h"
@@ -110,6 +111,8 @@ struct ath12k_spectral {
 	struct ath12k_dbring rx_ring;
 	/* Protects enabled, mode, and scan_active */
 	spinlock_t lock;
+	/* Serializes spectral WMI routing with vdev teardown. */
+	struct mutex vdev_lock;
 	struct rchan *rfs_scan;	/* relay(fs) channel for spectral scan */
 	enum spectral_scan_mode mode;
 	struct ath12k_spectral_params     params;
@@ -145,12 +148,9 @@ struct ath12k_spectral {
 	struct hrtimer scan_completion_timer;
 	/* received-count snapshot saved by the hrtimer cb for the worker */
 	u32 timeout_received_count;
-	/* vdev_id cached at scan-start (under ->lock); used by timeout_work
-	 * to send CLEAR+DISABLE without needing wiphy_lock - calling
-	 * wiphy_lock() from the workqueue deadlocks when wiphy->mtx is
-	 * already held by the nl80211 vendor-command dispatch path.
-	 */
+	/* Preferred vdev context for pdev-level spectral WMI commands. */
 	u32 active_vdev_id;
+	bool active_vdev_valid;
 	/* runs ath12k_spectral_send_complete_event from process context */
 	struct work_struct scan_timeout_work;
 	/* per-BW fft_size caps + scalar mins/maxs, populated at probe */
@@ -191,6 +191,7 @@ void ath12k_spectral_rollback_agile(struct ath12k *ar);
 
 int ath12k_spectral_init(struct ath12k_base *ab);
 void ath12k_spectral_deinit(struct ath12k_base *ab);
+void ath12k_spectral_abort(struct ath12k *ar);
 int ath12k_spectral_vif_stop(struct ath12k_link_vif *arvif);
 void ath12k_spectral_reset_buffer(struct ath12k *ar);
 struct ath12k_dbring *ath12k_spectral_get_dbring(struct ath12k *ar);
@@ -216,6 +217,10 @@ static inline void ath12k_spectral_deinit(struct ath12k_base *ab)
 static inline int ath12k_spectral_vif_stop(struct ath12k_link_vif *arvif)
 {
 	return 0;
+}
+
+static inline void ath12k_spectral_abort(struct ath12k *ar)
+{
 }
 
 static inline void ath12k_spectral_reset_buffer(struct ath12k *ar)

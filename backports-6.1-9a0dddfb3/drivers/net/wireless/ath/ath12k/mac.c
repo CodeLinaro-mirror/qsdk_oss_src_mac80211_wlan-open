@@ -2094,7 +2094,18 @@ static int ath12k_mac_monitor_vdev_delete(struct ath12k_link_vif *arvif)
 	if (!ar->monitor_vdev_created)
 		return 0;
 
+#ifdef CPTCFG_ATH12K_SPECTRAL
+	ret = ath12k_spectral_vif_stop(arvif);
+	if (ret)
+		ath12k_warn(ar->ab, "failed to stop spectral for monitor vdev %i: %d\n",
+			    arvif->vdev_id, ret);
+#endif
+
 	reinit_completion(&ar->vdev_delete_done);
+
+#ifdef CPTCFG_ATH12K_SPECTRAL
+	mutex_lock(&ar->spectral.vdev_lock);
+#endif
 
 	ret = ath12k_wmi_vdev_delete(ar, ar->monitor_vdev_id);
 	if (ret) {
@@ -2112,8 +2123,11 @@ cleanup:
 	ar->allocated_vdev_map &= ~(1LL << ar->monitor_vdev_id);
 	spin_lock_bh(&ar->ab->base_lock);
 	ar->ab->free_vdev_map |= 1LL << (ar->monitor_vdev_id);
-	list_del(&arvif->list);
 	spin_unlock_bh(&ar->ab->base_lock);
+	list_del(&arvif->list);
+#ifdef CPTCFG_ATH12K_SPECTRAL
+	mutex_unlock(&ar->spectral.vdev_lock);
+#endif
 	ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "mac monitor vdev %d deleted\n",
 		   ar->monitor_vdev_id);
 	WARN_ON(!ar->num_created_vdevs);
@@ -21808,16 +21822,20 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 			 ar->created_vdev_map);
 	ar->allocated_vdev_map |= 1LL << arvif->vdev_id;
 
-	spin_lock_bh(&ar->data_lock);
-
 	/* list added is not needed during mode1 recovery
 	 * as the arvif(s) updated are from the existing
 	 * list
 	 */
+#ifdef CPTCFG_ATH12K_SPECTRAL
+	mutex_lock(&ar->spectral.vdev_lock);
+#endif
+	spin_lock_bh(&ar->data_lock);
 	if (!ab->recovery_start)
 		list_add(&arvif->list, &ar->arvifs);
-
 	spin_unlock_bh(&ar->data_lock);
+#ifdef CPTCFG_ATH12K_SPECTRAL
+	mutex_unlock(&ar->spectral.vdev_lock);
+#endif
 
 	ath12k_mac_update_vif_offload(arvif);
 
@@ -22088,10 +22106,16 @@ err_vdev_del:
 	arvif->is_created = false;
 	arvif->ar = NULL;
 	ar->allocated_vdev_map &= ~(1LL << arvif->vdev_id);
+#ifdef CPTCFG_ATH12K_SPECTRAL
+	mutex_lock(&ar->spectral.vdev_lock);
+#endif
 	spin_lock_bh(&ar->data_lock);
 	if (!list_empty(&ar->arvifs))
 		list_del(&arvif->list);
 	spin_unlock_bh(&ar->data_lock);
+#ifdef CPTCFG_ATH12K_SPECTRAL
+	mutex_unlock(&ar->spectral.vdev_lock);
+#endif
 err_cu_mem:
 	spin_lock_bh(&ar->data_lock);
 	ath12k_core_cu_mem_free(ar, arvif);
@@ -22783,6 +22807,9 @@ static int ath12k_mac_vdev_delete(struct ath12k *ar, struct ath12k_link_vif *arv
 	int ret = -1;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+#ifdef CPTCFG_ATH12K_SPECTRAL
+	mutex_lock(&ar->spectral.vdev_lock);
+#endif
 
 	reinit_completion(&ar->vdev_delete_done);
 
@@ -22899,6 +22926,9 @@ err_vdev_del:
 	wiphy_work_cancel(ath12k_ar_to_hw(ar)->wiphy,
 			  &arvif->tpc_ie_eirp_work);
 
+#ifdef CPTCFG_ATH12K_SPECTRAL
+	mutex_unlock(&ar->spectral.vdev_lock);
+#endif
 	return ret;
 }
 
@@ -31409,6 +31439,9 @@ static int ath12k_mac_setup(struct ath12k *ar)
 	spin_lock_init(&ar->data_lock);
 	spin_lock_init(&ar->dp.ppdu_list_lock);
 	spin_lock_init(&ar->arsta_lock);
+#ifdef CPTCFG_ATH12K_SPECTRAL
+	mutex_init(&ar->spectral.vdev_lock);
+#endif
 	ath12k_dbg(ab, ATH12K_DBG_MAC,
 		   "arvifs list for radio hw_link_id %d initialized\n",
 		   ar->hw_link_id);
