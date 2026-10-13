@@ -3815,6 +3815,14 @@ ath12k_core_srng_htt_rx_filter_setup(struct ath12k_base *ab, u32 ring_id, int ma
 						tlv_filter);
 }
 
+static inline int
+ath12k_core_rx_link_desc_return(struct ath12k_base *ab,
+				struct ath12k_buffer_addr *buf_addr_info,
+				enum hal_wbm_rel_bm_act act)
+{
+	return ath12k_dp_arch_rx_link_desc_return(ab->dp, buf_addr_info, act);
+}
+
 extern unsigned int ath12k_mlo_capable;
 
 int ath12k_wsi_load_info_init(struct ath12k_base *ab);
@@ -3852,6 +3860,10 @@ struct ath12k *ath12k_core_ar_from_hw_link_id(struct ath12k_base *ab, u8 hw_link
 int ath12k_core_crypto_param_len(struct ath12k_base *ab, enum hal_encrypt_type enctype);
 int ath12k_core_crypto_icv_len(struct ath12k_base *ab, enum hal_encrypt_type enctype);
 int ath12k_core_crypto_mic_len(struct ath12k_base *ab, enum hal_encrypt_type enctype);
+
+struct hal_rx_msdu_link *ath12k_core_paddr_to_link_desc(struct ath12k_base *ab,
+							u32 cookie, dma_addr_t paddr);
+
 enum ath12k_peer_metadata_version
 ath12k_core_get_peer_metadata_ver(struct ath12k_base *ab);
 void ath12k_mvr_ch_switch_notify_work(struct work_struct *work);

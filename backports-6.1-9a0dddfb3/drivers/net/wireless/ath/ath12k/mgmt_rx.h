@@ -111,6 +111,7 @@ struct ath12k_device_mgmt_srng_stats {
 	u32 reo_err[HAL_REO_DEST_RING_ERROR_CODE_MAX];
 	u32 reo_err_rx[ATH12K_SRNG_STATS_MGMT_FRM_STYPE_MAX];
 	u32 frag_pkts;
+	u32 unexpected_link_desc; /* link descriptor expected only for frag */
 
 #ifdef CPTCFG_QCN_EXTN
 	struct ath12k_device_mgmt_srng_stats_extn stats_extn;

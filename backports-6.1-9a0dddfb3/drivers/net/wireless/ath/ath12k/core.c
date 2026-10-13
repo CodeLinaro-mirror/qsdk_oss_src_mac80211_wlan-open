@@ -8249,5 +8249,23 @@ void ath12k_core_cu_notify(struct ath12k *ar, struct ath12k_link_vif *arvif)
 }
 EXPORT_SYMBOL(ath12k_core_cu_notify);
 
+struct hal_rx_msdu_link *ath12k_core_paddr_to_link_desc(struct ath12k_base *ab,
+							u32 cookie, dma_addr_t paddr)
+{
+	struct dp_link_desc_bank *link_desc_banks;
+	struct hal_rx_msdu_link *link_desc_va;
+	struct ath12k_dp *dp = ab->dp;
+	u32 desc_bank;
+
+	desc_bank = u32_get_bits(cookie, DP_LINK_DESC_BANK_MASK);
+
+	link_desc_banks = dp->link_desc_banks;
+	link_desc_va = link_desc_banks[desc_bank].vaddr +
+		       (paddr - link_desc_banks[desc_bank].paddr);
+
+	return link_desc_va;
+}
+EXPORT_SYMBOL(ath12k_core_paddr_to_link_desc);
+
 MODULE_DESCRIPTION("Driver support for Qualcomm Technologies WLAN devices");
 MODULE_LICENSE("Dual BSD/GPL");
