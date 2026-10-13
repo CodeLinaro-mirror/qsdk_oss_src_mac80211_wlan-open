@@ -195,6 +195,7 @@ struct dentry *ath12k_debugfs_erp_create(void);
 #define ATH12K_HE_RATES				12
 #define ATH12K_HE_RATES_WITH_EXTRA_MCS		14
 #define ATH12K_EHT_RATES			16
+#define ATH12K_UHR_RATES			16
 #define HE_EXTRA_MCS_SUPPORT			GENMASK(31, 16)
 #define ATH12K_NSS_1				1
 #define ATH12K_NSS_4				4
@@ -242,46 +243,9 @@ enum qca_wlan_priority_type {
 #define BTCOEX_MAX_PKT_WEIGHT            255
 #define BTCOEX_MAX_WLAN_PRIORITY    ((QCA_WLAN_PRIORITY_MGMT << 1) - 1)
 
-enum wmi_tpc_pream_bw {
-	WMI_TPC_PREAM_CCK,
-	WMI_TPC_PREAM_OFDM,
-	WMI_TPC_PREAM_HT20,
-	WMI_TPC_PREAM_HT40,
-	WMI_TPC_PREAM_VHT20,
-	WMI_TPC_PREAM_VHT40,
-	WMI_TPC_PREAM_VHT80,
-	WMI_TPC_PREAM_VHT160,
-	WMI_TPC_PREAM_HE20,
-	WMI_TPC_PREAM_HE40,
-	WMI_TPC_PREAM_HE80,
-	WMI_TPC_PREAM_HE160,
-	WMI_TPC_PREAM_EHT20,
-	WMI_TPC_PREAM_EHT40,
-	WMI_TPC_PREAM_EHT60,
-	WMI_TPC_PREAM_EHT80,
-	WMI_TPC_PREAM_EHT120,
-	WMI_TPC_PREAM_EHT140,
-	WMI_TPC_PREAM_EHT160,
-	WMI_TPC_PREAM_EHT200,
-	WMI_TPC_PREAM_EHT240,
-	WMI_TPC_PREAM_EHT280,
-	WMI_TPC_PREAM_EHT320,
-	/* UHR preambles: FW sends one shared EHT/UHR rates array;
-	 * host indexes into rates_array2 identically to EHT.
-	 */
-	WMI_TPC_PREAM_UHR20,
-	WMI_TPC_PREAM_UHR40,
-	WMI_TPC_PREAM_UHR60,
-	WMI_TPC_PREAM_UHR80,
-	WMI_TPC_PREAM_UHR120,
-	WMI_TPC_PREAM_UHR140,
-	WMI_TPC_PREAM_UHR160,
-	WMI_TPC_PREAM_UHR200,
-	WMI_TPC_PREAM_UHR240,
-	WMI_TPC_PREAM_UHR280,
-	WMI_TPC_PREAM_UHR320,
-	WMI_TPC_PREAM_MAX
-};
+/* enum wmi_tpc_pream_bw is defined in wmi.h — it is a WMI protocol-level
+ * definition shared across host driver components beyond debugfs.
+ */
 
 enum ath12k_debug_tpc_stats_ctl_mode {
 	ATH12K_TPC_STATS_CTL_MODE_LEGACY_5GHZ_6GHZ,

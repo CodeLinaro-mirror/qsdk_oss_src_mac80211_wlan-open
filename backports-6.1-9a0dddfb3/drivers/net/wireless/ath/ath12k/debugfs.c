@@ -1735,23 +1735,127 @@ static const struct file_operations fops_dfs_block_radar = {
 	.open = ath12k_debugfs_open
 };
 
+/* Returns true if any supported band advertises UHR (11bn) PHY capability. */
+static bool ath12k_tpc_is_uhr_capable(struct ath12k *ar)
+{
+	int band;
+
+	for (band = 0; band < NUM_NL80211_BANDS; band++) {
+		if ((ar->pdev->cap.supported_bands & BIT(band)) &&
+		    ar->pdev->cap.band[band].uhr_cap_phy_info[0])
+			return true;
+	}
+	return false;
+}
+
+/* Returns true if the radio's pdev supports 6GHz (and therefore 320 MHz BW). */
+static bool ath12k_tpc_has_6ghz_band(struct ath12k *ar)
+{
+	return !!(ar->pdev->cap.supported_bands & BIT(NL80211_BAND_6GHZ));
+}
+
 static ssize_t ath12k_write_tpc_stats_type(struct file *file,
 					   const char __user *user_buf,
 					   size_t count, loff_t *ppos)
 {
 	struct ath12k *ar = file->private_data;
-	u8 type;
-	int ret;
+	u32 type, phymode, nss, num_chains;
+	int nargs, ret;
+	char buf[64];
 
-	ret = kstrtou8_from_user(user_buf, count, 0, &type);
-	if (ret)
-		return ret;
-
-	if (type >= WMI_HALPHY_PDEV_TX_STATS_MAX)
+	if (count >= sizeof(buf))
 		return -EINVAL;
+
+	ret = simple_write_to_buffer(buf, sizeof(buf) - 1, ppos, user_buf, count);
+	if (ret < 0)
+		return ret;
+	buf[ret] = '\0';
+
+	/*
+	 * Accept:
+	 *   <type>
+	 *   <type> <phymode>
+	 *   <type> <phymode> <nss>
+	 *   <type> <phymode> <nss> <num_chains>
+	 *
+	 * phymode is a WMI_TPC_PREAM_BW value. For types 0-3, WMI_TPC_PREAM_MAX
+	 * means "all phymodes". For types 4-6 (enhanced), a specific phymode must
+	 * be provided (WMI_TPC_PREAM_MAX is not accepted).
+	 * nss and num_chains default to 0xFF (sweep all) when omitted.
+	 */
+	phymode = WMI_TPC_PREAM_MAX;
+	nss = 0xFF;
+	num_chains = 0xFF;
+
+	nargs = sscanf(buf, "%u %u %u %u", &type, &phymode, &nss, &num_chains);
+	if (nargs < 1) {
+		ath12k_warn(ar->ab, "tpc_stats_type: usage: echo \"<type> [phymode [nss [num_chains]]]\" > tpc_stats_type\n");
+		return -EINVAL;
+	}
+
+	if (type >= WMI_HALPHY_PDEV_TX_STATS_MAX) {
+		ath12k_warn(ar->ab, "tpc_stats_type: invalid type %u, valid range [0, %u)\n",
+			    type, WMI_HALPHY_PDEV_TX_STATS_MAX);
+		return -EINVAL;
+	}
+	if (phymode > WMI_TPC_PREAM_MAX) {
+		ath12k_warn(ar->ab, "tpc_stats_type: invalid phymode %u, valid range [0, %u]\n",
+			    phymode, WMI_TPC_PREAM_MAX);
+		return -EINVAL;
+	}
+
+	/* Enhanced sub_ids (4-6) have additional constraints:
+	 * - phymode must be a specific mode, not WMI_TPC_PREAM_MAX
+	 * - nss and num_chains (when not 0xFF) must be within [1, num_tx_chains]
+	 * - nss must not exceed num_chains (NSS <= NTx always holds)
+	 * - UHR modes (>= WMI_TPC_PREAM_UHR20) require an 11bn (UHR-capable) chip
+	 * - Modes wider than 160 MHz (EHT200+, UHR200+) require 6 GHz band support
+	 */
+	if (type >= WMI_HALPHY_PDEV_TX_ENHANCED_SU_STATS) {
+		bool is_uhr_mode = phymode >= WMI_TPC_PREAM_UHR20;
+		bool is_gt_160mhz =
+			(phymode > WMI_TPC_PREAM_EHT160 &&
+			 phymode < WMI_TPC_PREAM_UHR20) ||
+			phymode > WMI_TPC_PREAM_UHR160;
+
+		if (phymode >= WMI_TPC_PREAM_MAX) {
+			ath12k_warn(ar->ab, "tpc_stats_type: enhanced type %u requires a specific phymode, not WMI_TPC_PREAM_MAX (%u)\n",
+				    type, WMI_TPC_PREAM_MAX);
+			return -EINVAL;
+		}
+		if (nss != 0xFF && (nss < 1 || nss > (u32)ar->num_tx_chains)) {
+			ath12k_warn(ar->ab, "tpc_stats_type: invalid nss %u, valid range [1, %d] or 0xFF for all\n",
+				    nss, ar->num_tx_chains);
+			return -EINVAL;
+		}
+		if (num_chains != 0xFF &&
+		    (num_chains < 1 || num_chains > (u32)ar->num_tx_chains)) {
+			ath12k_warn(ar->ab, "tpc_stats_type: invalid num_chains %u, valid range [1, %d] or 0xFF for all\n",
+				    num_chains, ar->num_tx_chains);
+			return -EINVAL;
+		}
+		if (nss != 0xFF && num_chains != 0xFF && nss > num_chains) {
+			ath12k_warn(ar->ab, "tpc_stats_type: nss %u exceeds num_chains %u\n",
+				    nss, num_chains);
+			return -EINVAL;
+		}
+		if (is_uhr_mode && !ath12k_tpc_is_uhr_capable(ar)) {
+			ath12k_warn(ar->ab, "tpc_stats_type: phymode %u is a UHR mode, not supported on this chip\n",
+				    phymode);
+			return -EINVAL;
+		}
+		if (is_gt_160mhz && !ath12k_tpc_has_6ghz_band(ar)) {
+			ath12k_warn(ar->ab, "tpc_stats_type: phymode %u requires 6 GHz band support, not available on this chip\n",
+				    phymode);
+			return -EINVAL;
+		}
+	}
 
 	spin_lock_bh(&ar->data_lock);
 	ar->debug.tpc_stats_type = type;
+	ar->debug.tpc_stats_pream_filter = phymode;
+	ar->debug.tpc_stats_nss_filter = nss;
+	ar->debug.tpc_stats_num_chains_filter = num_chains;
 	spin_unlock_bh(&ar->data_lock);
 
 	return count;
@@ -1802,6 +1906,7 @@ static int ath12k_get_tpc_ctl_mode_idx(struct wmi_tpc_stats_arg *tpc_stats,
 			break;
 		case WMI_TPC_PREAM_HE20:
 		case WMI_TPC_PREAM_EHT20:
+		case WMI_TPC_PREAM_UHR20:
 			*mode_idx = ATH12K_TPC_STATS_CTL_MODE_HE_EHT20_5GHZ_6GHZ;
 			break;
 		case WMI_TPC_PREAM_HT40:
@@ -1810,16 +1915,19 @@ static int ath12k_get_tpc_ctl_mode_idx(struct wmi_tpc_stats_arg *tpc_stats,
 			break;
 		case WMI_TPC_PREAM_HE40:
 		case WMI_TPC_PREAM_EHT40:
+		case WMI_TPC_PREAM_UHR40:
 			*mode_idx = ATH12K_TPC_STATS_CTL_MODE_HE_EHT40_5GHZ_6GHZ;
 			break;
 		case WMI_TPC_PREAM_VHT80:
 			*mode_idx = ATH12K_TPC_STATS_CTL_MODE_VHT80_5GHZ_6GHZ;
 			break;
 		case WMI_TPC_PREAM_EHT60:
+		case WMI_TPC_PREAM_UHR60:
 			*mode_idx = ATH12K_TPC_STATS_CTL_MODE_EHT80_SU_PUNC20;
 			break;
 		case WMI_TPC_PREAM_HE80:
 		case WMI_TPC_PREAM_EHT80:
+		case WMI_TPC_PREAM_UHR80:
 			*mode_idx = ATH12K_TPC_STATS_CTL_MODE_HE_EHT80_5GHZ_6GHZ;
 			break;
 		case WMI_TPC_PREAM_VHT160:
@@ -1827,22 +1935,29 @@ static int ath12k_get_tpc_ctl_mode_idx(struct wmi_tpc_stats_arg *tpc_stats,
 			break;
 		case WMI_TPC_PREAM_EHT120:
 		case WMI_TPC_PREAM_EHT140:
+		case WMI_TPC_PREAM_UHR120:
+		case WMI_TPC_PREAM_UHR140:
 			*mode_idx = ATH12K_TPC_STATS_CTL_MODE_EHT160_SU_PUNC20;
 			break;
 		case WMI_TPC_PREAM_HE160:
 		case WMI_TPC_PREAM_EHT160:
+		case WMI_TPC_PREAM_UHR160:
 			*mode_idx = ATH12K_TPC_STATS_CTL_MODE_HE_EHT160_5GHZ_6GHZ;
 			break;
 		case WMI_TPC_PREAM_EHT200:
+		case WMI_TPC_PREAM_UHR200:
 			*mode_idx = ATH12K_TPC_STATS_CTL_MODE_EHT320_SU_PUNC120;
 			break;
 		case WMI_TPC_PREAM_EHT240:
+		case WMI_TPC_PREAM_UHR240:
 			*mode_idx = ATH12K_TPC_STATS_CTL_MODE_EHT320_SU_PUNC80;
 			break;
 		case WMI_TPC_PREAM_EHT280:
+		case WMI_TPC_PREAM_UHR280:
 			*mode_idx = ATH12K_TPC_STATS_CTL_MODE_EHT320_SU_PUNC40;
 			break;
 		case WMI_TPC_PREAM_EHT320:
+		case WMI_TPC_PREAM_UHR320:
 			*mode_idx = ATH12K_TPC_STATS_CTL_MODE_HE_EHT320_5GHZ_6GHZ;
 			break;
 		/* TODO: UHR has distinct CTL powers from EHT at the HALPHY level.
@@ -2137,7 +2252,8 @@ static int ath12k_tpc_fill_pream(struct ath12k *ar, char *buf, int buf_len, int 
 			    rates > ATH12K_HE_MCS_MAX)
 				continue;
 
-			if (pream_type == WMI_RATE_PREAMBLE_EHT &&
+			if ((pream_type == WMI_RATE_PREAMBLE_EHT ||
+			     pream_type == WMI_RATE_PREAMBLE_UHR) &&
 			    rates > ATH12K_EHT_MCS_MAX)
 				continue;
 
@@ -2170,7 +2286,8 @@ static int ath12k_tpc_fill_pream(struct ath12k *ar, char *buf, int buf_len, int 
 			}
 			len += scnprintf(buf + len, buf_len - len, "\n");
 
-			if (pream_type == WMI_RATE_PREAMBLE_EHT)
+			if (pream_type == WMI_RATE_PREAMBLE_EHT ||
+			    pream_type == WMI_RATE_PREAMBLE_UHR)
 				/*For fetching the next eht rates pwr from rates array2*/
 				++eht_rate_idx;
 		}
@@ -2237,7 +2354,7 @@ static int ath12k_tpc_stats_print(struct ath12k *ar,
 		[WMI_TPC_PREAM_OFDM]    = ATH12K_NSS_1,
 		[WMI_TPC_PREAM_HT20]    = ATH12K_NSS_4,
 		[WMI_TPC_PREAM_HT40]    = ATH12K_NSS_4,
-		[WMI_TPC_PREAM_VHT20]   = ATH12K_NSS_8,
+	    [WMI_TPC_PREAM_VHT20]   = ATH12K_NSS_8,
 		[WMI_TPC_PREAM_VHT40]   = ATH12K_NSS_8,
 		[WMI_TPC_PREAM_VHT80]   = ATH12K_NSS_8,
 		[WMI_TPC_PREAM_VHT160]  = ATH12K_NSS_4,
@@ -2256,7 +2373,6 @@ static int ath12k_tpc_stats_print(struct ath12k *ar,
 		[WMI_TPC_PREAM_EHT240]  = ATH12K_NSS_4,
 		[WMI_TPC_PREAM_EHT280]  = ATH12K_NSS_4,
 		[WMI_TPC_PREAM_EHT320]  = ATH12K_NSS_4,
-		/* UHR supports up to 5 chains on Trestles */
 		[WMI_TPC_PREAM_UHR20]   = ATH12K_NSS_5,
 		[WMI_TPC_PREAM_UHR40]   = ATH12K_NSS_5,
 		[WMI_TPC_PREAM_UHR60]   = ATH12K_NSS_5,
@@ -2425,6 +2541,105 @@ static int ath12k_tpc_stats_print(struct ath12k *ar,
 	return len;
 }
 
+static void ath12k_tpc_enhanced_breakdown_print(struct ath12k *ar,
+						struct wmi_tpc_stats_arg *tpc_stats,
+						char *buf, size_t buf_len)
+{
+	const char * const pream_str[] = {
+		[WMI_TPC_PREAM_CCK]   = "CCK",    [WMI_TPC_PREAM_OFDM]   = "OFDM",
+		[WMI_TPC_PREAM_HT20]  = "HT20",   [WMI_TPC_PREAM_HT40]   = "HT40",
+		[WMI_TPC_PREAM_VHT20] = "VHT20",  [WMI_TPC_PREAM_VHT40]  = "VHT40",
+		[WMI_TPC_PREAM_VHT80] = "VHT80",  [WMI_TPC_PREAM_VHT160] = "VHT160",
+		[WMI_TPC_PREAM_HE20]  = "HE20",   [WMI_TPC_PREAM_HE40]   = "HE40",
+		[WMI_TPC_PREAM_HE80]  = "HE80",   [WMI_TPC_PREAM_HE160]  = "HE160",
+		[WMI_TPC_PREAM_EHT20] = "EHT20",  [WMI_TPC_PREAM_EHT40]  = "EHT40",
+		[WMI_TPC_PREAM_EHT60]  = "EHT60",  [WMI_TPC_PREAM_EHT80]   = "EHT80",
+		[WMI_TPC_PREAM_EHT120] = "EHT120", [WMI_TPC_PREAM_EHT140]  = "EHT140",
+		[WMI_TPC_PREAM_EHT160] = "EHT160", [WMI_TPC_PREAM_EHT200]  = "EHT200",
+		[WMI_TPC_PREAM_EHT240] = "EHT240", [WMI_TPC_PREAM_EHT280]  = "EHT280",
+		[WMI_TPC_PREAM_EHT320] = "EHT320",
+		[WMI_TPC_PREAM_UHR20]  = "UHR20",  [WMI_TPC_PREAM_UHR40]   = "UHR40",
+		[WMI_TPC_PREAM_UHR60]  = "UHR60",  [WMI_TPC_PREAM_UHR80]   = "UHR80",
+		[WMI_TPC_PREAM_UHR120] = "UHR120", [WMI_TPC_PREAM_UHR140]  = "UHR140",
+		[WMI_TPC_PREAM_UHR160] = "UHR160", [WMI_TPC_PREAM_UHR200]  = "UHR200",
+		[WMI_TPC_PREAM_UHR240] = "UHR240", [WMI_TPC_PREAM_UHR280]  = "UHR280",
+		[WMI_TPC_PREAM_UHR320] = "UHR320",
+	};
+	const char *band_str =
+		(tpc_stats->radio_band == 0) ? "2GHz" :
+		(tpc_stats->radio_band == 1) ? "5GHz" : "6GHz";
+	u8 type = ar->debug.tpc_stats_type;
+	const char *ppdu_type_str =
+		(type == WMI_HALPHY_PDEV_TX_ENHANCED_SU_STATS)     ? "SU" :
+		(type == WMI_HALPHY_PDEV_TX_ENHANCED_SUTXBF_STATS) ? "SU + TxBF" :
+		(type == WMI_HALPHY_PDEV_TX_ENHANCED_MU_STATS)     ? "MU" : "?";
+	u32 i, current_nss = 0;
+	const char *dev_max_pwr_cap_pream =
+		(tpc_stats->dev_max_pwr_cap_phy_mode < ARRAY_SIZE(pream_str) &&
+		 pream_str[tpc_stats->dev_max_pwr_cap_phy_mode])
+			? pream_str[tpc_stats->dev_max_pwr_cap_phy_mode] : "?";
+	size_t len = 0;
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "****** Display TPC Parameters ******\n\n");
+	len += scnprintf(buf + len, buf_len - len,
+			 "%-20s: %s\n\n", "PPDU Type", ppdu_type_str);
+	len += scnprintf(buf + len, buf_len - len,
+			 "%-20s: %-14s  %-20s: %u MHz\n",
+			 "Radio", band_str,
+			 "Channel", tpc_stats->chan_freq);
+	len += scnprintf(buf + len, buf_len - len,
+			 "%-20s: %-14d  %-20s: %d dBm\n\n",
+			 "No of Tx Chains", ar->num_tx_chains,
+			 "User Power Limit",
+			 (s32)le32_to_cpu(tpc_stats->user_power_limit));
+	len += scnprintf(buf + len, buf_len - len,
+			 "%-20s: %d dBm  [ %s, NSS=%u, NTx=%u, MCS=%u, Chain Gain=%d dBm ]\n",
+			 "Max TX Power",
+			 tpc_stats->dev_max_pwr_cap_pwr,
+			 dev_max_pwr_cap_pream,
+			 tpc_stats->dev_max_pwr_cap_nss,
+			 tpc_stats->dev_max_pwr_cap_num_chains,
+			 tpc_stats->dev_max_pwr_cap_mcs,
+			 tpc_stats->dev_max_pwr_cap_chain_gain_pwr);
+	len += scnprintf(buf + len, buf_len - len,
+			 "* Powers are in dBm scale\n\n");
+
+	for (i = 0; i < tpc_stats->pwr_breakdown_count; i++) {
+		const struct wmi_tpc_pwr_breakdown_entry *entry =
+			&tpc_stats->pwr_breakdown[i];
+		u32 d0 = le32_to_cpu(entry->dword0);
+		u32 d1 = le32_to_cpu(entry->dword1);
+		u32 d2 = le32_to_cpu(entry->dword2);
+		u32 nss = WMI_DISP_TPC_PWR_NSS_GET(d0);
+		u32 phymode = WMI_DISP_TPC_PWR_PHYMODE_GET(d0);
+
+		if (nss != current_nss) {
+			current_nss = nss;
+			len += scnprintf(buf + len, buf_len - len, "\n");
+			len += scnprintf(buf + len, buf_len - len,
+					 "=== NSS = %u ========================\n", nss);
+			len += scnprintf(buf + len, buf_len - len,
+					 "PhyMode  | numChains | NSS | MCS | Target(dBm) | Reg(dBm) | CTL(dBm) | Final(dBm)\n");
+			len += scnprintf(buf + len, buf_len - len,
+					 "----------------------------------------------------------------------\n");
+		}
+
+		len += scnprintf(buf + len, buf_len - len,
+				 "%-8s | %9u | %3u | %3u | %11d | %8d | %8d | %10d\n",
+				 (phymode < ARRAY_SIZE(pream_str) &&
+				  pream_str[phymode])
+					? pream_str[phymode] : "?",
+				 WMI_DISP_TPC_PWR_NUM_CHAINS_GET(d0),
+				 nss,
+				 WMI_DISP_TPC_PWR_MCS_GET(d0),
+				 (s32)WMI_DISP_TPC_PWR_TARGET_PWR_GET(d1),
+				 (s32)WMI_DISP_TPC_PWR_REG_PWR_GET(d1),
+				 (s32)WMI_DISP_TPC_PWR_CTL_PWR_GET(d2),
+				 (s32)WMI_DISP_TPC_PWR_FINAL_PWR_GET(d2));
+	}
+}
+
 static void ath12k_tpc_stats_fill(struct ath12k *ar,
 				  struct wmi_tpc_stats_arg *tpc_stats,
 				  char *buf)
@@ -2441,23 +2656,21 @@ static void ath12k_tpc_stats_fill(struct ath12k *ar,
 	spin_lock_bh(&ar->data_lock);
 
 	tpc = &tpc_stats->tpc_config;
-	len += scnprintf(buf + len, buf_len - len, "\n");
-	len += scnprintf(buf + len, buf_len - len,
-			 "*************** TPC config **************\n");
-	len += scnprintf(buf + len, buf_len - len,
-			 "* powers are in 0.25 dBm steps\n");
-	len += scnprintf(buf + len, buf_len - len,
-			 "reg domain-%d\t\tchan freq-%d\n",
-			 tpc->reg_domain, tpc->chan_freq);
-	len += scnprintf(buf + len, buf_len - len,
-			 "power limit-%d\t\tmax reg-domain Power-%d\n",
-			 le32_to_cpu(tpc->twice_max_reg_power) / 2, tpc->power_limit);
-	len += scnprintf(buf + len, buf_len - len,
-			 "No.of tx chain-%d\t",
-			 ar->num_tx_chains);
 
-	ath12k_tpc_stats_print(ar, tpc_stats, buf, len,
-			       ar->debug.tpc_stats_type);
+	if (ar->debug.tpc_stats_type >= WMI_HALPHY_PDEV_TX_ENHANCED_SU_STATS) {
+		len += scnprintf(buf + len, buf_len - len, "\n");
+		ath12k_tpc_enhanced_breakdown_print(ar, tpc_stats, buf + len,
+						    buf_len - len);
+	} else {
+		len += scnprintf(buf + len, buf_len - len, "\n");
+		len += scnprintf(buf + len, buf_len - len,
+				 "*************** TPC config **************\n");
+		len += scnprintf(buf + len, buf_len - len,
+				 "No.of tx chain-%d\t",
+				 ar->num_tx_chains);
+		ath12k_tpc_stats_print(ar, tpc_stats, buf, len,
+				       ar->debug.tpc_stats_type);
+	}
 	spin_unlock_bh(&ar->data_lock);
 }
 
@@ -2509,6 +2722,7 @@ static int ath12k_open_tpc_stats(struct inode *inode, struct file *file)
 
 	spin_lock_bh(&ar->data_lock);
 	ath12k_wmi_free_tpc_stats_mem(ar);
+	ar->debug.tpc_request = false;
 	spin_unlock_bh(&ar->data_lock);
 
 	return 0;
@@ -2539,9 +2753,60 @@ static const struct file_operations fops_tpc_stats = {
 	.llseek = default_llseek,
 };
 
+static ssize_t ath12k_read_tpc_stats_type(struct file *file,
+					  char __user *user_buf,
+					  size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	bool is_uhr  = ath12k_tpc_is_uhr_capable(ar);
+	bool has_6ghz = ath12k_tpc_has_6ghz_band(ar);
+	char buf[960];
+	size_t len = 0;
+
+	len += scnprintf(buf + len, sizeof(buf) - len,
+			 "Usage: echo \"type [phymode [nss [num_chains]]]\" > tpc_stats_type\n"
+			 "       cat tpc_stats\n\n"
+			 "type:\n"
+			 "  0  SU stats\n"
+			 "  1  SU TxBF stats\n"
+			 "  2  MU stats\n"
+			 "  3  MU TxBF stats\n"
+			 "  4  Enhanced SU breakdown (per-NSS/chain/MCS) [phymode required]\n"
+			 "  5  Enhanced SU TxBF breakdown               [phymode required]\n"
+			 "  6  Enhanced MU breakdown                    [phymode required]\n\n"
+			 "phymode (WMI_TPC_PREAM_BW) — required for types 4-6:\n"
+			 "   0 CCK       1 OFDM\n"
+			 "   2 HT20      3 HT40\n"
+			 "   4 VHT20     5 VHT40     6 VHT80     7 VHT160\n"
+			 "   8 HE20      9 HE40     10 HE80     11 HE160\n"
+			 "  12 EHT20    13 EHT40    14 EHT60    15 EHT80\n"
+			 "  16 EHT120   17 EHT140   18 EHT160\n");
+
+	if (has_6ghz)
+		len += scnprintf(buf + len, sizeof(buf) - len,
+				 "  19 EHT200   20 EHT240   21 EHT280   22 EHT320\n");
+
+	if (is_uhr) {
+		len += scnprintf(buf + len, sizeof(buf) - len,
+				 "  23 UHR20    24 UHR40    25 UHR60    26 UHR80\n"
+				 "  27 UHR120   28 UHR140   29 UHR160\n");
+		if (has_6ghz)
+			len += scnprintf(buf + len, sizeof(buf) - len,
+					 "  30 UHR200   31 UHR240   32 UHR280   33 UHR320\n");
+	}
+
+	len += scnprintf(buf + len, sizeof(buf) - len,
+			 "\nnss, num_chains: 0xFF = sweep all (default)\n\n"
+			 "Example: echo \"4 12\" > tpc_stats_type && cat tpc_stats\n"
+			 "         (Enhanced SU breakdown for EHT20, all NSS and chains)\n");
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
 static const struct file_operations fops_tpc_stats_type = {
+	.read = ath12k_read_tpc_stats_type,
 	.write = ath12k_write_tpc_stats_type,
-	.open = ath12k_debugfs_open,
+	.open = simple_open,
 	.llseek = default_llseek,
 };
 
@@ -7640,10 +7905,15 @@ void ath12k_debugfs_register(struct ath12k *ar)
 					   &fops_dfs_block_radar);
 	}
 
-	debugfs_create_file("tpc_stats", 0400, ar->debug.debugfs_pdev,
-			    ar, &fops_tpc_stats);
-	ath12k_debugfs_create_file("tpc_stats_type", 0200, ar->debug.debugfs_pdev,
-				   ar->ab, ar, &fops_tpc_stats_type);
+	debugfs_create_file("tpc_stats", 0400, ar->debug.debugfs_pdev, ar,
+			    &fops_tpc_stats);
+	debugfs_create_file("tpc_stats_type", 0600, ar->debug.debugfs_pdev,
+			    ar, &fops_tpc_stats_type);
+
+	ar->debug.tpc_stats_pream_filter = WMI_TPC_PREAM_MAX;
+	ar->debug.tpc_stats_nss_filter = 0xFF;
+	ar->debug.tpc_stats_num_chains_filter = 0xFF;
+
 	init_completion(&ar->debug.tpc_complete);
 
 	ath12k_debugfs_create_file("wmm_stats", 0644,
