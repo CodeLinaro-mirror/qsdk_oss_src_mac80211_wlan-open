@@ -249,8 +249,10 @@ int ath12k_wifi8_dp_tx_pool_create(struct ath12k_dp_hw_group *dp_hw_grp)
 		}
 	}
 
-	dp_hw_grp_wifi8->last_msduq_sam_id = MAX_NUM_SAM_MSDU_QUEUES_SUPPORTED - 1;
-	dp_hw_grp_wifi8->last_mpduq_sam_id = MAX_NUM_SAM_MPDU_QUEUES_SUPPORTED - 1;
+	dp_hw_grp_wifi8->last_msduq_sam_id = ab->sam_num_supported_msduq ?
+					     ab->sam_num_supported_msduq - 1 : 0;
+	dp_hw_grp_wifi8->last_mpduq_sam_id = ab->sam_num_supported_mpduq ?
+					     ab->sam_num_supported_mpduq - 1 : 0;
 	spin_lock_init(&dp_hw_grp_wifi8->sam_id_lock);
 
 	return 0;

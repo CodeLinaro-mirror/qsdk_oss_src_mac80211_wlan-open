@@ -28,17 +28,21 @@ u16 ath12k_wifi8_mpduq_sam_id_alloc(struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_w
 
 	ab = dp_hw_grp_wifi8->cumac_dp->ab;
 
+	if (!ab->sam_num_supported_mpduq ||
+	    ab->sam_num_supported_mpduq <= MAX_NUM_SAM_RESERVED_MPDU_QUEUES)
+		return HAL_SAM_INVALID_MPDUQ_ID;
+
 	spin_lock_bh(&dp_hw_grp_wifi8->sam_id_lock);
 
 	for (i = 0;
-	     i < MAX_NUM_SAM_MPDU_QUEUES_SUPPORTED - MAX_NUM_SAM_RESERVED_MPDU_QUEUES;
+	     i < ab->sam_num_supported_mpduq - MAX_NUM_SAM_RESERVED_MPDU_QUEUES;
 	     i++) {
 		mpduq_sam_id = mpduq_sam_id + 1;
 
 		/* Wrap around to the first non-reserved MPDUQ SAM ID if
 		 * the valid range is exceeded.
 		 */
-		if (mpduq_sam_id >= MAX_NUM_SAM_MPDU_QUEUES_SUPPORTED)
+		if (mpduq_sam_id >= ab->sam_num_supported_mpduq)
 			mpduq_sam_id = MAX_NUM_SAM_RESERVED_MPDU_QUEUES;
 
 		/* SAM supports queue IDs from a single slice range (slize size: 256)
@@ -58,7 +62,7 @@ u16 ath12k_wifi8_mpduq_sam_id_alloc(struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_w
 	}
 
 	dp_hw_grp_wifi8->last_mpduq_sam_id = mpduq_sam_id;
-	if (i >= MAX_NUM_SAM_MPDU_QUEUES_SUPPORTED - MAX_NUM_SAM_RESERVED_MPDU_QUEUES)
+	if (i >= ab->sam_num_supported_mpduq - MAX_NUM_SAM_RESERVED_MPDU_QUEUES)
 		mpduq_sam_id = HAL_SAM_INVALID_MPDUQ_ID;
 
 	spin_unlock_bh(&dp_hw_grp_wifi8->sam_id_lock);

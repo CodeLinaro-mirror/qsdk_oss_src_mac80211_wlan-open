@@ -123,6 +123,8 @@ struct ath12k_wmi_svc_rdy_ext2_arg {
 	u32 afc_deployment_type;
 	u32 mapc_max_co_ap_peers;
 	u32 mapc_max_ctdma_ap_peers;
+	u32 sam_capability_1;
+	u32 sam_capability_2;
 };
 
 struct ath12k_wmi_svc_rdy_ext2_parse {
@@ -9486,6 +9488,9 @@ static int ath12k_pull_svc_ready_ext2(struct ath12k_wmi_pdev *wmi_handle,
 	arg->afc_deployment_type = le32_to_cpu(ev->afc_deployment_type);
 	arg->mapc_max_co_ap_peers    = le32_to_cpu(ev->max_uhr_co_ap_peers);
 	arg->mapc_max_ctdma_ap_peers = le32_to_cpu(ev->max_uhr_ctdma_ap_peers);
+	arg->sam_capability_1 = le32_to_cpu(ev->sam_capability_1);
+	arg->sam_capability_2 = le32_to_cpu(ev->sam_capability_2);
+
 	return 0;
 }
 
@@ -10066,6 +10071,12 @@ static int ath12k_wmi_svc_rdy_ext2_parse(struct ath12k_base *ab,
 		if (test_bit(WMI_TLV_SERVICE_UHR_MAX_CTDMA_AP_PEERS_SUPPORT,
 			     ab->wmi_ab.svc_map))
 			ab->mapc_max_ctdma_peers = parse->arg.mapc_max_ctdma_ap_peers;
+		ab->sam_num_supported_peers = u32_get_bits(parse->arg.sam_capability_1,
+							   WMI_SAM_CAP1_NUM_PEER_MASK);
+		ab->sam_num_supported_msduq = u32_get_bits(parse->arg.sam_capability_1,
+							   WMI_SAM_CAP1_NUM_MSDUQ_MASK);
+		ab->sam_num_supported_mpduq = u32_get_bits(parse->arg.sam_capability_2,
+							   WMI_SAM_CAP2_NUM_MPDUQ_MASK);
 		break;
 
 	case WMI_TAG_ARRAY_STRUCT:

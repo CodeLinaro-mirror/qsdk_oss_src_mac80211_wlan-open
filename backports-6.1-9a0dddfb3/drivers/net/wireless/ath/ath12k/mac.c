@@ -3783,7 +3783,7 @@ static void ath12k_peer_assoc_h_basic(struct ath12k *ar,
 	}
 
 	arg->peer_caps = bss_conf->assoc_capability;
-	if (ar && ar->ah)
+	if (ar && ar->ah && ar->ab && ar->ab->sam_num_supported_peers)
 		arg->sta_id = ath12k_dp_peer_get_sta_id(&ar->ah->dp_hw, vif,
 							sta->addr);
 	else

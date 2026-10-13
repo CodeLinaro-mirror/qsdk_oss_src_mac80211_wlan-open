@@ -3671,6 +3671,13 @@ struct ath12k_wmi_soc_hal_reg_caps_params {
 
 #define WMI_TARGET_CAP_FLAGS_RX_PEER_METADATA_VERSION	GENMASK(1, 0)
 
+/* SAM capability_1 bitfield masks */
+#define WMI_SAM_CAP1_NUM_PEER_MASK      GENMASK(11, 0)
+#define WMI_SAM_CAP1_NUM_MSDUQ_MASK     GENMASK(24, 12)
+
+/* SAM capability_2 bitfield masks */
+#define WMI_SAM_CAP2_NUM_MPDUQ_MASK     GENMASK(11, 0)
+
 /**
  * struct wmi_service_ready_ext2_event - extended service ready event params
  * @afc_deployment_type: AFC deployment type indicated by FW (indoor,outdoor)

@@ -3174,6 +3174,10 @@ struct ath12k_base {
 	struct ath12k_wmi_enh_aoa_caps_arg enh_aoa_caps;
 	bool umac_reset_init_done;
 
+	u16 sam_num_supported_peers;
+	u16 sam_num_supported_msduq;
+	u16 sam_num_supported_mpduq;
+
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));
 };
