@@ -14842,6 +14842,13 @@ static int ath12k_mac_station_unauthorize(struct ath12k *ar,
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
+	if (!arsta->ahsta || arsta->link_id == ATH12K_INVALID_LINK_ID) {
+		ath12k_dbg_level(ar->ab, ATH12K_DBG_PEER, ATH12K_DBG_L0,
+				 "skip unauthorize for stale link sta (link_id %u ahsta %p)\n",
+				 arsta->link_id, arsta->ahsta);
+		return 0;
+	}
+
 	ath12k_dp_peer_unauthorize(ar, ath12k_ahsta_to_sta(arsta->ahsta), arsta->link_id);
 
 	/* Driver must clear the keys during the state change from
@@ -17794,6 +17801,10 @@ skip_pri_link_selection:
 				spin_lock_bh(&tmp_ar->arsta_lock);
 				ath12k_link_sta_hlist_delete(tmp_ar, tmp_arsta);
 				spin_unlock_bh(&tmp_ar->arsta_lock);
+
+				if (ahsta->saved_link_sta[tmp_link_id] == tmp_arsta)
+					ahsta->saved_link_sta[tmp_link_id] = NULL;
+
 				kfree(tmp_arsta);
 
 				def_arsta = &ahsta->deflink;
