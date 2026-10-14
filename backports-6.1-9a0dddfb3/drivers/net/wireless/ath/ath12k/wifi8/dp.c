@@ -1170,6 +1170,54 @@ void ath12k_wifi8_reset_device_dp_stats(struct ath12k_dp *dp)
 	ath12k_wifi8_global_ast_stats_reset(dp);
 }
 
+static void ath12k_wifi8_dump_dp_peer_info(struct ath12k_dp *dp,
+					struct seq_file *file)
+{
+	struct ath12k_hw_group *ag = dp->ab->ag;
+	struct ath12k_hw *ah = ath12k_ag_to_ah(ag, 0);
+	struct ath12k_dp_hw *dp_hw = &ah->dp_hw;
+	struct ath12k_dp_peer *dp_peer;
+	unsigned int used, free_count, mlo = 0, non_mlo = 0, vdev = 0;
+	u16 peer_id;
+
+	spin_lock_bh(&dp_hw->peer_hash_lock);
+
+	used = bitmap_weight(dp_hw->free_peer_id_map, ATH12K_MAX_PEER_ID);
+	free_count = ATH12K_MAX_PEER_ID - used;
+
+	for_each_set_bit(peer_id, dp_hw->free_peer_id_map, ATH12K_MAX_PEER_ID) {
+		dp_peer = rcu_dereference(dp_hw->dp_peer_list[peer_id]);
+		if (!dp_peer)
+			continue;
+		if (dp_peer->is_vdev_peer)
+			vdev++;
+		else if (dp_peer->is_mlo)
+			mlo++;
+		else
+			non_mlo++;
+	}
+
+	seq_puts(file, "\nPeer ID stats:\n");
+	seq_puts(file, "--------------\n");
+	seq_printf(file, "total_peer_ids: %u in_use: %u free: %u\n",
+		   ATH12K_MAX_PEER_ID, used, free_count);
+	seq_printf(file, "mlo_peers: %u non_mlo_peers: %u vdev_peers: %u\n",
+		   mlo, non_mlo, vdev);
+
+	for_each_set_bit(peer_id, dp_hw->free_peer_id_map, ATH12K_MAX_PEER_ID) {
+		dp_peer = rcu_dereference(dp_hw->dp_peer_list[peer_id]);
+		if (!dp_peer)
+			continue;
+		seq_printf(file,
+			   "peer_id: %u addr: %pM vdev_peer: %d mlo: %d non_mlo: %d\n",
+			   peer_id, dp_peer->addr,
+			   dp_peer->is_vdev_peer, dp_peer->is_mlo,
+			   !dp_peer->is_mlo);
+	}
+
+	spin_unlock_bh(&dp_hw->peer_hash_lock);
+}
+
 static ssize_t ath12k_wifi8_dump_device_dp_stats(struct ath12k_dp *dp,
 						 char *buf, int size)
 {
@@ -1744,6 +1792,7 @@ static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 	.dump_srng_stats = ath12k_wifi8_dump_srng_stats,
 	.dump_device_dp_stats = ath12k_wifi8_dump_device_dp_stats,
 	.reset_device_dp_stats = ath12k_wifi8_reset_device_dp_stats,
+	.dump_dp_peer_info = ath12k_wifi8_dump_dp_peer_info,
 	.dp_assoc_link_update = ath12k_wifi8_dp_assoc_link_update,
 	.dp_tx_mcast_send = ath12k_wifi8_dp_tx_mcast_send,
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
