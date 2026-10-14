@@ -5609,13 +5609,6 @@ int ath12k_recovery_reconfig(struct ath12k_base *ab)
 		ath12k_dbg(ab, ATH12K_DBG_MODE1_RECOVERY, "assign chanctx is completed\n");
 	}
 
-	for (i = 0; i < ag->num_devices; i++) {
-		partner_ab = ag->ab[i];
-		if (partner_ab->is_bypassed)
-			continue;
-		clear_bit(ATH12K_FLAG_UMAC_RECOVERY_START, &partner_ab->dev_flags);
-	}
-
 	/* reconfig_link_bss */
 	for (j = 0; j < ab->num_radios; j++) {
 		pdev = &ab->pdevs[j];
@@ -5927,7 +5920,6 @@ void ath12k_core_trigger_partner_device_crash(struct ath12k_base *ab)
 		 * method to ensure recovery of all partner chips in MODE0 instead of
 		 * relying on firmware to crash partner chips
 		 */
-		clear_bit(ATH12K_FLAG_UMAC_RECOVERY_START, &partner_ab->dev_flags);
 		if (!test_bit(ATH12K_FLAG_RECOVERY, &partner_ab->dev_flags)) {
 			ath12k_info(ab, "sending fw_hang cmd to partner chipset(s)\n");
 			set_bit(ATH12K_FLAG_RECOVERY, &partner_ab->dev_flags);
@@ -6249,21 +6241,13 @@ static void ath12k_core_reset(struct work_struct *work)
 		 */
 
 		if (ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE0) {
-			if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_START, &partner_ab->dev_flags) ||
-			    test_bit(ATH12K_FLAG_RECOVERY, &partner_ab->dev_flags)) {
-				/* On receiving MHI Interrupt for pdev which is
-				 * already in UMAC Recovery, then fallback to
-				 * MODE0
+			if (test_bit(ATH12K_FLAG_RECOVERY, &partner_ab->dev_flags)) {
+				/* Fallback to MODE0 If any other partner is already
+				 * in Recovery.
 				 */
 				ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
 				ath12k_info(ab, "Recovery is falling back to Mode0 as one of the partner chip is already in recovery\n");
 				break;
-			} else {
-				/* Set dev flags to UMAC recovery START
-				 * and set flag to send teardown later
-				 */
-				ath12k_info(ab, "setting teardown to true\n");
-				set_bit(ATH12K_FLAG_UMAC_RECOVERY_START, &partner_ab->dev_flags);
 			}
 		}
 	}
@@ -6277,9 +6261,10 @@ static void ath12k_core_reset(struct work_struct *work)
 		ath12k_core_to_group_ref_put(ab);
 
 	if (ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE0) {
-		if (ath12k_core_trigger_umac_reset(ab, WMI_MLO_TEARDOWN_SSR_REASON)) {
-			/* Fallback to Mode0 if umac reset/peer_cleanup is
-			 * failed
+		if (ath12k_dp_umac_reset_in_progress(ab) ||
+		    ath12k_core_trigger_umac_reset(ab, WMI_MLO_TEARDOWN_SSR_REASON)) {
+			/* Fallback to Mode0 if umac_reset is already in progress or
+			 * teardown umac reset is failed.
 			 */
 			ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
 			/* TODO: DS: Handle any clean up necessary for Mode1 SSR */

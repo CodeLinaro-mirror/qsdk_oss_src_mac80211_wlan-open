@@ -7938,6 +7938,16 @@ static ssize_t ath12k_write_simulate_fw_crash(struct file *file,
 		return -EPERM;
 	}
 
+	/* ath12k_dp_umac_reset_in_progress() will internally use group level
+	 * umac_reset_info to check if umac-reset is in progress or not, so
+	 * checking on any one SOC instance is enough.
+	 */
+
+	if (ath12k_dp_umac_reset_in_progress(ab)) {
+		ath12k_err(ab, "UMAC reset in progress, try later\n");
+		return -EPERM;
+	}
+
 	if (!strcmp(buf, "assert")) {
 		ath12k_info(ab, "simulating firmware assert crash\n");
 		atomic_set(&ag->accept_cmd, 0);
