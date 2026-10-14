@@ -437,7 +437,7 @@ int ath12k_telemetry_get_phy_nf(struct ath12k *ar)
 	ar->debug.htt_stats.stats_req = stats_req;
 	spin_unlock_bh(&ar->data_lock);
 
-	ret = ath12k_debugfs_htt_stats_req(ar);
+	ret = ath12k_debugfs_htt_stats_req(ar, true);
 
 	/* Clear the pointer under data_lock before freeing stats_req.
 	 * ath12k_debugfs_htt_ext_stats_handler() accesses stats_req fields
