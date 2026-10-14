@@ -774,6 +774,8 @@ enum htt_stats_frametype {
  */
 #define HTT_RX_RING_SELECTION_CFG_CMD_PHY_ERR_MASK	GENMASK(31, 0)
 #define HTT_RX_RING_SELECTION_CFG_CMD_PHY_ERR_MASK_CONT	GENMASK(31, 0)
+#define HTT_RX_RING_SELECTION_CFG_CMD_PHY_ERR_MASK_CONT2	GENMASK(31, 0)
+#define HTT_RX_RING_SELECTION_CFG_CMD_PHY_ERR_MASK_CONT3	GENMASK(31, 0)
 
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO3_EN_TLV_PKT_OFFSET	BIT(0)
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO3_PKT_TLV_OFFSET	GENMASK(14, 1)
@@ -1133,6 +1135,8 @@ struct htt_rx_ring_selection_cfg_cmd {
 	__le32 fp_data_mpdu_tlv_filter0;
 	__le32 fpmo_data_mpdu_tlv_filter0;
 	__le32 info5;
+	__le32 phy_err_mask_cont2;
+	__le32 phy_err_mask_cont3;
 } __packed;
 
 #define HTT_RX_RING_TLV_DROP_THRESHOLD_VALUE	32
@@ -1223,6 +1227,8 @@ struct htt_rx_ring_tlv_filter {
 	u8 fp_phy_err_buf_dest;
 	u32 phy_err_mask;
 	u32 phy_err_mask_cont;
+	u32 phy_err_mask_cont2;
+	u32 phy_err_mask_cont3;
 	bool phy_err_filter_valid;
 	u8 fp_fpmo_data_mpdu_filter_in_en;
 	u32 fp_data_mpdu_tlv_filter0;
