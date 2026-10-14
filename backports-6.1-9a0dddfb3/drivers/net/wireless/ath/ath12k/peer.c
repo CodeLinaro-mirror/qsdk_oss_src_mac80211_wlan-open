@@ -1062,6 +1062,30 @@ exit:
 
 		ahsta->ar_bitmap &= ~BIT(ar->radio_idx);
 
+		/* Drop the teardown-path references to arsta before releasing
+		 * it.  ath12k_dp_cp_link_peer_unassign() clears links_map only
+		 * on its success path; it bails out early when the DP peer or
+		 * link peer is no longer in the hash.  The release below is
+		 * unconditional, so on those paths the link would keep its
+		 * links_map bit set with saved_link_sta[] pointing at freed
+		 * memory, and the state transitions that run after
+		 * sta_pre_rcu_remove() iterate links_map and fall back to
+		 * saved_link_sta[].
+		 *
+		 * If the bit is still set here, unassign() bailed out
+		 * early and this free would have left a dangling links_map bit.
+		 */
+		if (ahsta->links_map & BIT(link_id))
+			ath12k_warn(ar->ab,
+				    "arsta: stale links_map bit at free: %pM link_id %u links_map 0x%x arsta %p deflink %d pre_rcu %d mlo %d\n",
+				    addr, link_id, ahsta->links_map, arsta,
+				    arsta == &ahsta->deflink,
+				    ahsta->pre_rcu_remove_done,
+				    ath12k_ahsta_to_sta(ahsta)->mlo);
+
+		ahsta->links_map &= ~BIT(link_id);
+		ahsta->saved_link_sta[link_id] = NULL;
+
 		if (arsta == &ahsta->deflink) {
 			arsta->link_id = ATH12K_INVALID_LINK_ID;
 			arsta->ahsta = NULL;
