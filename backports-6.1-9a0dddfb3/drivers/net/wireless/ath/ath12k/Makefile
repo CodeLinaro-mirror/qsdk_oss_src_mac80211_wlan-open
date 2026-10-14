@@ -93,7 +93,8 @@ ath12k-$(CPTCFG_QCN_EXTN) += \
 	qcn_extns/cbs_extn.o \
 	qcn_extns/sdwf_extn.o \
 	qcn_extns/ranging_extn.o \
-	qcn_extns/mapc_extn.o
+	qcn_extns/mapc_extn.o \
+	qcn_extns/mac_extn.o
 
 
 ath12k-$(CPTCFG_EXT_IPA_OFFLOAD) += \
