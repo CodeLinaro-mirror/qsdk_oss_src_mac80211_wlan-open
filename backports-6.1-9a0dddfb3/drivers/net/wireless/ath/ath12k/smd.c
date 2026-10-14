@@ -760,6 +760,9 @@ static void ath12k_mac_smd_roam_config(struct ieee80211_hw *hw,
 		    (info->transitioning_links & BIT(link_id)))
 			arg.flags |= SMD_ROAM_CONFIG_FLAG_DISABLE_LINK;
 
+		if (role == SMD_ROAM_CONFIG_ROLE_STA && info->is_exec_via_tap)
+			arg.flags |= SMD_ROAM_CONFIG_FLAG_EXEC_VIA_TAP;
+
 		if (ahsta) {
 			arsta = wiphy_dereference(hw->wiphy, ahsta->link[link_id]);
 			if (WARN_ON(!arsta))
