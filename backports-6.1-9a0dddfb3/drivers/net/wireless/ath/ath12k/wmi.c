@@ -10172,6 +10172,14 @@ static int ath12k_service_ready_ext2_event(struct ath12k_base *ab,
 	}
 
 	ab->enh_aoa_caps = svc_rdy_ext2.enh_aoa_caps;
+
+	/*
+	 * Set hal->rssi_full_band_accuracy_en based on the
+	 * WMI_SERVICE_RSSI_DBADD_EWMA_MAXNF service bit.
+	 */
+	ab->hal.rssi_full_band_accuracy_en =
+		test_bit(WMI_SERVICE_RSSI_DBADD_EWMA_MAXNF,
+			 ab->wmi_ab.svc_map);
 	complete(&ab->wmi_ab.service_ready);
 
 	return 0;
@@ -18977,6 +18985,14 @@ static void ath12k_wmi_rssi_dbm_conversion_param_info(struct ath12k_base *ab,
 
 	rssi_offsets->rssi_offset = rssi_offsets->avg_nf_dbm +
 				    rssi_offsets->rssi_temp_offset;
+
+	/*
+	 * Cache the WMI_SERVICE_RSSI_LINEARITY_AND_THERM_CORRECTIONS service bit
+	 * avoiding service bit map reads for each PPDU.
+	 */
+	ar->use_linear_gain_corr =
+		test_bit(WMI_SERVICE_RSSI_LINEARITY_AND_THERM_CORRECTIONS,
+			 ab->wmi_ab.svc_map);
 
 	ath12k_dbg(ab, ATH12K_DBG_WMI,
 		   "RSSI offset updated, current offset is %d\n",
