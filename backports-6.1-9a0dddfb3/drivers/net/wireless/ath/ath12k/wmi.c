@@ -23162,6 +23162,9 @@ send_cmd:
 			continue;
 		}
 
+		if (arsta->ahsta->state < IEEE80211_STA_ASSOC)
+			continue;
+
 		dp_peer = ath12k_sta_get_dp_peer_wiphy_locked(wiphy, arsta->ahsta);
 		if (!dp_peer)
 			continue;
