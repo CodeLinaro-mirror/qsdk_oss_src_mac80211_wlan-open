@@ -44,6 +44,7 @@
 #include "qca-vendor.h"
 #include "telemetry.h"
 #include "ppe.h"
+#include "reg.h"
 #include "cfr.h"
 #ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/ini.h"
@@ -5441,6 +5442,87 @@ static int ath12k_core_clear_recovery_t2lm(struct ath12k_hw_group *ag)
  * without affecting the other active radio
  */
 
+/**
+ * ath12k_recovery_dfs_cac_invalidate() - Invalidate stale DFS CAC-done state
+ *                                        after SSR firmware recovery.
+ * @ar: the ath12k radio instance
+ * @arvif: the link VIF whose channel context to evaluate
+ *
+ * During SSR recovery the firmware radar detector is offline, so any prior
+ * CAC-done state (NL80211_DFS_AVAILABLE) is no longer valid and the upper
+ * layer must re-run CAC before resuming operation on the DFS channel.
+ *
+ * This function downgrades the channel from NL80211_DFS_AVAILABLE to
+ * NL80211_DFS_USABLE for:
+ *   - AP vdevs on any 5 GHz radar channel.
+ *   - STA vdevs when STA-DFS is enabled and the regulatory domain is ETSI
+ *     (ETSI mandates CAC on STA when the radar detector was offline).
+ *
+ * NOL safety: cfg80211_set_dfs_state() rewrites all subchannels in the
+ * chandef unconditionally for a non-UNAVAILABLE target.  For a wide chandef
+ * (e.g. 160 MHz covering ch100–128) a subchannel may legitimately be on NOL.
+ * cfg80211_chandef_dfs_available() returns %true only when every radar
+ * subchannel is at AVAILABLE, guaranteeing no active NOL entry is erased.
+ *
+ * Caller must hold the wiphy mutex.
+ */
+static void ath12k_recovery_dfs_cac_invalidate(struct ath12k *ar,
+					       struct ath12k_link_vif *arvif)
+{
+	struct wiphy *wiphy;
+	struct cfg80211_chan_def *def = &arvif->chanctx.def;
+	struct wireless_dev *wdev;
+	enum wmi_vdev_type vdev_type;
+	bool cac_running;
+
+	if (!ar->ah || !ar->ah->hw)
+		return;
+
+	wiphy = ar->ah->hw->wiphy;
+
+	if (!def->chan)
+		return;
+	if (def->chan->band != NL80211_BAND_5GHZ)
+		return;
+
+	if (cfg80211_chandef_dfs_required(wiphy, def, NL80211_IFTYPE_AP) <= 0)
+		return;
+
+	vdev_type = arvif->ahvif ? arvif->ahvif->vdev_type : WMI_VDEV_TYPE_MONITOR;
+
+	if (vdev_type == WMI_VDEV_TYPE_AP) {
+		if (ar->ab->dfs_region == ATH12K_DFS_REG_ETSI &&
+		    cfg80211_chandef_dfs_available(wiphy, def))
+			return;
+	} else if (vdev_type == WMI_VDEV_TYPE_STA &&
+		   wiphy->sta_dfs_en &&
+		   ar->ab->dfs_region == ATH12K_DFS_REG_ETSI) {
+		if (cfg80211_chandef_dfs_available(wiphy, def))
+			return;
+	}
+
+	cac_running = test_bit(ATH12K_FLAG_CAC_RUNNING, &ar->dev_flags);
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+		   "dfs cac invalidate: freq=%d cac_running=%d vdev_type=%d link=%u\n",
+		   def->chan->center_freq, cac_running, vdev_type, arvif->link_id);
+
+	wdev = ieee80211_vif_to_wdev(arvif->ahvif->vif);
+	if (!wdev || !wdev->netdev)
+		return;
+
+	cfg80211_set_dfs_state(wiphy, def, NL80211_DFS_USABLE);
+
+	if (!cac_running) {
+		cfg80211_radar_notify(wiphy, def,
+				      NL80211_RADAR_PRE_CAC_EXPIRED, GFP_KERNEL);
+		return;
+	}
+
+	cfg80211_cac_event(wdev->netdev, def, NL80211_RADAR_CAC_ABORTED,
+			   GFP_KERNEL, arvif->link_id);
+}
+
 int ath12k_recovery_reconfig(struct ath12k_base *ab)
 {
 	struct ath12k *ar = NULL;
@@ -5657,6 +5739,39 @@ skip_link_info:
 	}
 	ab->recovery_start = false;
 	ath12k_info(ab, "Mode %d recovery completed\n", ag->recovery_mode - 1);
+
+	/* Invalidate stale DFS CAC-done state so the upper layer re-runs CAC.
+	 * Applies to all recovery modes: in every mode the FW radar detector was
+	 * offline during the assert and any prior NL80211_DFS_AVAILABLE state is
+	 * no longer valid. Iterate all group devices so MLO partner radios are
+	 * also covered.
+	 */
+	for (i = 0; i < ag->num_devices; i++) {
+		partner_ab = ag->ab[i];
+		if (!partner_ab || partner_ab->is_bypassed)
+			continue;
+		for (j = 0; j < partner_ab->num_radios; j++) {
+			pdev = &partner_ab->pdevs[j];
+			ar = pdev->ar;
+			if (!ar)
+				continue;
+			if (!ar->mac.sbands[NL80211_BAND_5GHZ].n_channels)
+				continue;
+			list_for_each_entry_safe_reverse(arvif, tmp, &ar->arvifs, list) {
+				if (!arvif->ahvif)
+					continue;
+				/* Bridge vdevs and monitor vdevs do not participate
+				 * in DFS CAC — skip them.
+				 */
+				if (ath12k_mac_is_bridge_vdev(arvif))
+					continue;
+				if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR)
+					continue;
+				ath12k_recovery_dfs_cac_invalidate(ar, arvif);
+			}
+		}
+	}
+
 	ath12k_mac_reconfig_complete(ah->hw, IEEE80211_RECONFIG_TYPE_RESTART);
 	wiphy_unlock(ah->hw->wiphy);
 	return ret;
