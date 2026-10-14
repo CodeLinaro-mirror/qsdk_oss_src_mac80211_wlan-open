@@ -2198,7 +2198,18 @@ struct ath12k {
 #endif /* CPTCFG_QCN_EXTN */
 	u32 num_stations;
 	u32 max_num_stations;
-
+	/* monotonic per-radio counter used to assign a fresh cookie to each
+	 * new CRYPTO_TEST operation (frag_idx == 0); reused for that
+	 * operation's later fragments as echoed back by userspace.
+	 */
+	u32 crypto_test_cookie;
+	/* tracks whether WMI_PDEV_FIPS_MODE_SET_CMDID was last sent with
+	 * enable=1, so a repeated fips_mode_set with the same value is not
+	 * re-sent to firmware.
+	 */
+	bool crypto_test_mode_enabled;
+	bool crypto_test_frag_active;
+	u32 crypto_test_next_frag_idx;
 	/* protects the radio specific data like debug stats, ppdu_stats_info stats,
 	 * vdev_stop_status info, scan data, ath12k_sta info, ath12k_link_vif info,
 	 * channel context data, survey info, test mode data.
