@@ -13,6 +13,10 @@
 #include "dp_rx.h"
 #include "../hw.h"
 
+#ifdef CPTCFG_QCN_EXTN
+#include "qcn_extns/dp_mon2_extn.h"
+#endif
+
 #define HAL_TX_MON_WMASK_COMPACT_EN_CFG			0x1
 #define HAL_TX_MON_WMASK_PCU_PPDU_SETUP_INIT_CFG	0x1E800000
 #define HAL_TX_MON_WMASK_FES_SETUP_CFG			0x3
@@ -236,6 +240,9 @@ ath12k_wifi8_hal_mon_parse_vht_sig_a(const struct hal_rx_vht_sig_a_info *vht_sig
 	ppdu_info->vht_flag_values2 = ppdu_info->bw;
 	ppdu_info->vht_flag_values4 =
 		u32_get_bits(info1, HAL_RX_VHT_SIG_A_INFO_INFO1_SU_MU_CODING);
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_wifi8_hal_mon_parse_vht_sig_a_extn(vht_sig, ppdu_info);
+#endif
 }
 
 static __always_inline void
@@ -251,6 +258,9 @@ ath12k_wifi8_hal_mon_parse_ht_sig(const struct hal_rx_ht_sig_info *ht_sig,
 	ppdu_info->ldpc = u32_get_bits(info1, HAL_RX_HT_SIG_INFO_INFO1_FEC_CODING);
 	ppdu_info->gi = u32_get_bits(info1, HAL_RX_HT_SIG_INFO_INFO1_GI);
 	ppdu_info->nss = (ppdu_info->mcs >> 3) + 1;
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_wifi8_hal_mon_parse_ht_sig_extn(ht_sig, ppdu_info);
+#endif
 }
 
 static __always_inline u8
@@ -369,6 +379,9 @@ ath12k_wifi8_hal_mon_parse_l_sig_a(const struct hal_rx_lsig_a_info *lsiga,
 	}
 
 	ppdu_info->rate = rate;
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_wifi8_hal_mon_parse_l_sig_a_extn(lsiga, ppdu_info);
+#endif
 }
 
 static __always_inline void
@@ -584,6 +597,9 @@ ath12k_wifi8_hal_mon_parse_he_sig_mu(
 
 	ppdu_info->is_stbc = info1 &
 			     HAL_RX_HE_SIG_A_MU_DL_INFO1_STBC;
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_wifi8_hal_mon_parse_he_sig_mu_extn(he_sig_a_mu_dl, ppdu_info);
+#endif
 }
 
 static __always_inline void
@@ -734,6 +750,9 @@ ath12k_wifi8_hal_mon_parse_he_sig_su(const struct hal_rx_he_sig_a_su_info *he_si
 	dcm = u32_get_bits(info0, HAL_RX_HE_SIG_A_SU_INFO_INFO0_DCM);
 	ppdu_info->nss = u32_get_bits(info0, HAL_RX_HE_SIG_A_SU_INFO_INFO0_NSTS) + 1;
 	ppdu_info->dcm = dcm;
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_wifi8_hal_mon_parse_he_sig_su_extn(he_sig_a, ppdu_info);
+#endif
 }
 
 static __always_inline void
@@ -1423,6 +1442,10 @@ ath12k_wifi8_hal_mon_parse_eht_mumimo_user(const struct hal_eht_sig_mu_mimo *use
 	known |= IEEE80211_RADIOTAP_EHT_KNOWN_ENCODING_BLOCK_CRC_M |
 		 IEEE80211_RADIOTAP_EHT_KNOWN_ENCODING_BLOCK_TAIL_M;
 	eht_info->eht.known = cpu_to_le32(known);
+
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_wifi8_hal_mon_parse_eht_mumimo_user_extn(user, ppdu_info);
+#endif
 }
 
 static __always_inline void
@@ -1464,7 +1487,6 @@ ath12k_wifi8_hal_mon_parse_eht_non_mumimo_user(const struct hal_eht_sig_non_mu_m
 
 	ppdu_info->nss = le32_get_bits(user->info0,
 				       HAL_RX_EHT_SIG_NON_MUMIMO_USER_INFO0_NSS) + 1;
-
 	data = __le32_to_cpu(eht_info->eht.data[7]);
 	data |= ATH12K_LE32_DEC_ENC(user->info0,
 				    HAL_RX_EHT_SIG_NON_MUMIMO_USER_INFO0_CRC,
@@ -1475,6 +1497,11 @@ ath12k_wifi8_hal_mon_parse_eht_non_mumimo_user(const struct hal_eht_sig_non_mu_m
 	known |= IEEE80211_RADIOTAP_EHT_KNOWN_ENCODING_BLOCK_CRC_M |
 		 IEEE80211_RADIOTAP_EHT_KNOWN_ENCODING_BLOCK_TAIL_M;
 	eht_info->eht.known = cpu_to_le32(known);
+
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_wifi8_hal_mon_parse_eht_non_mumimo_user_extn(user, ppdu_info);
+#endif
+
 }
 
 static __always_inline bool
@@ -1831,6 +1858,9 @@ ath12k_wifi8_hal_mon_parse_uhr_mumimo_user(const struct hal_uhr_sig_mu_mimo *use
 				       HAL_RX_UHR_SIG_MUMIMO_USER_INFO0_MCS);
 	ppdu_info->ldpc = le32_get_bits(user->info0,
 					HAL_RX_UHR_SIG_MUMIMO_USER_INFO0_LDPC_MODE);
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_wifi8_hal_mon_parse_uhr_mumimo_user_extn(user, ppdu_info);
+#endif
 }
 
 static __always_inline void
@@ -1933,6 +1963,9 @@ ath12k_wifi8_hal_mon_parse_uhr_non_mumimo_user(const struct hal_uhr_sig_non_mu_m
 				       HAL_RX_UHR_SIG_NON_MUMIMO_USER_INFO0_NSS) + 1;
 	ppdu_info->ldpc = le32_get_bits(user->info0,
 					HAL_RX_UHR_SIG_NON_MUMIMO_USER_INFO0_LDPC);
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_wifi8_hal_mon_parse_uhr_non_mumimo_user_extn(user, ppdu_info);
+#endif
 }
 
 static __always_inline void
@@ -3191,6 +3224,9 @@ ath12k_wifi8_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 		ppdu_info->tsft = (ppdu_info->tsft << 32) |
 				   __le32_to_cpu(ppdu_rx_duration->wb_timestamp_lower_32);
 		ath12k_wifi8_hal_mon_get_bb_info(tlv_data, tlv_len, ppdu_info);
+#ifdef CPTCFG_QCN_EXTN
+		ath12k_wifi8_hal_rx_get_phyrx_abort(ppdu_info, tlv_data);
+#endif
 		break;
 	}
 	case HAL_RX_MPDU_START: {
