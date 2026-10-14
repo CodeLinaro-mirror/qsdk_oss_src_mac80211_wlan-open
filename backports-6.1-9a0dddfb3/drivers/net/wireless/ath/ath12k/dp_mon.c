@@ -963,7 +963,7 @@ static void ath12k_dp_rx_fill_rate_info(struct rate_info *rate,
 	case HAL_RX_PREAMBLE_11N:
 		if (mcs > HAL_RX_MAX_MCS_HT)
 			return;
-		rate->mcs = mcs + 8 * (nss - 1);
+		rate->mcs = mcs;
 		rate->flags = RATE_INFO_FLAGS_MCS;
 		if (ppdu_info->sgi)
 			rate->flags |= RATE_INFO_FLAGS_SHORT_GI;
