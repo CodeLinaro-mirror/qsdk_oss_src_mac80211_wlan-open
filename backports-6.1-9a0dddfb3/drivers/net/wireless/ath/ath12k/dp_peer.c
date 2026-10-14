@@ -2938,7 +2938,8 @@ static void ath12k_mac_dp_peer_cleanup_cb(struct ath12k_pdev_dp *dp_pdev,
 
 		/*vdev peer cleanup is taken care later*/
 		if (ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE2 &&
-		    !dp_peer->is_vdev_peer && dp_peer->peer_links_map == 0) {
+		    !dp_peer->is_vdev_peer && dp_peer->peer_links_map == 0 &&
+		    !dp->global_peer_id_supported) {
 			ath12k_dbg_level(ab, ATH12K_DBG_MAC | ATH12K_DBG_PEER,
 					 ATH12K_DBG_L0,
 					 "dp_peer %pM dosent have active link_peers\n",
@@ -3015,6 +3016,7 @@ void ath12k_dp_peer_cleanup_all(struct ath12k *ar)
 
 	/*Link peer cleanup part*/
 	list_for_each_entry_safe(link_peer, tmp_link_peer, &ctx.link_peers, list) {
+		dp_peer = link_peer->dp_peer;
 		if (ath12k_dp_link_peer_get_sta(link_peer) && link_peer->dp_peer &&
 		    ath12k_dp_arch_mlo_peer_tid_teardown_ready(dp, link_peer->dp_peer,
 							       link_peer)) {
@@ -3023,6 +3025,10 @@ void ath12k_dp_peer_cleanup_all(struct ath12k *ar)
 
 				del_timer_sync(&rx_tid->frag_timer);
 			}
+			if (!link_peer->mlo)
+				ath12k_dp_arch_peer_drv_cleanup(dp,
+								dp_peer->peer_id,
+								ar->hw_link_id);
 		}
 		link_peer->dp_peer = NULL;
 		ath12k_link_peer_free(link_peer);
