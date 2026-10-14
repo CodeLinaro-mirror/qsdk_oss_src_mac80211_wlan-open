@@ -22957,6 +22957,20 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 
 	lockdep_assert_wiphy(hw->wiphy);
 
+	if (vif->type == NL80211_IFTYPE_MONITOR) {
+		link_id = ahvif->deflink.link_id;
+		arvif = wiphy_dereference(hw->wiphy, ahvif->link[link_id]);
+		if (!arvif || !arvif->ar)
+			return;
+
+		/* monitor may already have been deleted when chan_ctx is unassigned */
+		if (!arvif->ar->monitor_vdev_created) {
+			ath12k_warn(arvif->ar->ab,
+				    "monitor vdev %u is already deleted", arvif->vdev_id);
+			return;
+		}
+	}
+
 	if (vif->type == NL80211_IFTYPE_AP) {
 		ath12k_me_db_deinit(&ahvif->dp_vif);
 		ath12k_dbg(NULL, ATH12K_DBG_MAC,
