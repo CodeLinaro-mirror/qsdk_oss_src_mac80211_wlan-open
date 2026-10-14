@@ -5017,9 +5017,9 @@ ath12k_wifi8_dp_tx_proceed_drop(struct ath12k_wifi8_dp_congestion_control *congs
 
 		if (!dp_peer) {
 			rcu_read_unlock();
-			ath12k_info(ab,
-				    "peer find failed for flow peer_id %d flow_type %d tid %d\n",
-				    peer_id, flow_type, tid_num);
+			ath12k_dbg(ab, ATH12K_DBG_DP_TX,
+				   "peer find failed for flow peer_id %d flow_type %d tid %d\n",
+				   peer_id, flow_type, tid_num);
 			continue;
 		}
 
