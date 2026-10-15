@@ -396,7 +396,8 @@ void athdbg_collect_minidump(struct athdbg_request *dbg_req,
 	int val = 0;
 
 	if (!dbg_req)
-		goto exit;
+		return;
+
 	if (minidump_state != ENABLE_MINIDUMP)
 		goto exit;
 	if (kstrtou32(dbg_req->input_buf, 0, &val))
@@ -416,7 +417,8 @@ static void athdbg_show_all_minidump_struct(struct athdbg_request *dbg_req)
 	int val = 0;
 
 	if (!dbg_req)
-		goto exit;
+		return;
+
 	if (minidump_state != ENABLE_MINIDUMP)
 		goto exit;
 	if (kstrtou32(dbg_req->input_buf, 0, &val))
@@ -432,7 +434,8 @@ exit:
 static void athdbg_add_struct_to_minidump(struct athdbg_request *dbg_req)
 {
 	if (!dbg_req)
-		goto exit;
+		return;
+
 	if (minidump_state != ENABLE_MINIDUMP)
 		goto exit;
 
@@ -449,7 +452,8 @@ static void athdbg_minidump_collect_struct(struct athdbg_request *dbg_req,
 							struct ath12k_base *ab)
 {
 	if (!dbg_req)
-		goto exit;
+		return;
+
 	if (minidump_state != ENABLE_MINIDUMP)
 		goto exit;
 
@@ -469,7 +473,7 @@ static void athdbg_show_minidump_entries(struct athdbg_request *dbg_req)
 	int val = 0;
 
 	if (!dbg_req)
-		goto exit;
+		return;
 	if (minidump_state != ENABLE_MINIDUMP)
 		goto exit;
 	if (kstrtou32(dbg_req->input_buf, 0, &val))
@@ -494,7 +498,8 @@ static void athdbg_disable_minidump(struct athdbg_request *dbg_req)
 	int val = 0;
 
 	if (!dbg_req)
-		goto exit;
+		return;
+
 	if (kstrtou32(dbg_req->input_buf, 0, &val))
 		goto exit;
 
