@@ -267,10 +267,7 @@ int ath12k_hw_qcn9625_parse_cfr_enh_dma_hdr(struct ath12k *ar, u8 *data,
 		capture_type = CFR_CAPTURE_METHOD_AUTO;
 	}
 
-	/* header_size is already in bytes for the wifi8 layout, unlike
-	 * ath12k_cfir_enh_dma_hdr.length (words) on wifi7.
-	 */
-	*length = common_hdr.header_size;
+	*length = common_hdr.header_size * 4;
 	*length += common_hdr.payload_size;
 
 	lut->dbr_ppdu_id = common_hdr.phy_ppdu_id;
