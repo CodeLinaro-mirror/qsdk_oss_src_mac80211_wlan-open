@@ -447,6 +447,7 @@ reset_mpdu_info:
 	ppdu_info->mpdu_info[user_id].truncated = false;
 	ppdu_info->mpdu_info[user_id].mpdu_start_received = false;
 	ppdu_info->mpdu_info[user_id].full_pkt = false;
+	ppdu_info->mpdu_info[user_id].fcs_err = false;
 }
 
 static int
@@ -1000,6 +1001,7 @@ ath12k_wifi7_dp_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	struct ieee80211_rx_status rxs = {0};
 	int freq_update = -1, ret = 0;
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct ath12k_dp_mon_mpdu_meta *mpdu_meta;
 
 	ath12k_dp_mon_fill_rx_stats_info(ppdu_info, &rxs);
 
@@ -1014,7 +1016,8 @@ ath12k_wifi7_dp_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	if (skb_shinfo(mpdu)->nr_frags)
 		rxs.flag |= RX_FLAG_AMSDU_MORE;
 
-	if (ppdu_info->mpdu_info[ppdu_info->user_id].fcs_err)
+	mpdu_meta = (struct ath12k_dp_mon_mpdu_meta *)mpdu->data;
+	if (mpdu_meta->fcs_err)
 		rxs.flag |= RX_FLAG_FAILED_FCS_CRC;
 
 	ath12k_dp_mon_rx_process_dest_pktlog(dp_pdev, mpdu, ppdu_info);
