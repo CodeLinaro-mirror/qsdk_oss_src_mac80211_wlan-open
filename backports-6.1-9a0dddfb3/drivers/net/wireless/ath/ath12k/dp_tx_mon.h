@@ -168,9 +168,11 @@ struct ath12k_ext_mon_pkt_config;
  * @skb_alloc_failed: failures allocating skb for a new MPDU during PPDU reconstruction
  * @ring_extract_failed: failures reading the next entry from the TX mon destination ring
  * @get_num_users_failed: failures parsing the number of users from the PPDU start TLV
+ * @spl_pkt_cap_stats: Frames of different types (ARP, EAPOL, DHCP, DNS, ICMP, MGMT)
  * @frames_drop_in_sw: frames dropped by host in ext_mon filtering
  * @custom_call_back_delivered: frames delivered via notifier chain
  * @wmi_peer_send_failed: wmi peer command send failed
+ * @spc_bitmap: special packet bitmap programmed
  */
 struct ath12k_pdev_tx_mon_stats {
 	/* Tasklet related stats */
@@ -218,6 +220,7 @@ struct ath12k_pdev_tx_mon_stats {
 	u32 frames_drop_in_sw;
 	u32 wmi_peer_send_failed;
 	u32 custom_call_back_delivered;
+	u32 spc_bitmap;
 };
 
 /**

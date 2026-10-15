@@ -3803,7 +3803,9 @@ static u32 ath12k_get_tx_mon_stats_attr_size(void)
 {
 	u32 payload_size;
 
-	payload_size = nla_total_size(sizeof(u32)) * QCA_VENDOR_ATTR_TX_MON_STATS_MAX;
+	payload_size = nla_total_size(sizeof(u32)) *
+		       (QCA_VENDOR_ATTR_TX_MON_STATS_MAX - 1);
+	payload_size += nla_total_size(sizeof(u32) * ATH12K_DP_MON_TX_SPC_PKT_ID_MAX);
 	return nla_total_size_nested(payload_size);
 }
 
@@ -10511,6 +10513,19 @@ static int ath12k_fill_radio_tx_mon_stats(struct sk_buff *vendor_event,
 			pdev_tx_mon_stats->custom_call_back_delivered)) {
 		ath12k_err(NULL, "nla put failure: tx mon stats: %s",
 			   "frames delivered via custom call back");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_SPC_BITMAP,
+			pdev_tx_mon_stats->spc_bitmap)) {
+		ath12k_err(NULL, "nla put failure: tx mon stats: spc bitmap");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_SPC_PKT_COUNTS,
+		    sizeof(pdev_tx_mon_stats->spl_pkt_cap_stats),
+		    pdev_tx_mon_stats->spl_pkt_cap_stats)) {
+		ath12k_err(NULL, "nla put failure: tx mon stats: spc pkt counts");
 		return -EMSGSIZE;
 	}
 
