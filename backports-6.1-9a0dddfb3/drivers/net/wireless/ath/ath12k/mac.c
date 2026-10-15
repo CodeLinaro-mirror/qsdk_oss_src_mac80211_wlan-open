@@ -21688,6 +21688,8 @@ void ath12k_mac_op_stop(struct ieee80211_hw *hw, bool suspend)
 	mutex_lock(&ah->hw_mutex);
 
 	ah->state = ATH12K_HW_STATE_OFF;
+	/* TODO: Clear stale regulatory state when resetting regd_updated. */
+	ah->regd_updated = false;
 
 	for_each_ar(ah, ar, i) {
 		if (ar->ab->is_bypassed)

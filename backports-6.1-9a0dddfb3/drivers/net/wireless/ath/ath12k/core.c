@@ -3794,6 +3794,10 @@ static void ath12k_core_post_reconfigure_recovery(struct ath12k_base *ab)
 		switch (ah->state) {
 		case ATH12K_HW_STATE_ON:
 			ah->state = ATH12K_HW_STATE_RESTARTING;
+			/* TODO: Clear stale regulatory state when resetting
+			 * regd_updated.
+			 **/
+			ah->regd_updated = false;
 			break;
 		case ATH12K_HW_STATE_OFF:
 			ath12k_warn(ab,
