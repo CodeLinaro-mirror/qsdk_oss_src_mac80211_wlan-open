@@ -465,7 +465,13 @@ ath12k_reg_notifier(struct wiphy *wiphy, struct regulatory_request *request)
 	}
 
 	if (!ath12k_regdom_changes(hw, request->alpha2)) {
-		ath12k_dbg(ar->ab, ATH12K_DBG_REG, "Country is already set\n");
+		const struct ieee80211_regdomain *regd =
+						rcu_dereference_rtnl(wiphy->regd);
+		ath12k_dbg(ar->ab, ATH12K_DBG_REG,
+			   "regd request %c%c : country already %c%c\n",
+			   request->alpha2[0], request->alpha2[1],
+			   regd ? regd->alpha2[0] : '?',
+			   regd ? regd->alpha2[1] : '?');
 		return;
 	}
 
@@ -639,8 +645,8 @@ int ath12k_regd_update(struct ath12k *ar, bool init)
 	 */
 	if (ah->regd_updated) {
 		ath12k_dbg(ab, ATH12K_DBG_REG,
-			   "regd already updated for ah, curr pdev id %u\n",
-			   ar->pdev_idx);
+			   "regd already updated for ah, curr pdev id %u country %c%c\n",
+			   ar->pdev_idx, ar->alpha2[0], ar->alpha2[1]);
 		return 0;
 	}
 
@@ -683,6 +689,9 @@ int ath12k_regd_update(struct ath12k *ar, bool init)
 	 */
 	if (strncmp(regd->alpha2, "00", 2) &&
 	    (ah->use_6ghz_regd && !ar->supports_6ghz)) {
+		ath12k_dbg(ab, ATH12K_DBG_REG,
+			   "non 6ghz regd update deferred pdev %u country %c%c:\n",
+			   ar->pdev_idx, regd->alpha2[0], regd->alpha2[1]);
 		spin_unlock_bh(&ab->base_lock);
 		return 0;
 	}
@@ -744,11 +753,10 @@ int ath12k_regd_update(struct ath12k *ar, bool init)
 	if (ret)
 		goto err;
 
-	if (ah->state != ATH12K_HW_STATE_ON)
-		goto skip;
-
 	ah->regd_updated = true;
-skip:
+	ath12k_dbg(ab, ATH12K_DBG_REG,
+		   "regd updated pdev %u country %c%c\n",
+		   ar->pdev_idx, regd->alpha2[0], regd->alpha2[1]);
 	return 0;
 err:
 	ath12k_warn(ab, "failed to perform regd update : %d\n", ret);
