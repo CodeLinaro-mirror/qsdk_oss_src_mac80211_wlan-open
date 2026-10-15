@@ -409,18 +409,34 @@ ath12k_debugfs_sta_update_misc(struct ath12k_dp_link_peer *peer,
 static int
 ath12k_dbg_sta_open_htt_peer_stats(struct inode *inode, struct file *file)
 {
-	struct ieee80211_link_sta *link_sta = inode->i_private;
-	struct ieee80211_sta *sta = link_sta->sta;
-	u8 link_id = link_sta->link_id;
-	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
-	struct ath12k_hw *ah = ahsta->ahvif->ah;
+	struct ath12k_htt_peer_stats_ctx *ctx = inode->i_private;
+	struct ieee80211_sta *sta;
+	u8 link_id = ctx->link_id;
+	struct ath12k_sta *ahsta;
+	struct ath12k_hw *ah = ctx->ah;
 	struct ath12k_link_sta *arsta;
 	struct ath12k *ar;
 	struct debug_htt_stats_req *stats_req;
+	unsigned int sta_link_id = ctx->link_id;
 	int type;
 	int ret;
 
 	mutex_lock(&ah->hw_mutex);
+
+	rcu_read_lock();
+	sta = ieee80211_find_sta_by_link_addrs(ah->hw, ctx->peer_addr, NULL,
+					       &sta_link_id);
+	rcu_read_unlock();
+	if (!sta) {
+		ret = -ENOENT;
+		goto err_unlock;
+	}
+
+	ahsta = ath12k_sta_to_ahsta(sta);
+	if (!ahsta) {
+		ret = -ENOENT;
+		goto err_unlock;
+	}
 
 	if (!(BIT(link_id) & ahsta->links_map)) {
 		ret = -ENOENT;
@@ -437,17 +453,15 @@ ath12k_dbg_sta_open_htt_peer_stats(struct inode *inode, struct file *file)
 	}
 
 	ar = arsta->arvif->ar;
+	rcu_read_unlock();
 
 	type = ar->debug.htt_stats.type;
 	if ((type != ATH12K_DBG_HTT_EXT_STATS_PEER_INFO &&
 	     type != ATH12K_DBG_HTT_EXT_PEER_CTRL_PATH_TXRX_STATS) ||
 	     type == ATH12K_DBG_HTT_EXT_STATS_RESET) {
 		ret = -EPERM;
-		rcu_read_unlock();
 		goto err_unlock;
 	}
-
-	rcu_read_unlock();
 
 	stats_req = vzalloc(sizeof(*stats_req) + ATH12K_HTT_STATS_BUF_SIZE);
 	if (!stats_req) {
@@ -457,8 +471,8 @@ ath12k_dbg_sta_open_htt_peer_stats(struct inode *inode, struct file *file)
 
 	ar->debug.htt_stats.stats_req = stats_req;
 	stats_req->type = type;
-	memcpy(stats_req->peer_addr, link_sta->addr, ETH_ALEN);
-	ret = ath12k_debugfs_htt_stats_req(ar);
+	memcpy(stats_req->peer_addr, ctx->peer_addr, ETH_ALEN);
+	ret = ath12k_debugfs_htt_stats_req(ar, false);
 	if (ret < 0)
 		goto out;
 
@@ -479,15 +493,27 @@ err_unlock:
 static int
 ath12k_dbg_sta_release_htt_peer_stats(struct inode *inode, struct file *file)
 {
-	struct ieee80211_link_sta *link_sta = inode->i_private;
-	struct ieee80211_sta *sta = link_sta->sta;
-	u8 link_id = link_sta->link_id;
-	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
-	struct ath12k_hw *ah = ahsta->ahvif->ah;
+	struct ath12k_htt_peer_stats_ctx *ctx = inode->i_private;
+	struct ieee80211_sta *sta;
+	u8 link_id = ctx->link_id;
+	struct ath12k_sta *ahsta;
+	struct ath12k_hw *ah = ctx->ah;
 	struct ath12k_link_sta *arsta;
-	struct ath12k *ar;
+	struct ath12k *ar = NULL;
+	unsigned int sta_link_id = ctx->link_id;
 
 	mutex_lock(&ah->hw_mutex);
+
+	rcu_read_lock();
+	sta = ieee80211_find_sta_by_link_addrs(ah->hw, ctx->peer_addr, NULL,
+					       &sta_link_id);
+	rcu_read_unlock();
+	if (!sta) {
+		mutex_unlock(&ah->hw_mutex);
+		return -ENOENT;
+	}
+
+	ahsta = ath12k_sta_to_ahsta(sta);
 
 	if (!(BIT(link_id) & ahsta->links_map)) {
 		mutex_unlock(&ah->hw_mutex);
@@ -1150,12 +1176,12 @@ ath12k_write_htt_peer_stats_reset(struct file *file,
 				  const char __user *user_buf,
 				  size_t count, loff_t *ppos)
 {
-	struct ieee80211_link_sta *link_sta = file->private_data;
-	struct ieee80211_sta *sta = link_sta->sta;
-	u8 link_id = link_sta->link_id;
-	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
-	struct ath12k_hw *ah = ahsta->ahvif->ah;
+	struct ath12k_htt_peer_stats_ctx *ctx = file->private_data;
+	struct ath12k_hw *ah = ctx->ah;
+	u8 link_id = ctx->link_id;
 	struct ath12k_link_sta *arsta;
+	struct ath12k_sta *ahsta;
+	struct ieee80211_sta *sta;
 	struct ath12k *ar;
 	struct htt_ext_stats_cfg_params cfg_params = { 0 };
 	int ret;
@@ -1169,6 +1195,15 @@ ath12k_write_htt_peer_stats_reset(struct file *file,
 		return ret;
 
 	mutex_lock(&ah->hw_mutex);
+
+	rcu_read_lock();
+	sta = ieee80211_find_sta_by_link_addrs(ah->hw, ctx->peer_addr, NULL, NULL);
+	rcu_read_unlock();
+	if (!sta) {
+		mutex_unlock(&ah->hw_mutex);
+		return -ENOENT;
+	}
+	ahsta = ath12k_sta_to_ahsta(sta);
 
 	if (!(BIT(link_id) & ahsta->links_map)) {
 		mutex_unlock(&ah->hw_mutex);
@@ -1193,13 +1228,13 @@ ath12k_write_htt_peer_stats_reset(struct file *file,
 
 	cfg_params.cfg1 = HTT_STAT_DEFAULT_PEER_REQ_TYPE;
 
-	cfg_params.cfg2 |= FIELD_PREP(GENMASK(7, 0), link_sta->addr[0]);
-	cfg_params.cfg2 |= FIELD_PREP(GENMASK(15, 8), link_sta->addr[1]);
-	cfg_params.cfg2 |= FIELD_PREP(GENMASK(23, 16), link_sta->addr[2]);
-	cfg_params.cfg2 |= FIELD_PREP(GENMASK(31, 24), link_sta->addr[3]);
+	cfg_params.cfg2 |= FIELD_PREP(GENMASK(7, 0), ctx->peer_addr[0]);
+	cfg_params.cfg2 |= FIELD_PREP(GENMASK(15, 8), ctx->peer_addr[1]);
+	cfg_params.cfg2 |= FIELD_PREP(GENMASK(23, 16), ctx->peer_addr[2]);
+	cfg_params.cfg2 |= FIELD_PREP(GENMASK(31, 24), ctx->peer_addr[3]);
 
-	cfg_params.cfg3 |= FIELD_PREP(GENMASK(7, 0), link_sta->addr[4]);
-	cfg_params.cfg3 |= FIELD_PREP(GENMASK(15, 8), link_sta->addr[5]);
+	cfg_params.cfg3 |= FIELD_PREP(GENMASK(7, 0), ctx->peer_addr[4]);
+	cfg_params.cfg3 |= FIELD_PREP(GENMASK(15, 8), ctx->peer_addr[5]);
 
 	cfg_params.cfg3 |= ATH12K_HTT_PEER_STATS_RESET;
 
@@ -2160,7 +2195,7 @@ static const struct file_operations fops_reset_rx_stats = {
 static void
 ath12k_debugfs_htt_peer_stats_create_arsta(struct ath12k *ar,
 					   struct ath12k_link_sta *arsta,
-					   struct ieee80211_link_sta *link_sta)
+					   struct ath12k_htt_peer_stats_ctx *htt_ctx)
 {
 	struct dentry *file;
 
@@ -2177,13 +2212,13 @@ ath12k_debugfs_htt_peer_stats_create_arsta(struct ath12k *ar,
 
 	debugfs_create_file("htt_peer_stats", 0400,
 			    arsta->debugfs_dir,
-			    link_sta, &fops_htt_peer_stats);
+			    htt_ctx, &fops_htt_peer_stats);
 }
 
 static void
 ath12k_debugfs_htt_peer_stats_reset_create_arsta(struct ath12k *ar,
 						  struct ath12k_link_sta *arsta,
-						  struct ieee80211_link_sta *link_sta)
+					       struct ath12k_htt_peer_stats_ctx *htt_ctx)
 {
 	struct dentry *file;
 
@@ -2204,7 +2239,7 @@ ath12k_debugfs_htt_peer_stats_reset_create_arsta(struct ath12k *ar,
 
 	debugfs_create_file("htt_peer_stats_reset", 0600,
 			    arsta->debugfs_dir,
-			    link_sta, &fops_htt_peer_stats_reset);
+			    htt_ctx, &fops_htt_peer_stats_reset);
 }
 
 static bool ath12k_htt_stats_type_is_peer(enum ath12k_dbg_htt_ext_stats_type type)
@@ -2221,6 +2256,7 @@ void ath12k_debugfs_link_sta_op_add(struct ieee80211_hw *hw,
 	struct ath12k *ar;
 	struct ath12k_sta *ahsta;
 	struct ath12k_link_sta *arsta;
+	struct ath12k_htt_peer_stats_ctx *htt_ctx __free(kfree) = NULL;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
@@ -2256,15 +2292,26 @@ void ath12k_debugfs_link_sta_op_add(struct ieee80211_hw *hw,
 	 * this radio, create the entry immediately for this newly associated
 	 * link
 	 */
-	if (ath12k_htt_stats_type_is_peer(ar->debug.htt_stats.type))
-		ath12k_debugfs_htt_peer_stats_create_arsta(ar, arsta, link_sta);
+	if (ath12k_htt_stats_type_is_peer(ar->debug.htt_stats.type)) {
+		htt_ctx = kzalloc(sizeof(*htt_ctx), GFP_KERNEL);
 
-	/* htt_peer_stats_reset is created on demand alongside htt_peer_stats
-	 * when htt_stats_type is set to a peer-stats type (11 or 29), provided
-	 * the firmware advertises WMI_TLV_SERVICE_PER_PEER_HTT_STATS_RESET.
-	 */
-	if (ath12k_htt_stats_type_is_peer(ar->debug.htt_stats.type))
-		ath12k_debugfs_htt_peer_stats_reset_create_arsta(ar, arsta, link_sta);
+		if (htt_ctx) {
+			htt_ctx->ah = ath12k_ar_to_ah(ar);
+			htt_ctx->link_id = link_sta->link_id;
+			memcpy(htt_ctx->peer_addr, link_sta->addr, ETH_ALEN);
+
+			ath12k_debugfs_htt_peer_stats_create_arsta(ar, arsta, htt_ctx);
+
+			/* htt_peer_stats_reset is created on demand alongside
+			 * htt_peer_stats when htt_stats_type is set to a peer-stats
+			 * type (11 or 29), provided the firmware advertises
+			 * WMI_TLV_SERVICE_PER_PEER_HTT_STATS_RESET.
+			 */
+
+			ath12k_debugfs_htt_peer_stats_reset_create_arsta(ar, arsta,
+								   no_free_ptr(htt_ctx));
+		}
+	}
 
 	if (ath12k_dp_qos_msduq_stats_enabled(&ar->dp))
 		debugfs_create_file("qos_msduq", 0400, dir, link_sta->sta,
@@ -2292,6 +2339,56 @@ struct ath12k_htt_peer_stats_iter_data {
 	struct ath12k *ar;
 	bool create;
 };
+
+void
+ath12k_debugfs_htt_peer_stats_remove_arsta(struct ath12k_link_sta *arsta)
+{
+	struct dentry *dentry;
+	struct ath12k_htt_peer_stats_ctx *ctx = NULL;
+
+	lockdep_assert_wiphy(ath12k_ar_to_hw(arsta->arvif->ar)->wiphy);
+
+	if (!arsta->debugfs_dir)
+		return;
+
+	dentry = debugfs_lookup("htt_peer_stats", arsta->debugfs_dir);
+	if (dentry) {
+		ctx = d_inode(dentry)->i_private;
+		dput(dentry);
+		debugfs_lookup_and_remove("htt_peer_stats", arsta->debugfs_dir);
+	}
+
+	dentry = debugfs_lookup("htt_peer_stats_reset", arsta->debugfs_dir);
+	if (dentry) {
+		dput(dentry);
+		debugfs_lookup_and_remove("htt_peer_stats_reset", arsta->debugfs_dir);
+	}
+
+	kfree(ctx);
+}
+EXPORT_SYMBOL(ath12k_debugfs_htt_peer_stats_remove_arsta);
+
+static bool
+ath12k_debugfs_htt_peer_stats_create(struct ath12k *ar,
+				     struct ath12k *link_ar,
+				     struct ath12k_link_sta *arsta,
+				     struct ieee80211_link_sta *link_sta)
+{
+	struct ath12k_htt_peer_stats_ctx *htt_ctx __free(kfree) =
+		kzalloc(sizeof(*htt_ctx), GFP_KERNEL);
+
+	if (WARN_ON_ONCE(!htt_ctx))
+		return false;
+
+	htt_ctx->ah = ath12k_ar_to_ah(ar);
+	htt_ctx->link_id = link_sta->link_id;
+	memcpy(htt_ctx->peer_addr, link_sta->addr, ETH_ALEN);
+	ath12k_debugfs_htt_peer_stats_create_arsta(link_ar, arsta, htt_ctx);
+	ath12k_debugfs_htt_peer_stats_reset_create_arsta(link_ar, arsta,
+							 no_free_ptr(htt_ctx));
+
+	return true;
+}
 
 static void
 ath12k_debugfs_htt_peer_stats_iter(void *data, struct ieee80211_sta *sta)
@@ -2327,13 +2424,14 @@ ath12k_debugfs_htt_peer_stats_iter(void *data, struct ieee80211_sta *sta)
 			link_sta = rcu_dereference_protected(sta_ptr->link[link_id],
 				lockdep_is_held(&wiphy->mtx));
 			if (link_sta) {
-				ath12k_debugfs_htt_peer_stats_create_arsta(link_ar,
-									   arsta,
-									   link_sta);
-				ath12k_debugfs_htt_peer_stats_reset_create_arsta(link_ar,
-									     arsta,
-									     link_sta);
+				if (!ath12k_debugfs_htt_peer_stats_create(ar,
+									  link_ar,
+									  arsta,
+									  link_sta))
+					return;
 			}
+		} else {
+			ath12k_debugfs_htt_peer_stats_remove_arsta(arsta);
 		}
 	}
 }
