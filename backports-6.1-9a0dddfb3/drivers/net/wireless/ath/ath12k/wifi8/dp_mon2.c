@@ -397,6 +397,8 @@ ath12k_dp_mon_parse_mpdu_start(struct ath12k_pdev_dp *dp_pdev,
 
 	mpdu_meta = (struct ath12k_dp_mon_mpdu_meta *)skb->data;
 	mpdu_meta->decap_type =  ppdu_info->mpdu_info[user_id].decap_type;
+	mpdu_meta->mpdu_len = ppdu_info->mpdu_info[user_id].mpdu_len;
+
 	return 0;
 }
 
@@ -662,6 +664,7 @@ ath12k_wifi8_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_dp_rx_ext_mon *config;
 	struct ieee80211_hdr *hdr;
 	struct ath12k_ext_mon_pkt_config *pkt_config = NULL;
+	struct ath12k_dp_mon_mpdu_meta *mpdu_meta;
 	u8 filter_category, type, sub_type;
 	bool is_mcast = false;
 	bool need_rtap = true;
@@ -681,6 +684,7 @@ ath12k_wifi8_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 
 	hdr = (struct ieee80211_hdr *)ath12k_dp_mon_skb_get_frag_addr(mpdu, 0);
 
+	mpdu_meta = (struct ath12k_dp_mon_mpdu_meta *)mpdu->data;
 	type = ((__le16_to_cpu(hdr->frame_control) & IEEE80211_FCTL_FTYPE) >>
 		ATH12K_FC0_TYPE_SHIFT);
 	sub_type = ((__le16_to_cpu(hdr->frame_control) &
@@ -764,6 +768,9 @@ ath12k_wifi8_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	 * accessed beyond this point
 	 */
 	spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
+
+	if (!mpdu_meta->full_pkt)
+		ath12k_dp_mon_rx_trim_short_pkt_fcs(mpdu, mpdu_meta->mpdu_len);
 
 	if (need_rtap) {
 		skb_reserve(mpdu, ATH12K_DP_MON_MAX_RADIO_TAP_HDR);

@@ -597,6 +597,7 @@ struct hal_rx_mon_mpdu_info {
 	bool mpdu_end_received;
 	bool full_pkt;
 	bool fcs_err;
+	u16 mpdu_len;
 };
 
 struct hal_rx_nrp_info {

@@ -388,6 +388,7 @@ struct ath12k_dp_mon_mpdu_meta {
 	   full_pkt:1,
 	   fcs_err:1;
 	u32 err_bitmap;
+	u16 mpdu_len;
 };
 
 enum dp_mon_tx_ppdu_info_type {
@@ -2155,6 +2156,19 @@ ath12k_dp_get_ext_mon_peers(struct ath12k_pdev_dp *dp_pdev,
 		count++;
 	}
 	resp->peer.count = count;
+}
+
+static inline void
+ath12k_dp_mon_rx_trim_short_pkt_fcs(struct sk_buff *mpdu, u16 total_mpdu_len)
+{
+	int fcs_bytes;
+
+	if (total_mpdu_len <= FCS_LEN)
+		return;
+
+	fcs_bytes = (int)mpdu->len - (int)(total_mpdu_len - FCS_LEN);
+	if (fcs_bytes > 0)
+		skb_coalesce_rx_frag(mpdu, 0, -fcs_bytes, 0);
 }
 
 void ath12k_dp_mon_peer_telemetry_stats(const struct ath12k_dp_link_peer *peer,

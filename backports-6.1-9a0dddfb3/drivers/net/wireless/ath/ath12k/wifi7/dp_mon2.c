@@ -414,6 +414,7 @@ ath12k_dp_mon_parse_mpdu_start(struct ath12k_pdev_dp *dp_pdev,
 
 	mpdu_meta = (struct ath12k_dp_mon_mpdu_meta *)skb->data;
 	mpdu_meta->decap_type =  ppdu_info->mpdu_info[user_id].decap_type;
+	mpdu_meta->mpdu_len = ppdu_info->mpdu_info[user_id].mpdu_len;
 
 	return 0;
 }
@@ -932,6 +933,9 @@ ath12k_wifi7_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 			return ret;
 		}
 	}
+
+	if (!mpdu_meta->full_pkt)
+		ath12k_dp_mon_rx_trim_short_pkt_fcs(mpdu, mpdu_meta->mpdu_len);
 
 	vendor_tlv_len = 0;
 	if (need_metadata && level == ATH12K_EXT_MON_FILTER_LEVEL_MSDU &&
