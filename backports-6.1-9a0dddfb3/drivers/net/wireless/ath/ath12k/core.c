@@ -2998,6 +2998,64 @@ exit:
 	return ret;
 }
 
+static const struct ath12k_wmi_led_blink_rate ath12k_led_blink_rates[] = {
+	{500, 130},
+	{400, 100},
+	{280, 70},
+	{240, 60},
+	{200, 50},
+	{160, 40},
+	{130, 30},
+	{100, 30},
+	{90, 20},
+	{80, 20},
+	{70, 20},
+	{60, 10},
+	{50, 10},
+	{40, 10},
+};
+
+static void ath12k_led_init(struct ath12k_base *ab)
+{
+	struct ath12k_wmi_led_blink_arg arg;
+	struct ath12k *ar;
+	int i, ret;
+	bool led_blink_enable = true;
+	u32 bw_per_index = ATH12K_LED_BW_PER_IDX;
+
+	if (!test_bit(WMI_TLV_SERVICE_PCIE_DATA_RATE_LED_BLINK_SUPPORT,
+		      ab->wmi_ab.svc_map)) {
+		ath12k_info(ab, "LED blink feature is NOT supported by firmware\n");
+		return;
+	}
+
+#ifdef CPTCFG_QCN_EXTN
+	led_blink_enable = ath12k_cfg_get(ab, ATH12K_CFG_LED_BLINK_ENABLE);
+	bw_per_index = ath12k_cfg_get(ab, ATH12K_CFG_LED_BW_PER_IDX);
+#endif
+
+	for (i = 0; i < ab->num_radios; i++) {
+		ar = ab->pdevs[i].ar;
+		if (!ar || !ar->pdev)
+			continue;
+
+		arg.pdev_id = ar->pdev->pdev_id;
+		arg.blink_enable_flag = led_blink_enable;
+		arg.bw_per_index = bw_per_index;
+		arg.rates = ath12k_led_blink_rates;
+		arg.num_rates = ARRAY_SIZE(ath12k_led_blink_rates);
+
+		ret = ath12k_wmi_send_led_blink_table_cmd(ar, &arg);
+		if (ret)
+			ath12k_warn(ab, "failed to send led blink table cmd for pdev %d: %d\n",
+				    arg.pdev_id, ret);
+		else
+			ath12k_info(ab,
+				    "LED blink WMI command sent to firmware enable:%d\n",
+				    led_blink_enable);
+	}
+}
+
 int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 {
 	struct ath12k_hw_group *ag = ath12k_ab_to_ag(ab);
@@ -3100,6 +3158,8 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 			partner_ab = ag->ab[i];
 			if (ath12k_ftm_mode || !partner_ab || partner_ab->is_bypassed)
 				continue;
+
+			ath12k_led_init(partner_ab);
 
 			/* Skip pdev creation if WSI remap in progress and chip is not
 			 * in bypass Add state, as the pdev for other chips will be

@@ -607,6 +607,7 @@ enum wmi_tlv_cmd_id {
 	WMI_PDEV_SET_TGTR2P_TABLE_CMDID = 0x404F,
 	WMI_PDEV_SET_RF_PATH_CMDID = 0x4050,
 	WMI_PDEV_WSI_STATS_INFO_CMDID = 0x4051,
+	WMI_PDEV_ENABLE_LED_BLINK_DOWNLOAD_TABLE_CMDID = 0x4052,
 	WMI_PDEV_SET_CUMAC_CHIP_CMDID = 0x405D,
 	WMI_PDEV_DOWNLOAD_RTT_BLOB_CMDID = 0x405F,
 	WMI_VDEV_CREATE_CMDID = WMI_TLV_CMD(WMI_GRP_VDEV),
@@ -2589,6 +2590,8 @@ enum wmi_tlv_tag {
 	WMI_TAG_ATF_PEER_REQUEST_EVENT_V2 = 0x4A8,
 	WMI_TAG_PDEV_WSI_STATS_INFO_CMD = 0x4b1,
 	WMI_TAG_PDEV_DFS_RADAR_FLAGS = 0x4b4,
+	WMI_TAG_LED_BLINK_RATE_TABLE = 0x4C9,
+	WMI_TAG_ENABLE_LED_BLINK_DOWNLOAD_RATE_TABLE = 0x4CA,
 	WMI_TAG_DCS_OBSS_INT_TYPE = 0x4CF,
 	WMI_TAG_VDEV_CH_PSD_POWER_INFO = 0x4bc,
 	WMI_TAG_VDEV_CH_EIRP_POWER_INFO = 0x4bd,
@@ -2934,6 +2937,7 @@ enum wmi_tlv_service {
 	WMI_TLV_SERVICE_BOTH_PSD_EIRP_FOR_AP_SP_CLIENT_SP_SUPPORT = 393,
 	WMI_TLV_SERVICE_PDEV_PARAM_IN_UTF_WMI = 394,
 	WMI_TLV_SERVICE_SW_PROG_DFS_SUPPORT = 395,
+	WMI_TLV_SERVICE_PCIE_DATA_RATE_LED_BLINK_SUPPORT = 398,
 	WMI_TLV_SERVICE_DCS_OBSS_INT_SUPPORT = 402,
 	WMI_TLV_SERVICE_DYNAMIC_WSI_REMAP_SUPPORT = 403,
 	WMI_SERVICE_MLO_MODE2_RECOVERY_SUPPORTED = 406,
@@ -9219,6 +9223,34 @@ struct wmi_pdev_set_tgtr2p_table_event {
 	__le32 pdev_id;
 } __packed;
 
+#define ATH12K_WMI_MAX_LED_BLINK_RATES 32
+
+struct wmi_pdev_led_blink_table_cmd {
+	__le32 tlv_header;
+	__le32 pdev_id;
+	__le32 blink_enable_flag;
+	__le32 bw_per_index;
+} __packed;
+
+struct wmi_led_blink_rate_params {
+	__le32 tlv_header;
+	__le32 on_time;
+	__le32 off_time;
+} __packed;
+
+struct ath12k_wmi_led_blink_rate {
+	u32 on_time;
+	u32 off_time;
+};
+
+struct ath12k_wmi_led_blink_arg {
+	u32 pdev_id;
+	u32 blink_enable_flag;
+	u32 bw_per_index;
+	const struct ath12k_wmi_led_blink_rate *rates;
+	u32 num_rates;
+};
+
 struct wmi_bcn_tmpl_ml_params {
 	__le32 tlv_header;
 	__le32 vdev_id;
@@ -12012,6 +12044,9 @@ int ath12k_wmi_obss_color_cfg_cmd(struct ath12k *ar, u32 vdev_id,
 int ath12k_wmi_send_bss_color_change_enable_cmd(struct ath12k *ar, u32 vdev_id,
 						bool enable);
 int ath12k_wmi_pdev_lro_cfg(struct ath12k *ar, int pdev_id);
+
+int ath12k_wmi_send_led_blink_table_cmd(struct ath12k *ar,
+					struct ath12k_wmi_led_blink_arg *arg);
 int ath12k_wmi_pdev_dma_ring_cfg(struct ath12k *ar,
 				 struct ath12k_wmi_pdev_dma_ring_cfg_arg *arg);
 int ath12k_wmi_vdev_spectral_enable(struct ath12k *ar, u32 vdev_id,
