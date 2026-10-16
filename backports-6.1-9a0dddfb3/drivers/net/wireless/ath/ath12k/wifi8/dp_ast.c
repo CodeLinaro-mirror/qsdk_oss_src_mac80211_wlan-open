@@ -504,7 +504,7 @@ ath12k_dp_get_sw_ast_entry_by_index(struct ath12k_dp_hw_group *dp_hw_grp, u16 as
 	struct ath12k_dp_global_ast_table *ast_base =
 				ath12k_dp_get_global_ast_table(dp_hw_grp);
 
-	if (!ast_base || ast_index >= ast_base->num_ast_entries)
+	if (!ast_base || ast_index >= ast_base->num_ast_entries || !ast_base->ast_entries)
 		return NULL;
 
 	return ast_base->ast_entries[ast_index];
