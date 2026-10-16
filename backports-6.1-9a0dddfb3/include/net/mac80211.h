@@ -3811,10 +3811,19 @@ static inline void _ieee80211_hw_set(struct ieee80211_hw *hw,
  * struct ieee80211_scan_request - hw scan request
  *
  * @ies: pointers different parts of IEs (in req.ie)
+ * @n_scan_tx_addrs: number of entries in @scan_tx_addrs
+ * @scan_tx_addrs: optional actual source addresses used to transmit Probe
+ *	Request frames for this hardware scan request. Drivers may set entries
+ *	before starting the scan when hardware/firmware transmits Probe Request
+ *	frames with addresses that differ from the interface/link addresses visible
+ *	to mac80211. Entries are indexed by radio index, or by index 0 when the
+ *	wiphy does not advertise multiple radios. Leave entries zero when not used.
  * @req: cfg80211 request.
  */
 struct ieee80211_scan_request {
 	struct ieee80211_scan_ies ies;
+	unsigned int n_scan_tx_addrs;
+	u8 (*scan_tx_addrs)[ETH_ALEN];
 
 	/* Keep last */
 	struct cfg80211_scan_request req;
