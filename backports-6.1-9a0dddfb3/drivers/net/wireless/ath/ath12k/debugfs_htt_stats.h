@@ -30,14 +30,13 @@ void ath12k_debugfs_htt_stats_register(struct ath12k *ar);
 #ifdef CPTCFG_ATH12K_DEBUGFS
 void ath12k_debugfs_htt_ext_stats_handler(struct ath12k_base *ab,
 					  struct sk_buff *skb);
-int ath12k_debugfs_htt_stats_req(struct ath12k *ar, bool wiphy_locked);
+int ath12k_debugfs_htt_stats_req(struct ath12k *ar);
 #else /* CPTCFG_ATH12K_DEBUGFS */
 static inline void ath12k_debugfs_htt_ext_stats_handler(struct ath12k_base *ab,
 							struct sk_buff *skb)
 {
 }
-static inline int ath12k_debugfs_htt_stats_req(struct ath12k *ar,
-					       bool wiphy_locked)
+static inline int ath12k_debugfs_htt_stats_req(struct ath12k *ar)
 {
 	return 0;
 }

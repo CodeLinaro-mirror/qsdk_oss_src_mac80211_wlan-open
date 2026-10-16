@@ -16106,32 +16106,7 @@ static const struct file_operations fops_htt_stats_type = {
 	.llseek = default_llseek,
 };
 
-static int
-ath12k_debugfs_htt_stats_wait(struct ath12k *ar,
-			      struct debug_htt_stats_req *stats_req)
-{
-	if (!wait_for_completion_timeout(&stats_req->htt_stats_rcvd, 3 * HZ)) {
-		spin_lock_bh(&ar->data_lock);
-		if (!stats_req->done) {
-			stats_req->done = true;
-			spin_unlock_bh(&ar->data_lock);
-			ath12k_warn(ar->ab, "stats request timed out\n");
-			return -ETIMEDOUT;
-		}
-		spin_unlock_bh(&ar->data_lock);
-	}
-
-	spin_lock_bh(&ar->data_lock);
-	if (stats_req->buf_len) {
-		spin_unlock_bh(&ar->data_lock);
-		return 0;
-	}
-	spin_unlock_bh(&ar->data_lock);
-
-	return 1;
-}
-
-int ath12k_debugfs_htt_stats_req(struct ath12k *ar, bool wiphy_locked)
+int ath12k_debugfs_htt_stats_req(struct ath12k *ar)
 {
 	struct debug_htt_stats_req *stats_req = ar->debug.htt_stats.stats_req;
 	enum ath12k_dbg_htt_ext_stats_type type = stats_req->type;
@@ -16139,8 +16114,7 @@ int ath12k_debugfs_htt_stats_req(struct ath12k *ar, bool wiphy_locked)
 	int ret, pdev_id, i;
 	u64 cookie;
 
-	if (wiphy_locked)
-		lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
 	pdev_id = ath12k_mac_get_target_pdev_id(ar);
 	stats_req->pdev_id = pdev_id;
@@ -16173,20 +16147,31 @@ int ath12k_debugfs_htt_stats_req(struct ath12k *ar, bool wiphy_locked)
 			return ret;
 		}
 
-		if (wiphy_locked) {
-			/* Release the wiphy lock before blocking wait to avoid
-			 * holding it for up to 3 seconds, which would delay
-			 * concurrent nl80211 operations such as authentication
-			 * frame processing.
-			 */
-			wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
-			ret = ath12k_debugfs_htt_stats_wait(ar, stats_req);
+		/* Release the wiphy lock before blocking wait to avoid holding it
+		 * for up to 3 seconds, which would delay concurrent nl80211 operations
+		 * such as authentication frame processing.
+		 */
+		wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+		if (!wait_for_completion_timeout(&stats_req->htt_stats_rcvd, 3 * HZ)) {
 			wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+			spin_lock_bh(&ar->data_lock);
+			if (!stats_req->done) {
+				stats_req->done = true;
+				spin_unlock_bh(&ar->data_lock);
+				ath12k_warn(ar->ab, "stats request timed out\n");
+				return -ETIMEDOUT;
+			}
+			spin_unlock_bh(&ar->data_lock);
 		} else {
-			ret = ath12k_debugfs_htt_stats_wait(ar, stats_req);
+			wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
 		}
-		if (ret <= 0)
-			return ret;
+
+		spin_lock_bh(&ar->data_lock);
+		if (stats_req->buf_len) {
+			spin_unlock_bh(&ar->data_lock);
+			return 0;
+		}
+		spin_unlock_bh(&ar->data_lock);
 	}
 
 	ath12k_warn(ar->ab, "htt stats: max retries reached, buf_len still 0\n");
@@ -16254,7 +16239,7 @@ static int ath12k_open_htt_stats(struct inode *inode,
 					!!stats_req->cfg_param[2] ||
 					!!stats_req->cfg_param[3];
 
-	ret = ath12k_debugfs_htt_stats_req(ar, true);
+	ret = ath12k_debugfs_htt_stats_req(ar);
 	if (ret < 0)
 		goto out;
 
