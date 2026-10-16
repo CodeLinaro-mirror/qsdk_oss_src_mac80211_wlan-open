@@ -392,11 +392,18 @@ static struct rchan_callbacks rfs_scan_cb = {
 	.remove_buf_file = remove_buf_file_handler,
 };
 
-struct ath12k_link_vif *ath12k_spectral_get_vdev(struct ath12k *ar)
+static struct ath12k_link_vif *
+ath12k_spectral_get_vdev_locked(struct ath12k *ar,
+				u32 preferred_vdev_id,
+				bool preferred_vdev_valid)
 {
 	struct ath12k_link_vif *arvif;
 
-	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+	if (preferred_vdev_valid)
+		list_for_each_entry(arvif, &ar->arvifs, list)
+			if (arvif->is_created &&
+			    arvif->vdev_id == preferred_vdev_id)
+				return arvif;
 
 	/* if there already is a created vif doing spectral, return that. */
 	list_for_each_entry(arvif, &ar->arvifs, list)
@@ -411,6 +418,44 @@ struct ath12k_link_vif *ath12k_spectral_get_vdev(struct ath12k *ar)
 			return arvif;
 
 	return NULL;
+}
+
+static struct ath12k_link_vif *
+ath12k_spectral_get_survivor(struct ath12k *ar,
+			     struct ath12k_link_vif *removed)
+{
+	struct ath12k_link_vif *arvif;
+
+	list_for_each_entry(arvif, &ar->arvifs, list)
+		if (arvif != removed && arvif->is_created)
+			return arvif;
+
+	return NULL;
+}
+
+struct ath12k_link_vif *ath12k_spectral_get_vdev(struct ath12k *ar)
+{
+	struct ath12k_link_vif *arvif;
+	u32 preferred_vdev_id;
+	bool preferred_vdev_valid;
+
+	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	spin_lock_bh(&ar->spectral.lock);
+	preferred_vdev_id = ar->spectral.active_vdev_id;
+	preferred_vdev_valid = ar->spectral.active_vdev_valid;
+	spin_unlock_bh(&ar->spectral.lock);
+
+	arvif = ath12k_spectral_get_vdev_locked(ar, preferred_vdev_id,
+						preferred_vdev_valid);
+	if (arvif) {
+		spin_lock_bh(&ar->spectral.lock);
+		ar->spectral.active_vdev_id = arvif->vdev_id;
+		ar->spectral.active_vdev_valid = true;
+		spin_unlock_bh(&ar->spectral.lock);
+	}
+
+	return arvif;
 }
 
 int ath12k_spectral_nl80211_bw_to_idx(enum nl80211_chan_width bw)
@@ -550,10 +595,8 @@ int ath12k_spectral_start_scan(struct ath12k *ar)
 	ar->spectral.timestamp_war_offset[smode] = 0;
 	ar->spectral.samples_done = 0;   /* reset per-scan counter */
 	ar->spectral.scan_active = true;
-	/* Cache vdev_id so timeout_work can send CLEAR+DISABLE without
-	 * needing wiphy_lock or walking ar->arvifs from workqueue context.
-	 */
 	ar->spectral.active_vdev_id = arvif->vdev_id;
+	ar->spectral.active_vdev_valid = true;
 	spin_unlock_bh(&ar->spectral.lock);
 
 	/* Arm the host-side completion timer. If the FW fails to deliver
@@ -590,14 +633,14 @@ int ath12k_spectral_stop_scan(struct ath12k *ar)
 			    "spectral stop_scan: no active vdev on pdev %u\n",
 			    ar->pdev_idx);
 
-		/* Clean up agile state only — normal mode has no cached
-		 * params to clear. If this is a deinit path the spectral
-		 * struct is freed immediately after this return, so leaving
-		 * mode/scan_active unchanged for normal mode is safe.
-		 */
+		hrtimer_cancel(&ar->spectral.scan_completion_timer);
+		cancel_work_sync(&ar->spectral.scan_timeout_work);
 		spin_lock_bh(&ar->spectral.lock);
 		clear_agile_params =
 			ar->spectral.mode == SPECTRAL_SCAN_MODE_AGILE;
+		ar->spectral.mode = SPECTRAL_SCAN_MODE_INVALID;
+		ar->spectral.scan_active = false;
+		ar->spectral.active_vdev_valid = false;
 		spin_unlock_bh(&ar->spectral.lock);
 		if (clear_agile_params)
 			ath12k_spectral_rollback_agile(ar);
@@ -609,6 +652,7 @@ int ath12k_spectral_stop_scan(struct ath12k *ar)
 		ar->spectral.mode == SPECTRAL_SCAN_MODE_AGILE;
 	ar->spectral.mode = SPECTRAL_SCAN_MODE_INVALID;
 	ar->spectral.scan_active = false;
+	ar->spectral.active_vdev_valid = false;
 	ar->spectral.last_fft_timestamp[SPECTRAL_SCAN_MODE_NORMAL] = 0;
 	ar->spectral.timestamp_war_offset[SPECTRAL_SCAN_MODE_NORMAL] = 0;
 	ar->spectral.samples_done = 0;
@@ -625,6 +669,7 @@ int ath12k_spectral_stop_scan(struct ath12k *ar)
 	 * same lock, so cancelling while holding it would deadlock.
 	 */
 	hrtimer_cancel(&ar->spectral.scan_completion_timer);
+	cancel_work_sync(&ar->spectral.scan_timeout_work);
 
 	ret = ath12k_wmi_vdev_spectral_enable(ar, arvif->vdev_id,
 					      ATH12K_WMI_SPECTRAL_TRIGGER_CMD_CLEAR,
@@ -641,6 +686,7 @@ void ath12k_spectral_rollback_agile(struct ath12k *ar)
 	spin_lock_bh(&ar->spectral.lock);
 	ar->spectral.mode = SPECTRAL_SCAN_MODE_INVALID;
 	ar->spectral.scan_active = false;
+	ar->spectral.active_vdev_valid = false;
 	ar->spectral.params.frequency = 0;
 	ar->spectral.params.frequency2 = 0;
 	ar->spectral.params.bandwidth = 0;
@@ -670,6 +716,8 @@ int ath12k_spectral_configure_scan_params(struct ath12k *ar,
 		return -ENODEV;
 	}
 	spin_lock_bh(&ar->spectral.lock);
+	ar->spectral.active_vdev_id = arvif->vdev_id;
+	ar->spectral.active_vdev_valid = true;
 	ar->spectral.mode = mode;
 	/* configure always sends CLEAR+DISABLE to firmware, which terminates
 	 * any running scan. Clear scan_active so start_scan can re-trigger.
@@ -1706,23 +1754,21 @@ int ath12k_spectral_send_complete_event(struct ath12k *ar,
 /* Process-context worker: runs when the hrtimer expires. The hrtimer
  * itself runs in softirq and cannot issue WMI commands or sleep.
  *
- * LOCKING NOTE: this function intentionally does NOT call wiphy_lock().
- * Calling wiphy_lock() here would deadlock when wiphy->mtx is already
- * held by the nl80211 vendor-command dispatch path (e.g. while hostapd
- * or spectraltool is processing a vendor command).  The vdev_id needed
- * to send CLEAR+DISABLE is cached in sp->active_vdev_id at scan-start
- * (under sp->lock) so we never need to walk ar->arvifs here. This does
- * not pin vdev lifetime; if teardown wins the race, firmware may reject
- * the stale vdev_id and the error is logged below.
- */
+	 * LOCKING NOTE: this function intentionally does NOT call wiphy_lock().
+	 * Calling wiphy_lock() here would deadlock when wiphy->mtx is already
+	 * held by the nl80211 vendor-command dispatch path. The spectral vdev
+	 * lock serializes the active-vdev lookup and WMI send with vdev teardown.
+	 */
 static void ath12k_spectral_timeout_work(struct work_struct *work)
 {
 	struct ath12k_spectral *sp =
 		container_of(work, struct ath12k_spectral, scan_timeout_work);
 	struct ath12k *ar = container_of(sp, struct ath12k, spectral);
+	struct ath12k_link_vif *arvif;
 	enum spectral_scan_mode prev_mode;
 	u32 received;
 	u32 vdev_id;
+	bool active_vdev_valid;
 	int ret;
 
 	spin_lock_bh(&sp->lock);
@@ -1738,7 +1784,6 @@ static void ath12k_spectral_timeout_work(struct work_struct *work)
 	received = sp->timeout_received_count;
 	vdev_id  = sp->active_vdev_id;
 	prev_mode = sp->mode;
-	sp->mode = SPECTRAL_SCAN_MODE_INVALID;
 	if (prev_mode == SPECTRAL_SCAN_MODE_AGILE) {
 		sp->params.frequency  = 0;
 		sp->params.frequency2 = 0;
@@ -1747,16 +1792,35 @@ static void ath12k_spectral_timeout_work(struct work_struct *work)
 	sp->scan_active = false;
 	spin_unlock_bh(&sp->lock);
 
-	/* Send CLEAR+DISABLE to firmware using the cached vdev_id.
-	 * No wiphy_lock needed — see function comment above.
-	 */
-	ret = ath12k_wmi_vdev_spectral_enable(ar, vdev_id,
-					      ATH12K_WMI_SPECTRAL_TRIGGER_CMD_CLEAR,
-					      ATH12K_WMI_SPECTRAL_ENABLE_CMD_DISABLE);
-	if (ret)
-		ath12k_warn(ar->ab,
-			    "failed to disable spectral scan on vdev %d after timeout: %d\n",
-			    vdev_id, ret);
+	mutex_lock(&sp->vdev_lock);
+	spin_lock_bh(&sp->lock);
+	active_vdev_valid = sp->active_vdev_valid;
+	vdev_id = sp->active_vdev_id;
+	spin_unlock_bh(&sp->lock);
+	arvif = ath12k_spectral_get_vdev_locked(ar, vdev_id,
+						active_vdev_valid);
+	if (arvif) {
+		vdev_id = arvif->vdev_id;
+		ret = ath12k_wmi_vdev_spectral_enable(ar, vdev_id,
+						ATH12K_WMI_SPECTRAL_TRIGGER_CMD_CLEAR,
+						ATH12K_WMI_SPECTRAL_ENABLE_CMD_IGNORE);
+		if (!ret)
+			ret = ath12k_wmi_vdev_spectral_enable(ar, vdev_id,
+						ATH12K_WMI_SPECTRAL_TRIGGER_CMD_IGNORE,
+						ATH12K_WMI_SPECTRAL_ENABLE_CMD_DISABLE);
+		if (ret)
+			ath12k_warn(ar->ab,
+				    "failed to disable spectral scan on vdev %d after timeout: %d\n",
+				    vdev_id, ret);
+	} else {
+		ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+			   "spectral timeout: no created vdev for cleanup\n");
+	}
+	mutex_unlock(&sp->vdev_lock);
+
+	spin_lock_bh(&sp->lock);
+	sp->mode = SPECTRAL_SCAN_MODE_INVALID;
+	spin_unlock_bh(&sp->lock);
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
 		   "spectral scan timeout: vdev_id=%u mode=%u received=%u/%u\n",
@@ -1795,10 +1859,69 @@ static enum hrtimer_restart ath12k_spectral_scan_timeout(struct hrtimer *timer)
 
 int ath12k_spectral_vif_stop(struct ath12k_link_vif *arvif)
 {
-	if (!arvif->spectral_enabled)
+	struct ath12k *ar = arvif->ar;
+	struct ath12k_link_vif *survivor;
+	enum spectral_scan_mode mode;
+	bool active;
+	bool was_scan_active;
+	int ret;
+
+	if (!ar || !ar->spectral.enabled)
 		return 0;
 
-	return ath12k_spectral_stop_scan(arvif->ar);
+	spin_lock_bh(&ar->spectral.lock);
+	active = ar->spectral.active_vdev_valid &&
+		 ar->spectral.active_vdev_id == arvif->vdev_id;
+	mode = ar->spectral.mode;
+	active = active && mode < SPECTRAL_SCAN_MODE_MAX;
+	was_scan_active = ar->spectral.scan_active;
+	spin_unlock_bh(&ar->spectral.lock);
+
+	if (!active)
+		return 0;
+
+	hrtimer_cancel(&ar->spectral.scan_completion_timer);
+	cancel_work_sync(&ar->spectral.scan_timeout_work);
+	mutex_lock(&ar->spectral.vdev_lock);
+	survivor = ath12k_spectral_get_survivor(ar, arvif);
+	if (!survivor) {
+		spin_lock_bh(&ar->spectral.lock);
+		ar->spectral.mode = SPECTRAL_SCAN_MODE_INVALID;
+		ar->spectral.scan_active = false;
+		ar->spectral.active_vdev_valid = false;
+		spin_unlock_bh(&ar->spectral.lock);
+		mutex_unlock(&ar->spectral.vdev_lock);
+		return 0;
+	}
+
+	spin_lock_bh(&ar->spectral.lock);
+	ar->spectral.active_vdev_id = survivor->vdev_id;
+	ar->spectral.active_vdev_valid = true;
+	ar->spectral.scan_active = false;
+	spin_unlock_bh(&ar->spectral.lock);
+
+	ret = ath12k_spectral_configure_scan_params(ar, mode);
+	if (!ret && was_scan_active)
+		ret = ath12k_spectral_start_scan(ar);
+
+	mutex_unlock(&ar->spectral.vdev_lock);
+	return ret;
+}
+
+void ath12k_spectral_abort(struct ath12k *ar)
+{
+	if (!ar->spectral.enabled)
+		return;
+
+	hrtimer_cancel(&ar->spectral.scan_completion_timer);
+	cancel_work_sync(&ar->spectral.scan_timeout_work);
+	mutex_lock(&ar->spectral.vdev_lock);
+	spin_lock_bh(&ar->spectral.lock);
+	ar->spectral.mode = SPECTRAL_SCAN_MODE_INVALID;
+	ar->spectral.scan_active = false;
+	ar->spectral.active_vdev_valid = false;
+	spin_unlock_bh(&ar->spectral.lock);
+	mutex_unlock(&ar->spectral.vdev_lock);
 }
 
 void ath12k_spectral_reset_buffer(struct ath12k *ar)

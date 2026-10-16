@@ -3670,6 +3670,8 @@ static void ath12k_core_pre_reconfigure_recovery(struct ath12k_base *ab)
 			   ar->hw_link_id);
 
 		wiphy_lock(ah->hw->wiphy);
+		if (ab->mem_params.spectral_support)
+			ath12k_spectral_abort(ar);
 
 		list_for_each_entry(arvif, &ar->arvifs, list) {
 			if (arvif->is_started)
