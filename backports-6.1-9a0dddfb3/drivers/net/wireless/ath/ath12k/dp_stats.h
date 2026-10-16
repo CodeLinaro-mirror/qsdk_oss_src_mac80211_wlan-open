@@ -1279,16 +1279,17 @@ struct ath12k_telemetry_dp_peer {
  * @rx_undecoded_count: Total undecoded PPDUs that passed the PHY error mask filter
  * @phyrx_error_mask: Active PHY error mask bits 0-31
  * @phyrx_error_mask_cont: Active PHY error mask bits 32-63
+ * @phyrx_error_mask_cont2: Active PHY error mask bits 64-95
+ * @phyrx_error_mask_cont3: Active PHY error mask bits 96-127
  * @is_set: Non-zero when capture is armed and fields are valid
- */
-/* PHY error reason codes 0-53 valid; 54-63 reserved — must match
- * ATH12K_WIFI6_PHYRX_ERR_MAX in ath12k_cmn_extn.h
  */
 #ifdef CPTCFG_QCN_EXTN
 struct ath12k_dp_rx_undecoded_stats {
 	u32 rx_undecoded_count;
 	u32 phyrx_error_mask;
 	u32 phyrx_error_mask_cont;
+	u32 phyrx_error_mask_cont2;
+	u32 phyrx_error_mask_cont3;
 	u32 rx_undecoded_error[ATH12K_PHYRX_ERR_MAX];
 	u8  is_set;
 };
