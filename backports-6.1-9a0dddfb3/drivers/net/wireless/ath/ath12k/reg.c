@@ -1475,6 +1475,10 @@ ath12k_reg_build_regd(struct ath12k_base *ab,
 	new_regd->supp_cli_bitmap_6ghz |= BIT(reg_info->client_type);
 	new_regd->n_reg_rules = num_rules;
 
+#ifdef CPTCFG_QCN_EXTN
+	new_regd = ath12k_reg_build_for_noncountry(ab, new_regd, reg_info->phy_id);
+#endif
+
 ret:
 	return new_regd;
 }
@@ -2765,6 +2769,7 @@ ath12k_reg_build_new_regd_for_afc(struct ath12k *ar,
 	struct ieee80211_reg_rule *old_rule, *new_regd_rules;
 	int num_regd_rules, new_reg_rule_cnt;
 	int num_old_sp_rules = 0, num_new_sp_rules = 0;
+	int num_non_country_rules = 0;
 	int i, k;
 	char alpha2[3] = {0};
 
@@ -2777,16 +2782,27 @@ ath12k_reg_build_new_regd_for_afc(struct ath12k *ar,
 	num_regd_rules = regd->n_reg_rules;
 	for (i = 0; i < num_regd_rules; i++) {
 		old_rule = regd->reg_rules + i;
+#ifdef CPTCFG_QCN_EXTN
+		/* Count non country rules; they will be skipped during copy and
+		 * re-appended at the end via ath12k_reg_build_for_noncountry.
+		 */
+		if (ath12k_is_rule_non_country(old_rule)) {
+			num_non_country_rules++;
+			continue;
+		}
+#endif /* CPTCFG_QCN_EXTN */
 		if (old_rule->mode == NL80211_REG_AP_SP)
 			num_old_sp_rules++;
 	}
 
 	/* Remove the old sp rule from regd and add the new intersected sp rules */
 	num_new_sp_rules = num_afc_ranges + num_no_ir_ranges;
-	new_reg_rule_cnt = num_regd_rules  - num_old_sp_rules + num_new_sp_rules;
+	new_reg_rule_cnt = num_regd_rules - num_old_sp_rules
+			 - num_non_country_rules + num_new_sp_rules;
 	ath12k_dbg(ab, ATH12K_DBG_AFC,
-		   "Total reg rules %d old sp rules %d new sp rules %d\n",
-		   num_regd_rules, num_old_sp_rules, num_new_sp_rules);
+		   "Total reg rules %d old sp rules %d new sp rules %d non_country rules %d\n",
+		   num_regd_rules, num_old_sp_rules, num_new_sp_rules,
+		   num_non_country_rules);
 
 	/* This is unlikely as we ensure each SP rules is 20 MHz wide. So
 	 * there can only be a maximum of 59 rules for 6 GHz.
@@ -2823,6 +2839,10 @@ ath12k_reg_build_new_regd_for_afc(struct ath12k *ar,
 	for (i = 0; i < num_regd_rules; i++) {
 		old_rule = regd->reg_rules + i;
 
+#ifdef CPTCFG_QCN_EXTN
+		if (ath12k_is_rule_non_country(old_rule))
+			continue;
+#endif /* CPTCFG_QCN_EXTN */
 		if (old_rule->mode == NL80211_REG_AP_SP) {
 			continue;
 		} else {
@@ -2838,6 +2858,10 @@ ath12k_reg_build_new_regd_for_afc(struct ath12k *ar,
 						       no_ir_ranges,
 						       num_no_ir_ranges);
 	new_regd->band_mask = BIT(NL80211_BAND_6GHZ);
+
+#ifdef CPTCFG_QCN_EXTN
+	new_regd = ath12k_reg_build_for_noncountry(ar->ab, new_regd, ar->pdev_idx);
+#endif
 	*regd_afc = new_regd;
 
 	return 0;

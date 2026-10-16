@@ -3448,6 +3448,7 @@ struct wmi_ctrl_path_pmlo_telemetry_stats {
 #define WMI_RSRC_CFG_HOST_AFC_TRIGGER_ON_DEFAULT_CC_EVENT_BIT   22
 #define WMI_RSRC_CFG_HOST_SVC_REO_MGMT_SUPPORT                  26
 #define WMI_RSRC_CFG_HOST_SVC_FLAG_CUMAC_CMD_SUPPORT_BIT        27
+#define WMI_RSRC_CFG_HOST_SVC_FLAG_NON_COUNTRY_SUPPORT_BIT      29
 
 struct ath12k_wmi_resource_config_params {
 	__le32 tlv_header;
@@ -5959,6 +5960,7 @@ struct wmi_scan_radio_capabilities_ext2 {
 #define WMI_SCAN_RADIO_CAP_SCAN_RADIO         BIT(0)
 #define WMI_SCAN_RADIO_CAP_DFS_ENABLED        BIT(1)
 #define WMI_SCAN_RADIO_CAP_BLANKING_SUPPORTED BIT(2)
+#define WMI_SCAN_RADIO_CAP_NON_COUNTRY        BIT(3)
 
 struct peer_assoc_msduq_params {
 	u32 link_id;

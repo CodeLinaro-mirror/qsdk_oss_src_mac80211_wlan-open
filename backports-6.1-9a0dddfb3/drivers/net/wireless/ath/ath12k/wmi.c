@@ -8505,6 +8505,7 @@ ath12k_wmi_copy_resource_config(struct ath12k_base *ab,
 	wmi_cfg->max_num_group_keys = cpu_to_le32(tg_cfg->max_num_group_keys);
 #ifdef CPTCFG_QCN_EXTN
 	wmi_cfg->smart_ant_cap = cpu_to_le32(tg_cfg->smart_ant_cap);
+	ath12k_wmi_set_non_country_host_service_flag_extn(ab, wmi_cfg);
 #endif
 
 #ifdef CPTCFG_EXT_IPA_OFFLOAD

@@ -2700,6 +2700,7 @@ struct ath12k_smd_update_work {
 #define ATH12K_SCAN_RADIO_CAP_SUPPORTED   BIT(0)
 #define ATH12K_SCAN_RADIO_CAP_DFS_ENABLED BIT(1)
 #define ATH12K_SCAN_RADIO_CAP_BLANKING    BIT(2)
+#define ATH12K_SCAN_RADIO_CAP_NON_COUNTRY BIT(3)
 
 struct mlo_timestamp {
 	u32 info;
@@ -3718,6 +3719,11 @@ static inline bool ath12k_scan_radio_dfs_enabled(struct ath12k_pdev *pdev)
 static inline bool ath12k_scan_radio_blanking_supported(struct ath12k_pdev *pdev)
 {
 	return !!(pdev->cap.scan_radio_caps & ATH12K_SCAN_RADIO_CAP_BLANKING);
+}
+
+static inline bool ath12k_scan_radio_non_country_supported(struct ath12k_pdev *pdev)
+{
+	return !!(pdev->cap.scan_radio_caps & ATH12K_SCAN_RADIO_CAP_NON_COUNTRY);
 }
 
 int ath12k_core_config_iocoherency(struct ath12k_base *ab, bool enable);
