@@ -20,20 +20,12 @@ int ath12k_eht_ru_alloc_to_ru_loc_idx(u16 nl_ru);
 enum htt_ppdu_stats_gi ath12k_debugfs_sta_get_gi_idx(const struct rate_info *txrate);
 
 #ifdef CPTCFG_ATH12K_DEBUGFS
-
-struct ath12k_htt_peer_stats_ctx {
-	struct ath12k_hw *ah;
-	u8 link_id;
-	u8 peer_addr[ETH_ALEN];
-};
-
 void ath12k_debugfs_sta_op_add(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 			       struct ieee80211_sta *sta, struct dentry *dir);
 void ath12k_debugfs_link_sta_op_add(struct ieee80211_hw *hw,
 				    struct ieee80211_vif *vif,
 				    struct ieee80211_link_sta *link_sta,
 				    struct dentry *dir);
-void ath12k_debugfs_htt_peer_stats_remove_arsta(struct ath12k_link_sta *arsta);
 void ath12k_debugfs_htt_peer_stats_update(struct ath12k *ar,
 					  enum ath12k_dbg_htt_ext_stats_type old_type,
 					  enum ath12k_dbg_htt_ext_stats_type new_type);
@@ -49,11 +41,6 @@ void ath12k_debugfs_sta_update_misc(struct ath12k_dp_link_peer *peer,
 #else /* CPTCFG_ATH12K_DEBUGFS */
 
 #define ath12k_debugfs_sta_op_add NULL
-
-static inline void
-ath12k_debugfs_htt_peer_stats_remove_arsta(struct ath12k_link_sta *arsta)
-{
-}
 
 static inline void
 ath12k_debugfs_htt_peer_stats_update(struct ath12k *ar,

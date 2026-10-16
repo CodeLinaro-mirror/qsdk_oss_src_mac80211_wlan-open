@@ -14951,7 +14951,6 @@ static int ath12k_mac_station_remove(struct ath12k *ar,
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
 	wiphy_work_cancel(ar->ah->hw->wiphy, &arsta->update_wk);
-	ath12k_debugfs_htt_peer_stats_remove_arsta(arsta);
 
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA) {
 		if (arvif->smd_prep_vdev_stopped) {
