@@ -2898,6 +2898,12 @@ int ath12k_wsi_bypass_precheck(struct ath12k_base *ab, unsigned int value)
 		return -EBUSY;
 	}
 
+	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags) &&
+	    test_bit(ATH12K_GROUP_FLAG_HIF_POWER_DOWN, &ag->flags)) {
+		ath12k_err(ab, "Q6 is powered down, cannot allow remap\n");
+		return -ENODEV;
+	}
+
 	if ((!(test_bit(WMI_TLV_SERVICE_11BN, ab->wmi_ab.svc_map)) &&
 	    ((ag->num_devices - ag->num_bypassed) == ATH12K_MIN_ACTIVE_CHIP_FOR_BYPASS) &&
 	    value == ATH12K_WSI_BYPASS_REMOVE_DEVICE)) {
