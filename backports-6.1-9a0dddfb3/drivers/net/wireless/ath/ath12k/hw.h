@@ -401,6 +401,7 @@ struct ath12k_hw_params {
 	 * must not be enabled on V2 or later silicon.
 	 */
 	bool tqm2sw_fw_war;
+	bool hw_csum_enable;
 };
 
 struct ath12k_hw_ops {
