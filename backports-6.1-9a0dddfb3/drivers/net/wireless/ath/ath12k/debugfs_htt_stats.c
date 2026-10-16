@@ -3604,7 +3604,12 @@ ath12k_htt_print_tx_pdev_stats_cmn_tlv(const void *tag_buf, u16 tag_len,
 			 le32_to_cpu(htt_stats_buf->hw_reaped_sp));
 	len += scnprintf(buf + len, buf_len - len, "hw_reaped_vlp = %u\n\n",
 			 le32_to_cpu(htt_stats_buf->hw_reaped_vlp));
-
+	len += scnprintf(buf + len, buf_len - len, "cts_cnt = %u\n",
+			 le32_to_cpu(htt_stats_buf->cts_cnt));
+	len += scnprintf(buf + len, buf_len - len, "cts_data_cnt = %u\n",
+			 le32_to_cpu(htt_stats_buf->cts_data_cnt));
+	len += print_array_to_buf(buf, len, "cts_data_hist",
+				  htt_stats_buf->cts_data_hist, 4, "\n\n");
 	stats_req->buf_len = len;
 }
 
