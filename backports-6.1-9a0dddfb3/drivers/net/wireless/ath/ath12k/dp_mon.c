@@ -4008,25 +4008,61 @@ int ath12k_dp_ext_mon_set_rx_filter(struct ath12k_pdev_dp *dp_pdev,
 }
 EXPORT_SYMBOL(ath12k_dp_ext_mon_set_rx_filter);
 
+static bool
+ath12k_dp_ext_mon_peer_is_dup(struct ath12k_pdev_dp *dp_pdev,
+			      struct ath12k_dp_rx_ext_mon *rx_ext_mon,
+			      const struct ath12k_ext_mon_peer_info *peer_info)
+{
+	struct ath12k_dp_ext_mon_peer *peer;
+
+	lockdep_assert_held(&dp_pdev->dp_mon_pdev->rx_ext_mon_lock);
+	list_for_each_entry(peer, &rx_ext_mon->peer_list, list) {
+		if (!ether_addr_equal(peer->peer_info.mac_addr, peer_info->mac_addr) ||
+		    peer->peer_info.ra_addr != peer_info->ra_addr)
+			continue;
+
+		if (!peer_info->ra_addr) {
+			ath12k_warn(dp_pdev->dp, "TA peer %pM already added\n",
+				    peer_info->mac_addr);
+			return true;
+		}
+
+		if (is_zero_ether_addr(peer_info->ra_info.ra_addr_mask)) {
+			ath12k_warn(dp_pdev->dp, "RA peer %pM already added\n",
+				    peer_info->mac_addr);
+			return true;
+		} else if (is_zero_ether_addr(peer->peer_info.ra_info.ra_addr_mask)) {
+			ath12k_warn(dp_pdev->dp,
+				    "RA range peer with base mac %pM already exists\n",
+				    peer_info->mac_addr);
+			return true;
+		}
+
+		return false;
+	}
+
+	return false;
+}
+
 static int
 ath12k_dp_ext_mon_add_rx_peers(struct ath12k_pdev_dp *dp_pdev,
 				const struct ath12k_ext_mon_peer_config *peer_config)
 {
+	const struct ath12k_dp_arch_mon_ops *mon_ops = ath12k_dp_mon_ops_get(dp_pdev->dp);
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
 	struct ath12k_dp_rx_ext_mon *rx_ext_mon;
-	struct ath12k_set_neighbor_rx_params param = {0};
-	struct ath12k_dp_ext_mon_peer *peer, *tmp;
+	struct ath12k_ext_mon_wmi_entry *entry, *temp;
 	const struct ath12k_ext_mon_peer_info *peer_info;
 	struct ath12k_link_vif *arvif;
+	enum ath12k_ext_mon_peer_action action = ATH12K_EXT_MON_PEER_ACTION_ADD;
 	LIST_HEAD(peers_to_wmi);
-	int staged_count = 0;
+	int vdev_id;
 	bool found;
 	int ret = 0;
 	int i;
 
-	param.action = WMI_FILTER_NRP_ACTION_ADD;
-	param.vdev_id = ath12k_dp_ext_mon_find_mon_vdev_id(dp_pdev);
-	if (param.vdev_id == -1) {
+	vdev_id = ath12k_dp_ext_mon_find_mon_vdev_id(dp_pdev);
+	if (vdev_id == -1) {
 		ath12k_warn(dp_pdev->dp, "no active monitor vdev found\n");
 		return -ENODEV;
 	}
@@ -4066,77 +4102,90 @@ ath12k_dp_ext_mon_add_rx_peers(struct ath12k_pdev_dp *dp_pdev,
 		if (found)
 			continue;
 
-		list_for_each_entry(peer, &rx_ext_mon->peer_list, list) {
-			if (ether_addr_equal(peer->peer_info.mac_addr,
-					peer_info->mac_addr) &&
-					peer->peer_info.ra_addr == peer_info->ra_addr) {
-				found = true;
-				ath12k_warn(dp_pdev->dp, "peer %pM already added\n",
-					    peer_info->mac_addr);
-				break;
-			}
-		}
-		if (found)
+		if (ath12k_dp_ext_mon_peer_is_dup(dp_pdev, rx_ext_mon, peer_info))
 			continue;
 
-		list_for_each_entry(peer, &peers_to_wmi, list) {
-			if (ether_addr_equal(peer->peer_info.mac_addr,
-					     peer_info->mac_addr)) {
+		list_for_each_entry(entry, &peers_to_wmi, list) {
+			if (!entry->peer)
+				continue;
+			if (ether_addr_equal(entry->peer->peer_info.mac_addr,
+					     peer_info->mac_addr) &&
+			    entry->peer->peer_info.ra_addr == peer_info->ra_addr) {
 				found = true;
 				ath12k_warn(dp_pdev->dp,
-					    "peer %pM duplicate in request\n",
-					    peer_info->mac_addr);
+					    "peer %pM ra_addr: %d duplicate in request\n",
+					    peer_info->mac_addr, peer_info->ra_addr);
 				break;
 			}
 		}
 		if (found)
 			continue;
 
-		peer = kzalloc(sizeof(*peer), GFP_ATOMIC);
-		if (!peer)
-			continue;
+		if (mon_ops && mon_ops->ext_mon_handle_rx_peer) {
+			entry = kzalloc(sizeof(*entry), GFP_ATOMIC);
+			if (!entry) {
+				spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
+				list_for_each_entry_safe(entry, temp,
+							 &peers_to_wmi, list) {
+					kfree(entry->peer);
+					list_del(&entry->list);
+					kfree(entry);
+				}
+				return -ENOMEM;
+			}
 
-		memcpy(&peer->peer_info, peer_info, sizeof(*peer_info));
-		if (peer_info->ra_addr) {
-			list_add_tail(&peer->list, &rx_ext_mon->peer_list);
-			rx_ext_mon->peer_count++;
-			rx_ext_mon->ra_peer_count++;
-		} else {
-			list_add_tail(&peer->list, &peers_to_wmi);
-			staged_count++;
+			ret = mon_ops->ext_mon_handle_rx_peer(dp_pdev, peer_info, action,
+							      vdev_id, &peers_to_wmi,
+							      entry, NULL);
+			if (ret) {
+				kfree(entry);
+				entry = NULL;
+				ath12k_warn(dp_pdev->dp,
+					    "failed to stage peer %pM for add: %d\n",
+					    peer_info->mac_addr, ret);
+			}
 		}
 	}
 	spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
 
-	list_for_each_entry_safe(peer, tmp, &peers_to_wmi, list) {
-		ether_addr_copy(param.nrp_addr, peer->peer_info.mac_addr);
-		if (ath12k_wmi_vdev_set_neighbor_rx_cmd(dp_pdev->ar, &param)) {
+	list_for_each_entry_safe(entry, temp, &peers_to_wmi, list) {
+		/* Skip entries that need no WMI (e.g. WiFi 7 RA — software-only).
+		 * All real WMI commands set action != 0 (TA) or type != 0 (RA_FILTERING).
+		 */
+		if (!entry->param.action && !entry->param.type)
+			continue;
+
+		if (ath12k_wmi_vdev_set_neighbor_rx_cmd(dp_pdev->ar, &entry->param)) {
 			ath12k_err(dp_pdev->dp->ab,
-				   "wmi add fail vdev %d peer addr %pM\n",
-				   param.vdev_id, param.nrp_addr);
-			list_del(&peer->list);
-			kfree(peer);
-			staged_count--;
+				   "wmi add fail vdev %d peer %pM\n",
+				   entry->param.vdev_id, entry->param.nrp_addr);
+			kfree(entry->peer);
+			list_del(&entry->list);
+			kfree(entry);
+			continue;
 		}
 	}
 
 	spin_lock(&dp_mon_pdev->rx_ext_mon_lock);
 	rx_ext_mon = dp_mon_pdev->rx_ext_mon_config;
 	if (likely(rx_ext_mon)) {
-		rx_ext_mon->peer_count += staged_count;
-		list_splice_tail(&peers_to_wmi, &rx_ext_mon->peer_list);
+		list_for_each_entry_safe(entry, temp, &peers_to_wmi, list) {
+			if (entry->peer) {
+				rx_ext_mon->peer_count++;
+				if (entry->peer->peer_info.ra_addr)
+					rx_ext_mon->ra_peer_count++;
+				list_add_tail(&entry->peer->list, &rx_ext_mon->peer_list);
+			}
+			list_del(&entry->list);
+			kfree(entry);
+		}
 		spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
 	} else {
 		spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
-		param.action = WMI_FILTER_NRP_ACTION_REMOVE;
-		list_for_each_entry_safe(peer, tmp, &peers_to_wmi, list) {
-			ether_addr_copy(param.nrp_addr, peer->peer_info.mac_addr);
-			if (ath12k_wmi_vdev_set_neighbor_rx_cmd(dp_pdev->ar, &param))
-				ath12k_warn(dp_pdev->dp->ab,
-					    "wmi undo-add failed for peer %pM vdev %d\n",
-					    peer->peer_info.mac_addr, param.vdev_id);
-			list_del(&peer->list);
-			kfree(peer);
+		list_for_each_entry_safe(entry, temp, &peers_to_wmi, list) {
+			kfree(entry->peer);
+			list_del(&entry->list);
+			kfree(entry);
 		}
 		ret = -EINVAL;
 	}
@@ -4146,20 +4195,20 @@ ath12k_dp_ext_mon_add_rx_peers(struct ath12k_pdev_dp *dp_pdev,
 
 static int
 ath12k_dp_ext_mon_remove_rx_peers(struct ath12k_pdev_dp *dp_pdev,
-				   const struct ath12k_ext_mon_peer_config *peer_config)
+				  const struct ath12k_ext_mon_peer_config *peer_config)
 {
+	const struct ath12k_dp_arch_mon_ops *mon_ops = ath12k_dp_mon_ops_get(dp_pdev->dp);
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
 	struct ath12k_dp_rx_ext_mon *rx_ext_mon;
-	struct ath12k_set_neighbor_rx_params param = {0};
-	struct ath12k_dp_ext_mon_peer *peer, *tmp;
+	struct ath12k_ext_mon_wmi_entry *entry, *temp;
+	struct ath12k_dp_ext_mon_peer *peer, *peer_to_remove;
 	const struct ath12k_ext_mon_peer_info *peer_info;
+	enum ath12k_ext_mon_peer_action action = ATH12K_EXT_MON_PEER_ACTION_REMOVE;
 	LIST_HEAD(peers_to_wmi);
-	bool found;
-	int i;
+	int ret, i, vdev_id, err = 0;
 
-	param.action = WMI_FILTER_NRP_ACTION_REMOVE;
-	param.vdev_id = ath12k_dp_ext_mon_find_mon_vdev_id(dp_pdev);
-	if (param.vdev_id == -1) {
+	vdev_id = ath12k_dp_ext_mon_find_mon_vdev_id(dp_pdev);
+	if (vdev_id == -1) {
 		ath12k_warn(dp_pdev->dp, "no active monitor vdev found\n");
 		return -ENODEV;
 	}
@@ -4174,50 +4223,90 @@ ath12k_dp_ext_mon_remove_rx_peers(struct ath12k_pdev_dp *dp_pdev,
 
 	for (i = 0; i < peer_config->count; i++) {
 		peer_info = &peer_config->peer_info[i];
-		found = false;
-
 		if (is_zero_ether_addr(peer_info->mac_addr)) {
 			ath12k_warn(dp_pdev->dp,
 				    "removing all peers not supported in RX direction\n");
 			continue;
 		}
 
-		list_for_each_entry_safe(peer, tmp, &rx_ext_mon->peer_list, list) {
+		peer_to_remove = NULL;
+		list_for_each_entry(peer, &rx_ext_mon->peer_list, list) {
 			if (ether_addr_equal(peer->peer_info.mac_addr,
-					peer_info->mac_addr) &&
-					peer->peer_info.ra_addr == peer_info->ra_addr) {
-				list_del(&peer->list);
-				rx_ext_mon->peer_count--;
-				if (peer->peer_info.ra_addr) {
-					rx_ext_mon->ra_peer_count--;
-					kfree(peer);
-				} else {
-					list_add_tail(&peer->list, &peers_to_wmi);
-				}
-				found = true;
+					     peer_info->mac_addr) &&
+			    peer->peer_info.ra_addr == peer_info->ra_addr) {
+				peer_to_remove = peer;
 				break;
 			}
 		}
-
-		if (!found)
+		if (!peer_to_remove) {
 			ath12k_warn(dp_pdev->dp, "peer %pM (%s) not found for remove\n",
 				    peer_info->mac_addr,
 				    peer_info->ra_addr ? "RA" : "TA");
+			err = -ENOENT;
+			continue;
+		}
+
+		if (mon_ops && mon_ops->ext_mon_handle_rx_peer) {
+			entry = kzalloc(sizeof(*entry), GFP_ATOMIC);
+			if (!entry) {
+				spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
+				list_for_each_entry_safe(entry, temp,
+							 &peers_to_wmi, list) {
+					list_del(&entry->list);
+					kfree(entry);
+				}
+				return -ENOMEM;
+			}
+
+			ret = mon_ops->ext_mon_handle_rx_peer(dp_pdev, peer_info, action,
+							      vdev_id, &peers_to_wmi,
+							      entry, peer_to_remove);
+			if (ret) {
+				kfree(entry);
+				entry = NULL;
+				ath12k_warn(dp_pdev->dp,
+					    "failed to stage peer %pM for remove: %d\n",
+					    peer_info->mac_addr, ret);
+				err = ret;
+			}
+		}
 	}
 	spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
 
-	list_for_each_entry_safe(peer, tmp, &peers_to_wmi, list) {
-		ether_addr_copy(param.nrp_addr, peer->peer_info.mac_addr);
-		if (ath12k_wmi_vdev_set_neighbor_rx_cmd(dp_pdev->ar, &param)) {
-			ath12k_err(dp_pdev->dp->ab,
-				   "wmi remove fail vdev %d nrp %pM\n",
-				   param.vdev_id, param.nrp_addr);
-		}
-		list_del(&peer->list);
-		kfree(peer);
+	list_for_each_entry_safe(entry, temp, &peers_to_wmi, list) {
+		if (entry->param.action || entry->param.type)
+			if (ath12k_wmi_vdev_set_neighbor_rx_cmd(dp_pdev->ar,
+								&entry->param))
+				ath12k_err(dp_pdev->dp->ab,
+					   "wmi remove fail vdev %d nrp %pM\n",
+					   entry->param.vdev_id, entry->param.nrp_addr);
 	}
 
-	return 0;
+	spin_lock(&dp_mon_pdev->rx_ext_mon_lock);
+	rx_ext_mon = dp_mon_pdev->rx_ext_mon_config;
+	if (likely(rx_ext_mon)) {
+		list_for_each_entry_safe(entry, temp, &peers_to_wmi, list) {
+			if (entry->peer) {
+				list_del(&entry->peer->list);
+				rx_ext_mon->peer_count--;
+				if (entry->peer->peer_info.ra_addr)
+					rx_ext_mon->ra_peer_count--;
+				kfree(entry->peer);
+			}
+			list_del(&entry->list);
+			kfree(entry);
+		}
+		spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
+	} else {
+		spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
+		list_for_each_entry_safe(entry, temp, &peers_to_wmi, list) {
+			list_del(&entry->list);
+			kfree(entry->peer);
+			kfree(entry);
+		}
+	}
+
+	return err;
 }
 
 static int
@@ -4543,44 +4632,77 @@ EXPORT_SYMBOL(ath12k_dp_ext_mon_alloc);
 
 void
 ath12k_dp_ext_mon_drain_peer_list(struct ath12k_pdev_dp *dp_pdev,
-				  struct list_head *peer_list,
+				  struct list_head *peers_to_wmi,
 				  int vdev_id)
 {
+	const struct ath12k_dp_arch_mon_ops *mon_ops = ath12k_dp_mon_ops_get(dp_pdev->dp);
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct ath12k_dp_rx_ext_mon *rx_ext_mon = dp_mon_pdev->rx_ext_mon_config;
 	struct ath12k_dp_ext_mon_peer *peer, *tmp;
-	struct ath12k_set_neighbor_rx_params param = {0};
+	struct ath12k_ext_mon_wmi_entry *entry;
+	LIST_HEAD(local_peers);
+	int ret = 0;
+
+	lockdep_assert_held(&dp_mon_pdev->rx_ext_mon_lock);
 
 	if (vdev_id == -1) {
-		ath12k_warn(dp_pdev->dp->ab,
-			    "no active monitor vdev; skipping WMI REMOVE for peers\n");
-		list_for_each_entry_safe(peer, tmp, peer_list, list) {
+		list_for_each_entry_safe(peer, tmp, &rx_ext_mon->peer_list, list) {
 			list_del(&peer->list);
 			kfree(peer);
 		}
+		rx_ext_mon->peer_count = 0;
+		rx_ext_mon->ra_peer_count = 0;
 		return;
 	}
 
-	param.vdev_id = vdev_id;
-	param.action = WMI_FILTER_NRP_ACTION_REMOVE;
+	list_splice_init(&rx_ext_mon->peer_list, &local_peers);
+	rx_ext_mon->peer_count = 0;
+	rx_ext_mon->ra_peer_count = 0;
 
-	list_for_each_entry_safe(peer, tmp, peer_list, list) {
-		if (!peer->peer_info.ra_addr) {
-			ether_addr_copy(param.nrp_addr, peer->peer_info.mac_addr);
-			if (ath12k_wmi_vdev_set_neighbor_rx_cmd(dp_pdev->ar, &param))
-				ath12k_warn(dp_pdev->dp->ab,
-					    "wmi remove failed for peer %pM vdev %d\n",
-					    peer->peer_info.mac_addr, vdev_id);
-		}
+	list_for_each_entry_safe(peer, tmp, &local_peers, list) {
 		list_del(&peer->list);
+
+		entry = kzalloc(sizeof(*entry), GFP_ATOMIC);
+		if (entry && mon_ops && mon_ops->ext_mon_handle_rx_peer) {
+			ret = mon_ops->ext_mon_handle_rx_peer(dp_pdev, &peer->peer_info,
+							ATH12K_EXT_MON_PEER_ACTION_REMOVE,
+							vdev_id, peers_to_wmi,
+							entry, peer);
+			if (!ret)
+				continue;
+		}
+		/* kzalloc failed or callback failed — free directly */
+		kfree(entry);
 		kfree(peer);
 	}
 }
 EXPORT_SYMBOL(ath12k_dp_ext_mon_drain_peer_list);
 
+static void
+ath12k_dp_ext_mon_dispatch_wmi_entries(struct ath12k_pdev_dp *dp_pdev,
+				       struct list_head *peers_to_wmi,
+				       int vdev_id)
+{
+	struct ath12k_ext_mon_wmi_entry *entry, *tmp;
+
+	list_for_each_entry_safe(entry, tmp, peers_to_wmi, list) {
+		if (vdev_id != -1 && (entry->param.action || entry->param.type))
+			if (ath12k_wmi_vdev_set_neighbor_rx_cmd(dp_pdev->ar,
+								&entry->param))
+				ath12k_warn(dp_pdev->dp->ab,
+					    "wmi remove failed for peer %pM vdev %d\n",
+					    entry->param.nrp_addr, vdev_id);
+		list_del(&entry->list);
+		kfree(entry->peer);
+		kfree(entry);
+	}
+}
+
 void ath12k_dp_ext_mon_free(struct ath12k_pdev_dp *dp_pdev)
 {
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
 	struct ath12k_dp_rx_ext_mon *rx_config = NULL;
-	LIST_HEAD(peers_to_drain);
+	LIST_HEAD(peers_to_wmi);
 	int vdev_id;
 
 	if (unlikely(!dp_mon_pdev)) {
@@ -4595,13 +4717,12 @@ void ath12k_dp_ext_mon_free(struct ath12k_pdev_dp *dp_pdev)
 		return;
 	}
 
+	vdev_id = ath12k_dp_ext_mon_find_mon_vdev_id(dp_pdev);
+	ath12k_dp_ext_mon_drain_peer_list(dp_pdev, &peers_to_wmi, vdev_id);
 	dp_mon_pdev->rx_ext_mon_config = NULL;
-	list_splice_init(&rx_config->peer_list, &peers_to_drain);
 	spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
 
-	vdev_id = ath12k_dp_ext_mon_find_mon_vdev_id(dp_pdev);
-	ath12k_dp_ext_mon_drain_peer_list(dp_pdev, &peers_to_drain, vdev_id);
-
+	ath12k_dp_ext_mon_dispatch_wmi_entries(dp_pdev, &peers_to_wmi, vdev_id);
 	kfree(rx_config);
 }
 EXPORT_SYMBOL(ath12k_dp_ext_mon_free);
@@ -4610,7 +4731,7 @@ void ath12k_dp_ext_mon_reset(struct ath12k_pdev_dp *dp_pdev)
 {
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
 	struct ath12k_dp_rx_ext_mon *rx_config;
-	LIST_HEAD(peers_to_drain);
+	LIST_HEAD(peers_to_wmi);
 	int vdev_id;
 
 	if (unlikely(!dp_mon_pdev)) {
@@ -4629,13 +4750,14 @@ void ath12k_dp_ext_mon_reset(struct ath12k_pdev_dp *dp_pdev)
 		return;
 	}
 
-	list_splice_init(&rx_config->peer_list, &peers_to_drain);
+	vdev_id = ath12k_dp_ext_mon_find_mon_vdev_id(dp_pdev);
+	ath12k_dp_ext_mon_drain_peer_list(dp_pdev, &peers_to_wmi, vdev_id);
+
 	memset(rx_config, 0, sizeof(*rx_config));
 	INIT_LIST_HEAD(&rx_config->peer_list);
 	spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
 
-	vdev_id = ath12k_dp_ext_mon_find_mon_vdev_id(dp_pdev);
-	ath12k_dp_ext_mon_drain_peer_list(dp_pdev, &peers_to_drain, vdev_id);
+	ath12k_dp_ext_mon_dispatch_wmi_entries(dp_pdev, &peers_to_wmi, vdev_id);
 }
 EXPORT_SYMBOL(ath12k_dp_ext_mon_reset);
 
