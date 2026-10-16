@@ -3752,7 +3752,7 @@ static ssize_t ath12k_read_compress_fw_dump(struct file *file,
 }
 
 static const struct file_operations fops_compress_fw_dump = {
-	.open = ath12k_debugfs_open,
+	.open = simple_open,
 	.read = ath12k_read_compress_fw_dump,
 	.write = ath12k_write_compress_fw_dump,
 	.llseek = default_llseek,
@@ -3788,7 +3788,7 @@ static ssize_t ath12k_read_power_save_mode(struct file *file,
 }
 
 static const struct file_operations fops_power_save_mode = {
-	.open = ath12k_debugfs_open,
+	.open = simple_open,
 	.read = ath12k_read_power_save_mode,
 	.write = ath12k_write_power_save_mode,
 	.llseek = default_llseek,
