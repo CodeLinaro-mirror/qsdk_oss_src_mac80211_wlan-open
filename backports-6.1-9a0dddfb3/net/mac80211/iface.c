@@ -79,11 +79,17 @@ static int ieee80211_get_6ghz_max_txpower(struct ieee80211_link_data *link,
 	return max_pwr;
 }
 
+static bool ieee80211_is_usr_pwr_lvl_set(int pwr)
+{
+	return pwr != INT_MIN;
+}
+
 bool __ieee80211_recalc_txpower(struct ieee80211_link_data *link,
 				unsigned int link_id)
 {
 	struct ieee80211_chanctx_conf *chanctx_conf;
 	int power;
+	int idx;
 
 	rcu_read_lock();
 	chanctx_conf = rcu_dereference(link->conf->chanctx_conf);
@@ -99,10 +105,21 @@ bool __ieee80211_recalc_txpower(struct ieee80211_link_data *link,
 		if (max_pwr != S8_MIN)
 			power = max_pwr;
 	}
+	idx = chanctx_conf->radio_idx;
 	rcu_read_unlock();
 
-	if (link->user_power_level != IEEE80211_UNSET_POWER_LEVEL)
+	if (link->user_power_level != IEEE80211_UNSET_POWER_LEVEL) {
 		power = min(power, link->user_power_level);
+	} else {
+		struct wiphy *wiphy = link->sdata->local->hw.wiphy;
+
+		if (idx >= 0 && idx < wiphy->n_radio) {
+			int pwr = wiphy->radio_cfg[idx].user_pwr_lvl;
+
+			if (ieee80211_is_usr_pwr_lvl_set(pwr))
+				power = min(power, pwr);
+		}
+	}
 
 	if (link->ap_power_level != IEEE80211_UNSET_POWER_LEVEL)
 		power = min(power, link->ap_power_level);

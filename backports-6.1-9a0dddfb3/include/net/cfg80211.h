@@ -7203,6 +7203,7 @@ struct cfg80211_bg_radar {
  *
  * @rts_threshold: RTS threshold (dot11RTSThreshold);
  *	-1 (default) = RTS/CTS disabled
+ * @user_pwr_lvl: user tx power limit (dBm) for this radio.
  * @bgcac_cac_ms: test-only per-radio background CAC timeout override in ms;
  *	0 means use regulatory default behavior
  * @bootup_cac_feature: Bootup CAC feature support;
@@ -7210,6 +7211,7 @@ struct cfg80211_bg_radar {
  */
 struct wiphy_radio_cfg {
 	u32 rts_threshold;
+	int user_pwr_lvl;
 #ifdef CPTCFG_QCA_LAB_TEST_FEATURES
 	u32 bgcac_cac_ms;
 #endif
