@@ -11338,6 +11338,7 @@ ath12k_mac_select_scan_device(struct ieee80211_hw *hw,
 void __ath12k_mac_scan_finish(struct ath12k *ar)
 {
 	struct ieee80211_hw *hw = ath12k_ar_to_hw(ar);
+	bool notify_roc_expired = false;
 
 	lockdep_assert_held(&ar->data_lock);
 
@@ -11346,8 +11347,7 @@ void __ath12k_mac_scan_finish(struct ath12k *ar)
 		break;
 	case ATH12K_SCAN_RUNNING:
 	case ATH12K_SCAN_ABORTING:
-		if (ar->scan.is_roc && ar->scan.roc_notify)
-			ieee80211_remain_on_channel_expired(hw);
+		notify_roc_expired = ar->scan.is_roc && ar->scan.roc_notify;
 		fallthrough;
 	case ATH12K_SCAN_STARTING:
 		cancel_delayed_work(&ar->scan.timeout);
@@ -11356,6 +11356,8 @@ void __ath12k_mac_scan_finish(struct ath12k *ar)
 		if (ar->scan.is_roc)
 			ar->scan.scan_id = ATH12K_ROC_SCAN_ID;
 		wiphy_work_queue(ar->ah->hw->wiphy, &ar->scan.vdev_clean_wk);
+		if (notify_roc_expired)
+			ieee80211_remain_on_channel_expired(hw);
 		break;
 	}
 }
