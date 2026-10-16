@@ -16,6 +16,7 @@
 #ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/ath12k_cmn_extn.h"
 #include "qcn_extns/dp_mon_extn.h"
+#include "qcn_extns/dp_stats_extn.h"
 #include "qcn_extns/ini.h"
 #endif /* CPTCFG_QCN_EXTN */
 #include "dp_tx_mon.h"
@@ -2045,6 +2046,9 @@ ath12k_dp_mon_rx_scan_radio_stats_update(struct ath12k *ar,
 
 	ath12k_dp_rx_scan_radio_stats_update(telemetry_vif,
 				 &dp_mon_pdev->scan_radio.rx_scan_radio_stats);
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_dp_rx_undecoded_stats_update(telemetry_vif, dp_mon_pdev);
+#endif /* CPTCFG_QCN_EXTN */
 }
 
 static inline bool
