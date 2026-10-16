@@ -1499,8 +1499,11 @@ int ath12k_wmi_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 	cmd->buf_len = cpu_to_le32(buf_len);
 	cmd->tx_params_valid = tx_params_valid;
 
-	if (drv_info->flags & ATH12K_SKB_MGMT_SMD_HI_PRI)
+	if (drv_info->flags & ATH12K_SKB_MGMT_SMD_HI_PRI) {
 		cmd->tx_flags |= WMI_TX_MGMT_HI_PRIO_FLAG;
+		ath12k_dbg(ar->ab, ATH12K_DBG_SMD, "SMD: WMI_TX_MGMT_HI_PRIO_FLAG set for vdev_id %d desc_id %d\n",
+			    vdev_id, buf_id);
+	}
 
 	frame_tlv = (struct wmi_tlv *)(skb->data + sizeof(*cmd));
 	frame_tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_BYTE, roundup(buf_len, sizeof(u32)));

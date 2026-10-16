@@ -20237,6 +20237,11 @@ check_rm_action_frame:
 		if (action_code == WLAN_ACTION_UHR_LINK_RECONF_REQ ||
 		    action_code == WLAN_ACTION_UHR_LINK_RECONF_RESP) {
 			skb_cb->flags |= ATH12K_SKB_MGMT_SMD_HI_PRI;
+			ath12k_dbg(ar->ab, ATH12K_DBG_SMD,
+				   "smd: mark mgmt HI_PRI action=%s reconf_type=%u da=%pM sa=%pM\n",
+				   action_code == WLAN_ACTION_UHR_LINK_RECONF_REQ ?
+					"LINK_RECONF_REQ" : "LINK_RECONF_RESP",
+				   buf[1], hdr->addr1, hdr->addr2);
 		}
 		break;
 	default:
