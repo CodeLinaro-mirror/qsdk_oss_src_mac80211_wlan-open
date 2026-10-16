@@ -1495,6 +1495,29 @@ static const struct file_operations fops_device_dp_stats = {
 	.llseek = default_llseek,
 };
 
+static int ath12k_debugfs_dp_peer_info_show(struct seq_file *file, void *v)
+{
+	struct ath12k_base *ab = file->private;
+
+	if (ab->dp->arch_ops->dump_dp_peer_info)
+		ab->dp->arch_ops->dump_dp_peer_info(ab->dp, file);
+
+	return 0;
+}
+
+static int ath12k_debugfs_dp_peer_info_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, ath12k_debugfs_dp_peer_info_show, inode->i_private);
+}
+
+static const struct file_operations fops_dp_peer_info = {
+	.open = ath12k_debugfs_dp_peer_info_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+	.owner = THIS_MODULE,
+};
+
 static ssize_t ath12k_write_block_radar(struct file *file,
 					const char __user *user_buf,
 					size_t count, loff_t *ppos)
@@ -9524,6 +9547,8 @@ void ath12k_debugfs_pdev_create(struct ath12k_base *ab) {
 	ath12k_debugfs_create_file("device_dp_stats", 0600, ab->debugfs_soc,
 				   ab, ab,
 				   &fops_device_dp_stats);
+	debugfs_create_file("dp_peer_info", 0400, ab->debugfs_soc,
+			    ab, &fops_dp_peer_info);
 	ath12k_debugfs_create_file("device_mon_stats", 0600, ab->debugfs_soc,
 				   ab, ab,
 				   &fops_device_mon_stats);

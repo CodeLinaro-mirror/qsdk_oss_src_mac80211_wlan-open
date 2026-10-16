@@ -870,6 +870,7 @@ struct ath12k_dp_arch_ops {
 	ssize_t (*dump_srng_stats)(struct ath12k_dp *dp, char *buf, int size);
 	ssize_t (*dump_device_dp_stats)(struct ath12k_dp *dp, char *buf, int size);
 	void (*reset_device_dp_stats)(struct ath12k_dp *dp);
+	void (*dump_dp_peer_info)(struct ath12k_dp *dp, struct seq_file *file);
 	void (*dp_assoc_link_update)(struct ath12k_dp *dp, struct ath12k_hw *ah,
 				     struct ieee80211_sta *sta,
 				     struct ieee80211_vif *vif);
