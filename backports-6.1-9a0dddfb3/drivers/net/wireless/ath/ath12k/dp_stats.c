@@ -544,6 +544,7 @@ s8 ath12k_dp_get_rssi_value(s8 snr,
 
 	return rssi_val;
 }
+EXPORT_SYMBOL(ath12k_dp_get_rssi_value);
 
 /**
  * ath12k_dp_clear_preserved_stats - Clear preserved statistics

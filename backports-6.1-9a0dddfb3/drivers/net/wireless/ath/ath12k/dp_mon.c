@@ -1880,7 +1880,6 @@ ath12k_dp_mon_ppdu_per_user_rx_time_update(struct ath12k_pdev_dp *dp_pdev,
                   stats->dp_mon_stats.mon_stats.rx_airtime_consumption[ac].consumption);
 }
 
-#define RSSI_OFFSET 100
 #define RSSI_ACCURACY_OFFSET 128
 
 /**

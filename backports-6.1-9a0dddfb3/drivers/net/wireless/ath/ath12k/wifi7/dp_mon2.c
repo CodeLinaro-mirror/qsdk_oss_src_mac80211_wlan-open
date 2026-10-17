@@ -1932,19 +1932,16 @@ ath12k_wifi7_dp_mon_rx_process_ppdu(struct work_struct *work)
 			if (!list_empty(&dp->neighbor_peers)) {
 				list_for_each_entry_safe(nrp, tmp,
 							 &dp->neighbor_peers, list) {
-					u8 avg = nrp->avg_rssi;
-					u8 snr = ppdu_info->rssi_db_comb_chain_pri20;
-
 					is_addr_equal =
 					ether_addr_equal(nrp->addr,
 							 ppdu_info->nrp_info.mac_addr2);
 					if (filter_category ==
 					    DP_MPDU_FILTER_CATEGORY_MD && is_addr_equal) {
-						avg = ath12k_dp_get_avg_snr(snr,
-										  avg);
 						nrp->rssi =
-						    ppdu_info->rssi_db_comb_chain_pri20;
-						nrp->avg_rssi = avg;
+							ath12k_dp_nrp_rssi(pdev_dp,
+									   ppdu_info);
+						ath12k_dp_nrp_avg_rssi_update(nrp);
+						ath12k_dp_nrp_snr_update(nrp, ppdu_info);
 						nrp->timestamp =
 							ktime_to_ms(ktime_get_real());
 						goto unlock;

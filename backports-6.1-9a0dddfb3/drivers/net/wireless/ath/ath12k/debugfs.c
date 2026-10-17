@@ -2769,7 +2769,11 @@ static ssize_t ath12k_read_nrp_rssi(struct file *file,
 	loff_t file_pos = *ppos;
 	struct path *fpath = &file->f_path;
 	char *fname = fpath->dentry->d_iname;
-	char buf[128] = {0};
+	char buf[160] = {0};
+	u8 nrp_addr[ETH_ALEN];
+	s32 nrp_rssi, nrp_avg_rssi;
+	u32 nrp_snr, nrp_avg_snr;
+	s64 nrp_timestamp;
 	int i = 0;
 	int j = 0;
 	int len = 0;
@@ -2793,19 +2797,28 @@ static ssize_t ath12k_read_nrp_rssi(struct file *file,
 	list_for_each_entry(nrp, &dp->neighbor_peers, list)
 		if (ether_addr_equal(macaddr, nrp->addr))
 			break;
-	spin_unlock_bh(&dp->dp_lock);
-
 	if (!nrp) {
+		spin_unlock_bh(&dp->dp_lock);
 		ath12k_warn(ab, "cannot find any NAC for mac addr [%pM]\n",
 			    macaddr);
 		return -EINVAL;
 	}
+	ether_addr_copy(nrp_addr, nrp->addr);
+	nrp_rssi = nrp->rssi;
+	nrp_avg_rssi = nrp->avg_rssi;
+	nrp_snr = nrp->snr;
+	nrp_avg_snr = nrp->avg_snr;
+	nrp_timestamp = nrp->timestamp;
+	spin_unlock_bh(&dp->dp_lock);
 
 	len = scnprintf(buf, sizeof(buf),
-			"%-20s %-10s %-10s %s\n",
-			"Neighbor Peer MAC", "RSSI", "Avg RSSI", "Time");
-	len += scnprintf(buf + len, sizeof(buf) - len, "%-20pM %-10u %-10u %lld\n",
-			 nrp->addr, nrp->rssi, nrp->avg_rssi, nrp->timestamp);
+			"%-20s %-10s %-10s %-10s %-10s %s\n",
+			"Neighbor Peer MAC", "RSSI", "Avg RSSI", "SNR", "Avg SNR",
+			"Time");
+	len += scnprintf(buf + len, sizeof(buf) - len,
+			 "%-20pM %-10d %-10d %-10u %-10u %lld\n",
+			 nrp_addr, nrp_rssi, nrp_avg_rssi, nrp_snr, nrp_avg_snr,
+			 nrp_timestamp);
 
 	return simple_read_from_buffer(ubuf, count, ppos, buf, len);
 }
@@ -2958,6 +2971,8 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 			goto err_free;
 		}
 
+		ewma_avg_rssi_init(&nrp->rssi_ewma);
+		ewma_avg_snr_init(&nrp->snr_ewma);
 		nrp->vdev_id = -1;
 
 		list_for_each_entry(arvif, &ar->arvifs, list) {
