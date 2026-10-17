@@ -439,9 +439,7 @@ struct uplink_user_setup_info_v2 {
  * @header_version: ucode header version for the feature header that
  * follows this common header (4 for CFR/CIR per ucode's cc_upload table)
  *
- * @header_size: size of common header + feature header, in BYTES.
- * Unlike ath12k_cfir_enh_dma_hdr.length, this is already byte-granular --
- * do not multiply by 4
+ * @header_size: size of common header + feature header, in words.
  *
  * @payload_size: CFR payload length in bytes (32-bit), unlike
  * ath12k_cfir_enh_dma_hdr.total_bytes which is a 16-bit field
