@@ -31653,12 +31653,15 @@ int ath12k_mac_mlo_teardown_with_umac_reset(struct ath12k_base *ab,
 		for_each_ar(ah, ar, j) {
 			ar = &ah->radio[j];
 
-			if (ar->ab->is_bypassed ||
+			if (ar->ab->is_bypassed || ar->pdev_suspend ||
 			    (ar->ab == ab &&
 			     reason_code != WMI_MLO_TEARDOWN_REASON_DYNAMIC_WSI_REMAP)) {
 				/* No need to send teardown event for asserted
 				 * chip, as anyway there will be no completion
-				 * event from FW.
+				 * event from FW. Also skip any radio whose pdev
+				 * is currently WMI-suspended: a suspended pdev's
+				 * firmware won't respond to a teardown/umac-reset
+				 * WMI command.
 				 */
 				ar->teardown_complete_event = true;
 				continue;
