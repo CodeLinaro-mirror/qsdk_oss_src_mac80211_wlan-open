@@ -7195,6 +7195,11 @@ static int ieee80211_mgd_st_prepare(struct ieee80211_sub_if_data *sdata,
 			&sdata->u.mgd.prep_targets[target_slot];
 		bool already_prepared = target->target_sta != NULL;
 
+		target->exec_path = req->exec_path;
+		target->no_dl_sn = req->request_dl_sn_not_transferred;
+		target->no_ul_sn = req->request_ul_sn_not_transferred;
+		target->is_preferred_target = req->is_preferred_target;
+
 		ieee80211_smd_resend_prep_target(sdata, target);
 
 		ret = ieee80211_tx_smd_uhr_link_reconf(sdata,
