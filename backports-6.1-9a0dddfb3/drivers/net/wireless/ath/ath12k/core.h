@@ -2924,6 +2924,7 @@ struct ath12k_hw_group {
 	struct completion peer_cleanup_complete;
 	u64 wsi_peer_clean_timeout;
 	struct completion power_up;
+	bool wait_for_power_up;
 	bool mlo_teardown;
 	bool block_peer_create;
 	u8 cumac_chip_id;

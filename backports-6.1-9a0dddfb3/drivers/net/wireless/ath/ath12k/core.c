@@ -1164,31 +1164,40 @@ int ath12k_core_power_up(struct ath12k_hw_group *ag)
 {
 	struct ath12k_base *ab;
 	unsigned long time_left;
-	bool wait_for_power_up = false;
 	struct ath12k *ar = NULL;
 	int i, j, ret;
 
-	reinit_completion(&ag->power_up);
-	for (i = 0; i < ag->num_probed; i++) {
-		ab =  ag->ab[i];
-		if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags) &&
-		    !ath12k_hw_group_recovery_in_progress(ag)) {
-			for (j = 0; j < ab->num_radios; j++) {
-				ar = ab->pdevs[j].ar;
-				ar->pdev_suspend = false;
-			}
+	/* Serialize concurrent callers so only one triggers power-up and
+	 * waits on the shared completion.
+	 */
+	mutex_lock(&ag->mutex);
 
-			ath12k_hif_power_up(ab);
-			ab->powerup_triggered = true;
-			wait_for_power_up = true;
-			ath12k_info(ab, "Q6 power up is started\n");
+	if (!ag->wait_for_power_up) {
+		reinit_completion(&ag->power_up);
+		for (i = 0; i < ag->num_probed; i++) {
+			ab =  ag->ab[i];
+			if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags) &&
+			    !ath12k_hw_group_recovery_in_progress(ag)) {
+				for (j = 0; j < ab->num_radios; j++) {
+					ar = ab->pdevs[j].ar;
+					ar->pdev_suspend = false;
+				}
+
+				ath12k_hif_power_up(ab);
+				ab->powerup_triggered = true;
+				ag->wait_for_power_up = true;
+				ath12k_info(ab, "Q6 power up is started\n");
+			}
 		}
 	}
 
-	if (wait_for_power_up) {
+	mutex_unlock(&ag->mutex);
+
+	if (ag->wait_for_power_up) {
 		time_left = wait_for_completion_timeout(&ag->power_up,
 							ATH12K_Q6_POWER_UP_TIMEOUT);
 		if (!time_left) {
+			ag->wait_for_power_up = false;
 			ath12k_err(NULL, "Q6 power up wait timed out\n");
 			return -ETIMEDOUT;
 		}
@@ -3341,7 +3350,9 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 		}
 
 		if (ath12k_check_erp_power_down(ag)) {
-			complete(&ag->power_up);
+			/* Wake all waiters, not just one. */
+			complete_all(&ag->power_up);
+			ag->wait_for_power_up = false;
 			if (!ath12k_hw_group_recovery_in_progress(ag))
 				clear_bit(ATH12K_GROUP_FLAG_HIF_POWER_DOWN, &ag->flags);
 		}
@@ -3391,12 +3402,14 @@ err_core_stop:
 		ath12k_core_stop(ab);
 		mutex_unlock(&ab->core_lock);
 	}
+	ag->wait_for_power_up = false;
 	mutex_unlock(&ag->mutex);
 	goto exit;
 
 err_dp_free:
 	ath12k_dp_cmn_device_deinit(ab->dp);
 	mutex_unlock(&ab->core_lock);
+	ag->wait_for_power_up = false;
 	mutex_unlock(&ag->mutex);
 
 err_firmware_stop:
