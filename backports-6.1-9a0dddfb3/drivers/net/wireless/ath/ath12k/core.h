@@ -1082,6 +1082,7 @@ struct ath12k_link_vif {
 	struct ath12k_link_vif_extn arvif_extn;
 #endif /* CPTCFG_QCN_EXTN */
 	bool secured_bss;
+	bool dps_assist_enabled;
 };
 
 struct ath12k_dp_link_vif {
@@ -2279,6 +2280,13 @@ struct ath12k {
 	u16 num_stations_multistream;
 	struct wiphy_delayed_work ap_ps_timer;
 	u32 ap_ps_timeout;
+
+	/* Saved AP power-save params for SSR restore */
+	struct cfg80211_pcie_params pcie_params;
+	bool pcie_params_set;
+	u32 dcvs_mode;
+	bool dcvs_mode_set;
+	bool low_power_20mhz_enabled;
 
 	/* Periodic pdev stats timer: drives continuous FW counter updates
 	 * (CCA/channel utilization, noise floor, tx power) at a configurable
