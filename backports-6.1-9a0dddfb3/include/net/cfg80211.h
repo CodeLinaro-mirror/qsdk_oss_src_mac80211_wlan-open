@@ -7569,6 +7569,9 @@ struct wiphy {
 
 #ifdef CPTCFG_QCN_EXTN
 	bool allow_scan_on_dfs_chan;
+	void (*background_cac_event)(struct wiphy *wiphy,
+				     const struct cfg80211_chan_def *chandef,
+				     enum nl80211_radar_event event);
 #endif /* CPTCFG_QCN_EXTN */
 
 	char fw_version[ETHTOOL_FWVERS_LEN];

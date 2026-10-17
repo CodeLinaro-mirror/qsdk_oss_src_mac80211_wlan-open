@@ -1432,6 +1432,58 @@ static struct ath12k *ath12k_mac_get_ar_by_agile_chandef(struct ieee80211_hw *hw
 	return NULL;
 }
 
+#ifdef CPTCFG_QCN_EXTN
+/**
+ * ath12k_mac_background_cac_event() - Handle a background CAC event
+ * @wiphy: The wiphy that reported the event
+ * @bg_chandef: Channel definition associated with the event
+ * @event: Radar event reported by cfg80211
+ *
+ * Update the ath12k vendor DFS state for the channel associated with
+ * the background CAC event.
+ */
+static void
+ath12k_mac_background_cac_event(struct wiphy *wiphy,
+				const struct cfg80211_chan_def *bg_chandef,
+				enum nl80211_radar_event event)
+{
+	struct ieee80211_hw *hw;
+	struct ath12k *ar;
+	struct ieee80211_channel *state_chan;
+	enum ath12k_dfs_chan_state ath12k_dfs_state;
+
+	if (!bg_chandef || !bg_chandef->chan)
+		return;
+
+	hw = wiphy_to_ieee80211_hw(wiphy);
+	ar = ath12k_mac_get_ar_by_chan(hw, bg_chandef->chan);
+	if (!ar)
+		return;
+
+	state_chan = bg_chandef->chan;
+
+	switch (event) {
+	case NL80211_RADAR_CAC_FINISHED:
+		ath12k_dfs_state = ATH12K_DFS_CHAN_STATE_PRECAC_COMPLETED;
+		break;
+	case NL80211_RADAR_NOP_FINISHED:
+	case NL80211_RADAR_CAC_ABORTED:
+		ath12k_dfs_state = ATH12K_DFS_CHAN_STATE_CAC_REQUIRED;
+		break;
+	case NL80211_RADAR_DETECTED:
+		ath12k_dfs_state = ATH12K_DFS_CHAN_STATE_NOL;
+		break;
+	case NL80211_RADAR_CAC_STARTED:
+		ath12k_dfs_state = ATH12K_DFS_CHAN_STATE_PRECAC_STARTED;
+		break;
+	default:
+		return;
+	}
+
+	ath12k_dfs_update_chan_state(ar, state_chan, ath12k_dfs_state);
+}
+#endif /* CPTCFG_QCN_EXTN */
+
 static struct ath12k *ath12k_get_ar_by_ctx(struct ieee80211_hw *hw,
 					   struct ieee80211_chanctx_conf *ctx)
 {
@@ -12343,6 +12395,11 @@ static int ath12k_mac_abort_agile_cac(struct ath12k *ar, bool notify)
 	if (!ret) {
 		ar->agile_abort_pending = true;
 		ar->ap_ps_disabled_by_agile = false;
+#ifdef CPTCFG_QCN_EXTN
+		if (ar->agile_chandef.chan)
+			ath12k_dfs_update_chan_state(ar, ar->agile_chandef.chan,
+						     ATH12K_DFS_CHAN_STATE_CAC_REQUIRED);
+#endif
 		if (notify)
 			ath12k_mac_background_dfs_event(ar, ATH12K_BGDFS_ABORT);
 		memset(&ar->agile_chandef, 0, sizeof(struct cfg80211_chan_def));
@@ -31539,6 +31596,11 @@ static int ath12k_mac_setup_register(struct ath12k *ar,
 	int ret;
 	u8 total_vdevs;
 	struct ath12k_base *ab = ar->ab;
+
+#ifdef CPTCFG_QCN_EXTN
+	ar->ah->hw->wiphy->background_cac_event =
+		ath12k_mac_background_cac_event;
+#endif /* CPTCFG_QCN_EXTN */
 
 	init_waitqueue_head(&ar->txmgmt_empty_waitq);
 	idr_init(&ar->txmgmt_idr);
