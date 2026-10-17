@@ -19703,11 +19703,15 @@ ath12k_dp_rx_flow_tag_op(struct wiphy *wiphy,
 		if (ret)
 			ath12k_warn(ab_list[0],
 				    "rx_flow_tag_op: add failed ret=%d\n", ret);
+		else
+			ath12k_ab_to_dp(ab_list[0])->dp_hw_grp->flow_tag_active_count++;
 	} else /* DEL */ {
 		ret = ath12k_dp_rx_flow_delete_entry(ab_list[0], &flow_info);
 		if (ret)
 			ath12k_warn(ab_list[0],
 				    "rx_flow_tag_op: del failed ret=%d\n", ret);
+		else if (ath12k_ab_to_dp(ab_list[0])->dp_hw_grp->flow_tag_active_count)
+			ath12k_ab_to_dp(ab_list[0])->dp_hw_grp->flow_tag_active_count--;
 	}
 
 	return ret;

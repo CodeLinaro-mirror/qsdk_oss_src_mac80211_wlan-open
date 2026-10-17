@@ -1997,7 +1997,8 @@ ath12k_wifi8_dp_process_reo_rx_packets(struct ath12k_dp *dp,
 			};
 			if (tag.cce_match && dp_pdev->protocol_tag_active_count)
 				dp_rx_update_protocol_tag(dp_pdev, msdu, &tag);
-			dp_rx_update_flow_tag(dp_pdev, msdu, &tag);
+			if (dp_hw_grp->flow_tag_active_count)
+				dp_rx_update_flow_tag(dp_pdev, msdu, &tag);
 		}
 
 		if (likely(msdu_idx + 1 < num_msdus)) {
