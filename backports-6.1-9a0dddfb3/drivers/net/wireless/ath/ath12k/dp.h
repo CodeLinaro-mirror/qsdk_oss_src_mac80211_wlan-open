@@ -523,10 +523,12 @@ enum ath12k_dp_eapol_key_type {
 #define DP_INVALID_BANK_ID -1
 
 /* Tx Desc Flag bit definations */
-#define DP_TX_DESC_FLAG_FAST	0x1
-#define DP_TX_DESC_FLAG_MCAST	0x2
-#define DP_TX_DESC_FLAG_BCAST	0x4
-#define DP_TX_DESC_FLAG_RECYCLE	0x8
+#define DP_TX_DESC_FLAG_FAST		0x1
+#define DP_TX_DESC_FLAG_MCAST		0x2
+#define DP_TX_DESC_FLAG_BCAST		0x4
+#define DP_TX_DESC_FLAG_RECYCLE		0x8
+/* Set when tx_desc->spl_desc is set; peer_id may be invalid, skip peer search */
+#define DP_TX_DESC_FLAG_SPL_DESC	0x10
 
 #define MAX_TQM_RELEASE_REASON 29
 #define MAX_FW_TX_STATUS 7
