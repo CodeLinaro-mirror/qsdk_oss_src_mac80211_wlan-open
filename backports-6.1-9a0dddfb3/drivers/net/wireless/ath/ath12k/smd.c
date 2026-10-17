@@ -284,6 +284,9 @@ static int ath12k_smd_bss_assoc(struct ath12k *ar,
 						       target_mld_addr,
 						       BIT(arvif->ar->hw_link_id));
 
+		ath12k_dp_arch_assoc_link_update(dp, arvif->ar->ah,
+						 target_ap_sta, ahvif->vif);
+
 		if (ath12k_dp_arch_smd_exec_rx_tid(dp, dp_hw, ahvif->vif,
 						   target_mld_addr))
 			ath12k_warn(ab,

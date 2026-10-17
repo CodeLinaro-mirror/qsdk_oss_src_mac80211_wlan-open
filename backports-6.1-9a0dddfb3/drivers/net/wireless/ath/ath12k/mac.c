@@ -6732,6 +6732,9 @@ skip_vdev_up:
 						       vif->cfg.ap_addr,
 						       BIT(ar->hw_link_id));
 
+		ath12k_dp_arch_assoc_link_update(dp, arvif->ar->ah,
+						 ap_sta, vif);
+
 		if (ath12k_dp_arch_smd_exec_rx_tid(dp, dp_hw, vif, vif->cfg.ap_addr))
 			ath12k_warn(ab,
 				    "smd bss_assoc: rx_tid restore failed for %pM (non-fatal)\n",
