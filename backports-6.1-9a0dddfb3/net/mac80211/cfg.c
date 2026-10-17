@@ -7177,10 +7177,6 @@ static int ieee80211_mgd_st_prepare(struct ieee80211_sub_if_data *sdata,
 		return -EINVAL;
 	}
 
-	target_slot = ieee80211_smd_find_target_by_addr(sdata, req->target_mld_addr);
-	if (target_slot >= 0)
-		return -EEXIST;
-
 	if (ifmgd->num_prepared_targets >= ifmgd->max_prepared_targets) {
 		sdata_err(sdata, "smd: max concurrent preparations reached (%d)",
 			  ifmgd->max_prepared_targets);
@@ -7193,9 +7189,42 @@ static int ieee80211_mgd_st_prepare(struct ieee80211_sub_if_data *sdata,
 		return -ENOMEM;
 	}
 
-	target_slot = ieee80211_smd_add_prep_target(sdata,
-						    req->target_mld_addr,
+	target_slot = ieee80211_smd_find_target_by_addr(sdata, req->target_mld_addr);
+	if (target_slot >= 0) {
+		struct ieee80211_smd_prep_target *target =
+			&sdata->u.mgd.prep_targets[target_slot];
+		bool already_prepared = target->target_sta != NULL;
+
+		ieee80211_smd_resend_prep_target(sdata, target);
+
+		ret = ieee80211_tx_smd_uhr_link_reconf(sdata,
+						       req->target_mld_addr,
+						       req, assoc_data);
+		if (ret) {
+			sdata_err(sdata, "smd: failed to resend prep request: %d",
+				  ret);
+			kfree(assoc_data);
+			return ret;
+		}
+
+		if (already_prepared) {
+			kfree(assoc_data);
+		} else {
+			kfree(target->assoc_data);
+			target->assoc_data = assoc_data;
+		}
+
+		if (target->prep_timeout_started && target->assoc_data &&
+		    target->assoc_data->smd_timeout)
+			ieee80211_smd_start_prep_timeout(sdata, target,
+							 target->assoc_data->smd_timeout);
+
+		return 0;
+	}
+
+	target_slot = ieee80211_smd_add_prep_target(sdata, req->target_mld_addr,
 						    assoc_data);
+
 	if (target_slot < 0) {
 		sdata_err(sdata, "smd: failed to add target: %d", target_slot);
 		kfree(assoc_data);

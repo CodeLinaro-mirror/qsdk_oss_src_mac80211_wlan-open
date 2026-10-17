@@ -3656,6 +3656,8 @@ int ieee80211_smd_find_target_by_dialog_token(struct ieee80211_sub_if_data *sdat
 int ieee80211_smd_add_prep_target(struct ieee80211_sub_if_data *sdata,
 				  const u8 *target_addr,
 				  struct ieee80211_mgd_assoc_data *assoc_data);
+u8 ieee80211_smd_resend_prep_target(struct ieee80211_sub_if_data *sdata,
+				    struct ieee80211_smd_prep_target *target);
 void ieee80211_smd_remove_prep_target(struct ieee80211_sub_if_data *sdata,
 				      int slot);
 void ieee80211_smd_prep_reset_target(struct ieee80211_sub_if_data *sdata,
