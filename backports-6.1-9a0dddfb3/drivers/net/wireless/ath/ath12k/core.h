@@ -1372,6 +1372,8 @@ struct ath12k_vif {
 
 	u32 aid;
 	bool ps;
+	/* WNM TFS agreement */
+	bool wnm_tfs;
 
 	struct ath12k_link_vif deflink;
 	struct ath12k_link_vif __rcu *link[ATH12K_NUM_MAX_LINKS];
@@ -1640,6 +1642,8 @@ struct ath12k_mode3_recovery_params {
 	u16  added_links;
 };
 
+#define ATH12K_TFS_MAX_PARSE_RESULTS  16
+
 struct ath12k_sta {
 	struct ath12k_vif *ahvif;
 	enum hal_pn_type pn_type;
@@ -1729,7 +1733,142 @@ struct ath12k_sta {
 	u8 tim_bcast_offset;
 	u8 tim_bcast_high_rate;
 	u8 tim_bcast_low_rate;
+
+	/* Queue-driven: TX filter is active while this list is non-empty. */
+	spinlock_t       tfs_lock;
+	struct list_head tfs_rules_list;
+
+	/* Protects the TFS notify/delete queue below (use spin_lock, not _bh). */
+	struct work_struct tfs_action_work;
+	spinlock_t         tfs_action_lock; /* protects tfs_{notify,delete}_ids/count */
+	u8                 tfs_notify_ids[ATH12K_TFS_MAX_PARSE_RESULTS];
+	u8                 tfs_notify_count;
+	u8                 tfs_delete_ids[ATH12K_TFS_MAX_PARSE_RESULTS];
+	u8                 tfs_delete_count;
 };
+
+/* TFS (Traffic Filtering Service) — IEEE 802.11v §11.21.12 */
+
+/* Max Type3 filter_value/filter_mask length: (255 - overhead) / 2 */
+#define ATH12K_TFS_MAX_FILTER_LEN       125
+
+#define ATH12K_TFS_FLOW_LABEL_LEN 3
+
+#define ATH12K_TFS_TCLAS_TYPE1  1
+#define ATH12K_TFS_TCLAS_TYPE3  3
+#define ATH12K_TFS_TCLAS_TYPE4  4
+
+#define ATH12K_TFS_IP_VERSION4  4
+#define ATH12K_TFS_IP_VERSION6  6
+
+#define ATH12K_TFS_ACTION_DELETE  0x01
+#define ATH12K_TFS_ACTION_NOTIFY  0x02
+
+/* Type 4 adds dscp+next_header vs. Type 1 on the IPv6 wire format */
+#define ATH12K_TFS_TYPE4_V6_EXTRA_LEN 2
+
+/* WNM action frame codes (IEEE 802.11-2024 Table 9-354) */
+#define ATH12K_WNM_ACTION_TFS_NOTIFY 15
+#define ATH12K_TFS_NOTIFY_ACTION_HDR_LEN 3  /* category+action+count */
+
+#define ATH12K_TCLAS_PROCESS_AND  0  /* match ALL TCLAS elements, Table 9-210 */
+#define ATH12K_TCLAS_PROCESS_OR   1  /* match ANY TCLAS element, Table 9-210 */
+
+#define ATH12K_TFS_EID_TFS_REQ        91
+#define ATH12K_TFS_EID_TFS_RESP       92
+#define ATH12K_TFS_IE_HDR_LEN         2  /* generic [ID][Length] header */
+#define ATH12K_TFS_SUBELEMID_REQ      1
+#define ATH12K_TFS_SUBELEMID_RSP      1
+#define ATH12K_TFS_STATUS_ACCEPT                0
+#define ATH12K_TFS_STATUS_INVALID_CLASSIFIER    1
+#define ATH12K_TFS_STATUS_RESOURCE_UNAVAILABLE  2
+#define ATH12K_TFS_STATUS_REASON_UNKNOWN        5
+#define ATH12K_TFS_TCLAS_HDR_LEN      5  /* EID+len+UP+type+mask */
+#define ATH12K_TFS_TCLAS_TYPE_OFF     3  /* Classifier Type at pos[3] */
+#define ATH12K_TFS_TCLAS_LEN_OVERHEAD 3  /* UP+type+mask in the Length field */
+#define ATH12K_TFS_TCLAS_PARAMS_OFF   5  /* classifier params start at pos[5] */
+
+/* Type 3 classifier: [filter_offset(2)][filter_value(N)][filter_mask(N)] */
+#define ATH12K_TFS_TYPE3_LEN_OVERHEAD 5  /* UP+type+mask+filter_offset(2) in Length */
+#define ATH12K_TFS_TYPE3_FOFF_MSB_POS 5  /* filter_offset MSB byte position */
+#define ATH12K_TFS_TYPE3_FOFF_LSB_POS 6  /* filter_offset LSB byte position */
+#define ATH12K_TFS_TYPE3_DATA_POS     7  /* filter_value start position */
+
+/* TFS Request element wire-format (§9.4.2.78): [EID][Length][TFS_ID][Action][Sub...] */
+#define ATH12K_TFS_REQ_BODY_MIN       2  /* min body: TFS_ID + TFS_Action */
+#define ATH12K_TFS_REQ_ID_OFF         2  /* TFS_ID at pos[2] */
+#define ATH12K_TFS_REQ_ACTION_OFF     3  /* TFS_Action at pos[3] */
+#define ATH12K_TFS_REQ_SUBELEM_OFF    4  /* subelements start at pos[4] */
+
+/* TCLAS_PROCESS element: [EID=44][Length=1][Process_Value] */
+#define ATH12K_TFS_TCLAS_PROC_IE_LEN  3  /* total wire size */
+#define ATH12K_TFS_TCLAS_PROC_VAL_OFF 2  /* process value at sub[2] */
+
+/* DSCP extracted but not matched for IPv4 (§9.4.2.30) */
+struct ath12k_tclas_type4_v4 {
+	u8     version;
+	u8     src_ip[IPV4_LEN];
+	u8     dst_ip[IPV4_LEN];
+	__be16 src_port;
+	__be16 dst_port;
+	u8     dscp;
+	u8     protocol;
+} __packed;
+
+/* Type 4 additionally matches next_header and dscp */
+struct ath12k_tclas_type4_v6 {
+	u8     version;
+	u8     src_ip[IPV6_LEN];
+	u8     dst_ip[IPV6_LEN];
+	__be16 src_port;
+	__be16 dst_port;
+	u8     type4_dscp;
+	u8     type4_next_header;
+	u8     flow_label[ATH12K_TFS_FLOW_LABEL_LEN];
+} __packed;
+
+/* filter_value/filter_mask are kmalloc'd at parse time */
+struct ath12k_tclas_type3 {
+	u16  filter_offset;
+	u8   filter_len;
+	u8  *filter_value;
+	u8  *filter_mask;
+};
+
+/* TCLAS Element */
+struct ath12k_tclas {
+	struct list_head list;
+	u8               type;
+	union {
+		struct ath12k_tclas_type4_v4 v4;
+		struct ath12k_tclas_type4_v6 v6;
+		struct ath12k_tclas_type3    t3;
+	};
+};
+
+/* TFS Rule */
+struct ath12k_tfs_rule {
+	struct list_head list;
+	struct rcu_head  rcu_head;
+	u8               tfs_id;
+	u8               tfs_action;
+	u8               tclas_process;
+	struct list_head tclas_list;  /* TCLAS List */
+};
+
+/* TFS Parse Result */
+struct ath12k_tfs_parse_result {
+	u8 tfs_id;
+	u8 tfs_status;
+};
+
+void ath12k_tfs_peer_init(struct ath12k_sta *ahsta);
+void ath12k_tfs_peer_deinit(struct ath12k_sta *ahsta);
+int ath12k_tfs_parse_req_ies(struct ath12k_sta *ahsta,
+			     const u8 *ie_data, u16 ie_len,
+			     struct ath12k_tfs_parse_result *results,
+			     u8 *n_results, u8 max_results);
+void ath12k_tfs_delete_rules(struct ath12k_sta *ahsta);
 
 #define ATH12K_INVALID_RSSI_FULL -1
 #define ATH12K_INVALID_RSSI_EMPTY -128
