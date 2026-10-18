@@ -1619,7 +1619,7 @@ static int ath12k_wifi8_dp_mmesh_tx(struct ieee80211_hw *hw,
 		skb_pull(skb, ahvif->dp_vif.dp_extn.mhdr_len);
 
 		if (arvif->key_cipher != INVALID_CIPHER &&
-		    (mhdr->flags & METAHDR_FLAG_NOENCRYPT))
+		    !(mhdr->flags & METAHDR_FLAG_ENCRYPT))
 			no_enc_frame = 1;
 
 		if (mhdr->flags & METAHDR_FLAG_NOQOS)
