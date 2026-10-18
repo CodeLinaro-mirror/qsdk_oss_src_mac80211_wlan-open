@@ -357,6 +357,13 @@ ath12k_wifi7_dp_prepare_mesh_htt_metadata(struct ath12k_base *ab,
 	htt_desc_ext->info5 |=
 			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO5_LEARNING_FRAME);
 
+	htt_desc_ext->info0 |=
+			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_KEY_FLAGS);
+
+	htt_desc_ext->info2 |=
+			le32_encode_bits((mhdr->keyix & 0x3),
+					 HAL_TX_MSDU_METADATA_INFO2_KEY_FLAGS);
+
 	if (!(mhdr->flags & METAHDR_FLAG_ENCRYPT))
 		htt_desc_ext->info5 &=
 			~le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO5_LEARNING_FRAME);
@@ -368,7 +375,6 @@ ath12k_wifi7_dp_prepare_mesh_htt_metadata(struct ath12k_base *ab,
 			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_NSS_MASK)   |
 			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_PREAM_TYPE) |
 			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_BW_INFO)    |
-			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_KEY_FLAGS)  |
 			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_DYN_BW)     |
 			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_RETRIES)    |
 			le32_encode_bits(mhdr->rate_info[0].max_tries,
@@ -385,9 +391,6 @@ ath12k_wifi7_dp_prepare_mesh_htt_metadata(struct ath12k_base *ab,
 			le32_encode_bits(1,
 					 HAL_TX_MSDU_METADATA_INFO1_UPDATE_PEER_CACHE);
 
-		htt_desc_ext->info2 |=
-			le32_encode_bits((mhdr->keyix & 0x3),
-					 HAL_TX_MSDU_METADATA_INFO2_KEY_FLAGS);
 	}
 
 	if (!(mhdr->flags & METAHDR_FLAG_ENCRYPT)) {
@@ -397,9 +400,9 @@ ath12k_wifi7_dp_prepare_mesh_htt_metadata(struct ath12k_base *ab,
 	}
 
 	ath12k_dbg_level(ab, ATH12K_DBG_MMESH, ATH12K_DBG_L1,
-			 "skb %p pwr %d mcs 0x%x nss %d preamble %d",
+			 "skb %p pwr %d mcs 0x%x nss %d preamble %d keyix %d",
 			skb, mhdr->power, mhdr->rate_info[0].mcs, mhdr->rate_info[0].nss,
-			mhdr->rate_info[0].preamble_type);
+			mhdr->rate_info[0].preamble_type, mhdr->keyix);
 
 	ath12k_dbg_level(ab, ATH12K_DBG_MMESH, ATH12K_DBG_L1,
 			 "retries %d auto %d encrypt %d\n",

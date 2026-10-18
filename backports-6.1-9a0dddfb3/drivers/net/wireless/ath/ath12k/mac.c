@@ -20381,6 +20381,10 @@ int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	unsigned int mic_len;
 	bool mlo_params_valid;
 	bool link_agnostic;
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	struct meta_hdr_s *mhdr;
+	bool encrypt = false;
+#endif
 	dma_addr_t paddr;
 	u8 frm_stype = FIELD_GET(IEEE80211_FCTL_STYPE, hdr->frame_control);
 	int buf_id;
@@ -20389,6 +20393,17 @@ int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	u8 own_addr[ETH_ALEN];
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	if (skb_cb->flags & ATH12K_SKB_MONRAW_TX) {
+		mhdr = (struct meta_hdr_s *)(skb->data - MMESH_TX_META_HDR);
+		encrypt = !!(mhdr->flags & METAHDR_FLAG_ENCRYPT);
+		if (encrypt)
+			hdr->frame_control |= cpu_to_le16(IEEE80211_FCTL_PROTECTED);
+		else
+			hdr->frame_control &= ~__cpu_to_le16(IEEE80211_FCTL_PROTECTED);
+	}
+#endif
 
 	skb_cb->u.ar = ar;
 	skb_cb->flags &= ~ATH12K_SKB_DEAUTH_DISASSOC_TRACKED;
