@@ -7733,6 +7733,9 @@ static int ieee80211_uhr_mode_update(struct wiphy *wiphy,
 			params->dso[link_id].mode_update =
 				link->conf->dso.enable && new_dso->enable;
 			link->conf->dso = params->dso[link_id];
+			link->conf->dso_update = true;
+		} else {
+			link->conf->dso_update = false;
 		}
 	}
 

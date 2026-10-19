@@ -856,6 +856,9 @@ struct ieee80211_uhr_config {
  * @npca_update: true if any NPCA parameter was updated in this
  *	ieee80211_uhr_mode_update() call, regardless of whether NPCA was
  *	already active; used by the driver to gate WMI NPCA TLV inclusion
+ * @dso_update: true if any DSO parameter was updated in this
+ *	ieee80211_uhr_mode_update() call, regardless of whether DSO was
+ *	already active; used by the driver to gate WMI DSO TLV inclusion
  */
 struct ieee80211_bss_conf {
 	struct ieee80211_vif *vif;
@@ -992,6 +995,7 @@ struct ieee80211_bss_conf {
 	bool npca_mode_update;
 	bool npca_update;
 	struct cfg80211_uhr_dso_params dso;
+	bool dso_update;
 };
 
 /**
