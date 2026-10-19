@@ -2708,20 +2708,48 @@ montxpath:
 	 * This is necessary, for example, for old hostapd versions that
 	 * don't use nl80211-based management TX/RX.
 	 */
-	list_for_each_entry_rcu(tmp_sdata, &local->interfaces, list) {
-		if (!ieee80211_sdata_running(tmp_sdata))
-			continue;
-		if (tmp_sdata->vif.type == NL80211_IFTYPE_MONITOR ||
-		    tmp_sdata->vif.type == NL80211_IFTYPE_AP_VLAN)
-			continue;
-		if (ether_addr_equal(tmp_sdata->vif.addr, hdr->addr2)) {
-			sdata = tmp_sdata;
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
-			sdata1 = tmp_sdata;
-#endif
-			break;
+	if (mon_raw_tx && !is_multicast_ether_addr(hdr->addr1)) {
+		/* Peer lookup: find VAP owning DA (addr1) via BSSID (addr3). */
+		struct rhlist_head *tmp_rhl;
+
+		for_each_sta_info(local, hdr->addr1, sta, tmp_rhl) {
+			struct ieee80211_sub_if_data *cand = sta->sdata;
+
+			if (!ieee80211_sdata_running(cand))
+				continue;
+			/* For 4addr/WDS STAs, sdata is AP_VLAN;
+			 * resolve to parent AP.
+			 */
+			if (cand->vif.type == NL80211_IFTYPE_AP_VLAN && cand->bss)
+				cand = container_of(cand->bss,
+						    struct ieee80211_sub_if_data, u.ap);
+			if (ether_addr_equal(cand->vif.bss_conf.bssid,
+					     hdr->addr3)) {
+				sdata = cand;
+				sdata1 = cand;
+				break;
+			}
 		}
+	} else {
+#endif /* CPTCFG_QCN_EXTN_MESH_SUPPORT */
+		list_for_each_entry_rcu(tmp_sdata, &local->interfaces, list) {
+			if (!ieee80211_sdata_running(tmp_sdata))
+				continue;
+			if (tmp_sdata->vif.type == NL80211_IFTYPE_MONITOR ||
+			    tmp_sdata->vif.type == NL80211_IFTYPE_AP_VLAN)
+				continue;
+			if (ether_addr_equal(tmp_sdata->vif.addr, hdr->addr2)) {
+				sdata = tmp_sdata;
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+				sdata1 = tmp_sdata;
+#endif
+				break;
+			}
+		}
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 	}
+#endif /* CPTCFG_QCN_EXTN_MESH_SUPPORT */
 	chanctx_conf = rcu_dereference(sdata->vif.bss_conf.chanctx_conf);
 	if (!chanctx_conf) {
 		tmp_sdata = rcu_dereference(local->monitor_sdata);
@@ -2759,23 +2787,20 @@ montxpath:
 	if (chandef)
 		mon_center_freq1 = chandef->center_freq1;
 
-	/* Transmit interface found sdata1 */
+	/* Transmit interface found via peer lookup; if not, select mesh VAP. */
 	if (sdata1)
 		goto montxpath1;
 
-	/* No matching interface found in sdata1.
-	 * Select the Mesh interface for transmit.
-	 */
+	/* No peer match: fall back to any mesh VAP on the same band. */
 	list_for_each_entry_rcu(tmp_sdata, &local->interfaces, list) {
 		if (!ieee80211_sdata_running(tmp_sdata))
 			continue;
 
 		if (tmp_sdata->vif.type == NL80211_IFTYPE_MONITOR ||
-		    tmp_sdata->vif.type == NL80211_IFTYPE_AP_VLAN) {
+		    tmp_sdata->vif.type == NL80211_IFTYPE_AP_VLAN)
 			continue;
-		}
 
-		if (tmp_sdata->wdev.vap_submode != WDEV_VAP_SUBMODE_MESH)
+		if (!IEEE80211_EXTN_VAP_IS_MESH_MODE(tmp_sdata->wdev.vap_submode))
 			continue;
 
 		tmp_center_freq = 0;
@@ -2807,6 +2832,9 @@ montxpath:
 			sdata = tmp_sdata;
 		}
 	}
+
+	if (mon_raw_tx && !sdata1)
+		goto fail_rcu;
 
 	if (mon_raw_tx)
 		goto montxpath1;
