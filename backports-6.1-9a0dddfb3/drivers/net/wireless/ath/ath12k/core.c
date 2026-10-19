@@ -6581,6 +6581,8 @@ static struct ath12k_hw_group *ath12k_core_hw_group_alloc(struct ath12k_base *ab
 
 #ifdef CPTCFG_ATH12K_PRPL
 	ag->power_save_mode = false;
+#elif defined(CPTCFG_QCN_EXTN)
+	ag->power_save_mode = ath12k_cfg_get(ab, ATH12K_CFG_POWER_SAVE_MODE);
 #else
 	ag->power_save_mode = false;
 #endif
