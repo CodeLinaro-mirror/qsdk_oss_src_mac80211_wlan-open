@@ -1477,6 +1477,8 @@ static u8 ath12k_wifi7_mac_get_tx_link(struct ieee80211_sta *sta,
 
 	if (link != ATH12K_INVALID_LINK_ID) {
 		arsta = rcu_dereference(ahsta->link[link]);
+		if (!arsta || !arsta->arvif || !arsta->arvif->ar)
+			goto skip_link_agnostic_tx;
 		ab = arsta->arvif->ar->ab;
 	} else if (ieee80211_is_action(hdr->frame_control)) {
 		/* link_id is invalid, find first valid link */
