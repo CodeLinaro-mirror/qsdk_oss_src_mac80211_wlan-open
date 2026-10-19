@@ -1025,6 +1025,15 @@ static void ath12k_wifi8_dp_vif_configure(struct ath12k_dp *dp,
 		   ahvif->vdev_type, optype);
 
 	if (optype == ATH12K_DP_OP_DEINIT) {
+		/* Skip deinit if the type is not AP or STA vdev
+		 */
+		if (ahvif->vdev_type != WMI_VDEV_TYPE_STA &&
+				ahvif->vdev_type != WMI_VDEV_TYPE_AP) {
+			ath12k_dbg(central_ab, ATH12K_DBG_DP_TX, "ignoring bank deinit vdev type = %d\n",
+					ahvif->vdev_type);
+			return;
+		}
+
 		if (dp_vif->bank_id != DP_INVALID_BANK_ID)
 			ath12k_dp_tx_put_bank_profile(central_dp, dp_vif->bank_id);
 
@@ -1035,6 +1044,14 @@ static void ath12k_wifi8_dp_vif_configure(struct ath12k_dp *dp,
 						HAL_TX_PACKET_CONTROL_CONFIG_DEFAULT);
 		ath12k_mac_vif_unref(central_dp, ahvif->vif);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+		/* PPE-DS VP profiles are only allocated for AP and STA vif
+		 * types, so there is no VP profile to release for any other
+		 * vif type.
+		 */
+		if (ahvif->vif->type != NL80211_IFTYPE_AP &&
+				ahvif->vif->type != NL80211_IFTYPE_STATION)
+			return;
+
 		if (!ab->dp->ppe.ppe_ops ||
 			!ab->dp->ppe.ppe_ops->ath12k_dp_ppeds_dealloc_ppe_vp_profile) {
 			ath12k_err(ab, "vp_prof dealloc hdlr not present during deinit");
