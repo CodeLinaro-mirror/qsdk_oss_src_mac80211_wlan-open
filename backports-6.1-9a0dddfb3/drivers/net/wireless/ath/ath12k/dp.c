@@ -2137,6 +2137,7 @@ int ath12k_dp_ppeds_cc_desc_cleanup(struct ath12k_base *ab)
 	struct ath12k_ppeds_tx_desc_info *ppeds_tx_descs;
 	struct ath12k_dp_hw_group *dp_hw_grp = ath12k_ab_to_dp(ab)->dp_hw_grp;
 	struct sk_buff *skb;
+	u32 tx_desc_free_cnt = 0, *used_cnt;
 	int i, j;
 
 	if (!dp_hw_grp->ppedstxbaddr) {
@@ -2167,8 +2168,12 @@ int ath12k_dp_ppeds_cc_desc_cleanup(struct ath12k_base *ab)
 			dev_kfree_skb_any(skb);
 			list_add_tail(&ppeds_tx_descs[j].list,
 				      &dp_hw_grp->ppeds_tx_desc_free_list);
+			tx_desc_free_cnt++;
 		}
 	}
+
+	used_cnt = this_cpu_ptr(dp_hw_grp->ppeds_tx_desc_used_cnt);
+	(*used_cnt) -= tx_desc_free_cnt;
 
 	dp_hw_grp->ppeds_tx_desc_reuse_list_len = 0;
 	spin_unlock_bh(&dp_hw_grp->ppeds_tx_desc_lock);
