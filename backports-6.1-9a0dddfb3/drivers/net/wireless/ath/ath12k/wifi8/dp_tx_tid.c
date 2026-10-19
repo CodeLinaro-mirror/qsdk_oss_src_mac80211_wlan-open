@@ -196,6 +196,11 @@ u32 ath12k_wifi8_dp_tx_get_he_header_length(struct ath12k_dp_hw_group *dp_hw_grp
 			break;
 	}
 
+	if (!link_peer) {
+		rcu_read_unlock();
+		return 0;
+	}
+
 	arsta = ath12k_peer_get_link_sta(ab, link_peer);
 	if (!arsta || !arsta->arvif || !arsta->arvif->ahvif ||
 	    !arsta->arvif->ahvif->vif) {
