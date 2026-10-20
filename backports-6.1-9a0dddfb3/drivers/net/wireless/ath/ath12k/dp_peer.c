@@ -14,6 +14,300 @@
 #include "vendor.h"
 #include "qca-vendor.h"
 #include "sdwf.h"
+#include <net/ip.h>
+#include <net/ipv6.h>
+#include <net/dsfield.h>
+#include <net/inet_ecn.h>
+
+static bool ath12k_tfs_match_type4(const struct ath12k_tclas *tclas,
+				   const struct iphdr *ip4,
+				   const struct ipv6hdr *ip6,
+				   const __be16 *tp_hdr)
+{
+	u8 dscp_pkt, dscp_rule;
+
+	if (ip4 && tclas->v4.version == ATH12K_TFS_IP_VERSION4) {
+		__be32 saddr, daddr;
+
+		memcpy(&saddr, tclas->v4.src_ip, sizeof(tclas->v4.src_ip));
+		memcpy(&daddr, tclas->v4.dst_ip, sizeof(tclas->v4.dst_ip));
+
+		if (ip4->protocol != tclas->v4.protocol)
+			return false;
+		if (saddr && saddr != ip4->saddr)
+			return false;
+		if (daddr && daddr != ip4->daddr)
+			return false;
+		if ((tclas->v4.src_port || tclas->v4.dst_port) && !tp_hdr)
+			return false;
+		if (tp_hdr) {
+			if (tclas->v4.src_port &&
+			    ntohs(tclas->v4.src_port) != ntohs(tp_hdr[0]))
+				return false;
+			if (tclas->v4.dst_port &&
+			    ntohs(tclas->v4.dst_port) != ntohs(tp_hdr[1]))
+				return false;
+		}
+		/* DSCP intentionally not matched for IPv4 Type4
+		 * (IEEE 802.11v §9.4.2.30).
+		 */
+		return true;
+	}
+
+	if (ip6 && tclas->v6.version == ATH12K_TFS_IP_VERSION6) {
+		if (memcmp(ip6->saddr.s6_addr, tclas->v6.src_ip,
+			   sizeof(tclas->v6.src_ip)))
+			return false;
+		if (memcmp(ip6->daddr.s6_addr, tclas->v6.dst_ip,
+			   sizeof(tclas->v6.dst_ip)))
+			return false;
+		if (memcmp(ip6->flow_lbl, tclas->v6.flow_label,
+			   sizeof(tclas->v6.flow_label)))
+			return false;
+		if (tclas->type == ATH12K_TFS_TCLAS_TYPE4) {
+			dscp_pkt  = ipv6_get_dsfield(ip6) & ~INET_ECN_MASK;
+			dscp_rule = tclas->v6.type4_dscp & ~INET_ECN_MASK;
+
+			if (ip6->nexthdr != tclas->v6.type4_next_header)
+				return false;
+			if (dscp_pkt != dscp_rule)
+				return false;
+		}
+		if ((tclas->v6.src_port || tclas->v6.dst_port) && !tp_hdr)
+			return false;
+		if (tp_hdr) {
+			if (tclas->v6.src_port &&
+			    ntohs(tclas->v6.src_port) != ntohs(tp_hdr[0]))
+				return false;
+			if (tclas->v6.dst_port &&
+			    ntohs(tclas->v6.dst_port) != ntohs(tp_hdr[1]))
+				return false;
+		}
+		return true;
+	}
+
+	return false;
+}
+
+/* Type 3: match packet bytes at filter_offset against filter_value,
+ * masked by filter_mask. Matches raw bytes at a fixed offset from the
+ * start of the payload, regardless of protocol (§0D: "Useful for
+ * non-IP protocols or matching header fields not covered by Type 1/4").
+ */
+static bool ath12k_tfs_match_type3(const struct ath12k_tclas *tclas,
+				   const u8 *payload, unsigned int payload_len)
+{
+	const struct ath12k_tclas_type3 *t3 = &tclas->t3;
+	unsigned int i;
+	u8 pkt_byte;
+
+	if (!t3->filter_value || !t3->filter_mask || !t3->filter_len)
+		return false;
+
+	if ((unsigned int)t3->filter_offset + t3->filter_len > payload_len)
+		return false;
+
+	for (i = 0; i < t3->filter_len; i++) {
+		pkt_byte = payload[t3->filter_offset + i];
+
+		if ((pkt_byte & t3->filter_mask[i]) !=
+		    (t3->filter_value[i] & t3->filter_mask[i]))
+			return false;
+	}
+
+	return true;
+}
+
+static bool ath12k_tclas_match(const struct ath12k_tclas *tclas,
+			       __be16 ether_type,
+			       const struct iphdr *ip4,
+			       const struct ipv6hdr *ip6,
+			       const __be16 *tp_hdr,
+			       const u8 *payload, unsigned int payload_len)
+{
+	switch (tclas->type) {
+	case ATH12K_TFS_TCLAS_TYPE1:
+	case ATH12K_TFS_TCLAS_TYPE4:
+		if (ether_type == htons(ETH_P_IP))
+			return ath12k_tfs_match_type4(tclas, ip4, NULL, tp_hdr);
+		if (ether_type == htons(ETH_P_IPV6))
+			return ath12k_tfs_match_type4(tclas, NULL, ip6, tp_hdr);
+		return false;
+	case ATH12K_TFS_TCLAS_TYPE3:
+		return ath12k_tfs_match_type3(tclas, payload, payload_len);
+	default:
+		return false;
+	}
+}
+
+/* Record NOTIFY/DELETE action for a matched rule and schedule deferred work.
+ * Called under rcu_read_lock() with BH already disabled (TX hot path).
+ * Uses plain spin_lock (not _bh) because BH is already off. The work_fn
+ * that drains tfs_notify_ids[]/tfs_delete_ids[] is implemented by the CP
+ * team in mac.c (ath12k_tfs_action_work_fn), not here.
+ */
+static bool ath12k_tfs_id_pending(const u8 *ids, u8 count, u8 id)
+{
+	u8 i;
+
+	for (i = 0; i < count; i++)
+		if (ids[i] == id)
+			return true;
+
+	return false;
+}
+
+/* Record NOTIFY/DELETE action for a matched rule and schedule deferred work.
+ * Called under rcu_read_lock() with BH already disabled (TX hot path).
+ * Uses plain spin_lock (not _bh) because BH is already off. The work_fn
+ * that drains tfs_notify_ids[]/tfs_delete_ids[] is implemented by the CP
+ * team in mac.c (ath12k_tfs_action_work_fn), not here.
+ */
+static void ath12k_tfs_handle_rule_actions(struct ath12k_sta *ahsta,
+					   const struct ath12k_tfs_rule *rule)
+{
+	u8 action = rule->tfs_action;
+
+	if (!(action & (ATH12K_TFS_ACTION_NOTIFY | ATH12K_TFS_ACTION_DELETE)))
+		return;
+
+	spin_lock(&ahsta->tfs_action_lock);
+	if ((action & ATH12K_TFS_ACTION_NOTIFY) &&
+	    ahsta->tfs_notify_count < ATH12K_TFS_MAX_PARSE_RESULTS &&
+	    !ath12k_tfs_id_pending(ahsta->tfs_notify_ids,
+				   ahsta->tfs_notify_count, rule->tfs_id))
+		ahsta->tfs_notify_ids[ahsta->tfs_notify_count++] = rule->tfs_id;
+	if ((action & ATH12K_TFS_ACTION_DELETE) &&
+	    ahsta->tfs_delete_count < ATH12K_TFS_MAX_PARSE_RESULTS &&
+	    !ath12k_tfs_id_pending(ahsta->tfs_delete_ids,
+				   ahsta->tfs_delete_count, rule->tfs_id))
+		ahsta->tfs_delete_ids[ahsta->tfs_delete_count++] = rule->tfs_id;
+	spin_unlock(&ahsta->tfs_action_lock);
+
+	schedule_work(&ahsta->tfs_action_work);
+}
+
+bool ath12k_tfs_filter(struct ath12k_sta *ahsta, struct sk_buff *skb,
+		       bool is_hw_encap)
+{
+	struct ath12k_tfs_rule *rule;
+	const struct iphdr *ip4 = NULL;
+	const struct ipv6hdr *ip6 = NULL;
+	const __be16 *tp_hdr = NULL;
+	__be16 ether_type;
+	const u8 *payload;
+	unsigned int hdrlen, payload_len, l4_off;
+	const struct ethhdr *eth;
+	const struct ieee80211_hdr *hdr;
+	unsigned int mac_hdrlen;
+	struct ath12k_tclas *tclas;
+	int tclas_count = 0, tclas_match = 0;
+
+	if (!ahsta || !skb)
+		return true;
+
+	if (list_empty(&ahsta->tfs_rules_list))
+		return true;
+
+	if (is_hw_encap) {
+		if (!pskb_may_pull(skb, ETH_HLEN))
+			return false;
+		eth = (const struct ethhdr *)skb->data;
+		ether_type = eth->h_proto;
+		hdrlen = ETH_HLEN;
+	} else {
+		hdr = (const struct ieee80211_hdr *)skb->data;
+
+		if (skb->len < sizeof(*hdr))
+			return false;
+		mac_hdrlen = ieee80211_hdrlen(hdr->frame_control);
+		if (!pskb_may_pull(skb, mac_hdrlen + LLC_SNAP_HDR_LEN))
+			return false;
+		ether_type = *(__be16 *)(skb->data + mac_hdrlen +
+					 LLC_SNAP_HDR_LEN - sizeof(__be16));
+		hdrlen = mac_hdrlen + LLC_SNAP_HDR_LEN;
+	}
+
+	if (ether_type == htons(ETH_P_PAE) || ether_type == htons(ETH_P_ARP))
+		return true;
+
+	payload_len = skb->len - hdrlen;
+
+	if (ether_type == htons(ETH_P_IP)) {
+		if (pskb_may_pull(skb, hdrlen + sizeof(*ip4))) {
+			ip4 = (const struct iphdr *)(skb->data + hdrlen);
+			if (ip4->version == 4 && ip4->ihl >= 5 &&
+			    pskb_may_pull(skb, hdrlen + ip4->ihl * 4)) {
+				ip4 = (const struct iphdr *)(skb->data + hdrlen);
+				l4_off = hdrlen + ip4->ihl * 4;
+
+				if ((ip4->protocol == IPPROTO_TCP ||
+				     ip4->protocol == IPPROTO_UDP) &&
+				    pskb_may_pull(skb, l4_off + 2 * sizeof(__be16))) {
+					ip4 = (const struct iphdr *)(skb->data + hdrlen);
+					tp_hdr = (const __be16 *)(skb->data + l4_off);
+				}
+			} else {
+				ip4 = NULL;
+			}
+		}
+	} else if (ether_type == htons(ETH_P_IPV6)) {
+		if (pskb_may_pull(skb, hdrlen + sizeof(*ip6))) {
+			ip6 = (const struct ipv6hdr *)(skb->data + hdrlen);
+			if (ip6->version == 6) {
+				l4_off = hdrlen + sizeof(*ip6);
+
+				if ((ip6->nexthdr == IPPROTO_TCP ||
+				     ip6->nexthdr == IPPROTO_UDP) &&
+				    pskb_may_pull(skb, l4_off + 2 * sizeof(__be16))) {
+					ip6 = (const struct ipv6hdr *)
+						(skb->data + hdrlen);
+					tp_hdr = (const __be16 *)(skb->data + l4_off);
+				}
+			} else {
+				ip6 = NULL;
+			}
+		}
+	}
+
+	payload = skb->data + hdrlen;
+	rcu_read_lock();
+
+	list_for_each_entry_rcu(rule, &ahsta->tfs_rules_list, list) {
+		tclas_count = 0;
+		tclas_match = 0;
+		/* A rule with no TCLAS elements matches all traffic */
+		if (list_empty(&rule->tclas_list)) {
+			ath12k_tfs_handle_rule_actions(ahsta, rule);
+			rcu_read_unlock();
+			return true;
+		}
+
+		list_for_each_entry(tclas, &rule->tclas_list, list) {
+			tclas_count++;
+			if (ath12k_tclas_match(tclas, ether_type, ip4, ip6,
+					       tp_hdr, payload, payload_len)) {
+				if (rule->tclas_process == ATH12K_TCLAS_PROCESS_OR) {
+					tclas_match = tclas_count;
+					break;
+				}
+				tclas_match++;
+			}
+		}
+
+		if (tclas_match == tclas_count) {
+			ath12k_tfs_handle_rule_actions(ahsta, rule);
+			rcu_read_unlock();
+			return true;
+		}
+	}
+
+	rcu_read_unlock();
+
+	return false;
+}
+EXPORT_SYMBOL(ath12k_tfs_filter);
+
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 #ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/ipa/dp_ipa.h"

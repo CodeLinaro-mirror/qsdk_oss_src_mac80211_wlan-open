@@ -271,6 +271,22 @@ struct ath12k_dp_peer {
 #define QOS_MAX_SCS_ID 128
 
 #define QOS_TAG_MASK	GENMASK(7, 0)
+
+/**
+ * ath12k_tfs_filter() - filter a TX frame against a station's TFS rules
+ * @ahsta: station to check TFS rules for
+ * @skb: outgoing frame to classify
+ * @is_hw_encap: true if @skb is already Ethernet-encapsulated by hardware,
+ *	false if it still carries an 802.11 MAC header
+ *
+ * Called from the TX hot path.
+ *
+ * Return: true if the frame matches a rule (or no rules are configured)
+ *	and should be transmitted, false if it should be filtered out
+ */
+bool ath12k_tfs_filter(struct ath12k_sta *ahsta,
+		       struct sk_buff *skb, bool is_hw_encap);
+
 #define QOS_QOS_ID_MASK	GENMASK(15, 8)
 
 #define QOS_SCS_TAG	0xB9

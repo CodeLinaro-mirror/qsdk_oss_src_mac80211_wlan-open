@@ -207,7 +207,7 @@ static int ath12k_dp_rx_extract_tuple(struct sk_buff *skb,
 		memcpy(flow_params->src_ip.ipv4, &iph->saddr, IPV4_LEN);
 		memcpy(flow_params->dst_ip.ipv4, &iph->daddr, IPV4_LEN);
 
-		uh = (struct udphdr *)((u8 *)iph + ip_hdrlen(iph));
+		uh = (struct udphdr *)((u8 *)iph + ath12k_ip_hdrlen(iph));
 		flow_params->src_port = ntohs(uh->source);
 		flow_params->dst_port = ntohs(uh->dest);
 

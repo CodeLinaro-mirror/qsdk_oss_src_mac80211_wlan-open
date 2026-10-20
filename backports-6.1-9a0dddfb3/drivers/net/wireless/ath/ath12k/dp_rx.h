@@ -18,7 +18,7 @@ struct ath12k_sta;
 /* 17 tids for DP, 2 for mgmt, and 1 shared between DP and mgmt */
 #define ATH12K_MAX_TIDS 20
 
-#define ip_hdrlen(iph) ((iph)->ihl * 4)
+#define ath12k_ip_hdrlen(iph) ((iph)->ihl * 4)
 
 #ifndef PLATFORM_SDX
 #define VIRT_TO_PHYS(defrag_skb, buf_paddr) \
