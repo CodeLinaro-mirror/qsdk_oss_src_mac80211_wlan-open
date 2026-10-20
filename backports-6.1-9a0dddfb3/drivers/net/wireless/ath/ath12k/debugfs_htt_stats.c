@@ -9722,7 +9722,25 @@ ath12k_htt_print_pdev_sched_algo_ofdma_stats_tlv(const void *tag_buf, u16 tag_le
 				  ATH12K_FIRST_CMD_ABORT_RESERVED1, "\n");
 	len += print_array_to_buf(buf, len, "abort_reason_comb_second_cmd",
 				  htt_stats_buf->abort_reason_comb_second_cmd,
-				  ATH12K_SECOND_CMD_ABORT_RESERVED1, "\n\n");
+				  ATH12K_SECOND_CMD_ABORT_RESERVED1, "\n");
+	len += scnprintf(buf + len, buf_len - len, "obss_rx_airtime = %u\n",
+			 le32_to_cpu(htt_stats_buf->obss_rx_airtime));
+	len += scnprintf(buf + len, buf_len - len,
+			 "mixed_sta_bw_dl_ofdma_txmode_cnt = %u\n",
+			 le32_to_cpu(htt_stats_buf->mixed_sta_bw_dl_ofdma_txmode_cnt));
+	len += scnprintf(buf + len, buf_len - len, "dso_dl_ofdma_txmode_cnt = %u\n",
+			 le32_to_cpu(htt_stats_buf->dso_dl_ofdma_txmode_cnt));
+	len += scnprintf(buf + len, buf_len - len, "dso_pro_dl_ofdma_txmode_cnt = %u\n",
+			 le32_to_cpu(htt_stats_buf->dso_pro_dl_ofdma_txmode_cnt));
+	len += scnprintf(buf + len, buf_len - len,
+			 "mixed_sta_bw_ul_ofdma_txmode_cnt = %u\n",
+			 le32_to_cpu(htt_stats_buf->mixed_sta_bw_ul_ofdma_txmode_cnt));
+	len += scnprintf(buf + len, buf_len - len, "dso_ul_ofdma_txmode_cnt = %u\n",
+			 le32_to_cpu(htt_stats_buf->dso_ul_ofdma_txmode_cnt));
+	len += scnprintf(buf + len, buf_len - len, "dso_pro_ul_ofdma_txmode_cnt = %u\n",
+			 le32_to_cpu(htt_stats_buf->dso_pro_ul_ofdma_txmode_cnt));
+	len += scnprintf(buf + len, buf_len - len, "mixed_gen_users_txmode_cnt = %u\n\n",
+			 le32_to_cpu(htt_stats_buf->mixed_gen_users_txmode_cnt));
 
 	stats_req->buf_len = len;
 }
@@ -9814,6 +9832,9 @@ ath12k_htt_print_tx_pdev_rate_stats_be_bn_ofdma_tlv(const void *tag_buf, u16 tag
 
 	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_tx_ldpc = %u\n",
 			 le32_to_cpu(htt_stats_buf->bn_ofdma_tx_ldpc));
+
+	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_tx_2xldpc = %u\n",
+			 le32_to_cpu(htt_stats_buf->bn_ofdma_tx_2xldpc));
 
 	index = 0;
 	memset(str_buf, 0x0, HTT_MAX_STRING_LEN);
@@ -10716,8 +10737,11 @@ ath12k_htt_print_tx_pdev_be_rate_stats_tlv(const void *tag_buf, u16 tag_len,
 					"\n");
 		}
 		len += scnprintf(buf + len, buf_len - len,
-				"be_bn_mu_mimo_tx_ldpc = %u\n\n",
+				"be_bn_mu_mimo_tx_ldpc = %u\n",
 				le32_to_cpu(htt_stats_buf->be_mu_mimo_tx_ldpc));
+		len += scnprintf(buf + len, buf_len - len,
+				"bn_mu_mimo_tx_2xldpc = %u\n\n",
+				le32_to_cpu(htt_stats_buf->bn_mu_mimo_tx_2xldpc));
 	} else {
 		len += scnprintf(buf + len, buf_len - len,
 				"HTT_TX_PDEV_BE_RATE_STATS_TLV:\n");
