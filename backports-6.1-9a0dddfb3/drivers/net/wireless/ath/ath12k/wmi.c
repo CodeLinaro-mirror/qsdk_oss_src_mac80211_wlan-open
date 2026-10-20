@@ -19782,8 +19782,14 @@ static void ath12k_wmi_rssi_dbm_conversion_param_info(struct ath12k_base *ab,
 
 	/* if pdevs are not active ignore the event */
 	for (i = 0; i < ab->num_radios; i++) {
-		if (!ab->pdevs_active[i])
-			return;
+		if (ab->pdevs_active[i])
+			break;
+	}
+
+	if (i == ab->num_radios) {
+		ath12k_warn(ab,
+			    "WMI RSSI DBM conversion event ignored: no active pdev\n");
+		return;
 	}
 
 	ar = ath12k_wmi_rssi_dbm_process_fixed_param(ab, skb->data,
