@@ -147,6 +147,23 @@ struct ath12k_bcast_probe_rl_entry {
 #define ATH12K_PHY_6GHZ_HIGH "phy04"
 #define ATH12K_PHY_2GHZ_5GHZ "phy05"
 
+/* Band identifiers for decoding the radio_order param. */
+enum ath12k_band_id {
+	ATH12K_BAND_ID_INVALID   = 0,
+	ATH12K_BAND_ID_2GHZ      = 1,
+	ATH12K_BAND_ID_5GHZ      = 2,
+	ATH12K_BAND_ID_5GHZ_LOW  = 3,
+	ATH12K_BAND_ID_5GHZ_HIGH = 4,
+	ATH12K_BAND_ID_6GHZ      = 5,
+	ATH12K_BAND_ID_6GHZ_LOW  = 6,
+	ATH12K_BAND_ID_6GHZ_HIGH = 7,
+	ATH12K_BAND_ID_2GHZ_5GHZ = 8,
+};
+
+/* radio_order encoding: 4 bits per slot, slot 0 at bit 0. */
+#define ATH12K_RADIO_ORDER_SLOT_MASK  0xF
+#define ATH12K_RADIO_ORDER_SLOT_SHIFT 4
+
 #ifdef CPTCFG_QCN_EXTN
 /* Scan radio uses a single PHY name for all bands */
 #define ATH12K_PHY_SCAN_RADIO "phy-scan-00"
@@ -2930,6 +2947,7 @@ struct ath12k_base {
 	struct ath12k_wmi_hal_reg_capabilities_ext2_arg hal_reg_cap_ext2[MAX_RADIOS];
 	/* Boot-time RF path selection from rf_switch_config INI parameter. */
 	enum ath12k_rf_path_index rf_switch_config;
+
 	unsigned long long free_vdev_map;
 	unsigned long long free_vdev_stats_id_map;
 	wait_queue_head_t peer_mapping_wq;
