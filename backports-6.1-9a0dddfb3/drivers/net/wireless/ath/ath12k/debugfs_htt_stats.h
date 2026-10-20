@@ -1156,6 +1156,7 @@ struct ath12k_htt_tx_pdev_rate_stats_be_tlv {
 			       [ATH12K_HTT_TX_PDEV_STATS_NUM_BE_MCS_COUNTERS];
 	__le32 be_mu_mimo_tx_ldpc;
 	__le32 wifi_version;
+	__le32 bn_mu_mimo_tx_2xldpc;
 } __packed;
 
 struct ath12k_htt_tx_pdev_rate_stats_sawf_tlv {
@@ -4601,6 +4602,14 @@ struct ath12k_htt_pdev_sched_algo_ofdma_stats_tlv {
 	__le32 running_ul_scheduler_due_to_skip_dl[ATH12K_HTT_NUM_AC_WMM];
 	__le32 abort_reason_comb_first_cmd[ATH12K_COMB_ABORT_FIRST_CMD_MAX];
 	__le32 abort_reason_comb_second_cmd[ATH12K_COMB_ABORT_SECOND_CMD_MAX];
+	__le32 obss_rx_airtime;
+	__le32 mixed_sta_bw_dl_ofdma_txmode_cnt;
+	__le32 dso_dl_ofdma_txmode_cnt;
+	__le32 dso_pro_dl_ofdma_txmode_cnt;
+	__le32 mixed_sta_bw_ul_ofdma_txmode_cnt;
+	__le32 dso_ul_ofdma_txmode_cnt;
+	__le32 dso_pro_ul_ofdma_txmode_cnt;
+	__le32 mixed_gen_users_txmode_cnt;
 } __packed;
 
 #define ATH12K_HTT_TX_PDEV_STATS_NUM_BW_CNTRS		4
@@ -4744,6 +4753,7 @@ struct ath12k_htt_tx_pdev_rate_stats_be_ofdma_tlv {
 	__le32 bn_ofdma_tx_ru_size[ATH12K_HTT_TX_RX_PDEV_NUM_BE_RU_SIZE_CNTRS];
 	__le32 bn_ofdma_uhr_sig_mcs[ATH12K_HTT_TX_PDEV_NUM_UHR_SIG_MCS_CNTRS];
 	__le32 bn_ofdma_ba_ru_size[ATH12K_HTT_TX_RX_PDEV_NUM_BE_RU_SIZE_CNTRS];
+	__le32 bn_ofdma_tx_2xldpc;
 } __packed;
 
 struct ath12k_htt_pdev_mbssid_ctrl_frame_tlv {
