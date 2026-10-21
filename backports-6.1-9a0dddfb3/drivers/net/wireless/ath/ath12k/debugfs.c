@@ -2715,8 +2715,7 @@ static int ath12k_open_tpc_stats(struct inode *inode, struct file *file)
 
 	guard(wiphy)(ath12k_ar_to_hw(ar)->wiphy);
 
-	if (ah->state != ATH12K_HW_STATE_ON &&
-	    ah->state != ATH12K_HW_STATE_TM) {
+	if (!ath12k_ftm_mode && ah->state != ATH12K_HW_STATE_ON) {
 		ath12k_warn(ar->ab, "Interface not up\n");
 		return -ENETDOWN;
 	}
