@@ -1059,7 +1059,8 @@ int ath12k_wifi8_hal_tx_sam_mpduq_clear_cmd(struct ath12k_dp_wifi8 *dp_wifi8,
 	 */
 	desc->cmd_hdr.sam_cmd_number = cpu_to_le16(cmd_num);
 	desc->cmd_hdr.info0 =
-			le32_encode_bits((ab->hw_rev == ATH12K_HW_QCN9625_HW20 ? 1 : 0),
+			le32_encode_bits(((ab->hw_rev == ATH12K_HW_QCN9625_HW20 ||
+					 ab->hw_rev == ATH12K_HW_QCN9589_HW20) ? 1 : 0),
 					 HAL_SAM_CMD_HDR_INFO0_STATUS_REQUIRED_TO_SW);
 
 	/* If `clear_all` is true, update mpduq id range from 0 to max supported mpduq.*/
@@ -1068,13 +1069,15 @@ int ath12k_wifi8_hal_tx_sam_mpduq_clear_cmd(struct ath12k_dp_wifi8 *dp_wifi8,
 		le32_encode_bits(0, HAL_SAM_MPDU_INFO0_START_MPDU_QUEUE_SAM_ID) |
 		le32_encode_bits(MAX_NUM_SAM_MPDU_QUEUES_SUPPORTED - 1,
 				 HAL_SAM_MPDU_INFO0_END_MPDU_QUEUE_SAM_ID) |
-		le32_encode_bits((ab->hw_rev == ATH12K_HW_QCN9625_HW20 ? 0x1F : 0),
+		le32_encode_bits(((ab->hw_rev == ATH12K_HW_QCN9625_HW20 ||
+				 ab->hw_rev == ATH12K_HW_QCN9589_HW20) ? 0x1F : 0),
 				 HAL_SAM_MPDU_INFO0_LINK_MASK);
 	else
 		desc->info0 =
 		le32_encode_bits(id, HAL_SAM_MPDU_INFO0_START_MPDU_QUEUE_SAM_ID) |
 		le32_encode_bits(id, HAL_SAM_MPDU_INFO0_END_MPDU_QUEUE_SAM_ID) |
-		le32_encode_bits((ab->hw_rev == ATH12K_HW_QCN9625_HW20 ? 0x1F : 0),
+		le32_encode_bits(((ab->hw_rev == ATH12K_HW_QCN9625_HW20 ||
+				 ab->hw_rev == ATH12K_HW_QCN9589_HW20) ? 0x1F : 0),
 				 HAL_SAM_MPDU_INFO0_LINK_MASK);
 
 	return le16_to_cpu(desc->cmd_hdr.sam_cmd_number);
@@ -1103,7 +1106,8 @@ int ath12k_wifi8_hal_tx_sam_msduq_clear_cmd(struct ath12k_dp_wifi8 *dp_wifi8,
 	 */
 	desc->cmd_hdr.sam_cmd_number = cpu_to_le16(cmd_num);
 	desc->cmd_hdr.info0 =
-			le32_encode_bits((ab->hw_rev == ATH12K_HW_QCN9625_HW20 ? 1 : 0),
+			le32_encode_bits(((ab->hw_rev == ATH12K_HW_QCN9625_HW20 ||
+					 ab->hw_rev == ATH12K_HW_QCN9589_HW20) ? 1 : 0),
 					 HAL_SAM_CMD_HDR_INFO0_STATUS_REQUIRED_TO_SW);
 
 	/* If `clear_all` is true, update msduq id range from 0 to max supported msduq.*/
@@ -1112,13 +1116,15 @@ int ath12k_wifi8_hal_tx_sam_msduq_clear_cmd(struct ath12k_dp_wifi8 *dp_wifi8,
 		le32_encode_bits(0, HAL_SAM_MSDU_INFO0_START_MSDU_QUEUE_SAM_ID) |
 		le32_encode_bits(MAX_NUM_SAM_MSDU_QUEUES_SUPPORTED - 1,
 				 HAL_SAM_MSDU_INFO0_END_MSDU_QUEUE_SAM_ID) |
-		le32_encode_bits((ab->hw_rev == ATH12K_HW_QCN9625_HW20 ? 0x1F : 0),
+		le32_encode_bits(((ab->hw_rev == ATH12K_HW_QCN9625_HW20 ||
+				 ab->hw_rev == ATH12K_HW_QCN9589_HW20) ? 0x1F : 0),
 				 HAL_SAM_MSDU_INFO0_LINK_MASK);
 	else
 		desc->info0 =
 		le32_encode_bits(id, HAL_SAM_MSDU_INFO0_START_MSDU_QUEUE_SAM_ID) |
 		le32_encode_bits(id, HAL_SAM_MSDU_INFO0_END_MSDU_QUEUE_SAM_ID) |
-		le32_encode_bits((ab->hw_rev == ATH12K_HW_QCN9625_HW20 ? 0x1F : 0),
+		le32_encode_bits(((ab->hw_rev == ATH12K_HW_QCN9625_HW20 ||
+				 ab->hw_rev == ATH12K_HW_QCN9589_HW20) ? 0x1F : 0),
 				 HAL_SAM_MSDU_INFO0_LINK_MASK);
 
 	return le16_to_cpu(desc->cmd_hdr.sam_cmd_number);
@@ -1149,7 +1155,8 @@ int ath12k_wifi8_hal_tx_sam_peer_clear_cmd(struct ath12k_dp_wifi8 *dp_wifi8,
 	 */
 	desc->cmd_hdr.sam_cmd_number = cpu_to_le16(cmd_num);
 	desc->cmd_hdr.info0 =
-			le32_encode_bits((ab->hw_rev == ATH12K_HW_QCN9625_HW20 ? 1 : 0),
+			le32_encode_bits(((ab->hw_rev == ATH12K_HW_QCN9625_HW20 ||
+					 ab->hw_rev == ATH12K_HW_QCN9589_HW20) ? 1 : 0),
 					 HAL_SAM_CMD_HDR_INFO0_STATUS_REQUIRED_TO_SW);
 
 	/* If `clear_all` is true, update peer id range from 0 to max supported peer.*/
@@ -1157,15 +1164,17 @@ int ath12k_wifi8_hal_tx_sam_peer_clear_cmd(struct ath12k_dp_wifi8 *dp_wifi8,
 		desc->info0 = le32_encode_bits(0, HAL_SAM_PEER_INFO0_START_PEER_ID) |
 			      le32_encode_bits(ATH12K_MAX_STA_ID - 1,
 					       HAL_SAM_PEER_INFO0_END_PEER_ID) |
-			      le32_encode_bits((ab->hw_rev == ATH12K_HW_QCN9625_HW20
-						? 0x1F : 0),
-						HAL_SAM_PEER_INFO0_LINK_MASK);
+			      le32_encode_bits(((ab->hw_rev == ATH12K_HW_QCN9625_HW20 ||
+					       ab->hw_rev == ATH12K_HW_QCN9589_HW20)
+					       ? 0x1F : 0),
+					       HAL_SAM_PEER_INFO0_LINK_MASK);
 	else
 		desc->info0 = le32_encode_bits(id, HAL_SAM_PEER_INFO0_START_PEER_ID) |
 			      le32_encode_bits(id, HAL_SAM_PEER_INFO0_END_PEER_ID) |
-			      le32_encode_bits((ab->hw_rev == ATH12K_HW_QCN9625_HW20
-						? 0x1F : 0),
-						HAL_SAM_PEER_INFO0_LINK_MASK);
+			      le32_encode_bits(((ab->hw_rev == ATH12K_HW_QCN9625_HW20 ||
+					       ab->hw_rev == ATH12K_HW_QCN9589_HW20)
+					       ? 0x1F : 0),
+					       HAL_SAM_PEER_INFO0_LINK_MASK);
 
 	return le16_to_cpu(desc->cmd_hdr.sam_cmd_number);
 }
