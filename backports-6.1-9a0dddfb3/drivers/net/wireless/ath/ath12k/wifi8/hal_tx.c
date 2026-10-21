@@ -1046,7 +1046,9 @@ int ath12k_wifi8_hal_tx_sam_mpduq_clear_cmd(struct ath12k_dp_wifi8 *dp_wifi8,
 
 	tlv->tl = le64_encode_bits(HAL_SAM_MPDU_QUEUE_CLEAR_PROGRAMMING_BO,
 				   HAL_TLV_HDR_TAG) |
-		  le64_encode_bits(sizeof(*desc), HAL_TLV_64_HDR_LENGTH);
+		  le64_encode_bits(sizeof(*desc), HAL_TLV_64_HDR_LENGTH) |
+		  le64_encode_bits((ab->hw_rev == ATH12K_HW_QCN9625_HW10
+				    ? 0 : 6), HAL_TLV_64_HDR_SRC_LINK_ID);
 
 	desc = (struct hal_sam_mpdu_queue_clear_programming *)tlv->value;
 
@@ -1090,7 +1092,9 @@ int ath12k_wifi8_hal_tx_sam_msduq_clear_cmd(struct ath12k_dp_wifi8 *dp_wifi8,
 
 	tlv->tl = le64_encode_bits(HAL_SAM_MSDU_QUEUE_CLEAR_PROGRAMMING_BO,
 				   HAL_TLV_HDR_TAG) |
-		  le64_encode_bits(sizeof(*desc), HAL_TLV_64_HDR_LENGTH);
+		  le64_encode_bits(sizeof(*desc), HAL_TLV_64_HDR_LENGTH) |
+		  le64_encode_bits((ab->hw_rev == ATH12K_HW_QCN9625_HW10
+				    ? 0 : 6), HAL_TLV_64_HDR_SRC_LINK_ID);
 
 	desc = (struct hal_sam_msdu_queue_clear_programming *)tlv->value;
 
@@ -1136,7 +1140,7 @@ int ath12k_wifi8_hal_tx_sam_peer_clear_cmd(struct ath12k_dp_wifi8 *dp_wifi8,
 				   HAL_TLV_HDR_TAG) |
 		  le64_encode_bits(sizeof(*desc), HAL_TLV_64_HDR_LENGTH) |
 		  le64_encode_bits((ab->hw_rev == ATH12K_HW_QCN9625_HW10
-				    ? src_link_id : 0), HAL_TLV_64_HDR_SRC_LINK_ID);
+				    ? src_link_id : 6), HAL_TLV_64_HDR_SRC_LINK_ID);
 
 	desc = (struct hal_sam_peer_clear_programming *)tlv->value;
 
