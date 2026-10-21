@@ -1793,8 +1793,10 @@ void ath12k_wifi7_ucast_handler(struct ath12k_dp_vif *dp_vif,
 	 */
 	if (unlikely(ahvif->wnm_tfs) &&
 	    !ath12k_tfs_filter(ahsta, skb,
-			       skb_cb->flags & ATH12K_SKB_HW_80211_ENCAP))
+			       skb_cb->flags & ATH12K_SKB_HW_80211_ENCAP)) {
+		drop_reason = DP_TX_ENQ_DROP_TFS_FILTERED;
 		goto fail;
+	}
 
 	/* Setup MSDU info */
 	ath12k_wifi7_ucast_setup_msdu_info(dp_link_vif, &msdu_info, skb,
