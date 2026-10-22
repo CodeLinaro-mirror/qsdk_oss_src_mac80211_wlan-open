@@ -15,18 +15,37 @@
 #include "ranging.h"
 #ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/ranging_extn.h"
+#include "qcn_extns/ini.h"
 #endif
+
+bool ath12k_11az_responder_enabled(struct ath12k_base *ab)
+{
+	bool enabled = false;
+
+#ifdef CPTCFG_QCN_EXTN
+	enabled = ath12k_cfg_get(ab, ATH12K_CFG_RESPONDER_11AZ_SUPPORT);
+#endif
+
+	return enabled;
+}
 
 u32 ath12k_supported_rtt_responder_roles(struct ath12k_base *ab)
 {
 	u32 role = ATH12K_RTT_11MC_RESPONDER_ROLE;
+	bool responder_11az_enabled;
+	bool ntb_supported;
+	bool tb_rsta_supported;
 
-	if (test_bit(WMI_TLV_SERVICE_RTT_11AZ_NTB_SUPPORT,
-		     ab->wmi_ab.svc_map))
+	responder_11az_enabled = ath12k_11az_responder_enabled(ab);
+	ntb_supported = test_bit(WMI_TLV_SERVICE_RTT_11AZ_NTB_SUPPORT,
+				 ab->wmi_ab.svc_map);
+	tb_rsta_supported = test_bit(WMI_TLV_SERVICE_RTT_11AZ_TB_RSTA_SUPPORT,
+				     ab->wmi_ab.svc_map);
+
+	if (ntb_supported && responder_11az_enabled)
 		role |= ATH12K_RTT_11AZ_NTB_RESPONDER_ROLE;
 
-	if (test_bit(WMI_TLV_SERVICE_RTT_11AZ_TB_RSTA_SUPPORT,
-		     ab->wmi_ab.svc_map))
+	if (tb_rsta_supported && responder_11az_enabled)
 		role |= ATH12K_RTT_11AZ_TB_RESPONDER_ROLE;
 
 	return role;
@@ -155,13 +174,15 @@ static void ath12k_pasn_peer_sta_id_free(struct ath12k_dp_hw *dp_hw, u16 peer_id
 
 void ath12k_mac_set_ranging_ext_features(struct wiphy *wiphy, struct ath12k *ar)
 {
-	if (ath12k_11az_mac_sec_supported(ar->ab)) {
+	if (ath12k_11az_mac_sec_supported(ar->ab) &&
+	    ath12k_11az_responder_enabled(ar->ab)) {
 		wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_SECURE_RTT);
 		wiphy_ext_feature_set(wiphy,
 				      NL80211_EXT_FEATURE_PROT_RANGE_NEGO_AND_MEASURE);
 	}
 
-	if (ath12k_11az_mac_phy_sec_supported(ar->ab))
+	if (ath12k_11az_mac_phy_sec_supported(ar->ab) &&
+	    ath12k_11az_responder_enabled(ar->ab))
 		wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_SECURE_LTF);
 }
 
@@ -194,11 +215,13 @@ int ath12k_mac_setup_iftype_11az_ranging(struct ath12k_hw *ah)
 
 	for_each_ar(ah, tmp_ar, i) {
 		if (test_bit(WMI_TLV_SERVICE_RTT_11AZ_NTB_SUPPORT,
-			     tmp_ar->ab->wmi_ab.svc_map))
+			     tmp_ar->ab->wmi_ab.svc_map) &&
+		    ath12k_11az_responder_enabled(tmp_ar->ab))
 			ranging |= ATH12K_EXT_CAPA12_NTB_RANGING_RESPONDER;
 
 		if (test_bit(WMI_TLV_SERVICE_RTT_11AZ_TB_RSTA_SUPPORT,
-			     tmp_ar->ab->wmi_ab.svc_map))
+			     tmp_ar->ab->wmi_ab.svc_map) &&
+		    ath12k_11az_responder_enabled(tmp_ar->ab))
 			ranging |= ATH12K_EXT_CAPA12_TB_RANGING_RESPONDER;
 	}
 
