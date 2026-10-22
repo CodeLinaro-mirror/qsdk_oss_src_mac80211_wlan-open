@@ -1440,6 +1440,13 @@ struct ath12k_per_ppdu_tx_stats {
 	u32 retry_bytes;
 };
 
+#ifdef CPTCFG_ATH12K_DEBUGFS
+struct ath12k_htt_peer_stats_ctx {
+	struct ath12k *ar;
+	u8 peer_addr[ETH_ALEN];
+};
+#endif
+
 struct ath12k_link_sta {
 	struct ath12k_link_vif *arvif;
 	struct ath12k_sta *ahsta;
@@ -1510,6 +1517,7 @@ struct ath12k_link_sta {
 	enum wmi_phy_mode phymode;
 #ifdef CPTCFG_ATH12K_DEBUGFS
 	struct dentry *debugfs_dir;
+	struct ath12k_htt_peer_stats_ctx *htt_ctx;
 #endif
 	bool is_secured_peer;
 };

@@ -409,105 +409,67 @@ ath12k_debugfs_sta_update_misc(struct ath12k_dp_link_peer *peer,
 static int
 ath12k_dbg_sta_open_htt_peer_stats(struct inode *inode, struct file *file)
 {
-	struct ieee80211_link_sta *link_sta = inode->i_private;
-	struct ieee80211_sta *sta = link_sta->sta;
-	u8 link_id = link_sta->link_id;
-	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
-	struct ath12k_hw *ah = ahsta->ahvif->ah;
-	struct ath12k_link_sta *arsta;
+	struct ath12k_htt_peer_stats_ctx *ctx = inode->i_private;
 	struct ath12k *ar;
 	struct debug_htt_stats_req *stats_req;
 	int type;
 	int ret;
 
-	mutex_lock(&ah->hw_mutex);
+	if (!ctx || !ctx->ar)
+		return -ENOENT;
 
-	if (!(BIT(link_id) & ahsta->links_map)) {
-		ret = -ENOENT;
-		goto err_unlock;
-	}
-
-	rcu_read_lock();
-	arsta = wiphy_dereference(ah->hw->wiphy, ahsta->link[link_id]);
-
-	if (!arsta || !arsta->arvif->ar) {
-		ret = -ENOENT;
-		rcu_read_unlock();
-		goto err_unlock;
-	}
-
-	ar = arsta->arvif->ar;
+	ar = ctx->ar;
 
 	type = ar->debug.htt_stats.type;
 	if ((type != ATH12K_DBG_HTT_EXT_STATS_PEER_INFO &&
 	     type != ATH12K_DBG_HTT_EXT_PEER_CTRL_PATH_TXRX_STATS) ||
 	     type == ATH12K_DBG_HTT_EXT_STATS_RESET) {
 		ret = -EPERM;
-		rcu_read_unlock();
-		goto err_unlock;
+		goto err;
 	}
-
-	rcu_read_unlock();
 
 	stats_req = vzalloc(sizeof(*stats_req) + ATH12K_HTT_STATS_BUF_SIZE);
 	if (!stats_req) {
-		return -ENOMEM;
-		goto err_unlock;
+		ret = -ENOMEM;
+		goto err;
 	}
 
 	ar->debug.htt_stats.stats_req = stats_req;
+	stats_req->ar = ar;
 	stats_req->type = type;
-	memcpy(stats_req->peer_addr, link_sta->addr, ETH_ALEN);
+	memcpy(stats_req->peer_addr, ctx->peer_addr, ETH_ALEN);
 	ret = ath12k_debugfs_htt_stats_req(ar, false);
 	if (ret < 0)
 		goto out;
 
 	file->private_data = stats_req;
 	ar->debug.htt_stats.type = ATH12K_DBG_HTT_EXT_STATS_RESET;
-	mutex_unlock(&ah->hw_mutex);
 	return 0;
 out:
 	vfree(stats_req);
 	ar->debug.htt_stats.stats_req = NULL;
-err_unlock:
-	if (ar)
-		ar->debug.htt_stats.type = ATH12K_DBG_HTT_EXT_STATS_RESET;
-	mutex_unlock(&ah->hw_mutex);
+err:
+	ar->debug.htt_stats.type = ATH12K_DBG_HTT_EXT_STATS_RESET;
 	return ret;
 }
 
 static int
 ath12k_dbg_sta_release_htt_peer_stats(struct inode *inode, struct file *file)
 {
-	struct ieee80211_link_sta *link_sta = inode->i_private;
-	struct ieee80211_sta *sta = link_sta->sta;
-	u8 link_id = link_sta->link_id;
-	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
-	struct ath12k_hw *ah = ahsta->ahvif->ah;
-	struct ath12k_link_sta *arsta;
+	struct debug_htt_stats_req *stats_req = file->private_data;
 	struct ath12k *ar;
 
-	mutex_lock(&ah->hw_mutex);
+	if (!stats_req)
+		return 0;
 
-	if (!(BIT(link_id) & ahsta->links_map)) {
-		mutex_unlock(&ah->hw_mutex);
-		return -ENOENT;
-	}
-
-	rcu_read_lock();
-	arsta = wiphy_dereference(ah->hw->wiphy, ahsta->link[link_id]);
-
-	if (!arsta || !arsta->arvif->ar) {
-		rcu_read_unlock();
-		mutex_unlock(&ah->hw_mutex);
-		return -ENOENT;
-	}
-
-	ar = arsta->arvif->ar;
-	rcu_read_unlock();
-	vfree(file->private_data);
+	ar = stats_req->ar;
+	if (!ar)
+		goto free;
 	ar->debug.htt_stats.stats_req = NULL;
-	mutex_unlock(&ah->hw_mutex);
+
+free:
+	vfree(file->private_data);
+	file->private_data = NULL;
 
 	return 0;
 }
@@ -1149,12 +1111,7 @@ ath12k_write_htt_peer_stats_reset(struct file *file,
 				  const char __user *user_buf,
 				  size_t count, loff_t *ppos)
 {
-	struct ieee80211_link_sta *link_sta = file->private_data;
-	struct ieee80211_sta *sta = link_sta->sta;
-	u8 link_id = link_sta->link_id;
-	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
-	struct ath12k_hw *ah = ahsta->ahvif->ah;
-	struct ath12k_link_sta *arsta;
+	struct ath12k_htt_peer_stats_ctx *ctx = file->private_data;
 	struct ath12k *ar;
 	struct htt_ext_stats_cfg_params cfg_params = { 0 };
 	int ret;
@@ -1167,24 +1124,10 @@ ath12k_write_htt_peer_stats_reset(struct file *file,
 	if (!type)
 		return ret;
 
-	mutex_lock(&ah->hw_mutex);
-
-	if (!(BIT(link_id) & ahsta->links_map)) {
-		mutex_unlock(&ah->hw_mutex);
+	if (!ctx || !ctx->ar)
 		return -ENOENT;
-	}
 
-	rcu_read_lock();
-	arsta = wiphy_dereference(ah->hw->wiphy, ahsta->link[link_id]);
-
-	if (!arsta || !arsta->arvif->ar) {
-		rcu_read_unlock();
-		mutex_unlock(&ah->hw_mutex);
-		return -ENOENT;
-	}
-
-	ar = arsta->arvif->ar;
-	rcu_read_unlock();
+	ar = ctx->ar;
 
 	cfg_params.cfg0 = HTT_STAT_PEER_INFO_MAC_ADDR;
 	cfg_params.cfg0 |= FIELD_PREP(GENMASK(15, 1),
@@ -1192,13 +1135,13 @@ ath12k_write_htt_peer_stats_reset(struct file *file,
 
 	cfg_params.cfg1 = HTT_STAT_DEFAULT_PEER_REQ_TYPE;
 
-	cfg_params.cfg2 |= FIELD_PREP(GENMASK(7, 0), link_sta->addr[0]);
-	cfg_params.cfg2 |= FIELD_PREP(GENMASK(15, 8), link_sta->addr[1]);
-	cfg_params.cfg2 |= FIELD_PREP(GENMASK(23, 16), link_sta->addr[2]);
-	cfg_params.cfg2 |= FIELD_PREP(GENMASK(31, 24), link_sta->addr[3]);
+	cfg_params.cfg2 |= FIELD_PREP(GENMASK(7, 0), ctx->peer_addr[0]);
+	cfg_params.cfg2 |= FIELD_PREP(GENMASK(15, 8), ctx->peer_addr[1]);
+	cfg_params.cfg2 |= FIELD_PREP(GENMASK(23, 16), ctx->peer_addr[2]);
+	cfg_params.cfg2 |= FIELD_PREP(GENMASK(31, 24), ctx->peer_addr[3]);
 
-	cfg_params.cfg3 |= FIELD_PREP(GENMASK(7, 0), link_sta->addr[4]);
-	cfg_params.cfg3 |= FIELD_PREP(GENMASK(15, 8), link_sta->addr[5]);
+	cfg_params.cfg3 |= FIELD_PREP(GENMASK(7, 0), ctx->peer_addr[4]);
+	cfg_params.cfg3 |= FIELD_PREP(GENMASK(15, 8), ctx->peer_addr[5]);
 
 	cfg_params.cfg3 |= ATH12K_HTT_PEER_STATS_RESET;
 
@@ -1208,11 +1151,8 @@ ath12k_write_htt_peer_stats_reset(struct file *file,
 						 0ULL);
 	if (ret) {
 		ath12k_warn(ar->ab, "failed to send htt peer stats request: %d\n", ret);
-		mutex_unlock(&ah->hw_mutex);
 		return ret;
 	}
-
-	mutex_unlock(&ah->hw_mutex);
 
 	ret = count;
 
@@ -2156,16 +2096,42 @@ static const struct file_operations fops_reset_rx_stats = {
 };
 
 
+static struct ath12k_htt_peer_stats_ctx *
+ath12k_debugfs_htt_peer_stats_ctx_get(struct ath12k *ar,
+				      struct ath12k_link_sta *arsta,
+				      struct ieee80211_link_sta *link_sta)
+{
+	struct ath12k_htt_peer_stats_ctx *ctx;
+
+	if (arsta->htt_ctx)
+		return arsta->htt_ctx;
+
+	ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
+	if (!ctx)
+		return NULL;
+
+	ctx->ar = ar;
+	memcpy(ctx->peer_addr, link_sta->addr, ETH_ALEN);
+	arsta->htt_ctx = ctx;
+
+	return ctx;
+}
+
 static void
 ath12k_debugfs_htt_peer_stats_create_arsta(struct ath12k *ar,
 					   struct ath12k_link_sta *arsta,
 					   struct ieee80211_link_sta *link_sta)
 {
+	struct ath12k_htt_peer_stats_ctx *ctx;
 	struct dentry *file;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
 	if (!arsta->debugfs_dir)
+		return;
+
+	ctx = ath12k_debugfs_htt_peer_stats_ctx_get(ar, arsta, link_sta);
+	if (!ctx)
 		return;
 
 	file = debugfs_lookup("htt_peer_stats", arsta->debugfs_dir);
@@ -2176,7 +2142,7 @@ ath12k_debugfs_htt_peer_stats_create_arsta(struct ath12k *ar,
 
 	debugfs_create_file("htt_peer_stats", 0400,
 			    arsta->debugfs_dir,
-			    link_sta, &fops_htt_peer_stats);
+			    ctx, &fops_htt_peer_stats);
 }
 
 static void
@@ -2184,6 +2150,7 @@ ath12k_debugfs_htt_peer_stats_reset_create_arsta(struct ath12k *ar,
 						  struct ath12k_link_sta *arsta,
 						  struct ieee80211_link_sta *link_sta)
 {
+	struct ath12k_htt_peer_stats_ctx *ctx;
 	struct dentry *file;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
@@ -2195,6 +2162,10 @@ ath12k_debugfs_htt_peer_stats_reset_create_arsta(struct ath12k *ar,
 		      ar->ab->wmi_ab.svc_map))
 		return;
 
+	ctx = ath12k_debugfs_htt_peer_stats_ctx_get(ar, arsta, link_sta);
+	if (!ctx)
+		return;
+
 	file = debugfs_lookup("htt_peer_stats_reset", arsta->debugfs_dir);
 	if (file) {
 		dput(file);
@@ -2203,7 +2174,7 @@ ath12k_debugfs_htt_peer_stats_reset_create_arsta(struct ath12k *ar,
 
 	debugfs_create_file("htt_peer_stats_reset", 0600,
 			    arsta->debugfs_dir,
-			    link_sta, &fops_htt_peer_stats_reset);
+			    ctx, &fops_htt_peer_stats_reset);
 }
 
 static bool ath12k_htt_stats_type_is_peer(enum ath12k_dbg_htt_ext_stats_type type)

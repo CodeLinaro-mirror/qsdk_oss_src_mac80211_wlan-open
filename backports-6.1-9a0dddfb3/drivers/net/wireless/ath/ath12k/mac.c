@@ -14685,6 +14685,11 @@ static void ath12k_mac_free_unassign_link_sta(struct ath12k_hw *ah,
 		synchronize_rcu();
 	}
 
+#ifdef CPTCFG_ATH12K_DEBUGFS
+	kfree(arsta->htt_ctx);
+	arsta->htt_ctx = NULL;
+#endif
+
 	if (arsta == &ahsta->deflink) {
 		arsta->link_id = ATH12K_INVALID_LINK_ID;
 		arsta->ahsta = NULL;

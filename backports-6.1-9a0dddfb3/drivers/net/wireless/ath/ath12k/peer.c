@@ -1086,6 +1086,11 @@ exit:
 		ahsta->links_map &= ~BIT(link_id);
 		ahsta->saved_link_sta[link_id] = NULL;
 
+#ifdef CPTCFG_ATH12K_DEBUGFS
+		kfree(arsta->htt_ctx);
+		arsta->htt_ctx = NULL;
+#endif
+
 		if (arsta == &ahsta->deflink) {
 			arsta->link_id = ATH12K_INVALID_LINK_ID;
 			arsta->ahsta = NULL;
