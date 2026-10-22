@@ -761,6 +761,11 @@ int ath12k_wifi8_dp_telemetry_init(struct ath12k_dp *dp)
 
 	ath12k_wifi8_hal_tasc_peer_rx_fail_drop_default(dp->ab);
 
+	/*
+	 * Reset tx/rx stream config
+	 */
+	ath12k_wifi8_hal_tasc_stream_reset(dp->ab);
+
 	return 0;
 }
 
@@ -911,4 +916,40 @@ int ath12k_wifi8_dp_telemetry_umac_init(struct ath12k_base *ab)
 		return ret;
 
 	return 0;
+}
+
+void ath12k_wifi8_dp_telemetry_rx_stream_setup(struct ath12k_base *ab,
+					       u8 stream_id,
+					       u8 valid_band, u16 band_ids[],
+					       u16 win_siz_rate, u16 win_siz_lat)
+{
+	ath12k_wifi8_hal_tasc_rx_stream_stats_band_cfg(ab, stream_id,
+						       valid_band, band_ids);
+	ath12k_wifi8_hal_tasc_rx_stream_rate_win_size_cfg(ab, stream_id, win_siz_rate);
+	ath12k_wifi8_hal_tasc_rx_stream_latency_win_size_cfg(ab, stream_id, win_siz_lat);
+
+	/*
+	 * Add any other config write
+	 */
+
+	ath12k_wifi8_hal_tasc_rx_stream_id_valid_cfg(ab, stream_id, true);
+}
+
+void ath12k_wifi8_dp_telemetry_rx_stream_cleanup(struct ath12k_base *ab, u8 stream_id)
+{
+	ath12k_wifi8_hal_tasc_rx_stream_clear_stats(ab, stream_id);
+	ath12k_wifi8_hal_tasc_rx_stream_id_valid_cfg(ab, stream_id, false);
+	ath12k_wifi8_hal_tasc_rx_stream_rate_win_size_cfg(ab, stream_id, 0);
+	ath12k_wifi8_hal_tasc_rx_stream_latency_win_size_cfg(ab, stream_id, 0);
+}
+
+/*
+ * Update band ids dynamically once setup is done
+ */
+void ath12k_wifi8_dp_telemetry_rx_stream_band_cfg(struct ath12k_base *ab,
+						  u8 stream_id,
+						  u8 valid_band, u16 band_ids[])
+{
+	ath12k_wifi8_hal_tasc_rx_stream_stats_band_cfg(ab, stream_id,
+						       valid_band, band_ids);
 }

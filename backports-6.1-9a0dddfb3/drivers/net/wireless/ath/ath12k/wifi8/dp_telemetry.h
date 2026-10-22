@@ -45,4 +45,14 @@ int ath12k_wifi8_dp_telemetry_peer_config(struct ath12k_dp *dp, u16 stats_id,
 int ath12k_wifi8_dp_telemetry_peer_delete(struct ath12k_dp *dp, u16 stats_id,
 					  u16 link_band_id[HAL_TASC_BAND_MAX]);
 int ath12k_wifi8_dp_telemetry_umac_init(struct ath12k_base *ab);
+int ath12k_wifi8_dp_process_tx_stream_telemetry(struct ath12k_dp *dp, int budget);
+int ath12k_wifi8_dp_process_rx_stream_telemetry(struct ath12k_dp *dp, int budget);
+void ath12k_wifi8_dp_telemetry_rx_stream_setup(struct ath12k_base *ab,
+					       u8 stream_id,
+					       u8 valid_band, u16 band_ids[],
+					       u16 win_siz_rate, u16 win_siz_lat);
+void ath12k_wifi8_dp_telemetry_rx_stream_cleanup(struct ath12k_base *ab, u8 stream_id);
+void ath12k_wifi8_dp_telemetry_rx_stream_band_cfg(struct ath12k_base *ab,
+						  u8 stream_id,
+						  u8 valid_band, u16 band_ids[]);
 #endif

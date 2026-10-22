@@ -1631,3 +1631,302 @@ void ath12k_wifi8_hal_tasc_peer_rx_band(struct ath12k_base *ab,
 		u32_encode_bits(enable, HAL_RX_PEER_STATS_BAND_INDEX_MSB);
 	ath12k_hif_write32(ab, HAL_RX_PEER_STATS_CFG2_ADDR, val);
 }
+
+/*
+ * Tx and Rx stream stats hal functions
+ */
+static void
+ath12k_wifi8_hal_tasc_tx_stream_stats_cfg_enable(struct ath12k_base *ab,
+						 u8 stream_id, bool enable)
+{
+	u32 val = 0;
+
+	val |= FIELD_PREP(GENMASK(7, 0), stream_id);
+
+	if (enable)
+		val |= BIT(8);
+
+	ath12k_hif_write32(ab, HAL_TX_STREAM_STATS_CONFIG_CTRL, val);
+}
+
+#define HAL_STREAM_BAND_IDX_INVALID    0x3FF
+#define HAL_STREAM_BAND_IDX_MASK       0x3FF
+
+/*
+ * Program valid bands, leave unused slots as INVALID, set bit31 in
+ * last updated register.
+ *
+ * Caller is expected to provide all valid band ids (i.e., previously programmed band ids
+ * and new band ids) with band_valid bitmaks set appropriately.
+ */
+void ath12k_wifi8_hal_tasc_tx_stream_stats_band_cfg(struct ath12k_base *ab,
+						    u8 stream_id,
+						    u8 band_valid, u16 band_ids[])
+{
+	u32 reg[2] = {};
+	bool reg_valid[2] = {};
+	int last_reg = -1;
+	u8 i;
+
+	/*
+	 * Enable stream id before writing band idx
+	 */
+	ath12k_wifi8_hal_tasc_tx_stream_stats_cfg_enable(ab, stream_id, true);
+
+	/* Default all band slots to INVALID (0x3FF). */
+	reg[0] = FIELD_PREP(GENMASK(9, 0), HAL_STREAM_BAND_IDX_INVALID) |
+		 FIELD_PREP(GENMASK(19, 10), HAL_STREAM_BAND_IDX_INVALID) |
+		 FIELD_PREP(GENMASK(29, 20), HAL_STREAM_BAND_IDX_INVALID);
+
+	reg[1] = FIELD_PREP(GENMASK(9, 0), HAL_STREAM_BAND_IDX_INVALID) |
+		 FIELD_PREP(GENMASK(19, 10), HAL_STREAM_BAND_IDX_INVALID);
+
+	for (i = 0; i < HAL_TASC_BAND_MAX; i++) {
+		u8 reg_idx;
+		u8 slot;
+
+		if (!(band_valid & BIT(i)))
+			continue;
+
+		reg_idx = (i < 3) ? 0 : 1;
+		slot = (i < 3) ? i : (i - 3);
+
+		reg[reg_idx] &= ~(HAL_STREAM_BAND_IDX_MASK << (slot * 10));
+		reg[reg_idx] |= (band_ids[i] & HAL_STREAM_BAND_IDX_MASK) << (slot * 10);
+
+		reg_valid[reg_idx] = true;
+		last_reg = reg_idx;
+	}
+
+	/* Set bit31 only in the last programmed register */
+	if (last_reg >= 0)
+		reg[last_reg] |= BIT(31);
+
+	if (reg_valid[0])
+		ath12k_hif_write32(ab, HAL_TX_STREAM_STATS_BAND_CFG(0), reg[0]);
+
+	if (reg_valid[1])
+		ath12k_hif_write32(ab, HAL_TX_STREAM_STATS_BAND_CFG(1), reg[1]);
+}
+
+void ath12k_wifi8_hal_tasc_tx_stream_rate_win_size_cfg(struct ath12k_base *ab,
+						       u8 stream_id,
+						       u16 window_size)
+{
+	u32 n, s, val, mask;
+
+	n  = stream_id / 2; /* 0..127 */
+	s  = (stream_id % 2) * HAL_TX_STREAM_RATE_STATS_WINDOW_FIELD_WIDTH;
+
+	mask = GENMASK(s + HAL_TX_STREAM_RATE_STATS_WINDOW_FIELD_WIDTH - 1, s);
+
+	val = ath12k_hif_read32(ab, HAL_TX_STREAM_RATE_STATS_WINDOW_CFG(n));
+	val &= ~mask;
+	val |= ((u32)window_size << s) & mask;
+
+	ath12k_hif_write32(ab, HAL_TX_STREAM_RATE_STATS_WINDOW_CFG(n), val);
+}
+
+void ath12k_wifi8_hal_tasc_tx_stream_latency_win_size_cfg(struct ath12k_base *ab,
+							  u8 stream_id,
+							  u16 window_size)
+{
+	u32 n, s, val, mask;
+
+	n  = stream_id / 2; /* 0..127 */
+	s  = (stream_id % 2) * HAL_TX_STREAM_LATENCY_STATS_WINDOW_FIELD_WIDTH;
+
+	mask = GENMASK(s + HAL_TX_STREAM_LATENCY_STATS_WINDOW_FIELD_WIDTH - 1, s);
+
+	val = ath12k_hif_read32(ab, HAL_TX_STREAM_LATENCY_STATS_WINDOW_CFG(n));
+	val &= ~mask;
+	val |= ((u32)window_size << s) & mask;
+
+	ath12k_hif_write32(ab, HAL_TX_STREAM_LATENCY_STATS_WINDOW_CFG(n), val);
+}
+
+void ath12k_wifi8_hal_tasc_tx_stream_id_valid_cfg(struct ath12k_base *ab,
+						  u8 stream_id, bool valid)
+{
+	u32 n, b, val, mask;
+
+	n  = stream_id / HAL_TX_STREAM_ID_VALID_PER_REG; /* 0..7 */
+	b  = stream_id % HAL_TX_STREAM_ID_VALID_PER_REG; /* 0..31 */
+
+	mask = BIT(b);
+
+	val = ath12k_hif_read32(ab, HAL_TX_STREAM_ID_VALID_CFG(n));
+
+	if (valid)
+		val |= mask;
+	else
+		val &= ~mask;
+
+	ath12k_hif_write32(ab, HAL_TX_STREAM_ID_VALID_CFG(n), val);
+}
+
+void ath12k_wifi8_hal_tasc_tx_stream_clear_stats(struct ath12k_base *ab, u8 stream_id)
+{
+	u32 val = 0;
+
+	val |= FIELD_PREP(GENMASK(7, 0), stream_id);
+
+	val |= BIT(9) | BIT(10);
+
+	ath12k_hif_write32(ab, HAL_TX_STREAM_STATS_CONFIG_CTRL, val);
+}
+
+static void
+ath12k_wifi8_hal_tasc_rx_stream_stats_cfg_enable(struct ath12k_base *ab,
+						 u8 stream_id, bool enable)
+{
+	u32 val = 0;
+
+	val |= FIELD_PREP(GENMASK(7, 0), stream_id);
+
+	if (enable)
+		val |= BIT(8);
+
+	ath12k_hif_write32(ab, HAL_RX_STREAM_STATS_CONFIG_CTRL, val);
+}
+
+/*
+ * Program valid bands, leave unused slots as INVALID, set bit31 in
+ * last updated register.
+ *
+ * Caller is expected to provide all valid band ids (i.e., previously programmed band ids
+ * and new band ids) with band_valid bitmaks set appropriately.
+ */
+void ath12k_wifi8_hal_tasc_rx_stream_stats_band_cfg(struct ath12k_base *ab,
+						    u8 stream_id,
+						    u8 band_valid, u16 band_ids[])
+{
+	u32 reg[2] = {};
+	bool reg_valid[2] = {};
+	int last_reg = -1;
+	u8 i;
+
+	/*
+	 * Enable stream id before writing band idx
+	 */
+	ath12k_wifi8_hal_tasc_rx_stream_stats_cfg_enable(ab, stream_id, true);
+
+	/* Default all band slots to INVALID (0x3FF). */
+	reg[0] = FIELD_PREP(GENMASK(9, 0), HAL_STREAM_BAND_IDX_INVALID) |
+		 FIELD_PREP(GENMASK(19, 10), HAL_STREAM_BAND_IDX_INVALID) |
+		 FIELD_PREP(GENMASK(29, 20), HAL_STREAM_BAND_IDX_INVALID);
+
+	reg[1] = FIELD_PREP(GENMASK(9, 0), HAL_STREAM_BAND_IDX_INVALID) |
+		 FIELD_PREP(GENMASK(19, 10), HAL_STREAM_BAND_IDX_INVALID);
+
+	for (i = 0; i < HAL_TASC_BAND_MAX; i++) {
+		u8 reg_idx;
+		u8 slot;
+
+		if (!(band_valid & BIT(i)))
+			continue;
+
+		reg_idx = (i < 3) ? 0 : 1;
+		slot = (i < 3) ? i : (i - 3);
+
+		reg[reg_idx] &= ~(HAL_STREAM_BAND_IDX_MASK << (slot * 10));
+		reg[reg_idx] |= (band_ids[i] & HAL_STREAM_BAND_IDX_MASK) << (slot * 10);
+
+		reg_valid[reg_idx] = true;
+		last_reg = reg_idx;
+	}
+
+	/* Set bit31 only in the last programmed register */
+	if (last_reg >= 0)
+		reg[last_reg] |= BIT(31);
+
+	if (reg_valid[0])
+		ath12k_hif_write32(ab, HAL_RX_STREAM_STATS_BAND_CFG(0), reg[0]);
+
+	if (reg_valid[1])
+		ath12k_hif_write32(ab, HAL_RX_STREAM_STATS_BAND_CFG(1), reg[1]);
+}
+
+void ath12k_wifi8_hal_tasc_rx_stream_rate_win_size_cfg(struct ath12k_base *ab,
+						       u8 stream_id,
+						       u16 window_size)
+{
+	u32 n, s, val, mask;
+
+	n  = stream_id / 2; /* 0..127 */
+	s  = (stream_id % 2) * HAL_RX_STREAM_RATE_STATS_WINDOW_FIELD_WIDTH;
+
+	mask = GENMASK(s + HAL_RX_STREAM_RATE_STATS_WINDOW_FIELD_WIDTH - 1, s);
+
+	val = ath12k_hif_read32(ab, HAL_RX_STREAM_RATE_STATS_WINDOW_CFG(n));
+	val &= ~mask;
+	val |= ((u32)window_size << s) & mask;
+
+	ath12k_hif_write32(ab, HAL_RX_STREAM_RATE_STATS_WINDOW_CFG(n), val);
+}
+
+void ath12k_wifi8_hal_tasc_rx_stream_latency_win_size_cfg(struct ath12k_base *ab,
+							  u8 stream_id,
+							  u16 window_size)
+{
+	u32 n, s, val, mask;
+
+	n  = stream_id / 2; /* 0..127 */
+	s  = (stream_id % 2) * HAL_RX_STREAM_LATENCY_STATS_WINDOW_FIELD_WIDTH;
+
+	mask = GENMASK(s + HAL_RX_STREAM_LATENCY_STATS_WINDOW_FIELD_WIDTH - 1, s);
+
+	val = ath12k_hif_read32(ab, HAL_RX_STREAM_LATENCY_STATS_WINDOW_CFG(n));
+	val &= ~mask;
+	val |= ((u32)window_size << s) & mask;
+
+	ath12k_hif_write32(ab, HAL_RX_STREAM_LATENCY_STATS_WINDOW_CFG(n), val);
+}
+
+void ath12k_wifi8_hal_tasc_rx_stream_id_valid_cfg(struct ath12k_base *ab,
+						  u8 stream_id, bool valid)
+{
+	u32 n, b, val, mask;
+
+	n  = stream_id / HAL_RX_STREAM_ID_VALID_PER_REG; /* 0..7 */
+	b  = stream_id % HAL_RX_STREAM_ID_VALID_PER_REG; /* 0..31 */
+
+	mask = BIT(b);
+
+	val = ath12k_hif_read32(ab, HAL_RX_STREAM_ID_VALID_CFG(n));
+
+	if (valid)
+		val |= mask;
+	else
+		val &= ~mask;
+
+	ath12k_hif_write32(ab, HAL_RX_STREAM_ID_VALID_CFG(n), val);
+}
+
+void ath12k_wifi8_hal_tasc_rx_stream_clear_stats(struct ath12k_base *ab, u8 stream_id)
+{
+	u32 val = 0;
+
+	val |= FIELD_PREP(GENMASK(7, 0), stream_id);
+
+	val |= BIT(9) | BIT(10);
+
+	ath12k_hif_write32(ab, HAL_RX_STREAM_STATS_CONFIG_CTRL, val);
+}
+
+void ath12k_wifi8_hal_tasc_stream_reset(struct ath12k_base *ab)
+{
+	u32 n;
+
+	for (n = 0; n < 128; n++) {
+		ath12k_hif_write32(ab, HAL_TX_STREAM_RATE_STATS_WINDOW_CFG(n), 0);
+		ath12k_hif_write32(ab, HAL_RX_STREAM_RATE_STATS_WINDOW_CFG(n), 0);
+		ath12k_hif_write32(ab, HAL_TX_STREAM_LATENCY_STATS_WINDOW_CFG(n), 0);
+		ath12k_hif_write32(ab, HAL_RX_STREAM_LATENCY_STATS_WINDOW_CFG(n), 0);
+	}
+
+	for (n = 0; n < 8; n++) {
+		ath12k_hif_write32(ab, HAL_TX_STREAM_ID_VALID_CFG(n), 0);
+		ath12k_hif_write32(ab, HAL_RX_STREAM_ID_VALID_CFG(n), 0);
+	}
+}
