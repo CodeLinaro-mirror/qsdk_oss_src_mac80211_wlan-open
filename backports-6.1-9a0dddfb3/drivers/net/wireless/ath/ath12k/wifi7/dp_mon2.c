@@ -1026,6 +1026,9 @@ ath12k_wifi7_dp_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	if (mpdu_meta->fcs_err)
 		rxs.flag |= RX_FLAG_FAILED_FCS_CRC;
 
+	if (ath12k_dp_mon_rx_is_proto_ver_err(mpdu_meta, mpdu))
+		return -EINVAL;
+
 	ath12k_dp_mon_rx_process_dest_pktlog(dp_pdev, mpdu, ppdu_info);
 
 	if (!(dp_mon_pdev->rx_ext_mon_config &&
