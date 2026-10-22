@@ -36131,3 +36131,30 @@ int ath12k_tfs_parse_req_ies(struct ath12k_sta *ahsta,
 
 	return 0;
 }
+
+bool ath12k_mac_is_link_conf_tx_allowed(struct ath12k *ar,
+					struct ath12k_link_vif *arvif)
+{
+	struct ieee80211_hw *hw = ath12k_ar_to_hw(ar);
+	struct ieee80211_vif *vif = arvif->ahvif->vif;
+
+	if (vif->type != NL80211_IFTYPE_AP)
+		return true;
+
+	if (arvif->chanctx.def.chan->band == NL80211_BAND_6GHZ) {
+		struct ieee80211_bss_conf *link_conf;
+
+		link_conf = wiphy_dereference(hw->wiphy,
+					      vif->link_conf[arvif->link_id]);
+		if (!link_conf)
+			return false;
+		return ath12k_mac_is_reg_6ghz_power_mode_supported(ar,
+				arvif, link_conf->power_type);
+	}
+
+	return cfg80211_chandef_usable(hw->wiphy,
+				       &arvif->chanctx.def,
+				       IEEE80211_CHAN_DISABLED |
+				       IEEE80211_CHAN_NO_IR);
+}
+EXPORT_SYMBOL(ath12k_mac_is_link_conf_tx_allowed);

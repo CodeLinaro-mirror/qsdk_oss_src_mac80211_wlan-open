@@ -1049,3 +1049,18 @@ static inline u32 ath12k_get_chan_start_freq(u32 pri_freq, u32 cen_freq, u16 bw)
 void ath12k_mac_handle_swba(struct ath12k_link_vif *arvif,
 			    const struct wmi_tim_info *tim_info);
 int ath12k_mac_wnm_tim_bcast_ap_enable(struct ath12k_link_vif *arvif, bool enable);
+
+/**
+ * ath12k_mac_is_link_conf_tx_allowed - Check if a chandef permits transmission
+ * @ar: Radio instance
+ * @arvif: Link vif whose operating channel is validated
+ *
+ * For AP interfaces, validates that the operating channel permits
+ * transmission: uses cfg80211_chandef_usable() for 2.4/5 GHz and
+ * ath12k_mac_is_reg_6ghz_power_mode_supported() for 6 GHz.
+ * Non-AP interfaces are unconditionally permitted.
+ *
+ * Return: true if transmission is permitted on the operating channel.
+ */
+bool ath12k_mac_is_link_conf_tx_allowed(struct ath12k *ar,
+					struct ath12k_link_vif *arvif);
