@@ -12159,9 +12159,7 @@ static int wmi_process_mgmt_tx_comp(struct ath12k *ar, u32 desc_id,
 	struct ath12k_skb_cb *skb_cb;
 	struct ieee80211_hdr *hdr;
 	struct ieee80211_vif *vif;
-#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 	struct ath12k_vif *ahvif;
-#endif
 	struct ath12k_mgmt_frame_stats *mgmt_stats;
 	struct ieee80211_mgmt *mgmt;
 	u16 frm_stype;
@@ -12193,14 +12191,23 @@ static int wmi_process_mgmt_tx_comp(struct ath12k *ar, u32 desc_id,
 		ath12k_arvif_deauth_disassoc_tx_dec(ar, skb_cb);
 	}
 
-#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 	vif = skb_cb->vif;
-	if (vif) {
-		ahvif = ath12k_vif_to_ahvif(vif);
-		mgmt_stats = &ahvif->mgmt_stats;
-		if (skb_cb->flags & ATH12K_SKB_MONRAW_TX)
-			mgmt_stats->mon_tx_mesh_mgmt_cmpl++;
+	if (!vif) {
+		ath12k_warn(ar->ab, "failed to update txcompl stats: vif is NULL\n");
+		goto skip_mgmt_stats;
 	}
+
+	ahvif = ath12k_vif_to_ahvif(vif);
+	if (!ahvif) {
+		ath12k_warn(ar->ab, "failed to update txcompl stats: ahvif is NULL\n");
+		goto skip_mgmt_stats;
+	}
+
+	mgmt_stats = &ahvif->mgmt_stats;
+
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	if (skb_cb->flags & ATH12K_SKB_MONRAW_TX)
+		mgmt_stats->mon_tx_mesh_mgmt_cmpl++;
 #endif
 
 	if (ieee80211_is_mgmt(hdr->frame_control)) {
@@ -12226,11 +12233,6 @@ static int wmi_process_mgmt_tx_comp(struct ath12k *ar, u32 desc_id,
 					 hdr->addr2, mgmt->u.action.category,
 					 mgmt->u.action.u.chan_switch.action_code,
 					 status);
-		}
-
-		if (!vif) {
-			ath12k_warn(ar->ab, "failed to find vif to update txcompl mgmt stats\n");
-			goto skip_mgmt_stats;
 		}
 
 		if (!status)
@@ -25447,6 +25449,14 @@ ath12k_wmi_pasn_notify_delete(struct ath12k_link_vif *arvif,
 		   peer_idx, peer->peer_mac_addr.addr,
 		   le32_to_cpu(peer->control_flag));
 
+#ifndef CPTCFG_QCN_EXTN
+	if (!arvif->ahvif || !arvif->ahvif->vif) {
+		ath12k_warn(arvif->ar->ab,
+			    "RTT PASN delete: no mac80211 vif for vdev %u\n",
+			    arvif->vdev_id);
+		return;
+	}
+#endif
 	ret = ath12k_vendor_send_pasn_event(
 			ath12k_ar_to_hw(arvif->ar)->wiphy,
 #ifdef CPTCFG_QCN_EXTN
