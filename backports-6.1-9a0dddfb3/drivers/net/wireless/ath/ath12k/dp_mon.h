@@ -149,6 +149,12 @@
 #define ATH12K_RSSI_SCALE_FACTOR		64
 #define ATH12K_RSSI_SCALE_DOWN_SHIFT		32
 
+/*
+ * Bias applied before feeding signed RSSI (dBm) into an unsigned EWMA
+ * tracker, and removed again when reading the averaged value back.
+ */
+#define RSSI_OFFSET 100
+
 struct ath12k_mon_data;
 struct dp_mon_rx_filter;
 struct dp_mon_tx_filter;
@@ -2044,6 +2050,40 @@ ath12k_dp_get_avg_snr(u8 snr, u8 avg_snr)
 	}
 
 	return avg_snr;
+}
+
+static inline void
+ath12k_dp_nrp_avg_rssi_update(struct ath12k_neighbor_peer *nrp)
+{
+	/*
+	 * EWMA averaging of RSSI (dBm, signed), biased by RSSI_OFFSET to
+	 * keep the value non-negative for the unsigned EWMA accumulator.
+	 */
+	ewma_avg_rssi_add(&nrp->rssi_ewma, (nrp->rssi + RSSI_OFFSET) << 8);
+	nrp->avg_rssi = (ewma_avg_rssi_read(&nrp->rssi_ewma) >> 8) - RSSI_OFFSET;
+}
+
+static inline s8
+ath12k_dp_nrp_rssi(struct ath12k_pdev_dp *pdev_dp,
+		   struct hal_rx_mon_ppdu_info *ppdu_info)
+{
+	struct ath12k_dp_link_peer_rx_signal_stats nrp_stats = {0};
+	u8 snr = ppdu_info->rssi_db_comb_chain_pri20;
+
+	nrp_stats.rssi_region_offset = ppdu_info->rssi_region_offset;
+	nrp_stats.channel_bw = ppdu_info->bw;
+
+	return ath12k_dp_get_rssi_value((s8)snr, &nrp_stats,
+					&pdev_dp->ar->rssi_offsets, false);
+}
+
+static inline void
+ath12k_dp_nrp_snr_update(struct ath12k_neighbor_peer *nrp,
+			 struct hal_rx_mon_ppdu_info *ppdu_info)
+{
+	nrp->snr = ppdu_info->rssi_db_comb_chain_pri20;
+	ewma_avg_snr_add(&nrp->snr_ewma, nrp->snr);
+	nrp->avg_snr = ewma_avg_snr_read(&nrp->snr_ewma);
 }
 
 static inline void

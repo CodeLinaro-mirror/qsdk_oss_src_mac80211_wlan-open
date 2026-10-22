@@ -48,8 +48,12 @@ struct ath12k_neighbor_peer {
 	struct list_head list;
 	int vdev_id;
 	u8 addr[ETH_ALEN];
-	u8 rssi;
-	u8 avg_rssi;
+	s8 rssi;
+	s8 avg_rssi;
+	struct ewma_avg_rssi rssi_ewma;
+	u8 snr;
+	u8 avg_snr;
+	struct ewma_avg_snr snr_ewma;
 	s64 timestamp;
 	int pdev_id;
 };
