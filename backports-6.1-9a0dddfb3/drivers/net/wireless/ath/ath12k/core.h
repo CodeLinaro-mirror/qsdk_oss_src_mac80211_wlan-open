@@ -3903,7 +3903,8 @@ int ath12k_core_cu_mem_pool_init(struct ath12k_hw_group *ag);
 void ath12k_core_cu_mem_pool_deinit(struct ath12k_hw_group *ag);
 void ath12k_core_cu_notify(struct ath12k *ar, struct ath12k_link_vif *arvif);
 struct wireless_dev *ath12k_get_wdev_from_netdev(struct net_device *dev);
-int ath12k_wsi_bypass_precheck(struct ath12k_base *ab, unsigned int value);
+int ath12k_wsi_bypass_precheck(struct ath12k_base *ab, unsigned int value,
+			       struct ath12k *ar);
 int ath12k_core_mlo_setup(struct ath12k_hw_group *ag);
 int ath12k_core_wsi_mlo_teardown_umac_reset(struct ath12k_base *ab);
 void ath12k_core_send_fw_hang_cmd(struct ath12k_base *ab, unsigned int value);

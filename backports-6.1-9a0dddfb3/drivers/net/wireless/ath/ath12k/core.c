@@ -2908,11 +2908,10 @@ void ath12k_core_wsi_remap_mlo_reconfig(struct ath12k_hw_group *ag)
 }
 EXPORT_SYMBOL(ath12k_core_wsi_remap_mlo_reconfig);
 
-int ath12k_wsi_bypass_precheck(struct ath12k_base *ab, unsigned int value)
+int ath12k_wsi_bypass_precheck(struct ath12k_base *ab, unsigned int value,
+			       struct ath12k *ar)
 {
 	struct ath12k_hw_group *ag = ab->ag;
-	struct ath12k *ar;
-	int i;
 
 	if (!test_bit(WMI_TLV_SERVICE_DYNAMIC_WSI_REMAP_SUPPORT, ab->wmi_ab.svc_map)) {
 		ath12k_err(ab, "Firmware doesn't support dynamic WSI remap\n");
@@ -2942,36 +2941,24 @@ int ath12k_wsi_bypass_precheck(struct ath12k_base *ab, unsigned int value)
 		return -EINVAL;
 	}
 
-	if (!ab->is_cumac_chip &&
-	    ((!ab->is_bypassed && value == ATH12K_WSI_BYPASS_ADD_DEVICE) ||
-	    (ab->is_bypassed && value == ATH12K_WSI_BYPASS_REMOVE_DEVICE))) {
-		ath12k_err(ab, "Invalid operation\n");
+	if (!ar) {
+		ath12k_err(ab, "Invalid Radio\n");
 		return -EINVAL;
 	}
 
-	for (i = 0; i < ab->num_radios; i++) {
-		ar = ab->pdevs[i].ar;
-		if (!ar) {
-			ath12k_err(ab, "Invalid Radio\n");
-			return -EINVAL;
-		}
+	if (ar->pdev_suspend && value == ATH12K_WSI_BYPASS_REMOVE_DEVICE) {
+		ath12k_err(ab, "Invalid operation: radio is already suspended\n");
+		return -EINVAL;
+	}
 
-		if (ab->is_cumac_chip && ar->pdev_suspend &&
-		    value == ATH12K_WSI_BYPASS_REMOVE_DEVICE) {
-			ath12k_err(ab, "Invalid operation: CUMAC already suspended\n");
-			return -EINVAL;
-		}
+	if (!ar->pdev_suspend && value == ATH12K_WSI_BYPASS_ADD_DEVICE) {
+		ath12k_err(ab, "Invalid operation: radio is not suspended\n");
+		return -EINVAL;
+	}
 
-		if (ab->is_cumac_chip && !ar->pdev_suspend &&
-		    value == ATH12K_WSI_BYPASS_ADD_DEVICE) {
-			ath12k_err(ab, "Invalid operation: CUMAC not suspended\n");
-			return -EINVAL;
-		}
-
-		if (ar->num_created_vdevs > 0) {
-			ath12k_err(ab, "Vaps are active, cannot do bypass\n");
-			return -EBUSY;
-		}
+	if (ar->num_created_vdevs > 0) {
+		ath12k_err(ab, "Vaps are active, cannot do bypass\n");
+		return -EBUSY;
 	}
 
 	return 0;
@@ -3257,7 +3244,8 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 		for (i = 0; i < ag->num_devices; i++) {
 			partner_ab = ag->ab[i];
 			if (partner_ab->is_static_bypassed) {
-				ret = ath12k_wsi_bypass_precheck(partner_ab, 1);
+				ret = ath12k_wsi_bypass_precheck(partner_ab, 1,
+								 partner_ab->pdevs[0].ar);
 				if (ret) {
 					ath12k_err(ab, "WSI Bypass precheck failed");
 					goto out;
