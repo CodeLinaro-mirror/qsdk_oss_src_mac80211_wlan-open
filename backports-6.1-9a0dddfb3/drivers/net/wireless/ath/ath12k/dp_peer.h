@@ -153,6 +153,14 @@ struct ath12k_dp_link_peer {
 
 #define ATH12K_PEER_EVENT_RSSI_LOW      BIT(0)
 
+#ifdef CPTCFG_QCN_EXTN
+/* DP_PEER_FEATURE_EXTAP - ExtAP active for this peer's VIF; STA-mode peers only. */
+#define DP_PEER_FEATURE_EXTAP            BIT(0)
+
+#define ath12k_dp_peer_feature_enabled(__peer, __mask) \
+	(!!((__peer)->dp_peer_flags & (__mask)))
+#endif /* CPTCFG_QCN_EXTN */
+
 struct ath12k_dp_peer {
 	struct list_head list;
 	struct ieee80211_sta *sta;
@@ -182,6 +190,9 @@ struct ath12k_dp_peer {
 
 	u8 primary_link_id;
 	u8 assoc_hw_link_id;
+#ifdef CPTCFG_QCN_EXTN
+	u8 dp_peer_flags;
+#endif
 	/* Stable generation ID shared by this MLD's link peers. */
 	u64 peer_cookie;
 

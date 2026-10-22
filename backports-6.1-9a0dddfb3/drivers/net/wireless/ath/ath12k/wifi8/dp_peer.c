@@ -20,6 +20,9 @@
 #include "dp_telemetry.h"
 #include "hal_queue.h"
 #include "../mgmt_rx.h"
+#ifdef CPTCFG_QCN_EXTN
+#include "../qcn_extns/ath12k_cmn_extn.h"
+#endif
 
 #define ATH12K_DP_MAX_SEQ_NUM  0xFFF
 #define ATH12K_DP_MAX_POSSIBLE_BA_WIN  0x400
@@ -446,6 +449,11 @@ int ath12k_wifi8_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 
 	dp_peer->tx_encap_type = ahvif->dp_vif.tx_encap_type;
 	dp_peer->rx_decap_type = ahvif->dp_vif.rx_decap_type;
+
+#ifdef CPTCFG_QCN_EXTN
+	if (vif->type == NL80211_IFTYPE_STATION && ath12k_vif_has_extap(ahvif))
+		dp_peer->dp_peer_flags |= DP_PEER_FEATURE_EXTAP;
+#endif
 
 	for (i = 0; i < ATH12K_NUM_MAX_LINKS; i++)
 		dp_peer->l2h_link_map[i] = ATH12K_DP_HW_LINK_ID_INVALID;
