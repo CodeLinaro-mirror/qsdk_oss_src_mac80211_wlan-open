@@ -5062,6 +5062,7 @@ void ath12k_dp_mon_tx_buff_free(struct ath12k_dp *dp)
 		}
 		ath12k_dp_mon_desc_reset(&dp_tx_mon->tx_mon_desc_pool[i]);
 	}
+	ath12k_dp_mon_page_frag_cache_drain(&dp_tx_mon->tx_mon_pf_cache);
 
 	spin_unlock_bh(&dp_tx_mon->tx_mon_desc_lock);
 }
