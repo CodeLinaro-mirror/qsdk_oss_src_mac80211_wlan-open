@@ -2733,6 +2733,10 @@ EXPORT_SYMBOL(ath12k_dp_mon_rx_ring_init);
 
 void ath12k_dp_mon_page_frag_cache_drain(struct page_frag_cache *pf_cache)
 {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 9, 0)
+	page_frag_cache_drain(pf_cache);
+	memset(pf_cache, 0, sizeof(*pf_cache));
+#else
 	struct page *page;
 
 	if (!pf_cache->va)
@@ -2741,6 +2745,7 @@ void ath12k_dp_mon_page_frag_cache_drain(struct page_frag_cache *pf_cache)
 	page = virt_to_page(pf_cache->va);
 	__page_frag_cache_drain(page, pf_cache->pagecnt_bias);
 	memset(pf_cache, 0, sizeof(*pf_cache));
+#endif
 }
 EXPORT_SYMBOL(ath12k_dp_mon_page_frag_cache_drain);
 
