@@ -2407,7 +2407,6 @@ int ath12k_wmi_vdev_start(struct ath12k *ar, struct wmi_vdev_start_req_arg *arg,
 
 	if (!restart &&
 	    arg->uhr_config.adv_notification_interval &&
-	    arg->uhr_config.post_notification_interval &&
 	    arg->uhr_config.update_in_tim_interval) {
 		uhr_config_present = true;
 		len += sizeof(*uhr_config);
