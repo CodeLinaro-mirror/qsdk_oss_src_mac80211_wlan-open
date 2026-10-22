@@ -6400,6 +6400,8 @@ ath12k_dp_ext_mon_update_tx_config(struct ath12k_pdev_mon_dp *dp_mon_pdev,
 			ath12k_dp_ext_mon_is_mode_enabled(&new_config->all_peer);
 		curr_config->fpmo_enabled =
 			ath12k_dp_ext_mon_is_mode_enabled(&new_config->target_peer);
+		curr_config->fp_enabled |=
+			ath12k_dp_ext_mon_is_status_filter_set(&new_config->all_peer);
 		curr_config->monitor_flags = new_config->monitor_flags;
 		curr_config->metadata = new_config->meta_data;
 		curr_config->enable = true;
