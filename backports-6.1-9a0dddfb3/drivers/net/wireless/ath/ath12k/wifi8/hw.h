@@ -64,6 +64,7 @@
 #define ATH12K_TX_PEER_TELEMETRY_RING_MASK 0x1
 #define ATH12K_RX_PEER_TELEMETRY_RING_MASK 0x1
 
+#define ATH12K_TX_STREAM_TELEMETRY_RING_MASK 0x1
 #define ATH12K_REO_FLUSH_RING_MASK_0   0x1
 
 /* Dedicated interrupt group for fw_tqm2sw ring (FW-owned buffer WAR) */

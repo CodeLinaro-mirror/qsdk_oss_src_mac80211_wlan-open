@@ -1272,12 +1272,18 @@ void ath12k_wifi8_hal_umcmn_ts_cfg(struct ath12k_base *ab, u8 ts_resolution,
 			   HAL_UMAC_UMCMN_LATENCY_RESOLUTION, latency_val);
 }
 
-void ath12k_wifi8_hal_tasc_peer_tx_cfg(struct ath12k_base *ab, bool enable)
+void ath12k_wifi8_hal_tasc_tx_cfg(struct ath12k_base *ab, bool peer_stats_enable,
+				  bool stream_stats_enable)
 {
 	u32 val = 0;
 
-	val = u32_encode_bits(enable,
-			      HAL_TX_TELEMETRY_GLOBAL_CTRL_PEER_STATS_ENABLE);
+	val = u32_encode_bits(peer_stats_enable,
+			      HAL_TX_TELEMETRY_GLOBAL_CTRL_PEER_STATS_ENABLE) |
+	      u32_encode_bits(stream_stats_enable,
+			      HAL_TX_TELEMETRY_GLOBAL_CTRL_STREAM_RATE_STATS_ENABLE) |
+	      u32_encode_bits(stream_stats_enable,
+			      HAL_TX_TELEMETRY_GLOBAL_CTRL_STREAM_LATENCY_STATS_ENABLE);
+
 	ath12k_hif_write32(ab, HAL_TX_TELEMETRY_GLOBAL_CTRL_ADDR, val);
 }
 

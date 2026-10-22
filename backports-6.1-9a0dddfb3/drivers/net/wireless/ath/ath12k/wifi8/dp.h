@@ -215,6 +215,7 @@ struct ath12k_dp_wifi8 {
 	bool dp_ppe2wbm_use_dedicated_pool;
 	struct dp_srng rx_peer_telemetry_ring;
 	struct dp_srng tx_peer_telemetry_ring;
+	struct dp_srng tx_stream_telemetry_ring;
 #ifdef CPTCFG_QCN_EXTN
 	struct ath12k_dp_wifi8_extn extn;
 #endif /* CPTCFG_QCN_EXTN */

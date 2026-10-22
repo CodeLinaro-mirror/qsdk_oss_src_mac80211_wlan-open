@@ -399,6 +399,8 @@ struct ath12k_dp_tx_msdu_info {
 	   htt_mesh		: 1,
 	   me_convert		: 1,
 	   reserved		: 1;
+	u8 stream_id_valid	: 1;
+	u8 stream_id;
 
 	/* Extended descriptor info */
 	struct ath12k_dp_ext_desc_msdu_info ext_desc;

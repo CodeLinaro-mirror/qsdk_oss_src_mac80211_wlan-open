@@ -3152,4 +3152,154 @@ struct rx_peer_telemetry_desc {
 	__le32 info4;
 } __packed;
 
+#define HAL_MAX_TX_STREAM_BAND	5
+
+#define HAL_TX_STREAM_SIGNATURE_LATENCY_STATS	0x1111
+#define HAL_TX_STREAM_SIGNATURE_RATE_STATS	0x2222
+
+/* TX stream stats descriptor field masks */
+#define TX_STREAM_STATS_DESC_INFO0_STREAM_ID	GENMASK(7, 0)
+#define TX_STREAM_STATS_DESC_INFO0_NUM_WINDOW	GENMASK(10, 8)
+#define TX_STREAM_STATS_DESC_INFO0_TYPE		GENMASK(31, 16)
+
+#define TX_STREAM_STATS_DESC_INFO89_RING_ID	GENMASK(27, 20)
+#define TX_STREAM_STATS_DESC_INFO89_LOOPING_CNT	GENMASK(31, 28)
+
+#define HAL_TX_STREAM_STATS_NUM_LATENCY_BINS	6
+#define HAL_TX_STREAM_STATS_NUM_MCS_BINS	8
+#define HAL_TX_STREAM_STATS_NUM_NSS_BINS	4
+
+/* TX band latency stats: 13 dwords per band */
+#define TX_STREAM_LAT_INFO67_INTERFRAME_DELAY_41_32	GENMASK(9, 0)
+#define TX_STREAM_LAT_INFO67_LATENCY_SLA_BREACH		BIT(10)
+#define TX_STREAM_LAT_INFO67_PERCENTILE_SLA_BREACH	BIT(11)
+
+struct tx_stream_band_latency_stats {
+	__le32 info0;   /* sum_tx_latency[31:0] */
+	__le32 info1;   /* sum_tx_latency[63:32] */
+	__le32 info2;   /* total_pkt_count */
+	__le32 info3;   /* failed_pkt_count */
+	__le32 info4;   /* passed_pkt_count */
+	__le32 info5;   /* bin0_pkt_count */
+	__le32 info6;   /* bin1_pkt_count */
+	__le32 info7;   /* bin2_pkt_count */
+	__le32 info8;   /* bin3_pkt_count */
+	__le32 info9;   /* bin4_pkt_count */
+	__le32 info10;  /* bin5_pkt_count */
+	__le32 info11;  /* latency_variation[31:0] */
+	__le32 info12;  /* latency_variation[63:32] */
+} __packed;
+
+struct tx_stream_latency_stats_desc {
+	__le32 info0;   /* stream_id[7:0], num_windows[10:8], type[31:16] */
+	struct tx_stream_band_latency_stats stream_band[HAL_MAX_TX_STREAM_BAND];
+	__le32 info66;
+	__le32 info67;
+	__le32 info68;
+	__le32 info69;
+	__le32 info70;
+	__le32 info71;
+	__le32 info72;
+	__le32 info73;
+	__le32 info74;
+	__le32 info75;
+	__le32 info76;
+	__le32 info77;
+	__le32 info78;
+	__le32 info79;
+	__le32 info80;
+	__le32 info81;
+	__le32 info82;
+	__le32 info83;
+	__le32 info84;
+	__le32 info85;
+	__le32 info86;
+	__le32 info87;
+	__le32 info88;
+	__le32 info89;  /* ring_id[27:20], looping_cnt[31:28] */
+} __packed;
+
+/* TX band rate stats: 17 dwords per band */
+#define TX_STREAM_BAND_RATE_INFO1_EGRESS_BYTES_33_32	GENMASK(1, 0)
+#define TX_STREAM_BAND_RATE_INFO1_NUM_SUCCESS_PACKETS	GENMASK(31, 7)
+#define TX_STREAM_BAND_RATE_INFO2_NUM_RETRANSMISSIONS	GENMASK(24, 0)
+#define TX_STREAM_BAND_RATE_INFO_NUM_MCS_PACKETS	GENMASK(24, 0)
+#define TX_STREAM_BAND_RATE_INFO_NUM_NSS_PACKETS	GENMASK(24, 0)
+#define TX_STREAM_BAND_RATE_INFO16_SUM_ACK_RSSI_32	BIT(0)
+#define TX_STREAM_BAND_RATE_INFO16_NUM_PACKETS		GENMASK(31, 7)
+#define TX_STREAM_RATE_INFO87_INGRESS_BYTES_33_32	GENMASK(1, 0)
+#define TX_STREAM_RATE_INFO87_NUM_LOST_PACKETS		GENMASK(31, 7)
+#define TX_STREAM_RATE_INFO88_RATE_AVG_SLA_BREACH	BIT(0)
+#define TX_STREAM_RATE_INFO88_RATE_PCT_SLA_BREACH	BIT(1)
+#define TX_STREAM_RATE_INFO88_DROP_PCT_SLA_BREACH	BIT(2)
+#define TX_STREAM_RATE_INFO88_ERROR_PCT_SLA_BREACH	BIT(3)
+
+struct tx_stream_band_rate_stats {
+	__le32 info0;   /* egress_bytes[31:0] */
+	__le32 info1;   /* egress_bytes[33:32], num_success_pkts */
+	__le32 info2;   /* num_retransmissions */
+	__le32 info3;   /* mcs_bin0 */
+	__le32 info4;   /* mcs_bin1 */
+	__le32 info5;   /* mcs_bin2 */
+	__le32 info6;   /* mcs_bin3 */
+	__le32 info7;   /* mcs_bin4 */
+	__le32 info8;   /* mcs_bin5 */
+	__le32 info9;   /* mcs_bin6 */
+	__le32 info10;  /* mcs_bin7 */
+	__le32 info11;  /* nss_bin0 */
+	__le32 info12;  /* nss_bin1 */
+	__le32 info13;  /* nss_bin2 */
+	__le32 info14;  /* nss_bin3 */
+	__le32 info15;  /* sum_ack_rssi[31:0] */
+	__le32 info16;  /* sum_ack_rssi[32], num_packets */
+} __packed;
+
+struct tx_stream_rate_stats_desc {
+	__le32 info0;   /* stream_id[7:0], num_windows[10:8], type[31:16] */
+	struct tx_stream_band_rate_stats stream_band[HAL_MAX_TX_STREAM_BAND];
+	__le32 info86;
+	__le32 info87;  /* ingress_bytes[33:32], num_lost_pkts */
+	__le32 info88;  /* SLA breach flags */
+	__le32 info89;  /* ring_id[27:20], looping_cnt[31:28] */
+} __packed;
+
+#define ATH12K_MAX_STREAM_ID	255
+
+/* Host-side parsed representations of TX stream stats descriptors */
+struct ath12k_dp_tx_stream_latency_band_stat {
+	u64 latency;
+	u32 num_packets;
+	u32 num_fail_packets;
+	u32 num_pass_packets;
+	u32 num_bin_packets[HAL_TX_STREAM_STATS_NUM_LATENCY_BINS];
+	u64 latency_variation;
+};
+
+struct ath12k_dp_tx_stream_latency_stat {
+	struct ath12k_dp_tx_stream_latency_band_stat band[HAL_MAX_TX_STREAM_BAND];
+	u64 interframe_delay;
+	u32 latency_sla_breach    : 1,
+	    percentile_sla_breach : 1;
+};
+
+struct ath12k_dp_tx_stream_rate_band_stat {
+	u64 egress_bytes;
+	u32 num_success_packets;
+	u32 num_retransmissions;
+	u32 num_mcs_bin_packets[HAL_TX_STREAM_STATS_NUM_MCS_BINS];
+	u32 num_nss_bin_packets[HAL_TX_STREAM_STATS_NUM_NSS_BINS];
+	s64 sum_ack_rssi;
+	u32 num_packets;
+};
+
+struct ath12k_dp_tx_stream_rate_stat {
+	struct ath12k_dp_tx_stream_rate_band_stat band[HAL_MAX_TX_STREAM_BAND];
+	u64 ingress_bytes;
+	u32 num_lost_packets;
+	u32 rate_avg_sla_breach  : 1,
+	    rate_pct_sla_breach  : 1,
+	    drop_pct_sla_breach  : 1,
+	    error_pct_sla_breach : 1;
+};
+
 #endif /* ATH12K_HAL_DESC_H */

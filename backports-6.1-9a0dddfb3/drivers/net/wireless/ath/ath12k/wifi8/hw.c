@@ -454,6 +454,14 @@ static struct ath12k_hw_ring_mask ath12k_wifi8_hw_ring_mask_qcn9625 = {
 		0,
 		ATH12K_RX_PEER_TELEMETRY_RING_MASK
 	},
+	/* Group 14 */
+	.tx_stream_telemetry = {
+		0, 0, 0, 0,
+		0, 0, 0, 0,
+		0, 0, 0, 0,
+		0, 0,
+		ATH12K_TX_STREAM_TELEMETRY_RING_MASK
+	},
 	/* Group 17 */
 	.umcmn_interrupts = {
 		0, 0, 0, 0,

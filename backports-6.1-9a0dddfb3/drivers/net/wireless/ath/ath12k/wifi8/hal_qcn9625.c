@@ -223,6 +223,15 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.max_size = HAL_TELEMETRY_RING_MAX_SIZE,
 		.name = "Peer Rx Telemetry",
 	},
+	[HAL_STREAM_TX_TELEMETRY] = {
+		.start_ring_id = HAL_SRNG_RING_ID_STREAM_TX_TELEMETRY,
+		.max_rings = 1,
+		.entry_size = sizeof(struct tx_stream_latency_stats_desc) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_DST,
+		.max_size = HAL_TELEMETRY_RING_MAX_SIZE,
+		.name = "Stream Tx Telemetry",
+	},
 	[HAL_CE_SRC] = {
 		.start_ring_id = HAL_SRNG_RING_ID_CE0_SRC,
 		.max_rings = 24,
@@ -1392,6 +1401,11 @@ int ath12k_wifi8_hal_srng_create_config_qcn9625(struct ath12k_hal *hal)
 	s = &hal->srng_config[HAL_PEER_RX_TELEMETRY];
 	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_PEER_RX_TELEMETRY_RING_BASE_LSB;
 	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_PEER_RX_TELEMETRY_RING_HP;
+
+	s = &hal->srng_config[HAL_STREAM_TX_TELEMETRY];
+	s->reg_start[0] =
+		HAL_SEQ_WCSS_UMAC_TQM_REG + HAL_STREAM_TX_TELEMETRY_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_TQM_REG + HAL_STREAM_TX_TELEMETRY_RING_HP;
 
 	/* Some LMAC rings are not accessed from the host:
 	 * RXDMA_BUG, RXDMA_DST, RXDMA_MONITOR_BUF, RXDMA_MONITOR_STATUS,

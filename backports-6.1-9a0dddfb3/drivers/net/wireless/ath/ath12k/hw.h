@@ -235,6 +235,7 @@ struct ath12k_hw_ring_mask {
 	u8 reo_flush[ATH12K_EXT_IRQ_NUM_MAX];
 	/* Dedicated ring for FW-owned buffer completions (fw_tqm2sw WAR) */
 	u8 tqm2sw_fw[ATH12K_EXT_IRQ_NUM_MAX];
+	u8 tx_stream_telemetry[ATH12K_EXT_IRQ_NUM_MAX];
 };
 
 enum ath12k_m3_fw_loaders {

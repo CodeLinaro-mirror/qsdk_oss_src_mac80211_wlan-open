@@ -306,6 +306,10 @@ enum rdi_based_source_ring_selection {
 #define HAL_PEER_RX_TELEMETRY_RING_BASE_LSB	0x171c
 #define HAL_PEER_RX_TELEMETRY_RING_HP		0x3168
 
+/* TQM2SW_TELEMETRY0 RING (stream TX stats) */
+#define HAL_STREAM_TX_TELEMETRY_RING_BASE_LSB	0xcdc
+#define HAL_STREAM_TX_TELEMETRY_RING_HP		0x30d8
+
 /* PPE2TCL1 Ring address */
 #define HAL_TCL_PPE2TCL1_RING_BASE_LSB(hal) \
 	((hal)->regs->hal_tcl_ppe2tcl_ring_base_lsb)
@@ -2071,6 +2075,8 @@ enum hal_tx_latency_resolution {
 
 #define HAL_TX_TELEMETRY_GLOBAL_CTRL_ADDR		0xF10584
 #define HAL_TX_TELEMETRY_GLOBAL_CTRL_PEER_STATS_ENABLE	BIT(0)
+#define HAL_TX_TELEMETRY_GLOBAL_CTRL_STREAM_RATE_STATS_ENABLE		BIT(1)
+#define HAL_TX_TELEMETRY_GLOBAL_CTRL_STREAM_LATENCY_STATS_ENABLE	BIT(2)
 
 #define HAL_TX_PEER_STATS_WINDOW_SIZE_CFG_ADDR		0xF10000
 #define HAL_TX_PEER_STATS_WINDOW_SIZE_CFG		GENMASK(11, 0)
@@ -2402,7 +2408,8 @@ bool ath12k_wifi8_hal_ppeds_cfg_ast(struct ath12k_base *ab,
 
 void ath12k_wifi8_hal_umcmn_ts_cfg(struct ath12k_base *ab, u8 ts_resolution,
 				   u8 latency_resolution);
-void ath12k_wifi8_hal_tasc_peer_tx_cfg(struct ath12k_base *ab, bool enable);
+void ath12k_wifi8_hal_tasc_tx_cfg(struct ath12k_base *ab, bool peer_stats_enable,
+				  bool stream_stats_enable);
 void ath12k_wifi8_hal_tasc_peer_clk_cycle_config(struct ath12k_base *ab);
 void ath12k_wifi8_hal_tasc_peer_tx_max_peer(struct ath12k_base *ab,
 					    u16 ucast, u8 gcast_dl,
