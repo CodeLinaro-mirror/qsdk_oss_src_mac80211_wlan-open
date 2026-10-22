@@ -4573,6 +4573,13 @@ static int ath12k_wifi8_dp_tx_null_flowq_handler(
 		ret = -EINVAL;
 		goto end;
 	}
+	if (!READ_ONCE(peer->peer_links_map)) {
+		ath12k_err(dp->ab,
+			"null_flowq: peer_id %u addr %pM has no active links skipping queue alloc",
+			peer_id, peer->addr);
+		ret = -EINVAL;
+		goto end;
+	}
 	if (peer->qos_stats_lvl == ATH12K_QOS_SINGLE_LINK_STATS)
 		link_id =
 		ath12k_dp_peer_convert_hw_to_logical_link_id(peer, dp_pdev->hw_link_id);
