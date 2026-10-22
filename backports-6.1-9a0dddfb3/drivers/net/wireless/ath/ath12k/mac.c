@@ -21873,7 +21873,7 @@ void ath12k_mac_op_stop(struct ieee80211_hw *hw, bool suspend)
 	mutex_unlock(&ah->hw_mutex);
 
 	if (ag->power_save_mode &&
-	    ath12k_core_complete_teardown_required(ah))
+	    ath12k_core_complete_teardown_required(ag))
 		ath12k_core_cleanup_power_down_q6(ag, false);
 }
 EXPORT_SYMBOL(ath12k_mac_op_stop);
