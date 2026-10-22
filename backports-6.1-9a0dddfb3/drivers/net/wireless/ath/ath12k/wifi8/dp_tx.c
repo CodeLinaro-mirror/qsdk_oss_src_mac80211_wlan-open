@@ -426,6 +426,7 @@ static inline u32 ath12k_qos_get_metadata(u16 qos_id)
 /* TODO: SAWF Team to review */
 static inline
 void ath12k_wifi_qos_desc(struct hal_tcl_data_cmd *desc,
+			  struct ath12k_dp_tx_msdu_info *msdu_info,
 			  u32 msduq, u16 qos_id)
 {
 	u32 tid, flow_override, who_classify_info_sel;
@@ -435,8 +436,16 @@ void ath12k_wifi_qos_desc(struct hal_tcl_data_cmd *desc,
 	flow_override = u32_get_bits(msduq, MSDUQ_FLOW_OVERRIDE);
 	who_classify_info_sel = u32_get_bits(msduq, MSDUQ_WHO_CL_INFO);
 
-	desc->info1 |= u32_encode_bits(tid, HAL_TCL_DATA_CMD_INFO1_HLOS_TID) |
-		       u32_encode_bits(1, HAL_TCL_DATA_CMD_INFO1_HLOS_TID_OVERWRITE);
+	/* Since SCS takes precedence we clear the HLO_TID before overwriting
+	 * the TID value
+	 */
+	/* Resolve the HLOS TID into msdu_info only. The single write into
+	 * the TCL descriptor's HLOS_TID/HLOS_TID_OVERWRITE bits happens once
+	 * in ath12k_wifi8_dp_tx_hw_enqueue(), after all QoS mechanisms
+	 * (vif-wide MSCS, SAWF/SDWF, SCS/MSCS per-packet) have resolved.
+	 */
+	msdu_info->tid = tid;
+	msdu_info->tid_override = true;
 
 	desc->info2 |= u32_encode_bits(1, HAL_TCL_DATA_CMD_INFO2_FLOW_OVERRIDE_ENABLE) |
 		       u32_encode_bits(who_classify_info_sel,
@@ -449,8 +458,21 @@ void ath12k_wifi_qos_desc(struct hal_tcl_data_cmd *desc,
 }
 
 static inline
-void ath12k_wifi_qos_hlos_tid(struct hal_tcl_data_cmd *desc,
+void ath12k_wifi_qos_hlos_tid(struct ath12k_dp_tx_msdu_info *msdu_info,
 			      u8 tid)
+{
+	msdu_info->tid = tid < ATH12K_MAX_TID_VALUE ? tid : 0;
+	msdu_info->tid_override = true;
+}
+
+/* Commits the resolved HLOS TID into the TCL descriptor. Called exactly
+ * once per packet in ath12k_wifi8_dp_tx_hw_enqueue(), after every QoS
+ * mechanism (vif-wide MSCS, SAWF/SDWF, SCS/MSCS per-packet) has had a
+ * chance to resolve msdu_info->tid, so there is a single descriptor
+ * write instead of multiple writes that could stack via OR.
+ */
+static inline
+void ath12k_wifi_qos_commit_hlos_tid(struct hal_tcl_data_cmd *desc, u8 tid)
 {
 	desc->info1 |= u32_encode_bits(tid < ATH12K_MAX_TID_VALUE ? tid : 0,
 				       HAL_TCL_DATA_CMD_INFO1_HLOS_TID) |
@@ -470,7 +492,8 @@ static inline u8 ath12k_get_qos_tag(u32 mark)
 static inline void
 ath12k_wifi8_dp_qos_update(struct ath12k_dp *dp, struct ath12k_pdev_dp *dp_pdev,
 			   u32 mark, struct hal_tcl_data_cmd *desc, u8 qos_tag,
-			   struct ath12k_dp_peer *dp_peer, u8 link_id)
+			   struct ath12k_dp_peer *dp_peer, u8 link_id,
+			   struct ath12k_dp_tx_msdu_info *msdu_info)
 {
 	u8 scs_id;
 	u8 msduq;
@@ -511,10 +534,10 @@ ath12k_wifi8_dp_qos_update(struct ath12k_dp *dp, struct ath12k_pdev_dp *dp_pdev,
 	}
 	/* Update Desc for HLOS TID Override */
 	if (msduq < MSDUQ_MAX_DEF) {
-		ath12k_wifi_qos_hlos_tid(desc, msduq);
+		ath12k_wifi_qos_hlos_tid(msdu_info, msduq);
 	} else if (msduq < QOS_MSDUQ_MAX) {
 		/* Update Desc for User Defined QoS MSDUQ */
-		ath12k_wifi_qos_desc(desc, msduq, qos_id);
+		ath12k_wifi_qos_desc(desc, msdu_info, msduq, qos_id);
 	}
 }
 
@@ -1314,12 +1337,11 @@ static int ath12k_wifi8_dp_tx_hw_enqueue(struct ath12k_dp_link_vif *dp_link_vif,
 	}
 
 	ath12k_wifi8_dp_tx_hal_tcl_desc_update(hal_tcl_desc, msdu_info, skb);
-	if (unlikely(msdu_info->tid_override))
-		ath12k_wifi_qos_hlos_tid(hal_tcl_desc, msdu_info->tid);
 
 	if (unlikely(skb->mark & SDWF_VALID_MASK)) {
 		ath12k_wifi8_dp_qos_update(dp, dp_pdev, skb->mark, hal_tcl_desc,
-					   0, dp_peer, dp_link_vif->link_id);
+					   0, dp_peer, dp_link_vif->link_id,
+					   msdu_info);
 		ath12k_dp_sdwftx_ingress_stats_update(dp_pdev->ar,
 						      &skb->mark,
 						      qos_nw_delay,
@@ -1332,8 +1354,15 @@ static int ath12k_wifi8_dp_tx_hw_enqueue(struct ath12k_dp_link_vif *dp_link_vif,
 		if (qos_tag)
 			ath12k_wifi8_dp_qos_update(dp, dp_pdev, skb->mark,
 						   hal_tcl_desc, qos_tag,
-						   dp_peer, dp_link_vif->link_id);
+						   dp_peer, dp_link_vif->link_id,
+						   msdu_info);
 	}
+
+	/* Single, final commit of the resolved HLOS TID, after every QoS
+	 * mechanism above has had a chance to update msdu_info->tid.
+	 */
+	if (unlikely(msdu_info->tid_override))
+		ath12k_wifi_qos_commit_hlos_tid(hal_tcl_desc, msdu_info->tid);
 
 	ath12k_dmb();
 
@@ -1384,12 +1413,10 @@ static int ath12k_wifi8_dp_tx_hw_enqueue(struct ath12k_dp_link_vif *dp_link_vif,
 
 	ath12k_wifi8_dp_tx_hal_tcl_desc_update(&tcl_desc, msdu_info, skb);
 
-	if (unlikely(msdu_info->tid_override))
-		ath12k_wifi_qos_hlos_tid(&tcl_desc, msdu_info->tid);
-
 	if (unlikely(skb->mark & SDWF_VALID_MASK)) {
 		ath12k_wifi8_dp_qos_update(dp, dp_pdev, skb->mark, &tcl_desc,
-					   0, dp_peer, dp_link_vif->link_id);
+					   0, dp_peer, dp_link_vif->link_id,
+					   msdu_info);
 		ath12k_dp_sdwftx_ingress_stats_update(dp_pdev->ar,
 						      &skb->mark,
 						      qos_nw_delay,
@@ -1402,8 +1429,15 @@ static int ath12k_wifi8_dp_tx_hw_enqueue(struct ath12k_dp_link_vif *dp_link_vif,
 		if (qos_tag)
 			ath12k_wifi8_dp_qos_update(dp, dp_pdev, skb->mark,
 						   &tcl_desc, qos_tag,
-						   dp_peer, dp_link_vif->link_id);
+						   dp_peer, dp_link_vif->link_id,
+						   msdu_info);
 	}
+
+	/* Single, final commit of the resolved HLOS TID, after every QoS
+	 * mechanism above has had a chance to update msdu_info->tid.
+	 */
+	if (unlikely(msdu_info->tid_override))
+		ath12k_wifi_qos_commit_hlos_tid(&tcl_desc, msdu_info->tid);
 
 	memcpy(hal_tcl_desc, &tcl_desc, sizeof(tcl_desc));
 	ath12k_dmb();
