@@ -1157,6 +1157,12 @@ void cfg80211_dfs_channels_update_work(struct work_struct *work)
 						     radar_event, NULL,
 						     GFP_ATOMIC);
 
+#ifdef CPTCFG_QCN_EXTN
+				if (wiphy->background_cac_event)
+					wiphy->background_cac_event(wiphy, &chandef,
+								   radar_event);
+#endif /* CPTCFG_QCN_EXTN */
+
 				regulatory_propagate_dfs_state(wiphy, &chandef,
 							       c->dfs_state,
 							       radar_event);
@@ -1659,6 +1665,12 @@ __cfg80211_background_cac_event(struct cfg80211_registered_device *rdev,
 
 	if (!cfg80211_chandef_valid(&bgr->chandef))
 		return;
+
+#ifdef CPTCFG_QCN_EXTN
+	if (wiphy->background_cac_event) {
+		wiphy->background_cac_event(wiphy, &bgr->chandef, event);
+	}
+#endif /* CPTCFG_QCN_EXTN */
 
 	switch (event) {
 	case NL80211_RADAR_CAC_FINISHED:
