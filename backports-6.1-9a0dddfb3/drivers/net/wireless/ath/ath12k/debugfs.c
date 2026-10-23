@@ -224,7 +224,7 @@ ath12k_debug_write_wsi_bypass_device(struct file *file,
 		}
 	}
 	mutex_lock(&ab->core_lock);
-	ret = ath12k_wsi_bypass_precheck(ab, value);
+	ret = ath12k_wsi_bypass_precheck(ab, value, ab->pdevs[0].ar);
 
 	if (ret) {
 		ath12k_err(ab, "WSI Bypass precheck failed\n");
