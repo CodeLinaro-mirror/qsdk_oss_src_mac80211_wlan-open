@@ -4181,7 +4181,7 @@ int ath12k_wifi8_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
 static int ath12k_wifi8_dp_tx_reinject(struct ath12k_dp *dp,
 				       struct ath12k_dp_vif *dp_vif,
 				       struct hal_tcl_exit_base *tx_exception_desc,
-				       struct ath12k_tx_desc_info *tx_desc)
+				       struct sk_buff *skb)
 {
 	struct hal_tcl_data_cmd tcl_desc = {0};
 	struct hal_tcl_data_cmd *hal_tcl_desc;
@@ -4192,7 +4192,7 @@ static int ath12k_wifi8_dp_tx_reinject(struct ath12k_dp *dp,
 	u8 hal_ring_id;
 	u32 data_len;
 
-	ring_selector = dp->hw_params->hw_ops->get_ring_selector(tx_desc->skb);
+	ring_selector = dp->hw_params->hw_ops->get_ring_selector(skb);
 	ring_id = ring_selector % dp->hw_params->max_tx_ring;
 
 	memcpy(&tcl_desc.buf_addr_info, &tx_exception_desc->buf_addr_info,
@@ -4279,11 +4279,30 @@ static int ath12k_wifi8_dp_tx_reinject(struct ath12k_dp *dp,
 	return DP_TX_ENQ_SUCCESS;
 }
 
+static bool
+ath12k_wifi8_dp_tx_exc_is_udp(struct hal_tcl_exit_base *tx_exception_desc,
+			      bool is_ppeds)
+{
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	if (is_ppeds) {
+		u8 pid = le32_get_bits(tx_exception_desc->info5,
+				       HAL_TCL_EXIT_BASE_INFO5_PID);
+
+		return (pid == HAL_TCL_EXIT_PPEDS_PID_UDP_IPV4 ||
+			pid == HAL_TCL_EXIT_PPEDS_PID_UDP_LITE_IPV4 ||
+			pid == HAL_TCL_EXIT_PPEDS_PID_UDP_IPV6);
+	}
+#endif
+	return le16_get_bits(tx_exception_desc->info2,
+			     HAL_TCL_EXIT_BASE_INFO2_UDP_PROTO);
+}
+
 static int ath12k_wifi8_dp_tx_null_flowq_handler(
 			struct ath12k_dp *dp,
 			struct hal_tcl_exit_base *tx_exception_desc,
 			u32 desc_id,
-			struct ath12k_tx_desc_info *tx_desc)
+			struct sk_buff *skb,
+			bool is_ppeds)
 {
 	enum hal_tcl_encap_type encap_type;
 	struct ath12k_dp_tx_queue_metadata tx_q_params = {0};
@@ -4292,11 +4311,14 @@ static int ath12k_wifi8_dp_tx_null_flowq_handler(
 	u8 tidno, flow_type;
 	u16 peer_id;
 	u8 hw_link_id, link_id;
-	bool non_qos, is_tcp, is_udp, mcast;
+	bool non_qos, is_udp, mcast;
 	u8 bank_id;
 	struct ath12k_vif *ahvif;
 	struct ath12k_dp_vif *dp_vif;
 	int ret;
+
+	if (WARN_ON_ONCE(!skb))
+		return -EINVAL;
 
 	tidno = le32_get_bits(tx_exception_desc->info0,
 			      HAL_TCL_EXIT_BASE_INFO0_TID);
@@ -4368,10 +4390,7 @@ static int ath12k_wifi8_dp_tx_null_flowq_handler(
 
 	mcast = le16_get_bits(tx_exception_desc->info3,
 			      HAL_TCL_EXIT_BASE_INFO3_DA_IS_BCAST_MCAST);
-	is_udp = le32_get_bits(tx_exception_desc->info2,
-			       HAL_TCL_EXIT_BASE_INFO2_UDP_PROTO);
-	is_tcp = le32_get_bits(tx_exception_desc->info2,
-			       HAL_TCL_EXIT_BASE_INFO2_TCP_PROTO);
+	is_udp = ath12k_wifi8_dp_tx_exc_is_udp(tx_exception_desc, is_ppeds);
 	non_qos = le32_get_bits(tx_exception_desc->info1,
 				HAL_TCL_EXIT_BASE_INFO1_NON_QOS);
 
@@ -4419,12 +4438,9 @@ end:
 	if (ret)
 		return ret;
 
-	if (tx_desc)
-		return ath12k_wifi8_dp_tx_reinject(dp, dp_vif,
+	return ath12k_wifi8_dp_tx_reinject(dp, dp_vif,
 						   tx_exception_desc,
-						   tx_desc);
-	else
-		return 0;
+						   skb);
 }
 
 static bool
@@ -4518,6 +4534,8 @@ int ath12k_wifi8_dp_tx_exception_handler(struct ath12k_dp *dp, int budget)
 	struct ath12k_base *ab = dp->ab;
 	struct hal_tcl_exit_base *tx_exception_desc = NULL;
 	struct ath12k_tx_desc_info *tx_desc = NULL;
+	struct ath12k_ppeds_tx_desc_info *ppeds_tx_desc = NULL;
+	struct sk_buff *skb = NULL;
 	u32 desc_id;
 	struct hal_srng *srng;
 	int quota = budget;
@@ -4550,9 +4568,26 @@ int ath12k_wifi8_dp_tx_exception_handler(struct ath12k_dp *dp, int budget)
 		desc_id = le32_get_bits(tx_exception_desc->buf_addr_info.info1,
 					BUFFER_ADDR_INFO1_SW_COOKIE);
 		tx_desc = ath12k_dp_get_tx_desc(dp, desc_id);
+		if (tx_desc) {
+			skb = tx_desc->skb;
+			goto out;
+		}
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+		ppeds_tx_desc = ath12k_dp_get_ppeds_tx_desc(ab, desc_id);
+		if (ppeds_tx_desc) {
+			skb = ppeds_tx_desc->skb;
+			goto out;
+		}
+#endif
+		stats->invalid_desc++;
+		ath12k_warn(dp->ab,
+			    "unable to get tx_desc %d\n", desc_id);
+		continue;
+
+out:
 		if (tx_exception_error)
-			goto send_tqm2sw_fw_comp;
+			goto tx_buf_release;
 
 		if (le32_get_bits(tx_exception_desc->info7,
 				  HAL_TCL_EXIT_BASE_INFO7_FLOW_POINTER_NULL)) {
@@ -4560,18 +4595,31 @@ int ath12k_wifi8_dp_tx_exception_handler(struct ath12k_dp *dp, int budget)
 			ret = ath12k_wifi8_dp_tx_null_flowq_handler(dp,
 								    tx_exception_desc,
 								    desc_id,
-								    tx_desc);
+								    skb,
+								    !!ppeds_tx_desc);
 			if (ret == 0) {
 				stats->reinject_pkts++;
 				continue;
 			}
 		}
 
-send_tqm2sw_fw_comp:
+tx_buf_release:
 		rbm = le32_get_bits(tx_exception_desc->buf_addr_info.info1,
 				    BUFFER_ADDR_INFO1_RET_BUF_MGR);
 		ath12k_wifi8_dp_tx_exception_to_tx_comp(dp, paddr,
 							rbm, desc_id);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+		if (ppeds_tx_desc) {
+			spin_lock_bh(&dp->dp_hw_grp->ppeds_tx_desc_lock);
+			ppeds_tx_desc->in_use = false;
+			ppeds_tx_desc->flags = 0;
+			list_add_tail(&ppeds_tx_desc->list,
+				      &dp->dp_hw_grp->ppeds_tx_desc_free_list);
+			ppeds_tx_desc->skb = NULL;
+			spin_unlock_bh(&dp->dp_hw_grp->ppeds_tx_desc_lock);
+			dev_kfree_skb_any(skb);
+		}
+#endif
 	}
 
 	ath12k_hal_srng_access_end(ab, srng);
