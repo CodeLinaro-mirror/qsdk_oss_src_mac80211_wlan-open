@@ -21072,7 +21072,10 @@ void ath12k_mac_stop(struct ath12k *ar)
 
 	ath12k_debugfs_nrp_cleanup_all(ar);
 
-	if (!ar->allocated_vdev_map && !ar->pdev_suspend) {
+	if (!ar->allocated_vdev_map && !ar->pdev_suspend &&
+	    (ar->ab->ag->power_save_mode ||
+	    (ar->ab->ag->wsi_remap_in_progress && ar->ab->is_cumac_chip) ||
+	    (ath12k_erp_get_sm_state() == ATH12K_ERP_ENTER_COMPLETE))) {
 		ret = ath12k_mac_pdev_suspend(ar);
 		if (ret)
 			ath12k_warn(ar->ab, "pdev suspend command is failed %d\n", ret);
