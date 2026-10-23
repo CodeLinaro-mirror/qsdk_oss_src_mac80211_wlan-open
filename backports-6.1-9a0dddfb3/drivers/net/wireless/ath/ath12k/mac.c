@@ -21729,11 +21729,11 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 			memcpy(link_addr, arvif->bssid, ETH_ALEN);
 		} else if (link_conf) {
 			/* In split-phy scenario with MLO, use RANDOM MAC for scan vdev
-			 * only when creating a scan link (ATH12K_DEFAULT_SCAN_LINK)
+			 * only when creating a scan link
 			 * to avoid MAC address conflicts across radios.
 			 */
 			memcpy(link_addr, link_conf->addr, ETH_ALEN);
-			if (arvif->link_id == ATH12K_DEFAULT_SCAN_LINK &&
+			if ((ATH12K_SCAN_LINKS_MASK & BIT(arvif->link_id)) &&
 			    vif->valid_links)
 				eth_random_addr(link_addr);
 			memcpy(arvif->bssid, link_addr, ETH_ALEN);
@@ -21940,8 +21940,8 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 
 	dbg_lvl = (ahvif->vdev_type == WMI_VDEV_TYPE_STA) ? ATH12K_DBG_L1 : ATH12K_DBG_L0;
 	ath12k_dbg_level(ab, ATH12K_DBG_MAC, dbg_lvl,
-			 "[radio_idx : %u] vdev addr %pM bssid: %pM created, vdev_id %d created vdev map = 0x%llx\n",
-			 ar->radio_idx, arvif->addr, arvif->bssid, arvif->vdev_id,
+			 "[radio_idx : %u] vdev addr %pM mld addr %pM created, vdev_id %d created vdev map = 0x%llx\n",
+			 ar->radio_idx, arvif->addr, ahvif->vif->addr, arvif->vdev_id,
 			 ar->created_vdev_map);
 	ar->allocated_vdev_map |= 1LL << arvif->vdev_id;
 
