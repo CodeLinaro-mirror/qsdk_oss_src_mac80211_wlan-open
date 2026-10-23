@@ -12228,7 +12228,7 @@ static int wmi_process_mgmt_tx_comp(struct ath12k *ar, u32 desc_id,
 					 hdr->addr2, status);
 		else if (is_csa) {
 			mgmt = (struct ieee80211_mgmt *)hdr;
-			ath12k_dbg_level(ar->ab, ATH12K_DBG_MLME, ATH12K_DBG_L0,
+			ath12k_dbg_level(ar->ab, ATH12K_DBG_MLME, ATH12K_DBG_L1,
 					 "Tx completion for CSA action frame from %pM category %u action %u tx_status %u\n",
 					 hdr->addr2, mgmt->u.action.category,
 					 mgmt->u.action.u.chan_switch.action_code,
