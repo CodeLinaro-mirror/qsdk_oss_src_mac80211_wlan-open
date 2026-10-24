@@ -33498,16 +33498,19 @@ int ath12k_mac_op_qos_mgmt_cfg(struct ieee80211_hw *hw,
 {
 	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
 	enum ieee80211_qos_mgmt_type qm_type = qm_req->qm_type;
-	u8 link_id = ahsta->primary_link_id;
 	struct ath12k_link_sta *arsta;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
-	arsta = wiphy_dereference(hw->wiphy, ahsta->link[link_id]);
+	if (sta->mlo)
+		arsta = wiphy_dereference(hw->wiphy,
+					  ahsta->link[ahsta->primary_link_id]);
+	else
+		arsta = &ahsta->deflink;
 
 	if (!arsta) {
 		ath12k_err(NULL, "QoS mgmt arsta NULL link_id %d sta %pM\n",
-			   link_id, sta->addr);
+			   ahsta->primary_link_id, sta->addr);
 		return -EINVAL;
 	}
 
