@@ -3093,13 +3093,6 @@ int ath12k_wsi_bypass_precheck(struct ath12k_base *ab, unsigned int value,
 		return -ENODEV;
 	}
 
-	if ((!(test_bit(WMI_TLV_SERVICE_11BN, ab->wmi_ab.svc_map)) &&
-	    ((ag->num_devices - ag->num_bypassed) == ATH12K_MIN_ACTIVE_CHIP_FOR_BYPASS) &&
-	    value == ATH12K_WSI_BYPASS_REMOVE_DEVICE)) {
-		ath12k_err(ab, "Min 2 Chip has to be active for EHT device.\n");
-		return -EINVAL;
-	}
-
 	if (!ar) {
 		ath12k_err(ab, "Invalid Radio\n");
 		return -EINVAL;
@@ -6872,8 +6865,10 @@ ath12k_get_connected_dev(struct ath12k_base *ab, int reg,
 		}
 
 		if (!include_bypassed_device ||
-		    !ath12k_core_check_is_bypassed(ab->ag, connected_dev))
-			return connected_dev;
+		    !ath12k_core_check_is_bypassed(ab->ag, connected_dev)) {
+			if (connected_dev != ab_dev)
+				return connected_dev;
+		}
 
 		of_node_put(connected_dev);
 
@@ -6980,7 +6975,7 @@ static void ath12k_core_fill_adj_info(struct ath12k_base *ab)
 
 	if (!tx_neighbour) {
 		of_node_put(ab_dev);
-		return;
+		goto exit;
 	}
 
 	for (i = 0; i < ag->num_devices; i++) {
@@ -6997,8 +6992,9 @@ static void ath12k_core_fill_adj_info(struct ath12k_base *ab)
 
 	rx_neighbour = ath12k_get_connected_dev(ab, 1, is_bypassed);
 	if (!rx_neighbour) {
+		of_node_put(tx_neighbour);
 		of_node_put(ab_dev);
-		return;
+		goto exit;
 	}
 
 	if (tx_neighbour != rx_neighbour) {
@@ -7024,6 +7020,7 @@ static void ath12k_core_fill_adj_info(struct ath12k_base *ab)
 	of_node_put(rx_neighbour);
 	of_node_put(ab_dev);
 
+exit:
 	wsi_info->num_adj_chips = num_adj_chips;
 	for (i = 0; i < ag->num_devices && adj_device_idx_bmp; i++) {
 		if ((adj_device_idx_bmp & BIT(i)) ||
