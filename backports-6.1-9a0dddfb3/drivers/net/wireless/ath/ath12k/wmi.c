@@ -6497,9 +6497,9 @@ int ath12k_wmi_send_scan_chan_list_cmd(struct ath12k *ar,
 		if (num_sends)
 			cmd->flags |= cpu_to_le32(WMI_APPEND_TO_EXISTING_CHAN_LIST_FLAG);
 
-		ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
-			   "WMI no.of chan = %d len = %d pdev_id = %d num_sends = %d\n",
-			   num_send_chans, len, cmd->pdev_id, num_sends);
+		ath12k_dbg_level(ar->ab, ATH12K_DBG_WMI | ATH12K_DBG_SCAN, ATH12K_DBG_L2,
+				 "WMI no.of chan = %d len = %d pdev_id = %d num_sends = %d\n",
+				 num_send_chans, len, cmd->pdev_id, num_sends);
 
 		ptr = skb->data + sizeof(*cmd);
 
@@ -7180,10 +7180,10 @@ int ath12k_wmi_send_11d_scan_start_cmd(struct ath12k *ar,
 	cmd->start_interval_msec = cpu_to_le32(arg->start_interval_msec);
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_11D_SCAN_START_CMDID);
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
-		   "send 11d scan start vdev id %d period %d ms internal %d ms\n",
-		   arg->vdev_id, arg->scan_period_msec,
-		   arg->start_interval_msec);
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_WMI | ATH12K_DBG_SCAN, ATH12K_DBG_L1,
+			 "send 11d scan start vdev id %d period %d ms internal %d ms\n",
+			 arg->vdev_id, arg->scan_period_msec,
+			 arg->start_interval_msec);
 
 	if (ret) {
 		ath12k_warn(ar->ab,
@@ -7213,9 +7213,9 @@ int ath12k_wmi_send_11d_scan_stop_cmd(struct ath12k *ar, u32 vdev_id)
 	cmd->vdev_id = cpu_to_le32(vdev_id);
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_11D_SCAN_STOP_CMDID);
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
-		   "send 11d scan stop vdev id %d\n",
-		   cmd->vdev_id);
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_WMI | ATH12K_DBG_SCAN, ATH12K_DBG_L1,
+			 "send 11d scan stop vdev id %d\n",
+			 cmd->vdev_id);
 
 	if (ret) {
 		ath12k_warn(ar->ab,
@@ -12419,9 +12419,9 @@ static void ath12k_wmi_event_scan_started(struct ath12k *ar)
 		if (ar->scan.is_roc)
 			ieee80211_ready_on_channel(ath12k_ar_to_hw(ar));
 
-		ath12k_dbg(ar->ab, ATH12K_DBG_SCAN,
-			   "scan: [radio:%d] state -> RUNNING (WMI STARTED event) [%llu ms]\n",
-			   ar->radio_idx, ktime_to_ms(ktime_get()));
+		ath12k_dbg_level(ar->ab, ATH12K_DBG_WMI | ATH12K_DBG_SCAN, ATH12K_DBG_L0,
+				 "scan: [radio:%d] state -> RUNNING (WMI STARTED event) [%llu ms]\n",
+				 ar->radio_idx, ktime_to_ms(ktime_get()));
 
 		complete(&ar->scan.started);
 		break;
@@ -12468,9 +12468,9 @@ static void ath12k_wmi_event_scan_completed(struct ath12k *ar)
 		break;
 	case ATH12K_SCAN_RUNNING:
 	case ATH12K_SCAN_ABORTING:
-		ath12k_dbg(ar->ab, ATH12K_DBG_SCAN,
-			   "scan: [radio:%d] COMPLETED (WMI COMPLETED event) [%llu ms]\n",
-			   ar->radio_idx, ktime_to_ms(ktime_get()));
+		ath12k_dbg_level(ar->ab, ATH12K_DBG_WMI | ATH12K_DBG_SCAN, ATH12K_DBG_L0,
+				 "scan: [radio:%d] COMPLETED (WMI COMPLETED event) [%llu ms]\n",
+				 ar->radio_idx, ktime_to_ms(ktime_get()));
 		__ath12k_mac_scan_finish(ar);
 		break;
 	}
@@ -12858,9 +12858,10 @@ static int ath12k_reg_11d_new_cc_event(struct ath12k_base *ab, struct sk_buff *s
 	memcpy(&ab->new_alpha2, &ev->new_alpha2, REG_ALPHA2_LEN);
 	spin_unlock_bh(&ab->base_lock);
 
-	ath12k_dbg(ab, ATH12K_DBG_WMI, "wmi 11d new cc %c%c\n",
-		   ab->new_alpha2[0],
-		   ab->new_alpha2[1]);
+	ath12k_dbg_level(ab, ATH12K_DBG_WMI | ATH12K_DBG_SCAN, ATH12K_DBG_L1,
+			 "wmi 11d new cc %c%c\n",
+			 ab->new_alpha2[0],
+			 ab->new_alpha2[1]);
 
 	kfree(tb);
 

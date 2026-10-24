@@ -11914,10 +11914,11 @@ static void ath12k_mac_scan_send_complete(struct ath12k *ar,
 		    partner_ar->scan.state != ATH12K_SCAN_IDLE &&
 		    !partner_ar->scan.is_roc &&
 		    partner_ar->scan.parallel_scan_id == ar->scan.parallel_scan_id) {
-			ath12k_dbg(ar->ab, ATH12K_DBG_SCAN,
-				   "scan: [radio:%d] done scan_id=%u, deferring (partner radio:%d still RUNNING) [%llu ms]\n",
-				   ar->radio_idx, ar->scan.parallel_scan_id,
-				   partner_ar->radio_idx, ktime_to_ms(ktime_get()));
+			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC | ATH12K_DBG_SCAN,
+					 ATH12K_DBG_L0,
+					 "scan: [radio:%d] done scan_id=%u, deferring (partner radio:%d still RUNNING) [%llu ms]\n",
+					 ar->radio_idx, ar->scan.parallel_scan_id,
+					 partner_ar->radio_idx, ktime_to_ms(ktime_get()));
 			return;
 		}
 
@@ -11927,10 +11928,10 @@ static void ath12k_mac_scan_send_complete(struct ath12k *ar,
 			info->aborted = true;
 	}
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_SCAN,
-		   "scan: [radio:%d] all radios done scan_id=%u aborted=%d [%llu ms]\n",
-		   ar->radio_idx, ar->scan.parallel_scan_id,
-		   info->aborted, ktime_to_ms(ktime_get()));
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC | ATH12K_DBG_SCAN, ATH12K_DBG_L0,
+			 "scan: [radio:%d] all radios done scan_id=%u aborted=%d [%llu ms]\n",
+			 ar->radio_idx, ar->scan.parallel_scan_id,
+			 info->aborted, ktime_to_ms(ktime_get()));
 	ieee80211_scan_completed(ah->hw, info);
 }
 
@@ -11972,7 +11973,7 @@ static void ath12k_scan_vdev_clean_work(struct wiphy *wiphy, struct wiphy_work *
 		goto work_complete;
 	}
 
-	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC | ATH12K_DBG_SCAN, ATH12K_DBG_L1,
 			 "mac clean scan vdev (link id %u)", arvif->link_id);
 
 	ath12k_mac_remove_link_interface(ah->hw, arvif);
@@ -12684,7 +12685,7 @@ static int ath12k_mac_initiate_hw_scan(struct ieee80211_hw *hw,
 		return -ENOMEM;
 	}
 
-	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L0,
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC | ATH12K_DBG_SCAN, ATH12K_DBG_L0,
 			 "[vdev_id : %s radio_idx : %u] mac link ID %d selected for scan",
 			 ATH12K_INVALID_VDEV_ID, ar->radio_idx, arvif->link_id);
 
@@ -12858,7 +12859,8 @@ static int ath12k_mac_initiate_hw_scan(struct ieee80211_hw *hw,
 	ret = ath12k_start_scan(ar, arg);
 	if (ret) {
 		if (ret == -EBUSY)
-			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
+			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC | ATH12K_DBG_SCAN,
+					 ATH12K_DBG_L2,
 					 "scan engine is busy 11d state %d\n",
 					 ar->state_11d);
 		else
@@ -12870,7 +12872,8 @@ static int ath12k_mac_initiate_hw_scan(struct ieee80211_hw *hw,
 		goto exit;
 	}
 
-	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2, "mac scan started");
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC | ATH12K_DBG_SCAN,
+			 ATH12K_DBG_L2, "mac scan started");
 
 	/* As per cfg80211/mac80211 scan design, it allows only one
 	 * scan at a time. Hence last_scan link id is used for
@@ -12988,9 +12991,10 @@ int ath12k_mac_op_hw_scan(struct ieee80211_hw *hw,
 		spin_lock_bh(&ar->data_lock);
 		if (ar->scan.is_roc) {
 			spin_unlock_bh(&ar->data_lock);
-			ath12k_dbg(ar->ab, ATH12K_DBG_SCAN,
-				   "scan: [radio:%d] busy (ROC active), not starting scan_id=%u\n",
-				   ar->radio_idx, hw_req->req.parallel_scan_id);
+			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC | ATH12K_DBG_SCAN,
+					 ATH12K_DBG_L0,
+					 "scan: [radio:%d] busy (ROC active), not starting scan_id=%u\n",
+					 ar->radio_idx, hw_req->req.parallel_scan_id);
 			return -EBUSY;
 		}
 		spin_unlock_bh(&ar->data_lock);
@@ -12998,14 +13002,17 @@ int ath12k_mac_op_hw_scan(struct ieee80211_hw *hw,
 
 	/* Pass 2: all radios are ready — start scans. */
 	for (i = 0; i < n_segments; i++) {
+		struct cfg80211_scan_request *req = &hw_req->req;
+		int first_chan = segments[i].from_index;
+		int last_chan = segments[i].to_index - 1;
+
 		ar = segments[i].ar;
-		ath12k_dbg(ar->ab, ATH12K_DBG_SCAN,
-			   "scan: [radio:%d] starting channels[%d..%d], freq %u-%u MHz [%llu ms]\n",
-			   ar->radio_idx,
-			   segments[i].from_index, segments[i].to_index - 1,
-			   hw_req->req.channels[segments[i].from_index]->center_freq,
-			   hw_req->req.channels[segments[i].to_index - 1]->center_freq,
-			   ktime_to_ms(ktime_get()));
+		ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC | ATH12K_DBG_SCAN, ATH12K_DBG_L0,
+				 "scan: [radio:%d] starting channels[%d..%d], freq %u-%u MHz [%llu ms]\n",
+				 ar->radio_idx, first_chan, last_chan,
+				 req->channels[first_chan]->center_freq,
+				 req->channels[last_chan]->center_freq,
+				 ktime_to_ms(ktime_get()));
 		ret = ath12k_mac_initiate_hw_scan(hw, vif, hw_req, ar,
 						  segments[i].from_index,
 						  segments[i].to_index);
@@ -13019,16 +13026,19 @@ int ath12k_mac_op_hw_scan(struct ieee80211_hw *hw,
 			 * If no radio was started yet (i == 0), return the
 			 * error directly since no completion will ever arrive.
 			 */
-			ath12k_dbg(ar->ab, ATH12K_DBG_SCAN,
-				   "scan: [radio:%d] start failed scan_id=%u\n",
-				   ar->radio_idx, hw_req->req.parallel_scan_id);
+			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC | ATH12K_DBG_SCAN,
+					 ATH12K_DBG_L0,
+					 "scan: [radio:%d] start failed scan_id=%u\n",
+					 ar->radio_idx, hw_req->req.parallel_scan_id);
 			if (i == 0)
 				return ret;
 			while (--i >= 0) {
 				ar = segments[i].ar;
-				ath12k_dbg(ar->ab, ATH12K_DBG_SCAN,
-					   "scan: [radio:%d] aborting scan_id=%u\n",
-					   ar->radio_idx, ar->scan.parallel_scan_id);
+				ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC | ATH12K_DBG_SCAN,
+						 ATH12K_DBG_L0,
+						 "scan: [radio:%d] aborting scan_id=%u\n",
+						 ar->radio_idx,
+						 ar->scan.parallel_scan_id);
 				ath12k_scan_abort(ar);
 			}
 			return 0;
@@ -13073,9 +13083,9 @@ void ath12k_mac_op_cancel_hw_scan(struct ieee80211_hw *hw,
 
 		cancel_delayed_work(&ar->scan.timeout);
 		ath12k_scan_abort(ar);
-		ath12k_dbg(ar->ab, ATH12K_DBG_SCAN,
-			   "scan: [radio:%d] flush scan_id=%u\n",
-			   ar->radio_idx, ar->scan.parallel_scan_id);
+		ath12k_dbg_level(ar->ab, ATH12K_DBG_SCAN, ATH12K_DBG_L0,
+				 "scan: [radio:%d] flush scan_id=%u\n",
+				 ar->radio_idx, ar->scan.parallel_scan_id);
 		wiphy_work_flush(hw->wiphy, &ar->scan.vdev_clean_wk);
 	}
 }
@@ -22306,7 +22316,7 @@ void ath12k_mac_11d_scan_start(struct ath12k *ar, u32 vdev_id)
 	arg.start_interval_msec = 0;
 	arg.scan_period_msec = ATH12K_SCAN_11D_INTERVAL;
 
-	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L0,
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC | ATH12K_DBG_SCAN, ATH12K_DBG_L0,
 			 "mac start 11d scan for vdev %d\n", vdev_id);
 
 	ret = ath12k_wmi_send_11d_scan_start_cmd(ar, &arg);
@@ -22336,7 +22346,7 @@ void ath12k_mac_11d_scan_stop(struct ath12k *ar)
 	if (!test_bit(WMI_TLV_SERVICE_11D_OFFLOAD, ar->ab->wmi_ab.svc_map))
 		return;
 
-	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L0,
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC | ATH12K_DBG_SCAN, ATH12K_DBG_L0,
 			 "mac stop 11d for vdev %d\n", ar->vdev_id_11d_scan);
 
 	if (ar->state_11d == ATH12K_11D_PREPARING) {
@@ -22366,7 +22376,8 @@ void ath12k_mac_11d_scan_stop_all(struct ath12k_base *ab)
 	struct ath12k_pdev *pdev;
 	int i;
 
-	ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L0, "mac stop soc 11d scan\n");
+	ath12k_dbg_level(ab, ATH12K_DBG_MAC | ATH12K_DBG_SCAN, ATH12K_DBG_L0,
+			 "mac stop soc 11d scan\n");
 
 	for (i = 0; i < ab->num_radios; i++) {
 		pdev = &ab->pdevs[i];
@@ -27173,9 +27184,9 @@ ath12k_mac_unassign_vif_chanctx_handle(struct ieee80211_hw *hw,
 		arvif->is_started = false;
 
 	if (ar->scan.arvif == arvif && ar->scan.state == ATH12K_SCAN_RUNNING) {
-		ath12k_dbg(ar->ab, ATH12K_DBG_SCAN,
-			   "scan: [radio:%d] abort and flush scan_id=%u\n",
-			   ar->radio_idx, ar->scan.parallel_scan_id);
+		ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC | ATH12K_DBG_SCAN, ATH12K_DBG_L0,
+				 "scan: [radio:%d] abort and flush scan_id=%u\n",
+				 ar->radio_idx, ar->scan.parallel_scan_id);
 		ath12k_scan_abort(ar);
 		ar->scan.arvif = NULL;
 		/* Flush vdev_clean_wk synchronously so that
@@ -29188,7 +29199,7 @@ void ath12k_mac_update_bss_chan_survey(struct ath12k *ar,
 		return;
 
 	if (ar->scan.state != ATH12K_SCAN_IDLE) {
-		ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L3,
+		ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC | ATH12K_DBG_SCAN, ATH12K_DBG_L3,
 				 "ignoring bss chan info req while scanning..\n");
 		return;
 	}
