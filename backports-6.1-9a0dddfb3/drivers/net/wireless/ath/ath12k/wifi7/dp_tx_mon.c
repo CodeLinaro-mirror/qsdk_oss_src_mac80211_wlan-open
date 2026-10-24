@@ -124,7 +124,8 @@ u8 ath12k_wifi7_get_ext_mon_peer_filter_mode_locked(struct ath12k_pdev_dp *dp_pd
  *     peer-filter programming is enabled for this mode.
  *
  * Return: 0 if the MPDU passes filtering for the active mode, -EINVAL
- *	if it is rejected (or if fraglist/skb fragment counts disagree).
+ *	if it is rejected (or if non-existent mode or
+ *      fraglist/skb fragment counts disagree).
  */
 int ath12k_wifi7_dp_ext_mon_filter(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *mpdu)
 {
@@ -173,7 +174,7 @@ int ath12k_wifi7_dp_ext_mon_filter(struct ath12k_pdev_dp *dp_pdev, struct sk_buf
 		/* Perform Type filtering */
 		return ath12k_dp_ext_mon_filter_type(wh, &tx_ext_mon_config->fp);
 	default:
-		break;
+		return -EINVAL;
 	}
 
 	return 0;
