@@ -52,6 +52,9 @@
 #include "qcn_extns/mapc_extn.h"
 #include "qcn_extns/ipa/dp_ipa_pub.h"
 #include "qcn_extns/vendor_extn.h"
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#include "qcn_extns/ipa/dp_ipa.h"
+#endif
 #endif /* CPTCFG_QCN_EXTN */
 #include "mgmt_rx.h"
 #include "ranging.h"
@@ -377,6 +380,15 @@ const u8 ath12k_legacy_rate_wmi_pos_map[] = {
 #define ATH12K_MAX_AR_LINK_IDX	5
 #define ATH12K_SCAN_ROC_CLEANUP_TIMEOUT_MS 3000  /* Timeout for ROC cleanup after scan */
 						 /*  vdev clean */
+
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#define ATH12K_PPE_VP_NUM_CHECK(ahvif) \
+	((ahvif)->dp_vif.ppe_vp_num == ATH12K_INVALID_PPE_VP_NUM)
+#else
+#define ATH12K_PPE_VP_NUM_CHECK(ahvif) \
+	((ahvif)->dp_vif.ppe_vp_num != ATH12K_INVALID_PPE_VP_NUM)
+#endif
+
 static const u32 ath12k_smps_map[] = {
 	[WLAN_HT_CAP_SM_PS_STATIC] = WMI_PEER_SMPS_STATIC,
 	[WLAN_HT_CAP_SM_PS_DYNAMIC] = WMI_PEER_SMPS_DYNAMIC,
@@ -23693,7 +23705,7 @@ ppe_vp_config:
 #endif
 
 	if (vif->type == NL80211_IFTYPE_AP_VLAN &&
-	    ahvif->dp_vif.ppe_vp_num != ATH12K_INVALID_PPE_VP_NUM) {
+	    ATH12K_PPE_VP_NUM_CHECK(ahvif)) {
 		struct ath12k_vlan_iface *vlan_iface;
 		int ret;
 
@@ -23991,6 +24003,7 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 	struct ath12k_dp_vif *dp_vif;
 	u8 link_id;
 	int ret;
+	bool is_ipa_vlan_disconnect_sent = false;
 	struct ath12k_hw *ah = hw->priv;
 
 	lockdep_assert_wiphy(hw->wiphy);
@@ -24052,6 +24065,10 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 			ath12k_ppeds_detach_link_apvlan_vif(arvif, ahvif->vlan_iface, link_id);
 #endif
+			is_ipa_vlan_disconnect_sent |=
+				ath12k_dp_ipa_apvlan_disconnect(ahvif,
+								arvif,
+								vlan_master_vif);
 			ath12k_group_slot_free(arvif, ahvif);
 			continue;
 		}
@@ -24111,6 +24128,9 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 		ath12k_mac_remove_link_interface(hw, arvif);
 		ath12k_mac_unassign_link_vif(arvif);
 	}
+
+	if (vif->type == NL80211_IFTYPE_AP_VLAN && !is_ipa_vlan_disconnect_sent)
+		ath12k_dp_ipa_apvlan_sync_cleanup(hw, ahvif);
 
 	if (ahvif->dp_vif.ahvif_id != ATH12K_INVALID_AHVIF_ID) {
 		ah->free_ahvif_id_map |= 1ULL << ahvif->dp_vif.ahvif_id;

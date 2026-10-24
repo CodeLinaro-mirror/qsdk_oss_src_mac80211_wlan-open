@@ -2249,5 +2249,21 @@ struct sk_buff *ath12k_dp_alloc_skb(int size)
 	return netdev_alloc_skb_fast(NULL, size);
 }
 
+#endif /* CPTCFG_QCN_EXTN */
+
+#if !defined(CPTCFG_EXT_IPA_OFFLOAD) || !defined(CPTCFG_QCN_EXTN)
+static inline bool
+ath12k_dp_ipa_apvlan_disconnect(struct ath12k_vif *apvlan_ahvif,
+				struct ath12k_link_vif *parent_arvif,
+				struct ieee80211_vif *vlan_master_vif)
+{
+	return false;
+}
+
+static inline void
+ath12k_dp_ipa_apvlan_sync_cleanup(struct ieee80211_hw *hw,
+				  struct ath12k_vif *apvlan_ahvif)
+{
+}
 #endif
-#endif
+#endif /* ATH12K_DP_H */

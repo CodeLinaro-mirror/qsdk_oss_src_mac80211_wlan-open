@@ -53,6 +53,16 @@
 #define DP_PPE2WBM_DEDICATED_POOL	ATH12K_DP_INI_GET(PPE2WBM_DEDICATED_BUF_POOL)
 #endif
 
+#if defined(CPTCFG_EXT_IPA_OFFLOAD) && defined(CPTCFG_QCN_EXTN)
+#define ATH12K_WIFI8_DP_IPA_WDS_BANK_SETUP(ah, ahvif) \
+	ath12k_wifi8_dp_ipa_wds_bank_setup(ah, ahvif)
+#define ATH12K_DP_IPA_WDS_APVLAN_CONNECT(hw, ahvif) \
+	ath12k_dp_ipa_apvlan_connect(hw, ahvif)
+#else
+#define ATH12K_WIFI8_DP_IPA_WDS_BANK_SETUP(ah, ahvif)
+#define ATH12K_DP_IPA_WDS_APVLAN_CONNECT(hw, ahvif)
+#endif
+
 struct stats_to_peer_id_map {
 	u16 dp_peer_id;
 	u8 tid;
