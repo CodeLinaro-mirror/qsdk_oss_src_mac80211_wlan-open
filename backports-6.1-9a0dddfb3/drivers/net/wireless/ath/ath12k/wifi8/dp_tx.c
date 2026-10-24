@@ -1721,12 +1721,19 @@ ath12k_wifi8_dp_prepare_mesh_htt_metadata(struct ath12k_base *ab,
 
 	mhdr = (struct meta_hdr_s *)(skb->data - msdu_info->mhdr_len);
 
-	/* Set LEARNING_FRAME in info5 when NOT NOENCRYPT — matches WiFi7 behavior.
-	 * Both structs are 28 bytes; WiFi8 info5 is at the same offset as WiFi7 info5.
-	 */
-	if (mhdr->flags & METAHDR_FLAG_ENCRYPT)
-		htt_desc_ext->info5 =
+	htt_desc_ext->info5 |=
 			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO5_LEARNING_FRAME);
+
+	htt_desc_ext->info2 |=
+			le32_encode_bits((mhdr->keyix & 0x3),
+				HAL_TX_MSDU_METADATA_INFO2_KEY_FLAGS);
+
+	htt_desc_ext->info0 |=
+			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_KEY_FLAGS);
+
+	if (!(mhdr->flags & METAHDR_FLAG_ENCRYPT))
+		htt_desc_ext->info5 &=
+			~le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO5_LEARNING_FRAME);
 
 	if (!(mhdr->flags & METAHDR_FLAG_AUTO_RATE)) {
 		htt_desc_ext->info0 |=
@@ -1735,7 +1742,6 @@ ath12k_wifi8_dp_prepare_mesh_htt_metadata(struct ath12k_base *ab,
 			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_NSS_MASK)   |
 			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_PREAM_TYPE) |
 			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_BW_INFO)    |
-			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_KEY_FLAGS)  |
 			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_DYN_BW)     |
 			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_RETRIES)    |
 			le32_encode_bits(mhdr->rate_info[0].max_tries,
@@ -1749,10 +1755,6 @@ ath12k_wifi8_dp_prepare_mesh_htt_metadata(struct ath12k_base *ab,
 					 HAL_TX_MSDU_METADATA_INFO1_NSS_MASK) |
 			le32_encode_bits(mhdr->rate_info[0].preamble_type,
 					 HAL_TX_MSDU_METADATA_INFO1_PREAM_TYPE);
-
-		htt_desc_ext->info2 |=
-			le32_encode_bits((mhdr->keyix & 0x3),
-					 HAL_TX_MSDU_METADATA_INFO2_KEY_FLAGS);
 	}
 
 	if (!(mhdr->flags & METAHDR_FLAG_ENCRYPT)) {
@@ -1762,9 +1764,9 @@ ath12k_wifi8_dp_prepare_mesh_htt_metadata(struct ath12k_base *ab,
 	}
 
 	ath12k_dbg_level(ab, ATH12K_DBG_MMESH, ATH12K_DBG_L1,
-			 "wifi8 mesh htt: skb %p pwr %d mcs 0x%x nss %d preamble %d",
-			 skb, mhdr->power, mhdr->rate_info[0].mcs,
-			 mhdr->rate_info[0].nss, mhdr->rate_info[0].preamble_type);
+			 "skb %p pwr %d mcs 0x%x nss %d preamble %d keyix %d",
+			skb, mhdr->power, mhdr->rate_info[0].mcs, mhdr->rate_info[0].nss,
+			mhdr->rate_info[0].preamble_type, mhdr->keyix);
 
 	ath12k_dbg_level(ab, ATH12K_DBG_MMESH, ATH12K_DBG_L1,
 			 "wifi8 mesh htt: retries %d auto %d encrypt %d to_fw %u",
