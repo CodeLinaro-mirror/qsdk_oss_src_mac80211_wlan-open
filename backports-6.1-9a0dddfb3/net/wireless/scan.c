@@ -2494,7 +2494,8 @@ cfg80211_inform_single_bss_data(struct wiphy *wiphy,
 
 	channel = data->channel;
 	if (!channel ||
-	    cfg80211_is_6ghz_dup_beacon(channel, data->ie, data->ielen))
+	    (data->bss_source != BSS_SOURCE_STA_PROFILE &&
+	     cfg80211_is_6ghz_dup_beacon(channel, data->ie, data->ielen)))
 		channel = cfg80211_get_bss_channel(wiphy, data->ie, data->ielen,
 						   drv_data->chan);
 	if (!channel)
