@@ -650,6 +650,7 @@ ath12k_dp_capture_link_peer_stats(struct ath12k *ar,
 				  struct ath12k_dp_peer *dp_peer,
 				  u8 stats_link_id)
 {
+	struct ath12k_dp_peer_rx_stats *rx_stats;
 	int i;
 
 	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++)
@@ -664,8 +665,15 @@ ath12k_dp_capture_link_peer_stats(struct ath12k *ar,
 					    &dp_peer->stats[stats_link_id].rx_dbg);
 	ath12k_dp_aggr_wbm_rx_stats(&aggr_stats->wbm_err,
 				    &dp_peer->stats[stats_link_id].wbm_err);
-	aggr_stats->rx_counters.packets += peer->rx_packets;
-	aggr_stats->rx_counters.bytes += peer->rx_bytes;
+
+	if (ath12k_dp_hw_peer_stats_enabled(&ar->dp)) {
+		rx_stats = &dp_peer->stats[stats_link_id].rx[ATH12K_DP_HW_STATS_REO_IDX];
+		aggr_stats->rx_counters.packets += rx_stats->recv_from_reo.packets;
+		aggr_stats->rx_counters.bytes += rx_stats->recv_from_reo.bytes;
+	} else {
+		aggr_stats->rx_counters.packets += peer->rx_packets;
+		aggr_stats->rx_counters.bytes += peer->rx_bytes;
+	}
 }
 
 /**
