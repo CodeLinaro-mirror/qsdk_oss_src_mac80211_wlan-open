@@ -1301,6 +1301,9 @@ ieee80211_mesh_build_beacon(struct ieee80211_if_mesh *ifmsh)
 	sdata = container_of(ifmsh, struct ieee80211_sub_if_data, u.mesh);
 
 	sband = ieee80211_get_sband(sdata);
+	if (!sband)
+		return -EINVAL;
+
 	rate_flags =
 		ieee80211_chandef_rate_flags(&sdata->vif.bss_conf.chanreq.oper);
 
