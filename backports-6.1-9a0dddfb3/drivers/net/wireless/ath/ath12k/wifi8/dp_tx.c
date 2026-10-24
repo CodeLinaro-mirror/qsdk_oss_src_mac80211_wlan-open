@@ -1724,7 +1724,7 @@ ath12k_wifi8_dp_prepare_mesh_htt_metadata(struct ath12k_base *ab,
 	/* Set LEARNING_FRAME in info5 when NOT NOENCRYPT — matches WiFi7 behavior.
 	 * Both structs are 28 bytes; WiFi8 info5 is at the same offset as WiFi7 info5.
 	 */
-	if (!(mhdr->flags & METAHDR_FLAG_NOENCRYPT))
+	if (mhdr->flags & METAHDR_FLAG_ENCRYPT)
 		htt_desc_ext->info5 =
 			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO5_LEARNING_FRAME);
 
@@ -1755,7 +1755,7 @@ ath12k_wifi8_dp_prepare_mesh_htt_metadata(struct ath12k_base *ab,
 					 HAL_TX_MSDU_METADATA_INFO2_KEY_FLAGS);
 	}
 
-	if (mhdr->flags & METAHDR_FLAG_NOENCRYPT) {
+	if (!(mhdr->flags & METAHDR_FLAG_ENCRYPT)) {
 		htt_desc_ext->info0 |=
 			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_ENCRYPT_FLAG) |
 			le32_encode_bits(0, HAL_TX_MSDU_METADATA_INFO0_ENCRYPT_TYPE);
@@ -1770,7 +1770,7 @@ ath12k_wifi8_dp_prepare_mesh_htt_metadata(struct ath12k_base *ab,
 			 "wifi8 mesh htt: retries %d auto %d encrypt %d to_fw %u",
 			 mhdr->rate_info[0].max_tries,
 			 !!(mhdr->flags & METAHDR_FLAG_AUTO_RATE),
-			 !!(mhdr->flags & METAHDR_FLAG_NOENCRYPT),
+			 !!(mhdr->flags & METAHDR_FLAG_ENCRYPT),
 			 msdu_info->to_fw);
 skip:
 	return 0;

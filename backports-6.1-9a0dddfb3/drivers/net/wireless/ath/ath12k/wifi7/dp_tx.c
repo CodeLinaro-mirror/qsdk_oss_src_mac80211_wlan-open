@@ -357,7 +357,7 @@ ath12k_wifi7_dp_prepare_mesh_htt_metadata(struct ath12k_base *ab,
 	htt_desc_ext->info5 |=
 			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO5_LEARNING_FRAME);
 
-	if (mhdr->flags & METAHDR_FLAG_NOENCRYPT)
+	if (!(mhdr->flags & METAHDR_FLAG_ENCRYPT))
 		htt_desc_ext->info5 &=
 			~le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO5_LEARNING_FRAME);
 
@@ -390,7 +390,7 @@ ath12k_wifi7_dp_prepare_mesh_htt_metadata(struct ath12k_base *ab,
 					 HAL_TX_MSDU_METADATA_INFO2_KEY_FLAGS);
 	}
 
-	if (mhdr->flags & METAHDR_FLAG_NOENCRYPT) {
+	if (!(mhdr->flags & METAHDR_FLAG_ENCRYPT)) {
 		htt_desc_ext->info0 |=
 			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_ENCRYPT_FLAG) |
 			le32_encode_bits(0, HAL_TX_MSDU_METADATA_INFO0_ENCRYPT_TYPE);
@@ -405,7 +405,7 @@ ath12k_wifi7_dp_prepare_mesh_htt_metadata(struct ath12k_base *ab,
 			 "retries %d auto %d encrypt %d\n",
 			 mhdr->rate_info[0].max_tries,
 			 !!(mhdr->flags & METAHDR_FLAG_AUTO_RATE),
-			 !!(mhdr->flags & METAHDR_FLAG_NOENCRYPT));
+			 !!(mhdr->flags & METAHDR_FLAG_ENCRYPT));
 
 	ath12k_dbg_level(ab, ATH12K_DBG_MMESH, ATH12K_DBG_L1,
 			 "Meta hdr %0X %0X %0X %0X %0X %0X  to_fw %u",
@@ -2298,7 +2298,7 @@ static void ath12k_dp_tx_update_mmesh_stats(struct ath12k_dp *dp,
 	mhdr = (struct meta_hdr_s *)(skb->data - MMESH_TX_META_HDR);
 	if (mhdr->flags & METAHDR_FLAG_NOQOS)
 		DP_PEER_MISC_STATS_INC(peer, mmesh_stat, no_qos, 0, 1);
-	if (mhdr->flags & METAHDR_FLAG_NOENCRYPT)
+	if (!(mhdr->flags & METAHDR_FLAG_ENCRYPT))
 		DP_PEER_MISC_STATS_INC(peer, mmesh_stat, no_enc, 0, 1);
 	if (mhdr->flags & METAHDR_FLAG_INFO_UPDATED)
 		DP_PEER_MISC_STATS_INC(peer, mmesh_stat, txinfo, 0, 1);
