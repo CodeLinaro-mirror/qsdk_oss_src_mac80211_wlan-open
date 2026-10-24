@@ -1933,11 +1933,13 @@ static void ath12k_stats_event_work_handler(struct wiphy *wiphy,
 					    struct wiphy_work *work)
 {
 	struct ath12k_stats_work_context *stats_ctx;
+	struct ath12k_hw_group *ag;
 	struct ath12k_stats_list_entry *list_entry;
 	struct list_head temp_list;
 
 	stats_ctx = container_of(work, struct ath12k_stats_work_context,
 				 stats_nb_work);
+	ag = container_of(stats_ctx, struct ath12k_hw_group, stats_work);
 
 	INIT_LIST_HEAD(&temp_list);
 
@@ -1950,7 +1952,10 @@ static void ath12k_stats_event_work_handler(struct wiphy *wiphy,
 					      struct ath12k_stats_list_entry,
 					      node);
 
-		ath12k_wifi_stats_reply_setup(&list_entry->usr_command);
+		if (!ath12k_cmd_accepted(ag))
+			ath12k_warn(ag->ab[0], "stats event work rejected: bypass/SSR in progress\n");
+		else
+			ath12k_wifi_stats_reply_setup(&list_entry->usr_command);
 
 		list_del(&list_entry->node);
 		kfree(list_entry);
