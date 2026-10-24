@@ -11002,7 +11002,7 @@ skip_tpc_update:
 		}
 skip_pending_tx_vdev_up:
 
-		if (arvif->is_up && info->he_support) {
+		if (arvif->is_up && info->he_support && !arvif->vap_cfg.ba_bufsize) {
 			param_id = WMI_VDEV_PARAM_BA_MODE;
 
 			if (info->eht_support)
