@@ -26099,7 +26099,7 @@ int ath12k_wmi_send_peer_uhr_omp_cmd(struct ath12k *ar, u32 sw_peer_id,
 	}
 
 	for (i = 0, has_dso_update = false; i < num_links; i++) {
-		if (links[i].dso_mode_update) {
+		if (links[i].dso_update) {
 			has_dso_update = true;
 			break;
 		}
