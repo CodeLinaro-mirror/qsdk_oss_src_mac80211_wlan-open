@@ -778,13 +778,11 @@ int ath12k_vendor_generic_app_init_reply(struct sk_buff *vendor_event)
 	}
 
 	for (soc_id = 0; soc_id < ag->num_devices; soc_id++) {
-		u8 total_vdevs;
 
 		ab = ag->ab[soc_id];
-		total_vdevs = ath12k_core_get_total_num_vdevs(ab);
 
 		spin_lock_bh(&ab->base_lock);
-		if (ab->free_vdev_map == (1LL << (ab->num_radios * total_vdevs)) - 1) {
+		if (ab->free_vdev_map == (1LL << ab->num_max_vdev_supp) - 1) {
 			spin_unlock_bh(&ab->base_lock);
 			continue;
 		}

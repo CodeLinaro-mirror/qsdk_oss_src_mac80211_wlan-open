@@ -1024,16 +1024,40 @@ exit:
 	return ret;
 }
 
-u32 ath12k_core_get_max_station_per_radio(struct ath12k_base *ab)
+void ath12k_core_calc_max_station_per_radio(struct ath12k *ar)
 {
-	if (ab->num_radios == 2)
-		return TARGET_NUM_STATIONS_DBS;
-	else if (ab->num_radios == 3)
-		return TARGET_NUM_STATIONS_DBS_SBS;
-	return TARGET_NUM_STATIONS_SINGLE;
+	struct ath12k_base *ab = ar->ab;
+	u32 num_vdevs = ab->num_max_vdev_supp / ab->num_radios;
+	u32 num_peers = ar->max_num_peers;
+
+	if (!num_vdevs) {
+		ath12k_err(ab, "Invalid num_vdevs, station count = %u\n", num_peers);
+		ar->max_num_stations = 0;
+		return;
+	}
+
+	if (!num_peers) {
+		ath12k_err(ab, "Invalid num_peers station count = 0\n");
+		ar->max_num_stations = 0;
+		return;
+	}
+
+	if (num_peers < num_vdevs) {
+		ath12k_err(ab, "Invalid num_vdevs = %u num_peers = %u. station count = 0\n",
+			   num_vdevs, num_peers);
+		ar->max_num_stations = 0;
+		return;
+	}
+
+	ar->max_num_stations = num_peers - num_vdevs;
+
+	ath12k_dbg(ab, ATH12K_DBG_MAC,
+		   "Max stations: %u,  num_vdevs = %u num_peers = %u\n",
+		   ar->max_num_stations, num_vdevs, num_peers);
+	return;
 }
 
-u32 ath12k_core_get_def_max_peers_per_radio(struct ath12k_base *ab)
+u32 ath12k_core_get_drv_supp_peers_per_radio(struct ath12k_base *ab)
 {
 	if (ab->num_radios == 2)
 		return TARGET_NUM_PEERS_PDEV_DBS;
@@ -1041,21 +1065,26 @@ u32 ath12k_core_get_def_max_peers_per_radio(struct ath12k_base *ab)
 		return TARGET_NUM_PEERS_PDEV_DBS_SBS;
 	return TARGET_NUM_PEERS_PDEV_SINGLE;
 }
-EXPORT_SYMBOL(ath12k_core_get_def_max_peers_per_radio);
+EXPORT_SYMBOL(ath12k_core_get_drv_supp_peers_per_radio);
 
-u32 ath12k_core_get_supp_max_peers_per_radio(struct ath12k_base *ab)
+void ath12k_core_calc_max_peers_per_radio(struct ath12k *ar)
 {
-	u32 host_peers = ath12k_core_get_def_max_peers_per_radio(ab);
+	struct ath12k_base *ab = ar->ab;
+	u32 host_peers = ath12k_core_get_drv_supp_peers_per_radio(ab);
 	u32 fw_peers = ab->fw_max_peers / ab->num_radios;
 
 	if (!fw_peers) {
-		ath12k_warn(ab, "Invalid fw_peers, fw_max_peers:%u, num_radios:%d\n",
-				ab->fw_max_peers, ab->num_radios);
-		return host_peers;
+		ath12k_err(ab, "Invalid fw_peers count. Max peer: %u\n",
+			   host_peers);
+		ar->max_num_peers = host_peers;
 	}
-	return min(host_peers, fw_peers);
+
+	ar->max_num_peers = min(host_peers, fw_peers);
+
+	ath12k_dbg(ab, ATH12K_DBG_MAC,
+		   "Max peer: %u, host_peers = %u, fw_peers = %u\n",
+		   ar->max_num_peers, host_peers, fw_peers);
 }
-EXPORT_SYMBOL(ath12k_core_get_supp_max_peers_per_radio);
 
 u32 ath12k_core_get_max_num_tids(struct ath12k_base *ab)
 {
@@ -1208,7 +1237,6 @@ static void ath12k_core_power_down_device(struct ath12k_hw_group *ag,
 					  bool *wifi_standby_enabled)
 {
 	struct ath12k *ar;
-	u8 total_vdevs;
 	int i;
 	bool skip_power_down = false;
 
@@ -1270,8 +1298,7 @@ static void ath12k_core_power_down_device(struct ath12k_hw_group *ag,
 			ag->cumac_chip_id = ATH12K_CUMAC_CHIP_ID_INVALID;
 		}
 		ab->cumac_configured = false;
-		total_vdevs = ath12k_core_get_total_num_vdevs(ab);
-		ab->free_vdev_map = (1LL << (ab->num_radios * total_vdevs)) - 1;
+		ab->free_vdev_map = (1LL << ab->num_max_vdev_supp) - 1;
 		ab->free_vdev_stats_id_map = 0;
 		ath12k_core_to_group_ref_put(ab);
 		ath12k_qmi_free_resource(ab);
@@ -2611,6 +2638,9 @@ static int ath12k_core_hw_group_start(struct ath12k_hw_group *ag)
 	lockdep_assert_held(&ag->mutex);
 
 	if (test_bit(ATH12K_GROUP_FLAG_REGISTERED, &ag->flags)) {
+		ath12k_dbg(ab, ATH12K_DBG_MAC,
+			   "Group already registered, skipping peers and stations calculation\n");
+
 		ret = ath12k_core_complete_cumac_config(ag);
 		if (WARN_ON(ret))
 			goto err_mac_destroy;
@@ -3298,7 +3328,7 @@ exit:
 	return ret;
 }
 
-u8 ath12k_core_get_total_num_vdevs(struct ath12k_base *ab)
+u8 ath12k_core_get_drv_supp_vdevs_per_radio(struct ath12k_base *ab)
 {
 	u8 num_vdevs = TARGET_NUM_VDEVS;
 
@@ -3316,7 +3346,27 @@ u8 ath12k_core_get_total_num_vdevs(struct ath12k_base *ab)
 
 	return num_vdevs;
 }
-EXPORT_SYMBOL(ath12k_core_get_total_num_vdevs);
+EXPORT_SYMBOL(ath12k_core_get_drv_supp_vdevs_per_radio);
+
+void ath12k_core_calc_max_vdevs_per_soc(struct ath12k_base *ab)
+{
+	u32 host_vdevs, fw_vdevs;
+
+	host_vdevs = ath12k_core_get_drv_supp_vdevs_per_radio(ab);
+	fw_vdevs = ab->fw_max_vdevs;
+
+	/* FW send max vdevs supported per SoC, so calculate at per SoC level */
+	host_vdevs *= ab->num_radios;
+
+	if (fw_vdevs)
+		ab->num_max_vdev_supp = min(fw_vdevs, host_vdevs);
+	else
+		ab->num_max_vdev_supp = host_vdevs;
+
+	ath12k_dbg(ab, ATH12K_DBG_MAC,
+		   "num_max_vdev_supported: %u, host_vdevs: %u, fw_vdevs: %u num_radios: %d\n",
+		   ab->num_max_vdev_supp, host_vdevs, fw_vdevs, ab->num_radios);
+}
 
 bool ath12k_core_is_vdev_limit_reached(struct ath12k *ar,
 				       bool is_bridge_vdev)
@@ -3324,61 +3374,39 @@ bool ath12k_core_is_vdev_limit_reached(struct ath12k *ar,
 	struct ath12k_base *ab;
 	u32 num_created_vdevs;
 	u8 total_num_vdevs, num_created_bridge_vdevs;
-	bool ret = false;
 
 	ab = ar->ab;
-	total_num_vdevs = ath12k_core_get_total_num_vdevs(ab);
+	total_num_vdevs = ab->num_max_vdev_supp / ab->num_radios;
 	num_created_vdevs = ar->num_created_vdevs;
 	num_created_bridge_vdevs = ar->num_created_bridge_vdevs;
 
-	if (total_num_vdevs == ATH12K_MAX_NUM_VDEVS_NLINK) {
-		if ((num_created_vdevs + num_created_bridge_vdevs) >
-		    (ATH12K_MAX_NUM_VDEVS_NLINK - 1)) {
-			ath12k_err(ab, "failed to create vdev, reached total max vdev limit %d[%d]\n",
-				   num_created_vdevs + num_created_bridge_vdevs,
-				   ATH12K_MAX_NUM_VDEVS_NLINK);
-			ret = true;
-			goto exit;
-		}
-
-		if (!is_bridge_vdev &&
-		    num_created_vdevs > (TARGET_NUM_VDEVS - 1)) {
-			ath12k_err(ab, "failed to create vdev, reached max vdev limit %d[%d]\n",
-				   num_created_vdevs,
-				   TARGET_NUM_VDEVS);
-			ret = true;
-			goto exit;
-		}
-
-		if (is_bridge_vdev &&
-		    num_created_bridge_vdevs > (TARGET_NUM_BRIDGE_VDEVS - 1)) {
-			ath12k_warn(ab, "failed to create bridge vdev, reached max bridge vdev limit: %d[%d]\n",
-				    num_created_bridge_vdevs, TARGET_NUM_BRIDGE_VDEVS);
-			ret = true;
-			goto exit;
-		}
-		goto exit;
+	if (is_bridge_vdev &&
+	    num_created_bridge_vdevs > (TARGET_NUM_BRIDGE_VDEVS - 1)) {
+		ath12k_err(ab, "failed to create bridge vdev, reached max bridge vdev limit: %d[%d]\n",
+			   num_created_bridge_vdevs, TARGET_NUM_BRIDGE_VDEVS);
+		return true;
 	}
 
-	if (num_created_vdevs > (total_num_vdevs - 1)) {
+	if ((num_created_vdevs + num_created_bridge_vdevs) > (total_num_vdevs - 1)) {
 		ath12k_err(ab, "failed to create vdev, reached max vdev limit %d [%d]\n",
 			   num_created_vdevs, total_num_vdevs);
-		ret = true;
+		return true;
 	}
 
-exit:
-	return ret;
+	return false;
 }
 
 static int ath12k_core_reconfigure_on_crash(struct ath12k_base *ab, bool *is_ready)
 {
 	int ret;
-	u8 total_vdevs;
 
 	if (test_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags)) {
 		ath12k_core_cleanup(ab);
-		total_vdevs = ath12k_core_get_total_num_vdevs(ab);
-		ab->free_vdev_map = (1LL << (ab->num_radios * total_vdevs)) - 1;
+		if (!ab->num_max_vdev_supp) {
+			ath12k_err(ab, "max vdev supported unexpected count\n");
+			ath12k_core_calc_max_vdevs_per_soc(ab);
+		}
+		ab->free_vdev_map = (1LL << ab->num_max_vdev_supp) - 1;
 		ab->free_vdev_stats_id_map = 0;
 	}
 

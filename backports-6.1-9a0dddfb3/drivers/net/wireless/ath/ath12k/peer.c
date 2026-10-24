@@ -1323,7 +1323,7 @@ int ath12k_link_sta_hlist_init(struct ath12k *ar)
 		return 0;
 	}
 
-	sta_max = ath12k_core_get_max_station_per_radio(ar->ab);
+	sta_max = ar->max_num_peers;
 
 	ar->arsta_hash_bits = order_base_2(sta_max);
 	if (!ar->arsta_hash_bits) {
@@ -1691,8 +1691,9 @@ EXPORT_SYMBOL(ath12k_sta_hlist_delete);
 int ath12k_sta_hlist_init(struct ath12k_hw_group *ag)
 {
 	struct ath12k_base *ab;
+	struct ath12k *ar;
 	u32 sta_max = 0, buckets;
-	int i;
+	int i, j;
 
 	lockdep_assert_held(&ag->ahsta_lock);
 
@@ -1707,9 +1708,13 @@ int ath12k_sta_hlist_init(struct ath12k_hw_group *ag)
 	/* Size the table to cover all stations across every device in the group */
 	for (i = 0; i < ag->num_devices; i++) {
 		ab = ag->ab[i];
-		if (ab)
-			sta_max += ath12k_core_get_max_station_per_radio(ab) *
-					ab->num_radios;
+		if (!ab)
+			continue;
+		for (j = 0; j < ab->num_radios; j++) {
+			ar = ab->pdevs[j].ar;
+			if (ar)
+				sta_max += ar->max_num_stations;
+		}
 	}
 
 	if (!sta_max)

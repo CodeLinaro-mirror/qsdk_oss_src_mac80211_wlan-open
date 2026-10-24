@@ -8531,8 +8531,8 @@ int ath12k_wmi_cmd_init(struct ath12k_base *ab)
 	ab->hw_params->wmi_init(ab, &arg.res_cfg);
 	ab->wow.wmi_conf_rx_decap_mode = arg.res_cfg.rx_decap_mode;
 
-	ath12k_info(ab, "WMI_INIT: num_vdevs=%u (num_radios=%u)\n",
-		    arg.res_cfg.num_vdevs, ab->num_radios);
+	ath12k_info(ab, "WMI_INIT: Host num_vdevs=%u num_radios=%u num_peers=%u\n",
+		    arg.res_cfg.num_vdevs, ab->num_radios, arg.res_cfg.num_peers);
 
 	arg.num_mem_chunks = wmi_ab->num_mem_chunks;
 	arg.hw_mode_id = wmi_ab->preferred_hw_mode;
@@ -11540,7 +11540,7 @@ static bool ath12k_get_ar_next_vdev_pos(struct ath12k *ar, u32 *pos)
 	bool bit;
 	u32 i = 0;
 
-	for (i = *pos; i < ar->ab->num_max_vdev_supported; i++) {
+	for (i = *pos; i < ar->ab->num_max_vdev_supp; i++) {
 		bit = ar->allocated_vdev_map & (1LL << i);
 		if (bit) {
 			*pos = i;
@@ -12754,6 +12754,11 @@ static int ath12k_wmi_rdy_parse(struct ath12k_base *ab, u16 tag, u16 len,
 		ab->max_ml_peer_supported = fixed_param.max_num_ml_peers;
 		ab->fw_max_peers =
 			le32_to_cpu(fixed_param.ready_event_min.num_total_peers);
+		ab->fw_max_vdevs =
+			le32_to_cpu(fixed_param.num_max_active_vdevs);
+		ath12k_dbg(ab, ATH12K_DBG_MAC,
+			   "wmi_rdy_parse: fw_max_peers = %u fw_max_vdevs = %u\n",
+			   ab->fw_max_peers, ab->fw_max_vdevs);
 		break;
 	case WMI_TAG_ARRAY_FIXED_STRUCT:
 		addr_list = (struct ath12k_wmi_mac_addr_params *)ptr;
