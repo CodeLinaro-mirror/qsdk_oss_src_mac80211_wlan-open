@@ -458,7 +458,7 @@ ath12k_dbg_sta_open_htt_peer_stats(struct inode *inode, struct file *file)
 	ar->debug.htt_stats.stats_req = stats_req;
 	stats_req->type = type;
 	memcpy(stats_req->peer_addr, link_sta->addr, ETH_ALEN);
-	ret = ath12k_debugfs_htt_stats_req(ar);
+	ret = ath12k_debugfs_htt_stats_req(ar, false);
 	if (ret < 0)
 		goto out;
 
