@@ -36,7 +36,8 @@ struct ath12k_tx_sw_metadata {
 	    len        : 16,
 	    hw_link_id : 5,
 	    mmesh      : 1,
-	    rsvd1      : 2;
+	    to_fw      : 1,
+	    rsvd1      : 1;
 	u8  flags      : 5,
 	    rsvd2      : 3;
 	u32 hw_enqueue_tstamp;
@@ -2485,7 +2486,8 @@ ath12k_wifi8_dp_tx_process_htt_tx_complete(struct ath12k_dp *dp,
 		ts->peer_id = HAL_INVALID_PEERID;
 	}
 
-	if (!(sw_metadata->flags & DP_TX_DESC_FLAG_SPL_DESC))
+	if (!(sw_metadata->flags & DP_TX_DESC_FLAG_SPL_DESC) &&
+			!sw_metadata->to_fw)
 		peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, ts->peer_id);
 	if (peer)
 		link_id = ath12k_dp_validate_hw_link_id(ts->hw_link_id);
@@ -2796,7 +2798,8 @@ static void ath12k_wifi8_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 		goto exit;
 	}
 
-	if (!(sw_metadata->flags & DP_TX_DESC_FLAG_SPL_DESC))
+	if (!(sw_metadata->flags & DP_TX_DESC_FLAG_SPL_DESC) &&
+			!sw_metadata->to_fw)
 		peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, ts->peer_id);
 
 	info = IEEE80211_SKB_CB(msdu);
@@ -2938,7 +2941,8 @@ static void ath12k_wifi8_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 
-	if (!(sw_metadata->flags & DP_TX_DESC_FLAG_SPL_DESC)) {
+	if (!(sw_metadata->flags & DP_TX_DESC_FLAG_SPL_DESC) &&
+			!sw_metadata->to_fw) {
 		link_peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev,
 								     ts->peer_id);
 		ath12k_wifi8_dp_tx_update_txcompl(dp_pdev, ts);
@@ -3301,6 +3305,7 @@ int ath12k_wifi8_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 
 		sw_metadata->skb = tx_desc->skb;
 		sw_metadata->paddr = tx_desc->paddr;
+		sw_metadata->to_fw = tx_desc->to_fw;
 		sw_metadata->len = tx_desc->len;
 		sw_metadata->flags = tx_desc->flags;
 		sw_metadata->hw_enqueue_tstamp = tx_desc->hw_enqueue_tstamp;
