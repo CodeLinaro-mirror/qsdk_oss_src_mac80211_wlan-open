@@ -727,7 +727,7 @@ void ath12k_wifi8_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 
 	if (!dp_peer->is_vdev_peer && dp_hw_grp_wifi8 && dp_hw_grp_wifi8->cumac_dp) {
 		central_ab = dp_hw_grp_wifi8->cumac_dp->ab;
 		dp_wifi8 = ath12k_get_dp_wifi8(dp_hw_grp_wifi8->cumac_dp);
-		if (central_ab && dp_wifi8)
+		if (central_ab && dp_wifi8 && central_ab->sam_num_supported_peers)
 			srng = &central_ab->hal.srng_list[dp_wifi8->sam_cmd_ring.ring_id];
 
 		if (srng) {
