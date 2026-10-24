@@ -4883,15 +4883,34 @@ static u8 *
 ieee80211_ie_build_sec_chan_offset(u8 *pos,
 				   const struct cfg80211_chan_def *chandef)
 {
+	int pri40;
+	int width;
+
 	*pos++ = WLAN_EID_SECONDARY_CHANNEL_OFFSET;
 	*pos++ = 1;
 
-	if (chandef->center_freq1 > chandef->chan->center_freq)
-		*pos = IEEE80211_HT_PARAM_CHA_SEC_ABOVE;
-	else if (chandef->center_freq1 < chandef->chan->center_freq)
-		*pos = IEEE80211_HT_PARAM_CHA_SEC_BELOW;
-	else
+	/*
+	 * For 80/160/320 MHz CSA, Secondary Channel Offset still encodes the
+	 * HT 40 MHz primary segment, not the wider channel center frequency.
+	 */
+	width = cfg80211_chandef_get_width(chandef);
+	if (width < 40) {
 		*pos = IEEE80211_HT_PARAM_CHA_SEC_NONE;
+	} else if (width == 40) {
+		*pos = chandef->center_freq1 > chandef->chan->center_freq ?
+			IEEE80211_HT_PARAM_CHA_SEC_ABOVE :
+			IEEE80211_HT_PARAM_CHA_SEC_BELOW;
+	} else {
+		pri40 = cfg80211_chandef_primary_40(chandef);
+		if (pri40 < 0)
+			*pos = IEEE80211_HT_PARAM_CHA_SEC_NONE;
+		else if (pri40 > chandef->chan->center_freq)
+			*pos = IEEE80211_HT_PARAM_CHA_SEC_ABOVE;
+		else if (pri40 < chandef->chan->center_freq)
+			*pos = IEEE80211_HT_PARAM_CHA_SEC_BELOW;
+		else
+			*pos = IEEE80211_HT_PARAM_CHA_SEC_NONE;
+	}
 
 	return pos + 1;
 }

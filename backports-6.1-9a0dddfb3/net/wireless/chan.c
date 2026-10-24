@@ -605,6 +605,28 @@ int cfg80211_chandef_primary(const struct cfg80211_chan_def *c,
 }
 EXPORT_SYMBOL(cfg80211_chandef_primary);
 
+int cfg80211_chandef_primary_40(const struct cfg80211_chan_def *chandef)
+{
+	u16 punctured;
+	int primary_40;
+	int control;
+	int secondary_bit;
+
+	primary_40 = cfg80211_chandef_primary(chandef,
+					     NL80211_CHAN_WIDTH_40,
+					     &punctured);
+	if (primary_40 < 0)
+		return -1;
+
+	control = chandef->chan->center_freq;
+	secondary_bit = primary_40 > control ? 1 : 0;
+	if (punctured & BIT(secondary_bit))
+		return -1;
+
+	return primary_40;
+}
+EXPORT_SYMBOL(cfg80211_chandef_primary_40);
+
 static const struct cfg80211_chan_def *
 check_chandef_primary_compat(const struct cfg80211_chan_def *c1,
 			     const struct cfg80211_chan_def *c2,
