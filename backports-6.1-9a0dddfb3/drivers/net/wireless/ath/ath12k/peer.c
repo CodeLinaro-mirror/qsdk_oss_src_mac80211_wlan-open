@@ -153,16 +153,24 @@ void ath12k_peer_del_tracker_destroy(struct ath12k_pdev *pdev)
 		if (IS_ERR(entry))
 			continue;
 
-		/* Cancel the timer before removing entry */
-		del_timer_sync(&entry->timer);
-
+		/* Claim the entry before cancelling its timer. */
+		spin_lock_bh(&tracker->lock);
+		if (rhashtable_lookup_fast(&tracker->peer_del_hash, entry->addr,
+					   tracker->hash_params) != entry) {
+			spin_unlock_bh(&tracker->lock);
+			continue;
+		}
 		rhashtable_remove_fast(&tracker->peer_del_hash,
 				       &entry->rhash_node,
 				       tracker->hash_params);
 		if (!is_zero_ether_addr(entry->mld_addr))
 			rhashtable_remove_fast(&tracker->mld_del_hash,
-					       &entry->mld_rhash_node,
-					       tracker->mld_hash_params);
+				       &entry->mld_rhash_node,
+				       tracker->mld_hash_params);
+		spin_unlock_bh(&tracker->lock);
+
+		/* The entry is no longer visible to the timer callback. */
+		del_timer_sync(&entry->timer);
 		kfree_rcu(entry, rcu_head);
 		atomic_dec_if_positive(&pdev->peer_del_tracker_entries);
 	}
@@ -441,8 +449,23 @@ int ath12k_peer_del_tracker_clear_vdev(struct ath12k_pdev *pdev, u32 vdev_id)
 		if (IS_ERR(entry))
 			continue;
 
-		if (entry->vdev_id == vdev_id && num_entries < max_entries)
+		if (entry->vdev_id != vdev_id || num_entries >= max_entries)
+			continue;
+
+		/* Claim the entry before dropping the hash walk. */
+		spin_lock_bh(&tracker->lock);
+		if (rhashtable_lookup_fast(&tracker->peer_del_hash, entry->addr,
+					   tracker->hash_params) == entry) {
+			rhashtable_remove_fast(&tracker->peer_del_hash,
+					       &entry->rhash_node,
+					       tracker->hash_params);
+			if (!is_zero_ether_addr(entry->mld_addr))
+				rhashtable_remove_fast(&tracker->mld_del_hash,
+					       &entry->mld_rhash_node,
+					       tracker->mld_hash_params);
 			entries_to_remove[num_entries++] = entry;
+		}
+		spin_unlock_bh(&tracker->lock);
 	}
 
 	rhashtable_walk_stop(&iter);
@@ -451,16 +474,6 @@ int ath12k_peer_del_tracker_clear_vdev(struct ath12k_pdev *pdev, u32 vdev_id)
 	for (i = 0; i < num_entries; i++) {
 		entry = entries_to_remove[i];
 		del_timer_sync(&entry->timer);
-
-		spin_lock_bh(&tracker->lock);
-		rhashtable_remove_fast(&tracker->peer_del_hash,
-				       &entry->rhash_node,
-				       tracker->hash_params);
-		if (!is_zero_ether_addr(entry->mld_addr))
-			rhashtable_remove_fast(&tracker->mld_del_hash,
-					       &entry->mld_rhash_node,
-					       tracker->mld_hash_params);
-		spin_unlock_bh(&tracker->lock);
 
 		ath12k_dbg_level(ath12k_pdev_to_ab(pdev), ATH12K_DBG_PEER, ATH12K_DBG_L1,
 				 "removed peer %pM from deletion tracker (vdev %d)\n",
@@ -512,8 +525,23 @@ int ath12k_peer_del_tracker_clear_pdev(struct ath12k_pdev *pdev)
 		if (IS_ERR(entry))
 			continue;
 
-		if (num_entries < max_entries)
+		if (num_entries >= max_entries)
+			continue;
+
+		/* Claim the entry before dropping the hash walk. */
+		spin_lock_bh(&tracker->lock);
+		if (rhashtable_lookup_fast(&tracker->peer_del_hash, entry->addr,
+					   tracker->hash_params) == entry) {
+			rhashtable_remove_fast(&tracker->peer_del_hash,
+					       &entry->rhash_node,
+					       tracker->hash_params);
+			if (!is_zero_ether_addr(entry->mld_addr))
+				rhashtable_remove_fast(&tracker->mld_del_hash,
+					       &entry->mld_rhash_node,
+					       tracker->mld_hash_params);
 			entries_to_remove[num_entries++] = entry;
+		}
+		spin_unlock_bh(&tracker->lock);
 	}
 
 	rhashtable_walk_stop(&iter);
@@ -522,15 +550,6 @@ int ath12k_peer_del_tracker_clear_pdev(struct ath12k_pdev *pdev)
 	for (i = 0; i < num_entries; i++) {
 		entry = entries_to_remove[i];
 		del_timer_sync(&entry->timer);
-
-		spin_lock_bh(&tracker->lock);
-		rhashtable_remove_fast(&tracker->peer_del_hash, &entry->rhash_node,
-				       tracker->hash_params);
-		if (!is_zero_ether_addr(entry->mld_addr))
-			rhashtable_remove_fast(&tracker->mld_del_hash,
-					       &entry->mld_rhash_node,
-					       tracker->mld_hash_params);
-		spin_unlock_bh(&tracker->lock);
 
 		kfree_rcu(entry, rcu_head);
 		atomic_dec_if_positive(&pdev->peer_del_tracker_entries);
