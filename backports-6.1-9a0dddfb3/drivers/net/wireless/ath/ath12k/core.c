@@ -2986,7 +2986,8 @@ int ath12k_wsi_bypass_precheck(struct ath12k_base *ab, unsigned int value,
 		return -EINVAL;
 	}
 
-	if (!ar->pdev_suspend && value == ATH12K_WSI_BYPASS_ADD_DEVICE) {
+	if ((ab->wsi_remap_state != ATH12K_WSI_BYPASS_REMOVE_DEVICE ||
+	     !ar->pdev_suspend) && value == ATH12K_WSI_BYPASS_ADD_DEVICE) {
 		ath12k_err(ab, "Invalid operation: radio is not suspended\n");
 		return -EINVAL;
 	}
