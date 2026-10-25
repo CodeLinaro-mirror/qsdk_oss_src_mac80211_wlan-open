@@ -1456,14 +1456,10 @@ ath12k_wifi8_dp_process_reo_rx_err_packets(struct ath12k_dp *dp,
 						 rx_mpdu_info->reo_error_code,
 						 rx_mpdu_info->rxdma_push_reason,
 						 rx_mpdu_info->rxdma_error_code);
-		if (!drop)
+		if (!drop) {
 			ath12k_wifi8_dp_adjust_skb(spd_desc_l, NULL,
 						   &msdu_idx, hal_rx_desc_sz);
-
-		rx_desc = (struct hal_rx_desc *)spd_desc_l->vaddr;
-		ath12k_wifi8_dp_extract_rx_spd_data(hal, spd_desc_l, rx_desc);
-
-		if (drop) {
+		} else {
 			dev_kfree_skb_any(spd_desc_l->msdu);
 			spd_desc_l->msdu = NULL;
 		}
@@ -1487,6 +1483,9 @@ ath12k_wifi8_dp_process_reo_rx_err_packets(struct ath12k_dp *dp,
 			continue;
 		}
 
+		rx_desc = (struct hal_rx_desc *)spd_desc_l->vaddr;
+		ath12k_wifi8_dp_extract_rx_spd_data(partner_dp->hal, spd_desc_l, rx_desc);
+
 		partner_ab = partner_dp->ab;
 		if (!rcu_dereference(partner_ab->pdevs_active[pdev_id])) {
 			if (spd_desc_l->msdu) {
@@ -1497,7 +1496,8 @@ ath12k_wifi8_dp_process_reo_rx_err_packets(struct ath12k_dp *dp,
 		}
 
 		peer_metadata = rx_mpdu_info->peer_meta_data;
-		peer_id = ath12k_wifi8_dp_rx_get_peer_id(dp->ab, dp->peer_metadata_ver,
+		peer_id = ath12k_wifi8_dp_rx_get_peer_id(partner_dp->ab,
+							 partner_dp->peer_metadata_ver,
 							 peer_metadata);
 		tid = rx_mpdu_info->tid;
 		msdu_len = rx_msdu_info->msdu_length;
