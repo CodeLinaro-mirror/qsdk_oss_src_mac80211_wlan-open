@@ -7362,9 +7362,27 @@ static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 #endif /* CPTCFG_QCN_EXTN */
 
 	ath12k_debugfs_remove_interface(arvif);
-	ret = ath12k_mac_vdev_delete(ar, arvif);
-	if (ret)
-		ath12k_critical_failure_trigger(ar->ab, ATH12K_CRIT_VAP_FAILURE);
+	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR && !ar->monitor_vdev_created) {
+		ath12k_warn(ar->ab,
+			    "monitor vdev %u already deleted, skip fw vdev delete\n",
+			    arvif->vdev_id);
+
+		if (arvif->is_created) {
+			spin_lock_bh(&ar->data_lock);
+			ar->created_vdev_map &= ~(1LL << arvif->vdev_id);
+			spin_unlock_bh(&ar->data_lock);
+		}
+
+		arvif->is_created = false;
+		arvif->is_started = false;
+		arvif->is_scan_vif = false;
+		arvif->is_mlprobe_scan_vif = false;
+		arvif->ar = NULL;
+	} else {
+		ret = ath12k_mac_vdev_delete(ar, arvif);
+		if (ret)
+			ath12k_critical_failure_trigger(ar->ab, ATH12K_CRIT_VAP_FAILURE);
+	}
 
 	ath12k_mac_ap_ps_recalc(ar);
 }
@@ -23086,20 +23104,6 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 	struct ath12k_hw *ah = hw->priv;
 
 	lockdep_assert_wiphy(hw->wiphy);
-
-	if (vif->type == NL80211_IFTYPE_MONITOR) {
-		link_id = ahvif->deflink.link_id;
-		arvif = wiphy_dereference(hw->wiphy, ahvif->link[link_id]);
-		if (!arvif || !arvif->ar)
-			return;
-
-		/* monitor may already have been deleted when chan_ctx is unassigned */
-		if (!arvif->ar->monitor_vdev_created) {
-			ath12k_warn(arvif->ar->ab,
-				    "monitor vdev %u is already deleted", arvif->vdev_id);
-			return;
-		}
-	}
 
 	if (vif->type == NL80211_IFTYPE_AP) {
 		ath12k_me_db_deinit(&ahvif->dp_vif);
