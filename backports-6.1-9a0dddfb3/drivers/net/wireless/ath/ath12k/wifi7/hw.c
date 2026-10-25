@@ -1339,11 +1339,10 @@ static bool ath12k_wifi7_mac_is_mgmt_action_link_agnostic(struct ath12k_base *ab
 {
 	struct ieee80211_mgmt *mgmt = (struct ieee80211_mgmt *)skb->data;
 	const u8 *buf = (u8 *)&mgmt->u.action;
-	u8 category, action_code;
+	u8 category;
 
 	buf += ath12k_mac_get_iv_len(skb);
 	category = *buf++;
-	action_code = *buf++;
 
 	switch (category) {
 	case WLAN_CATEGORY_SPECTRUM_MGMT:
@@ -1351,13 +1350,14 @@ static bool ath12k_wifi7_mac_is_mgmt_action_link_agnostic(struct ath12k_base *ab
 			return true;
 		break;
 	case WLAN_CATEGORY_RADIO_MEASUREMENT:
-		switch (action_code) {
+		switch (*buf) {
 		case WLAN_ACTION_RADIO_MSR_LINK_MSR_REQ:
 		case WLAN_ACTION_RADIO_MSR_LINK_MSR_REP:
 			return false;
 		default:
 #ifdef CPTCFG_QCN_EXTN
-		if (ath12k_is_beacon_report_elem(action_code, buf, skb->data + skb->len))
+		if (ath12k_is_beacon_report_elem(*buf, buf + 2,
+						 skb->data + skb->len))
 			return false;
 #endif
 		}
@@ -1366,7 +1366,7 @@ static bool ath12k_wifi7_mac_is_mgmt_action_link_agnostic(struct ath12k_base *ab
 	case WLAN_CATEGORY_PROTECTED_EHT:
 		return true;
 	case WLAN_CATEGORY_WNM:
-		switch (action_code) {
+		switch (*buf) {
 		case WLAN_WNM_ACTION_BSS_TM_REQ:
 		case WLAN_WNM_ACTION_BSS_TM_RESP:
 			return true;
@@ -1375,7 +1375,7 @@ static bool ath12k_wifi7_mac_is_mgmt_action_link_agnostic(struct ath12k_base *ab
 		}
 		break;
 	case WLAN_CATEGORY_BACK:
-		switch (action_code) {
+		switch (*buf) {
 		case WLAN_ACTION_ADDBA_REQ:
 		case WLAN_ACTION_ADDBA_RESP:
 			return true;
