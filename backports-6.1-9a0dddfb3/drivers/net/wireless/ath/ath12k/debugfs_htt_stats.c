@@ -8523,6 +8523,10 @@ ath12k_htt_print_phy_reset_stats_tlv(const void *tag_buf, u16 tag_len,
 			u32_get_bits((calmerge_val),
 			HTT_STATS_PHY_RESET_CAL_DATA_SOURCE_M));
 	len += scnprintf(buf + len, buf_len - len,
+			"Caldata Source fail(1 - checksum failure) = %u\n",
+			u32_get_bits((calmerge_val),
+			HTT_STATS_PHY_RESET_CAL_DATA_SOURCE_FAIL_M));
+	len += scnprintf(buf + len, buf_len - len,
 			"Caldata merge status xtalcal = %u\n",
 			u32_get_bits((calmerge_val),
 			HTT_STATS_PHY_RESET_XTALCAL_M));
@@ -8586,6 +8590,42 @@ ath12k_htt_print_phy_reset_stats_tlv(const void *tag_buf, u16 tag_len,
 			"XTAL_from_OTP = %u\n",
 			u32_get_bits((calmerge_val),
 			HTT_STATS_PHY_RESET_XTAL_FROM_OTP_M));
+	len += scnprintf(buf + len, buf_len - len,
+			"Caldata merge status tpccal2G FPC dyn = %u\n",
+			u32_get_bits((calmerge_val),
+			HTT_STATS_PHY_RESET_TPCCAL2GFPC_DYN_M));
+	len += scnprintf(buf + len, buf_len - len,
+			"Caldata merge status tpccal2G OPC dyn = %u\n",
+			u32_get_bits((calmerge_val),
+			HTT_STATS_PHY_RESET_TPCCAL2GOPC_DYN_M));
+	len += scnprintf(buf + len, buf_len - len,
+			"Caldata merge status tpccal5G FPC dyn = %u\n",
+			u32_get_bits((calmerge_val),
+			HTT_STATS_PHY_RESET_TPCCAL5GFPC_DYN_M));
+	len += scnprintf(buf + len, buf_len - len,
+			"Caldata merge status tpccal5G OPC dyn = %u\n",
+			u32_get_bits((calmerge_val),
+			HTT_STATS_PHY_RESET_TPCCAL5GOPC_DYN_M));
+	len += scnprintf(buf + len, buf_len - len,
+			"Caldata merge status tpccal6G FPC dyn = %u\n",
+			u32_get_bits((calmerge_val),
+			HTT_STATS_PHY_RESET_TPCCAL6GFPC_DYN_M));
+	len += scnprintf(buf + len, buf_len - len,
+			"Caldata merge status tpccal6G OPC dyn = %u\n",
+			u32_get_bits((calmerge_val),
+			HTT_STATS_PHY_RESET_TPCCAL6GOPC_DYN_M));
+	len += scnprintf(buf + len, buf_len - len,
+			"Caldata merge status rxgaincal2G dyn = %u\n",
+			u32_get_bits((calmerge_val),
+			HTT_STATS_PHY_RESET_RXGAINCAL2G_DYN_M));
+	len += scnprintf(buf + len, buf_len - len,
+			"Caldata merge status rxgaincal5G dyn = %u\n",
+			u32_get_bits((calmerge_val),
+			HTT_STATS_PHY_RESET_RXGAINCAL5G_DYN_M));
+	len += scnprintf(buf + len, buf_len - len,
+			"Caldata merge status rxgaincal6G dyn = %u\n",
+			u32_get_bits((calmerge_val),
+			HTT_STATS_PHY_RESET_RXGAINCAL6G_DYN_M));
 	len += scnprintf(buf + len, buf_len - len,
 			"Wlan Driver Mode = %u\n\n",
 			u32_get_bits((calmerge_val),
@@ -13385,6 +13425,25 @@ static void ath12k_htt_print_ftm_stats_tlv(const void *tag_buf, u16 tag_len,
 	len += scnprintf(buf + len, buf_len - len,
 			 "bd_read_rsp: %u\n",
 			 le32_to_cpu(htt_stats_buf->bd_read_rsp));
+
+	u32 dword_bdf_dyn_stats = le32_to_cpu(htt_stats_buf->dword_bdf_dyn_stats);
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "isbdf2G_dyn: %u\n",
+			 u32_get_bits(dword_bdf_dyn_stats,
+				      ATH12K_HTT_STATS_FTM_IS_BDF2G_DYN));
+	len += scnprintf(buf + len, buf_len - len,
+			 "isbdf5G_dyn: %u\n",
+			 u32_get_bits(dword_bdf_dyn_stats,
+				      ATH12K_HTT_STATS_FTM_IS_BDF5G_DYN));
+	len += scnprintf(buf + len, buf_len - len,
+			 "isbdf6G_dyn: %u\n",
+			 u32_get_bits(dword_bdf_dyn_stats,
+				      ATH12K_HTT_STATS_FTM_IS_BDF6G_DYN));
+	len += scnprintf(buf + len, buf_len - len,
+			 "isDynSwitchOn: %u\n",
+			 u32_get_bits(dword_bdf_dyn_stats,
+				      ATH12K_HTT_STATS_FTM_IS_DYN_SWITCH_ON));
 
 
 	len += scnprintf(buf + len, buf_len - len,

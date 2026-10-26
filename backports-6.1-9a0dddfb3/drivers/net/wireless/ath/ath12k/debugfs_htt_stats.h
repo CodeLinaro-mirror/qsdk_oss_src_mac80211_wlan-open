@@ -4198,6 +4198,16 @@ struct ath12k_htt_phy_counters_tlv {
 #define HTT_STATS_PHY_RESET_AOACAL5G_M			GENMASK(14, 14)
 #define HTT_STATS_PHY_RESET_AOACAL6G_M			GENMASK(15, 15)
 #define HTT_STATS_PHY_RESET_XTAL_FROM_OTP_M		GENMASK(16, 16)
+#define HTT_STATS_PHY_RESET_TPCCAL2GFPC_DYN_M		GENMASK(17, 17)
+#define HTT_STATS_PHY_RESET_TPCCAL2GOPC_DYN_M		GENMASK(18, 18)
+#define HTT_STATS_PHY_RESET_TPCCAL5GFPC_DYN_M		GENMASK(19, 19)
+#define HTT_STATS_PHY_RESET_TPCCAL5GOPC_DYN_M		GENMASK(20, 20)
+#define HTT_STATS_PHY_RESET_TPCCAL6GFPC_DYN_M		GENMASK(21, 21)
+#define HTT_STATS_PHY_RESET_TPCCAL6GOPC_DYN_M		GENMASK(22, 22)
+#define HTT_STATS_PHY_RESET_RXGAINCAL2G_DYN_M		GENMASK(23, 23)
+#define HTT_STATS_PHY_RESET_RXGAINCAL5G_DYN_M		GENMASK(24, 24)
+#define HTT_STATS_PHY_RESET_RXGAINCAL6G_DYN_M		GENMASK(25, 25)
+#define HTT_STATS_PHY_RESET_CAL_DATA_SOURCE_FAIL_M	GENMASK(26, 26)
 
 #define HTT_STATS_PHY_RESET_GLUT_LINEARITY_M		GENMASK(7, 0)
 #define HTT_STATS_PHY_RESET_PLUT_LINEARITY_M		GENMASK(15, 8)
@@ -4261,7 +4271,17 @@ struct ath12k_htt_phy_reset_stats_tlv {
 				aoacal5G:1,
 				aoacal6G:1,
 				XTAL_from_OTP:1,
-				rsvd1:15;
+				tpccal2GFPC_dyn:1,
+				tpccal2GOPC_dyn:1,
+				tpccal5GFPC_dyn:1,
+				tpccal5GOPC_dyn:1,
+				tpccal6GFPC_dyn:1,
+				tpccal6GOPC_dyn:1,
+				rxgaincal2G_dyn:1,
+				rxgaincal5G_dyn:1,
+				rxgaincal6G_dyn:1,
+				CalDataSource_fail:1,
+				rsvd1:5;
 		};
 	};
 	union {
@@ -5974,6 +5994,12 @@ struct ath12k_htt_stats_pdev_ftm_tpccal_ext_tlv {
 /* ================= dword_rxgainCalRefISS ================= */
 #define ATH12K_HTT_STATS_RXGAINCAL_REF_ISS             GENMASK(7, 0)
 
+/* ================= dword_bdfDynStats ================= */
+#define ATH12K_HTT_STATS_FTM_IS_BDF2G_DYN              GENMASK(0, 0)
+#define ATH12K_HTT_STATS_FTM_IS_BDF5G_DYN              GENMASK(1, 1)
+#define ATH12K_HTT_STATS_FTM_IS_BDF6G_DYN              GENMASK(2, 2)
+#define ATH12K_HTT_STATS_FTM_IS_DYN_SWITCH_ON          GENMASK(4, 3)
+
 #define ATH12K_HTT_STATS_FTM_TIMESTAMP_TOTAL_CNT 50
 #define ATH12K_HTT_STATS_FTM_PPDU_DUR_CIRCULAR_BUF_CNT 10
 #define ATH12K_HTT_STATS_FTM_RXGAINCAL_MAX_NUM_CHAN_TLV2 16
@@ -6130,6 +6156,14 @@ struct ath12k_htt_stats_ftm_tlv {
 	} rx_gain_cal_params;
 	/*Miscallenous params*/
 	__le32 bd_read_rsp;
+	/* dword_bdf_dyn_stats
+	 * BIT [0]       :- isbdf2G_dyn
+	 * BIT [1]       :- isbdf5G_dyn
+	 * BIT [2]       :- isbdf6G_dyn
+	 * BIT [4 : 3]   :- isDynSwitchOn
+	 * BIT [31 : 5]  :- rsvd6
+	 */
+	__le32 dword_bdf_dyn_stats;
 } __packed;
 
 #define ATH12K_HTT_STATS_NUM_ANI_HIST_TYPE_1SEC 0
