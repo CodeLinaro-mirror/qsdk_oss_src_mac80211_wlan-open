@@ -210,6 +210,9 @@ struct ath12k_qmi {
 	struct target_mem_chunk target_mem[ATH12K_QMI_MAX_MEM_CHUNKS];
 	u32 mem_seg_count;
 	u32 target_mem_mode;
+#ifdef CPTCFG_QCN_EXTN
+	u32 mem_profile_mode;
+#endif /* CPTCFG_QCN_EXTN */
 	bool target_mem_delayed;
 	u8 cal_done;
 	u8 cal_timeout;
