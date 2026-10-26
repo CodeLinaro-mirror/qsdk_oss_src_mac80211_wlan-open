@@ -3803,7 +3803,7 @@ static ssize_t ath12k_read_power_save_mode(struct file *file,
 }
 
 static const struct file_operations fops_power_save_mode = {
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.read = ath12k_read_power_save_mode,
 	.write = ath12k_write_power_save_mode,
 	.llseek = default_llseek,
