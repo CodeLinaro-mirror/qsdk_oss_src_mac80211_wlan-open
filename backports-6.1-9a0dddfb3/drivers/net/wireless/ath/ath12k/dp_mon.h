@@ -2242,6 +2242,20 @@ ath12k_dp_mon_rx_trim_short_pkt_fcs(struct sk_buff *mpdu, u16 total_mpdu_len)
 		skb_coalesce_rx_frag(mpdu, 0, -fcs_bytes, 0);
 }
 
+static inline bool
+ath12k_dp_mon_rx_is_proto_ver_err(struct ath12k_dp_mon_mpdu_meta *mpdu_meta,
+				  struct sk_buff *mpdu)
+{
+	struct ieee80211_hdr *wh;
+
+	if (mpdu_meta->decap_type != DP_RX_DECAP_TYPE_RAW || !mpdu_meta->fcs_err)
+		return false;
+
+	wh = ath12k_dp_mon_skb_get_frag_addr(mpdu, 0);
+	return wh && unlikely((wh->frame_control &
+				 cpu_to_le16(IEEE80211_FCTL_VERS)) != 0);
+}
+
 void ath12k_dp_mon_peer_telemetry_stats(const struct ath12k_dp_link_peer *peer,
 					struct ath12k_peer_telemetry_stats *stats);
 void
