@@ -884,6 +884,66 @@ ath12k_dp_mon_rx_update_peer_rate_table_stats(struct ath12k_rx_peer_stats *rx_st
 	stats->rx_rate[bw_idx][gi_idx][nss_idx][mcs_idx] += len;
 }
 
+static void ath12k_dp_rx_fill_rate_info(struct rate_info *rate,
+					struct hal_rx_mon_ppdu_info *ppdu_info,
+					struct hal_rx_user_status *user_stats)
+{
+	u8 mcs, nss, sgi, bw, preamble;
+	u8 rix = 0;
+	u16 bitrate = 0;
+
+	if (!rate || !ppdu_info)
+		return;
+
+	mcs = user_stats ? user_stats->mcs : ppdu_info->mcs;
+	nss = user_stats ? user_stats->nss : ppdu_info->nss;
+	sgi = ppdu_info->gi;
+	bw = ppdu_info->bw;
+
+	memset(rate, 0, sizeof(*rate));
+	rate->nss = nss;
+	rate->bw = ath12k_mac_bw_to_mac80211_bw(bw);
+
+	/* preamble_type is not reliably populated by this HAL backend for
+	 * regular (non-monitor-vif) RX — mirror ath12k_dp_mon_update_radiotap()'s
+	 * PHY-mode detection, which uses these presence flags instead.
+	 */
+	if (ppdu_info->is_eht || ppdu_info->eht_usig) {
+		if (mcs > HAL_RX_MAX_MCS_BE)
+			return;
+		rate->mcs = mcs;
+		rate->flags = RATE_INFO_FLAGS_EHT_MCS;
+		rate->eht_gi = ath12k_eht_gi_to_nl80211_eht_gi(sgi);
+	} else if (ppdu_info->he_mu_flags || ppdu_info->he_flags) {
+		if (mcs > HAL_RX_MAX_MCS_HE)
+			return;
+		rate->mcs = mcs;
+		rate->flags = RATE_INFO_FLAGS_HE_MCS;
+		rate->he_gi = ath12k_he_gi_to_nl80211_he_gi(sgi);
+	} else if (ppdu_info->vht_flags) {
+		if (mcs > HAL_RX_MAX_MCS_VHT)
+			return;
+		rate->mcs = mcs;
+		rate->flags = RATE_INFO_FLAGS_VHT_MCS;
+		if (sgi)
+			rate->flags |= RATE_INFO_FLAGS_SHORT_GI;
+	} else if (ppdu_info->ht_flags) {
+		if (mcs > HAL_RX_MAX_MCS_HT || nss < 1 || nss > HAL_RX_MAX_NSS)
+			return;
+		rate->mcs = mcs;
+		rate->flags = RATE_INFO_FLAGS_MCS;
+		if (sgi)
+			rate->flags |= RATE_INFO_FLAGS_SHORT_GI;
+	} else {
+		preamble = ppdu_info->cck_flag ? WMI_RATE_PREAMBLE_CCK :
+						 WMI_RATE_PREAMBLE_OFDM;
+		if (ath12k_mac_hw_ratecode_to_legacy_rate(ppdu_info->rate, preamble,
+							  &rix, &bitrate) < 0)
+			return;
+		rate->legacy = bitrate;
+	}
+}
+
 void ath12k_dp_mon_rx_update_peer_su_stats(struct ath12k_pdev_dp *pdev_dp,
 					   struct ath12k_dp_link_peer *peer,
 					   struct hal_rx_mon_ppdu_info *ppdu_info)
@@ -893,6 +953,8 @@ void ath12k_dp_mon_rx_update_peer_su_stats(struct ath12k_pdev_dp *pdev_dp,
 
 	peer->rssi_comb = ppdu_info->rssi_comb;
 	ewma_avg_rssi_add(&peer->avg_rssi, ppdu_info->rssi_comb);
+
+	ath12k_dp_rx_fill_rate_info(&peer->rxrate, ppdu_info, NULL);
 
 	if (!ath12k_extd_rx_stats_enabled(pdev_dp->ar) || !rx_stats)
 		return;
@@ -1077,6 +1139,8 @@ ath12k_dp_mon_rx_update_user_stats(struct ath12k_pdev_dp *pdev_dp,
 	peer->rssi_comb = ppdu_info->rssi_comb;
 	ewma_avg_rssi_add(&peer->avg_rssi, ppdu_info->rssi_comb);
 
+	ath12k_dp_rx_fill_rate_info(&peer->rxrate, ppdu_info, user_stats);
+
 	if (!ath12k_extd_rx_stats_enabled(pdev_dp->ar))
 		return;
 
@@ -1166,9 +1230,6 @@ ath12k_dp_mon_rx_update_peer_mu_stats(struct ath12k_pdev_dp *pdev_dp,
 				      struct hal_rx_mon_ppdu_info *ppdu_info)
 {
 	u32 num_users, i;
-
-	if (!ath12k_extd_rx_stats_enabled(pdev_dp->ar))
-		return;
 
 	num_users = ppdu_info->num_users;
 	if (num_users > HAL_MAX_UL_MU_USERS)

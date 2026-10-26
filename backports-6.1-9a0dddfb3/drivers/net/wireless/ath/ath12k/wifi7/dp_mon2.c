@@ -1759,13 +1759,16 @@ int ath12k_dp_mon_rx_dual_ring_setup_ppdu_desc(struct ath12k_pdev_dp *dp_pdev)
 	/* Allocate an array of pointers instead of one large contiguous
 	 * block. Each ~12KB descriptor (embeds status_desc[512]) is then
 	 * allocated individually below, so a single ~1.5MB (order-9)
-	 * GFP_ATOMIC allocation is never attempted. That large contiguous
-	 * allocation was failing under DMA-zone fragmentation after
-	 * repeated SSR cycles.
+	 * allocation is never attempted. That large contiguous allocation
+	 * was failing under DMA-zone fragmentation after repeated SSR
+	 * cycles. No lock is held here, and this path only runs from
+	 * ath12k_core_start()'s process-context SSR reinit, so GFP_KERNEL
+	 * is used to let these allocations reclaim/compact instead of
+	 * failing outright under memory pressure.
 	 */
 	dp_mon_pdev->ppdu_desc_pool = kcalloc(ATH12K_DP_MON_NUM_PPDU_DESC,
 					      sizeof(*dp_mon_pdev->ppdu_desc_pool),
-					      GFP_ATOMIC);
+					      GFP_KERNEL);
 	if (unlikely(!dp_mon_pdev->ppdu_desc_pool)) {
 		ath12k_warn(dp_pdev->dp, "Failed to allocate monitor PPDU desc pool\n");
 		return -ENOMEM;
@@ -1774,7 +1777,7 @@ int ath12k_dp_mon_rx_dual_ring_setup_ppdu_desc(struct ath12k_pdev_dp *dp_pdev)
 	for (i = 0; i < ATH12K_DP_MON_NUM_PPDU_DESC; i++) {
 		dp_mon_pdev->ppdu_desc_pool[i] =
 				kzalloc(sizeof(*dp_mon_pdev->ppdu_desc_pool[i]),
-					GFP_ATOMIC);
+					GFP_KERNEL);
 		if (!dp_mon_pdev->ppdu_desc_pool[i]) {
 			ath12k_warn(dp_pdev->dp,
 				    "Failed to allocate monitor PPDU desc %d\n", i);

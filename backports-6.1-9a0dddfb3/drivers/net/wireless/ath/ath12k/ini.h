@@ -91,6 +91,7 @@
 #define ATH12K_CFG_DP \
 	ATH12K_CFG(ATH12K_CFG_DP_RXDMA_BUF_RING) \
 	ATH12K_CFG(ATH12K_CFG_DP_IPA_VLAN_ENABLE) \
+	ATH12K_CFG(ATH12K_CFG_DP_IPA_TWO_TX_PIPES_ENABLE) \
 
 #define ATH12K_CFG_MAX_DESC \
 	ATH12K_CFG_INI_UINT("max_descs", \
@@ -131,6 +132,10 @@
 	ATH12K_CFG_INI_UINT("dp_ipa_vlan_enable", \
 	0, ATH12K_MAX_CFG, 0,  \
 	ATH12K_CFG_VALUE_OR_DEFAULT, "IPA VLAN Enable")
+
+#define ATH12K_CFG_DP_IPA_TWO_TX_PIPES_ENABLE \
+	ATH12K_CFG_INI_BOOL("dp_ipa_two_tx_pipes_enable", true, \
+	"Enable IPA alt TX pipe on split-PHY boards")
 
 #define ATH12K_CFG_REP_UL_RESP \
 	ATH12K_CFG_INI_UINT("rep_ul_resp", \

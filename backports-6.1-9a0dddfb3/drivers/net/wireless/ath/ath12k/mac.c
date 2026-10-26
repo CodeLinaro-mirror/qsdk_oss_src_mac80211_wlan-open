@@ -17123,6 +17123,9 @@ static void ath12k_mac_vif_unref(struct ath12k_dp *dp, struct ieee80211_vif *vif
 			tx_spt_page = j + i * ATH12K_TX_SPT_PAGES_PER_POOL;
 			tx_desc_info = dp->txbaddr[tx_spt_page];
 
+			if (!tx_desc_info)
+				continue;
+
 			for (k = 0; k < ATH12K_MAX_SPT_ENTRIES; k++) {
 				if (!tx_desc_info[k].in_use)
 					continue;
@@ -17191,6 +17194,7 @@ static int ath12k_mac_vdev_delete(struct ath12k *ar, struct ath12k_link_vif *arv
 	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(ahvif);
 	struct ath12k_dp_link_vif *dp_link_vif;
 	struct ath12k_base *ab = ar->ab;
+	struct ath12k_dp *dp;
 	unsigned long time_left;
 	int ret = -1;
 
@@ -17259,13 +17263,16 @@ err_vdev_del:
 		     ath12k_mac_vif_txmgmt_idr_remove, vif);
 	spin_unlock_bh(&ar->data_lock);
 
-	ath12k_mac_vif_unref(ath12k_ab_to_dp(ab), vif);
-	dp_link_vif = &ahvif->dp_vif.dp_link_vif[arvif->link_id];
-	ath12k_dp_tx_put_bank_profile(ath12k_ab_to_dp(ab), dp_link_vif->bank_id);
+	dp = ath12k_ab_to_dp(ab);
+	ath12k_mac_vif_unref(dp, vif);
+	if (dp->bank_profiles) {
+		dp_link_vif = &ahvif->dp_vif.dp_link_vif[arvif->link_id];
+		ath12k_dp_tx_put_bank_profile(dp, dp_link_vif->bank_id);
 
-	if (arvif->splitphy_ds_bank_id != DP_INVALID_BANK_ID)
-		ath12k_dp_tx_put_bank_profile(ath12k_ab_to_dp(ab),
-					      arvif->splitphy_ds_bank_id);
+		if (arvif->splitphy_ds_bank_id != DP_INVALID_BANK_ID)
+			ath12k_dp_tx_put_bank_profile(dp,
+						      arvif->splitphy_ds_bank_id);
+	}
 
 	arvif->key_cipher = INVALID_CIPHER;
 
@@ -21548,6 +21555,25 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 		link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_BITRATE);
 	}
 
+	if (rate_info.rxrate.legacy || rate_info.rxrate.nss) {
+		if (rate_info.rxrate.legacy) {
+			link_sinfo->rxrate.legacy = rate_info.rxrate.legacy;
+		} else {
+			link_sinfo->rxrate.mcs = rate_info.rxrate.mcs;
+			link_sinfo->rxrate.nss = rate_info.rxrate.nss;
+			link_sinfo->rxrate.bw = rate_info.rxrate.bw;
+			link_sinfo->rxrate.he_gi = rate_info.rxrate.he_gi;
+			link_sinfo->rxrate.he_dcm = rate_info.rxrate.he_dcm;
+			link_sinfo->rxrate.he_ru_alloc =
+				rate_info.rxrate.he_ru_alloc;
+			link_sinfo->rxrate.eht_gi = rate_info.rxrate.eht_gi;
+			link_sinfo->rxrate.eht_ru_alloc =
+				rate_info.rxrate.eht_ru_alloc;
+		}
+		link_sinfo->rxrate.flags = rate_info.rxrate.flags;
+		link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_RX_BITRATE);
+	}
+
 	rssi_offset = rate_info.rssi_comb + ar->rssi_offsets.avg_nf_dbm;
 	rssi_signal = rate_info.rssi_comb > ar->rssi_offsets.xlna_bypass_threshold ?
 		      rssi_offset + ar->rssi_offsets.xlna_bypass_offset :
@@ -21650,6 +21676,23 @@ void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 		}
 		sinfo->txrate.flags = rate_info.txrate.flags;
 		sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_BITRATE);
+	}
+
+	if (rate_info.rxrate.legacy || rate_info.rxrate.nss) {
+		if (rate_info.rxrate.legacy) {
+			sinfo->rxrate.legacy = rate_info.rxrate.legacy;
+		} else {
+			sinfo->rxrate.mcs = rate_info.rxrate.mcs;
+			sinfo->rxrate.nss = rate_info.rxrate.nss;
+			sinfo->rxrate.bw = rate_info.rxrate.bw;
+			sinfo->rxrate.he_gi = rate_info.rxrate.he_gi;
+			sinfo->rxrate.he_dcm = rate_info.rxrate.he_dcm;
+			sinfo->rxrate.he_ru_alloc = rate_info.rxrate.he_ru_alloc;
+			sinfo->rxrate.eht_gi = rate_info.rxrate.eht_gi;
+			sinfo->rxrate.eht_ru_alloc = rate_info.rxrate.eht_ru_alloc;
+		}
+		sinfo->rxrate.flags = rate_info.rxrate.flags;
+		sinfo->filled |= BIT_ULL(NL80211_STA_INFO_RX_BITRATE);
 	}
 
 	rssi_offset = rate_info.rssi_comb + ar->rssi_offsets.avg_nf_dbm;
