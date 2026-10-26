@@ -3349,24 +3349,22 @@ void ath12k_dp_mon_add_rx_frag(struct sk_buff *skb, const void *mon_buf,
 }
 EXPORT_SYMBOL(ath12k_dp_mon_add_rx_frag);
 
-static int
-ath12k_dp_mon_rx_set_low_threshold(struct ath12k_dp *dp,
-				   struct dp_rxdma_mon_ring *rx_ring,
-				   u32 low_threshold)
+int ath12k_dp_mon_set_low_threshold(struct ath12k_dp *dp,
+				    struct dp_mon_srng_params *srng_params)
 {
 	struct ath12k_base *ab = dp->ab;
 	u32 ring_id;
 	struct hal_srng *srng;
 	int ret;
 
-	ring_id = rx_ring->refill_buf_ring.ring_id;
+	ring_id = srng_params->srng->refill_buf_ring.ring_id;
 	srng = &dp->hal->srng_list[ring_id];
-	ath12k_hal_set_low_threshold(srng, (low_threshold >> 1));
+	ath12k_hal_set_low_threshold(srng, (srng_params->low_threshold >> 1));
 	ret = ath12k_dp_tx_htt_srng_setup(ab, ring_id,
-					  0, HAL_RXDMA_MONITOR_BUF);
+					  0, srng_params->type);
 	if (ret) {
-		ath12k_info(ab, "failed to send HTT SRNG setup for monitor buf ring %d\n",
-			    ret);
+		ath12k_err(ab, "failed to send HTT SRNG setup for monitor buf ring %d\n",
+			   ret);
 		return ret;
 	}
 
@@ -3379,6 +3377,7 @@ int ath12k_dp_mon_rx_monitor_mode_buf_setup(struct ath12k *ar)
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
 	struct dp_rxdma_mon_ring *rx_ring;
+	struct dp_mon_srng_params srng_params;
 	size_t req_entries, num_free;
 	LIST_HEAD(list);
 	int ret = 0;
@@ -3391,6 +3390,10 @@ int ath12k_dp_mon_rx_monitor_mode_buf_setup(struct ath12k *ar)
 	rx_ring = &dp_mon->rxdma_mon_buf_ring;
 	ring_id = rx_ring->refill_buf_ring.ring_id;
 	srng = &dp->hal->srng_list[ring_id];
+
+	srng_params.srng = rx_ring;
+	srng_params.low_threshold = rx_ring->bufs_max;
+	srng_params.type = HAL_RXDMA_MONITOR_BUF;
 
 	/* Ensure monitor RX ring is fully replenished now that the monitor VAP
 	 * is being started. At boot we only partially filled the ring up to
@@ -3439,7 +3442,7 @@ skip_replenish:
 					  rx_ring->cur_fill_lvl);
 		spin_unlock_bh(&srng->lock);
 
-		ret = ath12k_dp_mon_rx_set_low_threshold(dp, rx_ring, rx_ring->bufs_max);
+		ret = ath12k_dp_mon_set_low_threshold(dp, &srng_params);
 		if (ret)
 			return ret;
 	}
@@ -3469,18 +3472,21 @@ int ath12k_dp_mon_rx_monitor_mode_reset_buffers(struct ath12k *ar)
 	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
 	struct dp_rxdma_mon_ring *rx_ring;
 	struct hal_srng *srng;
-	u16 ring_lvl;
+	struct dp_mon_srng_params srng_params;
 	int ret = 0;
 
 	if (unlikely(!dp_mon))
 		return -EINVAL;
 
-	ring_lvl = dp_mon->default_fill_lvl;
 	rx_ring = &dp_mon->rxdma_mon_buf_ring;
 	srng = &dp->hal->srng_list[rx_ring->refill_buf_ring.ring_id];
 
+	srng_params.srng = rx_ring;
+	srng_params.low_threshold = dp_mon->default_fill_lvl;
+	srng_params.type = HAL_RXDMA_MONITOR_BUF;
+
 	if (rx_ring->cur_fill_lvl > dp_mon->default_fill_lvl) {
-		ret = ath12k_dp_mon_rx_set_low_threshold(dp, rx_ring, ring_lvl);
+		ret = ath12k_dp_mon_set_low_threshold(dp, &srng_params);
 		if (ret)
 			return ret;
 
@@ -4969,6 +4975,7 @@ int ath12k_dp_mon_set_fill_level(struct ath12k_pdev_dp *dp_pdev, u32 val)
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ath12k_dp_mon *dp_mon;
 	struct dp_rxdma_mon_ring *rx_ring;
+	struct dp_mon_srng_params srng_params;
 	struct hal_srng *srng;
 	int ret;
 
@@ -4987,11 +4994,15 @@ int ath12k_dp_mon_set_fill_level(struct ath12k_pdev_dp *dp_pdev, u32 val)
 		return -EINVAL;
 	}
 
+	srng_params.srng = rx_ring;
+	srng_params.low_threshold = val;
+	srng_params.type = HAL_RXDMA_MONITOR_BUF;
+
 	spin_lock_bh(&srng->lock);
 	rx_ring->cur_fill_lvl = val;
 	spin_unlock_bh(&srng->lock);
 
-	ret = ath12k_dp_mon_rx_set_low_threshold(dp, rx_ring, val);
+	ret = ath12k_dp_mon_set_low_threshold(dp, &srng_params);
 	if (ret) {
 		ath12k_err(dp->ab, "rx_mon_fill_lvl: failed to update low threshold: %d\n",
 			   ret);

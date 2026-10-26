@@ -233,6 +233,7 @@ struct ath12k_pdev_tx_mon_stats {
  * @free: current snapshot of buffers in the free pool
  * @replenish_err: current snapshot of buffers stranded due to replenish failure
  * @proc_err: current snapshot of buffers stranded due to processing failure
+ * @null_bufs: current snapshot of null buffers
  */
 struct ath12k_dp_tx_mon_stats {
 	/* monitor buffer replenishment statistics */
@@ -245,6 +246,8 @@ struct ath12k_dp_tx_mon_stats {
 	u32 free;
 	u32 replenish_err;
 	u32 proc_err;
+	/* Null buffers */
+	u32 null_bufs;
 };
 
 struct ieee80211_frame_min {
@@ -418,5 +421,7 @@ ath12k_dp_ext_mon_filter_type(struct ieee80211_hdr *wh,
 int
 ath12k_dp_ext_mon_filter_subtype(struct ieee80211_hdr *wh,
 				 struct ath12k_ext_mon_pkt_config *pkt_config);
+int ath12k_dp_tx_mon_get_fill_level(struct ath12k_pdev_dp *dp_pdev, u64 *value);
+int ath12k_dp_tx_mon_set_fill_level(struct ath12k_pdev_dp *dp_pdev, u32 value);
 
 #endif /* ATH12K_DP_TX_MON_H */

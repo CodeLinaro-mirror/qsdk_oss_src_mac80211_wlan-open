@@ -10534,6 +10534,34 @@ static int ath12k_fill_radio_tx_mon_stats(struct sk_buff *vendor_event,
 		return -EMSGSIZE;
 	}
 
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_NULL_MON_BUFS,
+			tx_mon_stats->null_bufs)) {
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+			   "null monitor buffers from descriptor pool");
+		return -EMSGSIZE;
+	}
+
+	if (dp_mon && dp_mon->dp_tx_mon) {
+		if (nla_put_u32(vendor_event,
+				QCA_VENDOR_ATTR_TX_MON_STATS_MAX_SRNG_FILL_LVL,
+				dp_mon->dp_tx_mon->default_fill_lvl)) {
+			ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+				   "max srng fill lvl");
+			return -EMSGSIZE;
+		}
+
+		spin_lock_bh(&dp_mon->dp_tx_mon->tx_mon_desc_lock);
+		if (nla_put_u32(vendor_event,
+				QCA_VENDOR_ATTR_TX_MON_STATS_CURR_SRNG_FILL_LVL,
+				dp_mon->dp_tx_mon->tx_mon_buf_ring.cur_fill_lvl)) {
+			spin_unlock_bh(&dp_mon->dp_tx_mon->tx_mon_desc_lock);
+			ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+				   "curr srng fill lvl");
+			return -EMSGSIZE;
+		}
+		spin_unlock_bh(&dp_mon->dp_tx_mon->tx_mon_desc_lock);
+	}
+
 	return 0;
 }
 
