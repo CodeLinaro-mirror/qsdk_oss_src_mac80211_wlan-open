@@ -7645,6 +7645,7 @@ static void ath12k_qmi_driver_event_work(struct work_struct *work)
 		}
 
 skip:
+		kfree(event->data);
 		kfree(event);
 		spin_lock(&qmi->event_lock);
 	}
