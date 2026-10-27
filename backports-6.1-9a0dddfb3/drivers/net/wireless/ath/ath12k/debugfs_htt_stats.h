@@ -4806,7 +4806,8 @@ struct htt_txbf_ofdma_be_ndpa_stats_elem_t {
 struct htt_txbf_ofdma_be_ndpa_stats_tlv {
 	u32 num_elems_be_ndpa_arr;
 	u32 arr_elem_size_be_ndpa;
-	struct htt_txbf_ofdma_be_ndpa_stats_elem_t be_ndpa[1];
+	struct htt_txbf_ofdma_be_ndpa_stats_elem_t
+		be_ndpa[ATH12K_HTT_TX_PDEV_MAX_TXBF_OFDMA_USERS];
 };
 
 struct htt_txbf_ofdma_be_ndp_stats_elem_t {
@@ -4819,7 +4820,8 @@ struct htt_txbf_ofdma_be_ndp_stats_elem_t {
 struct htt_txbf_ofdma_be_ndp_stats_tlv {
 	u32 num_elems_be_ndp_arr;
 	u32 arr_elem_size_be_ndp;
-	struct htt_txbf_ofdma_be_ndp_stats_elem_t be_ndp[1];
+	struct htt_txbf_ofdma_be_ndp_stats_elem_t
+		be_ndp[ATH12K_HTT_TX_PDEV_MAX_TXBF_OFDMA_USERS];
 };
 
 struct htt_txbf_ofdma_be_brp_stats_elem_t {
@@ -4833,7 +4835,8 @@ struct htt_txbf_ofdma_be_brp_stats_elem_t {
 struct htt_txbf_ofdma_be_brp_stats_tlv {
 	u32 num_elems_be_brp_arr;
 	u32 arr_elem_size_be_brp;
-	struct htt_txbf_ofdma_be_brp_stats_elem_t be_brp[1];
+	struct htt_txbf_ofdma_be_brp_stats_elem_t
+		be_brp[ATH12K_HTT_TX_PDEV_MAX_TXBF_OFDMA_USERS];
 };
 
 struct htt_txbf_ofdma_be_steer_stats_elem_t {
@@ -4847,7 +4850,8 @@ struct htt_txbf_ofdma_be_steer_stats_elem_t {
 struct htt_txbf_ofdma_be_steer_stats_tlv {
 	u32 num_elems_be_steer_arr;
 	u32 arr_elem_size_be_steer;
-	struct htt_txbf_ofdma_be_steer_stats_elem_t be_steer[1];
+	struct htt_txbf_ofdma_be_steer_stats_elem_t
+		be_steer[ATH12K_HTT_TX_PDEV_MAX_TXBF_OFDMA_USERS];
 };
 
 struct ath12k_htt_txbf_ofdma_be_steer_mpdu_stats_tlv {
