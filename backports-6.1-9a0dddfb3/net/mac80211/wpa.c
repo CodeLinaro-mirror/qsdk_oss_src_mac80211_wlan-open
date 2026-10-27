@@ -389,7 +389,7 @@ static u8 ccmp_gcmp_aad(struct sk_buff *skb, u8 *aad, bool spp_amsdu)
 	return qos_tid;
 }
 
-static void ccmp_special_blocks(struct sk_buff *skb, u8 *pn, u8 *b_0, u8 *aad,
+void ieee80211_ccmp_special_blocks(struct sk_buff *skb, u8 *pn, u8 *b_0, u8 *aad,
 				bool spp_amsdu)
 {
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
@@ -411,8 +411,9 @@ static void ccmp_special_blocks(struct sk_buff *skb, u8 *pn, u8 *b_0, u8 *aad,
 	memcpy(&b_0[2], hdr->addr2, ETH_ALEN);
 	memcpy(&b_0[8], pn, IEEE80211_CCMP_PN_LEN);
 }
+EXPORT_SYMBOL_GPL(ieee80211_ccmp_special_blocks);
 
-static inline void ccmp_pn2hdr(u8 *hdr, u8 *pn, int key_id)
+void ieee80211_ccmp_pn2hdr(u8 *hdr, u8 *pn, int key_id)
 {
 	hdr[0] = pn[5];
 	hdr[1] = pn[4];
@@ -423,9 +424,9 @@ static inline void ccmp_pn2hdr(u8 *hdr, u8 *pn, int key_id)
 	hdr[6] = pn[1];
 	hdr[7] = pn[0];
 }
+EXPORT_SYMBOL_GPL(ieee80211_ccmp_pn2hdr);
 
-
-static inline void ccmp_hdr2pn(u8 *pn, u8 *hdr)
+void ieee80211_ccmp_hdr2pn(u8 *pn, u8 *hdr)
 {
 	pn[0] = hdr[7];
 	pn[1] = hdr[6];
@@ -434,6 +435,7 @@ static inline void ccmp_hdr2pn(u8 *pn, u8 *hdr)
 	pn[4] = hdr[1];
 	pn[5] = hdr[0];
 }
+EXPORT_SYMBOL_GPL(ieee80211_ccmp_hdr2pn);
 
 
 static int ccmp_encrypt_skb(struct ieee80211_tx_data *tx, struct sk_buff *skb,
@@ -493,14 +495,14 @@ static int ccmp_encrypt_skb(struct ieee80211_tx_data *tx, struct sk_buff *skb,
 	pn[1] = pn64 >> 32;
 	pn[0] = pn64 >> 40;
 
-	ccmp_pn2hdr(pos, pn, key->conf.keyidx);
+	ieee80211_ccmp_pn2hdr(pos, pn, key->conf.keyidx);
 
 	/* hwaccel - with software CCMP header */
 	if (info->control.hw_key)
 		return 0;
 
 	pos += IEEE80211_CCMP_HDR_LEN;
-	ccmp_special_blocks(skb, pn, b_0, aad,
+	ieee80211_ccmp_special_blocks(skb, pn, b_0, aad,
 			    key->conf.flags & IEEE80211_KEY_FLAG_SPP_AMSDU);
 	return ieee80211_aes_ccm_encrypt(key->u.ccmp.tfm, b_0, aad, pos, len,
 					 skb_put(skb, mic_len));
@@ -564,7 +566,7 @@ ieee80211_crypto_ccmp_decrypt(struct ieee80211_rx_data *rx,
 	if (!(status->flag & RX_FLAG_PN_VALIDATED)) {
 		int res;
 
-		ccmp_hdr2pn(pn, skb->data + hdrlen);
+		ieee80211_ccmp_hdr2pn(pn, skb->data + hdrlen);
 
 		queue = rx->security_idx;
 
@@ -580,7 +582,7 @@ ieee80211_crypto_ccmp_decrypt(struct ieee80211_rx_data *rx,
 			u8 aad[2 * AES_BLOCK_SIZE];
 			u8 b_0[AES_BLOCK_SIZE];
 			/* hardware didn't decrypt/verify MIC */
-			ccmp_special_blocks(skb, pn, b_0, aad,
+			ieee80211_ccmp_special_blocks(skb, pn, b_0, aad,
 					    key->conf.flags & IEEE80211_KEY_FLAG_SPP_AMSDU);
 
 			if (ieee80211_aes_ccm_decrypt(
@@ -605,7 +607,7 @@ ieee80211_crypto_ccmp_decrypt(struct ieee80211_rx_data *rx,
 	return RX_CONTINUE;
 }
 
-static void gcmp_special_blocks(struct sk_buff *skb, u8 *pn, u8 *j_0, u8 *aad,
+void ieee80211_gcmp_special_blocks(struct sk_buff *skb, u8 *pn, u8 *j_0, u8 *aad,
 				bool spp_amsdu)
 {
 	struct ieee80211_hdr *hdr = (void *)skb->data;
@@ -615,8 +617,9 @@ static void gcmp_special_blocks(struct sk_buff *skb, u8 *pn, u8 *j_0, u8 *aad,
 
 	ccmp_gcmp_aad(skb, aad, spp_amsdu);
 }
+EXPORT_SYMBOL_GPL(ieee80211_gcmp_special_blocks);
 
-static inline void gcmp_pn2hdr(u8 *hdr, const u8 *pn, int key_id)
+void ieee80211_gcmp_pn2hdr(u8 *hdr, const u8 *pn, int key_id)
 {
 	hdr[0] = pn[5];
 	hdr[1] = pn[4];
@@ -627,8 +630,9 @@ static inline void gcmp_pn2hdr(u8 *hdr, const u8 *pn, int key_id)
 	hdr[6] = pn[1];
 	hdr[7] = pn[0];
 }
+EXPORT_SYMBOL_GPL(ieee80211_gcmp_pn2hdr);
 
-static inline void gcmp_hdr2pn(u8 *pn, const u8 *hdr)
+void ieee80211_gcmp_hdr2pn(u8 *pn, const u8 *hdr)
 {
 	pn[0] = hdr[7];
 	pn[1] = hdr[6];
@@ -637,6 +641,7 @@ static inline void gcmp_hdr2pn(u8 *pn, const u8 *hdr)
 	pn[4] = hdr[1];
 	pn[5] = hdr[0];
 }
+EXPORT_SYMBOL_GPL(ieee80211_gcmp_hdr2pn);
 
 static int gcmp_encrypt_skb(struct ieee80211_tx_data *tx, struct sk_buff *skb)
 {
@@ -695,14 +700,14 @@ static int gcmp_encrypt_skb(struct ieee80211_tx_data *tx, struct sk_buff *skb)
 	pn[1] = pn64 >> 32;
 	pn[0] = pn64 >> 40;
 
-	gcmp_pn2hdr(pos, pn, key->conf.keyidx);
+	ieee80211_gcmp_pn2hdr(pos, pn, key->conf.keyidx);
 
 	/* hwaccel - with software GCMP header */
 	if (info->control.hw_key)
 		return 0;
 
 	pos += IEEE80211_GCMP_HDR_LEN;
-	gcmp_special_blocks(skb, pn, j_0, aad,
+	ieee80211_gcmp_special_blocks(skb, pn, j_0, aad,
 			    key->conf.flags & IEEE80211_KEY_FLAG_SPP_AMSDU);
 	return ieee80211_aes_gcm_encrypt(key->u.gcmp.tfm, j_0, aad, pos, len,
 					 skb_put(skb, IEEE80211_GCMP_MIC_LEN));
@@ -761,7 +766,7 @@ ieee80211_crypto_gcmp_decrypt(struct ieee80211_rx_data *rx)
 	if (!(status->flag & RX_FLAG_PN_VALIDATED)) {
 		int res;
 
-		gcmp_hdr2pn(pn, skb->data + hdrlen);
+		ieee80211_gcmp_hdr2pn(pn, skb->data + hdrlen);
 
 		queue = rx->security_idx;
 
@@ -777,7 +782,7 @@ ieee80211_crypto_gcmp_decrypt(struct ieee80211_rx_data *rx)
 			u8 aad[2 * AES_BLOCK_SIZE];
 			u8 j_0[AES_BLOCK_SIZE];
 			/* hardware didn't decrypt/verify MIC */
-			gcmp_special_blocks(skb, pn, j_0, aad,
+			ieee80211_gcmp_special_blocks(skb, pn, j_0, aad,
 					    key->conf.flags & IEEE80211_KEY_FLAG_SPP_AMSDU);
 
 			if (ieee80211_aes_gcm_decrypt(
