@@ -2124,7 +2124,9 @@ cleanup:
 	spin_lock_bh(&ar->ab->base_lock);
 	ar->ab->free_vdev_map |= 1LL << (ar->monitor_vdev_id);
 	spin_unlock_bh(&ar->ab->base_lock);
+	spin_lock_bh(&ar->data_lock);
 	list_del(&arvif->list);
+	spin_unlock_bh(&ar->data_lock);
 #ifdef CPTCFG_ATH12K_SPECTRAL
 	mutex_unlock(&ar->spectral.vdev_lock);
 #endif
