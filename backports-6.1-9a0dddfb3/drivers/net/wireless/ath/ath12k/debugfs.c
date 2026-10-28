@@ -111,6 +111,36 @@ ath12k_debugfs_create_file(const char *name, umode_t mode,
 }
 EXPORT_SYMBOL(ath12k_debugfs_create_file);
 
+static int ath12k_debugfs_state_check_ab(struct ath12k_base *ab)
+{
+	if (!ath12k_cmd_accepted(ab->ag)) {
+		ath12k_info(ab, "debugfs cmd rejected: bypass/SSR in progress\n");
+		return -EBUSY;
+	}
+
+	if (ab->is_bypassed) {
+		ath12k_info(ab, "Device is in Bypass state, skipping cmd\n");
+		return -EPERM;
+	}
+
+	if (atomic_read(&ab->wsi_remap_in_progress)) {
+		pr_info("athdbg: device is undergoing wsi remap, skipping cmd\n");
+		return -EPERM;
+	}
+
+	if (test_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags)) {
+		ath12k_info(ab, "Device is in recovery, skipping cmd\n");
+		return -EBUSY;
+	}
+
+	return 0;
+}
+
+static int ath12k_debugfs_state_check(struct ath12k *ar)
+{
+	return ath12k_debugfs_state_check_ab(ar->ab);
+}
+
 static ssize_t ath12k_read_sensitivity_level(struct file *file,
 					     char __user *user_buf,
 					     size_t count, loff_t *ppos)
@@ -2457,15 +2487,9 @@ static int ath12k_open_tpc_stats(struct inode *inode, struct file *file)
 	struct ath12k_hw *ah = ath12k_ar_to_ah(ar);
 	int ret;
 
-	if (ar->ab->is_bypassed) {
-		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "device is in bypassed state\n");
-		return -EPERM;
-	}
-
-	if (atomic_read(&ar->ab->wsi_remap_in_progress)) {
-		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "device is undergoing wsi remap\n");
-		return -EPERM;
-	}
+	ret = ath12k_debugfs_state_check(ar);
+	if (ret)
+		return ret;
 
 	guard(wiphy)(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -4534,10 +4558,9 @@ static int ath12k_open_vdev_stats(struct inode *inode, struct file *file)
 	void *buf;
 	int ret;
 
-	if (ar->ab->is_bypassed) {
-		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "device is in bypassed state\n");
-		return -EPERM;
-	}
+	ret = ath12k_debugfs_state_check(ar);
+	if (ret)
+		return ret;
 
 	guard(wiphy)(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -4604,10 +4627,9 @@ static int ath12k_open_vdev_extd_stats(struct inode *inode, struct file *file)
 	void *buf;
 	int ret;
 
-	if (ar->ab->is_bypassed) {
-		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "device is in bypassed state\n");
-		return -EPERM;
-	}
+	ret = ath12k_debugfs_state_check(ar);
+	if (ret)
+		return ret;
 
 	guard(wiphy)(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -4675,10 +4697,9 @@ static int ath12k_open_bcn_stats(struct inode *inode, struct file *file)
 	void *buf;
 	int ret;
 
-	if (ar->ab->is_bypassed) {
-		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "device is in bypassed state\n");
-		return -EPERM;
-	}
+	ret = ath12k_debugfs_state_check(ar);
+	if (ret)
+		return ret;
 
 	guard(wiphy)(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -4754,10 +4775,9 @@ static int ath12k_open_pdev_stats(struct inode *inode, struct file *file)
 	void *buf;
 	int ret;
 
-	if (ar->ab->is_bypassed) {
-		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "device is in bypassed state\n");
-		return -EPERM;
-	}
+	ret = ath12k_debugfs_state_check(ar);
+	if (ret)
+		return ret;
 
 	guard(wiphy)(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -7613,11 +7633,11 @@ static int ath12k_debugfs_hal_dump_srng_stats_open(struct inode *inode, struct f
 	struct ath12k_base *ab = inode->i_private;
 	struct ath12k_srng_stats_priv *priv;
 	const int size = 4096 * 6;
+	int ret;
 
-	if (ab->is_bypassed) {
-		ath12k_dbg(ab, ATH12K_DBG_MAC, "device is in bypassed state\n");
-		return -EPERM;
-	}
+	ret = ath12k_debugfs_state_check_ab(ab);
+	if (ret)
+		return ret;
 
 	priv = kzalloc(sizeof(*priv), GFP_KERNEL);
 	if (!priv)
