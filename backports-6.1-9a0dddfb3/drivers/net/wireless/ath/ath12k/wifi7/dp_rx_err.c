@@ -273,6 +273,8 @@ static void ath12k_wifi7_handle_oor_frame(struct ath12k_pdev_dp *dp_pdev,
 	}
 }
 
+#define ETH_P_1905 0x893a
+
 static bool ath12k_wifi7_handle_null_queue(struct ath12k_pdev_dp *dp_pdev,
 					   struct ath12k_dp_peer *peer,
 					   u8 tid,
@@ -293,6 +295,8 @@ static bool ath12k_wifi7_handle_null_queue(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_vif *ahvif;
 #endif /* CPTCFG_QCN_EXTN */
 	bool allow_3addr_mc = false;
+	struct sk_buff *msdu = spd_desc_l->msdu;
+	struct ethhdr *ehdr;
 
 	/* Packet arrived on a TID whose REO queue was not set up
 	 * (DESC_ADDR_ZERO). Set up the queue now so subsequent packets
@@ -333,6 +337,7 @@ static bool ath12k_wifi7_handle_null_queue(struct ath12k_pdev_dp *dp_pdev,
 
 	switch (spd_desc_l->tlv_info.decap) {
 	case DP_RX_DECAP_TYPE_ETHERNET2_DIX:
+		ehdr = (struct ethhdr *)msdu->data;
 		if (!peer)
 			return true;
 #ifdef CPTCFG_QCN_EXTN
@@ -343,7 +348,8 @@ static bool ath12k_wifi7_handle_null_queue(struct ath12k_pdev_dp *dp_pdev,
 		}
 #endif
 		is_4addr_sta = peer->vdev_type_4addr & BIT(NL80211_IFTYPE_STATION);
-		if (is_4addr_sta && is_mcbc && !to_ds && !allow_3addr_mc)
+		if (is_4addr_sta && is_mcbc && !to_ds && !allow_3addr_mc &&
+		    ehdr->h_proto != cpu_to_be16(ETH_P_1905))
 			return true;
 
 		if (peer)
