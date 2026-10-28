@@ -160,7 +160,11 @@ struct ath12k_ppdu_rx_stats_info;
 
 #define ATH12K_NUM_SU_USER	1
 
+#ifndef CPTCFG_QCN_EXTN
 #define ATH12K_DP_TX_MONITOR_RING_FILL_LVL_MIN	256
+#else
+#define ATH12K_DP_TX_MONITOR_RING_FILL_LVL_MIN ATH12K_DP_TX_MONITOR_BUF_RING_FILL_LVL_MIN
+#endif
 
 struct ath12k_mon_data;
 struct dp_mon_rx_filter;
