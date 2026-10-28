@@ -22,6 +22,7 @@ struct ath12k_base;
 struct ath12k_vif;
 struct ath12k_vlan_iface;
 struct ath12k_link_sta;
+struct ath12k_srng_dump_filter;
 
 enum ppeds_irq_type {
 	PPEDS_IRQ_PPE2TCL,
@@ -150,6 +151,10 @@ struct ath12k_ppeds_arch_ops {
 			struct ath12k_link_vif *arvif,
 			struct ath12k_dp_ppe_vp_profile *vp_profile,
 			u8 *bank_id, u8 *lmac_id);
+	ssize_t (*ath12k_dp_ppeds_dump_srng_stats)(struct ath12k_dp *dp,
+						   const struct ath12k_srng_dump_filter
+						   *filter,
+						   char *buf, int size);
 };
 
 struct ath12k_ppeds_napi {

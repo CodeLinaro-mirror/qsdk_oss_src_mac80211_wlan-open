@@ -14,6 +14,7 @@
 
 struct ath12k_base;
 struct ath12k_dp;
+struct ath12k_srng_dump_filter;
 struct hal_rx_reo_queue;
 struct hal_reo_dest_ring;
 struct hal_rx_spd_data;
@@ -1989,6 +1990,11 @@ int ath12k_hal_srng_setup_idx(struct ath12k_base *ab, enum hal_ring_type type,
 			      u32 restore_idx);
 void ath12k_hal_dump_srng_stats(struct ath12k_base *ab);
 ssize_t ath12k_debugfs_hal_dump_srng_stats(struct ath12k_base *ab, char *buf, int size);
+ssize_t ath12k_hal_dump_ring_stats(struct ath12k_base *ab,
+				   enum hal_ring_type type,
+				   int ring_id,
+				   const struct ath12k_srng_dump_filter *filter,
+				   char *buf, int size);
 void ath12k_hal_srng_get_shadow_config(struct ath12k_base *ab,
 				       u32 **cfg, u32 *len);
 int ath12k_hal_srng_update_shadow_config(struct ath12k_base *ab,
@@ -2070,8 +2076,6 @@ void ath12k_hal_rx_msdu_list_get(struct ath12k_hal *hal,
 				 u16 *num_msdus);
 u8 ath12k_hal_rx_h_l3pad_get(struct ath12k_hal *hal,
 			     struct hal_rx_desc *desc);
-ssize_t ath12k_hal_dump_ring_stats(struct ath12k_base *ab, enum hal_ring_type type,
-				   int ring_id, char *buf, int size);
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 ssize_t ath12k_hal_dump_ipa_ring_stats(struct ath12k_base *ab, enum hal_ring_type type,
 				       int ring_id, const char *ring_name,

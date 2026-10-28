@@ -932,6 +932,7 @@ static int ath12k_wifi8_dp_op_device_init(struct ath12k_dp *dp)
 	dp->htt_tx_mon_cfg_version = 1; /* wifi8 (Boron) extended message layout */
 
 	dp_wifi8->dp_ppe2wbm_use_dedicated_pool = DP_PPE2WBM_DEDICATED_POOL;
+
 	if (dp_wifi8->dp_ppe2wbm_use_dedicated_pool)
 		dp_wifi8->num_ppe2wbm_refill_rings = DP_PPE2WBM_REFILL_RING_MAX;
 	else
@@ -1306,6 +1307,7 @@ static ssize_t ath12k_wifi8_dump_device_dp_stats(struct ath12k_dp *dp,
 }
 
 static ssize_t ath12k_wifi8_dump_srng_stats(struct ath12k_dp *dp,
+					    const struct ath12k_srng_dump_filter *filter,
 					    char *buf, int size)
 {
 	int len = 0;
@@ -1314,40 +1316,44 @@ static ssize_t ath12k_wifi8_dump_srng_stats(struct ath12k_dp *dp,
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
 
 	for (i = 0; i < ab->hw_params->max_tx_ring; i++)
-		len += ath12k_hal_dump_ring_stats(ab, HAL_TX_COMPLETION,
+		len += ath12k_hal_dump_ring_stats(ab,
+						  HAL_TX_COMPLETION,
 						  dp->tx_ring[i].tcl_comp_ring.ring_id,
-						  buf + len, size - len);
+						  filter, buf + len, size - len);
 
 	for (i = 0; i < DP_WBM_REFILL_RING_MAX; i++)
-		len += ath12k_hal_dump_ring_stats(ab, HAL_WBM_BUF,
+		len += ath12k_hal_dump_ring_stats(ab,
+						  HAL_WBM_BUF,
 						  dp_wifi8->wbm_refill_ring[i].ring_id,
-						  buf + len, size - len);
+						  filter, buf + len, size - len);
 
 	len += ath12k_hal_dump_ring_stats(ab, HAL_WBM_IDLE_BUF,
 					  dp_wifi8->wbm_idle_buf_ring.ring_id,
-					  buf + len, size - len);
+					  filter, buf + len, size - len);
 
 	len += ath12k_hal_dump_ring_stats(ab, HAL_TX_EXCEPTION,
 					  dp_wifi8->tx_exception.ring_id,
-					  buf + len, size - len);
+					  filter, buf + len, size - len);
 
 	len += ath12k_hal_dump_ring_stats(ab, HAL_TCL_CMD,
 					  dp_wifi8->tcl_cmd_ring.ring_id,
-					  buf + len, size - len);
+					  filter, buf + len, size - len);
 
 	len += ath12k_hal_dump_ring_stats(ab, HAL_TCL_STATUS,
 					  dp_wifi8->tcl_status_ring.ring_id,
-					  buf + len, size - len);
+					  filter, buf + len, size - len);
 
 	len += ath12k_hal_dump_ring_stats(ab, HAL_PEER_TX_TELEMETRY,
 					  dp_wifi8->tx_peer_telemetry_ring.ring_id,
-					  buf + len, size - len);
+					  filter, buf + len, size - len);
 
 	len += ath12k_hal_dump_ring_stats(ab, HAL_PEER_RX_TELEMETRY,
 					  dp_wifi8->rx_peer_telemetry_ring.ring_id,
-					  buf + len, size - len);
+					  filter, buf + len, size - len);
 
-	len += ath12k_wifi8_dump_ipa_ring_stats(ab, dp_wifi8, buf + len, size - len);
+	if (filter->dump_all)
+		len += ath12k_wifi8_dump_ipa_ring_stats(ab, dp_wifi8, buf + len,
+							size - len);
 
 	return len;
 }
