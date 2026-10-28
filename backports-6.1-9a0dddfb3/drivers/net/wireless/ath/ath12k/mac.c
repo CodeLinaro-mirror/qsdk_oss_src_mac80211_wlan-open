@@ -15161,6 +15161,13 @@ static int ath12k_mac_station_add(struct ath12k *ar,
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
+	if (!ab->hw_params->vdev_start_delay && !arvif->is_started) {
+		ath12k_err(ar->ab, "[radio_idx : %u] Station link - %pM MLD - %pM addition failed since vdev - link %pM MLD %pM vdev_type=%u is not yet started\n",
+			   ar->radio_idx, arsta->addr, sta->addr, arvif->addr,
+			   vif->addr, ahvif->vdev_type);
+		return -EOPNOTSUPP;
+	}
+
 	if (arvif->peer_del_all_enable) {
 		ath12k_dbg(ab, ATH12K_DBG_MAC,
 			   "rejecting peer add %pM on vdev %d: link teardown in progress\n",
