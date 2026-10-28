@@ -1044,6 +1044,9 @@ void ath12k_wifi8_convert_n_deliver_nw_frame(struct ath12k_pdev_dp *dp_pdev,
 	struct sk_buff *msdu = rx_spd->msdu;
 	struct ieee80211_sta *pubsta = NULL;
 	u8 *rx_tlv_hdr;
+#ifdef CPTCFG_QCN_EXTN
+	bool is_extap;
+#endif
 	bool ret;
 
 	rx_msdu_info = &rx_spd->rx_msdu_info;
@@ -1080,19 +1083,35 @@ void ath12k_wifi8_convert_n_deliver_nw_frame(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 #ifdef CPTCFG_QCN_EXTN
-	if (unlikely(ath12k_dp_peer_feature_enabled(peer, DP_PEER_FEATURE_EXTAP))) {
+	is_extap = ath12k_dp_peer_feature_enabled(peer, DP_PEER_FEATURE_EXTAP);
+	if (unlikely(is_extap) && peer->dev) {
 		struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(peer->vif);
+		int extap_ret = ahvif ? ath12k_extap_rx(ahvif, msdu) : EXTAP_RX_BYPASS;
 
-		if (ahvif && ath12k_extap_rx(ahvif, msdu) > 0) {
-			struct ath12k_link_vif *arvif;
-			u8 link_id = rx_mpdu_info->src_link_id;
+		switch (extap_ret) {
+		case 0:
+			/* Converted — DMAC rewritten, deliver to stack */
+			msdu->dev = peer->dev;
+			ath12k_dp_rx_update_eapol_stats(dp_pdev->dp, msdu);
+			msdu->protocol = eth_type_trans(msdu, peer->dev);
+			napi_gro_receive(napi, msdu);
+			return;
+		case EXTAP_RX_DROP:
+			/* Drop */
+			if (ahvif) {
+				struct ath12k_link_vif *arvif;
+				u8 link_id = rx_mpdu_info->src_link_id;
 
-			arvif = rcu_dereference(ahvif->link[link_id]);
-			if (arvif)
-				arvif->link_stats.rx_dropped++;
-
+				arvif = rcu_dereference(ahvif->link[link_id]);
+				if (arvif)
+					arvif->link_stats.rx_dropped++;
+			}
 			dev_kfree_skb_any(msdu);
 			return;
+		case EXTAP_RX_BYPASS:
+		default:
+			/* Bypass — undecap_eth + ieee80211_rx_napi below */
+			break;
 		}
 	}
 #endif
