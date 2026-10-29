@@ -216,10 +216,39 @@ static int ath12k_wifi7_wsi_bypass_add(struct ath12k_base *ab,
 	return 0;
 }
 
+static void ath12k_wifi7_notify_partner_chip_power_state(struct ath12k_base *asserted_ab,
+							 u8 power_state)
+{
+	struct ath12k_base *ab;
+	struct ath12k_hw_group *ag = asserted_ab->ag;
+	int i, ret;
+
+	for (i = 0; i < ag->num_devices; i++) {
+		ab = ag->ab[i];
+
+		if (ab == asserted_ab || ab->is_bypassed)
+			continue;
+
+		/* Though PARTNER_CHIP_STATE_INFO QMI is applicable only to PCI-based
+		 * chipsets, peer creation failures can occur for any new MLO peers
+		 * during this window. Hence, block the creation of any new MLO peers
+		 * regardless of the bus type.
+		 */
+		if (ab->hif.bus == ATH12K_BUS_PCI) {
+			ret = ath12k_qmi_partner_chip_power_info_send(ab, power_state);
+			if (ret)
+				ath12k_err(ab, "Failed to send the power state for the chip\n");
+		}
+	}
+
+	ag->block_peer_create = (power_state == FW_ASSERTED_CHIP_PWR_DOWN);
+}
+
 const struct ath12k_cp_arch_ops ath12k_wifi7_cp_ops = {
 	.wsi_bypass_remove = ath12k_wifi7_wsi_bypass_remove,
 	.wsi_bypass_add    = ath12k_wifi7_wsi_bypass_add,
 	.en_ssr            = ath12k_core_send_fw_hang_cmd,
+	.notify_partner_chip_power_state = ath12k_wifi7_notify_partner_chip_power_state,
 };
 
 static int ath12k_wifi7_init(void)
