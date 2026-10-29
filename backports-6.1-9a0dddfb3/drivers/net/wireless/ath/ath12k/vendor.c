@@ -10905,6 +10905,12 @@ ath12k_vendor_set_rtt_responder_role(struct wireless_dev *wdev,
 
 	ar = arvif->ar;
 
+	if (role & (ATH12K_RTT_11AZ_NTB_RESPONDER_ROLE |
+		    ATH12K_RTT_11AZ_TB_RESPONDER_ROLE) &&
+	    !ath12k_11az_responder_enabled(ar->ab)) {
+		return -EOPNOTSUPP;
+	}
+
 	if (role) {
 		supported_role = ath12k_supported_rtt_responder_roles(ar->ab);
 		role &= supported_role;

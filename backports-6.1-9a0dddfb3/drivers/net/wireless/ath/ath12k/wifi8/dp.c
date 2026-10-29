@@ -38,6 +38,16 @@
 
 extern struct ppe_ds_wlan_ops_v2 ppeds_wifi8_wlanops_v2;
 
+#ifndef CPTCFG_EXT_IPA_OFFLOAD
+static inline ssize_t
+ath12k_wifi8_dump_ipa_ring_stats(struct ath12k_base *ab,
+				  struct ath12k_dp_wifi8 *dp_wifi8,
+				  char *buf, int size)
+{
+	return 0;
+}
+#endif /* CPTCFG_EXT_IPA_OFFLOAD */
+
 static int ath12k_wifi8_non_cumac_dp_service_srng(struct ath12k_dp *dp,
 						  struct ath12k_ext_irq_grp *irq_grp,
 						  int budget)
@@ -1336,6 +1346,8 @@ static ssize_t ath12k_wifi8_dump_srng_stats(struct ath12k_dp *dp,
 	len += ath12k_hal_dump_ring_stats(ab, HAL_PEER_RX_TELEMETRY,
 					  dp_wifi8->rx_peer_telemetry_ring.ring_id,
 					  buf + len, size - len);
+
+	len += ath12k_wifi8_dump_ipa_ring_stats(ab, dp_wifi8, buf + len, size - len);
 
 	return len;
 }

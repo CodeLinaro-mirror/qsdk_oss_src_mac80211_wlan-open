@@ -1627,7 +1627,7 @@ static int ath12k_wifi8_dp_mmesh_tx(struct ieee80211_hw *hw,
 		skb_pull(skb, ahvif->dp_vif.dp_extn.mhdr_len);
 
 		if (arvif->key_cipher != INVALID_CIPHER &&
-		    (mhdr->flags & METAHDR_FLAG_NOENCRYPT))
+		    !(mhdr->flags & METAHDR_FLAG_ENCRYPT))
 			no_enc_frame = 1;
 
 		if (mhdr->flags & METAHDR_FLAG_NOQOS)
@@ -1908,6 +1908,8 @@ static void ath12k_wifi8_mac_op_sta_set_4addr(struct ieee80211_hw *hw,
 
 			ath12k_wifi8_dp_vif_update_4addr(&ah->dp_hw, &ahvif->dp_vif,
 							 sta);
+			ATH12K_WIFI8_DP_IPA_WDS_BANK_SETUP(ah, ahvif);
+			ATH12K_DP_IPA_WDS_APVLAN_CONNECT(hw, ahvif);
 		}
 	}
 }
@@ -1961,6 +1963,21 @@ static int ath12k_wifi8_smd_ensure_tx_tid_queues(struct ath12k_base *ab,
 			   "SMD DL alloc: failed to alloc udp tx queue for peer %pM tid %u err %d\n",
 			   peer_addr, tid, ret);
 	return ret;
+}
+
+static void ath12k_wifi8_smd_cache_dl_ctx(struct ath12k_sta *ahsta, u8 tid,
+					  const struct ath12k_tx_smd_ctx_per_tid *tx_tid,
+					  u16 ba_buf_size)
+{
+	u16 lsn_offset = tx_tid->lsn_offset;
+
+	if (lsn_offset == ATH12K_SMD_INVALID_MLSN_OFFSET ||
+	    lsn_offset > ATH12K_SMD_BA_WIN_SIZE_MAX)
+		lsn_offset = 0;
+
+	ahsta->smd_info.sn[tid] = tx_tid->ssn + lsn_offset;
+	ahsta->smd_info.lsn_offset[tid] = lsn_offset;
+	ahsta->smd_info.tx_ba_buf_size[tid] = ba_buf_size;
 }
 
 static int ath12k_wifi8_mac_op_set_smd_ctx(struct ieee80211_hw *hw,
@@ -2064,22 +2081,22 @@ static int ath12k_wifi8_mac_op_set_smd_ctx(struct ieee80211_hw *hw,
 				 tid, tx_tid.ssn, ctx->pn_len,
 				 ctx->pn_len, tx_tid.pn_number, ba_buf_size);
 
-		/*
-		 * Skip TQM queue setup, TQM SN/PN update and WMI roam config
-		 * state for TIDs with no active BA session on the SAP
-		 * (ba_buf_size == 0).  There is no queue to seed and sending
-		 * zero ba_window_size to firmware for these TIDs is spurious.
+		/* Default TIDs have an MPDUQ from peer creation and still need
+		 * their SSN/PN seeded even when the SAP did not export BA
+		 * context.  Non-default TIDs without BA have no queue to seed.
 		 */
-		if (!ba_buf_size)
+		if (!ba_buf_size && !(ATH12K_DEFAULT_TID_MAP & BIT(tid)))
 			continue;
 
-		ret = ath12k_wifi8_smd_ensure_tx_tid_queues(ab, dp, dp_hw, vif,
-							    sta->addr, tid);
-		if (ret) {
-			ath12k_err(ab,
-				   "Failed to ensure TX queues for SMD DL ctx peer %pM tid: %d err: %d",
-				   sta->addr, tid, ret);
-			continue;
+		if (ba_buf_size) {
+			ret = ath12k_wifi8_smd_ensure_tx_tid_queues(ab, dp, dp_hw, vif,
+								    sta->addr, tid);
+			if (ret) {
+				ath12k_err(ab,
+					   "Failed to ensure TX queues for SMD DL ctx peer %pM tid: %d err: %d",
+					   sta->addr, tid, ret);
+				continue;
+			}
 		}
 
 		ret = ath12k_dp_arch_peer_tx_tid_update_for_smd(dp, dp_hw, vif,
@@ -2091,13 +2108,8 @@ static int ath12k_wifi8_mac_op_set_smd_ctx(struct ieee80211_hw *hw,
 			continue;
 		}
 
-		/* for WMI smd roam config cmd — written only after TQM is
-		 * seeded so firmware receives state that reflects what TQM
-		 * was actually programmed with.
-		 */
-		ahsta->smd_info.sn[tid] = tx_tid.ssn + tx_tid.lsn_offset;
-		ahsta->smd_info.lsn_offset[tid] = tx_tid.lsn_offset;
-		ahsta->smd_info.tx_ba_buf_size[tid] = ba_buf_size;
+		ath12k_wifi8_smd_cache_dl_ctx(ahsta, tid, &tx_tid,
+					      ba_buf_size);
 	}
 
 	/* Vendor context */

@@ -18,6 +18,9 @@
 #include <linux/of_address.h>
 #include <linux/ioport.h>
 #include <linux/devcoredump.h>
+#ifdef CPTCFG_QCN_EXTN
+#include "qcn_extns/ini.h"
+#endif /* CPTCFG_QCN_EXTN */
 
 #ifdef CPTCFG_ATHDEBUG
 #include "athdbg_if.h"
@@ -3913,7 +3916,11 @@ int ath12k_qmi_host_cap_send(struct ath12k_base *ab)
 	req.bdf_support_valid = 1;
 	req.bdf_support = 1;
 	req.mem_profile_mode_valid = 1;
+#ifdef CPTCFG_QCN_EXTN
+	req.mem_profile_mode = ab->qmi.mem_profile_mode;
+#else
 	req.mem_profile_mode = ath12k_active_mem_profile;
+#endif
 
 	if (ab->hw_params->fw.m3_loader == ath12k_m3_fw_loader_driver) {
 		req.m3_support_valid = 1;
@@ -7561,6 +7568,9 @@ int ath12k_qmi_init_service(struct ath12k_base *ab)
 {
 	int ret;
 	int tgt_mem_mode;
+#ifdef CPTCFG_QCN_EXTN
+	u32 ini_mem_mode;
+#endif
 
 	memset(&ab->qmi.target, 0, sizeof(struct target_info));
 	memset(&ab->qmi.target_mem, 0, sizeof(struct target_mem_chunk));
@@ -7570,6 +7580,18 @@ int ath12k_qmi_init_service(struct ath12k_base *ab)
 		ab->qmi.target_mem_mode = tgt_mem_mode;
 	else
 		ab->qmi.target_mem_mode = ATH12K_QMI_TARGET_MEM_MODE;
+
+#ifdef CPTCFG_QCN_EXTN
+	ini_mem_mode = ath12k_cfg_get(ab, ATH12K_CFG_TARGET_MEM_MODE);
+	if (ini_mem_mode != ATH12K_CFG_MEM_MODE_UNSET)
+		ab->qmi.target_mem_mode = ini_mem_mode;
+
+	ini_mem_mode = ath12k_cfg_get(ab, ATH12K_CFG_MEM_PROFILE_MODE);
+	if (ini_mem_mode != ATH12K_CFG_MEM_MODE_UNSET)
+		ab->qmi.mem_profile_mode = ini_mem_mode;
+	else
+		ab->qmi.mem_profile_mode = ath12k_active_mem_profile;
+#endif
 
 	ret = ath12k_hif_set_qrtr_endpoint_id(ab);
 	if (ret) {

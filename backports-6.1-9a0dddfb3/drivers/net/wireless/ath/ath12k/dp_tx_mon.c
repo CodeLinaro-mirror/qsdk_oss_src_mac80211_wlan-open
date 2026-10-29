@@ -3327,6 +3327,13 @@ int ath12k_dp_mon_tx_ext_mon_deliver(struct ath12k_pdev_dp *dp_pdev,
 	return NOTIFY_DONE;
 #endif /* CPTCFG_QCN_EXTN */
 }
+static bool
+ath12k_dp_mon_tx_is_legacy_rate(struct hal_tx_mon_ppdu_info *ppdu_info)
+{
+	return !ppdu_info->rx_status.ht_flags && !ppdu_info->rx_status.vht_flags &&
+	       !ppdu_info->rx_status.he_flags && !ppdu_info->rx_status.eht_flags;
+}
+
 /**
  * ath12k_dp_mon_tx_deliver_frame() - Helper to deliver single frame to monitor stack
  * @dp_pdev: ath12k pdev dp context
@@ -3384,7 +3391,7 @@ ath12k_dp_mon_tx_deliver_frame(struct ath12k_pdev_dp *dp_pdev,
 		return;
 	}
 
-	if (!ieee80211_is_data_qos(cpu_to_le16(ppdu_info->rx_status.frame_control))) {
+	if (ath12k_dp_mon_tx_is_legacy_rate(ppdu_info)) {
 		status.n_rates = ATH12K_RATE_STATUS_N_RATES;
 		status.rates = &rate_status;
 		ath12k_dp_mon_tx_fill_rate_status(dp_pdev, ppdu_info, &status);
@@ -5062,6 +5069,7 @@ void ath12k_dp_mon_tx_buff_free(struct ath12k_dp *dp)
 		}
 		ath12k_dp_mon_desc_reset(&dp_tx_mon->tx_mon_desc_pool[i]);
 	}
+	ath12k_dp_mon_page_frag_cache_drain(&dp_tx_mon->tx_mon_pf_cache);
 
 	spin_unlock_bh(&dp_tx_mon->tx_mon_desc_lock);
 }
@@ -6400,6 +6408,8 @@ ath12k_dp_ext_mon_update_tx_config(struct ath12k_pdev_mon_dp *dp_mon_pdev,
 			ath12k_dp_ext_mon_is_mode_enabled(&new_config->all_peer);
 		curr_config->fpmo_enabled =
 			ath12k_dp_ext_mon_is_mode_enabled(&new_config->target_peer);
+		curr_config->fp_enabled |=
+			ath12k_dp_ext_mon_is_status_filter_set(&new_config->all_peer);
 		curr_config->monitor_flags = new_config->monitor_flags;
 		curr_config->metadata = new_config->meta_data;
 		curr_config->enable = true;

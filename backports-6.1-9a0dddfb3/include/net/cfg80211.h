@@ -1360,6 +1360,15 @@ int cfg80211_chandef_primary(const struct cfg80211_chan_def *chandef,
 			     u16 *punctured);
 
 /**
+ * cfg80211_chandef_primary_40 - calculate the primary 40 MHz channel center
+ * @chandef: chandef to calculate for
+ *
+ * Returns: the primary 40 MHz channel center frequency, or -1 if the
+ * secondary 20 MHz channel in the primary 40 MHz segment is punctured.
+ */
+int cfg80211_chandef_primary_40(const struct cfg80211_chan_def *chandef);
+
+/**
  * nl80211_send_chandef - sends the channel definition.
  * @msg: the msg to send channel definition
  * @chandef: the channel definition to check
@@ -7569,6 +7578,9 @@ struct wiphy {
 
 #ifdef CPTCFG_QCN_EXTN
 	bool allow_scan_on_dfs_chan;
+	void (*background_cac_event)(struct wiphy *wiphy,
+				     const struct cfg80211_chan_def *chandef,
+				     enum nl80211_radar_event event);
 #endif /* CPTCFG_QCN_EXTN */
 
 	char fw_version[ETHTOOL_FWVERS_LEN];

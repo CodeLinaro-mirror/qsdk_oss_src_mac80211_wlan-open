@@ -40,7 +40,8 @@ struct ath12k_tx_sw_metadata {
 	    len        : 16,
 	    hw_link_id : 5,
 	    mmesh      : 1,
-	    rsvd1      : 2;
+	    to_fw      : 1,
+	    rsvd1      : 1;
 	u8  flags      : 5,
 	    rsvd2      : 3;
 	u32 hw_enqueue_tstamp;
@@ -430,6 +431,7 @@ static inline u32 ath12k_qos_get_metadata(u16 qos_id)
 /* TODO: SAWF Team to review */
 static inline
 void ath12k_wifi_qos_desc(struct hal_tcl_data_cmd *desc,
+			  struct ath12k_dp_tx_msdu_info *msdu_info,
 			  u32 msduq, u16 qos_id)
 {
 	u32 tid, flow_override, who_classify_info_sel;
@@ -439,8 +441,16 @@ void ath12k_wifi_qos_desc(struct hal_tcl_data_cmd *desc,
 	flow_override = u32_get_bits(msduq, MSDUQ_FLOW_OVERRIDE);
 	who_classify_info_sel = u32_get_bits(msduq, MSDUQ_WHO_CL_INFO);
 
-	desc->info1 |= u32_encode_bits(tid, HAL_TCL_DATA_CMD_INFO1_HLOS_TID) |
-		       u32_encode_bits(1, HAL_TCL_DATA_CMD_INFO1_HLOS_TID_OVERWRITE);
+	/* Since SCS takes precedence we clear the HLO_TID before overwriting
+	 * the TID value
+	 */
+	/* Resolve the HLOS TID into msdu_info only. The single write into
+	 * the TCL descriptor's HLOS_TID/HLOS_TID_OVERWRITE bits happens once
+	 * in ath12k_wifi8_dp_tx_hw_enqueue(), after all QoS mechanisms
+	 * (vif-wide MSCS, SAWF/SDWF, SCS/MSCS per-packet) have resolved.
+	 */
+	msdu_info->tid = tid;
+	msdu_info->tid_override = true;
 
 	desc->info2 |= u32_encode_bits(1, HAL_TCL_DATA_CMD_INFO2_FLOW_OVERRIDE_ENABLE) |
 		       u32_encode_bits(who_classify_info_sel,
@@ -453,8 +463,21 @@ void ath12k_wifi_qos_desc(struct hal_tcl_data_cmd *desc,
 }
 
 static inline
-void ath12k_wifi_qos_hlos_tid(struct hal_tcl_data_cmd *desc,
+void ath12k_wifi_qos_hlos_tid(struct ath12k_dp_tx_msdu_info *msdu_info,
 			      u8 tid)
+{
+	msdu_info->tid = tid < ATH12K_MAX_TID_VALUE ? tid : 0;
+	msdu_info->tid_override = true;
+}
+
+/* Commits the resolved HLOS TID into the TCL descriptor. Called exactly
+ * once per packet in ath12k_wifi8_dp_tx_hw_enqueue(), after every QoS
+ * mechanism (vif-wide MSCS, SAWF/SDWF, SCS/MSCS per-packet) has had a
+ * chance to resolve msdu_info->tid, so there is a single descriptor
+ * write instead of multiple writes that could stack via OR.
+ */
+static inline
+void ath12k_wifi_qos_commit_hlos_tid(struct hal_tcl_data_cmd *desc, u8 tid)
 {
 	desc->info1 |= u32_encode_bits(tid < ATH12K_MAX_TID_VALUE ? tid : 0,
 				       HAL_TCL_DATA_CMD_INFO1_HLOS_TID) |
@@ -474,7 +497,8 @@ static inline u8 ath12k_get_qos_tag(u32 mark)
 static inline void
 ath12k_wifi8_dp_qos_update(struct ath12k_dp *dp, struct ath12k_pdev_dp *dp_pdev,
 			   u32 mark, struct hal_tcl_data_cmd *desc, u8 qos_tag,
-			   struct ath12k_dp_peer *dp_peer, u8 link_id)
+			   struct ath12k_dp_peer *dp_peer, u8 link_id,
+			   struct ath12k_dp_tx_msdu_info *msdu_info)
 {
 	u8 scs_id;
 	u8 msduq;
@@ -515,10 +539,10 @@ ath12k_wifi8_dp_qos_update(struct ath12k_dp *dp, struct ath12k_pdev_dp *dp_pdev,
 	}
 	/* Update Desc for HLOS TID Override */
 	if (msduq < MSDUQ_MAX_DEF) {
-		ath12k_wifi_qos_hlos_tid(desc, msduq);
+		ath12k_wifi_qos_hlos_tid(msdu_info, msduq);
 	} else if (msduq < QOS_MSDUQ_MAX) {
 		/* Update Desc for User Defined QoS MSDUQ */
-		ath12k_wifi_qos_desc(desc, msduq, qos_id);
+		ath12k_wifi_qos_desc(desc, msdu_info, msduq, qos_id);
 	}
 }
 
@@ -1335,12 +1359,11 @@ static int ath12k_wifi8_dp_tx_hw_enqueue(struct ath12k_dp_link_vif *dp_link_vif,
 	}
 
 	ath12k_wifi8_dp_tx_hal_tcl_desc_update(hal_tcl_desc, msdu_info, skb);
-	if (unlikely(msdu_info->tid_override))
-		ath12k_wifi_qos_hlos_tid(hal_tcl_desc, msdu_info->tid);
 
 	if (unlikely(skb->mark & SDWF_VALID_MASK)) {
 		ath12k_wifi8_dp_qos_update(dp, dp_pdev, skb->mark, hal_tcl_desc,
-					   0, dp_peer, dp_link_vif->link_id);
+					   0, dp_peer, dp_link_vif->link_id,
+					   msdu_info);
 		ath12k_dp_sdwftx_ingress_stats_update(dp_pdev->ar,
 						      &skb->mark,
 						      qos_nw_delay,
@@ -1353,8 +1376,15 @@ static int ath12k_wifi8_dp_tx_hw_enqueue(struct ath12k_dp_link_vif *dp_link_vif,
 		if (qos_tag)
 			ath12k_wifi8_dp_qos_update(dp, dp_pdev, skb->mark,
 						   hal_tcl_desc, qos_tag,
-						   dp_peer, dp_link_vif->link_id);
+						   dp_peer, dp_link_vif->link_id,
+						   msdu_info);
 	}
+
+	/* Single, final commit of the resolved HLOS TID, after every QoS
+	 * mechanism above has had a chance to update msdu_info->tid.
+	 */
+	if (unlikely(msdu_info->tid_override))
+		ath12k_wifi_qos_commit_hlos_tid(hal_tcl_desc, msdu_info->tid);
 
 	ath12k_dmb();
 
@@ -1405,12 +1435,10 @@ static int ath12k_wifi8_dp_tx_hw_enqueue(struct ath12k_dp_link_vif *dp_link_vif,
 
 	ath12k_wifi8_dp_tx_hal_tcl_desc_update(&tcl_desc, msdu_info, skb);
 
-	if (unlikely(msdu_info->tid_override))
-		ath12k_wifi_qos_hlos_tid(&tcl_desc, msdu_info->tid);
-
 	if (unlikely(skb->mark & SDWF_VALID_MASK)) {
 		ath12k_wifi8_dp_qos_update(dp, dp_pdev, skb->mark, &tcl_desc,
-					   0, dp_peer, dp_link_vif->link_id);
+					   0, dp_peer, dp_link_vif->link_id,
+					   msdu_info);
 		ath12k_dp_sdwftx_ingress_stats_update(dp_pdev->ar,
 						      &skb->mark,
 						      qos_nw_delay,
@@ -1423,8 +1451,15 @@ static int ath12k_wifi8_dp_tx_hw_enqueue(struct ath12k_dp_link_vif *dp_link_vif,
 		if (qos_tag)
 			ath12k_wifi8_dp_qos_update(dp, dp_pdev, skb->mark,
 						   &tcl_desc, qos_tag,
-						   dp_peer, dp_link_vif->link_id);
+						   dp_peer, dp_link_vif->link_id,
+						   msdu_info);
 	}
+
+	/* Single, final commit of the resolved HLOS TID, after every QoS
+	 * mechanism above has had a chance to update msdu_info->tid.
+	 */
+	if (unlikely(msdu_info->tid_override))
+		ath12k_wifi_qos_commit_hlos_tid(&tcl_desc, msdu_info->tid);
 
 	memcpy(hal_tcl_desc, &tcl_desc, sizeof(tcl_desc));
 	ath12k_dmb();
@@ -1720,12 +1755,19 @@ ath12k_wifi8_dp_prepare_mesh_htt_metadata(struct ath12k_base *ab,
 
 	mhdr = (struct meta_hdr_s *)(skb->data - msdu_info->mhdr_len);
 
-	/* Set LEARNING_FRAME in info5 when NOT NOENCRYPT — matches WiFi7 behavior.
-	 * Both structs are 28 bytes; WiFi8 info5 is at the same offset as WiFi7 info5.
-	 */
-	if (!(mhdr->flags & METAHDR_FLAG_NOENCRYPT))
-		htt_desc_ext->info5 =
+	htt_desc_ext->info5 |=
 			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO5_LEARNING_FRAME);
+
+	htt_desc_ext->info2 |=
+			le32_encode_bits((mhdr->keyix & 0x3),
+				HAL_TX_MSDU_METADATA_INFO2_KEY_FLAGS);
+
+	htt_desc_ext->info0 |=
+			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_KEY_FLAGS);
+
+	if (!(mhdr->flags & METAHDR_FLAG_ENCRYPT))
+		htt_desc_ext->info5 &=
+			~le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO5_LEARNING_FRAME);
 
 	if (!(mhdr->flags & METAHDR_FLAG_AUTO_RATE)) {
 		htt_desc_ext->info0 |=
@@ -1734,7 +1776,6 @@ ath12k_wifi8_dp_prepare_mesh_htt_metadata(struct ath12k_base *ab,
 			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_NSS_MASK)   |
 			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_PREAM_TYPE) |
 			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_BW_INFO)    |
-			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_KEY_FLAGS)  |
 			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_DYN_BW)     |
 			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_RETRIES)    |
 			le32_encode_bits(mhdr->rate_info[0].max_tries,
@@ -1748,28 +1789,24 @@ ath12k_wifi8_dp_prepare_mesh_htt_metadata(struct ath12k_base *ab,
 					 HAL_TX_MSDU_METADATA_INFO1_NSS_MASK) |
 			le32_encode_bits(mhdr->rate_info[0].preamble_type,
 					 HAL_TX_MSDU_METADATA_INFO1_PREAM_TYPE);
-
-		htt_desc_ext->info2 |=
-			le32_encode_bits((mhdr->keyix & 0x3),
-					 HAL_TX_MSDU_METADATA_INFO2_KEY_FLAGS);
 	}
 
-	if (mhdr->flags & METAHDR_FLAG_NOENCRYPT) {
+	if (!(mhdr->flags & METAHDR_FLAG_ENCRYPT)) {
 		htt_desc_ext->info0 |=
 			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_ENCRYPT_FLAG) |
 			le32_encode_bits(0, HAL_TX_MSDU_METADATA_INFO0_ENCRYPT_TYPE);
 	}
 
 	ath12k_dbg_level(ab, ATH12K_DBG_MMESH, ATH12K_DBG_L1,
-			 "wifi8 mesh htt: skb %p pwr %d mcs 0x%x nss %d preamble %d",
-			 skb, mhdr->power, mhdr->rate_info[0].mcs,
-			 mhdr->rate_info[0].nss, mhdr->rate_info[0].preamble_type);
+			 "skb %p pwr %d mcs 0x%x nss %d preamble %d keyix %d",
+			skb, mhdr->power, mhdr->rate_info[0].mcs, mhdr->rate_info[0].nss,
+			mhdr->rate_info[0].preamble_type, mhdr->keyix);
 
 	ath12k_dbg_level(ab, ATH12K_DBG_MMESH, ATH12K_DBG_L1,
 			 "wifi8 mesh htt: retries %d auto %d encrypt %d to_fw %u",
 			 mhdr->rate_info[0].max_tries,
 			 !!(mhdr->flags & METAHDR_FLAG_AUTO_RATE),
-			 !!(mhdr->flags & METAHDR_FLAG_NOENCRYPT),
+			 !!(mhdr->flags & METAHDR_FLAG_ENCRYPT),
 			 msdu_info->to_fw);
 skip:
 	return 0;
@@ -2685,7 +2722,8 @@ ath12k_wifi8_dp_tx_process_htt_tx_complete(struct ath12k_dp *dp,
 		ts->peer_id = HAL_INVALID_PEERID;
 	}
 
-	if (!(sw_metadata->flags & DP_TX_DESC_FLAG_SPL_DESC))
+	if (!(sw_metadata->flags & DP_TX_DESC_FLAG_SPL_DESC) &&
+			!sw_metadata->to_fw)
 		peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, ts->peer_id);
 	if (peer)
 		link_id = ath12k_dp_validate_hw_link_id(ts->hw_link_id);
@@ -2996,7 +3034,8 @@ static void ath12k_wifi8_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 		goto exit;
 	}
 
-	if (!(sw_metadata->flags & DP_TX_DESC_FLAG_SPL_DESC))
+	if (!(sw_metadata->flags & DP_TX_DESC_FLAG_SPL_DESC) &&
+			!sw_metadata->to_fw)
 		peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, ts->peer_id);
 
 	info = IEEE80211_SKB_CB(msdu);
@@ -3147,7 +3186,8 @@ static void ath12k_wifi8_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 
-	if (!(sw_metadata->flags & DP_TX_DESC_FLAG_SPL_DESC)) {
+	if (!(sw_metadata->flags & DP_TX_DESC_FLAG_SPL_DESC) &&
+			!sw_metadata->to_fw) {
 		link_peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev,
 								     ts->peer_id);
 		ath12k_wifi8_dp_tx_update_txcompl(dp_pdev, ts);
@@ -3514,6 +3554,7 @@ int ath12k_wifi8_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 
 		sw_metadata->skb = tx_desc->skb;
 		sw_metadata->paddr = tx_desc->paddr;
+		sw_metadata->to_fw = tx_desc->to_fw;
 		sw_metadata->len = tx_desc->len;
 		sw_metadata->flags = tx_desc->flags;
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
@@ -4570,6 +4611,13 @@ static int ath12k_wifi8_dp_tx_null_flowq_handler(
 	if (!peer) {
 		ath12k_err(dp->ab, "peer_id is invalid for desc_id %d",
 			   desc_id);
+		ret = -EINVAL;
+		goto end;
+	}
+	if (!READ_ONCE(peer->peer_links_map)) {
+		ath12k_err(dp->ab,
+			"null_flowq: peer_id %u addr %pM has no active links skipping queue alloc",
+			peer_id, peer->addr);
 		ret = -EINVAL;
 		goto end;
 	}

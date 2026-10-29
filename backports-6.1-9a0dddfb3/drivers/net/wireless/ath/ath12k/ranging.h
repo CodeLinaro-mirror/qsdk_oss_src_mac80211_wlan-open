@@ -44,6 +44,7 @@ struct ath12k_base;
 struct ath12k_hw;
 
 u32 ath12k_supported_rtt_responder_roles(struct ath12k_base *ab);
+bool ath12k_11az_responder_enabled(struct ath12k_base *ab);
 int ath12k_mac_setup_iftype_11az_ranging(struct ath12k_hw *ah);
 void ath12k_mac_cleanup_iftype_11az_ranging(struct ath12k_hw *ah);
 void ath12k_mac_set_ranging_ext_features(struct wiphy *wiphy, struct ath12k *ar);

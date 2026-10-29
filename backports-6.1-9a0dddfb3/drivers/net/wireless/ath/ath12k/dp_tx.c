@@ -1093,7 +1093,7 @@ void ath12k_dp_tx_update_mmesh_stats_common(struct ath12k_dp *dp,
 	mhdr = (struct meta_hdr_s *)(skb->data - sizeof(struct meta_hdr_s));
 	if (mhdr->flags & METAHDR_FLAG_NOQOS)
 		DP_PEER_MISC_STATS_INC(peer, mmesh_stat, no_qos, 0, 1);
-	if (mhdr->flags & METAHDR_FLAG_NOENCRYPT)
+	if (!(mhdr->flags & METAHDR_FLAG_ENCRYPT))
 		DP_PEER_MISC_STATS_INC(peer, mmesh_stat, no_enc, 0, 1);
 	if (mhdr->flags & METAHDR_FLAG_INFO_UPDATED)
 		DP_PEER_MISC_STATS_INC(peer, mmesh_stat, txinfo, 0, 1);

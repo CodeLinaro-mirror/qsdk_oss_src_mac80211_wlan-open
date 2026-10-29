@@ -5527,6 +5527,7 @@ int ath12k_wmi_send_smd_roam_config(struct ath12k *ar,
 				ath12k_wmi_tlv_cmd_hdr(WMI_TAG_SMD_ROAM_PEER_TID_INFO,
 						       sizeof(*tid_info));
 			tid_info->tid_num = i;
+			tid_info->mlsn_offset_word = 0;
 			tid_info->mlsn_offset_word |=
 				le32_encode_bits(arg->peer_tid_info[i].mlsn,
 						 WMI_SMD_ROAM_CONFIG_PEER_TID_INFO_MLSN);
@@ -5538,8 +5539,11 @@ int ath12k_wmi_send_smd_roam_config(struct ath12k *ar,
 			tid_info->rx_ba_window_size =
 				arg->peer_tid_info[i].rx_buf_size;
 			ath12k_dbg(ar->ab, ATH12K_DBG_SMD,
-				   "tid: %u mlsn_offset_word: 0x%04x tx_ba: %u rx_ba=%u",
-				   tid_info->tid_num, tid_info->mlsn_offset_word,
+				   "tid: %u mlsn: %u offset: %u mlsn_offset_word: 0x%08x tx_ba: %u rx_ba=%u",
+				   tid_info->tid_num,
+				   arg->peer_tid_info[i].mlsn,
+				   arg->peer_tid_info[i].offset,
+				   le32_to_cpu(tid_info->mlsn_offset_word),
 				   tid_info->tx_ba_window_size,
 				   tid_info->rx_ba_window_size);
 			ptr += sizeof(*tid_info);
@@ -6493,9 +6497,9 @@ int ath12k_wmi_send_scan_chan_list_cmd(struct ath12k *ar,
 		if (num_sends)
 			cmd->flags |= cpu_to_le32(WMI_APPEND_TO_EXISTING_CHAN_LIST_FLAG);
 
-		ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
-			   "WMI no.of chan = %d len = %d pdev_id = %d num_sends = %d\n",
-			   num_send_chans, len, cmd->pdev_id, num_sends);
+		ath12k_dbg_level(ar->ab, ATH12K_DBG_WMI | ATH12K_DBG_SCAN, ATH12K_DBG_L2,
+				 "WMI no.of chan = %d len = %d pdev_id = %d num_sends = %d\n",
+				 num_send_chans, len, cmd->pdev_id, num_sends);
 
 		ptr = skb->data + sizeof(*cmd);
 
@@ -7176,10 +7180,10 @@ int ath12k_wmi_send_11d_scan_start_cmd(struct ath12k *ar,
 	cmd->start_interval_msec = cpu_to_le32(arg->start_interval_msec);
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_11D_SCAN_START_CMDID);
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
-		   "send 11d scan start vdev id %d period %d ms internal %d ms\n",
-		   arg->vdev_id, arg->scan_period_msec,
-		   arg->start_interval_msec);
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_WMI | ATH12K_DBG_SCAN, ATH12K_DBG_L1,
+			 "send 11d scan start vdev id %d period %d ms internal %d ms\n",
+			 arg->vdev_id, arg->scan_period_msec,
+			 arg->start_interval_msec);
 
 	if (ret) {
 		ath12k_warn(ar->ab,
@@ -7209,9 +7213,9 @@ int ath12k_wmi_send_11d_scan_stop_cmd(struct ath12k *ar, u32 vdev_id)
 	cmd->vdev_id = cpu_to_le32(vdev_id);
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_11D_SCAN_STOP_CMDID);
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
-		   "send 11d scan stop vdev id %d\n",
-		   cmd->vdev_id);
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_WMI | ATH12K_DBG_SCAN, ATH12K_DBG_L1,
+			 "send 11d scan stop vdev id %d\n",
+			 cmd->vdev_id);
 
 	if (ret) {
 		ath12k_warn(ar->ab,
@@ -8840,8 +8844,8 @@ int ath12k_wmi_cmd_init(struct ath12k_base *ab)
 	ab->hw_params->wmi_init(ab, &arg.res_cfg);
 	ab->wow.wmi_conf_rx_decap_mode = arg.res_cfg.rx_decap_mode;
 
-	ath12k_info(ab, "WMI_INIT: num_vdevs=%u (num_radios=%u)\n",
-		    arg.res_cfg.num_vdevs, ab->num_radios);
+	ath12k_info(ab, "WMI_INIT: Host num_vdevs=%u num_radios=%u num_peers=%u\n",
+		    arg.res_cfg.num_vdevs, ab->num_radios, arg.res_cfg.num_peers);
 
 	arg.num_mem_chunks = wmi_ab->num_mem_chunks;
 	arg.hw_mode_id = wmi_ab->preferred_hw_mode;
@@ -11871,7 +11875,7 @@ static bool ath12k_get_ar_next_vdev_pos(struct ath12k *ar, u32 *pos)
 	bool bit;
 	u32 i = 0;
 
-	for (i = *pos; i < ar->ab->num_max_vdev_supported; i++) {
+	for (i = *pos; i < ar->ab->num_max_vdev_supp; i++) {
 		bit = ar->allocated_vdev_map & (1LL << i);
 		if (bit) {
 			*pos = i;
@@ -12155,9 +12159,7 @@ static int wmi_process_mgmt_tx_comp(struct ath12k *ar, u32 desc_id,
 	struct ath12k_skb_cb *skb_cb;
 	struct ieee80211_hdr *hdr;
 	struct ieee80211_vif *vif;
-#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 	struct ath12k_vif *ahvif;
-#endif
 	struct ath12k_mgmt_frame_stats *mgmt_stats;
 	struct ieee80211_mgmt *mgmt;
 	u16 frm_stype;
@@ -12189,14 +12191,23 @@ static int wmi_process_mgmt_tx_comp(struct ath12k *ar, u32 desc_id,
 		ath12k_arvif_deauth_disassoc_tx_dec(ar, skb_cb);
 	}
 
-#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 	vif = skb_cb->vif;
-	if (vif) {
-		ahvif = ath12k_vif_to_ahvif(vif);
-		mgmt_stats = &ahvif->mgmt_stats;
-		if (skb_cb->flags & ATH12K_SKB_MONRAW_TX)
-			mgmt_stats->mon_tx_mesh_mgmt_cmpl++;
+	if (!vif) {
+		ath12k_warn(ar->ab, "failed to update txcompl stats: vif is NULL\n");
+		goto skip_mgmt_stats;
 	}
+
+	ahvif = ath12k_vif_to_ahvif(vif);
+	if (!ahvif) {
+		ath12k_warn(ar->ab, "failed to update txcompl stats: ahvif is NULL\n");
+		goto skip_mgmt_stats;
+	}
+
+	mgmt_stats = &ahvif->mgmt_stats;
+
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	if (skb_cb->flags & ATH12K_SKB_MONRAW_TX)
+		mgmt_stats->mon_tx_mesh_mgmt_cmpl++;
 #endif
 
 	if (ieee80211_is_mgmt(hdr->frame_control)) {
@@ -12217,16 +12228,11 @@ static int wmi_process_mgmt_tx_comp(struct ath12k *ar, u32 desc_id,
 					 hdr->addr2, status);
 		else if (is_csa) {
 			mgmt = (struct ieee80211_mgmt *)hdr;
-			ath12k_dbg_level(ar->ab, ATH12K_DBG_MLME, ATH12K_DBG_L0,
+			ath12k_dbg_level(ar->ab, ATH12K_DBG_MLME, ATH12K_DBG_L1,
 					 "Tx completion for CSA action frame from %pM category %u action %u tx_status %u\n",
 					 hdr->addr2, mgmt->u.action.category,
 					 mgmt->u.action.u.chan_switch.action_code,
 					 status);
-		}
-
-		if (!vif) {
-			ath12k_warn(ar->ab, "failed to find vif to update txcompl mgmt stats\n");
-			goto skip_mgmt_stats;
 		}
 
 		if (!status)
@@ -12413,9 +12419,9 @@ static void ath12k_wmi_event_scan_started(struct ath12k *ar)
 		if (ar->scan.is_roc)
 			ieee80211_ready_on_channel(ath12k_ar_to_hw(ar));
 
-		ath12k_dbg(ar->ab, ATH12K_DBG_SCAN,
-			   "scan: [radio:%d] state -> RUNNING (WMI STARTED event) [%llu ms]\n",
-			   ar->radio_idx, ktime_to_ms(ktime_get()));
+		ath12k_dbg_level(ar->ab, ATH12K_DBG_WMI | ATH12K_DBG_SCAN, ATH12K_DBG_L0,
+				 "scan: [radio:%d] state -> RUNNING (WMI STARTED event) [%llu ms]\n",
+				 ar->radio_idx, ktime_to_ms(ktime_get()));
 
 		complete(&ar->scan.started);
 		break;
@@ -12462,9 +12468,9 @@ static void ath12k_wmi_event_scan_completed(struct ath12k *ar)
 		break;
 	case ATH12K_SCAN_RUNNING:
 	case ATH12K_SCAN_ABORTING:
-		ath12k_dbg(ar->ab, ATH12K_DBG_SCAN,
-			   "scan: [radio:%d] COMPLETED (WMI COMPLETED event) [%llu ms]\n",
-			   ar->radio_idx, ktime_to_ms(ktime_get()));
+		ath12k_dbg_level(ar->ab, ATH12K_DBG_WMI | ATH12K_DBG_SCAN, ATH12K_DBG_L0,
+				 "scan: [radio:%d] COMPLETED (WMI COMPLETED event) [%llu ms]\n",
+				 ar->radio_idx, ktime_to_ms(ktime_get()));
 		__ath12k_mac_scan_finish(ar);
 		break;
 	}
@@ -12852,9 +12858,10 @@ static int ath12k_reg_11d_new_cc_event(struct ath12k_base *ab, struct sk_buff *s
 	memcpy(&ab->new_alpha2, &ev->new_alpha2, REG_ALPHA2_LEN);
 	spin_unlock_bh(&ab->base_lock);
 
-	ath12k_dbg(ab, ATH12K_DBG_WMI, "wmi 11d new cc %c%c\n",
-		   ab->new_alpha2[0],
-		   ab->new_alpha2[1]);
+	ath12k_dbg_level(ab, ATH12K_DBG_WMI | ATH12K_DBG_SCAN, ATH12K_DBG_L1,
+			 "wmi 11d new cc %c%c\n",
+			 ab->new_alpha2[0],
+			 ab->new_alpha2[1]);
 
 	kfree(tb);
 
@@ -13101,6 +13108,11 @@ static int ath12k_wmi_rdy_parse(struct ath12k_base *ab, u16 tag, u16 len,
 		ab->max_ml_peer_supported = fixed_param.max_num_ml_peers;
 		ab->fw_max_peers =
 			le32_to_cpu(fixed_param.ready_event_min.num_total_peers);
+		ab->fw_max_vdevs =
+			le32_to_cpu(fixed_param.num_max_active_vdevs);
+		ath12k_dbg(ab, ATH12K_DBG_MAC,
+			   "wmi_rdy_parse: fw_max_peers = %u fw_max_vdevs = %u\n",
+			   ab->fw_max_peers, ab->fw_max_vdevs);
 		break;
 	case WMI_TAG_ARRAY_FIXED_STRUCT:
 		addr_list = (struct ath12k_wmi_mac_addr_params *)ptr;
@@ -25443,6 +25455,14 @@ ath12k_wmi_pasn_notify_delete(struct ath12k_link_vif *arvif,
 		   peer_idx, peer->peer_mac_addr.addr,
 		   le32_to_cpu(peer->control_flag));
 
+#ifndef CPTCFG_QCN_EXTN
+	if (!arvif->ahvif || !arvif->ahvif->vif) {
+		ath12k_warn(arvif->ar->ab,
+			    "RTT PASN delete: no mac80211 vif for vdev %u\n",
+			    arvif->vdev_id);
+		return;
+	}
+#endif
 	ret = ath12k_vendor_send_pasn_event(
 			ath12k_ar_to_hw(arvif->ar)->wiphy,
 #ifdef CPTCFG_QCN_EXTN
@@ -26085,7 +26105,7 @@ int ath12k_wmi_send_peer_uhr_omp_cmd(struct ath12k *ar, u32 sw_peer_id,
 	}
 
 	for (i = 0, has_dso_update = false; i < num_links; i++) {
-		if (links[i].dso_mode_update) {
+		if (links[i].dso_update) {
 			has_dso_update = true;
 			break;
 		}

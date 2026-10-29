@@ -2715,8 +2715,7 @@ static int ath12k_open_tpc_stats(struct inode *inode, struct file *file)
 
 	guard(wiphy)(ath12k_ar_to_hw(ar)->wiphy);
 
-	if (ah->state != ATH12K_HW_STATE_ON &&
-	    ah->state != ATH12K_HW_STATE_TM) {
+	if (!ath12k_ftm_mode && ah->state != ATH12K_HW_STATE_ON) {
 		ath12k_warn(ar->ab, "Interface not up\n");
 		return -ENETDOWN;
 	}
@@ -4117,7 +4116,7 @@ static ssize_t ath12k_read_power_save_mode(struct file *file,
 }
 
 static const struct file_operations fops_power_save_mode = {
-	.open = simple_open,
+	.open = ath12k_debugfs_open,
 	.read = ath12k_read_power_save_mode,
 	.write = ath12k_write_power_save_mode,
 	.llseek = default_llseek,
@@ -7132,7 +7131,6 @@ static ssize_t ath12k_write_dp_stats_mask(struct file *file,
 				 * checked in ppeds
 				 */
 				ar->ah->hw->perf_mode = stats_disable;
-				ar->ab->stats_disable = stats_disable;
 				ar->ab->dp->stats_disable = stats_disable;
 
 				ath12k_dbg(ar->ab, ATH12K_DBG_TELEMETRY,
@@ -7192,6 +7190,15 @@ static ssize_t ath12k_write_dp_stats_mask(struct file *file,
 			}
 		}
 	}
+
+	for (i = 0; i < ah->num_radio; i++) {
+		ar = &ah->radio[i];
+		if (ar->ab->is_bypassed)
+			continue;
+		if (ar)
+			ar->ab->stats_disable = stats_disable;
+	}
+
 	ret = count;
 
 exit:

@@ -153,16 +153,24 @@ void ath12k_peer_del_tracker_destroy(struct ath12k_pdev *pdev)
 		if (IS_ERR(entry))
 			continue;
 
-		/* Cancel the timer before removing entry */
-		del_timer_sync(&entry->timer);
-
+		/* Claim the entry before cancelling its timer. */
+		spin_lock_bh(&tracker->lock);
+		if (rhashtable_lookup_fast(&tracker->peer_del_hash, entry->addr,
+					   tracker->hash_params) != entry) {
+			spin_unlock_bh(&tracker->lock);
+			continue;
+		}
 		rhashtable_remove_fast(&tracker->peer_del_hash,
 				       &entry->rhash_node,
 				       tracker->hash_params);
 		if (!is_zero_ether_addr(entry->mld_addr))
 			rhashtable_remove_fast(&tracker->mld_del_hash,
-					       &entry->mld_rhash_node,
-					       tracker->mld_hash_params);
+				       &entry->mld_rhash_node,
+				       tracker->mld_hash_params);
+		spin_unlock_bh(&tracker->lock);
+
+		/* The entry is no longer visible to the timer callback. */
+		del_timer_sync(&entry->timer);
 		kfree_rcu(entry, rcu_head);
 		atomic_dec_if_positive(&pdev->peer_del_tracker_entries);
 	}
@@ -441,8 +449,23 @@ int ath12k_peer_del_tracker_clear_vdev(struct ath12k_pdev *pdev, u32 vdev_id)
 		if (IS_ERR(entry))
 			continue;
 
-		if (entry->vdev_id == vdev_id && num_entries < max_entries)
+		if (entry->vdev_id != vdev_id || num_entries >= max_entries)
+			continue;
+
+		/* Claim the entry before dropping the hash walk. */
+		spin_lock_bh(&tracker->lock);
+		if (rhashtable_lookup_fast(&tracker->peer_del_hash, entry->addr,
+					   tracker->hash_params) == entry) {
+			rhashtable_remove_fast(&tracker->peer_del_hash,
+					       &entry->rhash_node,
+					       tracker->hash_params);
+			if (!is_zero_ether_addr(entry->mld_addr))
+				rhashtable_remove_fast(&tracker->mld_del_hash,
+					       &entry->mld_rhash_node,
+					       tracker->mld_hash_params);
 			entries_to_remove[num_entries++] = entry;
+		}
+		spin_unlock_bh(&tracker->lock);
 	}
 
 	rhashtable_walk_stop(&iter);
@@ -451,16 +474,6 @@ int ath12k_peer_del_tracker_clear_vdev(struct ath12k_pdev *pdev, u32 vdev_id)
 	for (i = 0; i < num_entries; i++) {
 		entry = entries_to_remove[i];
 		del_timer_sync(&entry->timer);
-
-		spin_lock_bh(&tracker->lock);
-		rhashtable_remove_fast(&tracker->peer_del_hash,
-				       &entry->rhash_node,
-				       tracker->hash_params);
-		if (!is_zero_ether_addr(entry->mld_addr))
-			rhashtable_remove_fast(&tracker->mld_del_hash,
-					       &entry->mld_rhash_node,
-					       tracker->mld_hash_params);
-		spin_unlock_bh(&tracker->lock);
 
 		ath12k_dbg_level(ath12k_pdev_to_ab(pdev), ATH12K_DBG_PEER, ATH12K_DBG_L1,
 				 "removed peer %pM from deletion tracker (vdev %d)\n",
@@ -512,8 +525,23 @@ int ath12k_peer_del_tracker_clear_pdev(struct ath12k_pdev *pdev)
 		if (IS_ERR(entry))
 			continue;
 
-		if (num_entries < max_entries)
+		if (num_entries >= max_entries)
+			continue;
+
+		/* Claim the entry before dropping the hash walk. */
+		spin_lock_bh(&tracker->lock);
+		if (rhashtable_lookup_fast(&tracker->peer_del_hash, entry->addr,
+					   tracker->hash_params) == entry) {
+			rhashtable_remove_fast(&tracker->peer_del_hash,
+					       &entry->rhash_node,
+					       tracker->hash_params);
+			if (!is_zero_ether_addr(entry->mld_addr))
+				rhashtable_remove_fast(&tracker->mld_del_hash,
+					       &entry->mld_rhash_node,
+					       tracker->mld_hash_params);
 			entries_to_remove[num_entries++] = entry;
+		}
+		spin_unlock_bh(&tracker->lock);
 	}
 
 	rhashtable_walk_stop(&iter);
@@ -522,15 +550,6 @@ int ath12k_peer_del_tracker_clear_pdev(struct ath12k_pdev *pdev)
 	for (i = 0; i < num_entries; i++) {
 		entry = entries_to_remove[i];
 		del_timer_sync(&entry->timer);
-
-		spin_lock_bh(&tracker->lock);
-		rhashtable_remove_fast(&tracker->peer_del_hash, &entry->rhash_node,
-				       tracker->hash_params);
-		if (!is_zero_ether_addr(entry->mld_addr))
-			rhashtable_remove_fast(&tracker->mld_del_hash,
-					       &entry->mld_rhash_node,
-					       tracker->mld_hash_params);
-		spin_unlock_bh(&tracker->lock);
 
 		kfree_rcu(entry, rcu_head);
 		atomic_dec_if_positive(&pdev->peer_del_tracker_entries);
@@ -1086,6 +1105,11 @@ exit:
 		ahsta->links_map &= ~BIT(link_id);
 		ahsta->saved_link_sta[link_id] = NULL;
 
+#ifdef CPTCFG_ATH12K_DEBUGFS
+		kfree(arsta->htt_ctx);
+		arsta->htt_ctx = NULL;
+#endif
+
 		if (arsta == &ahsta->deflink) {
 			arsta->link_id = ATH12K_INVALID_LINK_ID;
 			arsta->ahsta = NULL;
@@ -1323,7 +1347,7 @@ int ath12k_link_sta_hlist_init(struct ath12k *ar)
 		return 0;
 	}
 
-	sta_max = ath12k_core_get_max_station_per_radio(ar->ab);
+	sta_max = ar->max_num_peers;
 
 	ar->arsta_hash_bits = order_base_2(sta_max);
 	if (!ar->arsta_hash_bits) {
@@ -1691,8 +1715,9 @@ EXPORT_SYMBOL(ath12k_sta_hlist_delete);
 int ath12k_sta_hlist_init(struct ath12k_hw_group *ag)
 {
 	struct ath12k_base *ab;
+	struct ath12k *ar;
 	u32 sta_max = 0, buckets;
-	int i;
+	int i, j;
 
 	lockdep_assert_held(&ag->ahsta_lock);
 
@@ -1707,9 +1732,13 @@ int ath12k_sta_hlist_init(struct ath12k_hw_group *ag)
 	/* Size the table to cover all stations across every device in the group */
 	for (i = 0; i < ag->num_devices; i++) {
 		ab = ag->ab[i];
-		if (ab)
-			sta_max += ath12k_core_get_max_station_per_radio(ab) *
-					ab->num_radios;
+		if (!ab)
+			continue;
+		for (j = 0; j < ab->num_radios; j++) {
+			ar = ab->pdevs[j].ar;
+			if (ar)
+				sta_max += ar->max_num_stations;
+		}
 	}
 
 	if (!sta_max)

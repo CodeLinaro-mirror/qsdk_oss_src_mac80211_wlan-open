@@ -181,6 +181,7 @@ static int ath12k_smd_bss_assoc(struct ath12k *ar,
 
 	spin_lock_bh(&ar->data_lock);
 	arsta->bw = bandwidth;
+	arsta->bw_prev = arsta->bw;
 	spin_unlock_bh(&ar->data_lock);
 
 	rcu_read_unlock();
