@@ -1177,7 +1177,7 @@ static void ath12k_wifi8_dump_dp_peer_info(struct ath12k_dp *dp,
 	struct ath12k_hw *ah = ath12k_ag_to_ah(ag, 0);
 	struct ath12k_dp_hw *dp_hw = &ah->dp_hw;
 	struct ath12k_dp_peer *dp_peer;
-	unsigned int used, free_count, mlo = 0, non_mlo = 0, vdev = 0;
+	unsigned int used, free_count, mlo = 0, non_mlo = 0, vdev = 0, null_peer = 0;
 	u16 peer_id;
 
 	spin_lock_bh(&dp_hw->peer_hash_lock);
@@ -1206,14 +1206,17 @@ static void ath12k_wifi8_dump_dp_peer_info(struct ath12k_dp *dp,
 
 	for_each_set_bit(peer_id, dp_hw->free_peer_id_map, ATH12K_MAX_PEER_ID) {
 		dp_peer = rcu_dereference(dp_hw->dp_peer_list[peer_id]);
-		if (!dp_peer)
+		if (!dp_peer) {
+			null_peer++;
 			continue;
+		}
 		seq_printf(file,
 			   "peer_id: %u addr: %pM vdev_peer: %d mlo: %d non_mlo: %d\n",
 			   peer_id, dp_peer->addr,
 			   dp_peer->is_vdev_peer, dp_peer->is_mlo,
 			   !dp_peer->is_mlo);
 	}
+	seq_printf(file, "null_peer: %u\n", null_peer);
 
 	spin_unlock_bh(&dp_hw->peer_hash_lock);
 }
@@ -1763,7 +1766,6 @@ static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 	.dp_link_peer_unassign_id = ath12k_wifi8_dp_link_peer_unassign_id,
 	.peer_cleanup_indication = ath12k_dp_htt_peer_cleanup_indication,
 	.peer_drv_cleanup = ath12k_dp_peer_cleanup_indication,
-	.self_peer_drv_cleanup = ath12k_dp_self_peer_cleanup,
 	.dp_ppeds_tx_completion_handler = ath12k_wifi8_ppeds_tx_completion_handler,
 	.dp_link_peer_assoc = ath12k_wifi8_dp_link_peer_assoc,
 	.dp_get_peer_mgmt_flowq = ath12k_wifi8_get_mgmt_flowq,
@@ -1817,6 +1819,7 @@ static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 	.peer_rx_tid_svld_reset = ath12k_wifi8_peer_rx_tid_svld_reset,
 	.get_coredump_seg_count = ath12k_wifi8_dp_get_coredump_seg_count,
 	.get_coredump_segs = ath12k_wifi8_dp_get_coredump_segs,
+	.dp_peer_release = ath12k_wifi8_dp_peer_release,
 };
 
 struct ath12k_dp *ath12k_wifi8_dp_init(struct ath12k_base *ab)
