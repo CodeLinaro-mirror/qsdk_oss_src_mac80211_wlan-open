@@ -1292,6 +1292,7 @@ int ath12k_spectral_configure_scan_params(struct ath12k *ar,
 	param.scan_bin_scale       = p->scan_bin_scale;
 	param.scan_dbm_adj         = p->scan_dbm_adj;
 	param.scan_chn_mask        = p->scan_chn_mask;
+	param.recapture            = p->fft_recapture;
 
 	/* Mode and agile-specific parameters.
 	 * For AGILE mode: tell firmware to scan at the configured center
