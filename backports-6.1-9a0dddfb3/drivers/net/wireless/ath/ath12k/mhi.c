@@ -242,6 +242,7 @@ static void ath12k_mhi_op_status_cb(struct mhi_controller *mhi_cntrl,
 
 		if (!test_bit(ATH12K_GROUP_FLAG_UNREGISTER, &ag->flags)) {
 			ath12k_info(ab, "Schedule SSR Recovery reset work queue\n");
+			atomic_set(&ag->accept_cmd, 0);
 			set_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags);
 			set_bit(ATH12K_GROUP_FLAG_RECOVERY, &ab->ag->flags);
 			if (ab_pci->device_ops->get_reset_reason)

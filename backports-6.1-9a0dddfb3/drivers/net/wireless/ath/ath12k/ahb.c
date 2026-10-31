@@ -1194,6 +1194,7 @@ static void ath12k_ahb_handle_userpd_crash(struct ath12k_base *ab)
 	set_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags);
 
 	if (!test_bit(ATH12K_GROUP_FLAG_UNREGISTER, &ag->flags)) {
+		atomic_set(&ag->accept_cmd, 0);
 		set_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags);
 		set_bit(ATH12K_GROUP_FLAG_RECOVERY, &ag->flags);
 		ab_ahb->crash_type = ATH12K_RPROC_USERPD_CRASH;
@@ -1292,6 +1293,7 @@ int ath12k_ahb_root_pd_fatal_notifier(struct notifier_block *nb,
 	if (ab->fw_recovery_support == ATH12K_FW_RECOVERY_DISABLE)
 		ab_ahb->tgt_rproc->recovery_disabled = true;
 
+	atomic_set(&ag->accept_cmd, 0);
 	set_bit(ATH12K_GROUP_FLAG_RECOVERY, &ag->flags);
 	set_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags);
 

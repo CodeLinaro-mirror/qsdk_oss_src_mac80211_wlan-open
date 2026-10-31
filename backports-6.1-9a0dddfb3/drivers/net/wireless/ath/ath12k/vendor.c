@@ -8241,7 +8241,8 @@ static int ath12k_stats_device_setup(struct ath12k_telemetry_command *cmd)
 
 	dp = ar->ab->dp;
 
-	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)) {
+	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags) ||
+	    test_bit(ATH12K_FLAG_RECOVERY, &ar->ab->dev_flags)) {
 		ath12k_err(ar->ab, "Device stats return. Recovery in progress\n");
 		return -EINVAL;
 	}
@@ -8545,7 +8546,8 @@ static int ath12k_stats_peer_setup(struct ath12k_telemetry_command *cmd)
 	ar = ahvif->deflink.ar;
 
 	if (ahvif->deflink.ar && ahvif->deflink.ar->ab &&
-	    test_bit(ATH12K_FLAG_CRASH_FLUSH, &ahvif->deflink.ar->ab->dev_flags)) {
+	    (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ahvif->deflink.ar->ab->dev_flags) ||
+	     test_bit(ATH12K_FLAG_RECOVERY, &ahvif->deflink.ar->ab->dev_flags))) {
 		ath12k_err(NULL, "Peer stats return. Recovery in progress\n");
 		return -EINVAL;
 	}
@@ -9110,7 +9112,8 @@ static int ath12k_stats_vif_setup(struct ath12k_telemetry_command *cmd)
 	ar = ahvif->deflink.ar;
 
 	if (ahvif->deflink.ar && ahvif->deflink.ar->ab &&
-	    test_bit(ATH12K_FLAG_CRASH_FLUSH, &ahvif->deflink.ar->ab->dev_flags)) {
+	    (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ahvif->deflink.ar->ab->dev_flags) ||
+	     test_bit(ATH12K_FLAG_RECOVERY, &ahvif->deflink.ar->ab->dev_flags))) {
 		ath12k_err(NULL, "VAP stats return. Recovery in progress\n");
 		return -EINVAL;
 	}
@@ -10346,7 +10349,8 @@ static int ath12k_stats_radio_setup(struct ath12k_telemetry_command *cmd)
 		return -EINVAL;
 	}
 
-	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)) {
+	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags) ||
+	    test_bit(ATH12K_FLAG_RECOVERY, &ar->ab->dev_flags)) {
 		ath12k_err(ar->ab, "Radio stats return. Recovery in progress\n");
 		return -EINVAL;
 	}
