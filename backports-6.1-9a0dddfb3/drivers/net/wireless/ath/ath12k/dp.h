@@ -51,6 +51,19 @@
 #define DP_TX_COMP_RING3_SIZE		(ab->mem_params.dp_params.tx_compl_ring_size[3])
 #define DP_TX_COMP_RING4_SIZE		(ab->mem_params.dp_params.tx_compl_ring_size[4])
 
+#define ATH12K_SRNG_DUMP_DP_TX_SW	BIT(0)
+#define ATH12K_SRNG_DUMP_DP_TX_HW	BIT(1)
+#define ATH12K_SRNG_DUMP_DP_RX_SW	BIT(2)
+#define ATH12K_SRNG_DUMP_DP_RX_HW	BIT(3)
+#define ATH12K_SRNG_DUMP_DP_PPEDS_SW	BIT(4)
+#define ATH12K_SRNG_DUMP_DP_PPEDS_HW	BIT(5)
+#define ATH12K_SRNG_DUMP_MASK_VALID	GENMASK(5, 0)
+
+#define ATH12K_SRNG_DUMP_SW		BIT(0)
+#define ATH12K_SRNG_DUMP_HW		BIT(1)
+#define ATH12K_SRNG_DUMP_BOTH		(ATH12K_SRNG_DUMP_SW | \
+					 ATH12K_SRNG_DUMP_HW)
+
 #define DP_TX_DESC_COUNT_POOL0		(ab->mem_params.dp_params.tx_desc_count[0])
 #define DP_TX_DESC_COUNT_POOL1		(ab->mem_params.dp_params.tx_desc_count[1])
 #define DP_TX_DESC_COUNT_POOL2		(ab->mem_params.dp_params.tx_desc_count[2])
@@ -867,7 +880,9 @@ struct ath12k_dp_arch_ops {
 	void (*umcmn_timer_enable)(struct ath12k_base *ab);
 	void (*umcmn_timer_free)(struct ath12k_base *ab);
 
-	ssize_t (*dump_srng_stats)(struct ath12k_dp *dp, char *buf, int size);
+	ssize_t (*dump_srng_stats)(struct ath12k_dp *dp,
+				   const struct ath12k_srng_dump_filter *filter,
+				   char *buf, int size);
 	ssize_t (*dump_device_dp_stats)(struct ath12k_dp *dp, char *buf, int size);
 	void (*reset_device_dp_stats)(struct ath12k_dp *dp);
 	void (*dump_dp_peer_info)(struct ath12k_dp *dp, struct seq_file *file);
@@ -1046,6 +1061,7 @@ struct ath12k_dbg_dp_svc_sort_stats {
 
 struct ath12k_dp {
 	struct ath12k_base *ab;
+	u32 srng_dump_mask;
 	u8 num_bank_profiles;
 	/* protects the access and update of bank_profiles */
 	spinlock_t tx_bank_lock;
@@ -1312,6 +1328,13 @@ enum ath12k_rxtid_pn_check {
 	ATH12K_RXTID_PN_CHECK_DATA_TIDS,
 	ATH12K_RXTID_PN_CHECK_MGMT_TIDS,
 	ATH12K_RXTID_PN_CHECK_ALL_TIDS,
+};
+
+struct ath12k_srng_dump_filter {
+	bool dump_all;
+	u8 dp_tx_dump;
+	u8 dp_rx_dump;
+	u8 dp_ppeds_dump;
 };
 
 #define HTT_T2H_EXT_STATS_INFO1_DONE	BIT(11)

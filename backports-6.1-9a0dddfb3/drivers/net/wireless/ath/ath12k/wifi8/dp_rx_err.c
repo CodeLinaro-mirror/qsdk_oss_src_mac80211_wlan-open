@@ -30,6 +30,8 @@
 
 #define ATH12K_DP_RX_FRAGMENT_TIMEOUT_MS (2 * HZ)
 
+#define ETH_P_1905 0x893a
+
 static int ath12k_wifi8_dp_rx_h_cmp_frags(struct ath12k_base *ab,
 					  struct sk_buff *a, struct sk_buff *b)
 {
@@ -1044,6 +1046,9 @@ void ath12k_wifi8_convert_n_deliver_nw_frame(struct ath12k_pdev_dp *dp_pdev,
 	struct sk_buff *msdu = rx_spd->msdu;
 	struct ieee80211_sta *pubsta = NULL;
 	u8 *rx_tlv_hdr;
+#ifdef CPTCFG_QCN_EXTN
+	bool is_extap;
+#endif
 	bool ret;
 
 	rx_msdu_info = &rx_spd->rx_msdu_info;
@@ -1080,19 +1085,35 @@ void ath12k_wifi8_convert_n_deliver_nw_frame(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 #ifdef CPTCFG_QCN_EXTN
-	if (unlikely(ath12k_dp_peer_feature_enabled(peer, DP_PEER_FEATURE_EXTAP))) {
+	is_extap = ath12k_dp_peer_feature_enabled(peer, DP_PEER_FEATURE_EXTAP);
+	if (unlikely(is_extap) && peer->dev) {
 		struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(peer->vif);
+		int extap_ret = ahvif ? ath12k_extap_rx(ahvif, msdu) : EXTAP_RX_BYPASS;
 
-		if (ahvif && ath12k_extap_rx(ahvif, msdu) > 0) {
-			struct ath12k_link_vif *arvif;
-			u8 link_id = rx_mpdu_info->src_link_id;
+		switch (extap_ret) {
+		case 0:
+			/* Converted — DMAC rewritten, deliver to stack */
+			msdu->dev = peer->dev;
+			ath12k_dp_rx_update_eapol_stats(dp_pdev->dp, msdu);
+			msdu->protocol = eth_type_trans(msdu, peer->dev);
+			napi_gro_receive(napi, msdu);
+			return;
+		case EXTAP_RX_DROP:
+			/* Drop */
+			if (ahvif) {
+				struct ath12k_link_vif *arvif;
+				u8 link_id = rx_mpdu_info->src_link_id;
 
-			arvif = rcu_dereference(ahvif->link[link_id]);
-			if (arvif)
-				arvif->link_stats.rx_dropped++;
-
+				arvif = rcu_dereference(ahvif->link[link_id]);
+				if (arvif)
+					arvif->link_stats.rx_dropped++;
+			}
 			dev_kfree_skb_any(msdu);
 			return;
+		case EXTAP_RX_BYPASS:
+		default:
+			/* Bypass — undecap_eth + ieee80211_rx_napi below */
+			break;
 		}
 	}
 #endif
@@ -1254,9 +1275,11 @@ bool ath12k_wifi8_handle_null_queue(struct ath12k_pdev_dp *dp_pdev,
 {
 	struct rx_msdu_desc_info *rx_msdu_info = &spd_desc_l->rx_msdu_info;
 	bool is_mcbc = rx_msdu_info->da_is_mcbc;
-	bool is_4addr_sta;
+	bool is_4addr_sta, is_eapol;
 	bool to_ds = rx_msdu_info->to_ds;
 	bool fr_ds = rx_msdu_info->fr_ds;
+	struct sk_buff *msdu = spd_desc_l->msdu;
+	struct ethhdr *ehdr;
 
 	ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_RX,
 		   "null_q_desc mcbc: peer_id=%u da_is_mcbc=%u is_decrypted=%u decap=%u",
@@ -1264,6 +1287,8 @@ bool ath12k_wifi8_handle_null_queue(struct ath12k_pdev_dp *dp_pdev,
 		   spd_desc_l->tlv_info.is_decrypted,
 		   spd_desc_l->tlv_info.decap);
 
+	is_eapol = spd_desc_l->cce_match &&
+		   spd_desc_l->cce_metadata == ATH12K_ROUTE_EAP_METADATA;
 	/* Packet arrived on a TID whose REO queue was not set up
 	 * (DESC_ADDR_ZERO). Set up the queue now so subsequent packets
 	 * for this TID are routed correctly without hitting this error path.
@@ -1303,16 +1328,19 @@ bool ath12k_wifi8_handle_null_queue(struct ath12k_pdev_dp *dp_pdev,
 
 	switch (spd_desc_l->tlv_info.decap) {
 	case DP_RX_DECAP_TYPE_ETHERNET2_DIX:
+		ehdr = (struct ethhdr *)msdu->data;
 		if (!peer)
 			return true;
 		is_4addr_sta = peer->vdev_type_4addr & BIT(NL80211_IFTYPE_STATION);
-		if (is_4addr_sta && is_mcbc && !to_ds)
+		if (is_4addr_sta && is_mcbc && !to_ds &&
+		    ehdr->h_proto != cpu_to_be16(ETH_P_1905))
 			return true;
 
 		if (peer)
 			is_mcbc = is_mcbc && !peer->is_reset_mcbc;
 
-		if ((fr_ds && to_ds && peer && !peer->use_4addr) || is_mcbc) {
+		if (is_eapol || (fr_ds && to_ds && peer && !peer->use_4addr) ||
+		    is_mcbc) {
 			ath12k_wifi8_convert_n_deliver_nw_frame(dp_pdev,
 								spd_desc_l,
 								peer, rx_status,
@@ -1456,14 +1484,10 @@ ath12k_wifi8_dp_process_reo_rx_err_packets(struct ath12k_dp *dp,
 						 rx_mpdu_info->reo_error_code,
 						 rx_mpdu_info->rxdma_push_reason,
 						 rx_mpdu_info->rxdma_error_code);
-		if (!drop)
+		if (!drop) {
 			ath12k_wifi8_dp_adjust_skb(spd_desc_l, NULL,
 						   &msdu_idx, hal_rx_desc_sz);
-
-		rx_desc = (struct hal_rx_desc *)spd_desc_l->vaddr;
-		ath12k_wifi8_dp_extract_rx_spd_data(hal, spd_desc_l, rx_desc);
-
-		if (drop) {
+		} else {
 			dev_kfree_skb_any(spd_desc_l->msdu);
 			spd_desc_l->msdu = NULL;
 		}
@@ -1487,6 +1511,9 @@ ath12k_wifi8_dp_process_reo_rx_err_packets(struct ath12k_dp *dp,
 			continue;
 		}
 
+		rx_desc = (struct hal_rx_desc *)spd_desc_l->vaddr;
+		ath12k_wifi8_dp_extract_rx_spd_data(partner_dp->hal, spd_desc_l, rx_desc);
+
 		partner_ab = partner_dp->ab;
 		if (!rcu_dereference(partner_ab->pdevs_active[pdev_id])) {
 			if (spd_desc_l->msdu) {
@@ -1497,7 +1524,8 @@ ath12k_wifi8_dp_process_reo_rx_err_packets(struct ath12k_dp *dp,
 		}
 
 		peer_metadata = rx_mpdu_info->peer_meta_data;
-		peer_id = ath12k_wifi8_dp_rx_get_peer_id(dp->ab, dp->peer_metadata_ver,
+		peer_id = ath12k_wifi8_dp_rx_get_peer_id(partner_dp->ab,
+							 partner_dp->peer_metadata_ver,
 							 peer_metadata);
 		tid = rx_mpdu_info->tid;
 		msdu_len = rx_msdu_info->msdu_length;

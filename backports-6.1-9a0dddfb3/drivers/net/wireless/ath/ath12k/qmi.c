@@ -3252,6 +3252,7 @@ int ath12k_qmi_partner_chip_power_info_send(struct ath12k_base *ab, u8 power_sta
 out:
 	return ret;
 }
+EXPORT_SYMBOL(ath12k_qmi_partner_chip_power_info_send);
 
 int ath12k_qmi_mem_read(struct ath12k_base *ab, u32 mem_addr, void *mem_value,size_t count)
 {

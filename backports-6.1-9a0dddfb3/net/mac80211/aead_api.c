@@ -46,6 +46,7 @@ int aead_encrypt(struct crypto_aead *tfm, u8 *b_0, u8 *aad, size_t aad_len,
 
 	return ret;
 }
+EXPORT_SYMBOL_GPL(aead_encrypt);
 
 int aead_decrypt(struct crypto_aead *tfm, u8 *b_0, u8 *aad, size_t aad_len,
 		 u8 *data, size_t data_len, u8 *mic)
@@ -81,6 +82,7 @@ int aead_decrypt(struct crypto_aead *tfm, u8 *b_0, u8 *aad, size_t aad_len,
 
 	return err;
 }
+EXPORT_SYMBOL_GPL(aead_decrypt);
 
 struct crypto_aead *
 aead_key_setup_encrypt(const char *alg, const u8 key[],

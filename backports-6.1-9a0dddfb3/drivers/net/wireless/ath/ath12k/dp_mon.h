@@ -160,6 +160,12 @@ struct ath12k_ppdu_rx_stats_info;
 
 #define ATH12K_NUM_SU_USER	1
 
+#ifndef CPTCFG_QCN_EXTN
+#define ATH12K_DP_TX_MONITOR_RING_FILL_LVL_MIN	256
+#else
+#define ATH12K_DP_TX_MONITOR_RING_FILL_LVL_MIN ATH12K_DP_TX_MONITOR_BUF_RING_FILL_LVL_MIN
+#endif
+
 struct ath12k_mon_data;
 struct dp_mon_rx_filter;
 struct dp_mon_tx_filter;
@@ -198,6 +204,12 @@ struct dp_mon_desc_list_params {
 	struct page_frag_cache *pf_cache;
 	size_t buff_size;
 	bool is_tx_monitor;
+};
+
+struct dp_mon_srng_params {
+	struct dp_rxdma_mon_ring *srng;
+	enum hal_ring_type type;
+	u32 low_threshold;
 };
 
 enum dp_mon_stats_mode {
@@ -710,6 +722,7 @@ struct ath12k_pdev_mon_dp_stats {
  * @tx_num_frag_free: Count of freed TX monitor fragments
  * @tx_mon_buf_ring_ready: Refill ring descriptor availability state
  * @tx_mon_stats: Buffer lifecycle statistics at SOC level
+ * @default_fill_lvl: Default ring fill level for tx monitor source ring
  */
 struct ath12k_dp_tx_mon {
 	struct dp_rxdma_mon_ring tx_mon_buf_ring;
@@ -721,6 +734,7 @@ struct ath12k_dp_tx_mon {
 	u32 tx_num_frag_free;
 	bool tx_mon_buf_ring_ready;
 	struct ath12k_dp_tx_mon_stats tx_mon_stats;
+	u32 default_fill_lvl;
 };
 
 struct ath12k_pdev_mon_dp;
@@ -1227,6 +1241,8 @@ void ath12k_dp_mon_rx_nrp_set(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_mon_rx_nrp_reset(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_mon_rx_smart_mon_set(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_mon_rx_smart_mon_reset(struct ath12k_pdev_dp *dp_pdev);
+int ath12k_dp_mon_set_low_threshold(struct ath12k_dp *dp,
+				    struct dp_mon_srng_params *srng_params);
 int ath12k_dp_mon_rx_monitor_mode_buf_setup(struct ath12k *ar);
 int ath12k_dp_mon_rx_monitor_mode_reset_buffers(struct ath12k *ar);
 int ath12k_dp_mon_set_fill_level(struct ath12k_pdev_dp *dp_pdev, u32 val);
@@ -2228,6 +2244,20 @@ ath12k_dp_mon_rx_trim_short_pkt_fcs(struct sk_buff *mpdu, u16 total_mpdu_len)
 	fcs_bytes = (int)mpdu->len - (int)(total_mpdu_len - FCS_LEN);
 	if (fcs_bytes > 0)
 		skb_coalesce_rx_frag(mpdu, 0, -fcs_bytes, 0);
+}
+
+static inline bool
+ath12k_dp_mon_rx_is_proto_ver_err(struct ath12k_dp_mon_mpdu_meta *mpdu_meta,
+				  struct sk_buff *mpdu)
+{
+	struct ieee80211_hdr *wh;
+
+	if (mpdu_meta->decap_type != DP_RX_DECAP_TYPE_RAW || !mpdu_meta->fcs_err)
+		return false;
+
+	wh = ath12k_dp_mon_skb_get_frag_addr(mpdu, 0);
+	return wh && unlikely((wh->frame_control &
+				 cpu_to_le16(IEEE80211_FCTL_VERS)) != 0);
 }
 
 void ath12k_dp_mon_peer_telemetry_stats(const struct ath12k_dp_link_peer *peer,

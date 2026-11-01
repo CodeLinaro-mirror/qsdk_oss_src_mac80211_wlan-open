@@ -27,16 +27,21 @@ struct ath12k_link_vif;
 
 /* Num VDEVS per radio */
 #define TARGET_NUM_VDEVS		(ab->mem_params.num_vdevs)
+
+#define ATH12K_QMI_TARGET_MEM_MODE      (ab->mem_params.target_mem_mode)
+
 /* Maximum number of AP interfaces allowed per radio for MBSSID.
- * This excludes the monitor vdev + additional STA vdev included in
- * TARGET_NUM_VDEVS.
+ * This excludes the monitor vdevs for all profiles, for 1GB profiles
+ * additional STA vdev is excluded.
  */
-#define ATH12K_MBSSID_MAX_INTERFACES	((ab->mem_params.num_vdevs) - 2)
+#define ATH12K_MBSSID_MAX_INTERFACES \
+	(((ATH12K_QMI_TARGET_MEM_MODE == ATH12K_QMI_TARGET_MEM_MODE_256M) || \
+	 (ATH12K_QMI_TARGET_MEM_MODE == ATH12K_QMI_TARGET_MEM_MODE_512M)) ? \
+	 ((ab->mem_params.num_vdevs) - 1) : ((ab->mem_params.num_vdevs) - 2))
 
 /* Num of Bridge vdevs per radio */
 #define ATH12K_MAX_NUM_VDEVS_NLINK	(ab->mem_params.num_max_vdevs_nlink)
 #define TARGET_NUM_BRIDGE_VDEVS		(ab->mem_params.num_bridge_vdevs)
-#define ATH12K_QMI_TARGET_MEM_MODE      (ab->mem_params.target_mem_mode)
 
 #define TARGET_NUM_STATIONS_SINGLE	\
 	((ab->mem_params.num_stations_single) ? \
@@ -253,6 +258,8 @@ struct ath12k_cp_arch_ops {
 	int (*wsi_bypass_add)(struct ath12k_base *ab, struct ath12k *ar);
 	void (*en_ssr)(struct ath12k_base *ab, unsigned int value);
 	bool (*bridge_link_allowed)(void);
+	void (*notify_partner_chip_power_state)(struct ath12k_base *asserted_ab,
+					      u8 power_state);
 };
 
 

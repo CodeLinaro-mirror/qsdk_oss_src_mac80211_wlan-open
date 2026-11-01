@@ -385,13 +385,9 @@ void athdbg_coredump_qdss_dump(struct ath12k_base *ab,
 		return;
 	}
 
-	if (event_data->total_size &&
-		event_data->total_size <= ab->dbg_qmi.qdss_mem[0].size){
-		dump = vzalloc(event_data->total_size);
-		if (!dump) {
-			vfree(segment);
-			return;
-		}
+	if (num_seg > 2) {
+		pr_err("Invalid:QDSS segment more then expected\n");
+		return;
 	}
 
 	if (num_seg == 1) {
@@ -411,6 +407,12 @@ void athdbg_coredump_qdss_dump(struct ath12k_base *ab,
 					event_data->mem_seg[0].size,
 					event_data->mem_seg[1].size);
 			goto out;
+		}
+
+		dump = vzalloc(event_data->total_size);
+		if (!dump) {
+			vfree(segment);
+			return;
 		}
 
 		pr_err("qdss mem seg0 addr 0x%llx size 0x%x\n",

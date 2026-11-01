@@ -984,7 +984,7 @@ ath12k_update_tx_ppdu_adv_stats(struct ath12k_pdev_dp *dp_pdev,
 				struct ath12k_htt_tx_ppdu_stats *tx_ppdu_stats)
 {
 	bool is_ppdu_cookie_valid, is_pream_punct;
-	u8 ppdu_type, idx, tx_pwr;
+	u8 ppdu_type, idx, tx_pwr, chain_en;
 	u32 punc_mode, res_mcs;
 
 	ppdu_type = peer_stats->ppdu_type;
@@ -1051,10 +1051,23 @@ ath12k_update_tx_ppdu_adv_stats(struct ath12k_pdev_dp *dp_pdev,
 		DP_STATS_INCR(tx_ppdu_stats, punc_bw[punc_mode], peer_stats->succ_pkts);
 	}
 
-	tx_pwr = HTT_PPDU_GET_PER_CHAIN_TX_PWR(usr_stats->common.tx_pwr, 0);
-	if (usr_stats->common.tx_pwr_multiplier)
-		DP_STATS_UPD(tx_ppdu_stats, tx_pwr,
-			     tx_pwr / usr_stats->common.tx_pwr_multiplier);
+	/*
+	 * chain_enable_bits defaults to 1 (only tx_pwr[0] is valid), which is
+	 * what FW without per-chain Tx power support reports. FW with
+	 * per-chain support sets the bit of each chain whose tx_pwr is valid.
+	 */
+	chain_en = usr_stats->common.chain_enable_bits;
+	DP_STATS_UPD(tx_ppdu_stats, tx_pwr_chain_en, chain_en);
+
+	for (idx = 0; idx < HTT_STATS_MAX_CHAINS && idx < TX_PWR_CHAIN_LEN; idx++) {
+		tx_pwr = 0;
+		if ((chain_en & BIT(idx)) && usr_stats->common.tx_pwr_multiplier)
+			tx_pwr = HTT_PPDU_GET_PER_CHAIN_TX_PWR(usr_stats->common.tx_pwr,
+							       idx) /
+				 usr_stats->common.tx_pwr_multiplier;
+
+		DP_STATS_UPD(tx_ppdu_stats, tx_pwr[idx], tx_pwr);
+	}
 }
 
 void

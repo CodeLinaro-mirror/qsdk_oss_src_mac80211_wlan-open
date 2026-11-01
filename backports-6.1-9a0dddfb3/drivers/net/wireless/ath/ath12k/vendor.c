@@ -3729,8 +3729,10 @@ static int ath12k_get_htt_tx_stats_adv_attr_size(void)
 	/* TX PPDU Duration */
 	total_size += nla_total_size(sizeof(u64));
 
-	/* TX Power */
-	total_size += nla_total_size(sizeof(u8));
+	/* TX Power Per Chain Array [TX_PWR_CHAIN_LEN = 8] */
+	payload_size = nla_total_size(sizeof(u8)) * TX_PWR_CHAIN_LEN;
+	attr_size = nla_total_size_nested(payload_size);
+	total_size += attr_size;
 
 	/* TX msdu flush rsn */
 	total_size += nla_total_size(sizeof(u32));
@@ -4772,6 +4774,38 @@ ath12k_fill_mu_be_ppdu_cnt(struct sk_buff *vendor_event,
 }
 
 static int
+ath12k_fill_tx_pwr_attr(struct sk_buff *vendor_event,
+			struct ath12k_htt_tx_ppdu_stats *tx_ppdu_stats)
+{
+	struct nlattr *attr;
+	int i;
+
+	attr = nla_nest_start(vendor_event,
+			      QCA_VENDOR_WLAN_TELEMETRY_TX_PPDU_STATS_TX_PWR);
+	if (!attr) {
+		ath12k_err(NULL, "nla nest failure: tx pwr");
+		return -EINVAL;
+	}
+
+	/* Report only the chains FW marked valid in chain_enable_bits */
+	for (i = 0; i < QCA_VENDOR_ATTR_WLAN_TELEMETRY_NSS_MAX &&
+	     i < TX_PWR_CHAIN_LEN; i++) {
+		if (!(tx_ppdu_stats->tx_pwr_chain_en & BIT(i)))
+			continue;
+
+		if (nla_put_u8(vendor_event, (i + 1),
+			       tx_ppdu_stats->tx_pwr[i])) {
+			ath12k_err(NULL, "nla put failure: tx pwr chain %d", i);
+			nla_nest_cancel(vendor_event, attr);
+			return -EINVAL;
+		}
+	}
+	nla_nest_end(vendor_event, attr);
+
+	return 0;
+}
+
+static int
 ath12k_fill_su_bn_ppdu_cnt(struct sk_buff *vendor_event,
 			   struct ath12k_dp_link_peer_stats
 			   *link_peer_stats)
@@ -5229,13 +5263,9 @@ ath12k_fill_peer_tx_ppdu_stats_attr(struct ath12k *ar,
 			return -EINVAL;
 		}
 
-		/* TX Power */
-		if (nla_put_u8(vendor_event,
-			       QCA_VENDOR_WLAN_TELEMETRY_TX_PPDU_STATS_TX_PWR,
-			       tx_ppdu_stats->tx_pwr)) {
-			ath12k_err(NULL, "nla put failed: tx pwr");
+		/* TX Power Per Chain */
+		if (ath12k_fill_tx_pwr_attr(vendor_event, tx_ppdu_stats))
 			return -EINVAL;
-		}
 	}
 
 	/* Multicast Last TX Rate */
@@ -10532,6 +10562,34 @@ static int ath12k_fill_radio_tx_mon_stats(struct sk_buff *vendor_event,
 		    pdev_tx_mon_stats->spl_pkt_cap_stats)) {
 		ath12k_err(NULL, "nla put failure: tx mon stats: spc pkt counts");
 		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_MON_STATS_NULL_MON_BUFS,
+			tx_mon_stats->null_bufs)) {
+		ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+			   "null monitor buffers from descriptor pool");
+		return -EMSGSIZE;
+	}
+
+	if (dp_mon && dp_mon->dp_tx_mon) {
+		if (nla_put_u32(vendor_event,
+				QCA_VENDOR_ATTR_TX_MON_STATS_MAX_SRNG_FILL_LVL,
+				dp_mon->dp_tx_mon->default_fill_lvl)) {
+			ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+				   "max srng fill lvl");
+			return -EMSGSIZE;
+		}
+
+		spin_lock_bh(&dp_mon->dp_tx_mon->tx_mon_desc_lock);
+		if (nla_put_u32(vendor_event,
+				QCA_VENDOR_ATTR_TX_MON_STATS_CURR_SRNG_FILL_LVL,
+				dp_mon->dp_tx_mon->tx_mon_buf_ring.cur_fill_lvl)) {
+			spin_unlock_bh(&dp_mon->dp_tx_mon->tx_mon_desc_lock);
+			ath12k_err(NULL, "nla put failure: tx mon stats: %s",
+				   "curr srng fill lvl");
+			return -EMSGSIZE;
+		}
+		spin_unlock_bh(&dp_mon->dp_tx_mon->tx_mon_desc_lock);
 	}
 
 	return 0;

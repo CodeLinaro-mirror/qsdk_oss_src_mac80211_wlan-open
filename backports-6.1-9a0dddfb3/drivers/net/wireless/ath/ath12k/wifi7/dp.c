@@ -545,6 +545,7 @@ static void ath12k_wifi7_dp_link_vif_configure(struct ath12k_dp *dp,
 }
 
 static ssize_t ath12k_wifi7_dump_srng_stats(struct ath12k_dp *dp,
+					    const struct ath12k_srng_dump_filter *filter,
 					    char *buf, int size)
 {
 	int len = 0;
@@ -552,17 +553,20 @@ static ssize_t ath12k_wifi7_dump_srng_stats(struct ath12k_dp *dp,
 	int i;
 
 	for (i = 0; i < ab->hw_params->max_tx_ring; i++)
-		len += ath12k_hal_dump_ring_stats(ab, HAL_WBM2SW_RELEASE,
+		len += ath12k_hal_dump_ring_stats(ab,
+						  HAL_WBM2SW_RELEASE,
 						  dp->tx_ring[i].tcl_comp_ring.ring_id,
-						  buf + len, size - len);
+						  filter, buf + len, size - len);
 
-	len += ath12k_hal_dump_ring_stats(ab, HAL_WBM2SW_RELEASE,
+	len += ath12k_hal_dump_ring_stats(ab,
+					  HAL_WBM2SW_RELEASE,
 					  dp->rx_rel_ring.ring_id,
-					  buf + len, size - len);
+					  filter, buf + len, size - len);
 
-	len += ath12k_hal_dump_ring_stats(ab, HAL_RXDMA_BUF,
+	len += ath12k_hal_dump_ring_stats(ab,
+					  HAL_RXDMA_BUF,
 					  dp->rx_refill_buf_ring.refill_buf_ring.ring_id,
-					  buf + len, size - len);
+					  filter, buf + len, size - len);
 
 	return len;
 }

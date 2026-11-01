@@ -3947,6 +3947,10 @@ static void ath12k_core_post_reconfigure_recovery(struct ath12k_base *ab)
 		switch (ah->state) {
 		case ATH12K_HW_STATE_ON:
 			ah->state = ATH12K_HW_STATE_RESTARTING;
+			/* TODO: Clear stale regulatory state when resetting
+			 * regd_updated.
+			 **/
+			ah->regd_updated = false;
 			break;
 		case ATH12K_HW_STATE_OFF:
 			ath12k_warn(ab,
@@ -6189,27 +6193,14 @@ void ath12k_core_trigger_partner_device_crash(struct ath12k_base *ab)
 }
 EXPORT_SYMBOL(ath12k_core_trigger_partner_device_crash);
 
-static void ath12k_partner_chip_power_state_info(struct ath12k_hw_group *ag,
-						 u8 power_state)
+static void ath12k_arch_notify_partner_chip_power_state(struct ath12k_base *ab,
+							u8 power_state)
 {
-	struct ath12k_base *ab;
-	int i, ret;
+	if (!ab->hw_params->cp_arch_ops ||
+	    !ab->hw_params->cp_arch_ops->notify_partner_chip_power_state)
+		return;
 
-	for (i = 0; i < ag->num_devices; i++) {
-		ab = ag->ab[i];
-
-		if (ab->is_reset)
-			continue;
-
-		if (ab->hif.bus == ATH12K_BUS_PCI) {
-			ret = ath12k_qmi_partner_chip_power_info_send(ab, power_state);
-
-			if (ret < 0)
-				ath12k_err(ab, "Failed to send the power state for the chip\n");
-		}
-	}
-
-	ag->block_peer_create = (power_state == FW_ASSERTED_CHIP_PWR_DOWN);
+	ab->hw_params->cp_arch_ops->notify_partner_chip_power_state(ab, power_state);
 }
 
 static void ath12k_core_disable_ext_irq_during_recovery(struct ath12k_base *ab)
@@ -6581,7 +6572,8 @@ static void ath12k_core_reset(struct work_struct *work)
 
 	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2 ||
 	    ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE3)
-		ath12k_partner_chip_power_state_info(ag, FW_ASSERTED_CHIP_PWR_DOWN);
+		ath12k_arch_notify_partner_chip_power_state(ab,
+							    FW_ASSERTED_CHIP_PWR_DOWN);
 
 	if (ab->fw_recovery_support || ath12k_upload_dump_before_bugon) {
 		if (ab->hif.bus == ATH12K_BUS_PCI) {
@@ -6639,8 +6631,7 @@ static void ath12k_core_reset(struct work_struct *work)
 	/*As a foolproof clear ag->block_peer_create unconditionally for Mode-0*/
 	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2 ||
 	    ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE3)
-		ath12k_partner_chip_power_state_info(ag,
-						     FW_ASSERTED_CHIP_PWR_UP);
+		ath12k_arch_notify_partner_chip_power_state(ab, FW_ASSERTED_CHIP_PWR_UP);
 	else
 		ag->block_peer_create = false;
 

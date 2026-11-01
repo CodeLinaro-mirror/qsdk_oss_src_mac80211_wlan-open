@@ -72,6 +72,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.mac_type = ATH12K_HAL_SRNG_UMAC,
 		.ring_dir = HAL_SRNG_DIR_DST,
 		.max_size = HAL_REO2PPE_RING_BASE_MSB_RING_SIZE,
+		.name = "Reo2ppe",
 	},
 	[HAL_TCL_DATA] = {
 		.start_ring_id = HAL_SRNG_RING_ID_SW2TCL1,
@@ -199,6 +200,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.mac_type = ATH12K_HAL_SRNG_UMAC,
 		.ring_dir = HAL_SRNG_DIR_SRC,
 		.max_size = HAL_PPE2TCL_RING_BASE_MSB_RING_SIZE,
+		.name = "Ppe2tcl",
 	},
 	[HAL_PPE_RELEASE] = {
 		.start_ring_id = HAL_SRNG_RING_ID_WBM_PPE_RELEASE,

@@ -1136,6 +1136,29 @@ int ath12k_wifi7_dp_ppeds_get_bank_lmac_id(struct ath12k_base *ab,
 	return 0;
 }
 
+ssize_t ath12k_wifi7_dp_ppeds_dump_srng_stats(struct ath12k_dp *dp,
+					    const struct ath12k_srng_dump_filter *filter,
+					    char *buf, int size)
+{
+	int len = 0;
+	struct ath12k_base *ab = dp->ab;
+	u32 ring_id;
+
+	ring_id = dp->ppe.ppe2tcl_ring[PPE2TCL_RING_WIFI7].ring_id;
+	len += ath12k_hal_dump_ring_stats(ab, HAL_PPE2TCL, ring_id,
+					  filter, buf + len, size - len);
+
+	ring_id = dp->ppe.reo2ppe_ring[REO2PPE_RING_WIFI7].ring_id;
+	len += ath12k_hal_dump_ring_stats(ab, HAL_REO2PPE, ring_id,
+					  filter, buf + len, size - len);
+
+	ring_id = dp->ppe.ppeds_comp_ring.ppeds_txcmpl_ring.ring_id;
+	len += ath12k_hal_dump_ring_stats(ab, HAL_WBM2SW_RELEASE, ring_id,
+					  filter, buf + len, size - len);
+
+	return len;
+}
+
 struct ppe_ds_wlan_ops_v2 ppeds_wlanops_v2 = {
 	.get_tx_desc_many = ath12k_ppeds_get_batched_tx_desc_v2,
 	.release_tx_desc_single = ath12k_ppeds_release_tx_desc_single_v2,
@@ -1173,4 +1196,6 @@ struct ath12k_ppeds_arch_ops ath12k_wifi7_arch_ppeds_ops  = {
 				ath12k_wifi7_dp_ppeds_get_vp_profile_from_idx,
 	.ath12k_dp_ppeds_get_bank_lmac_id =
 				ath12k_wifi7_dp_ppeds_get_bank_lmac_id,
+	.ath12k_dp_ppeds_dump_srng_stats =
+				ath12k_wifi7_dp_ppeds_dump_srng_stats,
 };

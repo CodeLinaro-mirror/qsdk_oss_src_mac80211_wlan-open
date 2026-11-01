@@ -868,7 +868,7 @@ static int ath12k_wifi8_mgmt_rx_process_mmpdu(struct ath12k_mgmt *mgmt,
 	rxcb->rx_desc = rx_desc;
 
 	ath12k_wifi8_mgmt_extract_rx_desc_data(mgmt, &rx_desc_data, rx_desc,
-					       lrx_desc);
+					       lrx_desc, partner_ar->ab);
 	if (!rx_desc_data.msdu_done) {
 		ath12k_warn(mgmt, "msdu_done bit in MSDU_END is not set");
 		return -EIO;
@@ -904,7 +904,8 @@ static int ath12k_wifi8_mgmt_rx_process_mmpdu(struct ath12k_mgmt *mgmt,
 
 	rx_status->flag |= RX_FLAG_SKIP_MONITOR | RX_FLAG_DUP_VALIDATED;
 
-	peer_metadata = ath12k_wifi8_mgmt_rx_h_peer_meta_data(mgmt, rx_desc);
+	peer_metadata = ath12k_wifi8_mgmt_rx_h_peer_meta_data(mgmt, rx_desc,
+							      partner_ar->ab);
 	ath12k_wifi8_mgmt_rx_cu_mem_update(partner_ar, mmpdu, peer_metadata);
 
 	return 0;
@@ -1014,9 +1015,18 @@ static bool ath12k_wifi8_mgmt_rx_h_reo_err(struct ath12k_mgmt *mgmt,
 	rx_desc = (struct hal_rx_desc *)mmpdu->data;
 	lrx_desc = (struct hal_rx_desc *)last_buf->data;
 
-	ath12k_wifi8_mgmt_extract_rx_desc_data(mgmt, &rx_desc_data, rx_desc, lrx_desc);
-	if (!rx_desc_data.msdu_done)
+	partner_ar = ath12k_core_ar_from_hw_link_id(mgmt->ab, rxcb->hw_link_id);
+	if (!partner_ar) {
+		ath12k_info(mgmt->ab, "mgmt_reo Unable to find partner ar");
 		goto drop;
+	}
+
+	ath12k_wifi8_mgmt_extract_rx_desc_data(mgmt, &rx_desc_data, rx_desc,
+					       lrx_desc, partner_ar->ab);
+	if (!rx_desc_data.msdu_done) {
+		ath12k_info(mgmt->ab, "mgmt_reo Unable to find partner ar");
+		goto drop;
+	}
 
 	buf_hdr_len = hal_rx_desc_sz + rx_desc_data.l3_pad_bytes;
 	mmpdu_len = rx_desc_data.msdu_len;
@@ -1795,8 +1805,9 @@ static int ath12k_wifi8_mgmt_op_htt_setup(struct ath12k_mgmt *mgmt)
 	return ret;
 }
 
-static int
-ath12k_wifi8_mgmt_dump_ring_stats(struct ath12k_mgmt *mgmt, char *buf, int size)
+static int ath12k_wifi8_mgmt_dump_ring_stats(struct ath12k_mgmt *mgmt,
+					     const struct ath12k_srng_dump_filter *filter,
+					     char *buf, int size)
 {
 	struct ath12k_mgmt_wifi8 *mgmt_wifi8 = ath12k_get_mgmt_wifi8(mgmt);
 	struct ath12k_base *ab = mgmt->ab;
@@ -1805,25 +1816,25 @@ ath12k_wifi8_mgmt_dump_ring_stats(struct ath12k_mgmt *mgmt, char *buf, int size)
 	if (len < size)
 		len += ath12k_hal_dump_ring_stats(ab, HAL_REO_DST_MGMT,
 						  mgmt_wifi8->reo_dst_rx_ring.ring_id,
-						  buf + len, size - len);
+						  filter, buf + len, size - len);
 
 	if (len < size)
 		len += ath12k_hal_dump_ring_stats(ab, HAL_REO_EXCEPTION_MGMT,
 						  mgmt_wifi8->reo_dst_rx_err_ring.ring_id,
-						  buf + len, size - len);
+						  filter, buf + len, size - len);
 
 	if (len < size)
 		len += ath12k_hal_dump_ring_stats(ab, HAL_WBM_BUF_MGMT,
 						  mgmt_wifi8->wbm_refill_ring.ring_id,
-						  buf + len, size - len);
+						  filter, buf + len, size - len);
 
 	if (len < size)
 		len += ath12k_hal_dump_ring_stats(ab, HAL_WBM_IDLE_BUF_MGMT,
 						  mgmt_wifi8->wbm_idle_buf_ring.ring_id,
-						  buf + len, size - len);
+						  filter, buf + len, size - len);
 
 #ifdef CPTCFG_QCN_EXTN
-	len = ath12k_wifi8_mgmt_dump_ring_stats_extn(mgmt, buf, size, len);
+	len = ath12k_wifi8_mgmt_dump_ring_stats_extn(mgmt, filter, buf, size, len);
 #endif
 
 	return len;
