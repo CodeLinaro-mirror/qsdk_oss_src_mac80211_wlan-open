@@ -2026,12 +2026,21 @@ static inline int
 ath12k_dp_ext_mon_find_mon_vdev_id(struct ath12k_pdev_dp *dp_pdev)
 {
 	struct ath12k_link_vif *arvif;
+	u32 vdev_id;
 
+	spin_lock_bh(&dp_pdev->ar->data_lock);
 	list_for_each_entry(arvif, &dp_pdev->ar->arvifs, list) {
+		if (!arvif->ahvif)
+			continue;
+
 		if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR &&
-		    arvif->is_started)
-			return arvif->vdev_id;
+		    arvif->is_started) {
+			vdev_id = arvif->vdev_id;
+			spin_unlock_bh(&dp_pdev->ar->data_lock);
+			return vdev_id;
+		}
 	}
+	spin_unlock_bh(&dp_pdev->ar->data_lock);
 	return -1;
 }
 

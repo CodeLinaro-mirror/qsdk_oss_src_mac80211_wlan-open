@@ -4398,18 +4398,25 @@ ath12k_dp_ext_mon_tx_set_rtap_mode(struct ath12k_pdev_dp *dp_pdev, u8 meta_data)
 	enum ieee80211_ext_mon_event_type_extn mode =
 		enable ? IEEE80211_EXT_MON_POST_RTAP : IEEE80211_EXT_MON_PRE_RTAP;
 
+	spin_lock_bh(&dp_pdev->ar->data_lock);
 	list_for_each_entry(arvif, &dp_pdev->ar->arvifs, list) {
+		if (!arvif->ahvif)
+			continue;
+
 		if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR &&
 		    arvif->is_started) {
 			mon_vif = arvif->ahvif->vif;
 			break;
 		}
 	}
-	if (!mon_vif)
+	if (!mon_vif) {
+		spin_unlock_bh(&dp_pdev->ar->data_lock);
 		return;
+	}
 
 	ieee80211_set_ext_tx_monitor(mon_vif, enable);
 	ieee80211_set_ext_tx_mon_evt_typ(mon_vif, mode);
+	spin_unlock_bh(&dp_pdev->ar->data_lock);
 #endif /* CPTCFG_QCN_EXTN */
 }
 
@@ -5832,7 +5839,11 @@ ath12k_dp_ext_mon_tx_prepare_add_peers(struct ath12k_pdev_dp *dp_pdev,
 		if (!peer_info->ra_addr)
 			continue;
 
+		spin_lock_bh(&dp_pdev->ar->data_lock);
 		list_for_each_entry(arvif, &dp_pdev->ar->arvifs, list) {
+			if (!arvif->ahvif)
+				continue;
+
 			if (ether_addr_equal(arvif->bssid, peer_info->mac_addr)) {
 				found = true;
 				ath12k_warn(dp_pdev->dp,
@@ -5841,6 +5852,7 @@ ath12k_dp_ext_mon_tx_prepare_add_peers(struct ath12k_pdev_dp *dp_pdev,
 				break;
 			}
 		}
+		spin_unlock_bh(&dp_pdev->ar->data_lock);
 		if (found)
 			continue;
 

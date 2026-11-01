@@ -3688,7 +3688,11 @@ void ath12k_dp_ext_mon_enable_mac_ext_mon(struct ath12k_pdev_dp *dp_pdev,
 	struct ieee80211_vif *mon_vif = NULL;
 	struct ath12k_link_vif *arvif = NULL;
 
+	spin_lock_bh(&dp_pdev->ar->data_lock);
 	list_for_each_entry(arvif, &dp_pdev->ar->arvifs, list) {
+		if (!arvif->ahvif)
+			continue;
+
 		if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR &&
 		    arvif->is_started) {
 			mon_vif = arvif->ahvif->vif;
@@ -3697,6 +3701,7 @@ void ath12k_dp_ext_mon_enable_mac_ext_mon(struct ath12k_pdev_dp *dp_pdev,
 	}
 	if (mon_vif)
 		ieee80211_enable_ext_monitor(mon_vif, enable);
+	spin_unlock_bh(&dp_pdev->ar->data_lock);
 }
 
 static void
@@ -3704,14 +3709,20 @@ ath12k_dp_ext_mon_config_offchan_capture(struct ath12k_pdev_dp *dp_pdev, bool en
 {
 	struct ath12k_link_vif *arvif;
 
+	spin_lock_bh(&dp_pdev->ar->data_lock);
 	list_for_each_entry(arvif, &dp_pdev->ar->arvifs, list) {
+		if (!arvif->ahvif)
+			continue;
+
 		if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR &&
 		    arvif->is_started) {
 			ieee80211_enable_offchan_packet_capture(arvif->ahvif->vif,
 								enable);
+			spin_unlock_bh(&dp_pdev->ar->data_lock);
 			return;
 		}
 	}
+	spin_unlock_bh(&dp_pdev->ar->data_lock);
 	ath12k_warn(dp_pdev->dp,
 		    "no active monitor vdev found for offchan capture\n");
 }
@@ -3848,7 +3859,11 @@ ath12k_dp_ext_mon_add_rx_peers(struct ath12k_pdev_dp *dp_pdev,
 		peer_info = &peer_config->peer_info[i];
 		found = false;
 
+		spin_lock_bh(&dp_pdev->ar->data_lock);
 		list_for_each_entry(arvif, &dp_pdev->ar->arvifs, list) {
+			if (!arvif->ahvif)
+				continue;
+
 			if (ether_addr_equal(arvif->bssid, peer_info->mac_addr)) {
 				found = true;
 				ath12k_err(dp_pdev->dp->ab,
@@ -3857,6 +3872,7 @@ ath12k_dp_ext_mon_add_rx_peers(struct ath12k_pdev_dp *dp_pdev,
 				break;
 			}
 		}
+		spin_unlock_bh(&dp_pdev->ar->data_lock);
 		if (found)
 			continue;
 
