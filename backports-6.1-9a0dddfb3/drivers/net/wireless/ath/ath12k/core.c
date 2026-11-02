@@ -5650,6 +5650,7 @@ static void ath12k_recovery_dfs_cac_invalidate(struct ath12k *ar,
 
 int ath12k_recovery_reconfig(struct ath12k_base *ab)
 {
+	struct ath12k_link_vif *cac_arvif;
 	struct ath12k *ar = NULL;
 	struct ath12k_pdev *pdev;
 	struct ath12k_link_vif *arvif, *tmp;
@@ -5875,18 +5876,27 @@ skip_link_info:
 				continue;
 			if (!ar->mac.sbands[NL80211_BAND_5GHZ].n_channels)
 				continue;
+			/* CAC invalidation is radio-scoped. Select one eligible VIF
+			 * as the representative for this radio's channel context.
+			 */
+			cac_arvif = NULL;
 			list_for_each_entry_safe_reverse(arvif, tmp, &ar->arvifs, list) {
 				if (!arvif->ahvif)
 					continue;
-				/* Bridge vdevs and monitor vdevs do not participate
-				 * in DFS CAC — skip them.
-				 */
 				if (ath12k_mac_is_bridge_vdev(arvif))
 					continue;
-				if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR)
+				if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_STA) {
+					if (!ar->ah->hw->wiphy->sta_dfs_en ||
+					    ar->ab->dfs_region != ATH12K_DFS_REG_ETSI)
+						continue;
+				} else if (arvif->ahvif->vdev_type != WMI_VDEV_TYPE_AP) {
 					continue;
-				ath12k_recovery_dfs_cac_invalidate(ar, arvif);
+				}
+				cac_arvif = arvif;
+				break;
 			}
+			if (cac_arvif)
+				ath12k_recovery_dfs_cac_invalidate(ar, cac_arvif);
 		}
 	}
 
