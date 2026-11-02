@@ -6424,7 +6424,7 @@ static void ath12k_core_reset(struct work_struct *work)
 
 	/* Send vendor event to notify userspace about assert has occurred */
 #ifdef CPTCFG_QCN_EXTN
-	ath12k_vendor_send_event(ab,
+	ath12k_vendor_send_event_all_radios(ab,
 				 QCA_NL80211_VENDOR_FW_RECOVERY_EVENT_FW_ASSERT);
 #endif /* CPTCFG_QCN_EXTN */
 
