@@ -24962,15 +24962,12 @@ static struct ieee80211_channel *ath12k_mac_get_a_valid_channel(struct ath12k *a
 {
 	struct ieee80211_supported_band *sband;
 	enum nl80211_band band;
-	u32 freq_low, freq_high;
 	int chn;
 
 	for (band = 0; band < NUM_NL80211_BANDS; band++) {
 		if (!(ar->mac.sbands[band].channels))
 			continue;
 		sband = &ar->mac.sbands[band];
-		freq_low = ar->chan_info.low_freq;
-		freq_high = ar->chan_info.high_freq;
 
 		for (chn = 0; chn < sband->n_channels; chn++) {
 			if (sband->channels[chn].flags &
@@ -30416,15 +30413,16 @@ void ath12k_mac_update_freq_range(struct ath12k *ar,
 	if (!(freq_low && freq_high))
 		return;
 
-	ar->chan_info.low_freq = freq_low;
-	ar->chan_info.high_freq = freq_high;
-
 	if (ar->freq_range.start_freq || ar->freq_range.end_freq) {
+		ar->chan_info.low_freq = min(ar->chan_info.low_freq, freq_low);
+		ar->chan_info.high_freq = max(ar->chan_info.high_freq, freq_high);
 		ar->freq_range.start_freq = min(ar->freq_range.start_freq,
 						MHZ_TO_KHZ(freq_low));
 		ar->freq_range.end_freq = max(ar->freq_range.end_freq,
 					      MHZ_TO_KHZ(freq_high));
 	} else {
+		ar->chan_info.low_freq = freq_low;
+		ar->chan_info.high_freq = freq_high;
 		ar->freq_range.start_freq = MHZ_TO_KHZ(freq_low);
 		ar->freq_range.end_freq = MHZ_TO_KHZ(freq_high);
 	}
@@ -30439,17 +30437,88 @@ void ath12k_mac_update_freq_range(struct ath12k *ar,
 }
 
 /**
+ * ath12k_mac_update_wiphy_radio_freq_range - republish wiphy->radio[i].freq_range
+ * @ar: radio to update
+ *
+ * Call after any runtime ar->freq_range update. RCU-swaps in a new range
+ * so the lock-free RX-path reader never sees a torn value.
+ */
+void ath12k_mac_update_wiphy_radio_freq_range(struct ath12k *ar)
+{
+	struct wiphy *wiphy = ath12k_ar_to_ah(ar)->hw->wiphy;
+	struct wiphy_radio_freq_range *new_range, *old_range;
+	struct wiphy_radio *radio;
+
+	if (!wiphy->n_radio)
+		return;
+
+	new_range = kmalloc(sizeof(*new_range), GFP_KERNEL);
+	if (!new_range)
+		return;
+
+	radio = (struct wiphy_radio *)&wiphy->radio[ar->radio_idx];
+
+	spin_lock_bh(&ar->data_lock);
+	new_range->start_freq = ar->freq_range.start_freq;
+	new_range->end_freq   = ar->freq_range.end_freq;
+
+	old_range = (struct wiphy_radio_freq_range *)radio->freq_range;
+	rcu_assign_pointer(radio->freq_range, new_range);
+	radio->n_freq_range = 1;
+	spin_unlock_bh(&ar->data_lock);
+
+	if (old_range && old_range != &ar->freq_range)
+		kfree_rcu_mightsleep(old_range);
+}
+
+/**
+ * ath12k_mac_reset_dfs_for_rf_path_switch - clear DFS/NOL state for the
+ *                                           new RF path range
+ * @ar:       radio context
+ * @new_low:  new freq_low (MHz), after this switch
+ * @new_high: new freq_high (MHz), after this switch
+ *
+ * FW doesn't report which channels it cleared NOL for, so every radar
+ * channel in the new range is reset unconditionally, matching HALPHY.
+ */
+static void ath12k_mac_reset_dfs_for_rf_path_switch(struct ath12k *ar,
+						    u32 new_low, u32 new_high)
+{
+	struct ieee80211_supported_band *sband = &ar->mac.sbands[NL80211_BAND_5GHZ];
+	struct wiphy *wiphy = ath12k_ar_to_ah(ar)->hw->wiphy;
+	int i;
+
+	for (i = 0; i < sband->n_channels; i++) {
+		struct ieee80211_channel *chan = &sband->channels[i];
+		u32 freq = chan->center_freq;
+		struct cfg80211_chan_def chandef;
+
+		if (freq < new_low || freq > new_high)
+			continue;
+
+		if (!(chan->flags & IEEE80211_CHAN_RADAR))
+			continue;
+
+		cfg80211_chandef_create(&chandef, chan, NL80211_CHAN_HT20);
+		cfg80211_set_dfs_state(wiphy, &chandef, NL80211_DFS_USABLE);
+	}
+}
+
+/**
  * ath12k_mac_handle_rf_path_switch - orchestrate a 5G RF path switch
  * @ar:            radio context (must be a 5G radio, not 6 GHz)
  * @rf_path_index: 0 = primary/full range (4890-5930 MHz, ch 36-177)
  *                 1 = secondary/high range (5490-5930 MHz, ch 100-177)
  *
+ * Pure SW+FW operation, no regulatory domain push -- the new range is
+ * folded into ath12k_mac_channel_disabled_for_radio() and applied via
+ * ath12k_mac_recompute_shared_band(), same as the SW band filter.
+ *
  * Returns:
  * 0 on success
  * -EBUSY if a switch is already in progress
  * -ETIMEDOUT if firmware does not respond
- * -EIO if firmware rejected the switch,
- *   or a negative error code from the regd build / wiphy set.
+ * -EIO if firmware rejected the switch
  */
 int ath12k_mac_handle_rf_path_switch(struct ath12k *ar, u32 rf_path_index)
 {
@@ -30458,16 +30527,16 @@ int ath12k_mac_handle_rf_path_switch(struct ath12k *ar, u32 rf_path_index)
 	struct ieee80211_hw *hw = ath12k_ar_to_ah(ar)->hw;
 	struct ath12k_wmi_hal_reg_capabilities_ext_arg  *pri_cap;
 	struct ath12k_wmi_hal_reg_capabilities_ext2_arg *sec_cap;
-	struct ieee80211_regdomain *rf_regd = NULL;
 	u32 phy_id, freq_low, freq_high;
 	unsigned long time_left;
-	int ret;
+	int ret = 0;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
 	if (rf_path_index > ATH12K_RF_PATH_HIGH_RANGE) {
 		ath12k_warn(ab, "rf_path_switch: invalid index %u\n", rf_path_index);
-		return -EINVAL;
+		ret = -EINVAL;
+		goto notify;
 	}
 
 	/*
@@ -30479,11 +30548,18 @@ int ath12k_mac_handle_rf_path_switch(struct ath12k *ar, u32 rf_path_index)
 		ath12k_warn(ab,
 			    "rf_path_switch: pdev %u does not support RF path switching\n",
 			    ar->pdev->pdev_id);
-		return -EOPNOTSUPP;
+		ret = -EOPNOTSUPP;
+		goto notify;
 	}
 
 	if (ctx->is_switch_in_progress) {
 		ath12k_warn(ab, "rf_path_switch: switch already in progress\n");
+		/* Belongs to the switch still in flight -- send the failure
+		 * notification directly, without going through "out"/"notify"
+		 * below, since those would incorrectly clear that in-progress
+		 * state.
+		 */
+		ath12k_vendor_send_rf_path_mode_event(ar, rf_path_index, 1);
 		return -EBUSY;
 	}
 
@@ -30491,7 +30567,7 @@ int ath12k_mac_handle_rf_path_switch(struct ath12k *ar, u32 rf_path_index)
 		ath12k_dbg(ab, ATH12K_DBG_MAC,
 			   "rf_path_switch: already at index %u, no-op\n",
 			   rf_path_index);
-		return 0;
+		goto notify;
 	}
 
 	/*
@@ -30517,7 +30593,8 @@ int ath12k_mac_handle_rf_path_switch(struct ath12k *ar, u32 rf_path_index)
 		ath12k_warn(ab,
 			    "rf_path_switch: pdev %u invalid freq range [%u, %u] MHz for index %u\n",
 			    ar->pdev->pdev_id, freq_low, freq_high, rf_path_index);
-		return -EOPNOTSUPP;
+		ret = -EOPNOTSUPP;
+		goto notify;
 	}
 
 	ctx->is_fw_resp_success = false;
@@ -30556,57 +30633,51 @@ int ath12k_mac_handle_rf_path_switch(struct ath12k *ar, u32 rf_path_index)
 		goto out;
 	}
 
-	/*
-	 * Cache freq bounds for reuse on subsequent country-code changes.
-	 */
 	ctx->freq_low  = freq_low;
 	ctx->freq_high = freq_high;
 
-	/*
-	 * Update the WMI scan channel filter.
-	 */
+	/* Update the WMI scan channel filter. */
+	spin_lock_bh(&ar->data_lock);
 	ar->chan_info.low_freq  = freq_low;
 	ar->chan_info.high_freq = freq_high;
 	ar->freq_range.start_freq = MHZ_TO_KHZ(freq_low);
 	ar->freq_range.end_freq   = MHZ_TO_KHZ(freq_high);
+	spin_unlock_bh(&ar->data_lock);
+	ath12k_mac_update_wiphy_radio_freq_range(ar);
 
 	ath12k_dbg(ab, ATH12K_DBG_MAC,
 		   "rf_path_switch: pdev %u Layer 2 updated freq [%u, %u] MHz\n",
 		   ar->pdev->pdev_id, freq_low, freq_high);
 
-	/*
-	 * Rebuild the 5 GHz regulatory domain and push to cfg80211.
-	 */
-	ret = ath12k_reg_build_regd_for_rf_path(ar, &rf_regd);
-	if (ret) {
-		ath12k_warn(ab,
-			    "rf_path_switch: failed to build rf path regd: %d\n",
-			    ret);
-		goto out;
-	}
-
-	ret = regulatory_set_wiphy_regd(hw->wiphy, rf_regd);
-
-	kfree(rf_regd);
-	if (ret) {
-		ath12k_warn(ab,
-			    "rf_path_switch: regulatory_set_wiphy_regd failed: %d\n",
-			    ret);
-		goto out;
-	}
+	/* Reset DFS/NOL state for every radar channel in the new range. */
+	ath12k_mac_reset_dfs_for_rf_path_switch(ar, freq_low, freq_high);
 
 	/* Commit the new state */
 	ctx->current_index = rf_path_index;
 	ctx->is_switch_in_progress = false;
 
+	/* Union this radio's new range with every sibling sharing 5 GHz. */
+	ath12k_mac_recompute_shared_band(ar->ah, NL80211_BAND_5GHZ);
+
+	ret = ath12k_reg_update_chan_list(ar, false);
+	if (ret) {
+		ath12k_warn(ab,
+			    "rf_path_switch: pdev %u switched to index %u but failed to update FW chan list: %d -- FW scan list may be stale until the next successful push\n",
+			    ar->pdev->pdev_id, rf_path_index, ret);
+		goto notify;
+	}
+
 	ath12k_dbg(ab, ATH12K_DBG_MAC,
 		   "rf_path_switch: pdev %u switched to index %u (freq [%u, %u] MHz)\n",
 		   ar->pdev->pdev_id, rf_path_index, freq_low, freq_high);
 
-	return 0;
+	goto notify;
 
 out:
 	ctx->is_switch_in_progress = false;
+
+notify:
+	ath12k_vendor_send_rf_path_mode_event(ar, rf_path_index, ret ? 1 : 0);
 	return ret;
 }
 
@@ -30631,6 +30702,546 @@ static void ath12k_mac_update_5_9_ch_list(struct ath12k *ar,
 	}
 }
 
+static u32 ath12k_get_phy_id(struct ath12k *ar, u32 band);
+
+/**
+ * ath12k_mac_get_baseline_chan_info - HW capability range for @band on @ar
+ * @ar: radio context
+ * @band: nl80211 band
+ * @chan_info: returned frequency range
+ *
+ * Derived from hal_reg_cap -- independent of the active RF path and band
+ * filter, since it's the hardware-capability floor those operate within.
+ */
+static void ath12k_mac_get_baseline_chan_info(struct ath12k *ar,
+					      enum nl80211_band band,
+					      struct ath12k_chan_info *chan_info)
+{
+	struct ath12k_base *ab = ar->ab;
+	const struct ath12k_wmi_hal_reg_capabilities_ext_arg *reg_cap;
+	u32 phy_id = ar->pdev_idx;
+
+	if (ab->hw_params->single_pdev_only) {
+		if (band == NL80211_BAND_2GHZ)
+			phy_id = ath12k_get_phy_id(ar, WMI_HOST_WLAN_2GHZ_CAP);
+		else if (band == NL80211_BAND_5GHZ || band == NL80211_BAND_6GHZ)
+			phy_id = ath12k_get_phy_id(ar, WMI_HOST_WLAN_5GHZ_CAP);
+	}
+
+	reg_cap = &ab->hal_reg_cap[phy_id];
+	chan_info->low_freq = 0;
+	chan_info->high_freq = 0;
+
+	switch (band) {
+	case NL80211_BAND_2GHZ:
+		chan_info->low_freq = reg_cap->low_2ghz_chan;
+		chan_info->high_freq = reg_cap->high_2ghz_chan;
+		break;
+	case NL80211_BAND_5GHZ:
+		chan_info->low_freq = reg_cap->low_5ghz_chan;
+		chan_info->high_freq = reg_cap->high_5ghz_chan;
+		if (reg_cap->high_5ghz_chan > ATH12K_MIN_6GHZ_FREQ)
+			chan_info->high_freq = min(chan_info->high_freq,
+						   (u32)ATH12K_MAX_5GHZ_FREQ);
+		else
+			chan_info->high_freq = min(chan_info->high_freq,
+						   (u32)ATH12K_MIN_6GHZ_FREQ - 1);
+		break;
+	case NL80211_BAND_6GHZ:
+		chan_info->low_freq = max(reg_cap->low_5ghz_chan,
+					  (u32)ATH12K_MIN_6GHZ_FREQ);
+		chan_info->high_freq = reg_cap->high_5ghz_chan;
+		break;
+	default:
+		break;
+	}
+}
+
+/**
+ * ath12k_mac_channel_disabled_for_radio - decide if @chan should be disabled
+ *                                          for @ar
+ * @ar:   radio context
+ * @chan: channel to evaluate; may belong to a sibling radio's array under
+ *        MLO, but the checks below are always keyed off @ar's own state
+ * @mode: power mode @chan belongs to (the chan_6g[] index for 6 GHz);
+ *        pass NL80211_REG_NUM_POWER_MODES for non-6GHz callers, where
+ *        regdomain rules carry no meaningful power-mode distinction
+ *
+ * Vetoes if @chan is outside this radio's HW capability range, has no
+ * regdomain rule at @mode, is excluded by the SW band filter, or is
+ * outside the active RF path range. Caller unions this per-radio verdict
+ * across every radio sharing the band.
+ */
+static bool
+ath12k_mac_channel_disabled_for_radio(struct ath12k *ar,
+				      const struct ieee80211_channel *chan,
+				      enum nl80211_regulatory_power_modes mode)
+{
+	u32 freq = chan->center_freq;
+	u32 mask = ar->band_filter_ctx.current_enabled_bands;
+	struct ath12k_chan_info baseline;
+	u32 sub_band;
+
+	ath12k_mac_get_baseline_chan_info(ar, chan->band, &baseline);
+
+	if (freq < baseline.low_freq || freq > baseline.high_freq)
+		return true;
+
+	if (!ath12k_reg_freq_has_rule(ar, freq, mode))
+		return true;
+
+	switch (chan->band) {
+	case NL80211_BAND_2GHZ:
+		if (mask && !(mask & ATH12K_BAND_FILTER_2GHZ))
+			return true;
+		break;
+	case NL80211_BAND_5GHZ:
+		sub_band = (freq < ATH12K_MIN_5G_HIGH_BAND_FREQ) ?
+			   ATH12K_BAND_FILTER_5GHZ_LOW : ATH12K_BAND_FILTER_5GHZ_HIGH;
+		if (mask && !(mask & sub_band))
+			return true;
+
+		if (ath12k_is_rf_path_switch_supported(ar) &&
+		    (freq < ar->rf_path_ctx.freq_low || freq > ar->rf_path_ctx.freq_high))
+			return true;
+		break;
+	case NL80211_BAND_6GHZ:
+		sub_band = (freq < ATH12K_MID_6GHZ_BAND_FREQ) ?
+			   ATH12K_BAND_FILTER_6GHZ_LOW : ATH12K_BAND_FILTER_6GHZ_HIGH;
+		if (mask && !(mask & sub_band))
+			return true;
+		break;
+	default:
+		break;
+	}
+
+	return false;
+}
+
+/**
+ * ath12k_mac_recompute_shared_band - union-recompute IEEE80211_CHAN_DISABLED
+ *                                     for @band across every radio under @ah
+ * @ah: hw group whose wiphy owns the live, cfg80211-visible channel arrays
+ * @band: band to recompute
+ *
+ * A channel is disabled only if every radio sharing @band vetoes it via
+ * ath12k_mac_channel_disabled_for_radio() -- the union of what each radio
+ * is willing to enable. DFS/CAC/NOL state is never touched. Caller must
+ * hold the wiphy lock.
+ */
+void ath12k_mac_recompute_shared_band(struct ath12k_hw *ah, enum nl80211_band band)
+{
+	struct ieee80211_supported_band *live_sband = ah->hw->wiphy->bands[band];
+	struct ath12k *ar;
+	int i, j, k;
+
+	lockdep_assert_wiphy(ah->hw->wiphy);
+
+	if (!live_sband)
+		return;
+
+	for (i = 0; i < live_sband->n_channels; i++) {
+		struct ieee80211_channel *chan = &live_sband->channels[i];
+		bool disable = true;
+
+		for_each_ar(ah, ar, j) {
+			if (!ar->mac.sbands[band].channels)
+				continue;
+
+			if (!ath12k_mac_channel_disabled_for_radio(ar,
+			&ar->mac.sbands[band].channels[i],
+			band == NL80211_BAND_6GHZ ?
+				NL80211_REG_NUM_POWER_MODES : NL80211_REG_AP_LPI))
+				disable = false;
+		}
+
+		if (disable)
+			chan->flags |= IEEE80211_CHAN_DISABLED;
+		else
+			chan->flags &= ~IEEE80211_CHAN_DISABLED;
+	}
+
+	if (band != NL80211_BAND_6GHZ)
+		return;
+
+	for (k = 0; k < NL80211_REG_NUM_POWER_MODES; k++) {
+		struct ieee80211_6ghz_channel *live_chan_6g = live_sband->chan_6g[k];
+
+		if (!live_chan_6g)
+			continue;
+
+		for (i = 0; i < live_chan_6g->n_channels; i++) {
+			struct ieee80211_channel *chan = &live_chan_6g->channels[i];
+			bool disable = true;
+
+			for_each_ar(ah, ar, j) {
+				struct ieee80211_supported_band *sband =
+								&ar->mac.sbands[band];
+				struct ieee80211_6ghz_channel *chan_6g =
+								sband->chan_6g[k];
+
+				if (!chan_6g)
+					continue;
+
+				if (!ath12k_mac_channel_disabled_for_radio(ar,
+							&chan_6g->channels[i], k))
+					disable = false;
+			}
+
+			if (disable)
+				chan->flags |= IEEE80211_CHAN_DISABLED;
+			else
+				chan->flags &= ~IEEE80211_CHAN_DISABLED;
+		}
+	}
+}
+
+/**
+ * ath12k_mac_apply_band_filter_range - recompute and apply one band's
+ *                                       filtered frequency range
+ * @ar:             radio context
+ * @band:           NL80211_BAND_5GHZ or NL80211_BAND_6GHZ
+ * @enabled_bands:  bitmask of ATH12K_BAND_FILTER_* bits to expose
+ * @low_mask_bit:   ATH12K_BAND_FILTER_* bit gating this band's lower sub-band
+ * @high_mask_bit:  ATH12K_BAND_FILTER_* bit gating this band's upper sub-band
+ * @low_clamp_freq: freq (MHz) to clamp freq_low to when low_mask_bit is unset
+ * @high_clamp_freq: freq (MHz) to clamp freq_high to when high_mask_bit is unset
+ * @reg_freq:       consistent snapshot of this band's country-regdomain range
+ *
+ * Shared by the 5GHz/6GHz branches of ath12k_mac_handle_band_filter() so a
+ * radio spanning both bands gets each recomputed independently. Widens
+ * ar->chan_info/freq_range via ath12k_mac_update_freq_range() rather than
+ * overwriting -- callers must have reset both to {0,0} before the first
+ * band this radio owns, same as ath12k_regd_update_freq_range(), so a
+ * 5G+6G combo radio's two calls union into one correct span instead of
+ * the second call clobbering the first's result. A disabled band (freq
+ * low/high both 0) is skipped entirely, same no-gap guarantee relied on
+ * by ath12k_mac_handle_band_filter()'s mask validation.
+ */
+static void ath12k_mac_apply_band_filter_range(struct ath12k *ar,
+					       enum nl80211_band band,
+					       u32 enabled_bands,
+					       u32 low_mask_bit, u32 high_mask_bit,
+					       u32 low_clamp_freq, u32 high_clamp_freq,
+					       const struct ath12k_reg_freq *reg_freq)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_wmi_hal_reg_capabilities_ext_arg *pri_cap;
+	u32 phy_id, freq_low, freq_high;
+
+	if (ab->hw_params->single_pdev_only)
+		phy_id = ar->pdev->cap.band[WMI_HOST_WLAN_5GHZ_CAP].phy_id;
+	else
+		phy_id = ar->pdev_idx;
+
+	pri_cap = &ab->hal_reg_cap[phy_id];
+	freq_low  = max(pri_cap->low_5ghz_chan,  reg_freq->start_freq);
+	freq_high = min(pri_cap->high_5ghz_chan, reg_freq->end_freq);
+
+	if (!(enabled_bands & low_mask_bit))
+		freq_low = max(freq_low, low_clamp_freq);
+	if (!(enabled_bands & high_mask_bit))
+		freq_high = min(freq_high, high_clamp_freq);
+
+	if (!(enabled_bands & (low_mask_bit | high_mask_bit))) {
+		freq_low  = 0;
+		freq_high = 0;
+	}
+
+	ath12k_mac_update_freq_range(ar, freq_low, freq_high);
+
+	ath12k_dbg(ab, ATH12K_DBG_MAC,
+		   "band_filter: pdev %u %s freq_range [%u, %u] MHz (mask 0x%x)\n",
+		   ar->pdev->pdev_id, band == NL80211_BAND_6GHZ ? "6 GHz" : "5 GHz",
+		   freq_low, freq_high, enabled_bands);
+}
+
+/**
+ * ath12k_mac_band_filter_mask_has_gap - check @enabled_bands for an interior
+ *                                        disabled sub-band on @ar
+ * @ar: radio context
+ * @enabled_bands: candidate mask; caller ensures this is non-zero and not
+ *                 ATH12K_BAND_FILTER_NONE
+ *
+ * This radio's sub-bands form one ordered sequence by frequency (2GHz, then
+ * 5GHz-low/high, then 6GHz-low/high -- whichever this radio actually
+ * supports). The enabled bits must form a single contiguous run in that
+ * order: a disabled sub-band may never sit between two enabled ones. A
+ * single [low, high] span -- what both firmware's advertised range and the
+ * driver's own live-range lookups (AFC EIRP routing, radio selection by
+ * frequency) ultimately collapse to -- cannot represent a hole, so a mask
+ * that would create one here would make those lookups silently wrong for
+ * whatever sits in the gap.
+ *
+ * Returns true if @enabled_bands leaves a gap.
+ */
+static bool ath12k_mac_band_filter_mask_has_gap(struct ath12k *ar, u32 enabled_bands)
+{
+	u32 supported = ar->pdev->cap.supported_bands;
+	u32 seq[4];
+	int n = 0, i, first_set = -1, last_set = -1;
+
+	if (supported & WMI_HOST_WLAN_2GHZ_CAP)
+		seq[n++] = ATH12K_BAND_FILTER_2GHZ;
+	if (ar->mac.sbands[NL80211_BAND_5GHZ].channels) {
+		seq[n++] = ATH12K_BAND_FILTER_5GHZ_LOW;
+		seq[n++] = ATH12K_BAND_FILTER_5GHZ_HIGH;
+	}
+	if (ar->supports_6ghz) {
+		seq[n++] = ATH12K_BAND_FILTER_6GHZ_LOW;
+		seq[n++] = ATH12K_BAND_FILTER_6GHZ_HIGH;
+	}
+
+	for (i = 0; i < n; i++) {
+		if (enabled_bands & seq[i]) {
+			if (first_set == -1)
+				first_set = i;
+			last_set = i;
+		}
+	}
+
+	if (first_set == -1)
+		return false;
+
+	for (i = first_set; i <= last_set; i++) {
+		if (!(enabled_bands & seq[i]))
+			return true;
+	}
+
+	return false;
+}
+
+static bool ath12k_is_atleast_one_subband_present(struct ath12k *ar, u32 enabled_bands)
+{
+	u32 supported = ar->pdev->cap.supported_bands;
+
+	if ((enabled_bands & ATH12K_BAND_FILTER_2GHZ) &&
+	    (supported & WMI_HOST_WLAN_2GHZ_CAP))
+		return true;
+	if ((enabled_bands & (ATH12K_BAND_FILTER_5GHZ_LOW |
+			      ATH12K_BAND_FILTER_5GHZ_HIGH)) &&
+	    ar->mac.sbands[NL80211_BAND_5GHZ].channels)
+		return true;
+	if ((enabled_bands & (ATH12K_BAND_FILTER_6GHZ_LOW |
+			      ATH12K_BAND_FILTER_6GHZ_HIGH)) &&
+	    ar->supports_6ghz)
+		return true;
+
+	return false;
+}
+
+static int ath12k_mac_validate_band_filter_mask(struct ath12k *ar, u32 enabled_bands)
+{
+	struct ath12k_base *ab = ar->ab;
+
+	/* ATH12K_BAND_FILTER_NONE disables every band and must be passed
+	 * alone -- reject any mask that ORs it with other band bits.
+	 */
+	if ((enabled_bands & ATH12K_BAND_FILTER_NONE) &&
+	    enabled_bands != ATH12K_BAND_FILTER_NONE) {
+		ath12k_warn(ab,
+			    "band_filter: pdev %u: ATH12K_BAND_FILTER_NONE must be passed alone, got mask 0x%x\n",
+			    ar->pdev->pdev_id, enabled_bands);
+		return -EINVAL;
+	}
+
+	/* Reject any bit outside the defined set -- reserved bits 5-30 are
+	 * not silently ignored.
+	 */
+	if (enabled_bands & ~(ATH12K_BAND_FILTER_2GHZ |
+			      ATH12K_BAND_FILTER_5GHZ_LOW |
+			      ATH12K_BAND_FILTER_5GHZ_HIGH |
+			      ATH12K_BAND_FILTER_6GHZ_LOW |
+			      ATH12K_BAND_FILTER_6GHZ_HIGH |
+			      ATH12K_BAND_FILTER_NONE)) {
+		ath12k_warn(ab,
+			    "band_filter: pdev %u: mask 0x%x has reserved bits set\n",
+			    ar->pdev->pdev_id, enabled_bands);
+		return -EINVAL;
+	}
+
+	if (enabled_bands == ATH12K_BAND_FILTER_NONE || !enabled_bands)
+		return 0;
+
+	/* At least one enabled band must be supported. */
+	if (!ath12k_is_atleast_one_subband_present(ar, enabled_bands)) {
+		ath12k_warn(ab,
+			    "band_filter: pdev %u: no enabled band in mask 0x%x matches supported_bands 0x%x (supports_6ghz=%d)\n",
+			    ar->pdev->pdev_id, enabled_bands,
+			    ar->pdev->cap.supported_bands, ar->supports_6ghz);
+		return -EINVAL;
+	}
+
+	/* Reject a mask that leaves a gap between enabled sub-bands. */
+	if (ath12k_mac_band_filter_mask_has_gap(ar, enabled_bands)) {
+		ath12k_warn(ab,
+			    "band_filter: pdev %u: mask 0x%x disables a sub-band between two enabled ones\n",
+			    ar->pdev->pdev_id, enabled_bands);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static void ath12k_mac_apply_band_filter_2ghz_range(struct ath12k *ar, u32 enabled_bands)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_wmi_hal_reg_capabilities_ext_arg *reg_cap_2g;
+	u32 freq_low, freq_high, phy_id_2g;
+
+	if (!(ar->pdev->cap.supported_bands & WMI_HOST_WLAN_2GHZ_CAP))
+		return;
+
+	if (ab->hw_params->single_pdev_only) {
+		phy_id_2g = ar->pdev->cap.band[WMI_HOST_WLAN_2GHZ_CAP].phy_id;
+		reg_cap_2g = &ab->hal_reg_cap[phy_id_2g];
+	} else {
+		reg_cap_2g = &ab->hal_reg_cap[ar->pdev_idx];
+	}
+
+	spin_lock_bh(&ab->reg_freq_lock);
+	freq_low = max(reg_cap_2g->low_2ghz_chan, ab->reg_freq_2g.start_freq);
+	freq_high = min(reg_cap_2g->high_2ghz_chan, ab->reg_freq_2g.end_freq);
+	spin_unlock_bh(&ab->reg_freq_lock);
+
+	if (!(enabled_bands & ATH12K_BAND_FILTER_2GHZ)) {
+		freq_low  = 0;
+		freq_high = 0;
+	}
+
+	ath12k_mac_update_freq_range(ar, freq_low, freq_high);
+
+	ath12k_dbg(ab, ATH12K_DBG_MAC,
+		   "band_filter: pdev %u 2 GHz freq_range [%u, %u] MHz (mask 0x%x)\n",
+		   ar->pdev->pdev_id, freq_low, freq_high, enabled_bands);
+}
+
+static void ath12k_mac_recalc_band_filter_freq_range(struct ath12k *ar, u32 enabled_bands)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_reg_freq reg_freq;
+
+	if (enabled_bands == 0 ||
+	    !(ar->pdev->cap.supported_bands & WMI_HOST_WLAN_5GHZ_CAP)) {
+		/* Clear filter: recompute the correct range from hardware caps. */
+		ath12k_regd_update_freq_range(ar);
+		return;
+	}
+
+	/* Recompute each band this radio has independently -- it may
+	 * own 2GHz+5GHz or 5GHz+6GHz (never all three on real hardware).
+	 * Reset the union first so each band's contribution below widens
+	 * it via ath12k_mac_update_freq_range() instead of being clobbered
+	 * by whichever band runs last.
+	 */
+	spin_lock_bh(&ar->data_lock);
+	ar->chan_info.low_freq = 0;
+	ar->chan_info.high_freq = 0;
+	ar->freq_range.start_freq = 0;
+	ar->freq_range.end_freq = 0;
+	spin_unlock_bh(&ar->data_lock);
+
+	ath12k_mac_apply_band_filter_2ghz_range(ar, enabled_bands);
+
+	if (ar->mac.sbands[NL80211_BAND_5GHZ].channels) {
+		spin_lock_bh(&ab->reg_freq_lock);
+		reg_freq = ab->reg_freq_5g;
+		spin_unlock_bh(&ab->reg_freq_lock);
+
+		ath12k_mac_apply_band_filter_range(ar, NL80211_BAND_5GHZ,
+						   enabled_bands,
+						   ATH12K_BAND_FILTER_5GHZ_LOW,
+						   ATH12K_BAND_FILTER_5GHZ_HIGH,
+						   ATH12K_MIN_5G_HIGH_BAND_FREQ,
+						   ATH12K_MAX_5G_LOW_BAND_FREQ,
+						   &reg_freq);
+	}
+
+	if (ar->supports_6ghz) {
+		spin_lock_bh(&ab->reg_freq_lock);
+		reg_freq = ab->reg_freq_6g;
+		spin_unlock_bh(&ab->reg_freq_lock);
+
+		ath12k_mac_apply_band_filter_range(ar, NL80211_BAND_6GHZ,
+						   enabled_bands,
+						   ATH12K_BAND_FILTER_6GHZ_LOW,
+						   ATH12K_BAND_FILTER_6GHZ_HIGH,
+						   ATH12K_MID_6GHZ_BAND_FREQ,
+						   ATH12K_MID_6GHZ_BAND_FREQ,
+						   &reg_freq);
+	}
+}
+
+static void ath12k_mac_recompute_shared_bands(struct ath12k *ar)
+{
+	/* Recompute the union for every band this radio participates in. */
+	if (ar->mac.sbands[NL80211_BAND_2GHZ].channels)
+		ath12k_mac_recompute_shared_band(ar->ah, NL80211_BAND_2GHZ);
+	if (ar->mac.sbands[NL80211_BAND_5GHZ].channels)
+		ath12k_mac_recompute_shared_band(ar->ah, NL80211_BAND_5GHZ);
+	if (ar->supports_6ghz)
+		ath12k_mac_recompute_shared_band(ar->ah, NL80211_BAND_6GHZ);
+}
+
+static int ath12k_mac_push_band_filter_chan_list(struct ath12k *ar, u32 enabled_bands)
+{
+	struct ath12k_base *ab = ar->ab;
+	int ret;
+
+	ret = ath12k_reg_update_chan_list(ar, false);
+	if (ret) {
+		ath12k_warn(ab,
+			    "band_filter: pdev %u filter set to 0x%x but failed to update FW chan list: %d",
+			    ar->pdev->pdev_id, enabled_bands, ret);
+		ath12k_vendor_send_band_channel_filter_event(ar, 1);
+		return ret;
+	}
+
+	ath12k_vendor_send_band_channel_filter_event(ar, 0);
+	return 0;
+}
+
+int ath12k_mac_handle_band_filter(struct ath12k *ar, u32 enabled_bands)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct ieee80211_hw *hw = ath12k_ar_to_ah(ar)->hw;
+	int ret;
+
+	lockdep_assert_wiphy(hw->wiphy);
+
+	ret = ath12k_mac_validate_band_filter_mask(ar, enabled_bands);
+	if (ret)
+		return ret;
+
+	if (ar->band_filter_ctx.current_enabled_bands == enabled_bands) {
+		ath12k_dbg(ab, ATH12K_DBG_MAC,
+			   "band_filter: pdev %u already at mask 0x%x, no-op\n",
+			   ar->pdev->pdev_id, enabled_bands);
+		return 0;
+	}
+
+	ar->band_filter_ctx.current_enabled_bands = enabled_bands;
+
+	ath12k_mac_recalc_band_filter_freq_range(ar, enabled_bands);
+	ath12k_mac_update_wiphy_radio_freq_range(ar);
+	ath12k_mac_recompute_shared_bands(ar);
+
+	ret = ath12k_mac_push_band_filter_chan_list(ar, enabled_bands);
+	if (ret)
+		return ret;
+
+	ath12k_dbg(ab, ATH12K_DBG_MAC,
+		   "band_filter: pdev %u filter set to 0x%x (%s%s%s%s%s%s)\n",
+		   ar->pdev->pdev_id, enabled_bands,
+		   enabled_bands == ATH12K_BAND_FILTER_NONE ? "NONE " : "",
+		   enabled_bands & ATH12K_BAND_FILTER_2GHZ     ? "2G " : "",
+		   enabled_bands & ATH12K_BAND_FILTER_5GHZ_LOW ? "5GL " : "",
+		   enabled_bands & ATH12K_BAND_FILTER_5GHZ_HIGH ? "5GH " : "",
+		   enabled_bands & ATH12K_BAND_FILTER_6GHZ_LOW ? "6GL " : "",
+		   enabled_bands & ATH12K_BAND_FILTER_6GHZ_HIGH ? "6GH " : "");
+
+	return 0;
+}
 
 /**
  * ath12k_mac_update_ch_list - disable band chans outside the given frequency
@@ -30685,6 +31296,38 @@ static u32 ath12k_get_phy_id(struct ath12k *ar, u32 band)
 	ath12k_warn(ar->ab, "unsupported phy cap:%d\n", band);
 
 	return 0;
+}
+
+/**
+ * ath12k_mac_get_setup_5g_range - resolve the 5GHz range to build the
+ *                                  initial channel array from
+ * @ab: base
+ * @phy_id: phy_id resolved for hal_reg_cap[]/hal_reg_cap_ext2[] lookups
+ * @primary_low: this radio's primary (EXT) low_5ghz_chan
+ * @primary_high: this radio's primary (EXT) high_5ghz_chan
+ * @out_low: resolved low bound for the initial chan->flags
+ * @out_high: resolved high bound for the initial chan->flags
+ *
+ * out_low/out_high are the secondary (EXT2) range if valid and
+ * rf_switch_config selects it, else the primary range.
+ */
+static void ath12k_mac_get_setup_5g_range(struct ath12k_base *ab, u32 phy_id,
+					  u32 primary_low, u32 primary_high,
+					  u32 *out_low, u32 *out_high)
+{
+	struct ath12k_wmi_hal_reg_capabilities_ext2_arg *sec_cap =
+		&ab->hal_reg_cap_ext2[phy_id];
+	bool sec_cap_present = sec_cap->low_5ghz_chan_ext != 0 &&
+			       sec_cap->high_5ghz_chan_ext != 0;
+
+	if (sec_cap_present && ab->rf_switch_config == ATH12K_RF_PATH_HIGH_RANGE) {
+		*out_low  = sec_cap->low_5ghz_chan_ext;
+		*out_high = sec_cap->high_5ghz_chan_ext;
+		return;
+	}
+
+	*out_low  = primary_low;
+	*out_high = primary_high;
 }
 
 /**
@@ -31071,6 +31714,7 @@ static int ath12k_mac_setup_channels_rates(struct ath12k *ar,
 	struct ath12k_hw *ah = ar->ah;
 	void *channels;
 	u32 phy_id, freq_low, freq_high;
+	u32 setup_5g_low, setup_5g_high;
 	struct ieee80211_6ghz_channel *chan_6g;
 	int ret, i = 0;
 
@@ -31178,17 +31822,24 @@ static int ath12k_mac_setup_channels_rates(struct ath12k *ar,
 
 			if (ar->ab->hw_params->single_pdev_only)
 				phy_id = ath12k_get_phy_id(ar, WMI_HOST_WLAN_5GHZ_CAP);
+			else
+				phy_id = ar->pdev_idx;
+
+			ath12k_mac_get_setup_5g_range(ab, phy_id,
+						      reg_cap->low_5ghz_chan,
+						      reg_cap->high_5ghz_chan,
+						      &setup_5g_low, &setup_5g_high);
 
 			spin_lock_bh(&ab->reg_freq_lock);
-			freq_low = max(reg_cap->low_5ghz_chan,
+			freq_low = max(setup_5g_low,
 				       ab->reg_freq_5g.start_freq);
-			freq_high = min(reg_cap->high_5ghz_chan,
+			freq_high = min(setup_5g_high,
 					ab->reg_freq_5g.end_freq);
 			spin_unlock_bh(&ab->reg_freq_lock);
 
 			ath12k_mac_update_ch_list(ar, band,
-						  reg_cap->low_5ghz_chan,
-						  reg_cap->high_5ghz_chan);
+						  setup_5g_low,
+						  setup_5g_high);
 
 			ath12k_mac_update_freq_range(ar, freq_low, freq_high);
 
@@ -31965,6 +32616,18 @@ static u32 ath12k_mac_mapc_hw_cap_bitmap(struct ath12k_base *ab)
 	return bitmap;
 }
 
+static void ath12k_fill_band_filter_ctx(struct ath12k *ar)
+{
+	u32 ini_mask = ar->ab->band_channel_filter_config[ar->pdev_idx];
+
+	ar->band_filter_ctx.current_enabled_bands = ini_mask;
+
+	if (ini_mask)
+		ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+			   "pdev %u: band filter pre-set from INI: 0x%x\n",
+			   ar->pdev->pdev_id, ini_mask);
+}
+
 static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 {
 	struct ieee80211_hw *hw = ah->hw;
@@ -32443,6 +33106,7 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 
 			if (ath12k_is_rf_path_switch_supported(ar))
 				ath12k_fill_rf_path_ctx(ar, sec_cap, pri_cap);
+			ath12k_fill_band_filter_ctx(ar);
 		}
 
 		ret = ath12k_regd_update(ar, true);
@@ -32489,40 +33153,6 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 				 "mac pdev %u freq limits %u->%u MHz, no. of channels %u\n",
 				 ar->pdev->pdev_id, ar->freq_range.start_freq,
 				 ar->freq_range.end_freq, ar->num_channels);
-	}
-
-	/* Apply band-limited regd for any 5 GHz radio at secondary path.
-	 *
-	 * In MLO, the 6 GHz radio wins the ah->regd_updated gate and the
-	 * 5 GHz radio hits an early return in ath12k_regd_update() before
-	 * it can apply the restriction itself.  This sweep handles that case.
-	 *
-	 * regulatory_set_wiphy_regd() acts on the wiphy, not on individual
-	 * radios; stop after the first qualifying radio.
-	 */
-	for_each_ar(ah, ar, i) {
-		struct ieee80211_regdomain *rf_regd = NULL;
-
-		if (ar->rf_path_ctx.current_index != ATH12K_RF_PATH_HIGH_RANGE)
-			continue;
-
-		ret = ath12k_reg_build_regd_for_rf_path(ar, &rf_regd);
-		if (ret) {
-			ath12k_err(ar->ab,
-				   "rf_path: regd build failed for pdev %u: %d\n",
-				   ar->pdev->pdev_id, ret);
-			goto err_unregister_hw;
-		}
-
-		ret = regulatory_set_wiphy_regd(hw->wiphy, rf_regd);
-		kfree(rf_regd);
-		if (ret) {
-			ath12k_err(ar->ab,
-				   "rf_path: regulatory_set_wiphy_regd failed for pdev %u: %d\n",
-				   ar->pdev->pdev_id, ret);
-			goto err_unregister_hw;
-		}
-		break;
 	}
 
 	return 0;
@@ -35046,9 +35676,20 @@ struct ath12k *ath12k_mac_get_ar_by_center_freq(struct ieee80211_hw *hw,
 	struct ath12k *ar;
 	int i;
 
+	/* AFC (6 GHz) lookup -- ar->chan_info is this radio's single active
+	 * span; intersecting it with the fixed 6 GHz boundary recovers the
+	 * 6 GHz-specific bound without a dedicated per-band field, since the
+	 * no-gap mask validation in ath12k_mac_handle_band_filter() keeps
+	 * that span free of interior holes.
+	 */
 	for_each_ar(ah, ar, i) {
-		if (center_freq >= ar->chan_info.low_freq &&
-		    center_freq <= ar->chan_info.high_freq)
+		u32 low  = max_t(u32, ar->chan_info.low_freq, ATH12K_MIN_6GHZ_FREQ);
+		u32 high = min_t(u32, ar->chan_info.high_freq, ATH12K_MAX_6GHZ_FREQ);
+
+		if (low > high)
+			continue;
+
+		if (center_freq >= low && center_freq <= high)
 			return ar;
 	}
 

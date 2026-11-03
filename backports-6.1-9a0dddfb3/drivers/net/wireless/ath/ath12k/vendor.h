@@ -146,6 +146,26 @@ int ath12k_send_afc_request(struct ath12k *ar, struct ath12k_afc_host_request *a
  * Return: 0 on success, negative errno on failure.
  */
 int ath12k_send_afc_payload_reset(struct ath12k *ar);
+/**
+ * ath12k_vendor_send_band_channel_filter_event - notify userspace of a band
+ *                                                 filter change
+ * @ar: radio the filter was applied to
+ * @status: 0 on success, non-zero on failure
+ *
+ * Return: none
+ */
+void ath12k_vendor_send_band_channel_filter_event(struct ath12k *ar, u32 status);
+/**
+ * ath12k_vendor_send_rf_path_mode_event - notify userspace of an RF path
+ *                                          switch result
+ * @ar: radio the switch was applied to
+ * @rf_path_index: requested RF path index
+ * @status: 0 on success, non-zero on failure
+ *
+ * Return: none
+ */
+void ath12k_vendor_send_rf_path_mode_event(struct ath12k *ar, u32 rf_path_index,
+					   u32 status);
 
 /**
  * Opclass, channel and EIRP information attribute length

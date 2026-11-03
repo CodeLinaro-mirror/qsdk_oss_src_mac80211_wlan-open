@@ -1486,6 +1486,22 @@ bool cfg80211_chandef_dfs_nol_history(struct wiphy *wiphy,
 				      const struct cfg80211_chan_def *chandef);
 
 /**
+ * cfg80211_set_dfs_state - directly set the DFS state for a chandef
+ * @wiphy: the wiphy the chandef belongs to
+ * @chandef: the channel definition whose sub-channels should be updated
+ * @dfs_state: the new dfs_state to apply
+ *
+ * Sets dfs_state (and refreshes dfs_state_entered) on every DFS-capable
+ * sub-channel spanned by @chandef, without reprocessing the whole band
+ * against a regdomain. Intended for drivers that need to reset DFS/NOL
+ * state for a specific, narrow set of channels outside of the normal
+ * regulatory-domain-push path.
+ */
+void cfg80211_set_dfs_state(struct wiphy *wiphy,
+			    const struct cfg80211_chan_def *chandef,
+			    enum nl80211_dfs_state dfs_state);
+
+/**
  * cfg80211_chandef_dfs_cac_time - get maximum dfs cac time traversing
  * through the entire channel width
  * @wiphy: the wiphy to validate against

@@ -943,9 +943,44 @@ int ath12k_mac_vendor_send_assoc_event(struct ath12k_link_sta *arsta,
 				       bool reassoc);
 int ath12k_mac_vendor_send_disassoc_event(struct ath12k_link_sta *arsta,
 					  struct ieee80211_link_sta *link_sta);
+/**
+ * ath12k_mac_update_freq_range - widen ar->chan_info/freq_range to cover a range
+ * @ar: radio to update
+ * @freq_low: lower bound in MHz
+ * @freq_high: upper bound in MHz
+ */
 void ath12k_mac_update_freq_range(struct ath12k *ar,
 				  u32 freq_low, u32 freq_high);
+/**
+ * ath12k_mac_update_wiphy_radio_freq_range - republish wiphy->radio[i].freq_range
+ * @ar: radio to update
+ *
+ * Call after any runtime ar->freq_range update. RCU-swaps in a new range
+ * so the lock-free RX-path reader never sees a torn value.
+ */
+void ath12k_mac_update_wiphy_radio_freq_range(struct ath12k *ar);
+/**
+ * ath12k_mac_handle_rf_path_switch - switch a radio's active RF path
+ * @ar: radio context
+ * @rf_path_index: 0 = primary/full range, 1 = secondary/high range
+ *
+ * Return: 0 on success, negative errno on failure
+ */
 int ath12k_mac_handle_rf_path_switch(struct ath12k *ar, u32 rf_path_index);
+/**
+ * ath12k_mac_handle_band_filter - apply or clear a per-radio SW band filter
+ * @ar: radio context
+ * @enabled_bands: bitmask of ATH12K_BAND_FILTER_* bits to expose; 0 = clear
+ *
+ * Return: 0 on success, negative errno on failure
+ */
+int ath12k_mac_handle_band_filter(struct ath12k *ar, u32 enabled_bands);
+/**
+ * ath12k_mac_recompute_shared_band - recompute IEEE80211_CHAN_DISABLED for @band
+ * @ah: hw group whose wiphy owns the live channel arrays
+ * @band: band to recompute
+ */
+void ath12k_mac_recompute_shared_band(struct ath12k_hw *ah, enum nl80211_band band);
 void ath12k_mac_ieee80211_free_txskb(struct ieee80211_hw *hw,
 				     struct sk_buff *skb,
 				     struct ath12k_pdev_dp *dp_pdev,

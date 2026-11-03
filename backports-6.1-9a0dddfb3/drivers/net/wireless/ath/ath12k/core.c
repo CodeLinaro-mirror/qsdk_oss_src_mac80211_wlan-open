@@ -3239,6 +3239,37 @@ static void ath12k_led_init(struct ath12k_base *ab)
 	}
 }
 
+/**
+ * ath12k_set_default_radio_subbands - cache per-radio boot-time SW band
+ *                                       filter from the band_channel_filter_config INI
+ * @ab: base
+ *
+ * Byte-packed per radio: radio 0's ATH12K_BAND_FILTER_* mask in bits
+ * [0:4], radio 1's in bits [8:12].
+ */
+static void ath12k_set_default_radio_subbands(struct ath12k_base *ab)
+{
+	u32 band_filter_ini;
+	u32 *fil_cfg;
+	int i;
+
+#ifdef CPTCFG_QCN_EXTN
+	band_filter_ini = ath12k_cfg_get(ab, ATH12K_CFG_BAND_CHANNEL_FILTER_CONFIG);
+#else
+	band_filter_ini = 0; /* default: no filter pre-set */
+#endif /* CPTCFG_QCN_EXTN */
+
+	fil_cfg = ab->band_channel_filter_config;
+	for (i = 0; i < MAX_RADIOS; i++) {
+		fil_cfg[i] = (band_filter_ini >>
+			      (i * ATH12K_BAND_FILTER_CONFIG_PER_RADIO_BITS)) &
+			      GENMASK(ATH12K_BAND_FILTER_CONFIG_MASK_BITS - 1, 0);
+		if (fil_cfg[i])
+			ath12k_info(ab, "band_channel_filter_config[%d]: 0x%x\n",
+				    i, fil_cfg[i]);
+	}
+}
+
 int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 {
 	struct ath12k_hw_group *ag = ath12k_ab_to_ag(ab);
@@ -3277,6 +3308,9 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 	ath12k_info(ab, "rf_switch_config: %u (%s 5G range)\n",
 		    ab->rf_switch_config,
 		    ab->rf_switch_config ? "secondary/high" : "primary/full");
+
+	/* Cache band_channel_filter_config INI value for use in mac registration. */
+	ath12k_set_default_radio_subbands(ab);
 
 	ret = ath12k_dp_cmn_device_init(ab->dp);
 	if (ret) {

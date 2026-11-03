@@ -5577,17 +5577,13 @@ int ath12k_wmi_update_scan_chan_list(struct ath12k *ar,
 	int num_channels = 0;
 	int i, ret;
 	bool found = false;
-	u32 low_freq, high_freq;
+	struct ath12k_chan_info chan_info;
 
-	/* Snapshot chan_info under data_lock to get a consistent view of the
-	 * freq range for both the count pass and the fill pass. Without this,
-	 * a concurrent ath12k_regd_update_freq_range() call from another
-	 * regulatory update could widen the range between the two passes,
-	 * causing the fill pass to write more entries than were allocated.
+	/* Snapshot under data_lock so the count and fill passes see a
+	 * consistent range even if a regulatory update races in.
 	 */
 	spin_lock_bh(&ar->data_lock);
-	low_freq = ar->chan_info.low_freq;
-	high_freq = ar->chan_info.high_freq;
+	chan_info = ar->chan_info;
 	spin_unlock_bh(&ar->data_lock);
 
 	bands = hw->wiphy->bands;
@@ -5600,11 +5596,12 @@ int ath12k_wmi_update_scan_chan_list(struct ath12k *ar,
 			    IEEE80211_CHAN_DISABLED)
 				continue;
 
-			if (band == NL80211_BAND_5GHZ || band == NL80211_BAND_6GHZ)
+			if (band == NL80211_BAND_2GHZ ||
+			    band == NL80211_BAND_5GHZ || band == NL80211_BAND_6GHZ)
 				if (bands[band]->channels[i].center_freq <
-				    low_freq ||
+				    chan_info.low_freq ||
 				    bands[band]->channels[i].center_freq >
-				    high_freq)
+				    chan_info.high_freq)
 					continue;
 
 			num_channels++;
@@ -5638,16 +5635,17 @@ int ath12k_wmi_update_scan_chan_list(struct ath12k *ar,
 			if (channel->flags & IEEE80211_CHAN_DISABLED)
 				continue;
 
-			if (band == NL80211_BAND_5GHZ || band == NL80211_BAND_6GHZ) {
+			if (band == NL80211_BAND_2GHZ ||
+			    band == NL80211_BAND_5GHZ || band == NL80211_BAND_6GHZ) {
 				if (bands[band]->channels[i].center_freq <
-				    low_freq ||
+				    chan_info.low_freq ||
 				    bands[band]->channels[i].center_freq >
-				    high_freq) {
+				    chan_info.high_freq) {
 					ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
 						   "skip freq %d outside range %d-%d MHz\n",
 						   bands[band]->channels[i].center_freq,
-						   low_freq,
-						   high_freq);
+						   chan_info.low_freq,
+						   chan_info.high_freq);
 					continue;
 				}
 			}

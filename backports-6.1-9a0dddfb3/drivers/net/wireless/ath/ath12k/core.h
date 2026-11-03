@@ -1925,6 +1925,29 @@ void ath12k_tfs_delete_rules(struct ath12k_sta *ahsta);
 #define ATH12K_MAX_5G_LOW_BAND_FREQ  5330
 #define ATH12K_MIN_5G_HIGH_BAND_FREQ 5490
 
+/* Per-radio band filter bitmask — used by ath12k_band_filter_ctx */
+#define ATH12K_BAND_FILTER_2GHZ       BIT(0)
+#define ATH12K_BAND_FILTER_5GHZ_LOW   BIT(1)
+#define ATH12K_BAND_FILTER_5GHZ_HIGH  BIT(2)
+#define ATH12K_BAND_FILTER_6GHZ_LOW   BIT(3)
+#define ATH12K_BAND_FILTER_6GHZ_HIGH  BIT(4)
+/* Sentinel: set alone to disable every band on the radio. Distinct from a
+ * mask of 0, which means no filter -- every band enabled.
+ */
+#define ATH12K_BAND_FILTER_NONE       BIT(31)
+
+/* band_channel_filter_config INI packing: each radio's mask uses only the
+ * low ATH12K_BAND_FILTER_CONFIG_MASK_BITS bits, but radios are byte-aligned
+ * (8 bits apart), not packed back-to-back -- see
+ * ATH12K_CFG_BAND_CHANNEL_FILTER_CONFIG's doc comment (ini.h) for the INI
+ * value's bit layout.
+ */
+#define ATH12K_BAND_FILTER_CONFIG_MASK_BITS      5
+#define ATH12K_BAND_FILTER_CONFIG_PER_RADIO_BITS 8
+
+/* 6 GHz low/high sub-band split: low = 5925-6525 MHz, high = 6525-7125 MHz */
+#define ATH12K_MID_6GHZ_BAND_FREQ 6525
+
 #define ATH12K_NUM_CHANS 	102
 #define ATH12K_MIN_5GHZ_CHAN 	36
 #define ATH12K_MAX_5GHZ_CHAN 	177
@@ -2330,6 +2353,16 @@ struct ath12k_tx_mon_ssr_stats {
 	u32 status_desc_drained;
 };
 
+/**
+ * struct ath12k_band_filter_ctx - per-radio SW band filter state
+ * @current_enabled_bands: active bitmask of ATH12K_BAND_FILTER_* bits;
+ *                     0 = no filter (all bands, default); the bit values
+ *                     are as defined in enum qca_wlan_vendor_band_filter_mask
+ */
+struct ath12k_band_filter_ctx {
+	u32 current_enabled_bands;
+};
+
 struct ath12k {
 	struct ath12k_base *ab;
 	u8 pdev_idx;
@@ -2714,11 +2747,18 @@ struct ath12k {
 	u32 igmp_tid_override;
 	/* Bitmask for UNII-1/2A coex disable: bit0=UNII-1, bit1=UNII-2A */
 	u8 chan_coex_disable_mask;
+	/* Stores currently active band_channel_filter setting */
+	struct ath12k_band_filter_ctx band_filter_ctx;
 };
 
 static inline bool ath12k_is_rf_path_switch_supported(struct ath12k *ar)
 {
 	return ar->rf_path_ctx.supported;
+}
+
+static inline bool ath12k_is_band_filter_active(struct ath12k *ar)
+{
+	return ar->band_filter_ctx.current_enabled_bands;
 }
 
 struct ath12k_6ghz_sp_reg_rule {
@@ -3248,7 +3288,8 @@ struct ath12k_base {
 	struct ath12k_wmi_hal_reg_capabilities_ext2_arg hal_reg_cap_ext2[MAX_RADIOS];
 	/* Boot-time RF path selection from rf_switch_config INI parameter. */
 	enum ath12k_rf_path_index rf_switch_config;
-
+	/* Per-pdev boot-time band filter from INI. */
+	u32 band_channel_filter_config[MAX_RADIOS];
 	unsigned long long free_vdev_map;
 	unsigned long long free_vdev_stats_id_map;
 	wait_queue_head_t peer_mapping_wq;

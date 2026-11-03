@@ -632,14 +632,37 @@ struct ieee80211_regdomain *ath12k_get_current_regd(struct ath12k *ar);
 enum wmi_reg_6g_ap_type
 ath12k_ieee80211_ap_pwr_type_convert(enum ieee80211_ap_reg_power power_type);
 int ath12k_regd_update(struct ath12k *ar, bool init);
-int ath12k_reg_build_regd_for_rf_path(struct ath12k *ar,
-				      struct ieee80211_regdomain **regd_out);
+/**
+ * ath12k_regd_update_freq_range - recompute @ar's active frequency range
+ * @ar: radio context
+ *
+ * Return: none
+ */
+void ath12k_regd_update_freq_range(struct ath12k *ar);
+/**
+ * ath12k_reg_freq_has_rule - check if the regdomain covers a frequency at a
+ *                             given 6 GHz power mode
+ * @ar: radio context
+ * @freq_mhz: channel center frequency in MHz
+ * @mode: power mode to match; NL80211_REG_NUM_POWER_MODES for non-6GHz bands
+ *
+ * Return: true if a matching rule covers the frequency
+ */
+bool ath12k_reg_freq_has_rule(struct ath12k *ar, u32 freq_mhz,
+			      enum nl80211_regulatory_power_modes mode);
 int ath12k_reg_update_chan_list(struct ath12k *ar, bool wait);
 void ath12k_reg_update_cached_country_regdomain(struct ath12k_base *ab,
 						 const struct ath12k_reg_info *reg_info,
 						 u32 domain_code_6g_super_id);
 int ath12k_reg_get_num_chans_in_band(struct ath12k *ar,
 				     struct ieee80211_supported_band *band);
+/**
+ * ath12k_reg_get_enabled_num_chans - count @ar's currently enabled channels
+ * @ar: radio to count for
+ *
+ * Return: the count
+ */
+int ath12k_reg_get_enabled_num_chans(struct ath12k *ar);
 /**
  * ath12k_reg_get_fallback_regd() - find a usable regulatory domain
  * @ab: ath12k base
