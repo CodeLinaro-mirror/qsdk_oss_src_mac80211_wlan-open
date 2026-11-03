@@ -3154,6 +3154,65 @@ end:
 	spin_unlock_bh(&dp_hw->peer_hash_lock);
 }
 
+static void ath12k_wifi8_dp_peer_set_msdu_drop(struct ath12k_dp_peer *dp_peer, u8 value)
+{
+	struct hal_txpt_classify_info *txpt_info;
+	int bank, tid;
+
+	for (bank = 0; bank < ATH12K_NUM_TX_CLASSIFY_BANKS; bank++) {
+		for (tid = 0; tid < ATH12K_NUM_TID_PER_BANK; tid++) {
+			txpt_info = ath12k_get_txpt_info_ptr(dp_peer, bank, tid);
+			if (!txpt_info)
+				continue;
+			txpt_info->info2 |=
+				le32_encode_bits(value, HAL_TXPT_CLASSIFY_MSDU_DROP);
+		}
+	}
+}
+
+void ath12k_wifi8_dp_peer_tid_drop(struct ath12k_dp *dp, u8 value)
+{
+	struct ath12k_dp *cumac_dp = ath12k_get_central_dp(dp);
+	struct ath12k_base *ab = dp->ab;
+	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k_hw *ah;
+	struct ath12k_dp_hw *dp_hw;
+	struct ath12k_dp_peer *dp_peer;
+	struct ath12k_pdev *pdev;
+	struct ath12k *ar;
+	int i, j;
+
+	for (i = 0; i < ag->num_hw; i++) {
+		ah = ath12k_ag_to_ah(ag, i);
+		if (!ah)
+			continue;
+
+		dp_hw = &ah->dp_hw;
+
+		spin_lock_bh(&dp_hw->peer_list_lock);
+		list_for_each_entry(dp_peer, &dp_hw->peers, list) {
+			for (j = 0; j < ab->num_radios; j++) {
+				pdev = &ab->pdevs[j];
+				ar = pdev->ar;
+				if (!ar)
+					continue;
+
+				if (dp_peer->peer_links_map & BIT(ar->hw_link_id)) {
+					ath12k_dbg_level(ab, ATH12K_DBG_PEER,
+							 ATH12K_DBG_L2,
+							 "peer_mark_data_drop: peer_id=%u addr=%pM\n",
+							 dp_peer->peer_id, dp_peer->addr);
+					ath12k_wifi8_dp_peer_set_msdu_drop(dp_peer,
+									   value);
+				}
+			}
+		}
+		spin_unlock_bh(&dp_hw->peer_list_lock);
+	}
+
+	ath12k_wifi8_hal_txpt_classify_info_flush(cumac_dp->ab);
+}
+
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 bool ath12k_wifi8_dp_peer_ast_param_get(struct ath12k_hw *ah, struct ieee80211_vif *vif,
 					u16 *ast_info,
@@ -3197,4 +3256,5 @@ bool ath12k_wifi8_dp_peer_ast_param_get(struct ath12k_hw *ah, struct ieee80211_v
 	spin_unlock_bh(&dp_hw->peer_hash_lock);
 	return true;
 }
+
 #endif

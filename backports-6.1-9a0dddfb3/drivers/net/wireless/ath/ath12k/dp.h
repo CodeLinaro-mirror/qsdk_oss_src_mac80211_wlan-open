@@ -912,6 +912,7 @@ struct ath12k_dp_arch_ops {
 	int (*get_coredump_segs)(struct ath12k_dp *dp,
 				 struct ath12k_dump_segment *seg_arr, int max_segs);
 	void (*dp_peer_release)(struct kref *ref);
+	void (*peer_tid_drop)(struct ath12k_dp *dp, u8 value);
 };
 
 struct ath12k_bp_stats {
@@ -1664,6 +1665,13 @@ static inline int ath12k_dp_arch_get_peer_init_status(struct ath12k_dp *dp,
 		return dp->arch_ops->get_peer_init_status(dp, dp_hw, addr);
 
 	return 0;
+}
+
+static inline void
+ath12k_dp_arch_peer_tid_drop(struct ath12k_dp *dp, u8 value)
+{
+	if (dp->arch_ops->peer_tid_drop)
+		dp->arch_ops->peer_tid_drop(dp, value);
 }
 
 static inline int

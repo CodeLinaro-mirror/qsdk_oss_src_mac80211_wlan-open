@@ -1177,6 +1177,9 @@ irqreturn_t ath12k_umac_reset_interrupt_handler(int irq, void *arg)
 		has_valid_event = true;
 	}
 
+	if (u32_get_bits(t2h_msg, HTT_ATH12K_UMAC_RESET_T2H_INDICATE_TARGET_RECOVERY))
+		has_valid_event = true;
+
 	/* Only schedule tasklet if we have valid events */
 	if (has_valid_event)
 		tasklet_schedule(&umac_reset->intr_tq);
@@ -1191,6 +1194,7 @@ void ath12k_dp_umac_reset_handle(struct ath12k_base *ab)
 	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ag->mlo_umac_reset;
 	struct ath12k_dp_htt_umac_reset_recovery_msg_shmem_t *shmem_vaddr;
 	struct ath12k_base *partner_ab;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	enum ath12k_umac_reset_state current_state;
 	enum dp_umac_reset_tx_cmd tx_cmd;
 	int rx_event, num_event = 0;
@@ -1217,6 +1221,11 @@ void ath12k_dp_umac_reset_handle(struct ath12k_base *ab)
 
 	t2h_msg = shmem_vaddr->t2h_msg;
 	shmem_vaddr->t2h_msg = 0;
+
+	if (u32_get_bits(t2h_msg, HTT_ATH12K_UMAC_RESET_T2H_INDICATE_TARGET_RECOVERY)) {
+		ath12k_dp_arch_peer_tid_drop(dp, 1);
+		return;
+	}
 
 	rx_event = ATH12K_UMAC_RESET_RX_EVENT_NONE;
 

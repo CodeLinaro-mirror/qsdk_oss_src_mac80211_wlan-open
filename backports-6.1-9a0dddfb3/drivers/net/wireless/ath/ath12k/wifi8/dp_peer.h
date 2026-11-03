@@ -101,4 +101,5 @@ int ath12k_wifi8_peer_tx_tid_sn_reset(struct ath12k_base *ab,
 				      struct ath12k_dp_hw *dp_hw,
 				      struct ieee80211_vif *vif,
 				      const u8 *peer_addr);
+void ath12k_wifi8_dp_peer_tid_drop(struct ath12k_dp *dp, u8 value);
 #endif
