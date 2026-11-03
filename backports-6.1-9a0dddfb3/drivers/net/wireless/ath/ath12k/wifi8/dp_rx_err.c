@@ -30,6 +30,8 @@
 
 #define ATH12K_DP_RX_FRAGMENT_TIMEOUT_MS (2 * HZ)
 
+#define ETH_P_1905 0x893a
+
 static int ath12k_wifi8_dp_rx_h_cmp_frags(struct ath12k_base *ab,
 					  struct sk_buff *a, struct sk_buff *b)
 {
@@ -1255,6 +1257,8 @@ bool ath12k_wifi8_handle_null_queue(struct ath12k_pdev_dp *dp_pdev,
 	bool is_4addr_sta;
 	bool to_ds = rx_msdu_info->to_ds;
 	bool fr_ds = rx_msdu_info->fr_ds;
+	struct sk_buff *msdu = spd_desc_l->msdu;
+	struct ethhdr *ehdr;
 
 	ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_RX,
 		   "null_q_desc mcbc: peer_id=%u da_is_mcbc=%u is_decrypted=%u decap=%u",
@@ -1301,10 +1305,12 @@ bool ath12k_wifi8_handle_null_queue(struct ath12k_pdev_dp *dp_pdev,
 
 	switch (spd_desc_l->tlv_info.decap) {
 	case DP_RX_DECAP_TYPE_ETHERNET2_DIX:
+		ehdr = (struct ethhdr *)msdu->data;
 		if (!peer)
 			return true;
 		is_4addr_sta = peer->vdev_type_4addr & BIT(NL80211_IFTYPE_STATION);
-		if (is_4addr_sta && is_mcbc && !to_ds)
+		if (is_4addr_sta && is_mcbc && !to_ds &&
+		    ehdr->h_proto != cpu_to_be16(ETH_P_1905))
 			return true;
 
 		if (peer)
