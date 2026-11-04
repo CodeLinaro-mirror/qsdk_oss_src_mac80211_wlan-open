@@ -1859,6 +1859,14 @@ bool ath12k_reg_freq_has_rule(struct ath12k *ar, u32 freq_mhz,
 	for (i = 0; i < base_regd->n_reg_rules; i++) {
 		rule = &base_regd->reg_rules[i];
 
+#ifdef CPTCFG_QCN_EXTN
+		if (ath12k_is_rule_non_country(rule)) {
+			if (freq_khz >= rule->freq_range.start_freq_khz &&
+			    freq_khz <= rule->freq_range.end_freq_khz)
+				return true;
+			continue;
+		}
+#endif
 		if (mode == NL80211_REG_NUM_POWER_MODES) {
 			if (rule->mode > NL80211_REG_AP_VLP)
 				continue;
