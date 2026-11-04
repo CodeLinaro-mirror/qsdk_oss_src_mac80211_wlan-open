@@ -1590,6 +1590,7 @@ static int ath12k_wifi8_smd_ensure_tx_tid_queues(struct ath12k_base *ab,
 
 static void ath12k_wifi8_smd_cache_dl_ctx(struct ath12k_sta *ahsta, u8 tid,
 					  const struct ath12k_tx_smd_ctx_per_tid *tx_tid,
+					  const struct ieee80211_smd_ctx_ba *dl_ba,
 					  u16 ba_buf_size)
 {
 	u16 lsn_offset = tx_tid->lsn_offset;
@@ -1601,6 +1602,16 @@ static void ath12k_wifi8_smd_cache_dl_ctx(struct ath12k_sta *ahsta, u8 tid,
 	ahsta->smd_info.sn[tid] = tx_tid->ssn + lsn_offset;
 	ahsta->smd_info.lsn_offset[tid] = lsn_offset;
 	ahsta->smd_info.tx_ba_buf_size[tid] = ba_buf_size;
+
+	spin_lock_bh(&ahsta->ba_lock);
+	ahsta->tx_ba_params[tid].tid = tid;
+	ahsta->tx_ba_params[tid].buf_size = ba_buf_size;
+	ahsta->tx_ba_params[tid].ssn = tx_tid->ssn;
+	ahsta->tx_ba_params[tid].policy = dl_ba->ba_policy;
+	ahsta->tx_ba_params[tid].amsdu = dl_ba->amsdu_supported;
+	ahsta->tx_ba_params[tid].timeout = dl_ba->timeout;
+	ahsta->tx_ba_params[tid].valid = true;
+	spin_unlock_bh(&ahsta->ba_lock);
 }
 
 static int ath12k_wifi8_mac_op_set_smd_ctx(struct ieee80211_hw *hw,
@@ -1682,6 +1693,19 @@ static int ath12k_wifi8_mac_op_set_smd_ctx(struct ieee80211_hw *hw,
 			ath12k_err(ab,
 				   "Failed to set SMD UL ctx for %pM tid: %d err: %d",
 				   sta->addr, tid, ret);
+
+		if (!rx_tid.ba_win_sz)
+			continue;
+
+		spin_lock_bh(&ahsta->ba_lock);
+		ahsta->rx_ba_params[tid].tid = tid;
+		ahsta->rx_ba_params[tid].buf_size = rx_tid.ba_win_sz;
+		ahsta->rx_ba_params[tid].ssn = rx_tid.ssn;
+		ahsta->rx_ba_params[tid].policy = ul_ba->ba_policy;
+		ahsta->rx_ba_params[tid].amsdu = ul_ba->amsdu_supported;
+		ahsta->rx_ba_params[tid].timeout = ul_ba->timeout;
+		ahsta->rx_ba_params[tid].valid = true;
+		spin_unlock_bh(&ahsta->ba_lock);
 	}
 
 	/* DL context - Data TIDs */
@@ -1732,7 +1756,7 @@ static int ath12k_wifi8_mac_op_set_smd_ctx(struct ieee80211_hw *hw,
 		}
 
 		ath12k_wifi8_smd_cache_dl_ctx(ahsta, tid, &tx_tid,
-					      ba_buf_size);
+					      dl_ba, ba_buf_size);
 	}
 
 	/* Vendor context */
