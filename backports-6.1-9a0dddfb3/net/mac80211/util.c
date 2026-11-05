@@ -4541,6 +4541,9 @@ void ieee80211_start_punctured_cac(struct wiphy *wiphy,
 			continue;
 
 		list_for_each_entry(obj, &ctx->punct_obj_list, list) {
+			struct cfg80211_chan_def punct_chandef;
+			struct ieee80211_channel *chan;
+
 			if (obj->cac_started ||
 			    obj->center_freq != chandef->chan->center_freq)
 				continue;
@@ -4555,6 +4558,12 @@ void ieee80211_start_punctured_cac(struct wiphy *wiphy,
 			hrtimer_start(&obj->cac_timer,
 				      ms_to_ktime(cac_time),
 				      HRTIMER_MODE_REL);
+			chan = ieee80211_get_channel(wiphy, obj->center_freq);
+			if (chan) {
+				cfg80211_chandef_create(&punct_chandef, chan,
+							NL80211_CHAN_NO_HT);
+				cfg80211_punct_cac_started(wiphy, &punct_chandef);
+			}
 		}
 	}
 }

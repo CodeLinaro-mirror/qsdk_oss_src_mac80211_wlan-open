@@ -10963,6 +10963,19 @@ void cfg80211_punct_cac_finished(struct net_device *netdev,
 				 gfp_t gfp);
 
 /**
+ * cfg80211_punct_cac_started - punctured channel CAC started event
+ * @wiphy: the wiphy
+ * @chandef: chandef for the punctured 20 MHz sub-channel on which CAC started
+ *
+ * Notify userspace (hostapd) that Channel Availability Check has started on a
+ * punctured sub-channel. Unlike cfg80211_cac_event(), this does not touch the
+ * operating link's cac_started/dfs_state since a punctured sub-channel is not
+ * the operating link.
+ */
+void cfg80211_punct_cac_started(struct wiphy *wiphy,
+				const struct cfg80211_chan_def *chandef);
+
+/**
  * cfg80211_background_cac_abort - Channel Availability Check offchan abort event
  * @wiphy: the wiphy
  *
