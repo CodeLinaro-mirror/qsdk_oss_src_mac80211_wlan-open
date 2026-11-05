@@ -406,10 +406,6 @@ void __ieee80211_start_rx_ba_session(struct sta_info *sta,
 	if (buf_size == 0)
 		buf_size = max_buf_size;
 
-#ifdef CPTCFG_QCN_EXTN
-	/* Limit the buf_size based on user configured value */
-	buf_size = ieee80211_cap_rx_ba_bufsize_extn(link_conf, buf_size);
-#endif /* CPTCFG_QCN_EXTN */
 	/* make sure the size doesn't exceed the maximum supported by the hw */
 	if (buf_size > sta->sta.max_rx_aggregation_subframes)
 		buf_size = sta->sta.max_rx_aggregation_subframes;
