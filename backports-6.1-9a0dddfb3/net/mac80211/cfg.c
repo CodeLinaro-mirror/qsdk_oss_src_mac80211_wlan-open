@@ -5279,6 +5279,13 @@ static int ieee80211_set_csa_beacon(struct ieee80211_link_data *link_data,
 
 	switch (sdata->vif.type) {
 	case NL80211_IFTYPE_AP:
+		/* Drop any stale beacon before replacing it or skipping it. */
+		ieee80211_free_next_beacon(link_data);
+
+		/* Scan radios do not install the post-CSA beacon. */
+		if (wdev_is_scan_radio(&sdata->wdev))
+			break;
+
 		link_data->u.ap.next_beacon =
 			cfg80211_beacon_dup(&params->beacon_after);
 		if (!link_data->u.ap.next_beacon)
