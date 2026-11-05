@@ -2574,13 +2574,14 @@ netdev_tx_t ieee80211_monitor_start_xmit(struct sk_buff *skb,
 	struct ieee80211_sub_if_data *tmp_sdata, *sdata;
 	struct ieee80211_local *local = wdev_priv(wdev);
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
-	struct ieee80211_chanctx_conf *chanctx_conf;
+	struct ieee80211_chanctx_conf *chanctx_conf = NULL;
 	struct cfg80211_chan_def *chandef = NULL;
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 	struct wiphy *wiphy = wdev->wiphy;
 	struct ieee80211_sub_if_data *sdata1 = NULL;
 	struct ieee80211_tx_control control = {};
 	int mon_center_freq1, tmp_center_freq;
+	int matched_lid = -1;
 	struct ieee80211_bss_conf *bss_conf;
 	struct ieee80211_key *key = NULL;
 	struct sta_info *sta = NULL;
@@ -2715,6 +2716,7 @@ montxpath:
 
 		for_each_sta_info(local, hdr->addr1, sta, tmp_rhl) {
 			struct ieee80211_sub_if_data *cand = sta->sdata;
+			bool addr3_match = false;
 
 			if (!ieee80211_sdata_running(cand))
 				continue;
@@ -2724,13 +2726,36 @@ montxpath:
 			if (cand->vif.type == NL80211_IFTYPE_AP_VLAN && cand->bss)
 				cand = container_of(cand->bss,
 						    struct ieee80211_sub_if_data, u.ap);
-			if (ether_addr_equal(cand->vif.bss_conf.bssid,
-					     hdr->addr3)) {
+			if (cand->vif.valid_links) {
+				/* MLD AP: check addr3 against each active
+				 * link address.
+				 */
+				unsigned long links = cand->vif.valid_links;
+				unsigned int lid;
+
+				for_each_set_bit(lid, &links,
+						 IEEE80211_MLD_MAX_NUM_LINKS) {
+					struct ieee80211_bss_conf *lc =
+						rcu_dereference(cand->vif.link_conf[lid]);
+
+					if (lc &&
+					    ether_addr_equal(lc->addr, hdr->addr3)) {
+						matched_lid = lid;
+						addr3_match = true;
+						break;
+					}
+				}
+			} else {
+				addr3_match = ether_addr_equal(cand->vif.bss_conf.bssid,
+							       hdr->addr3);
+			}
+			if (addr3_match) {
 				sdata = cand;
 				sdata1 = cand;
 				break;
 			}
 		}
+
 	} else {
 #endif /* CPTCFG_QCN_EXTN_MESH_SUPPORT */
 		list_for_each_entry_rcu(tmp_sdata, &local->interfaces, list) {
@@ -2750,21 +2775,28 @@ montxpath:
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 	}
 #endif /* CPTCFG_QCN_EXTN_MESH_SUPPORT */
-	chanctx_conf = rcu_dereference(sdata->vif.bss_conf.chanctx_conf);
+	/* For MLD peer lookup, use the matched link's chanctx. */
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	if (sdata1 && matched_lid >= 0) {
+		bss_conf = rcu_dereference(sdata->vif.link_conf[matched_lid]);
+		if (bss_conf)
+			chanctx_conf = rcu_dereference(bss_conf->chanctx_conf);
+	}
+#endif
+	if (!chanctx_conf)
+		chanctx_conf = rcu_dereference(sdata->vif.bss_conf.chanctx_conf);
 	if (!chanctx_conf) {
 		tmp_sdata = rcu_dereference(local->monitor_sdata);
 		if (tmp_sdata)
 			chanctx_conf =
 				rcu_dereference(tmp_sdata->vif.bss_conf.chanctx_conf);
 	}
-
 	if (chanctx_conf) {
 		chandef = &chanctx_conf->def;
 	} else {
 		if (!tid_stats_disable)
 			ieee80211_tx_drop_stats(sdata, info->tid,
 						TX_DROP_BAD_CHANCTX_CONF);
-
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 		for (i = 0; i < IEEE80211_MLD_MAX_NUM_LINKS; i++) {
 			bss_conf = rcu_dereference(sdata->vif.link_conf[i]);
@@ -2918,6 +2950,9 @@ montxpath1:
 
 		info->control.vif = &sdata->vif;
 		info->control.flags |= IEEE80211_TX_CTRL_MON_RAW_TX;
+		if (matched_lid >= 0)
+			info->control.flags |= u32_encode_bits(matched_lid,
+							    IEEE80211_TX_CTRL_MLO_LINK);
 		control.src_vif =  wdev_to_ieee80211_vif(wdev);
 		/* Deliver the frame to vendor driver directly from here */
 		drv_tx(local, &control, skb);
