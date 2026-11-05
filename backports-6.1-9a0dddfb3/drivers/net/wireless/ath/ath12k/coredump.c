@@ -773,7 +773,7 @@ void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 		}
 		/* Send vendor event to notify userspace about coredump is ready*/
 #ifdef CPTCFG_QCN_EXTN
-		ath12k_vendor_send_event(ab,
+		ath12k_vendor_send_radio_event(ab->pdevs[0].ar,
 				QCA_NL80211_VENDOR_FW_RECOVERY_EVENT_DUMP_READY);
 #endif /* CPTCFG_QCN_EXTN */
 		dev_coredumpm(ab->dev, THIS_MODULE, st, st->total_sz, GFP_KERNEL,
@@ -781,7 +781,7 @@ void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 		wait_for_completion(&st->dump_done);
 		/* Send vendor event to notify userspace about coredump has completed */
 #ifdef CPTCFG_QCN_EXTN
-		ath12k_vendor_send_event(ab,
+		ath12k_vendor_send_radio_event(ab->pdevs[0].ar,
 				QCA_NL80211_VENDOR_FW_RECOVERY_EVENT_DUMP_COMPLETED);
 #endif /* CPTCFG_QCN_EXTN */
 
@@ -1065,8 +1065,8 @@ void ath12k_coredump_ahb_collect(struct ath12k_base *ab)
 
 	/* Send vendor event to notify userspace about coredump is ready*/
 #ifdef CPTCFG_QCN_EXTN
-	ath12k_vendor_send_event(ab,
-				 QCA_NL80211_VENDOR_FW_RECOVERY_EVENT_DUMP_READY);
+	ath12k_vendor_send_radio_event(ab->pdevs[0].ar,
+			QCA_NL80211_VENDOR_FW_RECOVERY_EVENT_DUMP_READY);
 #endif /* CPTCFG_QCN_EXTN */
         dev_coredumpm(ab->dev, THIS_MODULE, &elf_dump_state, data_size, GFP_KERNEL,
                       ath12k_userpd_coredump_read, ath12k_userpd_coredump_free);
@@ -1074,8 +1074,8 @@ void ath12k_coredump_ahb_collect(struct ath12k_base *ab)
         wait_for_completion(&elf_dump_state.dump_done);
 	/* Send vendor event to notify userspace about coredump has completed */
 #ifdef CPTCFG_QCN_EXTN
-	ath12k_vendor_send_event(ab,
-				 QCA_NL80211_VENDOR_FW_RECOVERY_EVENT_DUMP_COMPLETED);
+	ath12k_vendor_send_radio_event(ab->pdevs[0].ar,
+			QCA_NL80211_VENDOR_FW_RECOVERY_EVENT_DUMP_COMPLETED);
 #endif /* CPTCFG_QCN_EXTN */
         vfree(elf_dump_state.header);
 end:

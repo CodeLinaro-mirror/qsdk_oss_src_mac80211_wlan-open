@@ -29124,8 +29124,8 @@ ath12k_mac_reconfig_complete(struct ieee80211_hw *hw,
 		ath12k_erp_handle_ssr(ar);
 		/* Send vendor event to notify userspace about fw recovery completion */
 #ifdef CPTCFG_QCN_EXTN
-		ath12k_vendor_send_event(ab,
-					 QCA_NL80211_VENDOR_FW_RECOVERY_EVENT_RECOVERY_DONE);
+		ath12k_vendor_send_radio_event(ar,
+				QCA_NL80211_VENDOR_FW_RECOVERY_EVENT_RECOVERY_DONE);
 #endif /* CPTCFG_QCN_EXTN */
 
 		/* Re-apply RTT responder role after FW recovery */
