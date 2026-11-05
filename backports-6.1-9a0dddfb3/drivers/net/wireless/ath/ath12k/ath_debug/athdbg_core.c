@@ -9,6 +9,7 @@
 #include <linux/init.h>
 #include "athdbg_minidump.h"
 #include "athdbg_core.h"
+#include "athdbg_qmi.h"
 #include "athdbg_wmi_recording.h"
 #include "athdbg_uio.h"
 #include "../debug.h"
@@ -182,8 +183,19 @@ static void athdbg_process_request(struct work_struct *work)
 		case ATH_DBG_REQ_COLLECT_MINI_DUMP:
 			athdbg_process_minidump_request(dbg_req->ab, dbg_req);
 			break;
-		case ATH_DBG_REQ_ENABLE_QDSS:
-			athdbg_config_qdss(dbg_req->ab);
+		case ATH_DBG_REQ_QDSS:
+			if (dbg_req->data) {
+				athdbg_config_qdss(dbg_req->ab);
+			} else {
+				ret = athdbg_send_qdss_trace_mode_req(dbg_req->ab,
+							QMI_WLANFW_QDSS_TRACE_OFF_V01,
+							0);
+				if (ret < 0)
+					pr_warn("athdbg_core: Failed to stop QDSS: %d\n",
+						ret);
+				else
+					athdbg_qmi_qdss_mem_free(dbg_req->ab);
+			}
 			break;
 
 		case ATH_DBG_REQ_DUMP_QDSS:
