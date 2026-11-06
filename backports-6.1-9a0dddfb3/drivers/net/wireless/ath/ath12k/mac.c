@@ -24301,11 +24301,8 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 		if (link_conf && link_conf->uhr_support) {
 			arg.uhr_config.adv_notification_interval =
 				link_conf->uhr_config.adv_notification_interval;
-
-			/*TODO: currently hardcoded until finalized in
-			 * 802.11bn specification.
-			 */
-			arg.uhr_config.post_notification_interval = 10;
+			arg.uhr_config.post_notification_interval =
+				link_conf->uhr_config.post_notification_interval;
 			arg.uhr_config.update_in_tim_interval =
 				link_conf->uhr_config.update_in_tim_interval;
 		}
