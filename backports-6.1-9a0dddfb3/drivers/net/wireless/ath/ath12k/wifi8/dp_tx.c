@@ -4434,11 +4434,18 @@ static int ath12k_wifi8_dp_tx_null_flowq_handler(
 				HAL_TCL_EXIT_BASE_INFO1_NON_QOS);
 
 	if (peer->is_vdev_peer || non_qos) {
-		ath12k_err(dp->ab,
-			   "Frame is either mcast %d or non_qos %d for desc_id %d",
-			   mcast, non_qos, desc_id);
-		rcu_read_unlock();
-		return -EINVAL;
+		struct ieee80211_sta *sta = ath12k_dp_peer_get_sta(peer);
+
+		if (peer->is_vdev_peer ||
+		    !(peer->is_11s_mesh_peer &&
+			encap_type == HAL_TCL_ENCAP_TYPE_NATIVE_WIFI &&
+			sta && sta->wme)) {
+			ath12k_err(dp->ab,
+				   "Frame is either mcast %d or non_qos %d for desc_id %d",
+				   mcast, non_qos, desc_id);
+			rcu_read_unlock();
+			return -EINVAL;
+		}
 	}
 
 	if (le32_get_bits(tx_exception_desc->info7,
