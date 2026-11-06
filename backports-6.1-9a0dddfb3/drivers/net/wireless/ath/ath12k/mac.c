@@ -11967,6 +11967,31 @@ ath12k_mac_get_started_ap_arvif(struct ath12k *ar)
 	return NULL;
 }
 
+static void ath12k_mac_scan_update_probe_params(struct ath12k *ar,
+						struct ath12k_wmi_scan_req_arg *arg)
+{
+	static const u8 ap_probe_time_by_ssid[] = {
+		11, 20, 20, 20, 20, 20, 20, 11, 11, 11, 8,
+	};
+	u32 ssid_num;
+
+	if (!arg->repeat_probe_time)
+		arg->repeat_probe_time = arg->dwell_time_active / 2;
+
+	if (!arg->n_probes)
+		arg->n_probes = arg->repeat_probe_time ?
+			arg->dwell_time_active / arg->repeat_probe_time : 0;
+
+	if (!ath12k_mac_get_started_ap_arvif(ar))
+		return;
+
+	ssid_num = arg->num_ssids * arg->num_bssid;
+	ssid_num = min_t(u32, ssid_num, ARRAY_SIZE(ap_probe_time_by_ssid) - 1);
+	arg->repeat_probe_time = ap_probe_time_by_ssid[ssid_num];
+	arg->n_probes = arg->repeat_probe_time ?
+		arg->dwell_time_active / arg->repeat_probe_time : 0;
+}
+
 /* Must not be called in bottom half (interrupt/softirq) context as it may sleep. */
 static int ath12k_mac_abort_agile_cac(struct ath12k *ar, bool notify)
 {
@@ -12364,6 +12389,9 @@ static int ath12k_mac_initiate_hw_scan(struct ieee80211_hw *hw,
 	} else {
 		scan_timeout = arg->max_scan_time;
 	}
+
+	ath12k_mac_scan_update_probe_params(ar, arg);
+
 	/* Add a margin to account for event/command processing */
 	scan_timeout = scan_timeout + ATH12K_MAC_SCAN_TIMEOUT_MSECS;
 
