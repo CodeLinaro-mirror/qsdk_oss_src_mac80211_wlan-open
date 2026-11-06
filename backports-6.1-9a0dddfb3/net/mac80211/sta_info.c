@@ -1617,7 +1617,7 @@ static void __sta_info_destroy_part2(struct sta_info *sta, bool recalc)
 	 * that reference this STA, since they can carry a cached hw_key
 	 * pointer that ieee80211_free_sta_keys() below is about to free.
 	 */
-	if (!ieee80211_hw_check(&local->hw, HAS_TX_QUEUE))
+	if (ieee80211_hw_check(&local->hw, HAS_TX_QUEUE))
 		ieee80211_purge_sta_pending(sta);
 
 	/* now keys can no longer be reached */
