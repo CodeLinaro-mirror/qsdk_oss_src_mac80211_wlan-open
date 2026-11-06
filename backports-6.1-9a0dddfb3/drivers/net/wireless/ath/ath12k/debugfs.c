@@ -6811,7 +6811,6 @@ static ssize_t ath12k_write_dp_stats_mask(struct file *file,
 				 * checked in ppeds
 				 */
 				ar->ah->hw->perf_mode = stats_disable;
-				ar->ab->stats_disable = stats_disable;
 				ar->ab->dp->stats_disable = stats_disable;
 
 				ath12k_dbg(ar->ab, ATH12K_DBG_TELEMETRY,
@@ -6870,6 +6869,15 @@ static ssize_t ath12k_write_dp_stats_mask(struct file *file,
 			}
 		}
 	}
+
+	for (i = 0; i < ah->num_radio; i++) {
+		ar = &ah->radio[i];
+		if (ar->ab->is_bypassed)
+			continue;
+		if (ar)
+			ar->ab->stats_disable = stats_disable;
+	}
+
 	ret = count;
 
 exit:
