@@ -1951,6 +1951,9 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 			link_conf->uhr_config.adv_notification_interval =
 				(params->uhr_cap->fixed.mac.mac_cap[3] &
 				 IEEE80211_UHR_MAC_CAP3_PARAM_UPD_ADV_NOTIF_INTV) >> 2;
+			link_conf->uhr_config.post_notification_interval =
+				(params->uhr_cap->fixed.mac.mac_cap[5] &
+				 IEEE80211_UHR_MAC_CAP5_POST_UPD_NOTIF_INTV) >> 3;
 			link_conf->uhr_config.update_in_tim_interval =
 				((params->uhr_cap->fixed.mac.mac_cap[3] &
 				  IEEE80211_UHR_MAC_CAP3_UPD_IND_TIM_INTV_LOW) >> 7) |
