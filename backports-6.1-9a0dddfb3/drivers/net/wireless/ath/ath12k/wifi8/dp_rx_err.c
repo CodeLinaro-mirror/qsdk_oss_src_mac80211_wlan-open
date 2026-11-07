@@ -1254,9 +1254,9 @@ bool ath12k_wifi8_handle_null_queue(struct ath12k_pdev_dp *dp_pdev,
 {
 	struct rx_msdu_desc_info *rx_msdu_info = &spd_desc_l->rx_msdu_info;
 	bool is_mcbc = rx_msdu_info->da_is_mcbc;
-	bool is_4addr_sta;
 	bool to_ds = rx_msdu_info->to_ds;
 	bool fr_ds = rx_msdu_info->fr_ds;
+	bool is_4addr_sta, is_eapol;
 	struct sk_buff *msdu = spd_desc_l->msdu;
 	struct ethhdr *ehdr;
 
@@ -1266,6 +1266,8 @@ bool ath12k_wifi8_handle_null_queue(struct ath12k_pdev_dp *dp_pdev,
 		   spd_desc_l->tlv_info.is_decrypted,
 		   spd_desc_l->tlv_info.decap);
 
+	is_eapol = spd_desc_l->cce_match &&
+		   spd_desc_l->cce_metadata == ATH12K_ROUTE_EAP_METADATA;
 	/* Packet arrived on a TID whose REO queue was not set up
 	 * (DESC_ADDR_ZERO). Set up the queue now so subsequent packets
 	 * for this TID are routed correctly without hitting this error path.
@@ -1316,7 +1318,8 @@ bool ath12k_wifi8_handle_null_queue(struct ath12k_pdev_dp *dp_pdev,
 		if (peer)
 			is_mcbc = is_mcbc && !peer->is_reset_mcbc;
 
-		if ((fr_ds && to_ds && peer && !peer->use_4addr) || is_mcbc) {
+		if (is_eapol || (fr_ds && to_ds && peer && !peer->use_4addr) ||
+		    is_mcbc) {
 			ath12k_wifi8_convert_n_deliver_nw_frame(dp_pdev,
 								spd_desc_l,
 								peer, rx_status,
