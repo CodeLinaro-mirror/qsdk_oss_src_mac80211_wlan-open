@@ -15,6 +15,7 @@
 #include "dp_cmn.h"
 #include "ppe.h"
 #include <linux/errno.h>
+#include <linux/kref.h>
 #include "dp_stats.h"
 #include "dp_htt_logger.h"
 #include "dp_ext_desc.h"
@@ -783,11 +784,6 @@ struct ath12k_dp_arch_ops {
 	void (*peer_drv_cleanup)(struct ath12k_dp *dp,
 				 u16 peer_id,
 				 u8 hw_link_id);
-	void (*self_peer_drv_cleanup)(struct ath12k_dp *dp,
-				      struct ath12k_hw *ah,
-				      u8 *addr,
-				      u8 hw_link_id,
-				      struct ieee80211_vif *vif);
 	int (*dp_ppeds_tx_completion_handler)(struct ath12k_base *ab, int budget);
 	void (*dp_link_peer_assoc)(struct ath12k_dp_hw *dp_hw, struct ath12k_dp *dp,
 				   u8 *addr, u32 hw_link_id, struct ieee80211_vif *vif);
@@ -915,6 +911,7 @@ struct ath12k_dp_arch_ops {
 	int (*get_coredump_seg_count)(struct ath12k_dp *dp);
 	int (*get_coredump_segs)(struct ath12k_dp *dp,
 				 struct ath12k_dump_segment *seg_arr, int max_segs);
+	void (*dp_peer_release)(struct kref *ref);
 };
 
 struct ath12k_bp_stats {
@@ -1544,6 +1541,13 @@ ath12k_dp_arch_peer_reo_cmd_flush(struct ath12k_dp *dp,
 }
 
 static inline void
+ath12k_dp_arch_peer_release(struct ath12k_dp *dp, struct kref *ref)
+{
+	if (dp->arch_ops->dp_peer_release)
+		kref_put(ref, dp->arch_ops->dp_peer_release);
+}
+
+static inline void
 ath12k_dp_arch_assoc_link_update(struct ath12k_dp *dp,
 				 struct ath12k_hw *ah,
 				 struct ieee80211_sta *sta,
@@ -1595,19 +1599,6 @@ ath12k_dp_arch_peer_drv_cleanup(struct ath12k_dp *dp,
 	if (dp->arch_ops->peer_drv_cleanup)
 		dp->arch_ops->peer_drv_cleanup(dp, peer_id,
 					       hw_link_id);
-}
-
-static inline void
-ath12k_dp_arch_self_peer_drv_cleanup(struct ath12k_dp *dp,
-				     struct ath12k_hw *ah,
-				     u8 *addr,
-				     u8 hw_link_id,
-				     struct ieee80211_vif *vif)
-{
-	if (dp->arch_ops->self_peer_drv_cleanup)
-		dp->arch_ops->self_peer_drv_cleanup(dp, ah, addr,
-						    hw_link_id,
-						    vif);
 }
 
 static inline void ath12k_dp_arch_link_peer_assoc(struct ath12k_dp *dp,

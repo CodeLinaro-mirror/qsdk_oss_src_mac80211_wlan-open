@@ -720,6 +720,31 @@ static int ath12k_peer_delete_send(struct ath12k *ar, u32 vdev_id, const u8 *add
 	return 0;
 }
 
+static void ath12k_peer_recovery_drv_cleanup(struct ath12k *ar,
+					     struct ieee80211_sta *sta,
+					     u8 *addr,
+					     struct ieee80211_vif *vif)
+{
+	struct ath12k_dp_hw *dp_hw = &ar->ah->dp_hw;
+	struct ath12k_dp_peer *dp_peer;
+	u16 peer_id = ATH12K_MLO_PEER_ID_INVALID;
+
+	spin_lock_bh(&dp_hw->peer_hash_lock);
+	if (sta)
+		dp_peer = ath12k_dp_peer_find_by_addr_and_sta(dp_hw, sta->addr,
+							      sta);
+	else
+		dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, addr, vif);
+	if (dp_peer)
+		peer_id = dp_peer->peer_id;
+	spin_unlock_bh(&dp_hw->peer_hash_lock);
+
+	if (peer_id != ATH12K_MLO_PEER_ID_INVALID)
+		ath12k_dp_arch_peer_drv_cleanup(ath12k_ab_to_dp(ar->ab),
+						peer_id,
+						ar->pdev->hw_link_id);
+}
+
 static int __ath12k_peer_delete(struct ath12k *ar, struct ath12k_link_vif *arvif,
 				u8 *addr, bool skip_peer_del, u32 mlo_hw_link_id_bitmap,
 				bool peer_delete_send_mlo_hw_bitmap,
@@ -756,7 +781,7 @@ static int __ath12k_peer_delete(struct ath12k *ar, struct ath12k_link_vif *arvif
 	if (test_bit(ATH12K_FLAG_RECOVERY, &ar->ab->dev_flags)) {
 		ath12k_warn(ar->ab, "skipped peer delete cmd for vdev_id %d addr %pM during recovery ret:%d\n",
 			    arvif->vdev_id, addr, -EHOSTDOWN);
-
+		ath12k_peer_recovery_drv_cleanup(ar, sta, addr, arvif->ahvif->vif);
 		return -EHOSTDOWN;
 	}
 
@@ -1051,6 +1076,8 @@ int ath12k_peer_dp_cp_link_peer_delete(struct ath12k_link_vif *arvif,
 		ath12k_warn(ar->ab,
 			    "skipped peer delete cmd for vdev_id %d addr %pM during recovery ret:%d\n",
 			    arvif->vdev_id, addr, -EHOSTDOWN);
+		ath12k_peer_recovery_drv_cleanup(ar, ath12k_ahsta_to_sta(ahsta),
+						 addr, arvif->ahvif->vif);
 		ret = -EHOSTDOWN;
 		goto exit;
 	}
@@ -1130,10 +1157,6 @@ static bool ath12k_check_linkpeer_drv_cleanup(struct ieee80211_sta *sta,
 					      struct ath12k_sta *ahsta,
 					      struct ath12k *ar)
 {
-	if (ar->ab->ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE3 &&
-	    ath12k_hw_group_recovery_in_progress(ar->ab->ag))
-		return true;
-
 	if (sta->mlo && ahsta->recov.asserted_peer_pending &&
 	    ar->ab == ar->ab->ag->assert_ab)
 		return true;

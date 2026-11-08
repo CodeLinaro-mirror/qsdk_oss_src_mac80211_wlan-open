@@ -2948,8 +2948,7 @@ static void ath12k_mac_dp_peer_cleanup_cb(struct ath12k_pdev_dp *dp_pdev,
 
 		/*vdev peer cleanup is taken care later*/
 		if (ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE2 &&
-		    !dp_peer->is_vdev_peer && dp_peer->peer_links_map == 0 &&
-		    !dp->global_peer_id_supported) {
+		    !dp_peer->is_vdev_peer && dp_peer->peer_links_map == 0) {
 			ath12k_dbg_level(ab, ATH12K_DBG_MAC | ATH12K_DBG_PEER,
 					 ATH12K_DBG_L0,
 					 "dp_peer %pM dosent have active link_peers\n",
@@ -2991,9 +2990,9 @@ static void ath12k_mac_dp_peer_cleanup_cb(struct ath12k_pdev_dp *dp_pdev,
 			/* Remove ath12k_dp_peer from linked list */
 			spin_lock_bh(&dp_hw->peer_list_lock);
 			list_del(&dp_peer->list);
-			list_del_init(&dp_peer->tqm_cleanup_node);
 			list_add(&dp_peer->list, &ctx->dp_peers);
 			spin_unlock_bh(&dp_hw->peer_list_lock);
+			ath12k_dp_arch_peer_release(dp, &dp_peer->refcount);
 		}
 	}
 
@@ -3026,7 +3025,6 @@ void ath12k_dp_peer_cleanup_all(struct ath12k *ar)
 
 	/*Link peer cleanup part*/
 	list_for_each_entry_safe(link_peer, tmp_link_peer, &ctx.link_peers, list) {
-		dp_peer = link_peer->dp_peer;
 		if (ath12k_dp_link_peer_get_sta(link_peer) && link_peer->dp_peer &&
 		    ath12k_dp_arch_mlo_peer_tid_teardown_ready(dp, link_peer->dp_peer,
 							       link_peer)) {
@@ -3040,11 +3038,9 @@ void ath12k_dp_peer_cleanup_all(struct ath12k *ar)
 				del_timer_sync(&rx_tid->frag_timer);
 				kfree(rx_tid);
 			}
-			if (!link_peer->mlo)
-				ath12k_dp_arch_peer_drv_cleanup(dp,
-								dp_peer->peer_id,
-								ar->hw_link_id);
 		}
+		ath12k_dp_arch_peer_drv_cleanup(dp, link_peer->dp_peer->peer_id,
+						ar->hw_link_id);
 		link_peer->dp_peer = NULL;
 		ath12k_link_peer_free(link_peer);
 	}
@@ -3053,16 +3049,18 @@ void ath12k_dp_peer_cleanup_all(struct ath12k *ar)
 	list_for_each_entry_safe(dp_peer, tmp_dp_peer, &ctx.dp_peers, list) {
 		list_del(&dp_peer->list);
 
-		if (dp_peer->qos && dp_peer->qos->telemetry_peer_ctx)
-			ath12k_telemetry_peer_ctx_free(dp_peer->qos->telemetry_peer_ctx);
 		if (dp_peer->sta_id != ATH12K_STA_ID_INVALID)
 			clear_bit(dp_peer->sta_id, dp_hw->free_sta_id_map);
 
-		if (!dp_peer->peer_links_map) {
-			kfree(dp_peer->rx_tid);
-			dp_peer->rx_tid = NULL;
-			kfree(dp_peer->qos);
-			kfree(dp_peer);
+		if (!dp->global_peer_id_supported) {
+			if (dp_peer->qos && dp_peer->qos->telemetry_peer_ctx)
+				ath12k_telemetry_peer_ctx_free(dp_peer->qos->telemetry_peer_ctx);
+			if (!dp_peer->peer_links_map) {
+				kfree(dp_peer->rx_tid);
+				dp_peer->rx_tid = NULL;
+				kfree(dp_peer->qos);
+				kfree(dp_peer);
+			}
 		}
 	}
 }
