@@ -255,6 +255,7 @@ ieee80211_determine_ap_chan(struct ieee80211_sub_if_data *sdata,
 			    const struct ieee802_11_elems *elems,
 			    bool ignore_ht_channel_mismatch,
 			    const struct ieee80211_conn_settings *conn,
+			    bool allow_beacon_puncturing_update,
 			    struct cfg80211_chan_def *chandef)
 {
 	const struct ieee80211_ht_operation *ht_oper = elems->ht_operation;
@@ -425,6 +426,7 @@ ieee80211_determine_ap_chan(struct ieee80211_sub_if_data *sdata,
 	 */
 	if (eht_oper->params & IEEE80211_EHT_OPER_INFO_PRESENT) {
 		struct cfg80211_chan_def eht_chandef = *chandef;
+		struct cfg80211_chan_def compat_chandef;
 		bool support_160, support_320;
 		u8 he_phy_cap, eht_phy_cap;
 
@@ -461,7 +463,29 @@ ieee80211_determine_ap_chan(struct ieee80211_sub_if_data *sdata,
 			return IEEE80211_CONN_MODE_HE;
 		}
 
-		if (!cfg80211_chandef_compatible(chandef, &eht_chandef)) {
+		/*
+		 * At this point, chandef describes the channel derived from HT/VHT/HE
+		 * oper info. eht_chandef starts as a copy of it, then applies
+		 * the EHT width, center frequencies and disabled-subchannel bitmap.
+		 * UHR also uses this EHT-derived operating channel definition.
+		 *
+		 * The legacy operation information does not carry the EHT bitmap,
+		 * so chandef->punctured is normally zero. The generic compatibility
+		 * check includes puncturing and can reject matching geometry when
+		 * that legacy value differs from a valid EHT bitmap.
+		 *
+		 * For eligible EHT/UHR beacons without CSA/ECSA, replace only the
+		 * bitmap in the comparison copy with the legacy value. This avoids
+		 * treating absent legacy bitmap information as a conflict(bypass);
+		 * channel geometry is still checked. eht_chandef was validated
+		 * above and its actual bitmap is retained when assigned to
+		 * chandef below.
+		 */
+		compat_chandef = eht_chandef;
+		if (allow_beacon_puncturing_update)
+			compat_chandef.punctured = chandef->punctured;
+
+		if (!cfg80211_chandef_compatible(chandef, &compat_chandef)) {
 			sdata_info(sdata,
 				   "AP EHT information doesn't match HT/VHT/HE, disabling EHT\n");
 			return IEEE80211_CONN_MODE_HE;
@@ -1144,7 +1168,7 @@ again:
 		return ERR_PTR(-ENOMEM);
 
 	ap_mode = ieee80211_determine_ap_chan(sdata, link_id, channel, bss->vht_cap_info,
-					      elems, false, conn, ap_chandef);
+					      elems, false, conn, false, ap_chandef);
 
 	/* this should be impossible since parsing depends on our mode */
 	if (WARN_ON(ap_mode > conn->mode)) {
@@ -1429,6 +1453,34 @@ ieee80211_notify_colocated_ap_6ghz_update(struct ieee80211_sub_if_data *sdata,
 }
 
 /**
+ * ieee80211_chanreq_puncturing_changed - detect an operating bitmap-only change
+ * @previous: current operating request or pending CSA target
+ * @next: candidate channel request
+ *
+ * Compare the operating definitions directly, allowing only their puncturing
+ * bitmaps to differ. AP definitions are outside this helper's scope.
+ *
+ * Return: %true if the operating bitmap differs and other compared properties
+ * match; %false for unchanged requests or changes to other properties.
+ */
+static bool
+ieee80211_chanreq_puncturing_changed(const struct ieee80211_chan_req *previous,
+				     const struct ieee80211_chan_req *next)
+{
+	const struct cfg80211_chan_def *n = &next->oper;
+	const struct cfg80211_chan_def *o = &previous->oper;
+
+	return cfg80211_channel_identical(n->chan, o->chan) &&
+		n->width == o->width &&
+		n->center_freq1 == o->center_freq1 &&
+		n->freq1_offset == o->freq1_offset &&
+		n->center_freq2 == o->center_freq2 &&
+		n->width_device == o->width_device &&
+		n->center_freq_device == o->center_freq_device &&
+		n->punctured != o->punctured;
+}
+
+/**
  * ieee80211_sta_bw_reconfig_start_csa - start CSA for STA bandwidth reconfig
  * @link: STA link that detected the bandwidth reconfiguration
  * @new_oper: new operating channel definition to switch to
@@ -1600,6 +1652,9 @@ static int ieee80211_config_bw(struct ieee80211_link_data *link,
 	enum ieee80211_conn_mode ap_mode;
 	u32 vht_cap_info = 0;
 	u16 ht_opmode;
+	bool from_beacon = !strcmp(frame, "beacon");
+	bool allow_beacon_puncturing_update;
+	bool puncturing_changed;
 	int ret;
 
 	/* don't track any bandwidth changes in legacy/S1G modes */
@@ -1610,8 +1665,22 @@ static int ieee80211_config_bw(struct ieee80211_link_data *link,
 	if (elems->vht_cap_elem)
 		vht_cap_info = le32_to_cpu(elems->vht_cap_elem->vht_cap_info);
 
+	/*
+	 * This flag grants eligibility; it does not indicate a bitmap change.
+	 * UHR inherits EHT channel operation, including its puncturing bitmap.
+	 * Exclude scan/association processing, CSA/ECSA elements, and active
+	 * AP-announced switches. Non-CSA beacons during a locally initiated
+	 * BW reconfiguration remain eligible for bitmap-only deferral.
+	 */
+	allow_beacon_puncturing_update = from_beacon &&
+		sdata->u.mgd.associated &&
+		(link->u.mgd.conn.mode >= IEEE80211_CONN_MODE_EHT) &&
+		!elems->ch_switch_ie && !elems->ext_chansw_ie &&
+		(!link->conf->csa_active || link->u.mgd.csa.bw_reconfig);
+
 	ap_mode = ieee80211_determine_ap_chan(sdata, link->link_id, channel, vht_cap_info,
 					      elems, true, &link->u.mgd.conn,
+					      allow_beacon_puncturing_update,
 					      &ap_chandef);
 
 	if (ap_mode != link->u.mgd.conn.mode) {
@@ -1719,6 +1788,41 @@ static int ieee80211_config_bw(struct ieee80211_link_data *link,
 							     BSS_CHANGED_TPE),
 							  power_mode_changed);
 		}
+
+	if (allow_beacon_puncturing_update) {
+
+		if (!cfg80211_chandef_valid(&chanreq.oper))
+			return -EINVAL;
+
+		/* Use the pending CSA target, or the current request if idle. */
+		puncturing_changed = ieee80211_chanreq_puncturing_changed(
+			link->conf->csa_active ? &link->csa.chanreq :
+			&link->conf->chanreq, &chanreq);
+
+		/* Preserve an in-flight BW/CSA target when only its bitmap differs. */
+		if (link->conf->csa_active && link->u.mgd.csa.bw_reconfig &&
+		    puncturing_changed) {
+
+			/* Allow deferred beacon contents to be processed again. */
+			link->u.mgd.beacon_crc_valid = false;
+			return 0;
+		}
+
+		/*
+		 * For Non-CSA beacons with only punc bitmap change, trigger CSA
+		 * to update Repeater AP links chandef similar to BW update
+		 */
+		if (!link->conf->csa_active && puncturing_changed) {
+
+			/* Preserve the usability check from the in-place update path. */
+			if (!cfg80211_chandef_usable(sdata->local->hw.wiphy,
+						     &chanreq.oper,
+						     IEEE80211_CHAN_DISABLED))
+				return -EINVAL;
+			return ieee80211_sta_bw_reconfig_start_csa(
+				link, &chanreq.oper, &ap_chandef);
+		}
+	}
 
 	if (ieee80211_chanreq_identical(&chanreq, &link->conf->chanreq))
 		return 0;
