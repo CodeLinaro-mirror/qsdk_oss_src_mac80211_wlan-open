@@ -2122,6 +2122,8 @@ cleanup:
 	spin_unlock_bh(&ar->ab->base_lock);
 	spin_lock_bh(&ar->data_lock);
 	list_del(&arvif->list);
+	if (arvif->is_created)
+		ar->created_vdev_map &= ~(1LL << ar->monitor_vdev_id);
 	spin_unlock_bh(&ar->data_lock);
 #ifdef CPTCFG_ATH12K_SPECTRAL
 	mutex_unlock(&ar->spectral.vdev_lock);
@@ -2132,6 +2134,7 @@ cleanup:
 	ar->num_created_vdevs--;
 	ar->monitor_vdev_id = -1;
 	ar->monitor_vdev_created = false;
+	arvif->ahvif->device_bitmap &= ~BIT(ar->ab->wsi_info.index);
 
 	return ret;
 }
@@ -7360,27 +7363,9 @@ static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 #endif /* CPTCFG_QCN_EXTN */
 
 	ath12k_debugfs_remove_interface(arvif);
-	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR && !ar->monitor_vdev_created) {
-		ath12k_warn(ar->ab,
-			    "monitor vdev %u already deleted, skip fw vdev delete\n",
-			    arvif->vdev_id);
-
-		if (arvif->is_created) {
-			spin_lock_bh(&ar->data_lock);
-			ar->created_vdev_map &= ~(1LL << arvif->vdev_id);
-			spin_unlock_bh(&ar->data_lock);
-		}
-
-		arvif->is_created = false;
-		arvif->is_started = false;
-		arvif->is_scan_vif = false;
-		arvif->is_mlprobe_scan_vif = false;
-		arvif->ar = NULL;
-	} else {
-		ret = ath12k_mac_vdev_delete(ar, arvif);
-		if (ret)
-			ath12k_critical_failure_trigger(ar->ab, ATH12K_CRIT_VAP_FAILURE);
-	}
+	ret = ath12k_mac_vdev_delete(ar, arvif);
+	if (ret)
+		ath12k_critical_failure_trigger(ar->ab, ATH12K_CRIT_VAP_FAILURE);
 
 	ath12k_mac_ap_ps_recalc(ar);
 }
@@ -26059,6 +26044,7 @@ ath12k_mac_assign_vif_chanctx_handle(struct ieee80211_hw *hw,
 		ret = ath12k_mac_monitor_start(ar);
 		if (ret) {
 			ath12k_mac_monitor_vdev_delete(arvif);
+			ath12k_mac_unassign_link_vif(arvif);
 			goto out;
 		}
 
@@ -26264,7 +26250,8 @@ ath12k_mac_unassign_vif_chanctx_handle(struct ieee80211_hw *hw,
 	 */
 cleanup:
 	memset(&arvif->chanctx, 0, sizeof(*ctx));
-	if (!vif->valid_links) {
+	if (!vif->valid_links &&
+	    ahvif->vdev_type != WMI_VDEV_TYPE_MONITOR) {
 		ath12k_mac_remove_link_interface(hw, arvif);
 		ath12k_mac_unassign_link_vif(arvif);
 	}
