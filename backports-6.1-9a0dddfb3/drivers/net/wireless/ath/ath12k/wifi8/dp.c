@@ -1820,6 +1820,7 @@ static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 	.get_coredump_seg_count = ath12k_wifi8_dp_get_coredump_seg_count,
 	.get_coredump_segs = ath12k_wifi8_dp_get_coredump_segs,
 	.dp_peer_release = ath12k_wifi8_dp_peer_release,
+	.peer_tid_drop = ath12k_wifi8_dp_peer_tid_drop,
 };
 
 struct ath12k_dp *ath12k_wifi8_dp_init(struct ath12k_base *ab)

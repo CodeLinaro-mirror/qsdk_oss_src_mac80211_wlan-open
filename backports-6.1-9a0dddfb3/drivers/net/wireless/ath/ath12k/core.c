@@ -6408,6 +6408,16 @@ static void ath12k_core_reset(struct work_struct *work)
 			/* wake queues here as ping should continue for
 			 * legacy clients in non-asserted chipsets
 			 */
+			for (i = 0; i < ag->num_hw; i++) {
+				ah = ag->ah[i];
+				if (!ah)
+					continue;
+
+				ieee80211_wake_queues(ah->hw);
+				ah->queue_stop = false;
+			}
+			ath12k_dbg(ab, ATH12K_DBG_MODE1_RECOVERY,
+					"Queues are started as umac reset is completed for partner chipset\n");
 			if (ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE3) {
 				ath12k_core_peer_disassoc(ag, ab);
 			} else {
@@ -6421,17 +6431,11 @@ static void ath12k_core_reset(struct work_struct *work)
 					ath12k_info(ag->assert_ab,
 						    "Mode3 Asserted, MLO Client-retaining recovery - Steering T2LM/Link removal Success\n");
 				}
+				/* Unblock traffic for the peers which were earlier
+				 * blocked as part of the notification from firmware
+				 */
+				ath12k_dp_arch_peer_tid_drop(ab->dp, 0);
 			}
-			for (i = 0; i < ag->num_hw; i++) {
-				ah = ag->ah[i];
-				if (!ah)
-					continue;
-
-				ieee80211_wake_queues(ah->hw);
-				ah->queue_stop = false;
-			}
-			ath12k_dbg(ab, ATH12K_DBG_MODE1_RECOVERY,
-					"Queues are started as umac reset is completed for partner chipset\n");
 		}
 	}
 
