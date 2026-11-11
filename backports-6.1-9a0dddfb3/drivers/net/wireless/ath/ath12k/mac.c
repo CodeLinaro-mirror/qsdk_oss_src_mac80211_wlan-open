@@ -2121,7 +2121,7 @@ cleanup:
 	ar->ab->free_vdev_map |= 1LL << (ar->monitor_vdev_id);
 	spin_unlock_bh(&ar->ab->base_lock);
 	spin_lock_bh(&ar->data_lock);
-	list_del(&arvif->list);
+	list_del_init(&arvif->list);
 	if (arvif->is_created)
 		ar->created_vdev_map &= ~(1LL << ar->monitor_vdev_id);
 	spin_unlock_bh(&ar->data_lock);
@@ -22285,8 +22285,7 @@ err_vdev_del:
 	mutex_lock(&ar->spectral.vdev_lock);
 #endif
 	spin_lock_bh(&ar->data_lock);
-	if (!list_empty(&ar->arvifs))
-		list_del(&arvif->list);
+	list_del_init(&arvif->list);
 	spin_unlock_bh(&ar->data_lock);
 #ifdef CPTCFG_ATH12K_SPECTRAL
 	mutex_unlock(&ar->spectral.vdev_lock);
@@ -23051,8 +23050,7 @@ static int ath12k_mac_vdev_delete(struct ath12k *ar, struct ath12k_link_vif *arv
 
 err_vdev_del:
 	spin_lock_bh(&ar->data_lock);
-	if (!list_empty(&ar->arvifs))
-		list_del(&arvif->list);
+	list_del_init(&arvif->list);
 	spin_unlock_bh(&ar->data_lock);
 
 	ath12k_peer_cleanup(ar, arvif->vdev_id);
@@ -23165,8 +23163,37 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 		 */
 		ath12k_ahvif_put_link_cache(ahvif, link_id);
 		arvif = wiphy_dereference(hw->wiphy, vlan_master_ahvif->link[link_id]);
-		if (!arvif || !arvif->is_created)
+		if (!arvif)
 			continue;
+
+		if (!arvif->is_created) {
+			if (arvif->ar)
+				ath12k_dbg_level(arvif->ar->ab, ATH12K_DBG_MAC,
+						 ATH12K_DBG_L0,
+						 "[radio_idx : %u] remove interface, uncreated vdev %u type %u, subtype %u\n",
+						 arvif->ar->radio_idx, arvif->vdev_id,
+						 ahvif->vdev_type, arvif->vdev_subtype);
+			else
+				ath12k_dbg_level(NULL, ATH12K_DBG_MAC, ATH12K_DBG_L0,
+						 "[radio_idx : %s] remove interface, uncreated vdev %u type %u, subtype %u\n",
+						 ATH12K_INVALID_RADIO_IDX, arvif->vdev_id,
+						 ahvif->vdev_type, arvif->vdev_subtype);
+
+			if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR) {
+				if (arvif->ar) {
+					spin_lock_bh(&arvif->ar->data_lock);
+					list_del_init(&arvif->list);
+					spin_unlock_bh(&arvif->ar->data_lock);
+				} else {
+					ath12k_dbg_level(NULL, ATH12K_DBG_MAC,
+							 ATH12K_DBG_L0,
+							 "Monitor arvif removed when ar not available\n");
+					list_del_init(&arvif->list);
+				}
+				ath12k_mac_unassign_link_vif(arvif);
+			}
+			continue;
+		}
 
 		if (vif->type == NL80211_IFTYPE_AP_VLAN) {
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
