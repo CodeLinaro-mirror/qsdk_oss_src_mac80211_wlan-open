@@ -3524,7 +3524,7 @@ static void ath12k_check_for_valid_chanctx(struct ath12k *ar)
 			ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
 				   "Del arvif vdev %u MAC %pM from radio hw_link_id %d list\n",
 				   arvif->vdev_id, arvif->addr, ar->hw_link_id);
-			list_del(&arvif->list);
+			list_del_init(&arvif->list);
 			arvif->ar = NULL;
 		} else if (arvif->chanctx.def.chan) {
 			def = &arvif->chanctx.def;
@@ -3904,6 +3904,7 @@ static void ath12k_core_restart(struct work_struct *work)
 	bool is_ready = false;
 	struct ath12k_hw *ah;
 	struct ath12k *ar;
+	struct ath12k_link_vif *arvif, *tmp;
 	int ret, i, j;
 
 	ret = ath12k_core_reconfigure_on_crash(ab, &is_ready);
@@ -3932,15 +3933,22 @@ static void ath12k_core_restart(struct work_struct *work)
 		for (j = 0; j < ab->num_radios; j++) {
 			ar = ab->pdevs[j].ar;
 
+			/* ToDo: wiphy_lock is added for removing arvif from list
+			 * during mode0 recovery. Optimize the ar->arvifs list and nodes
+			 * accesses, to remove this protection.
+			 */
+			wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
 			spin_lock_bh(&ar->data_lock);
 			ath12k_check_for_valid_chanctx(ar);
 			if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE0) {
 				ath12k_dbg(ab, ATH12K_DBG_MAC,
 					   "Initialize arvifs list for radio hw_link_id %d\n",
 					   ar->hw_link_id);
-				INIT_LIST_HEAD(&ar->arvifs);
+				list_for_each_entry_safe(arvif, tmp, &ar->arvifs, list)
+					list_del_init(&arvif->list);
 			}
 			spin_unlock_bh(&ar->data_lock);
+			wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
 		}
 
 		if (!is_ready)
