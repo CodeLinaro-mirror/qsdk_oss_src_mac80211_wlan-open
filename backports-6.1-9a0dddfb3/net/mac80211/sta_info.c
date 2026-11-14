@@ -3744,6 +3744,7 @@ void ieee80211_sta_remove_link(struct sta_info *sta, unsigned int link_id,
 				 */
 				sta->deflink.debugfs_dir = NULL;
 				ieee80211_link_sta_debugfs_add(&sta->deflink);
+				ieee80211_link_sta_debugfs_drv_add(&sta->deflink);
 			}
 		}
 	}
