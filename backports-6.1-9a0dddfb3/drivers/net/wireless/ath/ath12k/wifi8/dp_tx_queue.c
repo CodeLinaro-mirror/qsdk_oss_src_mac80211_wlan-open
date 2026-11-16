@@ -34,6 +34,9 @@ struct hal_txpt_classify_info *ath12k_get_txpt_info_ptr(struct ath12k_dp_peer *p
 			ath12k_dp_get_tx_flow_info_from_peer(peer);
 	u32 offset;
 
+	if (!tx_flow_info)
+		return NULL;
+
 	if (bank_id >= ATH12K_NUM_TX_CLASSIFY_BANKS || tidpos >= ATH12K_NUM_TID_PER_BANK)
 		return NULL;
 
@@ -47,6 +50,9 @@ dma_addr_t ath12k_get_txpt_paddr(struct ath12k_dp_peer *peer, u8 bank_id, u8 tid
 	struct ath12k_dp_tx_flow_info *tx_flow_info =
 			ath12k_dp_get_tx_flow_info_from_peer(peer);
 	u32 offset;
+
+	if (!tx_flow_info)
+		return 0;
 
 	if (bank_id >= ATH12K_NUM_TX_CLASSIFY_BANKS || tidpos >= ATH12K_NUM_TID_PER_BANK)
 		return 0;
@@ -63,6 +69,8 @@ void ath12k_dp_txpt_update_to_all(struct ath12k_dp_peer *peer,
 	if (txpt_info_ptr) {
 		/* get bank_id 0, tid0 txpt ptr */
 		tx_tidx = ath12k_get_txpt_info_ptr(peer, 0, 1);
+		if (!tx_tidx)
+			return;
 
 		/* Copy all default tids information to all 0-7 tids */
 		for (int tid_num = 0; tid_num < 8; tid_num++) {
@@ -86,7 +94,7 @@ void ath12k_set_txpt_flow_ptr(struct ath12k_dp_hw_group *dp_hw_grp,
 		tx_tid_ptr = ath12k_get_txpt_info_ptr(peer, 0, tid + 1);
 		txpt_paddr = ath12k_get_txpt_paddr(peer, 0, tid + 1);
 
-		if (tx_tid_ptr) {
+		if (tx_tid_ptr && txpt_paddr) {
 			ti.flow_handler = HAL_WIFITXPT_TO_TQM;
 			ti.flow_loop_handler = HAL_WIFITXPT_LOOP_TO_TQM;
 			ti.paddr = txpt_paddr;
@@ -583,7 +591,7 @@ void ath12k_tx_classify_info_free(struct ath12k_dp_hw_group *dp_hw_grp,
 	struct hal_txpt_classify_data ti = {0};
 	struct device *dev = ath12k_dp_get_dev_from_dp_hw_group(dp_hw_grp);
 
-	if (!tx_tid_ptr || !(*tx_tid_ptr))
+	if (!tx_tid_ptr || !(*tx_tid_ptr) || !txpt_paddr)
 		return;
 
 	ath12k_core_dma_sync_single_for_cpu(dev,
